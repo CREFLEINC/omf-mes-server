@@ -81,6 +81,8 @@ const ID_RESOLVED = [
   'app/document-issue/document-issue-report.service.ts',
   'maintenance/tool-usage/tool-usage-create.service.ts',
   'production/material-consumption/material-consumption.service.ts',
+  // POP 실적 정정의 정정한 작업자(장부 P-120).
+  'production/production-result/production-result-correct.service.ts',
   'production/production-result/production-result.service.ts',
   // POP 마감의 주체 작업자(P-108).
   'production/work-order/work-order-close.service.ts',

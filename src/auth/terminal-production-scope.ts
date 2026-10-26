@@ -18,6 +18,7 @@ export const TERMINAL_PRODUCTION_OPERATIONS: Readonly<Record<string, readonly ('
   'POST /production/work-orders/{workOrderId}:close': ['POP'],
   'POST /production/work-sessions/{workSessionId}/events': ['POP'],
   'POST /production/production-results': ['POP'],
+  'POST /production/production-results/{productionResultId}:correct': ['POP'],
   'POST /trace/serial-numbers': ['POP'],
   'POST /production/material-consumptions': ['POP'],
   'POST /trace/lots/{lotId}:complete': ['POP'],
@@ -176,6 +177,25 @@ export async function assertTerminalProductionScope(
     });
     if (found !== unique.length) throw denied();
   };
+  /**
+   * 정정할 실적 — 그 W/O 가 이 단말 공장의 배포된 W/O 이고 그 공정의 이 단말 매핑에 「실적 입력」이 켜져 있어야 한다(장부 P-120).
+   * 완료·마감은 여기서 가르지 않는다 — 마감 뒤 정정은 서비스가 까닭(ERP 전송)과 할 일을 담은 400 으로 막는다.
+   * 없는 실적과 남의 공장 실적이 같은 401 이다.
+   */
+  const correctableResult = async (value: unknown): Promise<void> => {
+    const id = positiveId(value);
+    const row = id === null ? null : await prisma.production_result.findFirst({
+      where: { production_result_id: id, work_order: { production_line: { plant_id: terminal.plantId },
+        released_at: { not: null }, NOT: { status_code: 'CANCELLED' } } },
+      select: { work_order: { select: { routing_operation: { select: { process: { select: { terminal_process: {
+        where: { terminal_id: terminal.terminalId }, select: { can_input_result: true },
+      } } } } } } } },
+    });
+    if (!row) throw scopeDenied(FOREIGN_RESULT);
+    const mapping = row.work_order.routing_operation.process.terminal_process[0];
+    if (mapping === undefined) throw scopeDenied(FOREIGN_RESULT);
+    if (!mapping.can_input_result) throw flagDenied(FLAG_NAME.can_input_result);
+  };
   const ownLot = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.lot.findFirst({
@@ -224,6 +244,13 @@ export async function assertTerminalProductionScope(
       }
       if (given(body.moldId)) await ownMold(body.moldId);
       if (given(body.workSessionId)) await ownSession(body.workSessionId, FOREIGN_SESSION);
+      break;
+    case 'POST /production/production-results/{productionResultId}:correct':
+      await correctableResult(request.params.productionResultId);
+      for (const allocation of array(body.lotAllocations)) {
+        const lotId = object(allocation).lotId;
+        if (given(lotId)) await ownLot(lotId);
+      }
       break;
     case 'POST /trace/serial-numbers':
       if (given(body.lotId)) await ownLot(body.lotId);
@@ -287,6 +314,7 @@ function flagDenied(name: string): ContractException {
 }
 
 const FOREIGN_MOLD = '고른 금형이 이 단말 공장의 금형이 아닙니다. 관리웹 기준정보 관리 › 툴·금형 › 툴/금형/지그 마스터에서 금형의 공장을 확인하거나 다른 금형을 고르세요.';
+const FOREIGN_RESULT = '고른 실적은 이 단말 공장의 실적이 아니거나 이 단말에 매핑되지 않은 공정의 실적입니다 — 이 단말의 실적 화면에서 W/O 를 다시 고르거나, 관리웹 시스템 관리 › 단말기-공정 매핑에서 그 공정을 확인하세요.';
 const FOREIGN_SESSION = '고른 작업 세션은 이 단말이 연 세션이 아닙니다 — 이 단말의 작업 시작 화면에서 세션을 다시 연 뒤 실적을 다시 등록하세요.';
 const FOREIGN_EQUIPMENT = '고른 설비가 이 단말 공장의 설비가 아닙니다. 관리웹 기준정보 관리 › 설비 › 설비·설비그룹 마스터에서 설비의 공장을 확인하거나 다른 설비를 고르세요.';
 const NO_EQUIPMENT = '이 단말에 연결된 설비도, 이 W/O 의 계획 설비도 없어 설비를 실을 수 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 이 단말의 설비를 연결하세요.';
