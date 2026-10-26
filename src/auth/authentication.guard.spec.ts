@@ -157,10 +157,16 @@ describe('FR-004/005 terminal bearer authentication', () => {
     expect(await statusOf(mobile.guard.canActivate(context('GET /mdm/terminals/{terminalId}/processes', {}, { terminalId: '7' }, `Bearer ${mobile.token}`).execution))).toBe(401);
   });
 
-  it('allows POP inspection items only for its installed same-plant equipment', async () => {
-    const { guard, token } = setup('POP');
+  it('allows POP inspection items for its equipment and in-service same-plant equipment only', async () => {
+    const { guard, token, prisma } = setup('POP');
     expect(await guard.canActivate(context('GET /mdm/equipments/{equipmentId}/inspection-items',
       {}, { equipmentId: '5' }, `Bearer ${token}`).execution)).toBe(true);
+    expect(await guard.canActivate(context('GET /mdm/equipments/{equipmentId}/inspection-items',
+      {}, { equipmentId: '6' }, `Bearer ${token}`).execution)).toBe(true);
+    expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({
+      where: { equipment_id: 6n, plant_id: 3n, status_code: 'IN_SERVICE' }, select: { equipment_id: true },
+    });
+    (prisma.equipment.findFirst as jest.Mock).mockResolvedValueOnce(null);
     expect(await statusOf(guard.canActivate(context('GET /mdm/equipments/{equipmentId}/inspection-items',
       {}, { equipmentId: '6' }, `Bearer ${token}`).execution))).toBe(401);
   });
@@ -332,6 +338,14 @@ describe('FR-004/005 terminal bearer authentication', () => {
     for (const key of ['GET /maintenance/breakdowns', 'GET /maintenance/downtimes',
       'GET /maintenance/downtimes/summary', 'GET /maintenance/inspections']) {
       expect(await pop.guard.canActivate(context(key, { equipmentId: '5' }, {}, `Bearer ${pop.token}`).execution)).toBe(true);
+    }
+    // 비가동 기록은 자기 설비만 · 작업 전 점검 게이트(고장·점검)는 옆 설비로 시작하므로 같은 공장 가동 설비까지(장부 P-123).
+    for (const key of ['GET /maintenance/downtimes', 'GET /maintenance/downtimes/summary']) {
+      expect(await statusOf(pop.guard.canActivate(context(key, { equipmentId: '6' }, {}, `Bearer ${pop.token}`).execution))).toBe(401);
+    }
+    for (const key of ['GET /maintenance/breakdowns', 'GET /maintenance/inspections']) {
+      expect(await pop.guard.canActivate(context(key, { equipmentId: '6' }, {}, `Bearer ${pop.token}`).execution)).toBe(true);
+      (pop.prisma.equipment.findFirst as jest.Mock).mockResolvedValueOnce(null);
       expect(await statusOf(pop.guard.canActivate(context(key, { equipmentId: '6' }, {}, `Bearer ${pop.token}`).execution))).toBe(401);
     }
     const mobile = setup('MOBILE');

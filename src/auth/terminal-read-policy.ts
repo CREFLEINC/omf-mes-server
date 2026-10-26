@@ -78,16 +78,19 @@ export async function assertTerminalReadScope(
     if (!row) throw denied();
   };
   /**
-   * POP 은 자기 설비만 읽는다. `precheck` 는 작업 전 점검 게이트가 쓰는 설비 읽기다 — 설비 없는 POP 은 W/O 의 계획 설비로
-   * 점검하는데 이 읽기에는 W/O 가 없으므로, 단말 공장 안의 설비면 받는다(설비 있는 POP 은 그대로 자기 설비만).
+   * POP 은 자기 설비를 읽는다. `precheck` 는 작업 전 점검 게이트가 쓰는 설비 읽기다 — 작업 시작과 같은 범위라
+   * 설비 있는 POP 도 단말 공장의 가동 설비(옆 설비로 시작 · 장부 P-123)를, 설비 없는 POP 은 W/O 가 없는 이 읽기에서
+   * 단말 공장 안의 설비를 읽는다.
    */
-  const popMayRead = (id: bigint, precheck: boolean): boolean =>
-    terminal.terminalTypeCode !== 'POP' || id === terminal.equipmentId || (precheck && terminal.equipmentId === null);
   const ownEquipment = async (value: unknown, precheck = false): Promise<void> => {
     const id = positiveId(value);
-    if (id === null || !popMayRead(id, precheck)) throw denied();
+    if (id === null) throw denied();
+    const own = terminal.terminalTypeCode !== 'POP' || id === terminal.equipmentId;
+    if (!own && !precheck) throw denied();
+    const neighbor = !own && terminal.equipmentId !== null;
     const row = await prisma.equipment.findFirst({
-      where: { equipment_id: id, plant_id: plantId }, select: { equipment_id: true },
+      where: { equipment_id: id, plant_id: plantId, ...(neighbor ? { status_code: IN_SERVICE } : {}) },
+      select: { equipment_id: true },
     });
     if (!row) throw denied();
   };

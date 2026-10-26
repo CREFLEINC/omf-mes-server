@@ -1092,9 +1092,11 @@ describe('작업 세션 조회 4건 (e2e)', () => {
         workOrderId, equipmentId: Number(equipment), decidedAt: START_AT, controlLevelCode: 'WARN', decisionCode: 'PASSED',
       });
 
-    it('설비 없는 POP 단말은 W/O 의 계획 설비로 작업 전 점검을 기록한다 — 다른 설비는 막힌다', async () => {
+    // 장부 P-123 — 계획 설비 밖이어도 단말 공장의 가동 설비면 받는다(옆 설비로 시작). 다른 공장 설비는 401 이다.
+    it('설비 없는 POP 단말은 W/O 의 계획 설비·단말 공장의 가동 설비로 작업 전 점검을 기록한다 — 다른 공장 설비는 막힌다', async () => {
       await precheck(listed.own, equipmentId).expect(201);
-      expect((await precheck(listed.own, otherEquipmentId)).status).not.toBe(201);
+      await precheck(listed.own, otherEquipmentId).expect(201);
+      expect((await precheck(listed.own, farEquipmentId)).status).toBe(401);
     });
 
     it('설비 없는 POP 단말은 점검 게이트의 설비 읽기를 단말 공장 설비에 한해 한다 — 다른 공장 설비는 막힌다', async () => {
@@ -1113,8 +1115,8 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       for (const response of await Promise.all(gateReads(farEquipmentId))) expect(response.status).toBe(401);
     });
 
-    it('W/O 에도 설비가 없으면 점검할 설비가 없고, 점검 없이 설비 없는 세션을 연다', async () => {
-      expect((await precheck(listed.unplanned, equipmentId)).status).not.toBe(201);
+    it('W/O 에도 설비가 없으면 단말 공장의 가동 설비만 실을 수 있고, 점검 없이 설비 없는 세션을 연다', async () => {
+      expect((await precheck(listed.unplanned, farEquipmentId)).status).toBe(401);
 
       const opened = await terminalPost(BASE, { workOrderId: listed.unplanned, startedAt: START_AT }).expect(201);
       const session = await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(opened.body.workSessionId) } });
