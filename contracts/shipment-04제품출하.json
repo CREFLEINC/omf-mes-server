@@ -488,7 +488,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — 입출고 추적 화면 권한",
+      "description": "권한 없음 — LOT 추적 화면 권한",
       "content": {
        "application/json": {
         "schema": {

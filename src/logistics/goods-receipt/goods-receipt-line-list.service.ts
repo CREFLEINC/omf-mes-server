@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, LineTotals, Named, PagedResponseWith, UomTotalRow, lineTotals, named } from '../line-list';
 
 /**
- * 입고 건을 가로지르는 입고 줄 목록 — 자재입고·생산입고 현황(입출고 추적 화면 · 장부 P-119).
+ * 입고 건을 가로지르는 입고 줄 목록 — 자재입고·생산입고 현황(LOT 추적 화면 · 장부 P-119).
  * 입고 목록(`GET /logistics/goods-receipts`)은 머리글 단위라 품목·수량이 없다.
  * 기간은 공장 현지 날짜다 — 입고 목록의 `receiptDateFrom/To`(UTC 날짜)와 다르다.
  */

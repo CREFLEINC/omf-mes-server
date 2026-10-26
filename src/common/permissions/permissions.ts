@@ -25,12 +25,6 @@ export interface Permission {
   groupCode: string;
 }
 
-/**
- * 입출고 추적 화면(설계 밖 · 장부 P-119). ⚠ 번호와 메뉴 자리는 화면 계획이 정해지면 확정한다 — 그때 이 값과
- * `prisma/seed.ts` 관리자 역할 목록의 같은 문자열만 바꾼다.
- */
-export const TRACE_FLOW_SCREEN = 'W-01-14';
-
 export const PERMISSIONS: readonly Permission[] = [
   // 01 자재·창고
   { code: 'M-01-01', name: '입하 등록', groupCode: '01' },
@@ -59,7 +53,6 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-01-11', name: '신규 P/O 등록', groupCode: '01' },
   { code: 'W-01-12', name: '재고조정', groupCode: '01' },
   { code: 'W-01-13', name: '물류 문서 진행현황·취소', groupCode: '01' },
-  { code: TRACE_FLOW_SCREEN, name: '입출고 추적', groupCode: '01' },
   // 02 생산 실행
   { code: 'M-02-01', name: 'WIP 공정 이동 스캔', groupCode: '02' },
   { code: 'M-02-02', name: '수리 왕복 투입·반출 스캔', groupCode: '02' },
@@ -88,6 +81,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-02-06', name: 'ERP W/O 변경 관리자 확인', groupCode: '02' },
   { code: 'W-02-07', name: '긴급 W/O 발행', groupCode: '02' },
   { code: 'W-02-08', name: 'W/O 진행현황 조회(생산 실적 집계 포함)', groupCode: '02' },
+  // 설계 밖 화면 — 생산 관리 > W/O 진행현황 조회 아래(omf-all-around#73 · 장부 P-119).
+  { code: 'W-02-09', name: 'LOT 추적', groupCode: '02' },
   { code: 'W-02-10', name: '추가 자재 출고 요청(수동)', groupCode: '02' },
   // 03 품질
   { code: 'W-03-01', name: 'Lot Status 현황·변경이력 조회', groupCode: '03' },

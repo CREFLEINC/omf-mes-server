@@ -8,7 +8,7 @@ import {
   GoodsReceiptLineListService,
 } from './goods-receipt-line-list.service';
 
-/** 자재입고·생산입고 현황 — 입출고 추적 화면(장부 P-119). 관리웹 세션 전용이다. */
+/** 자재입고·생산입고 현황 — LOT 추적 화면(장부 P-119). 관리웹 세션 전용이다. */
 @Controller('logistics/goods-receipt-lines')
 export class GoodsReceiptLineListController {
   constructor(private readonly lines: GoodsReceiptLineListService) {}

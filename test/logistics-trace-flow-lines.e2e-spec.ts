@@ -1,5 +1,5 @@
 /**
- * 입출고 추적 화면의 입고·출고 현황(장부 P-119) — 입고 줄·출하 줄 목록.
+ * LOT 추적 화면의 입고·출고 현황(장부 P-119) — 입고 줄·출하 줄 목록.
  * 기간은 공장 현지 날짜다: 현지 자정 직후(UTC 로는 전날)의 입고가 그날에 들고, 현지 전날 밤 입고는 빠진다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -18,7 +18,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'TFLE2E';
 const DAY = '2026-08-10';
-const SCREEN = 'W-01-14';
+const SCREEN = 'W-02-09';
 const USERS = { allowed: `${PREFIX}-allowed`, denied: `${PREFIX}-denied` };
 const PASSWORD = 'TF-추적-비밀번호';
 
