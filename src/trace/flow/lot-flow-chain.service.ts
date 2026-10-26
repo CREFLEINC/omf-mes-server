@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
+import { LIVE_ALLOCATION } from '../../core/lot/lot-allocation';
 import { CONSUMED_RELATION, tracedWorkOrders } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -206,7 +207,7 @@ export class LotFlowChainService {
 
   private async goodQty(lotIds: bigint[]): Promise<Map<bigint, number>> {
     const rows = await this.prisma.production_result_lot_allocation.groupBy({
-      by: ['lot_id'], where: { lot_id: { in: lotIds } }, _sum: { allocated_qty: true },
+      by: ['lot_id'], where: { lot_id: { in: lotIds }, ...LIVE_ALLOCATION }, _sum: { allocated_qty: true },
     });
     return new Map(rows.map((row) => [row.lot_id, Number(row._sum.allocated_qty ?? 0)]));
   }

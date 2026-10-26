@@ -1,4 +1,5 @@
 import { PageRequest } from '../../common/pagination';
+import { liveAllocationSql } from '../../core/lot/lot-allocation';
 import { CONSUMED_RELATION } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { HU_STATUS_PACKED } from '../../inventory/handling-unit/handling-unit-status';
@@ -28,7 +29,7 @@ export function tracedSql(workOrder: string): string {
 }
 
 const HAS_PRODUCTION = (lot: string) =>
-  `EXISTS (SELECT 1 FROM production.production_result_lot_allocation pa WHERE pa.lot_id = ${lot})`;
+  `EXISTS (SELECT 1 FROM production.production_result_lot_allocation pa WHERE pa.lot_id = ${lot} AND ${liveAllocationSql('pa')})`;
 
 /** `sources`(LOT id 를 내는 SQL)의 각 LOT 이 들어간 생산 LOT — (source_lot_id, target_lot_id, work_order_id, basis). */
 export function forwardLinksSql(sources: string): string {

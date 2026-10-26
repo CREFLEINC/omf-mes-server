@@ -4,7 +4,7 @@ import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues, assertWorkerNoPresent } from '../../common/master';
-import { Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import { LIVE_ALLOCATION, Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMPLETION_REASON, assertCompletionReason } from './lot-rules';
 import { lotProgress } from './lot-progress';
@@ -137,7 +137,7 @@ async function lockLot(tx: Tx, lotId: number): Promise<LockedLot> {
 /** ⛔ `production_result.good_qty` 의 합이 «아니다» — 그건 W/O 축이다(§3-3). */
 async function allocatedSum(tx: Tx, lotId: number): Promise<Prisma.Decimal> {
   const sum = await tx.production_result_lot_allocation.aggregate({
-    where: { lot_id: BigInt(lotId) },
+    where: { lot_id: BigInt(lotId), ...LIVE_ALLOCATION },
     _sum: { allocated_qty: true },
   });
   return sum._sum.allocated_qty ?? new Prisma.Decimal(0);

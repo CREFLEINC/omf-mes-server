@@ -15,6 +15,7 @@ import {
   optionalDay,
   optionalInstant,
 } from '../../core/lot';
+import { LIVE_ALLOCATION } from '../../core/lot/lot-allocation';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -280,7 +281,7 @@ export class LotService {
    */
   private async progress(row: LotRow): Promise<LotProgressView> {
     const sum = await this.prisma.production_result_lot_allocation.aggregate({
-      where: { lot_id: row.lot_id },
+      where: { lot_id: row.lot_id, ...LIVE_ALLOCATION },
       _sum: { allocated_qty: true },
     });
     return lotProgress(row.initial_qty, sum._sum.allocated_qty ?? new Prisma.Decimal(0));

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { localPeriodSql, plantToday } from '../../common/period/plant-local-period';
+import { liveAllocationSql } from '../../core/lot/lot-allocation';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
@@ -103,7 +104,7 @@ export function stagedSql(query: ProductLotFlowQuery, bind: (value: unknown) => 
       SELECT lt.lot_id, lt.plant_id, lt.source_id AS work_order_id, MIN(pr.occurred_at) AS first_produced_at,
              MAX(pr.occurred_at) AS last_produced_at, SUM(pa.allocated_qty) AS produced_qty
         FROM trace.lot lt
-        JOIN production.production_result_lot_allocation pa ON pa.lot_id = lt.lot_id
+        JOIN production.production_result_lot_allocation pa ON pa.lot_id = lt.lot_id AND ${liveAllocationSql('pa')}
         JOIN production.production_result pr ON pr.production_result_id = pa.production_result_id
        WHERE ${and.join(' AND ')}
        GROUP BY lt.lot_id, lt.plant_id, lt.source_id
