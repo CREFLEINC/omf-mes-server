@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
-import { ContractException } from '../../common/errors';
+import { ContractException, ERROR_CODE, field } from '../../common/errors';
+import { HttpStatus } from '@nestjs/common';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { PostingInput } from '../../core/inventory-posting/posting.types';
 import { ShipmentCreateWrite, ShipmentWrite, postShipment } from './shipment-posting';
@@ -58,6 +59,10 @@ interface Seed {
   balanceRows?: Record<number, number>;
   lotStatus?: Record<number, string>;
   missingLot?: number;
+  /** LOT 별 그 창고의 피킹분 — 없으면 넉넉하다. */
+  picked?: Record<number, number>;
+  /** 출고 코어가 소진에서 던질 400 — 경로를 출하 본문으로 옮기는지 본다. */
+  consumeError?: ContractException;
 }
 
 function fake(seed: Seed = {}): {
@@ -86,10 +91,18 @@ function fake(seed: Seed = {}): {
             .filter((id) => Number(id) !== seed.missingLot)
             .map((id) => ({
               lot_id: id,
+              lot_no: `LOT-${String(id)}`,
               item_id: Number(id) === LOT_A ? ITEM_A : ITEM_B,
               status_code: seed.lotStatus?.[Number(id)] ?? 'NORMAL',
             })),
         ),
+    },
+    inventory_balance: {
+      findMany: ({ where }: { where: { lot_id: { in: bigint[] } } }) =>
+        Promise.resolve(where.lot_id.in.map((id) => ({
+          lot_id: id,
+          picked_qty: new Prisma.Decimal(seed.picked?.[Number(id)] ?? 1000),
+        }))),
     },
     judgment_type_control: { findFirst: () => Promise.resolve(null) },
     warehouse: {
@@ -195,7 +208,7 @@ function fake(seed: Seed = {}): {
     consume: (_tx: unknown, moves: unknown) => {
       recorded.order.push('posting.consume');
       recorded.consumed.push(moves);
-      return Promise.resolve();
+      return seed.consumeError === undefined ? Promise.resolve() : Promise.reject(seed.consumeError);
     },
     post: (_tx: unknown, posted: PostingInput) => {
       recorded.order.push('posting.post');
@@ -507,5 +520,75 @@ describe('postShipment — 긴급 직행(expedited)', () => {
 
     expect(recorded.receipt).toHaveLength(0);
     expect(recorded.posted).toHaveLength(1);
+  });
+});
+
+describe('postShipment — 피킹분 확인과 출하 본문 경로', () => {
+  const twoAllocations = (first: number, second: number, lotB = LOT_A) => write({
+    lines: [{
+      shipmentRequestLineId: REQUEST_LINE_ID, shippedQty: first + second, uomId: UOM_ID,
+      allocations: [
+        { lotId: LOT_A, allocatedQty: first, uomId: UOM_ID },
+        { lotId: lotB, allocatedQty: second, uomId: UOM_ID },
+      ],
+    }],
+  });
+
+  it('피킹되지 않은 LOT 은 그 배분의 allocatedQty 를 짚고 M-04-01 조치를 싣는다 — 출고 전표를 세우기 전이다', async () => {
+    const { tx, posting, recorded } = fake({ picked: { [LOT_A]: 0 } });
+
+    const failure = await caught(() => postShipment(tx, posting, write()));
+
+    expect(failure.getStatus()).toBe(400);
+    expect(failure.errors).toEqual([expect.objectContaining({
+      field: 'lines[0].allocations[0].allocatedQty', code: 'NEGATIVE_BALANCE',
+      message: expect.stringMatching(/^LOT LOT-501 은 피킹되지 않았습니다\..*M-04-01/),
+    })]);
+    expect(recorded.order).not.toContain('goods_issue.create');
+  });
+
+  it('같은 LOT 을 나눠 배분하면 합으로 보고, 합이 피킹분을 넘긴 배분 하나만 짚는다', async () => {
+    const { tx, posting } = fake({ picked: { [LOT_A]: 6 } });
+
+    const failure = await caught(() => postShipment(tx, posting, twoAllocations(4, 3)));
+
+    expect(failure.errors).toEqual([expect.objectContaining({
+      field: 'lines[0].allocations[1].allocatedQty',
+      message: expect.stringContaining('피킹된 수량(6)보다 많이 배분했습니다(배분 7)'),
+    })]);
+  });
+
+  it('피킹분 안의 배분은 통과한다 — 경계값(같은 양)도', async () => {
+    const { tx, posting, recorded } = fake({ picked: { [LOT_A]: 10 } });
+
+    await postShipment(tx, posting, write());
+
+    expect(recorded.order).toContain('posting.post');
+  });
+
+  it('긴급 직행은 피킹분을 보지 않는다 — 피킹을 건너뛰는 경로다', async () => {
+    const { tx, posting, recorded } = fake({ picked: { [LOT_A]: 0 } });
+
+    await postShipment(tx, posting, { ...write({ expedited: true, expediteReason: '고객 라인 정지' }), goodsReceiptNo: RECEIPT_NO, receiptLocationId: BigInt(LOCATION_ID) });
+
+    expect(recorded.order).toContain('posting.post');
+  });
+
+  it('출고 코어의 400 은 출고 줄 경로를 배분 경로로 옮기고 보유 수량 문구에 조치를 붙인다', async () => {
+    const consumeError = new ContractException(HttpStatus.BAD_REQUEST, [
+      field('lines[1].issueQty', ERROR_CODE.NEGATIVE_BALANCE, '보유 수량보다 많이 낼 수 없습니다.'),
+      field('lines[0].lotId', ERROR_CODE.INVALID, '재고 차원이 둘 이상이라 어느 것을 낼지 정할 수 없습니다.'),
+    ]);
+    const { tx, posting } = fake({ consumeError });
+
+    const failure = await caught(() => postShipment(tx, posting, twoAllocations(4, 3, LOT_B)));
+
+    expect(failure.errors).toEqual([
+      expect.objectContaining({
+        field: 'lines[0].allocations[1].allocatedQty',
+        message: expect.stringMatching(/^보유 수량보다 많이 낼 수 없습니다\. .*배분 수량을 줄이세요\.$/),
+      }),
+      expect.objectContaining({ field: 'lines[0].allocations[0].lotId', message: '재고 차원이 둘 이상이라 어느 것을 낼지 정할 수 없습니다.' }),
+    ]);
   });
 });

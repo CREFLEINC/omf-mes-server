@@ -139,6 +139,7 @@ export async function postShipment(
   const expedited = input.expedited === true;
   if (expedited) await postExpeditedReceipt(tx, posting, write, shipmentId, lots);
   const sources = await resolveSources(tx, write, lots);
+  if (!expedited) await assertPicked(tx, input, lots);
 
   const issue = await tx.goods_issue.create({
     data: {
@@ -181,7 +182,7 @@ export async function postShipment(
   }
 
   // ⭐ 원장·소진·손검사·되짚기가 여기 한 줄에 다 있다. ⛔ 이 안을 복제하지 않는다.
-  await postIssue(
+  await onShipmentPaths(input, () => postIssue(
     tx,
     posting,
     {
@@ -203,7 +204,7 @@ export async function postShipment(
       occurredAt: new Date(input.occurredAt),
     },
     write.appUserId,
-  );
+  ));
 
   await writeShipmentLines(tx, write, shipmentId, issueLines);
   return shipmentId;
@@ -358,14 +359,14 @@ function flatten(input: ShipmentCreateWrite): FlatAllocation[] {
  * 품질·재고 상태 칸을 안 실어 **어느 것을 낼지 정할 수 없다**(출고 코어가 같은 자리에서 같은
  * 판정을 한다 · `issue-posting.ts:131-141`).
  */
-type LotRow = { lot_id: bigint; item_id: bigint; status_code: string };
+type LotRow = { lot_id: bigint; lot_no: string; item_id: bigint; status_code: string };
 
 /** 배분이 가리키는 LOT 을 «한 번» 읽는다 — 품질 게이트와 위치 해소가 같은 행을 쓴다. */
 async function readLots(tx: Tx, input: ShipmentCreateWrite): Promise<Map<string, LotRow>> {
   const lotIds = [...new Set(flatten(input).map((entry) => BigInt(entry.allocation.lotId)))];
   const lots = await tx.lot.findMany({
     where: { lot_id: { in: lotIds } },
-    select: { lot_id: true, item_id: true, status_code: true },
+    select: { lot_id: true, lot_no: true, item_id: true, status_code: true },
   });
   return new Map(lots.map((lot) => [lot.lot_id.toString(), lot]));
 }
@@ -416,4 +417,61 @@ function pathOfLot(input: ShipmentCreateWrite, lotId: bigint | number): string {
   return entry === undefined
     ? 'lines'
     : `lines[${entry.lineIndex}].allocations[${entry.allocationIndex}].lotId`;
+}
+
+const PICK_ACTION = '모바일 출하 피킹(M-04-01)에서 이 LOT 을 먼저 피킹하거나, 피킹된 LOT 으로 배분을 바꾸세요.';
+
+/**
+ * 평시 출하는 피킹분만 낼 수 있다 — 출고 전기가 배분마다 `picked_qty` 를 소진한다. 그 판정을 출고 코어에
+ * 맡기면 오류가 출고 전표 줄(`lines[i].issueQty`)을 짚어 출하 본문과 어긋나므로 여기서 먼저 본다.
+ * 같은 LOT 을 여러 배분에 나누면 합으로 보고, 합이 넘친 배분을 짚는다. `resolveSources` 가 잔액을 이미 잠갔다.
+ */
+async function assertPicked(tx: Tx, input: ShipmentCreateWrite, lots: Map<string, LotRow>): Promise<void> {
+  const rows = await tx.inventory_balance.findMany({
+    where: { warehouse_id: BigInt(input.warehouseId), lot_id: { in: [...lots.values()].map((lot) => lot.lot_id) } },
+    select: { lot_id: true, picked_qty: true },
+  });
+  const picked = new Map(rows.map((row) => [String(row.lot_id), row.picked_qty]));
+  const allocated = new Map<string, Prisma.Decimal>();
+  const flagged = new Set<string>();
+  const errors: ErrorItem[] = [];
+  for (const entry of flatten(input)) {
+    const key = String(entry.allocation.lotId);
+    const sum = (allocated.get(key) ?? new Prisma.Decimal(0)).plus(entry.allocation.allocatedQty);
+    allocated.set(key, sum);
+    const available = picked.get(key) ?? new Prisma.Decimal(0);
+    // 한 LOT 은 처음 넘친 배분 한 번만 짚는다.
+    if (flagged.has(key) || sum.lessThanOrEqualTo(available)) continue;
+    flagged.add(key);
+    const lotNo = (lots.get(key) as LotRow).lot_no;
+    const path = `lines[${entry.lineIndex}].allocations[${entry.allocationIndex}].allocatedQty`;
+    errors.push(field(path, ERROR_CODE.NEGATIVE_BALANCE, available.isZero()
+      ? `LOT ${lotNo} 은 피킹되지 않았습니다. ${PICK_ACTION}`
+      : `LOT ${lotNo} 을 피킹된 수량(${available.toString()})보다 많이 배분했습니다(배분 ${sum.toString()}). ${PICK_ACTION}`));
+  }
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
+
+const ISSUE_LINE_FIELD = /^lines\[(\d+)\]\.(issueQty|lotId)$/;
+
+/**
+ * 출고 코어의 400 은 출고 전표 줄(`lines[i]`)을 짚는다 — 출고 줄은 배분마다 하나라 배분 경로로 옮긴다.
+ * ⛔ 코어의 문구·경로는 피킹 출고 등이 같이 쓰므로 그쪽을 고치지 않는다.
+ */
+async function onShipmentPaths<T>(input: ShipmentCreateWrite, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof ContractException)) throw error;
+    const flat = flatten(input);
+    throw new ContractException(error.getStatus(), error.errors.map((item) => {
+      const match = item.field === undefined ? null : ISSUE_LINE_FIELD.exec(item.field);
+      const entry = match === null ? undefined : flat[Number(match[1])];
+      if (match === null || entry === undefined) return item;
+      const at = `lines[${entry.lineIndex}].allocations[${entry.allocationIndex}]`;
+      return match[2] === 'lotId'
+        ? { ...item, field: `${at}.lotId` }
+        : { ...item, field: `${at}.allocatedQty`, message: `${item.message} 이 창고의 그 LOT 가용 수량을 재고 현황에서 확인하고 배분 수량을 줄이세요.` };
+    }));
+  }
 }
