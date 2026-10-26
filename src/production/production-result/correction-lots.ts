@@ -237,8 +237,9 @@ export async function affectedLots(
   const [after, lots, labels] = await Promise.all([
     liveLotQuantities(tx, lotIds),
     tx.lot.findMany({ where: { lot_id: { in: lotIds.map(BigInt) } }, select: { lot_id: true, lot_no: true }, orderBy: { lot_no: 'asc' } }),
+    // 출력 결과 칸이 생기기 전의 발행은 결과가 비어 있다 — 실패만 빼고 빈 것은 발행으로 센다.
     tx.document_issue_log.findMany({
-      where: { document_type_code: 'PRODUCTION_LOT_LABEL', lot_id: { in: lotIds.map(BigInt) }, NOT: { print_outcome_code: 'FAILED' } },
+      where: { document_type_code: 'PRODUCTION_LOT_LABEL', lot_id: { in: lotIds.map(BigInt) }, OR: [{ print_outcome_code: null }, { print_outcome_code: { not: 'FAILED' } }] },
       orderBy: [{ lot_id: 'asc' }, { issue_seq: 'desc' }],
       distinct: ['lot_id'],
       select: { lot_id: true, label_qty: true },

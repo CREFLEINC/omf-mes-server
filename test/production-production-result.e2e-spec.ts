@@ -789,7 +789,7 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);
       const label = await prisma.document_issue_log.create({ data: {
         document_type_code: 'PRODUCTION_LOT_LABEL', target_type_code: 'LOT', target_id: slots[0].lot_id, lot_id: slots[0].lot_id,
-        issue_seq: 1, issued_at: new Date(), issued_worker_id: ids.worker, print_outcome_code: 'PENDING', label_qty: 30,
+        issue_seq: 1, issued_at: new Date(), issued_worker_id: ids.worker, label_qty: 30,
       } });
       try {
         const corrected = await correctResult(recorded.body.productionResultId, { goodQty: 25, note: '오입력' }).expect(201);
