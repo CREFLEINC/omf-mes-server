@@ -26,7 +26,7 @@ interface BodyParserError {
   limit?: unknown;
 }
 
-function bodyParseError(error: unknown, _request: Request, _response: Response, next: NextFunction): void {
+export function bodyParseError(error: unknown, _request: Request, _response: Response, next: NextFunction): void {
   const { type, status, limit } = (error ?? {}) as BodyParserError;
   // 해석기 오류가 아니거나 서버 쪽 사정(5xx)이면 손대지 않는다 — 응답 필터가 500 으로 다룬다.
   if (typeof type !== 'string' || typeof status !== 'number' || status >= 500) {
@@ -41,7 +41,8 @@ function messageFor(type: string, limit: unknown): string {
   switch (type) {
     case 'entity.parse.failed':
       return '요청 본문이 JSON 객체 형식이 아닙니다. 올바른 JSON 객체로 보내세요.';
-    case 'entity.too.large': {
+    case 'entity.too.large':
+    case 'parameters.too.many': {
       const size = typeof limit === 'number' ? `(최대 ${Math.floor(limit / 1024)}kb)` : '';
       return `요청 본문이 너무 큽니다${size}. 본문을 줄이거나 나눠 보내세요.`;
     }
