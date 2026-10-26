@@ -30,7 +30,8 @@ const BASE = '/api/logistics/shipments';
 const ROLE = 'SHE2E-ROLE';
 /** ⭐ 등록만 403 을 선언했다 — 조회 둘은 «선언 0» 이라 세션만 있으면 된다(§1-1 실측). */
 /** ⭐ `W-01-13` 은 다형 취소 화면이다 — 자리 ⑤(출하 소유 전표가 거기서 막히는지)를 HTTP 로 본다. */
-const PERMISSIONS = ['W-04-04', 'W-04-05', 'W-04-12', 'W-01-13'];
+/** `M-04-01` — 모바일 출하 피킹 뒤 출하가 이어지는 자리(F-3)를 같은 계정으로 부른다. */
+const PERMISSIONS = ['W-04-04', 'W-04-05', 'W-04-12', 'W-01-13', 'M-04-01'];
 /** ⭐ 픽스처가 전부 이 창 안에 있고 다른 스위트의 출하는 밖에 있다. */
 const WINDOW = { shipDateFrom: '2026-08-20', shipDateTo: '2026-08-22' };
 
@@ -779,6 +780,62 @@ describe('출하 목록 (e2e)', () => {
     expect(ledgers).toBeLessThanOrEqual(1);
   });
 
+  // ── 피킹분 확인 — 오류는 출하 본문의 배분 칸을 짚고 조치(M-04-01)를 싣는다 ─────────────
+  const allocate = (lotId: bigint, qty: number, requestId = made.postRequest, lineId = made.postRequestLine): CreateBody =>
+    body({
+      shipmentRequestId: requestId,
+      lines: [
+        {
+          shipmentRequestLineId: lineId,
+          shippedQty: qty,
+          uomId: Number(ids.uom),
+          allocations: [{ lotId: Number(lotId), allocatedQty: qty, uomId: Number(ids.uom) }],
+        },
+      ],
+    });
+
+  it('F-1 피킹하지 않은 LOT 으로 출하하면 400 — 배분 수량 칸·LOT 번호·M-04-01 조치', async () => {
+    const failed = await post(allocate(ids.lotNoPick, 4), 400);
+
+    expect(failed.errors).toEqual([
+      expect.objectContaining({
+        field: 'lines[0].allocations[0].allocatedQty',
+        code: 'NEGATIVE_BALANCE',
+        message: `LOT ${PREFIX}-LOT-NOPICK: 남은 피킹분이 없습니다(아직 피킹하지 않았거나 이미 출하에 썼습니다). 모바일 출하 피킹(M-04-01)에서 이 LOT 을 먼저 피킹하거나, 피킹된 LOT 으로 배분을 바꾸세요.`,
+      }),
+    ]);
+  });
+
+  it('F-2 피킹분보다 많이 배분하면 400 — 문구에 피킹분과 배분 합이 실린다', async () => {
+    const failed = await post(allocate(ids.lotPartial, 4), 400);
+
+    expect(failed.errors).toEqual([
+      expect.objectContaining({
+        field: 'lines[0].allocations[0].allocatedQty',
+        message: expect.stringContaining(`LOT ${PREFIX}-LOT-PARTIAL: 피킹된 수량(3)보다 많이 배분했습니다(배분 4)`),
+      }),
+    ]);
+  });
+
+  it('F-3 모바일 출하 — 피킹(M-04-01)한 수량만큼 출하하면 201 이고 피킹분이 소진된다', async () => {
+    // 전용 지시 라인 — 공용 라인의 배정·출하 누계가 앞 시험 순서에 따라 달라지지 않게 한다.
+    await request(app.getHttpServer())
+      .post(`/api/logistics/shipment-requests/${made.pickRequest}/lines/${made.pickRequestLine}:pick`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', `${PREFIX}-W1`)
+      .send({ lotId: Number(ids.lotPick), pickedQty: 5, uomId: Number(ids.uom) })
+      .expect(200);
+
+    await post(allocate(ids.lotPick, 5, made.pickRequest, made.pickRequestLine));
+
+    const row = await prisma.inventory_balance.findFirstOrThrow({
+      where: { lot_id: ids.lotPick, warehouse_id: ids.warehouse },
+      select: { picked_qty: true },
+    });
+    expect(row.picked_qty.toNumber()).toBe(0);
+  });
+
   async function balance(): Promise<{ on_hand_qty: Prisma.Decimal; picked_qty: Prisma.Decimal }> {
     return prisma.inventory_balance.findFirstOrThrow({
       where: { lot_id: ids.lotPost, warehouse_id: ids.warehouse },
@@ -1488,6 +1545,10 @@ describe('출하 목록 (e2e)', () => {
       // ⭐ 등록 경로용 — `lotPost` 는 잔액·피킹이 서 있고 `lotDefect` 는 Release 가 아니다.
       ['lotPost', 'LOT-POST'],
       ['lotDefect', 'LOT-DEFECT'],
+      // 피킹분 확인용 — 피킹 0 · 피킹 3 · 모바일 피킹을 거칠 LOT.
+      ['lotNoPick', 'LOT-NOPICK'],
+      ['lotPartial', 'LOT-PARTIAL'],
+      ['lotPick', 'LOT-PICK'],
       // ⭐ 긴급 직행용 — 잔액이 «없는» 정상 LOT(「아직 입고 안 된 LOT」).
       ['lotExp', 'LOT-EXP'],
     ] as const) {
@@ -1523,7 +1584,9 @@ describe('출하 목록 (e2e)', () => {
       where: { warehouse_id: ids.warehouse },
       select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } },
     });
-    for (const lotId of [ids.lotPost, ids.lotDefect]) {
+    for (const [lotId, pickedQty] of [
+      [ids.lotPost, 2000], [ids.lotDefect, 2000], [ids.lotNoPick, 0], [ids.lotPartial, 3], [ids.lotPick, 0],
+    ] as const) {
       await prisma.inventory_balance.create({
         data: {
           legal_entity_id: warehouse.plant.legal_entity_id,
@@ -1540,7 +1603,7 @@ describe('출하 목록 (e2e)', () => {
           // ⭐ 넉넉히 둔다 — 이 스위트가 등록을 여러 번 부르고 그때마다 4 씩 깎는다.
           //   빠듯하면 뒤 시험이 「배정 초과」로 먼저 죽어 «다른» 판정을 재게 된다(실제로 그랬다).
           on_hand_qty: 5000,
-          picked_qty: 2000,
+          picked_qty: pickedQty,
         },
       });
     }
@@ -1583,6 +1646,22 @@ describe('출하 목록 (e2e)', () => {
     });
     made.postRequest = Number(header.shipment_request_id);
     made.postRequestLine = Number(header.shipment_request_line[0].shipment_request_line_id);
+
+    // F-3(모바일 피킹 뒤 출하) 전용 — 수주 없는 지시 라인 하나.
+    const pickHeader = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-PICK`,
+        fulfillment_plant_id: ids.plant,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
+        status_code: 'REGISTERED',
+        shipment_request_line: { create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, requested_qty: 5, allocated_qty: 5 }] },
+      },
+      include: { shipment_request_line: true },
+    });
+    made.pickRequest = Number(pickHeader.shipment_request_id);
+    made.pickRequestLine = Number(pickHeader.shipment_request_line[0].shipment_request_line_id);
 
     // ⭐ 「배정은 넉넉한데 수주가 모자란」 지시 — 두 한도를 «따로» 반증하는 축이다(P-7b).
     const tightOrder = await prisma.sales_order.create({
@@ -1949,6 +2028,10 @@ describe('출하 목록 (e2e)', () => {
         WHERE source_document_type_code = 'SHIPMENT' AND source_document_id IN (${OUR_SHIPMENTS})`,
       `DELETE FROM logistics.shipment WHERE shipment_id IN (${OUR_SHIPMENTS})`,
       `DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}%'`,
+      // 모바일 피킹(F-3)이 채번한 예약 — 번호에 접두어가 없어 지시 라인으로 좁힌다.
+      `DELETE FROM inventory.inventory_reservation WHERE source_document_type_code = 'SHIPMENT_REQUEST_LINE'
+          AND source_document_id IN (SELECT shipment_request_line_id FROM logistics.shipment_request_line
+                                      WHERE shipment_request_id IN (${OUR_REQUESTS}))`,
       `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (${OUR_REQUESTS})`,
       `DELETE FROM logistics.shipment_request WHERE shipment_request_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.sales_order_line WHERE sales_order_id IN (
