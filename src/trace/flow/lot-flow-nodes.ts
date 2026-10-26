@@ -48,9 +48,10 @@ export interface MaterialSide {
 export interface ProductSide {
   /** 생산입고(취소 제외), 입고 일시순. */
   productionReceipts: ReceiptNode[];
-  packages: { handlingUnitId: number; handlingUnitNo: string; handlingUnitTypeCode: string; qty: number;
+  /** 열린 상자(포장 중)도 싣는다 — 단계·포장 수는 확정(PACKED)만 센다. */
+  packages: { handlingUnitId: number; handlingUnitNo: string; handlingUnitTypeCode: string; statusCode: string; qty: number;
     shippingUnit: { shippingUnitId: number; shippingUnitNo: string } | null }[];
-  /** 출하(취소 제외), 출하 일시순. 포장에 담긴 채 나갔으면 그 취급 단위 번호. */
+  /** 출하(취소 제외) — 출하·취급 단위마다 한 줄, 출하 일시순. 포장 없이 LOT 을 직접 배분했으면 취급 단위 번호가 null. */
   shipments: { shipmentId: number; shipmentNo: string; shippedAt: string | null; statusCode: string; customer: Named;
     qty: number; handlingUnitNo: string | null }[];
 }
@@ -139,10 +140,10 @@ export async function productSides(prisma: PrismaService, lotIds: readonly bigin
   const [receipts, packages, shipments] = await Promise.all([
     receiptsOf(prisma, lotIds, 'PRODUCT'),
     prisma.$queryRawUnsafe<{
-      lot_id: bigint; handling_unit_id: bigint; handling_unit_no: string; handling_unit_type_code: string; qty: unknown;
+      lot_id: bigint; handling_unit_id: bigint; handling_unit_no: string; handling_unit_type_code: string; status_code: string; qty: unknown;
       shipping_unit_id: bigint | null; shipping_unit_no: string | null;
     }[]>(
-      `SELECT hc.lot_id, hu.handling_unit_id, hu.handling_unit_no, hu.handling_unit_type_code, SUM(hc.qty) AS qty,
+      `SELECT hc.lot_id, hu.handling_unit_id, hu.handling_unit_no, hu.handling_unit_type_code, hu.status_code, SUM(hc.qty) AS qty,
               su.shipping_unit_id, su.shipping_unit_no
          FROM inventory.handling_unit_content hc
          JOIN inventory.handling_unit hu ON hu.handling_unit_id = hc.handling_unit_id
@@ -166,11 +167,12 @@ export async function productSides(prisma: PrismaService, lotIds: readonly bigin
          LEFT JOIN inventory.handling_unit hu ON hu.handling_unit_id = a.handling_unit_id
         WHERE a.lot_id = ANY($1::bigint[]) AND s.status_code <> ${SHIPMENT_CANCELLED}
         GROUP BY a.lot_id, s.shipment_id, c.partner_id, hu.handling_unit_no
-        ORDER BY s.shipped_at, s.shipment_id`, [...lotIds],
+        ORDER BY s.shipped_at, s.shipment_id, hu.handling_unit_no`, [...lotIds],
     ),
   ]);
   const packOf = groupBy(packages, (row) => ({
     handlingUnitId: Number(row.handling_unit_id), handlingUnitNo: row.handling_unit_no, handlingUnitTypeCode: row.handling_unit_type_code,
+    statusCode: row.status_code,
     qty: Number(row.qty),
     shippingUnit: row.shipping_unit_id === null ? null : { shippingUnitId: Number(row.shipping_unit_id), shippingUnitNo: row.shipping_unit_no ?? '' },
   }));

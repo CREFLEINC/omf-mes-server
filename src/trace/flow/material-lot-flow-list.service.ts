@@ -5,7 +5,7 @@ import { localPeriodSql, plantToday } from '../../common/period/plant-local-peri
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
 import { FORWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageFilter } from './flow-stage';
-import { RECEIPT_CANCELLED, SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, forwardLinksSql } from './flow-sql';
+import { HU_PACKED, LIVE_CONSUMPTION, RECEIPT_CANCELLED, SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, forwardLinksSql } from './flow-sql';
 import { LotHead, MaterialSide, lotHeads, materialSides, pick } from './lot-flow-nodes';
 
 /** 정방향 목록 — 자재 LOT(자재입고가 있는 LOT). 기간 축은 첫 자재입고 일시(공장 현지 날짜). */
@@ -26,6 +26,8 @@ export interface MaterialLotFlowQuery {
 
 export interface MaterialLotFlowRow extends LotHead, MaterialSide {
   firstReceivedAt: string;
+  /** 투입량 — 정정된 원 투입은 빼고 정정 투입을 넣는다. 투입은 재고 원장을 거치지 않아 투입 기록으로 센다. */
+  consumedQty: number;
   stages: {
     received: { count: number };
     consumed: { workOrderCount: number };
@@ -47,6 +49,7 @@ interface StagedRow {
   produced: bigint;
   received_lots: bigint;
   packed_lots: bigint;
+  consumed_qty: unknown;
   hu_count: bigint;
   shipped_lots: bigint;
   shipment_count: bigint;
@@ -78,7 +81,7 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
     CONSUMED: 'c.wo_count', PRODUCED: 'a.produced', PRODUCTION_RECEIVED: 'a.received_lots', PACKED: 'a.packed_lots', SHIPPED: 'a.shipped_lots',
   });
   // ⛔ 하위 집계는 LOT 마다 LATERAL 로 센다(색인을 탄다). CTE 로 미리 모아 붙이면 기간 조건(MIN 위)의 행 수 추정이 1 로
-  //    떨어져 CTE 를 LOT 마다 다시 훑는다 — LOT 2,500개에서 0.8초였다(측정은 장부 P-119).
+  //    떨어져 CTE 를 LOT 마다 다시 훑는다.
   const links = forwardLinksSql('SELECT b.lot_id');
   return `
     WITH firsts AS (
@@ -92,11 +95,12 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
       SELECT f.lot_id, f.first_received_at FROM firsts f JOIN mdm.plant p ON p.plant_id = f.plant_id
        ${period === undefined ? '' : `WHERE ${localPeriodSql('f.first_received_at', 'p.timezone_code', period, bind)}`}
     ), staged AS (
-      SELECT b.lot_id, b.first_received_at, c.wo_count, a.produced, a.received_lots, a.packed_lots, u.hu_count, a.shipped_lots,
+      SELECT b.lot_id, b.first_received_at, c.wo_count, c.consumed_qty, a.produced, a.received_lots, a.packed_lots, u.hu_count, a.shipped_lots,
              sh.shipment_count, sh.last_shipped_at, COALESCE(a.legacy, false) AS legacy, ${stage} AS stage
         FROM base b
         CROSS JOIN LATERAL (
-          SELECT COUNT(DISTINCT mc.work_order_id) AS wo_count FROM production.material_consumption mc WHERE mc.lot_id = b.lot_id
+          SELECT COUNT(DISTINCT mc.work_order_id) AS wo_count, COALESCE(SUM(mc.input_qty) FILTER (WHERE ${LIVE_CONSUMPTION}), 0) AS consumed_qty
+            FROM production.material_consumption mc WHERE mc.lot_id = b.lot_id
         ) c
         CROSS JOIN LATERAL (
           SELECT COUNT(DISTINCT k.target_lot_id) AS produced,
@@ -109,6 +113,7 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
         CROSS JOIN LATERAL (
           SELECT COUNT(DISTINCT hc.handling_unit_id) AS hu_count
             FROM (${links}) k JOIN inventory.handling_unit_content hc ON hc.lot_id = k.target_lot_id
+            JOIN inventory.handling_unit hh ON hh.handling_unit_id = hc.handling_unit_id AND hh.status_code = ${HU_PACKED}
         ) u
         CROSS JOIN LATERAL (
           SELECT COUNT(DISTINCT s.shipment_id) AS shipment_count, MAX(s.shipped_at) AS last_shipped_at
@@ -141,6 +146,7 @@ export class MaterialLotFlowListService {
         ...pick(heads, row.lot_id),
         ...side,
         firstReceivedAt: row.first_received_at.toISOString(),
+        consumedQty: Number(row.consumed_qty),
         stages: {
           received: { count: side.receipts.length },
           consumed: { workOrderCount: Number(row.wo_count) },

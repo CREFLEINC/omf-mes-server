@@ -4,7 +4,7 @@ import { CONSUMED_RELATION, tracedWorkOrders } from '../../core/lot/lot-genealog
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
-import { forwardLinksSql } from './flow-sql';
+import { LIVE_CONSUMPTION, forwardLinksSql } from './flow-sql';
 import { LotHead, MaterialSide, Named, ProductSide, lotHeads, materialSides, productSides, pick } from './lot-flow-nodes';
 
 /** 한 호출이 싣는 생산 LOT 의 상한 — 넘으면 `truncated` 와 전체 수를 준다. */
@@ -37,7 +37,7 @@ export interface ForwardFlow extends MaterialSide {
   lot: LotHead;
   basis: TraceBasis;
   workOrders: (WorkOrderHead & Consumption & {
-    /** 실적이 아직 없어 이은 생산 LOT 이 없으면 null. */
+    /** W/O 에 실적이 아직 없으면 null(투입만). 실적은 있는데 이 LOT 의 투입 구간과 겹치는 실적이 없으면 계보 근거에 빈 목록이다. */
     linkBasis: TraceBasis | null;
     productionLots: ProductionLotNode[];
   })[];
@@ -56,18 +56,18 @@ export interface BackwardFlow extends ProductSide {
   lot: LotHead;
   goodQty: number;
   basis: TraceBasis;
-  /** 원천이 W/O 가 아닌 LOT(자재·분할)이면 null 이고 투입 자재도 없다. */
+  /** 원천이 W/O 가 아닌 LOT(자재·분할)이면 null 이고 투입 자재도 없다. 실적 배분이 없는 생산 LOT 은 W/O 만 싣고 투입 자재는 비운다 — 정방향이 그 LOT 을 잇지 않는 것과 맞춘다. */
   workOrder: (WorkOrderHead & {
     results: { count: number; goodQty: number; defectQty: number; firstAt: string | null; lastAt: string | null };
   }) | null;
   inputMaterials: InputMaterialNode[];
 }
 
-/** 정정된 원 투입은 빼고 정정 투입을 넣는다 — 계보의 투입 구간(`inputWindows`)과 같은 셈. */
-const LIVE_CONSUMPTION = `NOT EXISTS (SELECT 1 FROM production.material_consumption cx WHERE cx.corrects_consumption_id = mc.material_consumption_id)`;
-
 @Injectable()
 export class LotFlowChainService {
+  /** 시험이 상한을 낮춰 `truncated` 를 본다. */
+  productionLotsShown = PRODUCTION_LOTS_SHOWN;
+
   constructor(private readonly prisma: PrismaService) {}
 
   async forward(lotId: number): Promise<ForwardFlow> {
@@ -82,12 +82,18 @@ export class LotFlowChainService {
       ),
     ]);
     const targets = [...new Set(links.map((link) => link.target_lot_id))];
-    const shown = targets.slice(0, PRODUCTION_LOTS_SHOWN);
+    const shown = targets.slice(0, this.productionLotsShown);
     const nodes = await this.productionLots(shown, id);
-    const orders = await this.workOrderHeads([...consumptions.keys()]);
+    const workOrderIds = [...consumptions.keys()];
+    const [orders, traced, produced] = await Promise.all([
+      this.workOrderHeads(workOrderIds),
+      tracedWorkOrders(this.prisma, workOrderIds),
+      this.prisma.production_result.findMany({ where: { work_order_id: { in: workOrderIds } }, distinct: ['work_order_id'], select: { work_order_id: true } }),
+    ]);
+    const hasResults = new Set(produced.map((row) => row.work_order_id));
     const workOrders = [...consumptions].map(([workOrderId, consumption]) => {
       const mine = links.filter((link) => link.work_order_id === workOrderId);
-      const linkBasis = mine[0]?.basis ?? null;
+      const linkBasis: TraceBasis | null = !hasResults.has(workOrderId) ? null : traced.has(workOrderId) ? GENEALOGY_BASIS : WORK_ORDER_BASIS;
       return {
         ...pick(orders, workOrderId),
         ...consumption,
@@ -118,14 +124,14 @@ export class LotFlowChainService {
 
     const workOrderId = source.source_id;
     const traced = (await tracedWorkOrders(this.prisma, [workOrderId])).size > 0;
-    const sources = traced
+    const sources = !goodQty.has(id) ? [] : traced
       ? (await this.prisma.lot_relation.findMany({
           where: { target_lot_id: id, relation_type_code: CONSUMED_RELATION }, distinct: ['source_lot_id'], select: { source_lot_id: true },
         })).map((row) => row.source_lot_id)
       : (await this.prisma.material_consumption.findMany({
           where: { work_order_id: workOrderId }, distinct: ['lot_id'], select: { lot_id: true },
         })).map((row) => row.lot_id);
-    const linkBasis = traced ? GENEALOGY_BASIS : WORK_ORDER_BASIS;
+    const linkBasis: TraceBasis = traced ? GENEALOGY_BASIS : WORK_ORDER_BASIS;
     const [orders, results, heads, sides, consumptions, producers] = await Promise.all([
       this.workOrderHeads([workOrderId]),
       this.results(workOrderId),
@@ -138,14 +144,17 @@ export class LotFlowChainService {
       ...base,
       basis: linkBasis,
       workOrder: { ...pick(orders, workOrderId), results },
-      inputMaterials: sources.map((sourceId) => ({
-        ...pick(heads, sourceId),
-        ...pick(sides, sourceId),
-        ...pick(consumptions, sourceId),
-        linkBasis,
-        producedBy: producers.get(sourceId) ?? null,
-        cyclic: sourceId === id,
-      })),
+      // 첫 투입 시각 → LOT 번호 — 화면이 투입 순서대로 그린다.
+      inputMaterials: sources
+        .map((sourceId) => ({
+          ...pick(heads, sourceId),
+          ...pick(sides, sourceId),
+          ...pick(consumptions, sourceId),
+          linkBasis,
+          producedBy: producers.get(sourceId) ?? null,
+          cyclic: sourceId === id,
+        }))
+        .sort((a, b) => a.firstConsumedAt.localeCompare(b.firstConsumedAt) || a.lotNo.localeCompare(b.lotNo)),
     };
   }
 

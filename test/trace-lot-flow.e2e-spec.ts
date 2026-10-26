@@ -2,11 +2,14 @@
  * LOT 추적 정방향·역방향(장부 P-119) — 사슬 하나로 목록 둘과 LOT 하나의 사슬 둘을 본다.
  *
  * 자재 LOT M1 ─ 입하(공급사 LOT)·자재입고
- *   ├ W/O G(계보) → 생산 LOT G1 ─ 생산입고·포장·출하      (G2 는 실적 없는 선발행 슬롯 — 안 보여야 한다)
- *   ├ W/O L(계보 없음 · #166 이전) → L1 (W/O 단위 추정)
- *   ├ W/O N(실적 없음) → 이은 LOT 없음
- *   └ W/O S(계보) → 반제품 S1 ─ W/O G 에 다시 투입(S1 → G1)
+ *   ├ W/O G(계보) → 생산 LOT G1 ─ 생산입고(+취소 완료 1)·포장(확정 HU1 · 열린 HU2)·출하(HU1 로 · LOT 직접 · 취소 1)
+ *   │                               (G2 는 실적 없는 선발행 슬롯 — 안 보여야 한다)
+ *   ├ W/O L(계보 없음) → L1 (W/O 단위 추정)
+ *   ├ W/O N(실적 없음) → 이은 LOT 없음(linkBasis null)
+ *   ├ W/O T(계보 · M1 은 이어지지 않음) → 빈 목록(linkBasis 계보)
+ *   └ W/O S(계보) → 반제품 S1 ─ W/O G·T 에 다시 투입
  * 자재 LOT M2 ─ 자재입고만
+ * 반제품 C1 ─ 자기 W/O C(계보 없음)에 다시 투입 — W/O 단위 추정으로 C1 → C1(순환)
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -21,6 +24,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { LotFlowChainService, PRODUCTION_LOTS_SHOWN } from '../src/trace/flow/lot-flow-chain.service';
 
 const PREFIX = 'TLFE2E';
 const DAY = '2026-08-12';
@@ -87,11 +91,12 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       expect(body.stageCounts).toEqual({ RECEIVED: 1, CONSUMED: 0, PRODUCED: 0, PRODUCTION_RECEIVED: 0, PACKED: 0, SHIPPED: 1 });
       const m1 = body.items[1];
       expect(m1).toMatchObject({
-        currentStageCode: 'SHIPPED', basis: 'WORK_ORDER_ESTIMATE', receivedQty: 100,
+        currentStageCode: 'SHIPPED', basis: 'WORK_ORDER_ESTIMATE', receivedQty: 100, consumedQty: 50,
         inbound: { inboundReceiptNo: `${PREFIX}-IR`, supplierLotNo: 'SUP-LOT-1', supplier: { code: `${PREFIX}-SUP` } },
+        // 포장은 확정(PACKED) 상자만, 출하는 취소를 빼고 HU 로 나간 것과 LOT 직접 배분을 함께 센다.
         stages: {
-          received: { count: 1 }, consumed: { workOrderCount: 4 }, produced: { lotCount: 3 },
-          productionReceived: { lotCount: 1 }, packed: { lotCount: 1, handlingUnitCount: 1 }, shipped: { lotCount: 1, shipmentCount: 1 },
+          received: { count: 1 }, consumed: { workOrderCount: 5 }, produced: { lotCount: 3 },
+          productionReceived: { lotCount: 1 }, packed: { lotCount: 1, handlingUnitCount: 1 }, shipped: { lotCount: 1, shipmentCount: 2 },
         },
       });
       expect(body.items[0]).toMatchObject({ currentStageCode: 'RECEIVED', basis: 'LOT_GENEALOGY_ESTIMATE' });
@@ -103,6 +108,13 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       expect(no(body.items)).toEqual([`${PREFIX}-M2`]);
       expect(body.page.total).toBe(1);
       expect(body.stageCounts.SHIPPED).toBe(1);
+    });
+
+    it('단계가 아닌 조건(공급사)을 걸면 단계별 건수도 그 조건으로 센다', async () => {
+      const body = (await get('material-lot-flows', { ...query(), supplierId: Number(ids.supplier) }).expect(200)).body as Body;
+
+      expect(no(body.items)).toEqual([`${PREFIX}-M1`]);
+      expect(body.stageCounts).toEqual({ RECEIVED: 0, CONSUMED: 0, PRODUCED: 0, PRODUCTION_RECEIVED: 0, PACKED: 0, SHIPPED: 1 });
     });
 
     it('입하 번호로 집으면 기간 없이도 된다', async () => {
@@ -132,20 +144,48 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       conforms('/trace/lots/{lotId}/forward-flow', body);
       expect(body).toMatchObject({ basis: 'WORK_ORDER_ESTIMATE', truncated: false, totalProductionLotCount: 3, lot: { lotNo: `${PREFIX}-M1` } });
       const byNo = Object.fromEntries((body.workOrders as Body[]).map((wo) => [wo.workOrderNo, wo]));
-      expect(Object.keys(byNo).sort()).toEqual([`${PREFIX}-WO-G`, `${PREFIX}-WO-L`, `${PREFIX}-WO-N`, `${PREFIX}-WO-S`]);
+      expect(Object.keys(byNo).sort()).toEqual([`${PREFIX}-WO-G`, `${PREFIX}-WO-L`, `${PREFIX}-WO-N`, `${PREFIX}-WO-S`, `${PREFIX}-WO-T`]);
+      // 실적이 아예 없으면 null(투입만) · 실적은 있는데 이 LOT 이 이어지지 않았으면 계보 근거에 빈 목록.
       expect(byNo[`${PREFIX}-WO-N`]).toMatchObject({ linkBasis: null, productionLots: [] });
+      expect(byNo[`${PREFIX}-WO-T`]).toMatchObject({ linkBasis: 'LOT_GENEALOGY_ESTIMATE', productionLots: [] });
       expect(byNo[`${PREFIX}-WO-L`]).toMatchObject({ linkBasis: 'WORK_ORDER_ESTIMATE' });
       expect(no(byNo[`${PREFIX}-WO-L`].productionLots)).toEqual([`${PREFIX}-L1`]);
       // 실적 없는 선발행 슬롯 G2 는 같은 W/O 여도 잇지 않는다.
       expect(no(byNo[`${PREFIX}-WO-G`].productionLots)).toEqual([`${PREFIX}-G1`]);
       expect(byNo[`${PREFIX}-WO-G`].productionLots[0]).toMatchObject({
         linkBasis: 'LOT_GENEALOGY_ESTIMATE', goodQty: 40, consumedFurther: 0, cyclic: false,
+        // 취소 완료 입고·취소 출하는 빠지고, 한 LOT 이 상자 둘·출하 둘로 나뉜다.
         productionReceipts: [{ goodsReceiptNo: `${PREFIX}-GR-G1`, qty: 40 }],
-        packages: [{ handlingUnitNo: `${PREFIX}-HU1`, qty: 30 }],
-        shipments: [{ shipmentNo: `${PREFIX}-SH1`, qty: 30, handlingUnitNo: `${PREFIX}-HU1`, customer: { code: `${PREFIX}-CUS` } }],
+        packages: [{ handlingUnitNo: `${PREFIX}-HU1`, statusCode: 'PACKED', qty: 30 }, { handlingUnitNo: `${PREFIX}-HU2`, statusCode: 'OPEN', qty: 5 }],
+        shipments: [
+          { shipmentNo: `${PREFIX}-SH1`, qty: 30, handlingUnitNo: `${PREFIX}-HU1`, customer: { code: `${PREFIX}-CUS` } },
+          { shipmentNo: `${PREFIX}-SH2`, qty: 5, handlingUnitNo: null },
+        ],
       });
+      expect(byNo[`${PREFIX}-WO-G`].productionLots[0].productionReceipts).toHaveLength(1);
+      expect(byNo[`${PREFIX}-WO-G`].productionLots[0].shipments).toHaveLength(2);
       // 반제품은 한 단만 — 다시 투입됐다는 표시만 준다.
-      expect(byNo[`${PREFIX}-WO-S`].productionLots[0]).toMatchObject({ lotNo: `${PREFIX}-S1`, consumedFurther: 1 });
+      expect(byNo[`${PREFIX}-WO-S`].productionLots[0]).toMatchObject({ lotNo: `${PREFIX}-S1`, consumedFurther: 2 });
+    });
+
+    it('생산 LOT 이 상한을 넘으면 앞만 싣고 truncated·전체 수를 준다', async () => {
+      const chains = app.get(LotFlowChainService);
+      chains.productionLotsShown = 1;
+      try {
+        const body = (await get(`lots/${ids.m1}/forward-flow`).expect(200)).body as Body;
+        expect(body).toMatchObject({ truncated: true, totalProductionLotCount: 3 });
+        expect((body.workOrders as Body[]).flatMap((wo) => wo.productionLots)).toHaveLength(1);
+      } finally {
+        chains.productionLotsShown = PRODUCTION_LOTS_SHOWN;
+      }
+    });
+
+    it('조회한 LOT 자신으로 되돌아오면 cyclic 이다 — 정방향·역방향 모두', async () => {
+      const forward = (await get(`lots/${ids.c1}/forward-flow`).expect(200)).body as Body;
+      expect(forward.workOrders[0].productionLots).toEqual([expect.objectContaining({ lotNo: `${PREFIX}-C1`, cyclic: true })]);
+
+      const backward = (await get(`lots/${ids.c1}/backward-flow`).expect(200)).body as Body;
+      expect(backward.inputMaterials).toEqual([expect.objectContaining({ lotNo: `${PREFIX}-C1`, cyclic: true })]);
     });
 
     it('없는 LOT 은 404 이다', async () => {
@@ -167,7 +207,7 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
         currentStageCode: 'SHIPPED', basis: 'LOT_GENEALOGY_ESTIMATE', inputMaterialLotCount: 2, producedQty: 40,
         workOrder: { workOrderNo: `${PREFIX}-WO-G` },
         stages: { productionReceived: { count: 1, qty: 40 }, packed: { handlingUnitCount: 1, qty: 30 },
-          shipped: { shipmentCount: 1, qty: 30, customerCount: 1, customers: [{ code: `${PREFIX}-CUS` }] } },
+          shipped: { shipmentCount: 2, qty: 35, customerCount: 1, customers: [{ code: `${PREFIX}-CUS` }] } },
       });
       expect(body.items.find((row: Body) => row.lotNo === `${PREFIX}-L1`)).toMatchObject({
         currentStageCode: 'PRODUCED', basis: 'WORK_ORDER_ESTIMATE', inputMaterialLotCount: 1,
@@ -196,17 +236,26 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       expect(body).toMatchObject({
         basis: 'LOT_GENEALOGY_ESTIMATE', goodQty: 40,
         workOrder: { workOrderNo: `${PREFIX}-WO-G`, results: { count: 1, goodQty: 40 } },
-        shipments: [{ shipmentNo: `${PREFIX}-SH1` }], packages: [{ handlingUnitNo: `${PREFIX}-HU1` }],
+        shipments: [{ shipmentNo: `${PREFIX}-SH1` }, { shipmentNo: `${PREFIX}-SH2` }],
+        packages: [{ handlingUnitNo: `${PREFIX}-HU1` }, { handlingUnitNo: `${PREFIX}-HU2` }],
         productionReceipts: [{ goodsReceiptNo: `${PREFIX}-GR-G1` }],
       });
+      // 첫 투입 시각이 같으면 LOT 번호순.
+      expect(no(body.inputMaterials)).toEqual([`${PREFIX}-M1`, `${PREFIX}-S1`]);
       const inputs = Object.fromEntries((body.inputMaterials as Body[]).map((input) => [input.lotNo, input]));
-      expect(Object.keys(inputs).sort()).toEqual([`${PREFIX}-M1`, `${PREFIX}-S1`]);
       expect(inputs[`${PREFIX}-M1`]).toMatchObject({
         linkBasis: 'LOT_GENEALOGY_ESTIMATE', producedBy: null, cyclic: false, consumedQty: 10,
         inbound: { inboundReceiptNo: `${PREFIX}-IR`, supplierLotNo: 'SUP-LOT-1' },
         receipts: [{ goodsReceiptNo: `${PREFIX}-GR-M1` }],
       });
       expect(inputs[`${PREFIX}-S1`]).toMatchObject({ producedBy: { workOrderNo: `${PREFIX}-WO-S` }, inbound: null });
+    });
+
+    it('실적 배분이 없는 생산 LOT 은 W/O 만 싣고 투입 자재는 비운다 — 정방향이 잇지 않는 것과 같다', async () => {
+      const body = (await get(`lots/${ids.g2}/backward-flow`).expect(200)).body as Body;
+
+      conforms('/trace/lots/{lotId}/backward-flow', body);
+      expect(body).toMatchObject({ goodQty: 0, workOrder: { workOrderNo: `${PREFIX}-WO-G` }, inputMaterials: [] });
     });
 
     it('계보 없는 W/O 의 생산 LOT 은 W/O 단위 추정으로 그 W/O 의 투입 자재 전부다', async () => {
@@ -307,16 +356,21 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     }
   }
 
-  async function receive(suffix: string, type: string, lotId: bigint, itemId: bigint, qty: number, at: Date, inboundLineId?: bigint): Promise<void> {
+  async function receive(
+    suffix: string, type: string, lotId: bigint, itemId: bigint, qty: number, at: Date, inboundLineId?: bigint, status = 'POSTED',
+  ): Promise<void> {
     await prisma.goods_receipt.create({ data: {
-      goods_receipt_no: `${PREFIX}-GR-${suffix}`, receipt_type_code: type, plant_id: ids.plant, warehouse_id: ids.warehouse, receipt_datetime: at, status_code: 'POSTED',
+      goods_receipt_no: `${PREFIX}-GR-${suffix}`, receipt_type_code: type, plant_id: ids.plant, warehouse_id: ids.warehouse, receipt_datetime: at, status_code: status,
       goods_receipt_line: { create: [{ line_no: 1, item_id: itemId, lot_id: lotId, receipt_qty: qty, uom_id: ids.uom, quality_status_code: 'NORMAL',
         inventory_status_code: 'AVAILABLE', destination_location_id: ids.location, inbound_receipt_line_id: inboundLineId ?? null }] },
     } });
   }
 
   async function makeChain(): Promise<void> {
-    const wo = { G: await workOrder('G', ids.product), L: await workOrder('L', ids.product), N: await workOrder('N', ids.product), S: await workOrder('S', ids.semi) };
+    const wo = {
+      G: await workOrder('G', ids.product), L: await workOrder('L', ids.product), N: await workOrder('N', ids.product),
+      S: await workOrder('S', ids.semi), T: await workOrder('T', ids.semi), C: await workOrder('C', ids.semi),
+    };
     ids.m1 = await lot('M1', ids.material, 'MATERIAL', 'INBOUND_RECEIPT_LINE', 1n);
     ids.m2 = await lot('M2', ids.material, 'MATERIAL', 'INBOUND_RECEIPT_LINE', 1n);
     ids.s1 = await lot('S1', ids.semi, 'PRODUCTION', 'WORK_ORDER', wo.S);
@@ -324,6 +378,8 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     ids.g2 = await lot('G2', ids.product, 'PRODUCTION', 'WORK_ORDER', wo.G);
     ids.l1 = await lot('L1', ids.product, 'PRODUCTION', 'WORK_ORDER', wo.L);
     ids.n1 = await lot('N1', ids.product, 'PRODUCTION', 'WORK_ORDER', wo.N);
+    ids.t1 = await lot('T1', ids.semi, 'PRODUCTION', 'WORK_ORDER', wo.T);
+    ids.c1 = await lot('C1', ids.semi, 'PRODUCTION', 'WORK_ORDER', wo.C);
 
     const inbound = await prisma.inbound_receipt.create({
       data: { inbound_receipt_no: `${PREFIX}-IR`, supplier_id: ids.supplier, plant_id: ids.plant, receipt_datetime: await local(DAY, '08:00'), status_code: 'RECEIVED',
@@ -335,27 +391,41 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     await receive('M2', 'MATERIAL', ids.m2, ids.material, 50, await local(DAY, '09:30'));
 
     const at = await local(DAY, '10:00');
-    for (const target of [wo.G, wo.L, wo.N, wo.S]) await consume(target, ids.m1, ids.material, 10, at);
+    for (const target of [wo.G, wo.L, wo.N, wo.S, wo.T]) await consume(target, ids.m1, ids.material, 10, at);
     await consume(wo.G, ids.s1, ids.semi, 5, at);
+    await consume(wo.T, ids.s1, ids.semi, 5, at);
+    await consume(wo.C, ids.c1, ids.semi, 1, at);
     const later = await local(DAY, '11:00');
     await produce(wo.S, ids.s1, 20, later, [ids.m1]);
     await produce(wo.G, ids.g1, 40, later, [ids.m1, ids.s1]);
     await produce(wo.L, ids.l1, 25, later, []);
+    // 실적은 있지만 그 구간에 M1 이 이어지지 않았다 — 계보 근거에 빈 목록.
+    await produce(wo.T, ids.t1, 10, later, [ids.s1]);
+    // 자기 자신을 다시 넣은 W/O — 계보 표는 자기 참조를 막으니(ck_lot_relation_self) 계보 없는 W/O 단위 추정으로만 생긴다.
+    await produce(wo.C, ids.c1, 10, later, []);
 
     await receive('G1', 'PRODUCT', ids.g1, ids.product, 40, await local(DAY, '12:00'));
-    const box = await prisma.handling_unit.create({ data: { handling_unit_no: `${PREFIX}-HU1`, handling_unit_type_code: 'BOX', status_code: 'ACTIVE',
+    await receive('G1-CXL', 'PRODUCT', ids.g1, ids.product, 9, await local(DAY, '12:30'), undefined, 'CANCELLED');
+    const box = await prisma.handling_unit.create({ data: { handling_unit_no: `${PREFIX}-HU1`, handling_unit_type_code: 'BOX', status_code: 'PACKED',
       handling_unit_content: { create: [{ item_id: ids.product, lot_id: ids.g1, qty: 30, uom_id: ids.uom }] } } });
+    // 아직 확정 안 된 상자 — packages 에는 「포장 중」으로 실리지만 포장 단계·수에는 들지 않는다.
+    await prisma.handling_unit.create({ data: { handling_unit_no: `${PREFIX}-HU2`, handling_unit_type_code: 'BOX', status_code: 'OPEN',
+      handling_unit_content: { create: [{ item_id: ids.product, lot_id: ids.g1, qty: 5, uom_id: ids.uom }] } } });
     const shipmentRequest = await prisma.shipment_request.create({
       data: { shipment_request_no: `${PREFIX}-SR`, customer_id: ids.customer, ship_to_partner_id: ids.customer, requested_ship_date: new Date(`${DAY}T00:00:00.000Z`),
         status_code: 'CONFIRMED', shipment_request_line: { create: [{ line_no: 1, item_id: ids.product, requested_qty: 30, uom_id: ids.uom }] } },
       include: { shipment_request_line: true },
     });
-    await prisma.shipment.create({ data: {
-      shipment_no: `${PREFIX}-SH1`, shipment_request_id: shipmentRequest.shipment_request_id, warehouse_id: ids.warehouse, status_code: 'CONFIRMED',
-      shipped_at: await local(DAY, '15:00'),
+    const ship = async (suffix: string, status: string, time: string, qty: number, handlingUnitId: bigint | null) => prisma.shipment.create({ data: {
+      shipment_no: `${PREFIX}-${suffix}`, shipment_request_id: shipmentRequest.shipment_request_id, warehouse_id: ids.warehouse, status_code: status,
+      shipped_at: await local(DAY, time),
       shipment_line: { create: [{ line_no: 1, shipment_request_line_id: shipmentRequest.shipment_request_line[0].shipment_request_line_id, item_id: ids.product,
-        shipped_qty: 30, uom_id: ids.uom, shipment_lot_allocation: { create: [{ lot_id: ids.g1, allocated_qty: 30, uom_id: ids.uom, handling_unit_id: box.handling_unit_id }] } }] },
+        shipped_qty: qty, uom_id: ids.uom, shipment_lot_allocation: { create: [{ lot_id: ids.g1, allocated_qty: qty, uom_id: ids.uom, handling_unit_id: handlingUnitId }] } }] },
     } });
+    await ship('SH1', 'CONFIRMED', '15:00', 30, box.handling_unit_id);
+    // 포장 없이 LOT 을 직접 배분한 출하 · 취소된 출하.
+    await ship('SH2', 'CONFIRMED', '16:00', 5, null);
+    await ship('SH-CXL', 'CANCELLED', '17:00', 7, null);
   }
 
   async function login(loginId: string, permissions: string[]): Promise<string[]> {

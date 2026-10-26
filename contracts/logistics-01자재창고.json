@@ -6379,7 +6379,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "자재입고 창고"
+      "description": "자재입고 창고 — 그 창고로 들어온 자재입고만으로 첫 자재입고를 본다"
      },
      {
       "name": "currentStageCode",
@@ -6447,6 +6447,7 @@
               "type": "object",
               "required": [
                "firstReceivedAt",
+               "consumedQty",
                "stages",
                "currentStageCode",
                "basis"
@@ -6455,6 +6456,10 @@
                "firstReceivedAt": {
                 "type": "string",
                 "format": "date-time"
+               },
+               "consumedQty": {
+                "type": "number",
+                "description": "투입량 — 원 투입에서 정정된 것을 빼고 정정 투입을 넣는다(투입 기록 기준)"
                },
                "stages": {
                 "type": "object",
@@ -6524,7 +6529,8 @@
                    "handlingUnitCount": {
                     "type": "integer"
                    }
-                  }
+                  },
+                  "description": "포장 확정(PACKED) 취급 단위만"
                  },
                  "shipped": {
                   "type": "object",
@@ -7077,7 +7083,7 @@
                   "type": "null"
                  }
                 ],
-                "description": "실적이 아직 없어 이은 생산 LOT 이 없으면 null"
+                "description": "W/O 에 실적이 아예 없으면 null(투입만). 실적은 있는데 이 LOT 의 투입 구간과 겹치는 실적이 없으면 LOT_GENEALOGY_ESTIMATE 에 productionLots 가 빈 목록이다"
                },
                "productionLots": {
                 "type": "array",
@@ -7241,14 +7247,14 @@
                "type": "null"
               }
              ],
-             "description": "원천이 W/O 가 아닌 LOT 이면 null"
+             "description": "원천이 W/O 가 아닌 LOT 이면 null(투입 자재도 비어 있다)"
             },
             "inputMaterials": {
              "type": "array",
              "items": {
               "$ref": "#/components/schemas/LotFlowInputMaterial"
              },
-             "description": "투입 자재 LOT"
+             "description": "투입 자재 LOT — 첫 투입 시각 → LOT 번호순. 실적 배분이 없는 생산 LOT 은 비운다(정방향이 그 LOT 을 잇지 않는 것과 같다)"
             }
            }
           }
@@ -9278,7 +9284,7 @@
      "LOT_GENEALOGY_ESTIMATE",
      "WORK_ORDER_ESTIMATE"
     ],
-    "description": "이음 근거 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)라 그 W/O 의 투입 자재 전부 × 실적 배분이 있는 생산 LOT 전부로 이었다. 입고·포장·출하는 문서로 이어져 근거 칸이 없다"
+    "description": "이음 근거 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(추정) · WORK_ORDER_ESTIMATE = 실적은 있는데 계보가 없는 W/O 라 그 W/O 의 투입 자재 전부 × 실적 배분이 있는 생산 LOT 전부로 이었다. 입고·포장·출하는 문서로 이어져 근거 칸이 없다"
    },
    "LotFlowLotHead": {
     "type": "object",
@@ -9432,6 +9438,7 @@
      "handlingUnitId",
      "handlingUnitNo",
      "handlingUnitTypeCode",
+     "statusCode",
      "qty",
      "shippingUnit"
     ],
@@ -9445,6 +9452,10 @@
      },
      "handlingUnitTypeCode": {
       "type": "string"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "취급 단위 상태 — PACKED = 포장 확정, OPEN = 포장 중. 포장 단계·포장 수는 PACKED 만 센다"
      },
      "qty": {
       "type": "number"
@@ -9461,7 +9472,7 @@
       "description": "출하 단위에 담겼으면 그 단위"
      }
     },
-    "description": "포장(취급 단위)"
+    "description": "포장(취급 단위) — 포장 중(OPEN)인 상자도 싣는다"
    },
    "LotFlowShippingUnit": {
     "type": "object",
@@ -9521,7 +9532,7 @@
       ]
      }
     },
-    "description": "출하 한 건(취소 제외) — 포장에 담긴 채 나갔으면 그 취급 단위 번호"
+    "description": "출하(취소 제외) — 출하·취급 단위마다 한 줄. 포장 없이 LOT 을 직접 배분했으면 handlingUnitNo 가 null"
    },
    "LotFlowProductSide": {
     "type": "object",
