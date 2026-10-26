@@ -53,7 +53,7 @@ export function periodUnlessPinned(
   to: string | undefined,
   fields: PeriodFields,
   pinned: boolean,
-  today?: Date,
+  today: string,
 ): LocalPeriod | undefined {
   if (pinned && from === undefined) return undefined;
   return localPeriod(from, to, fields, today);

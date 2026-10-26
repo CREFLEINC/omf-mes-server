@@ -94,7 +94,7 @@ async function receiptsOf(prisma: PrismaService, lotIds: readonly bigint[], type
        FROM logistics.goods_receipt_line l
        JOIN logistics.goods_receipt gr ON gr.goods_receipt_id = l.goods_receipt_id
        JOIN mdm.warehouse w ON w.warehouse_id = gr.warehouse_id
-      WHERE l.lot_id = ANY($1::bigint[]) AND gr.receipt_type_code = $2 AND gr.status_code NOT IN ${RECEIPT_CANCELLED}
+      WHERE l.lot_id = ANY($1::bigint[]) AND gr.receipt_type_code = $2 AND gr.status_code <> ${RECEIPT_CANCELLED}
       GROUP BY l.lot_id, gr.goods_receipt_id, w.warehouse_id
       ORDER BY gr.receipt_datetime, gr.goods_receipt_id`, [...lotIds], type,
   );

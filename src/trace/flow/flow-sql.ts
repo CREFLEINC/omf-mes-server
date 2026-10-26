@@ -1,6 +1,9 @@
+import { PageRequest } from '../../common/pagination';
 import { CONSUMED_RELATION } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
+import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
+import { StageCode, stageCounts } from './flow-stage';
 
 /**
  * LOT 추적 목록·사슬이 함께 쓰는 SQL 조각. 값은 모두 코드 상수라 그대로 끼운다(사용자 값은 호출 쪽이 bind 한다).
@@ -9,7 +12,8 @@ import { GENEALOGY_BASIS, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.se
  * ⭐ 실적 배분이 없는 생산 LOT 은 잇지 않는다 — 투입만 하고 실적이 없는 W/O 의 빈 선발행 LOT 이 영향 LOT 으로 보이면
  *   안 된다. 기존 `affected-production-lots` 는 이 조건이 없다(별도 건).
  */
-export const RECEIPT_CANCELLED = `('CANCELLED', 'CANCEL_REQUESTED')`;
+/** 입고는 취소 완료만 뺀다 — 취소 요청 중인 입고는 재고가 그대로이고 반려되면 남는다(입고 줄 현황과 같은 기준). */
+export const RECEIPT_CANCELLED = `'CANCELLED'`;
 export const SHIPMENT_CANCELLED = `'CANCELLED'`;
 const WO = `'${WORK_ORDER_LOT_SOURCE}'`;
 const CONSUMED = `'${CONSUMED_RELATION}'`;
@@ -53,7 +57,7 @@ export function downstreamLateralSql(lot: string): string {
       SELECT COUNT(*) AS received_count, COALESCE(SUM(dl.receipt_qty), 0) AS received_qty
         FROM logistics.goods_receipt_line dl
         JOIN logistics.goods_receipt dg ON dg.goods_receipt_id = dl.goods_receipt_id
-       WHERE dl.lot_id = ${lot} AND dg.receipt_type_code = 'PRODUCT' AND dg.status_code NOT IN ${RECEIPT_CANCELLED}
+       WHERE dl.lot_id = ${lot} AND dg.receipt_type_code = 'PRODUCT' AND dg.status_code <> ${RECEIPT_CANCELLED}
     ) dr ON true
     LEFT JOIN LATERAL (
       SELECT COUNT(DISTINCT hc.handling_unit_id) AS hu_count, COALESCE(SUM(hc.qty), 0) AS packed_qty
@@ -67,4 +71,30 @@ export function downstreamLateralSql(lot: string): string {
         JOIN logistics.shipment ds ON ds.shipment_id = dsl.shipment_id
        WHERE da.lot_id = ${lot} AND ds.status_code <> ${SHIPMENT_CANCELLED}
     ) dsh ON true`;
+}
+
+/**
+ * `WITH … staged AS (…)` 를 한 번만 돌려 단계별 건수(단계 조건 없이)와 그 쪽의 행을 함께 받는다.
+ * staged 를 두 번 읽으므로 PostgreSQL 이 한 번 계산해 둔다 — 두 질의로 나누면 하위 집계를 두 번 돈다.
+ */
+export async function stagedPage<R extends { lot_id: bigint | null }>(
+  prisma: PrismaService,
+  withSql: string,
+  params: unknown[],
+  options: { stages: readonly StageCode[]; filter: string[] | undefined; orderBy: string; page: PageRequest },
+): Promise<{ rows: R[]; counts: Record<string, number>; total: number }> {
+  const values = [...params, ...(options.filter === undefined ? [] : [options.filter]), options.page.take, options.page.skip];
+  const at = params.length + (options.filter === undefined ? 0 : 1);
+  const where = options.filter === undefined ? '' : `WHERE stage = ANY($${params.length + 1}::text[])`;
+  const rows = await prisma.$queryRawUnsafe<(R & { stage_counts: { stage: string; count: number }[] | null })[]>(
+    `${withSql}, counts AS (SELECT json_agg(json_build_object('stage', stage, 'count', n)) AS stage_counts
+                             FROM (SELECT stage, COUNT(*) AS n FROM staged GROUP BY stage) g)
+     SELECT c.stage_counts, p.* FROM counts c
+       LEFT JOIN LATERAL (SELECT * FROM staged ${where} ORDER BY ${options.orderBy} LIMIT $${at + 1} OFFSET $${at + 2}) p ON true`,
+    ...values,
+  );
+  const counts = stageCounts(options.stages, (rows[0]?.stage_counts ?? []).map((row) => ({ stage: row.stage, count: BigInt(row.count) })));
+  const total = Object.entries(counts).filter(([stage]) => options.filter === undefined || options.filter.includes(stage))
+    .reduce((sum, [, count]) => sum + count, 0);
+  return { rows: rows.filter((row) => row.lot_id !== null), counts, total };
 }

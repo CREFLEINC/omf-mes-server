@@ -174,8 +174,9 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       });
     });
 
-    it('출하 번호로 집거나 출하일 축·LOT 번호 일부·단계로 거른다', async () => {
+    it('출하 번호·W/O 번호로 집거나 출하일 축·LOT 번호 일부·단계로 거른다', async () => {
       expect(no((await get('product-lot-flows', { shipmentNo: `${PREFIX}-SH1` }).expect(200)).body.items)).toEqual([`${PREFIX}-G1`]);
+      expect(no((await get('product-lot-flows', { workOrderNo: `${PREFIX}-WO-L` }).expect(200)).body.items)).toEqual([`${PREFIX}-L1`]);
       expect(no((await get('product-lot-flows', { ...query(), dateAxis: 'SHIPPED' }).expect(200)).body.items)).toEqual([`${PREFIX}-G1`]);
       expect(no((await get('product-lot-flows', { q: `${PREFIX}-L`, dateFrom: DAY, dateTo: DAY }).expect(200)).body.items)).toEqual([`${PREFIX}-L1`]);
       expect(no((await get('product-lot-flows', { ...query(), currentStageCode: 'PRODUCED' }).expect(200)).body.items)).toEqual([`${PREFIX}-L1`]);

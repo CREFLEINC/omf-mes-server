@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriodSql } from '../../common/period/plant-local-period';
+import { localPeriodSql, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
-import { FORWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageCounts, stageFilter } from './flow-stage';
-import { RECEIPT_CANCELLED, SHIPMENT_CANCELLED, downstreamLateralSql, forwardLinksSql } from './flow-sql';
+import { FORWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageFilter } from './flow-stage';
+import { RECEIPT_CANCELLED, SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, forwardLinksSql } from './flow-sql';
 import { LotHead, MaterialSide, lotHeads, materialSides, pick } from './lot-flow-nodes';
 
 /** 정방향 목록 — 자재 LOT(자재입고가 있는 LOT). 기간 축은 첫 자재입고 일시(공장 현지 날짜). */
@@ -55,12 +55,12 @@ interface StagedRow {
   stage: string;
 }
 
-export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) => string, today?: Date): string {
+export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) => string, today: string): string {
   requireEntry(query as Record<string, unknown>, ['itemId', 'lotNo', 'inboundReceiptNo', 'q'],
     '자재 품목(itemId) · 자재 LOT 번호(lotNo) · 입하 번호(inboundReceiptNo) · LOT 번호 일부(q)');
   const period = periodUnlessPinned(query.receiptDateFrom, query.receiptDateTo,
     { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' }, query.lotNo !== undefined || query.inboundReceiptNo !== undefined, today);
-  const and = [`gr.receipt_type_code = 'MATERIAL'`, `gr.status_code NOT IN ${RECEIPT_CANCELLED}`];
+  const and = [`gr.receipt_type_code = 'MATERIAL'`, `gr.status_code <> ${RECEIPT_CANCELLED}`];
   if (query.itemId !== undefined) and.push(`lt.item_id = ${bind(query.itemId)}::bigint`);
   if (query.lotNo !== undefined) and.push(`lt.lot_no = ${bind(query.lotNo)}`);
   if (query.q !== undefined && query.q.trim() !== '') and.push(`lt.lot_no ILIKE ${bind(`%${query.q.trim()}%`)}`);
@@ -75,9 +75,11 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
       WHERE irl.lot_id = lt.lot_id AND ${inbound.join(' AND ')})`);
   }
   const stage = stageCaseSql(FORWARD_STAGES, {
-    CONSUMED: 'COALESCE(c.wo_count, 0)', PRODUCED: 'COALESCE(a.produced, 0)', PRODUCTION_RECEIVED: 'COALESCE(a.received_lots, 0)',
-    PACKED: 'COALESCE(a.packed_lots, 0)', SHIPPED: 'COALESCE(a.shipped_lots, 0)',
+    CONSUMED: 'c.wo_count', PRODUCED: 'a.produced', PRODUCTION_RECEIVED: 'a.received_lots', PACKED: 'a.packed_lots', SHIPPED: 'a.shipped_lots',
   });
+  // ⛔ 하위 집계는 LOT 마다 LATERAL 로 센다(색인을 탄다). CTE 로 미리 모아 붙이면 기간 조건(MIN 위)의 행 수 추정이 1 로
+  //    떨어져 CTE 를 LOT 마다 다시 훑는다 — LOT 2,500개에서 0.8초였다(측정은 장부 P-119).
+  const links = forwardLinksSql('SELECT b.lot_id');
   return `
     WITH firsts AS (
       SELECT lt.lot_id, lt.plant_id, MIN(gr.receipt_datetime) AS first_received_at
@@ -89,42 +91,32 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
     ), base AS (
       SELECT f.lot_id, f.first_received_at FROM firsts f JOIN mdm.plant p ON p.plant_id = f.plant_id
        ${period === undefined ? '' : `WHERE ${localPeriodSql('f.first_received_at', 'p.timezone_code', period, bind)}`}
-    ), consumed AS (
-      SELECT mc.lot_id, COUNT(DISTINCT mc.work_order_id) AS wo_count
-        FROM production.material_consumption mc WHERE mc.lot_id IN (SELECT lot_id FROM base) GROUP BY mc.lot_id
-    ), links AS (${forwardLinksSql('SELECT lot_id FROM base')}
-    ), down AS (
-      SELECT t.lot_id, dr.received_count, dp.hu_count, dsh.shipment_count
-        FROM (SELECT DISTINCT target_lot_id AS lot_id FROM links) t ${downstreamLateralSql('t.lot_id')}
-    ), agg AS (
-      SELECT k.source_lot_id AS lot_id,
-             COUNT(DISTINCT k.target_lot_id) AS produced,
-             COUNT(DISTINCT k.target_lot_id) FILTER (WHERE d.received_count > 0) AS received_lots,
-             COUNT(DISTINCT k.target_lot_id) FILTER (WHERE d.hu_count > 0) AS packed_lots,
-             COUNT(DISTINCT k.target_lot_id) FILTER (WHERE d.shipment_count > 0) AS shipped_lots,
-             BOOL_OR(k.basis = '${WORK_ORDER_BASIS}') AS legacy
-        FROM links k JOIN down d ON d.lot_id = k.target_lot_id GROUP BY k.source_lot_id
-    ), units AS (
-      SELECT k.source_lot_id AS lot_id, COUNT(DISTINCT hc.handling_unit_id) AS hu_count
-        FROM links k JOIN inventory.handling_unit_content hc ON hc.lot_id = k.target_lot_id GROUP BY k.source_lot_id
-    ), ships AS (
-      SELECT k.source_lot_id AS lot_id, COUNT(DISTINCT s.shipment_id) AS shipment_count, MAX(s.shipped_at) AS last_shipped_at
-        FROM links k
-        JOIN logistics.shipment_lot_allocation sa ON sa.lot_id = k.target_lot_id
-        JOIN logistics.shipment_line ssl ON ssl.shipment_line_id = sa.shipment_line_id
-        JOIN logistics.shipment s ON s.shipment_id = ssl.shipment_id AND s.status_code <> ${SHIPMENT_CANCELLED}
-       GROUP BY k.source_lot_id
     ), staged AS (
-      SELECT b.lot_id, b.first_received_at, COALESCE(c.wo_count, 0) AS wo_count, COALESCE(a.produced, 0) AS produced,
-             COALESCE(a.received_lots, 0) AS received_lots, COALESCE(a.packed_lots, 0) AS packed_lots,
-             COALESCE(u.hu_count, 0) AS hu_count, COALESCE(a.shipped_lots, 0) AS shipped_lots,
-             COALESCE(sh.shipment_count, 0) AS shipment_count, sh.last_shipped_at, COALESCE(a.legacy, false) AS legacy,
-             ${stage} AS stage
+      SELECT b.lot_id, b.first_received_at, c.wo_count, a.produced, a.received_lots, a.packed_lots, u.hu_count, a.shipped_lots,
+             sh.shipment_count, sh.last_shipped_at, COALESCE(a.legacy, false) AS legacy, ${stage} AS stage
         FROM base b
-        LEFT JOIN consumed c ON c.lot_id = b.lot_id
-        LEFT JOIN agg a ON a.lot_id = b.lot_id
-        LEFT JOIN units u ON u.lot_id = b.lot_id
-        LEFT JOIN ships sh ON sh.lot_id = b.lot_id
+        CROSS JOIN LATERAL (
+          SELECT COUNT(DISTINCT mc.work_order_id) AS wo_count FROM production.material_consumption mc WHERE mc.lot_id = b.lot_id
+        ) c
+        CROSS JOIN LATERAL (
+          SELECT COUNT(DISTINCT k.target_lot_id) AS produced,
+                 COUNT(DISTINCT k.target_lot_id) FILTER (WHERE dr.received_count > 0) AS received_lots,
+                 COUNT(DISTINCT k.target_lot_id) FILTER (WHERE dp.hu_count > 0) AS packed_lots,
+                 COUNT(DISTINCT k.target_lot_id) FILTER (WHERE dsh.shipment_count > 0) AS shipped_lots,
+                 BOOL_OR(k.basis = '${WORK_ORDER_BASIS}') AS legacy
+            FROM (${links}) k ${downstreamLateralSql('k.target_lot_id')}
+        ) a
+        CROSS JOIN LATERAL (
+          SELECT COUNT(DISTINCT hc.handling_unit_id) AS hu_count
+            FROM (${links}) k JOIN inventory.handling_unit_content hc ON hc.lot_id = k.target_lot_id
+        ) u
+        CROSS JOIN LATERAL (
+          SELECT COUNT(DISTINCT s.shipment_id) AS shipment_count, MAX(s.shipped_at) AS last_shipped_at
+            FROM (${links}) k
+            JOIN logistics.shipment_lot_allocation sa ON sa.lot_id = k.target_lot_id
+            JOIN logistics.shipment_line ssl ON ssl.shipment_line_id = sa.shipment_line_id
+            JOIN logistics.shipment s ON s.shipment_id = ssl.shipment_id AND s.status_code <> ${SHIPMENT_CANCELLED}
+        ) sh
     )`;
 }
 
@@ -137,21 +129,10 @@ export class MaterialLotFlowListService {
     const page = pageRequest(query);
     const params: unknown[] = [];
     const bind = (value: unknown): string => `$${params.push(value)}`;
-    const withSql = stagedSql(query, bind);
-    const stages = stageFilter(query.currentStageCode);
-    const counts = stageCounts(FORWARD_STAGES, await this.prisma.$queryRawUnsafe<{ stage: string; count: bigint }[]>(
-      `${withSql} SELECT stage, COUNT(*) AS count FROM staged GROUP BY stage`, ...params,
-    ));
-    const total = Object.entries(counts).filter(([stage]) => stages === undefined || stages.includes(stage))
-      .reduce((sum, [, count]) => sum + count, 0);
-    const n = params.length;
-    const rows = await this.prisma.$queryRawUnsafe<StagedRow[]>(
-      `${withSql} SELECT * FROM staged
-        ${stages === undefined ? '' : `WHERE stage = ANY($${n + 1}::text[])`}
-        ORDER BY first_received_at DESC, lot_id DESC
-        LIMIT $${n + (stages === undefined ? 1 : 2)} OFFSET $${n + (stages === undefined ? 2 : 3)}`,
-      ...params, ...(stages === undefined ? [] : [stages]), page.take, page.skip,
-    );
+    const withSql = stagedSql(query, bind, await plantToday(this.prisma, query.plantId));
+    const { rows, counts, total } = await stagedPage<StagedRow>(this.prisma, withSql, params, {
+      stages: FORWARD_STAGES, filter: stageFilter(query.currentStageCode), orderBy: 'first_received_at DESC, lot_id DESC', page,
+    });
     const ids = rows.map((row) => row.lot_id);
     const [heads, sides] = await Promise.all([lotHeads(this.prisma, ids), materialSides(this.prisma, ids)]);
     const items = rows.map((row) => {

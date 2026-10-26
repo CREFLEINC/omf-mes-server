@@ -29,8 +29,8 @@ describe('LOT 추적 단계', () => {
   });
 
   it('번호로 집었으면 기간은 선택이고, 아니면 시작이 필수다', () => {
-    expect(periodUnlessPinned(undefined, undefined, FIELDS, true)).toBeUndefined();
-    expect(periodUnlessPinned('2026-10-01', undefined, FIELDS, true, new Date('2026-10-26T00:00:00Z'))).toEqual({ from: '2026-10-01' });
-    expect(() => periodUnlessPinned(undefined, undefined, FIELDS, false)).toThrow(ContractException);
+    expect(periodUnlessPinned(undefined, undefined, FIELDS, true, '2026-10-26')).toBeUndefined();
+    expect(periodUnlessPinned('2026-10-01', undefined, FIELDS, true, '2026-10-26')).toEqual({ from: '2026-10-01' });
+    expect(() => periodUnlessPinned(undefined, undefined, FIELDS, false, '2026-10-26')).toThrow(ContractException);
   });
 });

@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriodSql } from '../../common/period/plant-local-period';
+import { localPeriodSql, plantToday } from '../../common/period/plant-local-period';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
-import { BACKWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageCounts, stageFilter } from './flow-stage';
-import { SHIPMENT_CANCELLED, downstreamLateralSql, inputCountSql, tracedSql } from './flow-sql';
+import { BACKWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageFilter } from './flow-stage';
+import { SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, inputCountSql, tracedSql } from './flow-sql';
 import { LotHead, Named, lotHeads, pick } from './lot-flow-nodes';
 
 /** 역방향 목록 — 실적 배분이 있는 생산 LOT. 기간 축은 첫 실적(기본) 또는 출하일. */
@@ -16,6 +16,7 @@ export interface ProductLotFlowQuery {
   lotNo?: string;
   q?: string;
   shipmentNo?: string;
+  workOrderNo?: string;
   dateAxis?: 'PRODUCED' | 'SHIPPED';
   dateFrom?: string;
   dateTo?: string;
@@ -64,21 +65,24 @@ interface StagedRow {
   stage: string;
 }
 
-export function stagedSql(query: ProductLotFlowQuery, bind: (value: unknown) => string, today?: Date): string {
-  requireEntry(query as Record<string, unknown>, ['itemId', 'lotNo', 'shipmentNo', 'q'],
-    '제품 품목(itemId) · 생산 LOT 번호(lotNo) · 출하 번호(shipmentNo) · LOT 번호 일부(q)');
+export function stagedSql(query: ProductLotFlowQuery, bind: (value: unknown) => string, today: string): string {
+  requireEntry(query as Record<string, unknown>, ['itemId', 'lotNo', 'shipmentNo', 'workOrderNo', 'q'],
+    '제품 품목(itemId) · 생산 LOT 번호(lotNo) · 출하 번호(shipmentNo) · W/O 번호(workOrderNo) · LOT 번호 일부(q)');
   const axis = query.dateAxis ?? 'PRODUCED';
   if (axis !== 'PRODUCED' && axis !== 'SHIPPED') {
     throw one(field('dateAxis', ERROR_CODE.INVALID, `기간 기준 ${String(axis)} 은 쓸 수 없습니다. PRODUCED(첫 실적) 또는 SHIPPED(출하일)로 보내세요.`));
   }
   const period = periodUnlessPinned(query.dateFrom, query.dateTo,
     { from: 'dateFrom', to: 'dateTo', label: axis === 'PRODUCED' ? '생산일' : '출하일' },
-    query.lotNo !== undefined || query.shipmentNo !== undefined, today);
+    query.lotNo !== undefined || query.shipmentNo !== undefined || query.workOrderNo !== undefined, today);
   const and = [`lt.source_type_code = '${WORK_ORDER_LOT_SOURCE}'`];
   if (query.itemId !== undefined) and.push(`lt.item_id = ${bind(query.itemId)}::bigint`);
   if (query.lotNo !== undefined) and.push(`lt.lot_no = ${bind(query.lotNo)}`);
   if (query.q !== undefined && query.q.trim() !== '') and.push(`lt.lot_no ILIKE ${bind(`%${query.q.trim()}%`)}`);
   if (query.plantId !== undefined) and.push(`lt.plant_id = ${bind(query.plantId)}::bigint`);
+  if (query.workOrderNo !== undefined) {
+    and.push(`EXISTS (SELECT 1 FROM production.work_order qw WHERE qw.work_order_id = lt.source_id AND qw.work_order_no = ${bind(query.workOrderNo)})`);
+  }
   const shipped: string[] = [];
   if (query.shipmentNo !== undefined) shipped.push(`xs.shipment_no = ${bind(query.shipmentNo)}`);
   if (query.customerId !== undefined) shipped.push(`xr.customer_id = ${bind(query.customerId)}::bigint`);
@@ -124,21 +128,10 @@ export class ProductLotFlowListService {
     const page = pageRequest(query);
     const params: unknown[] = [];
     const bind = (value: unknown): string => `$${params.push(value)}`;
-    const withSql = stagedSql(query, bind);
-    const stages = stageFilter(query.currentStageCode);
-    const counts = stageCounts(BACKWARD_STAGES, await this.prisma.$queryRawUnsafe<{ stage: string; count: bigint }[]>(
-      `${withSql} SELECT stage, COUNT(*) AS count FROM staged GROUP BY stage`, ...params,
-    ));
-    const total = Object.entries(counts).filter(([stage]) => stages === undefined || stages.includes(stage))
-      .reduce((sum, [, count]) => sum + count, 0);
-    const n = params.length;
-    const rows = await this.prisma.$queryRawUnsafe<StagedRow[]>(
-      `${withSql} SELECT * FROM staged
-        ${stages === undefined ? '' : `WHERE stage = ANY($${n + 1}::text[])`}
-        ORDER BY first_produced_at DESC, lot_id DESC
-        LIMIT $${n + (stages === undefined ? 1 : 2)} OFFSET $${n + (stages === undefined ? 2 : 3)}`,
-      ...params, ...(stages === undefined ? [] : [stages]), page.take, page.skip,
-    );
+    const withSql = stagedSql(query, bind, await plantToday(this.prisma, query.plantId));
+    const { rows, counts, total } = await stagedPage<StagedRow>(this.prisma, withSql, params, {
+      stages: BACKWARD_STAGES, filter: stageFilter(query.currentStageCode), orderBy: 'first_produced_at DESC, lot_id DESC', page,
+    });
     const ids = rows.map((row) => row.lot_id);
     const [heads, orders, customers] = await Promise.all([lotHeads(this.prisma, ids), this.workOrdersOf(rows), this.customersOf(ids)]);
     const items = rows.map((row) => {
