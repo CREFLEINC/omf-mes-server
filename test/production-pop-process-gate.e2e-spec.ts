@@ -314,6 +314,61 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     });
   });
 
+  describe('POP 실적 정정 — 실적 입력 매핑·재직 작업자만, 정정한 작업자·단말을 이력에(장부 P-120)', () => {
+    const correctResult = (token: string, productionResultId: number, payload: Record<string, unknown> = {}) =>
+      asPop(request(app.getHttpServer()).post(`/api/production/production-results/${productionResultId}:correct`), token)
+        .send({ reasonCode: 'MISCOUNT', ...payload });
+
+    it('실적 입력이 켜진 단말은 정정하고, 이력에 그 단말과 작업자를 남긴다', async () => {
+      const token = await terminal('COR1', { [String(ids.process)]: { can_input_result: true } });
+      const saved = await saveResult(token).expect(201);
+
+      const corrected = await correctResult(token, saved.body.productionResultId, { goodQty: 2, note: '단말 정정' }).expect(201);
+
+      expect(corrected.body).toMatchObject({ correctsProductionResultId: saved.body.productionResultId, goodQty: 2 });
+      const terminalRow = await prisma.terminal.findFirstOrThrow({ where: { terminal_code: `${PREFIX}-POP-COR1` } });
+      const audit = await prisma.audit_event.findFirstOrThrow({
+        where: { target_type_code: 'PRODUCTION_RESULT', target_id: BigInt(saved.body.productionResultId), event_type_code: 'RESULT_CORRECTED' },
+      });
+      expect(audit).toMatchObject({ terminal_id: terminalRow.terminal_id, performed_by: null, reason: 'MISCOUNT · 단말 정정' });
+      expect(audit.after_value).toMatchObject({ workerNo, goodQty: 2 });
+      const row = await prisma.production_result.findUniqueOrThrow({ where: { production_result_id: BigInt(corrected.body.productionResultId) } });
+      expect(row.created_by).toBeNull();
+    });
+
+    it('실적 입력이 꺼진 단말은 401 이고 켤 곳을 알린다', async () => {
+      const saved = await saveResult(await terminal('COR2', { [String(ids.process)]: { can_input_result: true } })).expect(201);
+      const token = await terminal('COR3', { [String(ids.process)]: { can_input_material: true } });
+
+      const rejected = await correctResult(token, saved.body.productionResultId, { note: '사유' }).expect(401);
+
+      expect(rejected.body.errors[0].message).toContain('「실적 입력」');
+      expect(rejected.body.errors[0].message).toContain('관리웹 시스템 관리 › 단말기-공정 매핑에서');
+    });
+
+    it('그 공정에 매핑이 없는 단말과 없는 실적은 같은 401 이고 까닭과 할 일을 알린다', async () => {
+      const saved = await saveResult(await terminal('COR4', { [String(ids.process)]: { can_input_result: true } })).expect(201);
+      const token = await terminal('COR5', { [String(ids.otherProcess)]: { can_input_result: true } });
+
+      const unmapped = await correctResult(token, saved.body.productionResultId, { note: '사유' }).expect(401);
+      const missing = await correctResult(token, 999999999999, { note: '사유' }).expect(401);
+
+      expect(unmapped.body.errors[0].message).toContain('이 단말 공장의 실적이 아니거나 이 단말에 매핑되지 않은 공정의 실적입니다');
+      expect(missing.body.errors).toEqual(unmapped.body.errors);
+    });
+
+    it('작업자 사번이 없으면 401 이다 — 단말 정정은 정정한 작업자를 남겨야 한다', async () => {
+      const token = await terminal('COR6', { [String(ids.process)]: { can_input_result: true } });
+      const saved = await saveResult(token).expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/production/production-results/${saved.body.productionResultId}:correct`)
+        .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'MISCOUNT' })
+        .expect(401);
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function asPop(test: request.Test, token: string): request.Test {
