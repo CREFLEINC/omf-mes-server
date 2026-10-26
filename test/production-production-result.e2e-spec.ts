@@ -504,23 +504,10 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       await correct(resultDId, { reasonCode: '   ' }).expect(400);
     });
 
-    it('정정 — 수량을 바꾸면 400 이고, 상신·승인 뒤 같은 요청이 201 이 된다', async () => {
-      const payload = { reasonCode: 'MISCOUNT', goodQty: 50 };
+    it('정정 — 마감 전 수량 정정은 승인 없이 201 이다(사용자 결정 · 장부 P-120)', async () => {
+      const accepted = await correct(resultCId, { reasonCode: 'MISCOUNT', goodQty: 50 }).expect(201);
 
-      const rejected = await correct(resultCId, payload).expect(400);
-
-      // ⭐ 코어 `assertApproved` 는 ⌜요청 0건이면 통과⌝ 라 이 자리를 열어 준다 — 도메인 게이트가 막는다.
-      expect(rejected.body.errors[0]).toMatchObject({ code: 'APPROVAL_REQUIRED' });
-
-      const submitted = await submit(resultCId, '집계에서 양품 20 EA 누락').expect(202);
-      // 승인 «전»에는 진행 중이라 코드가 갈린다.
-      const pending = await correct(resultCId, payload).expect(400);
-      expect(pending.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
-
-      await decide('approve', submitted.body.approvalRequestId, '수량 확인함');
-      const accepted = await correct(resultCId, payload).expect(201);
-
-      expect(accepted.body).toMatchObject({ correctsProductionResultId: resultCId, goodQty: 50, defectQty: 0 });
+      expect(accepted.body).toMatchObject({ correctsProductionResultId: resultCId, goodQty: 50, defectQty: 0, affectedLots: [] });
     });
 
     it('정정 — 정정본이 목록에 원본과 «둘 다» 보인다', async () => {
@@ -904,6 +891,77 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       const response = await complete(slots[0].lot_id).expect(200);
 
       expect(response.body.completedAt).toBe(COMPLETED_AT);
+    });
+
+    /** 정정 — LOT 배분·잠금·라벨(장부 P-120). */
+    const correctResult = (productionResultId: number, payload: object) =>
+      request(app.getHttpServer())
+        .post(`${RESULTS}/${productionResultId}:correct`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'MISCOUNT', ...payload });
+
+    const progressOf = async (lotId: bigint): Promise<number> => {
+      const response = await request(app.getHttpServer()).get(`${LOTS}/${Number(lotId)}?withProgress=true`).set('Cookie', cookie).expect(200);
+      return response.body.lot.progress.goodQty as number;
+    };
+
+    it('정정 — 양품을 고치면 LOT 수량이 정정을 따르고(두 번 세지 않는다), 라벨을 찍었던 LOT 은 재발행 필요다', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);
+      const label = await prisma.document_issue_log.create({ data: {
+        document_type_code: 'PRODUCTION_LOT_LABEL', target_type_code: 'LOT', target_id: slots[0].lot_id, lot_id: slots[0].lot_id,
+        issue_seq: 1, issued_at: new Date(), issued_worker_id: ids.worker, print_outcome_code: 'PENDING', label_qty: 30,
+      } });
+      try {
+        const corrected = await correctResult(recorded.body.productionResultId, { goodQty: 25, note: '오입력' }).expect(201);
+
+        expect(corrected.body.affectedLots).toEqual([{
+          lotId: Number(slots[0].lot_id), lotNo: expect.any(String), qtyBefore: 30, qtyAfter: 25, lastLabelQty: 30, labelReissueNeeded: true,
+        }]);
+        expect(await progressOf(slots[0].lot_id)).toBe(25);
+        const audit = await prisma.audit_event.findFirst({
+          where: { target_type_code: 'PRODUCTION_RESULT', target_id: BigInt(recorded.body.productionResultId), event_type_code: 'RESULT_CORRECTED' },
+        });
+        expect(audit).toMatchObject({ reason: 'MISCOUNT · 오입력' });
+        // 정정본을 다시 정정해도 잎만 센다.
+        await correctResult(corrected.body.productionResultId, { goodQty: 28 }).expect(201);
+        expect(await progressOf(slots[0].lot_id)).toBe(28);
+      } finally {
+        await prisma.document_issue_log.delete({ where: { document_issue_log_id: label.document_issue_log_id } });
+      }
+    });
+
+    it('정정 — 마감된 W/O 는 400 STATE_LOCKED 이고 LOT 수량은 그대로다', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);
+      await prisma.work_order.update({ where: { work_order_id: BigInt(workOrderId) }, data: { status_code: 'CLOSED' } });
+
+      const rejected = await correctResult(recorded.body.productionResultId, { goodQty: 25 }).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+      expect(rejected.body.errors[0].message).toContain('마감돼 ERP 로 생산입고가 이미 나갔습니다');
+      expect(await progressOf(slots[0].lot_id)).toBe(30);
+    });
+
+    it('정정 — 포장에 담긴 LOT 은 400 STATE_LOCKED 이고 포장 번호와 할 일을 알린다', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);
+      const box = await prisma.handling_unit.create({ data: {
+        handling_unit_no: `${PREFIX}-HU-${randomUUID().slice(0, 8)}`, handling_unit_type_code: 'BOX', status_code: 'OPEN',
+        handling_unit_content: { create: [{ item_id: ids.item, lot_id: slots[0].lot_id, qty: 10, uom_id: ids.uom }] },
+      } });
+      try {
+        const rejected = await correctResult(recorded.body.productionResultId, { goodQty: 25 }).expect(400);
+
+        expect(rejected.body.errors[0]).toMatchObject({ field: 'lotAllocations', code: 'STATE_LOCKED' });
+        expect(rejected.body.errors[0].message).toContain(`포장 ${box.handling_unit_no} 에 담겼습니다`);
+        // 수량을 안 바꾸는 정정(사유만)은 LOT 이 넘어갔어도 된다.
+        await correctResult(recorded.body.productionResultId, { note: '사유만' }).expect(201);
+      } finally {
+        await prisma.handling_unit_content.deleteMany({ where: { handling_unit_id: box.handling_unit_id } });
+        await prisma.handling_unit.delete({ where: { handling_unit_id: box.handling_unit_id } });
+      }
     });
 
     it('진척 — `GET /trace/lots/{lotId}?withProgress=true` 에 `progress` 4칸이 실리고 `false` 면 키가 없다(R-6)', async () => {

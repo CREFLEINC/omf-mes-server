@@ -464,6 +464,12 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
             where: { document_type_code: "PRODUCTION_LOT_LABEL", lot_id: lotId },
           }),
         ).toBe(1);
+        // 발행 순간의 라벨 수량을 남긴다(장부 P-120) — 실적 배분이 없으면 계획 수량이다.
+        const issued = await prisma.document_issue_log.findFirstOrThrow({
+          where: { document_type_code: "PRODUCTION_LOT_LABEL", lot_id: lotId },
+          select: { label_qty: true },
+        });
+        expect(Number(issued.label_qty)).toBe(100);
       },
     );
 
