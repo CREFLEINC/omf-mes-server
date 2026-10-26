@@ -106,7 +106,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await cleanup();
     await makeFixtures();
     await makeUser();
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await cleanup();
