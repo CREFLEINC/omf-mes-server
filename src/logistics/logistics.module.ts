@@ -16,6 +16,8 @@ import { GoodsIssueController } from './goods-issue/goods-issue.controller';
 import { GoodsIssueQueryService } from './goods-issue/goods-issue-query.service';
 import { GoodsIssueUpdateService } from './goods-issue/goods-issue-update.service';
 import { GoodsIssueService } from './goods-issue/goods-issue.service';
+import { GoodsReceiptLineListController } from './goods-receipt/goods-receipt-line-list.controller';
+import { GoodsReceiptLineListService } from './goods-receipt/goods-receipt-line-list.service';
 import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller';
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { InboundReceiptQueryService } from './inbound-receipt/inbound-receipt-query.service';
@@ -66,6 +68,8 @@ import { ShippingUnitBoxService } from './shipping-unit/shipping-unit-box.servic
 import { ShippingUnitQueryService } from './shipping-unit/shipping-unit-query.service';
 import { ShippingUnitController } from './shipping-unit/shipping-unit.controller';
 import { ShippingUnitService } from './shipping-unit/shipping-unit.service';
+import { ShipmentLineListController } from './shipment/shipment-line-list.controller';
+import { ShipmentLineListService } from './shipment/shipment-line-list.service';
 import { ShipmentQueryService } from './shipment/shipment-query.service';
 import { ShipmentController } from './shipment/shipment.controller';
 import { ShipmentCancelService } from './shipment/shipment-cancel.service';
@@ -109,6 +113,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   controllers: [
     GoodsIssueController,
     GoodsReceiptController,
+    GoodsReceiptLineListController,
     PickingController,
     PutawayRuleController,
     PutawayTaskController,
@@ -120,6 +125,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShippingUnitController,
     ShipmentRequestController,
     ShipmentController,
+    ShipmentLineListController,
     StockReinstatementController,
     AsnController,
     InboundReceiptController,
@@ -139,6 +145,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     GoodsIssueService,
     GoodsIssueUpdateService,
     GoodsReceiptService,
+    GoodsReceiptLineListService,
     PickingPickService,
     PickingQueryService,
     PutawayCompleteService,
@@ -159,6 +166,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentRequestQueryService,
     ShipmentRequestService,
     ShipmentQueryService,
+    ShipmentLineListService,
     ShipmentService,
     ShipmentConfirmService,
     ShipmentCancelService,
