@@ -6,6 +6,10 @@ import { ApprovalModule } from '../core/approval';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
+import { LotFlowChainService } from './flow/lot-flow-chain.service';
+import { LotFlowController } from './flow/lot-flow.controller';
+import { MaterialLotFlowListService } from './flow/material-lot-flow-list.service';
+import { ProductLotFlowListService } from './flow/product-lot-flow-list.service';
 import { LotLifecycleEventController } from './lot/lot-lifecycle-event.controller';
 import { LotCompleteService } from './lot/lot-complete.service';
 import { LotExternalIdentifierService } from './lot/lot-external-identifier.service';
@@ -29,7 +33,7 @@ import { SerialNumberController } from './serial-number/serial-number.controller
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, LotRegistryModule, ApprovalModule, NumberingModule, AuthModule],
-  controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController],
+  controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController],
   providers: [
     LotService,
     LotImpactService,
@@ -43,6 +47,9 @@ import { SerialNumberController } from './serial-number/serial-number.controller
     LotStatusEventService,
     SerialNumberQueryService,
     SerialNumberCreateService,
+    MaterialLotFlowListService,
+    ProductLotFlowListService,
+    LotFlowChainService,
   ],
 })
 export class TraceModule {}

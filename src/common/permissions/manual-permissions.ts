@@ -139,6 +139,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // LOT 추적 화면의 입고·출고 현황 — 설계 밖 화면이라 그 화면만 연다(장부 P-119).
   'GET /logistics/goods-receipt-lines': ['W-02-09'],
   'GET /logistics/shipment-lines': ['W-02-09'],
+  // 같은 화면의 정방향·역방향 — 목록과 LOT 하나의 사슬(장부 P-119).
+  'GET /trace/material-lot-flows': ['W-02-09'],
+  'GET /trace/product-lot-flows': ['W-02-09'],
+  'GET /trace/lots/{lotId}/forward-flow': ['W-02-09'],
+  'GET /trace/lots/{lotId}/backward-flow': ['W-02-09'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.

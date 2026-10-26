@@ -6297,6 +6297,996 @@
     "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9)."
    }
   },
+  "/trace/material-lot-flows": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "LOT 추적 정방향 목록(자재 LOT)",
+    "description": "자재입고가 있는 LOT 과 단계 진행. 진입점(itemId·lotNo·inboundReceiptNo·q) 중 하나가 필요하다. 기간 축은 첫 자재입고 일시(취소 완료 제외 · 공장 현지 날짜, 양 끝 포함, 최대 366일) — lotNo·inboundReceiptNo 로 집으면 기간은 선택. 정렬: 첫 자재입고 일시 내림차순. 근거: 서버 선행 · 장부 P-119",
+    "parameters": [
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "자재 품목"
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "자재 LOT 번호 정확 일치"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호 부분 일치"
+     },
+     {
+      "name": "inboundReceiptNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입하 번호 정확 일치"
+     },
+     {
+      "name": "receiptDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "첫 자재입고일 시작(공장 현지 날짜)"
+     },
+     {
+      "name": "receiptDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "첫 자재입고일 종료(포함)"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "warehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "자재입고 창고 — 그 창고로 들어온 자재입고만으로 첫 자재입고를 본다"
+     },
+     {
+      "name": "currentStageCode",
+      "in": "query",
+      "style": "form",
+      "explode": false,
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "enum": [
+         "RECEIVED",
+         "CONSUMED",
+         "PRODUCED",
+         "PRODUCTION_RECEIVED",
+         "PACKED",
+         "SHIPPED"
+        ]
+       }
+      },
+      "description": "현재 단계(하위 사슬에서 가장 멀리 간 단계)로 거른다 — 여럿을 쉼표로"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "stageCounts"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "allOf": [
+             {
+              "$ref": "#/components/schemas/LotFlowLotHead"
+             },
+             {
+              "$ref": "#/components/schemas/LotFlowMaterialSide"
+             },
+             {
+              "type": "object",
+              "required": [
+               "firstReceivedAt",
+               "consumedQty",
+               "stages",
+               "currentStageCode",
+               "basis"
+              ],
+              "properties": {
+               "firstReceivedAt": {
+                "type": "string",
+                "format": "date-time"
+               },
+               "consumedQty": {
+                "type": "number",
+                "description": "투입량 — 원 투입에서 정정된 것을 빼고 정정 투입을 넣는다(투입 기록 기준)"
+               },
+               "stages": {
+                "type": "object",
+                "required": [
+                 "received",
+                 "consumed",
+                 "produced",
+                 "productionReceived",
+                 "packed",
+                 "shipped"
+                ],
+                "properties": {
+                 "received": {
+                  "type": "object",
+                  "required": [
+                   "count"
+                  ],
+                  "properties": {
+                   "count": {
+                    "type": "integer"
+                   }
+                  }
+                 },
+                 "consumed": {
+                  "type": "object",
+                  "required": [
+                   "workOrderCount"
+                  ],
+                  "properties": {
+                   "workOrderCount": {
+                    "type": "integer"
+                   }
+                  }
+                 },
+                 "produced": {
+                  "type": "object",
+                  "required": [
+                   "lotCount"
+                  ],
+                  "properties": {
+                   "lotCount": {
+                    "type": "integer"
+                   }
+                  }
+                 },
+                 "productionReceived": {
+                  "type": "object",
+                  "required": [
+                   "lotCount"
+                  ],
+                  "properties": {
+                   "lotCount": {
+                    "type": "integer"
+                   }
+                  }
+                 },
+                 "packed": {
+                  "type": "object",
+                  "required": [
+                   "lotCount",
+                   "handlingUnitCount"
+                  ],
+                  "properties": {
+                   "lotCount": {
+                    "type": "integer"
+                   },
+                   "handlingUnitCount": {
+                    "type": "integer"
+                   }
+                  },
+                  "description": "포장 확정(PACKED) 취급 단위만"
+                 },
+                 "shipped": {
+                  "type": "object",
+                  "required": [
+                   "lotCount",
+                   "shipmentCount",
+                   "lastShippedAt"
+                  ],
+                  "properties": {
+                   "lotCount": {
+                    "type": "integer"
+                   },
+                   "shipmentCount": {
+                    "type": "integer"
+                   },
+                   "lastShippedAt": {
+                    "type": [
+                     "string",
+                     "null"
+                    ],
+                    "format": "date-time"
+                   }
+                  }
+                 }
+                },
+                "description": "단계마다 닿은 수 — 생산 LOT 기준"
+               },
+               "currentStageCode": {
+                "type": "string",
+                "enum": [
+                 "RECEIVED",
+                 "CONSUMED",
+                 "PRODUCED",
+                 "PRODUCTION_RECEIVED",
+                 "PACKED",
+                 "SHIPPED"
+                ]
+               },
+               "basis": {
+                "$ref": "#/components/schemas/LotFlowBasis"
+               }
+              }
+             }
+            ]
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "stageCounts": {
+           "type": "object",
+           "required": [
+            "RECEIVED",
+            "CONSUMED",
+            "PRODUCED",
+            "PRODUCTION_RECEIVED",
+            "PACKED",
+            "SHIPPED"
+           ],
+           "properties": {
+            "RECEIVED": {
+             "type": "integer"
+            },
+            "CONSUMED": {
+             "type": "integer"
+            },
+            "PRODUCED": {
+             "type": "integer"
+            },
+            "PRODUCTION_RECEIVED": {
+             "type": "integer"
+            },
+            "PACKED": {
+             "type": "integer"
+            },
+            "SHIPPED": {
+             "type": "integer"
+            }
+           },
+           "description": "단계별 LOT 수 — 필터 전체를 세되 currentStageCode 조건만 빼고 센다(조건 칩 건수)"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 진입점 없음 · 기간 시작 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — LOT 추적 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-119."
+   }
+  },
+  "/trace/product-lot-flows": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "LOT 추적 역방향 목록(생산 LOT)",
+    "description": "실적 배분이 있는 생산 LOT 과 단계 진행(빈 선발행 슬롯 제외). 진입점(itemId·lotNo·shipmentNo·workOrderNo·q) 중 하나가 필요하다. 기간 축은 dateAxis — PRODUCED(기본, 첫 실적 시각) 또는 SHIPPED(그 LOT 이 실린 출하의 출하 일시). 공장 현지 날짜, 양 끝 포함, 최대 366일 — lotNo·shipmentNo·workOrderNo 로 집으면 기간은 선택. 정렬: 첫 실적 시각 내림차순. 근거: 서버 선행 · 장부 P-119",
+    "parameters": [
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "제품 품목"
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "생산 LOT 번호 정확 일치"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "생산 LOT 번호 부분 일치"
+     },
+     {
+      "name": "shipmentNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "출하 번호 정확 일치"
+     },
+     {
+      "name": "workOrderNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "W/O 번호 정확 일치 — 그 W/O 가 만든 생산 LOT"
+     },
+     {
+      "name": "dateAxis",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "PRODUCED",
+        "SHIPPED"
+       ],
+       "default": "PRODUCED"
+      },
+      "description": "기간 기준"
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 시작(공장 현지 날짜)"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 종료(포함)"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "customerId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "그 고객사로 출하된 LOT"
+     },
+     {
+      "name": "currentStageCode",
+      "in": "query",
+      "style": "form",
+      "explode": false,
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "enum": [
+         "PRODUCED",
+         "PRODUCTION_RECEIVED",
+         "PACKED",
+         "SHIPPED"
+        ]
+       }
+      },
+      "description": "현재 단계(하위 사슬에서 가장 멀리 간 단계)로 거른다 — 여럿을 쉼표로"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "stageCounts"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "allOf": [
+             {
+              "$ref": "#/components/schemas/LotFlowLotHead"
+             },
+             {
+              "type": "object",
+              "required": [
+               "workOrder",
+               "producedQty",
+               "firstProducedAt",
+               "lastProducedAt",
+               "inputMaterialLotCount",
+               "basis",
+               "stages",
+               "currentStageCode"
+              ],
+              "properties": {
+               "workOrder": {
+                "type": "object",
+                "required": [
+                 "workOrderId",
+                 "workOrderNo",
+                 "statusCode"
+                ],
+                "properties": {
+                 "workOrderId": {
+                  "type": "integer",
+                  "format": "int64"
+                 },
+                 "workOrderNo": {
+                  "type": "string"
+                 },
+                 "statusCode": {
+                  "type": "string"
+                 }
+                }
+               },
+               "producedQty": {
+                "type": "number"
+               },
+               "firstProducedAt": {
+                "type": "string",
+                "format": "date-time"
+               },
+               "lastProducedAt": {
+                "type": "string",
+                "format": "date-time"
+               },
+               "inputMaterialLotCount": {
+                "type": "integer"
+               },
+               "basis": {
+                "$ref": "#/components/schemas/LotFlowBasis"
+               },
+               "stages": {
+                "type": "object",
+                "required": [
+                 "productionReceived",
+                 "packed",
+                 "shipped"
+                ],
+                "properties": {
+                 "productionReceived": {
+                  "type": "object",
+                  "required": [
+                   "count",
+                   "qty"
+                  ],
+                  "properties": {
+                   "count": {
+                    "type": "integer"
+                   },
+                   "qty": {
+                    "type": "number"
+                   }
+                  }
+                 },
+                 "packed": {
+                  "type": "object",
+                  "required": [
+                   "handlingUnitCount",
+                   "qty"
+                  ],
+                  "properties": {
+                   "handlingUnitCount": {
+                    "type": "integer"
+                   },
+                   "qty": {
+                    "type": "number"
+                   }
+                  }
+                 },
+                 "shipped": {
+                  "type": "object",
+                  "required": [
+                   "shipmentCount",
+                   "qty",
+                   "lastShippedAt",
+                   "customers",
+                   "customerCount"
+                  ],
+                  "properties": {
+                   "shipmentCount": {
+                    "type": "integer"
+                   },
+                   "qty": {
+                    "type": "number"
+                   },
+                   "lastShippedAt": {
+                    "type": [
+                     "string",
+                     "null"
+                    ],
+                    "format": "date-time"
+                   },
+                   "customers": {
+                    "type": "array",
+                    "items": {
+                     "$ref": "#/components/schemas/LotFlowNamed"
+                    },
+                    "description": "이름순 앞 3개"
+                   },
+                   "customerCount": {
+                    "type": "integer"
+                   }
+                  }
+                 }
+                }
+               },
+               "currentStageCode": {
+                "type": "string",
+                "enum": [
+                 "PRODUCED",
+                 "PRODUCTION_RECEIVED",
+                 "PACKED",
+                 "SHIPPED"
+                ]
+               }
+              }
+             }
+            ]
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "stageCounts": {
+           "type": "object",
+           "required": [
+            "PRODUCED",
+            "PRODUCTION_RECEIVED",
+            "PACKED",
+            "SHIPPED"
+           ],
+           "properties": {
+            "PRODUCED": {
+             "type": "integer"
+            },
+            "PRODUCTION_RECEIVED": {
+             "type": "integer"
+            },
+            "PACKED": {
+             "type": "integer"
+            },
+            "SHIPPED": {
+             "type": "integer"
+            }
+           },
+           "description": "단계별 LOT 수 — 필터 전체를 세되 currentStageCode 조건만 빼고 센다(조건 칩 건수)"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 진입점 없음 · 기간 시작 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — LOT 추적 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-119."
+   }
+  },
+  "/trace/lots/{lotId}/forward-flow": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "LOT 하나의 하위 사슬(정방향)",
+    "description": "입하·자재입고 → 투입 W/O → 생산 LOT → 생산입고·포장(출하 단위)·출하. 반제품은 한 번에 한 단만 푼다 — consumedFurther 가 0 보다 큰 생산 LOT 으로 다시 부른다. 실적 배분이 없는 생산 LOT 은 잇지 않는다. 근거: 서버 선행 · 장부 P-119",
+    "responses": {
+     "200": {
+      "description": "LOT 하나의 사슬",
+      "content": {
+       "application/json": {
+        "schema": {
+         "allOf": [
+          {
+           "$ref": "#/components/schemas/LotFlowMaterialSide"
+          },
+          {
+           "type": "object",
+           "required": [
+            "lot",
+            "basis",
+            "workOrders",
+            "truncated",
+            "totalProductionLotCount"
+           ],
+           "properties": {
+            "lot": {
+             "$ref": "#/components/schemas/LotFlowLotHead"
+            },
+            "basis": {
+             "$ref": "#/components/schemas/LotFlowBasis"
+            },
+            "workOrders": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "required": [
+               "workOrderId",
+               "workOrderNo",
+               "item",
+               "statusCode",
+               "consumedQty",
+               "firstConsumedAt",
+               "lastConsumedAt",
+               "linkBasis",
+               "productionLots"
+              ],
+              "properties": {
+               "workOrderId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "workOrderNo": {
+                "type": "string"
+               },
+               "item": {
+                "$ref": "#/components/schemas/LotFlowNamed"
+               },
+               "statusCode": {
+                "type": "string"
+               },
+               "consumedQty": {
+                "type": "number"
+               },
+               "firstConsumedAt": {
+                "type": "string",
+                "format": "date-time"
+               },
+               "lastConsumedAt": {
+                "type": "string",
+                "format": "date-time"
+               },
+               "linkBasis": {
+                "oneOf": [
+                 {
+                  "$ref": "#/components/schemas/LotFlowBasis"
+                 },
+                 {
+                  "type": "null"
+                 }
+                ],
+                "description": "W/O 에 실적이 아예 없으면 null(투입만). 실적은 있는데 이 LOT 의 투입 구간과 겹치는 실적이 없으면 LOT_GENEALOGY_ESTIMATE 에 productionLots 가 빈 목록이다"
+               },
+               "productionLots": {
+                "type": "array",
+                "items": {
+                 "$ref": "#/components/schemas/LotFlowProductionLot"
+                }
+               }
+              }
+             },
+             "description": "이 LOT 이 투입된 W/O · 첫 투입순"
+            },
+            "truncated": {
+             "type": "boolean",
+             "description": "생산 LOT 이 500개를 넘어 앞 500개만 실었다"
+            },
+            "totalProductionLotCount": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — LOT 추적 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-119."
+   }
+  },
+  "/trace/lots/{lotId}/backward-flow": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "LOT 하나의 상위 사슬(역방향)",
+    "description": "출하·포장·생산입고 ← 생산 LOT ← W/O·실적 ← 투입 자재 LOT ← 자재입고·입하(공급사·입하 번호·공급사 LOT 번호). 반제품은 한 번에 한 단만 푼다 — producedBy 가 있는 투입 자재 LOT 으로 다시 부른다. 투입 자재 집합과 근거는 input-materials 와 같다. 근거: 서버 선행 · 장부 P-119",
+    "responses": {
+     "200": {
+      "description": "LOT 하나의 사슬",
+      "content": {
+       "application/json": {
+        "schema": {
+         "allOf": [
+          {
+           "$ref": "#/components/schemas/LotFlowProductSide"
+          },
+          {
+           "type": "object",
+           "required": [
+            "lot",
+            "goodQty",
+            "basis",
+            "workOrder",
+            "inputMaterials"
+           ],
+           "properties": {
+            "lot": {
+             "$ref": "#/components/schemas/LotFlowLotHead"
+            },
+            "goodQty": {
+             "type": "number"
+            },
+            "basis": {
+             "$ref": "#/components/schemas/LotFlowBasis"
+            },
+            "workOrder": {
+             "oneOf": [
+              {
+               "type": "object",
+               "required": [
+                "workOrderId",
+                "workOrderNo",
+                "item",
+                "statusCode",
+                "results"
+               ],
+               "properties": {
+                "workOrderId": {
+                 "type": "integer",
+                 "format": "int64"
+                },
+                "workOrderNo": {
+                 "type": "string"
+                },
+                "item": {
+                 "$ref": "#/components/schemas/LotFlowNamed"
+                },
+                "statusCode": {
+                 "type": "string"
+                },
+                "results": {
+                 "type": "object",
+                 "required": [
+                  "count",
+                  "goodQty",
+                  "defectQty",
+                  "firstAt",
+                  "lastAt"
+                 ],
+                 "properties": {
+                  "count": {
+                   "type": "integer"
+                  },
+                  "goodQty": {
+                   "type": "number"
+                  },
+                  "defectQty": {
+                   "type": "number"
+                  },
+                  "firstAt": {
+                   "type": [
+                    "string",
+                    "null"
+                   ],
+                   "format": "date-time"
+                  },
+                  "lastAt": {
+                   "type": [
+                    "string",
+                    "null"
+                   ],
+                   "format": "date-time"
+                  }
+                 },
+                 "description": "그 W/O 의 실적(정정된 원 실적 제외)"
+                }
+               }
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "description": "원천이 W/O 가 아닌 LOT 이면 null(투입 자재도 비어 있다)"
+            },
+            "inputMaterials": {
+             "type": "array",
+             "items": {
+              "$ref": "#/components/schemas/LotFlowInputMaterial"
+             },
+             "description": "투입 자재 LOT — 첫 투입 시각 → LOT 번호순. 실적 배분이 없는 생산 LOT 은 비운다(정방향이 그 LOT 을 잇지 않는 것과 같다)"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — LOT 추적 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-119."
+   }
+  },
   "/trace/lots": {
    "get": {
     "tags": [
@@ -8266,6 +9256,420 @@
       "example": "확정된 전표는 수정할 수 없습니다."
      }
     }
+   },
+   "LotFlowNamed": {
+    "type": "object",
+    "required": [
+     "id",
+     "code",
+     "name"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    },
+    "description": "LOT 추적 노드가 짚는 마스터 — 코드·이름을 함께 싣는다(장부 P-119)"
+   },
+   "LotFlowBasis": {
+    "type": "string",
+    "enum": [
+     "LOT_GENEALOGY_ESTIMATE",
+     "WORK_ORDER_ESTIMATE"
+    ],
+    "description": "이음 근거 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(추정) · WORK_ORDER_ESTIMATE = 실적은 있는데 계보가 없는 W/O 라 그 W/O 의 투입 자재 전부 × 실적 배분이 있는 생산 LOT 전부로 이었다. 입고·포장·출하는 문서로 이어져 근거 칸이 없다"
+   },
+   "LotFlowLotHead": {
+    "type": "object",
+    "required": [
+     "lotId",
+     "lotNo",
+     "plantId",
+     "item",
+     "lotTypeCode",
+     "statusCode",
+     "uomId",
+     "uomCode",
+     "completedAt"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "item": {
+      "$ref": "#/components/schemas/LotFlowNamed"
+     },
+     "lotTypeCode": {
+      "type": "string"
+     },
+     "statusCode": {
+      "type": "string"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "completedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     }
+    },
+    "description": "LOT 추적 노드의 LOT 머리"
+   },
+   "LotFlowReceipt": {
+    "type": "object",
+    "required": [
+     "goodsReceiptId",
+     "goodsReceiptNo",
+     "receiptDatetime",
+     "warehouse",
+     "qty"
+    ],
+    "properties": {
+     "goodsReceiptId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "goodsReceiptNo": {
+      "type": "string"
+     },
+     "receiptDatetime": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "warehouse": {
+      "$ref": "#/components/schemas/LotFlowNamed"
+     },
+     "qty": {
+      "type": "number"
+     }
+    },
+    "description": "입고 한 건(취소 완료 제외 — 취소 요청 중은 남는다)"
+   },
+   "LotFlowInbound": {
+    "type": "object",
+    "required": [
+     "inboundReceiptId",
+     "inboundReceiptNo",
+     "receiptDatetime",
+     "supplier",
+     "supplierLotNo"
+    ],
+    "properties": {
+     "inboundReceiptId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inboundReceiptNo": {
+      "type": "string"
+     },
+     "receiptDatetime": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "supplier": {
+      "$ref": "#/components/schemas/LotFlowNamed"
+     },
+     "supplierLotNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "description": "이 LOT 을 등록한 입하 줄(입하 번호·입하일·공급사·공급사 LOT 번호)"
+   },
+   "LotFlowMaterialSide": {
+    "type": "object",
+    "required": [
+     "inbound",
+     "receipts",
+     "receivedQty"
+    ],
+    "properties": {
+     "inbound": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/LotFlowInbound"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "재생재·분할 LOT 처럼 입하에서 오지 않았으면 null"
+     },
+     "receipts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/LotFlowReceipt"
+      },
+      "description": "자재입고 · 입고 일시순"
+     },
+     "receivedQty": {
+      "type": "number"
+     }
+    },
+    "description": "자재 쪽 문서"
+   },
+   "LotFlowPackage": {
+    "type": "object",
+    "required": [
+     "handlingUnitId",
+     "handlingUnitNo",
+     "handlingUnitTypeCode",
+     "statusCode",
+     "qty",
+     "shippingUnit"
+    ],
+    "properties": {
+     "handlingUnitId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "handlingUnitNo": {
+      "type": "string"
+     },
+     "handlingUnitTypeCode": {
+      "type": "string"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "취급 단위 상태 — PACKED = 포장 확정, OPEN = 포장 중. 포장 단계·포장 수는 PACKED 만 센다"
+     },
+     "qty": {
+      "type": "number"
+     },
+     "shippingUnit": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/LotFlowShippingUnit"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "출하 단위에 담겼으면 그 단위"
+     }
+    },
+    "description": "포장(취급 단위) — 포장 중(OPEN)인 상자도 싣는다"
+   },
+   "LotFlowShippingUnit": {
+    "type": "object",
+    "required": [
+     "shippingUnitId",
+     "shippingUnitNo"
+    ],
+    "properties": {
+     "shippingUnitId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "shippingUnitNo": {
+      "type": "string"
+     }
+    }
+   },
+   "LotFlowShipment": {
+    "type": "object",
+    "required": [
+     "shipmentId",
+     "shipmentNo",
+     "shippedAt",
+     "statusCode",
+     "customer",
+     "qty",
+     "handlingUnitNo"
+    ],
+    "properties": {
+     "shipmentId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "shipmentNo": {
+      "type": "string"
+     },
+     "shippedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "statusCode": {
+      "type": "string"
+     },
+     "customer": {
+      "$ref": "#/components/schemas/LotFlowNamed"
+     },
+     "qty": {
+      "type": "number"
+     },
+     "handlingUnitNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "description": "출하(취소 제외) — 출하·취급 단위마다 한 줄. 포장 없이 LOT 을 직접 배분했으면 handlingUnitNo 가 null"
+   },
+   "LotFlowProductSide": {
+    "type": "object",
+    "required": [
+     "productionReceipts",
+     "packages",
+     "shipments"
+    ],
+    "properties": {
+     "productionReceipts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/LotFlowReceipt"
+      },
+      "description": "생산입고 · 입고 일시순"
+     },
+     "packages": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/LotFlowPackage"
+      }
+     },
+     "shipments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/LotFlowShipment"
+      },
+      "description": "출하 일시순"
+     }
+    },
+    "description": "제품 쪽 문서"
+   },
+   "LotFlowProductionLot": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/LotFlowLotHead"
+     },
+     {
+      "$ref": "#/components/schemas/LotFlowProductSide"
+     },
+     {
+      "type": "object",
+      "required": [
+       "goodQty",
+       "linkBasis",
+       "serialCount",
+       "consumedFurther",
+       "cyclic"
+      ],
+      "properties": {
+       "goodQty": {
+        "type": "number"
+       },
+       "linkBasis": {
+        "$ref": "#/components/schemas/LotFlowBasis"
+       },
+       "serialCount": {
+        "type": "integer"
+       },
+       "consumedFurther": {
+        "type": "integer",
+        "description": "이 LOT 이 다시 투입된 W/O 수 — 반제품이면 0 보다 크다. 화면이 이 LOT 으로 정방향을 다시 부른다(한 번에 한 단)"
+       },
+       "cyclic": {
+        "type": "boolean",
+        "description": "조회한 LOT 자신으로 되돌아왔다(경로 대조는 화면이 한다)"
+       }
+      }
+     }
+    ],
+    "description": "정방향 사슬의 생산 LOT"
+   },
+   "LotFlowInputMaterial": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/LotFlowLotHead"
+     },
+     {
+      "$ref": "#/components/schemas/LotFlowMaterialSide"
+     },
+     {
+      "type": "object",
+      "required": [
+       "consumedQty",
+       "firstConsumedAt",
+       "lastConsumedAt",
+       "linkBasis",
+       "producedBy",
+       "cyclic"
+      ],
+      "properties": {
+       "consumedQty": {
+        "type": "number"
+       },
+       "firstConsumedAt": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "lastConsumedAt": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "linkBasis": {
+        "$ref": "#/components/schemas/LotFlowBasis"
+       },
+       "producedBy": {
+        "oneOf": [
+         {
+          "type": "object",
+          "required": [
+           "workOrderId",
+           "workOrderNo"
+          ],
+          "properties": {
+           "workOrderId": {
+            "type": "integer",
+            "format": "int64"
+           },
+           "workOrderNo": {
+            "type": "string"
+           }
+          }
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "이 자재 LOT 이 생산 LOT(반제품)이면 그 W/O — 화면이 이 LOT 으로 역방향을 다시 부른다(한 번에 한 단)"
+       },
+       "cyclic": {
+        "type": "boolean",
+        "description": "조회한 LOT 자신으로 되돌아왔다(경로 대조는 화면이 한다)"
+       }
+      }
+     }
+    ],
+    "description": "역방향 사슬의 투입 자재 LOT"
    },
    "ErrorResponse": {
     "type": "object",
