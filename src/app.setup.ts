@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 
 import { ErrorResponseFilter } from './common/errors';
+import { configureBodyParsing } from './common/http/body-parsing';
 import { configureCors } from './common/http/cors';
 
 /**
@@ -10,6 +11,7 @@ import { configureCors } from './common/http/cors';
 export function configureApp(app: INestApplication, prefix: string): string[] {
   app.setGlobalPrefix(prefix);
   app.useGlobalFilters(new ErrorResponseFilter());
+  configureBodyParsing(app);
   // 목록이 없으면 아무것도 열지 않는다 — 기본은 종전과 같다.
   return configureCors(app, process.env.CORS_ORIGINS);
 }
