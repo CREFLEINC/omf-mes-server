@@ -3,9 +3,9 @@ import { Injectable } from '@nestjs/common';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { localPeriodSql, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
-import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
+import { TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
 import { FORWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageFilter } from './flow-stage';
-import { HU_PACKED, LIVE_CONSUMPTION, RECEIPT_CANCELLED, SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, forwardLinksSql } from './flow-sql';
+import { HU_PACKED, LIVE_CONSUMPTION, RECEIPT_CANCELLED, SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, estimateBasis, forwardLinksSql } from './flow-sql';
 import { LotHead, MaterialSide, lotHeads, materialSides, pick } from './lot-flow-nodes';
 
 /** 정방향 목록 — 자재 LOT(자재입고가 있는 LOT). 기간 축은 첫 자재입고 일시(공장 현지 날짜). */
@@ -37,7 +37,8 @@ export interface MaterialLotFlowRow extends LotHead, MaterialSide {
     shipped: { lotCount: number; shipmentCount: number; lastShippedAt: string | null };
   };
   currentStageCode: string;
-  basis: TraceBasis;
+  /** 추정 이음이 없으면 null. */
+  basis: TraceBasis | null;
 }
 
 export type MaterialLotFlowList = PagedResponse<MaterialLotFlowRow> & { stageCounts: Record<string, number> };
@@ -156,7 +157,7 @@ export class MaterialLotFlowListService {
           shipped: { lotCount: Number(row.shipped_lots), shipmentCount: Number(row.shipment_count), lastShippedAt: row.last_shipped_at?.toISOString() ?? null },
         },
         currentStageCode: row.stage,
-        basis: row.legacy ? WORK_ORDER_BASIS : GENEALOGY_BASIS,
+        basis: estimateBasis(Number(row.produced) > 0, row.legacy),
       } satisfies MaterialLotFlowRow;
     });
     return { ...pagedResponse(items, total, page), stageCounts: counts };

@@ -3,7 +3,7 @@ import { CONSUMED_RELATION } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { HU_STATUS_PACKED } from '../../inventory/handling-unit/handling-unit-status';
 import { PrismaService } from '../../prisma/prisma.service';
-import { GENEALOGY_BASIS, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
+import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
 import { StageCode, stageCounts } from './flow-stage';
 
 // LOT 추적 목록·사슬이 함께 쓰는 SQL 조각. 값은 모두 코드 상수라 그대로 끼운다(사용자 값은 호출 쪽이 bind 한다).
@@ -20,6 +20,15 @@ export const HU_PACKED = `'${HU_STATUS_PACKED}'`;
 export const LIVE_CONSUMPTION = `NOT EXISTS (SELECT 1 FROM production.material_consumption cx WHERE cx.corrects_consumption_id = mc.material_consumption_id)`;
 const WO = `'${WORK_ORDER_LOT_SOURCE}'`;
 const CONSUMED = `'${CONSUMED_RELATION}'`;
+
+/**
+ * 목록 행·사슬 맨 위의 근거 — 이음은 모두 추정이라 값이 있으면 화면이 「추정 포함」을 띄운다. 이음이 없으면(투입 없음·투입만·
+ * 문서로만 이어짐) null 이고, 하나라도 W/O 단위 추정이면 그것이 앞선다.
+ */
+export function estimateBasis(linked: boolean, anyWorkOrderEstimate: boolean): TraceBasis | null {
+  if (!linked) return null;
+  return anyWorkOrderEstimate ? WORK_ORDER_BASIS : GENEALOGY_BASIS;
+}
 
 /** 계보가 한 줄이라도 있는 W/O 인가 — `tracedWorkOrders` 와 같은 판정. `workOrder` 는 W/O id 를 내는 SQL 식이다. */
 export function tracedSql(workOrder: string): string {
