@@ -6570,7 +6570,15 @@
                 ]
                },
                "basis": {
-                "$ref": "#/components/schemas/LotFlowBasis"
+                "oneOf": [
+                 {
+                  "$ref": "#/components/schemas/LotFlowBasis"
+                 },
+                 {
+                  "type": "null"
+                 }
+                ],
+                "description": "추정 이음이 있을 때만 값 — 이어진 생산 LOT 이 하나라도 W/O 단위 추정이면 WORK_ORDER_ESTIMATE, 아니면 LOT_GENEALOGY_ESTIMATE. 이어진 생산 LOT 이 없으면(투입 없음·투입만) null. 장부 P-119"
                }
               }
              }
@@ -6843,7 +6851,15 @@
                 "type": "integer"
                },
                "basis": {
-                "$ref": "#/components/schemas/LotFlowBasis"
+                "oneOf": [
+                 {
+                  "$ref": "#/components/schemas/LotFlowBasis"
+                 },
+                 {
+                  "type": "null"
+                 }
+                ],
+                "description": "추정 이음이 있을 때만 값 — 투입 자재로 이었으면 그 근거. 이어진 투입 자재가 없으면 null. 장부 P-119"
                },
                "stages": {
                 "type": "object",
@@ -7032,7 +7048,15 @@
              "$ref": "#/components/schemas/LotFlowLotHead"
             },
             "basis": {
-             "$ref": "#/components/schemas/LotFlowBasis"
+             "oneOf": [
+              {
+               "$ref": "#/components/schemas/LotFlowBasis"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "description": "추정 이음이 있을 때만 값 — 이음이 하나라도 W/O 단위 추정이면 WORK_ORDER_ESTIMATE, 아니면 LOT_GENEALOGY_ESTIMATE. 이어진 생산 LOT 이 없으면(투입 없음·투입만) null. 장부 P-119"
             },
             "workOrders": {
              "type": "array",
@@ -7178,7 +7202,15 @@
              "type": "number"
             },
             "basis": {
-             "$ref": "#/components/schemas/LotFlowBasis"
+             "oneOf": [
+              {
+               "$ref": "#/components/schemas/LotFlowBasis"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "description": "추정 이음이 있을 때만 값 — 투입 자재로 이었으면 그 근거. 원천이 W/O 가 아니거나 실적 배분·투입이 없어 투입 자재가 비면 null. 장부 P-119"
             },
             "workOrder": {
              "oneOf": [
