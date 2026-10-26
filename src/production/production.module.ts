@@ -32,6 +32,7 @@ import { ProductionResultService } from './production-result/production-result.s
 import { ProductionResultController } from './production-result/production-result.controller';
 import { WorkOrderCancelService } from './work-order/work-order-cancel.service';
 import { WorkOrderCloseService } from './work-order/work-order-close.service';
+import { WorkOrderDailyResultsService } from './work-order/work-order-daily-results.service';
 import { WorkOrderNotifier } from './work-order/work-order-notice';
 import { WorkOrderQueryService } from './work-order/work-order-query.service';
 import { WorkOrderReleaseService } from './work-order/work-order-release.service';
@@ -91,6 +92,7 @@ import { WorkSessionService } from './work-session/work-session.service';
     WorkOrderTransitionService,
     WorkOrderReleaseService,
     WorkOrderCloseService,
+    WorkOrderDailyResultsService,
     WorkOrderNotifier,
     WorkOrderCancelService,
     WorkOrderResourcePlanService,
