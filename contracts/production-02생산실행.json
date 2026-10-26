@@ -1984,7 +1984,7 @@
      "production"
     ],
     "summary": "실적 정정",
-    "description": "원본을 고치지 않고 정정 레코드를 덧붙인다. 정정본이 LOT 배분을 갖고(lotAllocations) LOT 수량은 정정되지 않은 실적의 배분만 센다. W/O 가 마감·취소되면 400 STATE_LOCKED, 바뀌는 LOT 이 생산입고(취소 완료 제외)·포장·출하(취소 제외)로 넘어갔으면 400 STATE_LOCKED(field lotAllocations). 마감 전 수량 정정은 승인 없이 사유만 필수다(사용자 결정 2026-10-26). 근거: 공유계약 G-18 · W-02-05 §5 · 서버 선행 장부 P-120",
+    "description": "원본을 고치지 않고 정정 레코드를 덧붙인다. 관리웹 세션이 부른다. 정정본이 LOT 배분을 갖고(lotAllocations) LOT 수량은 정정되지 않은 실적의 배분만 센다. 다섯 수량이 모두 0 인 정정도 받는다(잘못 넣은 실적 지우기 · 다른 LOT 으로 옮기려면 0 으로 정정하고 새 실적 등록) — 그때 배분은 없다. W/O 가 마감·취소되면 400 STATE_LOCKED. 수량이 바뀌는 LOT 이 생산입고(취소 완료 제외)·포장·출하(취소 제외)·선별 분할·다음 공정 투입·OQC 의뢰(취소 제외)로 넘어갔으면 400 STATE_LOCKED(본문에 lotAllocations 가 있으면 그 칸, 없으면 goodQty) — 문구가 그 번호와 할 일(생산입고 취소·포장 해체·출하 취소 등)을 알린다. 완료된 LOT 이 미달이 됐는데 W/O 에 미달 사유가 없으면 완료를 풀고(affectedLots.completionReset) 다시 완료하게 한다. 수량 정정에 승인이 필요 없고 사유만 필수다. 근거: 공유계약 G-18 · W-02-05 §5 · 서버 선행 장부 P-120",
     "parameters": [
      {
       "name": "productionResultId",
@@ -2071,7 +2071,7 @@
      "production"
     ],
     "summary": "실적 정정 상신",
-    "description": "A급 보정(수불·기간업무시스템에 영향을 주는 정정)을 승인에 올린다. **등급은 서버가 정정 내용으로 판정한다** — 화면이 등급을 보내지 않는다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 진행 중인 승인 요청이 이미 있으면 400 이다 — 한 실적에 살아 있는 요청은 하나다. 반려된 요청은 진행 중이 아니므로 다시 상신할 수 있고 그때는 새 요청이 만들어진다(공유계약 J-6). 승인이 끝나면 정정은 `POST /production/production-results/{productionResultId}:correct` 로 기록한다 — 이 오퍼레이션은 «승인 요청»만 만든다. 근거: W-02-05 §5-4 · 공유계약 J-4 · G-18 · 2026-08-31 사용자 확정(A급 보정부터 승인)",
+    "description": "⛔ deprecated — 더 받지 않는다(항상 400 code=INVALID 「수량 정정은 승인 없이 사유만으로 저장합니다 — 정정 화면에서 바로 저장하세요」). 마감 전 수량 정정은 승인 없이 사유만으로 :correct 에 저장하고, 마감 뒤에는 정정을 막는다. 근거: 서버 선행 · 장부 P-120. (옛 설명: A급 보정(수불·기간업무시스템에 영향을 주는 정정)을 승인에 올린다. **등급은 서버가 정정 내용으로 판정한다** — 화면이 등급을 보내지 않는다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 진행 중인 승인 요청이 이미 있으면 400 이다 — 한 실적에 살아 있는 요청은 하나다. 반려된 요청은 진행 중이 아니므로 다시 상신할 수 있고 그때는 새 요청이 만들어진다(공유계약 J-6). 승인이 끝나면 정정은 `POST /production/production-results/{productionResultId}:correct` 로 기록한다 — 이 오퍼레이션은 «승인 요청»만 만든다. 근거: W-02-05 §5-4 · 공유계약 J-4 · G-18 · 2026-08-31 사용자 확정(A급 보정부터 승인))",
     "parameters": [
      {
       "name": "productionResultId",
@@ -6264,7 +6264,7 @@
     "properties": {
      "affectedLots": {
       "type": "array",
-      "description": "정정 응답에만 싣는다 — 정정으로 수량이 바뀐 LOT. lastLabelQty 는 마지막 생산 LOT 라벨에 찍힌 수량(모르면 null), labelReissueNeeded 면 재발행 사유 RESULT_CORRECTED 로 다시 발행한다. 근거: 서버 선행 · 장부 P-120",
+      "description": "정정 응답에만 싣는다 — 정정으로 수량이 바뀐 LOT. lastLabelQty 는 마지막 생산 LOT 라벨(인쇄 실패 제외)에 찍힌 수량(모르면 null), labelReissueNeeded 면 재발행 사유 RESULT_CORRECTED 로 다시 발행한다. 근거: 서버 선행 · 장부 P-120",
       "items": {
        "type": "object",
        "required": [
@@ -6273,7 +6273,8 @@
         "qtyBefore",
         "qtyAfter",
         "lastLabelQty",
-        "labelReissueNeeded"
+        "labelReissueNeeded",
+        "completionReset"
        ],
        "properties": {
         "lotId": {
@@ -6297,6 +6298,10 @@
         },
         "labelReissueNeeded": {
          "type": "boolean"
+        },
+        "completionReset": {
+         "type": "boolean",
+         "description": "완료된 LOT 이 미달이 됐는데 W/O 에 미달 사유가 없어 완료를 풀었다 — 생산 LOT 완료를 다시 한다(사유를 묻는다)"
         }
        }
       }

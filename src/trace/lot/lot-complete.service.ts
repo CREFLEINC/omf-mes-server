@@ -64,6 +64,7 @@ export class LotCompleteService {
     body: LotComplete,
     context: LotCompleteContext,
   ): Promise<LotView> {
+    await lockSourceWorkOrder(tx, lotId);
     const locked = await lockLot(tx, lotId);
     // 계약이 ⌜**생산** LOT 을 완료로 옮긴다⌝ 라 적었다 — 자재·재생재 LOT 은 대상이 아니다.
     if (locked.source_type_code !== WORK_ORDER_LOT_SOURCE) {
@@ -121,6 +122,19 @@ interface LockedLot {
   source_id: bigint;
   completed_at: Date | null;
   version_no: number;
+}
+
+/**
+ * 원천 W/O 를 LOT 보다 «먼저» 잠근다 — 실적 정정이 W/O → 실적 → LOT 순으로 잠그고 LOT 수량을 바꾸므로, 같은 순서여야
+ * 정정 중인 수량으로 완료를 판정하지 않고 서로 교착하지도 않는다(장부 P-120).
+ */
+async function lockSourceWorkOrder(tx: Tx, lotId: number): Promise<void> {
+  await tx.$queryRaw`
+    SELECT wo.work_order_id
+      FROM production.work_order wo
+      JOIN trace.lot lt ON lt.source_type_code = ${WORK_ORDER_LOT_SOURCE} AND lt.source_id = wo.work_order_id
+     WHERE lt.lot_id = ${BigInt(lotId)}
+       FOR UPDATE OF wo`;
 }
 
 /** ⛔ `SELECT … FOR UPDATE` — 읽고 판정하고 쓰는 사이에 같은 LOT 이 완료되면 재완료 게이트가 옛 값을 본다. */
