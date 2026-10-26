@@ -287,7 +287,6 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
   async function makeMasters(): Promise<void> {
     const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     ids.plant = plant.plant_id;
-    ids.unit = plant.business_unit_id;
     const [uom] = await prisma.uom.findMany({ take: 1, orderBy: { uom_id: 'asc' } });
     ids.uom = uom.uom_id;
     const warehouse = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WH` }, {
