@@ -3,10 +3,10 @@ import { Injectable } from '@nestjs/common';
 import { pageRequest, pagedResponse } from '../../common/pagination';
 import { localPeriod, localPeriodSql } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BuiltSql, Named, PagedWithTotals, UomTotalRow, lineTotals, named } from '../line-list';
+import { BuiltSql, LineTotals, Named, PagedResponseWith, UomTotalRow, lineTotals, named } from '../line-list';
 
 /**
- * 입고 건을 가로지르는 입고 줄 목록 — 자재입고·생산입고 현황(입하~출고 추적 화면 · 장부 P-119).
+ * 입고 건을 가로지르는 입고 줄 목록 — 자재입고·생산입고 현황(입출고 추적 화면 · 장부 P-119).
  * 입고 목록(`GET /logistics/goods-receipts`)은 머리글 단위라 품목·수량이 없다.
  * 기간은 공장 현지 날짜다 — 입고 목록의 `receiptDateFrom/To`(UTC 날짜)와 다르다.
  */
@@ -81,6 +81,9 @@ export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today?: 
   return { sql: and.join('\n    AND '), params };
 }
 
+/** 입고 유형이 섞인 목록에서 화면이 자재입고·생산입고 칩의 건수를 따로 부르지 않게 유형별 줄 수도 센다. */
+export type GoodsReceiptLineTotals = LineTotals & { lineCountByType: { receiptTypeCode: string; lineCount: number }[] };
+
 interface LineRow {
   goods_receipt_line_id: bigint;
   goods_receipt_id: bigint;
@@ -113,11 +116,11 @@ export class GoodsReceiptLineListService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** 입고 일시 내림차순 → 입고 → 줄 번호 — 최근 것부터 본다. */
-  async list(query: GoodsReceiptLineListQuery): Promise<PagedWithTotals<GoodsReceiptLineListItem>> {
+  async list(query: GoodsReceiptLineListQuery): Promise<PagedResponseWith<GoodsReceiptLineListItem, GoodsReceiptLineTotals>> {
     const page = pageRequest(query);
     const where = goodsReceiptLineWhere(query);
     const next = where.params.length;
-    const [rows, totals] = await Promise.all([
+    const [rows, totals, byType] = await Promise.all([
       this.prisma.$queryRawUnsafe<LineRow[]>(
         `SELECT l.goods_receipt_line_id, l.goods_receipt_id, gr.goods_receipt_no, l.line_no, gr.receipt_type_code,
                 gr.receipt_datetime, gr.status_code, gr.plant_id, w.warehouse_id, w.warehouse_code, w.warehouse_name,
@@ -147,8 +150,19 @@ export class GoodsReceiptLineListService {
          ORDER BY u.uom_code`,
         ...where.params,
       ),
+      this.prisma.$queryRawUnsafe<{ receipt_type_code: string; line_count: bigint }[]>(
+        `SELECT gr.receipt_type_code, COUNT(*) AS line_count
+         ${FROM}
+         WHERE ${where.sql}
+         GROUP BY gr.receipt_type_code
+         ORDER BY gr.receipt_type_code`,
+        ...where.params,
+      ),
     ]);
-    const result = lineTotals(totals);
+    const result = {
+      ...lineTotals(totals),
+      lineCountByType: byType.map((row) => ({ receiptTypeCode: row.receipt_type_code, lineCount: Number(row.line_count) })),
+    };
     return { ...pagedResponse(rows.map(itemOf), result.lineCount, page), totals: result };
   }
 }

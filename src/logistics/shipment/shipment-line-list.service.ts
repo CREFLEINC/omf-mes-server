@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, Named, PagedWithTotals, UomTotalRow, lineTotals, named } from '../line-list';
 
 /**
- * 출하 건을 가로지르는 출하 줄 목록 — 제품출고 현황(입하~출고 추적 화면 · 장부 P-119).
+ * 출하 건을 가로지르는 출하 줄 목록 — 제품출고 현황(입출고 추적 화면 · 장부 P-119).
  * 출하 목록(`GET /logistics/shipments`)은 머리글 단위라 품목 필터·수량이 없다. 기간 축은 출하 목록과 같은
  * `shipped_at` 이고 공장(출하 창고의 공장) 현지 날짜다.
  */

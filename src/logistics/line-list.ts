@@ -22,7 +22,8 @@ export interface LineTotals {
   qtyByUom: { uomId: number; uomCode: string; qty: number }[];
 }
 
-export type PagedWithTotals<T> = PagedResponse<T> & { totals: LineTotals };
+export type PagedResponseWith<T, Totals> = PagedResponse<T> & { totals: Totals };
+export type PagedWithTotals<T> = PagedResponseWith<T, LineTotals>;
 
 export interface UomTotalRow {
   uom_id: bigint;

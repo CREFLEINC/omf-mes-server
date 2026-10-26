@@ -3174,7 +3174,8 @@
            "type": "object",
            "required": [
             "lineCount",
-            "qtyByUom"
+            "qtyByUom",
+            "lineCountByType"
            ],
            "description": "필터 전체(쪽과 무관)의 합계. 단위가 섞이면 더할 수 없어 단위마다 둔다.",
            "properties": {
@@ -3204,6 +3205,25 @@
                }
               }
              }
+            },
+            "lineCountByType": {
+             "type": "array",
+             "description": "입고 유형(receiptTypeCode)별 줄 수 — 유형 칩의 건수. 유형 필터를 주면 그 유형 하나뿐이다",
+             "items": {
+              "type": "object",
+              "required": [
+               "receiptTypeCode",
+               "lineCount"
+              ],
+              "properties": {
+               "receiptTypeCode": {
+                "type": "string"
+               },
+               "lineCount": {
+                "type": "integer"
+               }
+              }
+             }
             }
            }
           }
@@ -3223,7 +3243,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — 입하~출고 추적 화면 권한",
+      "description": "권한 없음 — 입출고 추적 화면 권한",
       "content": {
        "application/json": {
         "schema": {

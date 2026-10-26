@@ -1,5 +1,5 @@
 /**
- * 입하~출고 추적 화면의 입고·출고 현황(장부 P-119) — 입고 줄·출하 줄 목록.
+ * 입출고 추적 화면의 입고·출고 현황(장부 P-119) — 입고 줄·출하 줄 목록.
  * 기간은 공장 현지 날짜다: 현지 자정 직후(UTC 로는 전날)의 입고가 그날에 들고, 현지 전날 밤 입고는 빠진다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -24,6 +24,7 @@ const PASSWORD = 'TF-추적-비밀번호';
 
 interface Totals {
   lineCount: number;
+  lineCountByType?: { receiptTypeCode: string; lineCount: number }[];
   qtyByUom: { uomId: number; uomCode: string; qty: number }[];
 }
 interface Paged<T> {
@@ -100,7 +101,11 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
       expect(validator('logistics-01자재창고.json', '/logistics/goods-receipt-lines')(body)).toBe(true);
       expect(body.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-PRD`, `${PREFIX}-GR-MAT`]);
       expect(body.page.total).toBe(2);
-      expect(body.totals).toEqual({ lineCount: 2, qtyByUom: [{ uomId: Number(ids.uom), uomCode: expect.any(String), qty: 140 }] });
+      expect(body.totals).toEqual({
+        lineCount: 2,
+        qtyByUom: [{ uomId: Number(ids.uom), uomCode: expect.any(String), qty: 140 }],
+        lineCountByType: [{ receiptTypeCode: 'MATERIAL', lineCount: 1 }, { receiptTypeCode: 'PRODUCT', lineCount: 1 }],
+      });
     });
 
     it('자재입고 줄은 입하의 공급사를, 생산입고 줄은 LOT 원천 W/O 를 싣는다', async () => {
