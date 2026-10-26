@@ -2,7 +2,7 @@ import { ContractException } from '../errors';
 import { localPeriod, localPeriodSql } from './plant-local-period';
 
 const FIELDS = { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' };
-const TODAY = new Date('2026-10-26T03:00:00Z');
+const TODAY = '2026-10-26';
 
 function errorOf(run: () => unknown): unknown {
   try {

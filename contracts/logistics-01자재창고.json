@@ -2902,7 +2902,7 @@
      "logistics"
     ],
     "summary": "입고 줄 목록(자재입고·생산입고 현황)",
-    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 시작이 필수, 최대 366일이다 — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소·취소요청 입고는 뺀다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119 · omf-all-around#73",
+    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 시작이 필수, 최대 366일이다 — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소 완료(CANCELLED) 입고만 뺀다 — 취소요청 중인 입고는 재고가 그대로라 보인다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119",
     "parameters": [
      {
       "name": "receiptTypeCode",
@@ -3253,7 +3253,7 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-119 · omf-all-around#73."
+    "x-internal-note": "서버 선행 · 장부 P-119."
    }
   },
   "/logistics/goods-receipts": {

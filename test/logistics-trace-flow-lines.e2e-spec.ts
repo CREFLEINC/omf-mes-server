@@ -18,6 +18,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'TFLE2E';
 const DAY = '2026-08-10';
+/** LOT 이 많은 출하 — 위 시험들의 기간 밖에 둔다. */
+const MANY_DAY = '2026-08-13';
 const SCREEN = 'W-02-09';
 const USERS = { allowed: `${PREFIX}-allowed`, denied: `${PREFIX}-denied` };
 const PASSWORD = 'TF-추적-비밀번호';
@@ -94,23 +96,33 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
   describe('GET /logistics/goods-receipt-lines', () => {
     const window = { receiptDateFrom: DAY, receiptDateTo: DAY, q: PREFIX };
 
-    it('현지 날짜로 고른다 — 현지 자정 직후(UTC 전날) 입고는 들고, 현지 전날 밤 입고·취소 입고는 빠진다', async () => {
+    it('현지 날짜로 고른다 — 현지 자정 직후(UTC 전날) 입고는 들고, 현지 전날 밤 입고·취소 완료 입고는 빠지고, 취소 요청 중 입고는 남는다', async () => {
       const response = await get('goods-receipt-lines', window).expect(200);
       const body = response.body as Paged<ReceiptLine>;
 
       expect(validator('logistics-01자재창고.json', '/logistics/goods-receipt-lines')(body)).toBe(true);
-      expect(body.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-PRD`, `${PREFIX}-GR-MAT`]);
-      expect(body.page.total).toBe(2);
+      expect(body.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-REQ`, `${PREFIX}-GR-PRD`, `${PREFIX}-GR-MAT`]);
+      expect(body.items[0].statusCode).toBe('CANCEL_REQUESTED');
+      expect(body.page.total).toBe(3);
       expect(body.totals).toEqual({
-        lineCount: 2,
-        qtyByUom: [{ uomId: Number(ids.uom), uomCode: expect.any(String), qty: 140 }],
-        lineCountByType: [{ receiptTypeCode: 'MATERIAL', lineCount: 1 }, { receiptTypeCode: 'PRODUCT', lineCount: 1 }],
+        lineCount: 3,
+        qtyByUom: [{ uomId: Number(ids.uom), uomCode: expect.any(String), qty: 143 }],
+        lineCountByType: [{ receiptTypeCode: 'MATERIAL', lineCount: 2 }, { receiptTypeCode: 'PRODUCT', lineCount: 1 }],
       });
+    });
+
+    it('합계는 쪽과 무관하다 — size=1 이어도 필터 전체를 센다', async () => {
+      const body = (await get('goods-receipt-lines', { ...window, size: 1 }).expect(200)).body as Paged<ReceiptLine>;
+
+      expect(body.items).toHaveLength(1);
+      expect(body.page.total).toBe(3);
+      expect(body.totals.lineCount).toBeGreaterThanOrEqual(2);
+      expect(body.totals.lineCount).toBe(3);
     });
 
     it('자재입고 줄은 입하의 공급사를, 생산입고 줄은 LOT 원천 W/O 를 싣는다', async () => {
       const body = (await get('goods-receipt-lines', window).expect(200)).body as Paged<ReceiptLine>;
-      const [product, material] = body.items;
+      const [, product, material] = body.items;
 
       expect(material).toMatchObject({
         receiptTypeCode: 'MATERIAL', lotNo: `${PREFIX}-LOT-MAT`, receiptQty: 100, workOrder: null,
@@ -124,8 +136,8 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
 
     it('유형·품목·공급사·상태로 거르고 합계도 그 조건으로 센다', async () => {
       const material = (await get('goods-receipt-lines', { ...window, receiptTypeCode: 'MATERIAL' }).expect(200)).body as Paged<ReceiptLine>;
-      expect(material.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-MAT`]);
-      expect(material.totals.qtyByUom[0].qty).toBe(100);
+      expect(material.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-REQ`, `${PREFIX}-GR-MAT`]);
+      expect(material.totals.qtyByUom[0].qty).toBe(103);
 
       const product = (await get('goods-receipt-lines', { ...window, itemId: Number(ids.product) }).expect(200)).body as Paged<ReceiptLine>;
       expect(product.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-PRD`]);
@@ -135,6 +147,9 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
 
       const cancelled = (await get('goods-receipt-lines', { ...window, statusCode: 'CANCELLED' }).expect(200)).body as Paged<ReceiptLine>;
       expect(cancelled.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-CXL`]);
+
+      const requested = (await get('goods-receipt-lines', { ...window, statusCode: 'CANCEL_REQUESTED' }).expect(200)).body as Paged<ReceiptLine>;
+      expect(requested.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-REQ`]);
     });
 
     it('기간 시작이 없거나 366일을 넘으면 400 이고 칸과 조치를 알린다', async () => {
@@ -181,6 +196,14 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
 
       const byLot = (await get('shipment-lines', { shipDateFrom: DAY, shipDateTo: DAY, q: `${PREFIX}-LOT-FG2` }).expect(200)).body as Paged<ShipmentLine>;
       expect(byLot.items.map((line) => line.shipmentNo)).toEqual([`${PREFIX}-SH-OK`]);
+    });
+
+    it('LOT 이 많은 줄은 LOT 번호순 앞 5개와 전체 수를 준다', async () => {
+      const body = (await get('shipment-lines', { shipDateFrom: MANY_DAY, shipDateTo: MANY_DAY, q: `${PREFIX}-SH-MANY` }).expect(200)).body as Paged<ShipmentLine>;
+
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0].lotCount).toBe(6);
+      expect(body.items[0].lots.map((lot) => lot.lotNo)).toEqual([1, 2, 3, 4, 5].map((n) => `${PREFIX}-LOT-FG${n}`));
     });
 
     it('기간 시작이 없으면 400, 권한이 없으면 403 이다', async () => {
@@ -256,8 +279,9 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
     ids.lotMat = (await lot('MAT', ids.material, 'INBOUND_RECEIPT_LINE', 1n)).lot_id;
     ids.lotFg1 = (await lot('FG1', ids.product, 'WORK_ORDER', ids.workOrder)).lot_id;
     ids.lotFg2 = (await lot('FG2', ids.product, 'WORK_ORDER', ids.workOrder)).lot_id;
+    for (const n of [3, 4, 5, 6]) ids[`lotFg${n}`] = (await lot(`FG${n}`, ids.product, 'WORK_ORDER', ids.workOrder)).lot_id;
     // W/O 는 실행마다 새로 만들어 id 가 바뀐다 — 남아 있던 LOT 의 원천을 새 W/O 로 다시 잇는다.
-    await prisma.lot.updateMany({ where: { lot_id: { in: [ids.lotFg1, ids.lotFg2] } }, data: { source_id: ids.workOrder } });
+    await prisma.lot.updateMany({ where: { lot_no: { startsWith: `${PREFIX}-LOT-FG` } }, data: { source_id: ids.workOrder } });
   }
 
   async function makeReceipts(): Promise<void> {
@@ -288,6 +312,8 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
     await receipt('MAT', 'MATERIAL', await local(DAY, '00:30'), 'POSTED', ids.lotMat, ids.material, 100, inboundLineId);
     await receipt('PRD', 'PRODUCT', await local(DAY, '10:00'), 'POSTED', ids.lotFg1, ids.product, 40);
     await receipt('CXL', 'MATERIAL', await local(DAY, '11:00'), 'CANCELLED', ids.lotMat, ids.material, 7);
+    // 취소 요청 중 — 재고가 그대로이고 반려되면 남으므로 현황에 보인다.
+    await receipt('REQ', 'MATERIAL', await local(DAY, '12:00'), 'CANCEL_REQUESTED', ids.lotMat, ids.material, 3);
     // 현지 전날 23:30 — UTC 날짜로 보면 위 자재입고와 같은 날이다.
     await receipt('EVE', 'MATERIAL', await local('2026-08-09', '23:30'), 'POSTED', ids.lotMat, ids.material, 5);
   }
@@ -319,6 +345,7 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
     await shipment('OK', 'CONFIRMED', await local(DAY, '01:00'), [[ids.lotFg2, 10], [ids.lotFg1, 20]]);
     await shipment('CXL', 'CANCELLED', await local(DAY, '02:00'), [[ids.lotFg1, 5]]);
     await shipment('OUT', 'CONFIRMED', await local('2026-08-11', '00:30'), [[ids.lotFg1, 5]]);
+    await shipment('MANY', 'CONFIRMED', await local(MANY_DAY, '09:00'), [6, 5, 4, 3, 2, 1].map((n) => [ids[`lotFg${n}`], 1] as [bigint, number]));
   }
 
   async function login(loginId: string, permissions: string[]): Promise<string[]> {

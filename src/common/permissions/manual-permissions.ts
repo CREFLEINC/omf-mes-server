@@ -136,10 +136,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-sheets/{inspectionSheetId}:approve': ['W-03-14'],
   'POST /quality/inspection-sheets/{inspectionSheetId}:check': ['W-03-14'],
   'POST /quality/inspection-sheets/{inspectionSheetId}:reopen': ['W-03-14'],
-  // LOT 추적 화면의 입고·출고 현황 — 설계 밖 화면이라 그 화면만 연다(omf-all-around#73 · 장부 P-119).
+  // LOT 추적 화면의 입고·출고 현황 — 설계 밖 화면이라 그 화면만 연다(장부 P-119).
   'GET /logistics/goods-receipt-lines': ['W-02-09'],
   'GET /logistics/shipment-lines': ['W-02-09'],
-  // 같은 화면의 정방향·역방향 — 목록과 LOT 하나의 사슬(#73 · 장부 P-119).
+  // 같은 화면의 정방향·역방향 — 목록과 LOT 하나의 사슬(장부 P-119).
   'GET /trace/material-lot-flows': ['W-02-09'],
   'GET /trace/product-lot-flows': ['W-02-09'],
   'GET /trace/lots/{lotId}/forward-flow': ['W-02-09'],

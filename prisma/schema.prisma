@@ -944,7 +944,7 @@ model goods_receipt {
   subcontract_receipt       subcontract_receipt[]
 
   @@index([warehouse_id], map: "ix_goods_receipt_warehouse")
-  @@index([receipt_type_code, receipt_datetime], map: "ix_goods_receipt_type_datetime")
+  @@index([receipt_datetime, receipt_type_code], map: "ix_goods_receipt_datetime_type")
   @@schema("logistics")
 }
 

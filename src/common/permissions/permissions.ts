@@ -81,7 +81,7 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-02-06', name: 'ERP W/O 변경 관리자 확인', groupCode: '02' },
   { code: 'W-02-07', name: '긴급 W/O 발행', groupCode: '02' },
   { code: 'W-02-08', name: 'W/O 진행현황 조회(생산 실적 집계 포함)', groupCode: '02' },
-  // 설계 밖 화면 — 생산 관리 > W/O 진행현황 조회 아래(omf-all-around#73 · 장부 P-119).
+  // 설계 밖 화면 — 생산 관리 > W/O 진행현황 조회 아래(장부 P-119).
   { code: 'W-02-09', name: 'LOT 추적', groupCode: '02' },
   { code: 'W-02-10', name: '추가 자재 출고 요청(수동)', groupCode: '02' },
   // 03 품질
