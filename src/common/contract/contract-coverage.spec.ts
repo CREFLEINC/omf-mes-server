@@ -66,7 +66,8 @@ describe('계약 커버리지', () => {
     // 발주 하나의 입고 진행 1 오퍼레이션(#805 · 장부 P-110): 544 → 545.
     // 입고 단계 칩의 수 1 오퍼레이션(#805 · 장부 P-110): 545 → 546.
     // 입고 줄·출하 줄 현황 2 오퍼레이션(#73 · 장부 P-119): 546 → 548.
-    expect(registry.size).toBe(548);
+    // 정방향·역방향 목록·사슬 4 오퍼레이션(#73 · 장부 P-119): 548 → 552.
+    expect(registry.size).toBe(552);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
