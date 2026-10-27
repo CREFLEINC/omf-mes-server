@@ -39,6 +39,7 @@ type CancelableDocument = 'GOODS_ISSUE' | 'GOODS_RECEIPT';
 const CANCEL_ACTION = 'shipment-cancel';
 const APPROVAL_DOCUMENT_TYPE = 'APPROVAL_REQUEST';
 const DOCUMENT_CANCELLED = 'CANCELLED';
+const POSTED = 'POSTED';
 const RELEASE_FIELD = 'shipmentId';
 
 export interface ShipmentCancelRequestBody {
@@ -135,8 +136,9 @@ export class ShipmentCancelService {
       // ⭐⭐ **역전기 순서가 거꾸로다**(§3-6 ⓕ) — 출고 역(+q)이 먼저, 입고 역(−q)이 나중이다.
       //    긴급 직행이면 입고분이 잔액을 세웠고 출고가 그것을 깎았다. 뒤집으면 입고 역이 0 에서 −q 를
       //    내려 코어가 거부한다. 평시는 입고가 없어 출고 역 하나다.
+      // 상자 정정(장부 P-125)이 옛 출고를 취소하고 새 출고를 세운다 — 살아 있는 출고 하나만 되돌린다.
       const issue = await tx.goods_issue.findFirst({
-        where: { source_document_type_code: SHIPMENT_TARGET, source_document_id: locked.shipment_id },
+        where: { source_document_type_code: SHIPMENT_TARGET, source_document_id: locked.shipment_id, status_code: POSTED },
         select: { goods_issue_id: true },
       });
       if (issue === null) {
@@ -260,23 +262,31 @@ async function releaseShipmentReservations(tx: Tx, shipment: LockedShipment): Pr
     },
   });
   for (const allocation of allocations) {
-    let remaining = new Prisma.Decimal(allocation.allocated_qty);
-    const reservations = await tx.inventory_reservation.findMany({
-      where: {
-        source_document_type_code: SHIPMENT_REQUEST_LINE,
-        source_document_id: allocation.shipment_line.shipment_request_line_id,
-        lot_id: allocation.lot_id,
-        consumed_qty: { gt: 0 },
-      },
-      orderBy: { inventory_reservation_id: 'asc' },
-      select: { inventory_reservation_id: true, consumed_qty: true },
-    });
-    for (const reservation of reservations) {
-      if (remaining.lessThanOrEqualTo(0)) break;
-      const take = Prisma.Decimal.min(new Prisma.Decimal(reservation.consumed_qty), remaining);
-      await releaseReservation(tx, reservation.inventory_reservation_id, allocation.shipment_line.item_id, take, RELEASE_FIELD);
-      remaining = remaining.minus(take);
-    }
+    await releaseLineLotReservations(tx, allocation.shipment_line.shipment_request_line_id,
+      allocation.shipment_line.item_id, allocation.lot_id, new Prisma.Decimal(allocation.allocated_qty));
+  }
+}
+
+/** (지시 라인, LOT) 의 소진된 예약을 `qty` 만큼 풀린 것으로 옮긴다 — 소진분이 남은 행부터, 예약 id 순. */
+export async function releaseLineLotReservations(
+  tx: Tx, shipmentRequestLineId: bigint, itemId: bigint, lotId: bigint, qty: Prisma.Decimal,
+): Promise<void> {
+  let remaining = qty;
+  const reservations = await tx.inventory_reservation.findMany({
+    where: {
+      source_document_type_code: SHIPMENT_REQUEST_LINE,
+      source_document_id: shipmentRequestLineId,
+      lot_id: lotId,
+      consumed_qty: { gt: 0 },
+    },
+    orderBy: { inventory_reservation_id: 'asc' },
+    select: { inventory_reservation_id: true, consumed_qty: true },
+  });
+  for (const reservation of reservations) {
+    if (remaining.lessThanOrEqualTo(0)) break;
+    const take = Prisma.Decimal.min(new Prisma.Decimal(reservation.consumed_qty), remaining);
+    await releaseReservation(tx, reservation.inventory_reservation_id, itemId, take, RELEASE_FIELD);
+    remaining = remaining.minus(take);
   }
 }
 
