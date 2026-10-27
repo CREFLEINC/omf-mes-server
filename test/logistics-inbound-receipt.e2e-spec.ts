@@ -468,6 +468,43 @@ describe('입하 등록 (e2e)', () => {
       expect(await allocationsOf(lineId)).toEqual([[added.purchaseOrderLineId, 1000]]);
     });
 
+    it('excludeExceptionTypeCode — 그 유형의 입하 줄이 빠지고 예외 없는 줄은 남는다 · page.total 도 뺀 수', async () => {
+      const lineOf = async (exceptionTypeCode: string | null): Promise<number> => {
+        const source = await seedOrderLine(100);
+        const detail = await create({
+          exceptionTypeCode,
+          exceptionReason: exceptionTypeCode === null ? null : '시험',
+          lines: [{ ...(await lineDraft()), purchaseOrderLineId: source.purchaseOrderLineId, receivedQty: 110, excessQty: 10 }],
+        });
+        return detail.lines[0].inboundReceiptLineId;
+      };
+      const [customer, sample, over, plain] = [await lineOf('CUSTOMER_SUPPLY'), await lineOf('FREE_SAMPLE'), await lineOf('OVER_DELIVERY'), await lineOf(null)];
+      type Row = { inboundReceiptLineId: number; exceptionTypeCode: string | null };
+      const listOf = async (extra: string) => {
+        const body = (await api(`/inbound-unallocated?size=200&supplierId=${supplierId}${extra}`).expect(200)).body as { items: Row[]; page: { total: number } };
+        return { ids: body.items.map((row) => row.inboundReceiptLineId), types: body.items.map((row) => row.exceptionTypeCode), total: body.page.total };
+      };
+
+      const all = await listOf('');
+      const kept = await listOf('&excludeExceptionTypeCode=CUSTOMER_SUPPLY,FREE_SAMPLE');
+      const repeated = await listOf('&excludeExceptionTypeCode=CUSTOMER_SUPPLY&excludeExceptionTypeCode=FREE_SAMPLE');
+
+      expect(all.ids).toEqual(expect.arrayContaining([customer, sample, over, plain]));
+      expect(kept.ids).toEqual(expect.arrayContaining([over, plain]));
+      expect(kept.ids).not.toContain(customer);
+      expect(kept.ids).not.toContain(sample);
+      expect(kept.types).not.toContain('CUSTOMER_SUPPLY');
+      expect(kept.total).toBe(all.total - all.types.filter((type) => type === 'CUSTOMER_SUPPLY' || type === 'FREE_SAMPLE').length);
+      expect(repeated).toEqual(kept);
+    });
+
+    it('⛔ excludeExceptionTypeCode 가 비었거나 코드 모양이 아니면 400', async () => {
+      for (const bad of ['', 'customer_supply', 'CUSTOMER_SUPPLY,']) {
+        const response = await api(`/inbound-unallocated?excludeExceptionTypeCode=${bad}`).expect(400);
+        expect(response.body.errors).toEqual([expect.objectContaining({ field: 'excludeExceptionTypeCode', code: 'INVALID' })]);
+      }
+    });
+
     it('권한 — 로그인 없으면 401, 화면 권한이 없으면 403', async () => {
       await request(app.getHttpServer()).get('/api/logistics/inbound-unallocated').expect(401);
       await api('/inbound-unallocated', 'get', noPermCookie).expect(403);
