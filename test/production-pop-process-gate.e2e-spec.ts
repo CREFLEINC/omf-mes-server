@@ -357,19 +357,77 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       expect(missing.body.errors).toEqual(unmapped.body.errors);
     });
 
-    it('작업자 사번이 없으면 401 이다 — 단말 정정은 정정한 작업자를 남겨야 한다', async () => {
+    it('작업자 사번이 없으면 401 이고 원인과 조치를 알린다 — 단말 정정은 정정한 작업자를 남겨야 한다', async () => {
       const token = await terminal('COR6', { [String(ids.process)]: { can_input_result: true } });
       const saved = await saveResult(token).expect(201);
 
-      await request(app.getHttpServer())
+      const rejected = await request(app.getHttpServer())
         .post(`/api/production/production-results/${saved.body.productionResultId}:correct`)
         .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', randomUUID())
         .send({ reasonCode: 'MISCOUNT' })
         .expect(401);
+      expect(rejected.body.errors[0].message)
+        .toBe('작업자 사번이 없거나 이 단말 공장의 재직 작업자가 아닙니다 — POP 에 로그인한 작업자를 확인하세요.');
+    });
+
+    it('남의 공장 실적·없는 실적·int64 를 넘는 id 는 본문까지 같은 401 이다', async () => {
+      const token = await terminal('COR7', { [String(ids.process)]: { can_input_result: true } });
+      const workOrderId = await ownWorkOrder('C7');
+      const saved = await saveResult(token, { workOrderId: Number(workOrderId) }).expect(201);
+      await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { production_line_id: ids.foreignLine } });
+
+      const foreign = await correctResult(token, saved.body.productionResultId, { note: '사유' }).expect(401);
+      const missing = await correctResult(token, 999999999999, { note: '사유' }).expect(401);
+      const huge = await asPop(request(app.getHttpServer()).post('/api/production/production-results/99999999999999999999:correct'), token)
+        .send({ reasonCode: 'MISCOUNT', note: '사유' }).expect(401);
+
+      expect(foreign.body.errors[0].message).toContain('이 단말 공장의 실적이 아니거나');
+      expect(missing.body).toEqual(foreign.body);
+      expect(huge.body).toEqual(foreign.body);
+    });
+
+    it('남의 공장 LOT 을 배분에 실으면 없는 LOT 과 같은 401 이고 LOT 을 다시 고르라고 알린다', async () => {
+      const token = await terminal('COR8', { [String(ids.process)]: { can_input_result: true } });
+      const saved = await saveResult(token).expect(201);
+      const withLot = (lotId: number) => correctResult(token, saved.body.productionResultId, {
+        goodQty: 1, note: '사유', lotAllocations: [{ lotId, allocatedQty: 1 }],
+      }).expect(401);
+
+      const foreign = await withLot(Number(ids.foreignLot));
+      expect(foreign.body.errors[0].message).toBe('고른 LOT 은 이 단말 공장의 LOT 이 아닙니다 — 실적 화면에서 LOT 을 다시 고르세요.');
+      expect((await withLot(999_999_999)).body).toEqual(foreign.body);
+    });
+
+    it('마감·취소된 W/O 의 실적은 단말 판정이 아니라 400 STATE_LOCKED 로 까닭을 알린다', async () => {
+      const token = await terminal('COR9', { [String(ids.process)]: { can_input_result: true } });
+      for (const status of ['CLOSED', 'CANCELLED']) {
+        const workOrderId = await ownWorkOrder(`C9${status}`);
+        const saved = await saveResult(token, { workOrderId: Number(workOrderId) }).expect(201);
+        await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { status_code: status } });
+
+        const rejected = await correctResult(token, saved.body.productionResultId, { note: '사유' }).expect(400);
+        expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      }
+    });
+
+    it('이미 정정된 실적을 단말이 다시 정정하면 400 이다', async () => {
+      const token = await terminal('COR10', { [String(ids.process)]: { can_input_result: true } });
+      const saved = await saveResult(token).expect(201);
+      await correctResult(token, saved.body.productionResultId, { goodQty: 2, note: '사유' }).expect(201);
+
+      const again = await correctResult(token, saved.body.productionResultId, { goodQty: 3, note: '사유' }).expect(400);
+      expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
     });
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  async function ownWorkOrder(suffix: string): Promise<bigint> {
+    return (await prisma.work_order.create({ data: {
+      work_order_no: `${PREFIX}-WO-${suffix}`, routing_operation_id: ids.operation, item_id: ids.item, order_qty: 100,
+      uom_id: ids.uom, status_code: 'IN_PROGRESS', production_line_id: ids.line, released_at: STARTED_AT,
+    } })).work_order_id;
+  }
 
   function asPop(test: request.Test, token: string): request.Test {
     return test.set('Authorization', `Bearer ${token}`).set('X-Worker-No', workerNo).set('Idempotency-Key', randomUUID());
@@ -464,6 +522,11 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       legal_entity_id: legalEntityId, plant_code: `${PREFIX}-P2`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
     } });
     const foreignLine = await prisma.production_line.create({ data: { plant_id: otherPlant.plant_id, line_code: `${PREFIX}-LINE2`, line_name: PREFIX } });
+    ids.foreignLine = foreignLine.production_line_id;
+    ids.foreignLot = (await prisma.lot.create({ data: {
+      lot_no: `${PREFIX}-FLOT`, item_id: ids.item, lot_type_code: 'PRODUCTION', plant_id: otherPlant.plant_id, initial_qty: 10,
+      uom_id: ids.uom, source_type_code: 'WORK_ORDER', source_id: 990002n, status_code: 'NORMAL',
+    } })).lot_id;
     ids.foreignEquipment = (await prisma.equipment.create({ data: {
       plant_id: otherPlant.plant_id, production_line_id: foreignLine.production_line_id, equipment_code: `${PREFIX}-EQX`, equipment_name: PREFIX,
       equipment_type_code: 'PRESS', status_code: 'IN_SERVICE',

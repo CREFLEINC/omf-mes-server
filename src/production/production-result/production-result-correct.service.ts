@@ -176,7 +176,7 @@ export class ProductionResultCorrectService {
       after_value: {
         productionResultId: Number(row.production_result_id), ...quantitiesOf(row),
         lotAllocations: allocations.map((allocation) => ({ ...allocation })),
-        // 단말 정정은 계정이 없어 작업자를 남긴다(터미널 감사와 같은 꼴 · `terminal-worker-audit.ts`).
+        // 단말 정정은 계정이 없어 작업자를 남긴다 — workerId·workerNo 만 터미널 감사(`terminal-worker-audit.ts`)와 같은 꼴이다.
         ...(prepared.workerId === undefined ? {} : { workerId: prepared.workerId.toString(), workerNo: context.workerNo }),
       },
       reason: [body.reasonCode, body.note].filter((part) => part !== undefined && part !== '').join(' · '),

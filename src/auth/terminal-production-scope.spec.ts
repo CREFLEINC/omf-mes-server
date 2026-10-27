@@ -24,6 +24,7 @@ const prisma = {
   lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 43n }) },
   mold: { findFirst: jest.fn().mockResolvedValue({ mold_id: 53n }) },
   equipment: { findFirst: jest.fn().mockResolvedValue({ equipment_id: 61n }) },
+  production_result: { findFirst: jest.fn() },
 } as unknown as PrismaService;
 
 function request(body: Record<string, unknown> = {}, params: Record<string, string> = {}, workerNo?: string): Request {
@@ -335,6 +336,46 @@ describe('POP production terminal scope', () => {
       await expect(save({ moldId: 54 })).rejects.toMatchObject(message('고른 금형이 이 단말 공장의 금형이 아닙니다.'));
       (prisma.work_session.findFirst as jest.Mock).mockResolvedValueOnce(null);
       await expect(save({ workSessionId: 30 })).rejects.toMatchObject(message('고른 작업 세션은 이 단말이 연 세션이 아닙니다'));
+    });
+  });
+
+  describe('실적 정정 — 공장·이 단말의 실적 입력 매핑만 보고 W/O 상태는 서비스에 맡긴다', () => {
+    const CORRECT = 'POST /production/production-results/{productionResultId}:correct';
+    const result = (flags: Record<string, boolean>[]) => ({ work_order: { routing_operation: { process: { terminal_process: flags } } } });
+    const correct = (resultId: string, body: Record<string, unknown> = {}, workerNo: string | undefined = '900028') =>
+      assertTerminalProductionScope(prisma, request(body, { productionResultId: resultId }, workerNo), CORRECT, terminal);
+    const message = (text: string) => ({ status: 401, errors: [expect.objectContaining({ message: text })] });
+
+    it('그 공장 실적이고 실적 입력이 켜졌으면 통과한다 — 조건에 W/O 상태가 없다', async () => {
+      (prisma.production_result.findFirst as jest.Mock).mockResolvedValueOnce(result([{ can_input_result: true }]));
+      await expect(correct('71')).resolves.toBeUndefined();
+      expect(prisma.production_result.findFirst).toHaveBeenCalledWith({
+        where: { production_result_id: 71n, work_order: { production_line: { plant_id: 3n } } },
+        select: { work_order: { select: { routing_operation: { select: { process: { select: { terminal_process: {
+          where: { terminal_id: 7n }, select: { can_input_result: true },
+        } } } } } } } },
+      });
+    });
+
+    it('남의 공장·없는 실적·매핑 없음·int64 초과 id 는 같은 401, 실적 입력이 꺼졌으면 켤 곳을 알린다', async () => {
+      (prisma.production_result.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      const missing = await correct('71').catch((error: unknown) => error);
+      (prisma.production_result.findFirst as jest.Mock).mockResolvedValueOnce(result([]));
+      await expect(correct('71')).rejects.toEqual(missing);
+      await expect(correct('99999999999999999999')).rejects.toEqual(missing);
+      (prisma.production_result.findFirst as jest.Mock).mockResolvedValueOnce(result([{ can_input_result: false }]));
+      await expect(correct('71')).rejects.toMatchObject({ status: 401, errors: [expect.objectContaining({
+        message: expect.stringContaining('「실적 입력」을 켜세요.'),
+      })] });
+    });
+
+    it('작업자·배분 LOT 의 401 은 원인과 조치를 알린다', async () => {
+      await expect(correct('71', {}, '')).rejects.toMatchObject(
+        message('작업자 사번이 없거나 이 단말 공장의 재직 작업자가 아닙니다 — POP 에 로그인한 작업자를 확인하세요.'));
+      (prisma.production_result.findFirst as jest.Mock).mockResolvedValueOnce(result([{ can_input_result: true }]));
+      (prisma.lot.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      await expect(correct('71', { lotAllocations: [{ lotId: 44, allocatedQty: 1 }] })).rejects.toMatchObject(
+        message('고른 LOT 은 이 단말 공장의 LOT 이 아닙니다 — 실적 화면에서 LOT 을 다시 고르세요.'));
     });
   });
 });
