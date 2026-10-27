@@ -107,12 +107,12 @@ export class HandlingUnitController {
   replaceContents(
     @Req() request: Request,
     @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
-    @Body() body: { items: HandlingUnitContentUpsert[] },
+    @Body() body: { items: HandlingUnitContentUpsert[]; reason?: string },
   ): Promise<{ items: HandlingUnitContentView[] }> {
     const context = contextOf(request, 'PUT /inventory/handling-units/{handlingUnitId}/contents');
     const version = ifMatchVersion(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.contentWrites.replace(handlingUnitId, version, body.items, context),
+      this.contentWrites.replace(handlingUnitId, version, body.items, context, body.reason),
     );
   }
 

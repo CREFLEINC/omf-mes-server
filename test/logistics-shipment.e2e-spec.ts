@@ -31,7 +31,8 @@ const ROLE = 'SHE2E-ROLE';
 /** ⭐ 등록만 403 을 선언했다 — 조회 둘은 «선언 0» 이라 세션만 있으면 된다(§1-1 실측). */
 /** ⭐ `W-01-13` 은 다형 취소 화면이다 — 자리 ⑤(출하 소유 전표가 거기서 막히는지)를 HTTP 로 본다. */
 /** `M-04-01` — 모바일 출하 피킹 뒤 출하가 이어지는 자리(F-3)를 같은 계정으로 부른다. */
-const PERMISSIONS = ['W-04-04', 'W-04-05', 'W-04-12', 'W-01-13', 'M-04-01'];
+/** `M-04-03` — 출하에 배분된 상자 정정(G-*)을 같은 계정으로 부른다(장부 P-125). */
+const PERMISSIONS = ['W-04-04', 'W-04-05', 'W-04-12', 'W-01-13', 'M-04-01', 'M-04-03'];
 /** ⭐ 픽스처가 전부 이 창 안에 있고 다른 스위트의 출하는 밖에 있다. */
 const WINDOW = { shipDateFrom: '2026-08-20', shipDateTo: '2026-08-22' };
 
@@ -996,6 +997,174 @@ describe('출하 목록 (e2e)', () => {
     return { body: response.body as Record<string, unknown>, etag: response.headers.etag };
   }
 
+  // ── 출하에 배분된 상자 정정 `PUT /inventory/handling-units/{id}/contents` (장부 P-125) ──────────────
+  /** lotPost 5 · lotRepack 5 를 한 줄에 배분한 출하와, 두 배분이 이어진 확정 포장 상자. */
+  async function packedShipment(): Promise<{ shipmentId: number; huId: bigint; allocations: Record<string, bigint> }> {
+    const created = await post(body({
+      lines: [{
+        shipmentRequestLineId: made.postRequestLine, shippedQty: 10, uomId: Number(ids.uom),
+        allocations: [
+          { lotId: Number(ids.lotPost), allocatedQty: 5, uomId: Number(ids.uom) },
+          { lotId: Number(ids.lotRepack), allocatedQty: 5, uomId: Number(ids.uom) },
+        ],
+      }],
+    }));
+    made.hu = (made.hu ?? 0) + 1;
+    const unit = await prisma.handling_unit.create({ data: {
+      handling_unit_no: `${PREFIX}-HU${made.hu}`, handling_unit_type_code: 'PALLET', status_code: 'PACKED', warehouse_id: ids.warehouse,
+    } });
+    await prisma.handling_unit_content.createMany({ data: [ids.lotPost, ids.lotRepack].map((lotId) => ({
+      handling_unit_id: unit.handling_unit_id, item_id: ids.item, lot_id: lotId, qty: 5, uom_id: ids.uom,
+    })) });
+    const rows = await prisma.shipment_lot_allocation.findMany({
+      where: { shipment_line: { shipment_id: BigInt(created.shipmentId as number) } }, select: { shipment_lot_allocation_id: true, lot_id: true },
+    });
+    await prisma.shipment_lot_allocation.updateMany({
+      where: { shipment_lot_allocation_id: { in: rows.map((row) => row.shipment_lot_allocation_id) } },
+      data: { handling_unit_id: unit.handling_unit_id },
+    });
+    return { shipmentId: created.shipmentId as number, huId: unit.handling_unit_id,
+      allocations: Object.fromEntries(rows.map((row) => [String(row.lot_id), row.shipment_lot_allocation_id])) };
+  }
+
+  const contents = (post: number, repack?: number) => [
+    { itemId: Number(ids.item), lotId: Number(ids.lotPost), qty: post, uomId: Number(ids.uom) },
+    ...(repack === undefined ? [] : [{ itemId: Number(ids.item), lotId: Number(ids.lotRepack), qty: repack, uomId: Number(ids.uom) }]),
+  ];
+
+  function repack(huId: bigint, items: unknown[], reason: string | null = '포장 수량 잘못 셈', expected = 200) {
+    return request(app.getHttpServer())
+      .put(`/api/inventory/handling-units/${huId}/contents`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', `${PREFIX}-W1`)
+      .send({ items, ...(reason === null ? {} : { reason }) })
+      .expect(expected);
+  }
+
+  const balanceOf = (lotId: bigint) => prisma.inventory_balance.findFirstOrThrow({
+    where: { lot_id: lotId, warehouse_id: ids.warehouse }, select: { on_hand_qty: true, picked_qty: true },
+  });
+  const requestLineShipped = async () => (await prisma.shipment_request_line.findUniqueOrThrow({
+    where: { shipment_request_line_id: BigInt(made.postRequestLine) }, select: { shipped_qty: true },
+  })).shipped_qty.toNumber();
+  const issuesOf = (shipmentId: number) => prisma.goods_issue.findMany({
+    where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(shipmentId) },
+    orderBy: { goods_issue_id: 'asc' }, include: { goods_issue_line: { orderBy: { line_no: 'asc' } } },
+  });
+
+  it('G-1 상자 수량을 줄이면 배분·출하 줄·지시 라인이 줄고, 옛 출고는 역전기·취소, 새 출고가 고친 수량으로 선다', async () => {
+    const { shipmentId, huId, allocations } = await packedShipment();
+    const [shippedBefore, balanceBefore] = [await requestLineShipped(), await balanceOf(ids.lotPost)];
+
+    await repack(huId, contents(3, 5));
+
+    const allocation = await prisma.shipment_lot_allocation.findUniqueOrThrow({ where: { shipment_lot_allocation_id: allocations[String(ids.lotPost)] } });
+    expect(allocation.allocated_qty.toNumber()).toBe(3);
+    const line = await prisma.shipment_line.findFirstOrThrow({ where: { shipment_id: BigInt(shipmentId) } });
+    expect(line.shipped_qty.toNumber()).toBe(8);
+    expect(await requestLineShipped()).toBe(shippedBefore - 2);
+    const issues = await issuesOf(shipmentId);
+    expect(issues.map((issue) => issue.status_code)).toEqual(['CANCELLED', 'POSTED']);
+    expect(issues[1].goods_issue_line.map((row) => row.issue_qty.toNumber())).toEqual([3, 5]);
+    expect(line.goods_issue_line_id).toBe(issues[1].goods_issue_line[0].goods_issue_line_id);
+    // 줄인 2 는 가용으로 돌아온다 — 피킹분은 그대로다(출하 취소와 같은 뜻).
+    const after = await balanceOf(ids.lotPost);
+    expect(after.on_hand_qty.minus(balanceBefore.on_hand_qty).toNumber()).toBe(2);
+    expect(after.picked_qty.toNumber()).toBe(balanceBefore.picked_qty.toNumber());
+    const audit = await prisma.audit_event.findFirstOrThrow({
+      where: { target_type_code: 'HANDLING_UNIT', target_id: huId, event_type_code: 'HANDLING_UNIT_CONTENTS_CHANGED' },
+    });
+    expect(audit).toMatchObject({ reason: '포장 수량 잘못 셈', after_value: expect.objectContaining({
+      shipment: expect.objectContaining({ cancelledGoodsIssueNo: issues[0].goods_issue_no, goodsIssueNo: issues[1].goods_issue_no }),
+    }) });
+  });
+
+  it('G-2 늘리면 늘린 만큼 잔액 피킹분을 소진하고 출고가 늘어난다', async () => {
+    const { shipmentId, huId } = await packedShipment();
+    const before = await balanceOf(ids.lotRepack);
+
+    await repack(huId, contents(5, 7));
+
+    const after = await balanceOf(ids.lotRepack);
+    expect(before.on_hand_qty.minus(after.on_hand_qty).toNumber()).toBe(2);
+    expect(before.picked_qty.minus(after.picked_qty).toNumber()).toBe(2);
+    expect((await issuesOf(shipmentId))[1].goods_issue_line.map((row) => row.issue_qty.toNumber())).toEqual([5, 7]);
+  });
+
+  it('G-3 LOT 을 빼면 그 배분이 없어진다', async () => {
+    const { shipmentId, huId, allocations } = await packedShipment();
+
+    await repack(huId, contents(5));
+
+    expect(await prisma.shipment_lot_allocation.findUnique({ where: { shipment_lot_allocation_id: allocations[String(ids.lotRepack)] } })).toBeNull();
+    expect((await prisma.shipment_line.findFirstOrThrow({ where: { shipment_id: BigInt(shipmentId) } })).shipped_qty.toNumber()).toBe(5);
+  });
+
+  it('G-4 사유가 없거나, 배분 안 된 LOT 을 넣거나, 배정·피킹분을 넘으면 400 이고 아무것도 바뀌지 않는다', async () => {
+    const { shipmentId, huId } = await packedShipment();
+
+    const noReason = await repack(huId, contents(3, 5), null, 400);
+    expect(noReason.body.errors[0]).toMatchObject({ field: 'reason', code: 'REQUIRED' });
+    const newLot = await repack(huId, [...contents(5, 5), { itemId: Number(ids.item), lotId: Number(ids.lotPick), qty: 1, uomId: Number(ids.uom) }], '추가', 400);
+    expect(newLot.body.errors[0].message).toContain('출하에 배분된 LOT 만');
+    const overAllocated = await repack(huId, contents(5, 900), '많이', 400);
+    expect(overAllocated.body.errors[0].message).toContain('배정 수량');
+    const picked = await balanceOf(ids.lotRepack);
+    await prisma.inventory_balance.updateMany({ where: { lot_id: ids.lotRepack, warehouse_id: ids.warehouse }, data: { picked_qty: 1 } });
+    try {
+      const short = await repack(huId, contents(5, 7), '늘림', 400);
+      expect(short.body.errors[0].message).toContain('모바일 출하 피킹(M-04-01)');
+    } finally {
+      await prisma.inventory_balance.updateMany({ where: { lot_id: ids.lotRepack, warehouse_id: ids.warehouse }, data: { picked_qty: picked.picked_qty } });
+    }
+    expect((await issuesOf(shipmentId)).map((issue) => issue.status_code)).toEqual(['POSTED']);
+  });
+
+  it('G-5 출하 단위에 담긴 상자 · 취소 결재 중 · 긴급 직행 · 확정된 출하면 409 이고 다음 할 일을 알린다', async () => {
+    const boxed = await packedShipment();
+    const unit = await prisma.shipping_unit.create({ data: {
+      shipping_unit_no: `${PREFIX}-SU${made.hu}`, shipment_id: BigInt(boxed.shipmentId), shipping_unit_type_code: 'PALLET', status_code: 'CLOSED',
+    } });
+    await prisma.shipping_unit_handling_unit.create({ data: { shipping_unit_id: unit.shipping_unit_id, handling_unit_id: boxed.huId, seq: 1 } });
+    expect((await repack(boxed.huId, contents(3, 5), '줄임', 409)).body.message).toContain('P-04-05 출하 단위에서 단위를 다시 열고 상자를 뺀 뒤');
+
+    const pending = await packedShipment();
+    await requestCancel(pending.shipmentId, await versionOf(pending.shipmentId), 200);
+    expect((await repack(pending.huId, contents(3, 5), '줄임', 409)).body.message).toContain('취소 결재가 진행 중');
+
+    const expedited = await packedShipment();
+    await prisma.shipment.update({ where: { shipment_id: BigInt(expedited.shipmentId) }, data: { expedited: true, expedite_reason: '시험' } });
+    expect((await repack(expedited.huId, contents(3, 5), '줄임', 409)).body.message).toContain('출하를 취소하고 다시 등록하세요');
+
+    const confirmed = await packedShipment();
+    await confirmShipment(confirmed.shipmentId, await versionOf(confirmed.shipmentId), 200);
+    expect((await repack(confirmed.huId, contents(3, 5), '줄임', 409)).body.message).toContain('확정되어');
+  });
+
+  it('G-6 정정한 출하도 취소하면 살아 있는 새 출고를 역전기한다 — 재고가 출하 전으로 돌아온다', async () => {
+    const before = await balanceOf(ids.lotPost);
+    const { shipmentId, huId } = await packedShipment();
+    await repack(huId, contents(3, 5));
+    await requestCancel(shipmentId, await versionOf(shipmentId), 200);
+    await approveCancel(shipmentId);
+
+    await cancelShipment(shipmentId, await versionOf(shipmentId), 200);
+
+    expect((await issuesOf(shipmentId)).map((issue) => issue.status_code)).toEqual(['CANCELLED', 'CANCELLED']);
+    expect((await balanceOf(ids.lotPost)).on_hand_qty.toNumber()).toBe(before.on_hand_qty.toNumber());
+  });
+
+  it('G-7 정정한 출하를 확정하면 ERP 송신이 고친 수량으로 적재된다', async () => {
+    const { shipmentId, huId } = await packedShipment();
+    await repack(huId, contents(3, 5));
+
+    await confirmShipment(shipmentId, await versionOf(shipmentId), 200);
+
+    expect((await prisma.shipment_line.findFirstOrThrow({ where: { shipment_id: BigInt(shipmentId) } })).shipped_qty.toNumber()).toBe(8);
+    expect(await prisma.integration_message.count({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) } })).toBe(1);
+  });
+
   async function versionOf(shipmentId: unknown): Promise<number> {
     const row = await prisma.shipment.findUniqueOrThrow({
       where: { shipment_id: BigInt(shipmentId as number) },
@@ -1501,6 +1670,10 @@ describe('출하 목록 (e2e)', () => {
       orderBy: { business_unit_id: 'asc' },
     });
     ids.plant = plant.plant_id;
+    // 상자 정정(G-*)이 사번 실재를 본다 — 피킹(F-3)은 사번이 있기만 하면 된다.
+    await ensure(prisma.worker, { worker_no: `${PREFIX}-W1` }, {
+      worker_no: `${PREFIX}-W1`, worker_name: '출하검사작업자', business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED',
+    });
     for (const [key, suffix] of [
       ['warehouse', 'WH1'],
       ['warehouse2', 'WH2'],
@@ -1549,6 +1722,8 @@ describe('출하 목록 (e2e)', () => {
       ['lotNoPick', 'LOT-NOPICK'],
       ['lotPartial', 'LOT-PARTIAL'],
       ['lotPick', 'LOT-PICK'],
+      // 상자 정정(G-*)용 — lotPost 와 함께 한 출하 줄에 배분한다.
+      ['lotRepack', 'LOT-REPACK'],
       // ⭐ 긴급 직행용 — 잔액이 «없는» 정상 LOT(「아직 입고 안 된 LOT」).
       ['lotExp', 'LOT-EXP'],
     ] as const) {
@@ -1585,7 +1760,7 @@ describe('출하 목록 (e2e)', () => {
       select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } },
     });
     for (const [lotId, pickedQty] of [
-      [ids.lotPost, 2000], [ids.lotDefect, 2000], [ids.lotNoPick, 0], [ids.lotPartial, 3], [ids.lotPick, 0],
+      [ids.lotPost, 2000], [ids.lotDefect, 2000], [ids.lotNoPick, 0], [ids.lotPartial, 3], [ids.lotPick, 0], [ids.lotRepack, 2000],
     ] as const) {
       await prisma.inventory_balance.create({
         data: {
@@ -2037,6 +2212,12 @@ describe('출하 목록 (e2e)', () => {
       `DELETE FROM logistics.sales_order_line WHERE sales_order_id IN (
          SELECT sales_order_id FROM logistics.sales_order WHERE sales_order_no LIKE '${PREFIX}%')`,
       `DELETE FROM logistics.sales_order WHERE sales_order_no LIKE '${PREFIX}%'`,
+      `DELETE FROM inventory.handling_unit_repack_event_line WHERE handling_unit_id IN (
+         SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%')`,
+      `DELETE FROM inventory.handling_unit_repack_event e WHERE NOT EXISTS (
+         SELECT 1 FROM inventory.handling_unit_repack_event_line l WHERE l.handling_unit_repack_event_id = e.handling_unit_repack_event_id)`,
+      `DELETE FROM inventory.handling_unit_content WHERE handling_unit_id IN (
+         SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%')`,
       `DELETE FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'`,
       `DELETE FROM inventory.inventory_balance WHERE location_id IN (
          SELECT location_id FROM mdm.location WHERE location_code LIKE '${PREFIX}%')`,
