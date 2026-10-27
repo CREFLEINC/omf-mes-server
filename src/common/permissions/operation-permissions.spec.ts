@@ -131,6 +131,14 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(OPERATION_PERMISSIONS['POST /logistics/inbound-receipts']).toEqual(['M-01-01', 'W-01-03']);
   });
 
+  // 결재 화면(W-03-09)에서 승인한 뒤 실행 · 적용까지 잇는다 — IQC 생략 실행과 같은 짜임(장부 P-127 · omf-all-around#193).
+  it('⛔ OQC 생략 실행 · 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
+    // 순서는 도출표와 수동 표를 합친 차례라 뜻이 없다 — 화면 집합으로 본다.
+    const screensOf = (operation: string): string[] => [...(OPERATION_PERMISSIONS[operation] ?? [])].sort();
+    expect(screensOf('POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc')).toEqual(['W-03-09', 'W-04-03']);
+    expect(screensOf('POST /quality/concessions/{concessionId}:apply')).toEqual(['W-03-09', 'W-03-10']);
+  });
+
   // P-06-01(창고 적재 위치 라벨 발행)은 설계 밖 화면이라 도출표가 영영 주지 않는다 — 장부 P-28.
   it('⛔ 발행 POST에 창고 적재 위치 라벨 발행 화면이 있다 — 장부 P-28', () => {
     expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toContain('P-06-01');

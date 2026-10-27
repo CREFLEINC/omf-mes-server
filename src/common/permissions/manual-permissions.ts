@@ -99,7 +99,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /trace/lots/{lotId}:skip-iqc': ['W-01-02'],
   // OQC 생략 요청·실행 — 출하검사 판정 화면 W-04-03 의 조작이다. 결재는 W-03-09 가 한다(omf-all-around#119 · 장부 P-83).
   'POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip': ['W-04-03'],
-  'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03'],
+  // 실행은 결재 화면 W-03-09 에서도 한다 — IQC 생략(위 `:skip-iqc` 가 결재 화면 W-01-02)과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
+  'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03', 'W-03-09'],
   // 불량 기록 등록 — IQC 불합격 사유를 남기는 수입검사 판정 화면의 조작이다(omf-all-around#106 · 장부 P-42).
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
@@ -403,7 +404,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 특채 요청·적용(omf-all-around#84 · 장부 P-79) — 처분 판정 처리(W-03-10)가 그 부적합에서 만든다.
   // 승인은 결재 경로(W-03-09)의 몫이라 여기 적지 않는다.
   'POST /quality/concessions': ['W-03-10'],
-  'POST /quality/concessions/{concessionId}:apply': ['W-03-10'],
+  // 적용은 결재 화면 W-03-09 에서도 한다 — IQC·OQC 생략 실행과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
+  'POST /quality/concessions/{concessionId}:apply': ['W-03-10', 'W-03-09'],
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],
