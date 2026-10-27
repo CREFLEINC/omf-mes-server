@@ -106,10 +106,15 @@ export class LotQtyCorrectService {
     } });
     if (terminal !== undefined) await recordTerminalWorkerAudit(tx, { actor: terminal, targetTypeCode: 'LOT', targetId: BigInt(lotId) });
     // 출력 결과 칸이 생기기 전의 발행은 결과가 비어 있다 — 실패만 빼고 빈 것은 발행으로 센다.
-    const labels = await tx.document_issue_log.count({
+    const labels = await tx.document_issue_log.findMany({
       where: { lot_id: BigInt(lotId), document_type_code: { in: MATERIAL_LABELS }, OR: [{ print_outcome_code: null }, { print_outcome_code: { not: 'FAILED' } }] },
+      orderBy: [{ document_type_code: 'asc' }, { issue_seq: 'desc' }],
+      distinct: ['document_type_code'],
+      select: { label_qty: true },
     });
-    return { qtyBefore: lot.initial_qty.toNumber(), labelReissueNeeded: labels > 0 };
+    // 라벨 종류마다 마지막 발행을 본다. 수량을 남기기 전 발행은 찍힌 수량을 몰라 — 수량이 늘 바뀌므로 — 다시 발행한다.
+    const labelReissueNeeded = labels.some((row) => row.label_qty === null || !row.label_qty.equals(qty));
+    return { qtyBefore: lot.initial_qty.toNumber(), labelReissueNeeded };
   }
 }
 

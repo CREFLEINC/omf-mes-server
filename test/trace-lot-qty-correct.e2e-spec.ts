@@ -102,6 +102,18 @@ describe('자재 LOT 수량 정정 (e2e)', () => {
     expect(needed.body.labelReissueNeeded).toBe(true);
   });
 
+  it('⭐ 라벨에 찍힌 수량이 있으면 고친 수량과 비교한다 — 같으면 다시 발행하지 않는다', async () => {
+    const same = await inboundLot(10);
+    await label(same.lotId, null, 9);
+    const notNeeded = await correct(same.lotId, await etagOf(same.lotId), { qty: 9, reason: '재계수' }).expect(200);
+    expect(notNeeded.body.labelReissueNeeded).toBe(false);
+
+    const differs = await inboundLot(10);
+    await label(differs.lotId, null, 10);
+    const needed = await correct(differs.lotId, await etagOf(differs.lotId), { qty: 9, reason: '재계수' }).expect(200);
+    expect(needed.body.labelReissueNeeded).toBe(true);
+  });
+
   it('⭐ P/O 배정 합까지는 줄일 수 있고, 그 아래는 400 이다 — 배정을 먼저 줄이라고 안내한다', async () => {
     const lot = await inboundLot(10);
     await allocate(lot.lineId, 6);
@@ -345,10 +357,10 @@ describe('자재 LOT 수량 정정 (e2e)', () => {
     return { lotId: lot.lot_id, lotNo: lot.lot_no, lineId: line.inbound_receipt_line_id, receiptId: receipt.inbound_receipt_id };
   }
 
-  async function label(lotId: bigint, outcome: string | null): Promise<void> {
+  async function label(lotId: bigint, outcome: string | null, labelQty: number | null = null): Promise<void> {
     await prisma.document_issue_log.create({ data: {
       document_type_code: 'MATERIAL_LOT_LABEL', target_type_code: 'LOT', target_id: lotId, lot_id: lotId,
-      issued_by: probeUserId, print_outcome_code: outcome,
+      issued_by: probeUserId, print_outcome_code: outcome, label_qty: labelQty,
       ...(outcome === 'FAILED' ? { print_reported_at: new Date(), print_failure_reason: '용지 걸림', print_reported_worker_id: await reporter() } : {}),
     } });
   }
