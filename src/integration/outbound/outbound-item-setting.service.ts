@@ -2,7 +2,8 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
-import { OUTBOUND_ITEMS, OUTBOUND_ITEM_CODES } from './outbound-item';
+import { MESSAGE_STATUS } from '../message/integration-message.service';
+import { OUTBOUND_ITEMS, OUTBOUND_ITEM_CODES, OutboundItem } from './outbound-item';
 
 /** 계약 `OutboundItemSetting` 과 동형. */
 interface SettingView {
@@ -13,7 +14,9 @@ interface SettingView {
   lockReason?: string;
   sendTimingNote?: string;
   interfaceDefinitionId?: number;
+  interfaceCode: string | null;
   pendingMessageCount: number;
+  failedMessageCount: number;
 }
 
 export interface SettingUpdate {
@@ -39,15 +42,25 @@ export class OutboundItemSettingService {
     });
     const stored = new Map(rows.map((row) => [row.outbound_item_code as string, row]));
 
-    const pending = await this.pendingByInterface(
+    const linked = await this.definitionCodes(
       rows
         .map((row) => row.interface_definition_id)
         .filter((id): id is bigint => id !== null),
+    );
+    const codeOf = (item: OutboundItem): string | null => {
+      const definitionId = stored.get(item.code)?.interface_definition_id;
+      return item.interfaceCode ?? (definitionId == null ? null : (linked.get(definitionId) ?? null));
+    };
+    const counts = await this.countByStatus(
+      OUTBOUND_ITEMS.map(codeOf).filter((code): code is string => code !== null),
     );
 
     return OUTBOUND_ITEMS.map((item) => {
       const row = stored.get(item.code);
       const definitionId = row?.interface_definition_id ?? null;
+      const interfaceCode = codeOf(item);
+      const count = (status: string): number =>
+        interfaceCode === null ? 0 : (counts.get(`${interfaceCode}|${status}`) ?? 0);
       return {
         outboundItemCode: item.code,
         outboundItemName: item.name,
@@ -58,7 +71,11 @@ export class OutboundItemSettingService {
         ...(item.lockReason === undefined ? {} : { lockReason: item.lockReason }),
         ...(item.sendTimingNote === undefined ? {} : { sendTimingNote: item.sendTimingNote }),
         ...(definitionId === null ? {} : { interfaceDefinitionId: Number(definitionId) }),
-        pendingMessageCount: definitionId === null ? 0 : (pending.get(Number(definitionId)) ?? 0),
+        interfaceCode,
+        // 「대기」는 아직 안 보낸 것(PENDING)만이다 — 송신 예정 목록(`statusCode=PENDING`)의
+        // 건수와 같아야 한다(사용자 결정 2026-10-27 · 장부 P-124). 실패는 따로 센다.
+        pendingMessageCount: count(MESSAGE_STATUS.PENDING),
+        failedMessageCount: count(MESSAGE_STATUS.FAILED),
       };
     });
   }
@@ -104,27 +121,28 @@ export class OutboundItemSettingService {
     return this.list();
   }
 
-  /** 「아직 보내지 못한 건수」 — 연계 정의별로 한 번에 센다(되돌림 §X-3 과 같은 셈). */
-  private async pendingByInterface(definitionIds: bigint[]): Promise<Map<number, number>> {
+  private async definitionCodes(definitionIds: bigint[]): Promise<Map<bigint, string>> {
     if (definitionIds.length === 0) return new Map();
     const definitions = await this.prisma.interface_definition.findMany({
       where: { interface_definition_id: { in: definitionIds } },
       select: { interface_definition_id: true, interface_code: true },
     });
+    return new Map(definitions.map((d) => [d.interface_definition_id, d.interface_code]));
+  }
+
+  /** 송신 메시지를 인터페이스·상태별로 한 번에 센다. 키는 `코드|상태`. */
+  private async countByStatus(interfaceCodes: string[]): Promise<Map<string, number>> {
+    if (interfaceCodes.length === 0) return new Map();
     const counted = await this.prisma.integration_message.groupBy({
-      by: ['interface_code'],
+      by: ['interface_code', 'status_code'],
       where: {
-        interface_code: { in: definitions.map((d) => d.interface_code) },
-        completed_at: null,
+        interface_code: { in: interfaceCodes },
+        status_code: { in: [MESSAGE_STATUS.PENDING, MESSAGE_STATUS.FAILED] },
       },
       _count: { _all: true },
     });
-    const byCode = new Map(counted.map((row) => [row.interface_code, row._count._all]));
     return new Map(
-      definitions.map((d) => [
-        Number(d.interface_definition_id),
-        byCode.get(d.interface_code) ?? 0,
-      ]),
+      counted.map((row) => [`${row.interface_code}|${row.status_code}`, row._count._all]),
     );
   }
 

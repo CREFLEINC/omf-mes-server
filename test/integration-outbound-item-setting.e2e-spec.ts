@@ -46,7 +46,9 @@ interface Setting {
   locked: boolean;
   lockReason?: string;
   interfaceDefinitionId?: number;
+  interfaceCode: string | null;
   pendingMessageCount: number;
+  failedMessageCount: number;
 }
 
 describe('송신 항목 설정 (e2e)', () => {
@@ -207,7 +209,7 @@ describe('송신 항목 설정 (e2e)', () => {
     expect(rows[0].version_no).toBeGreaterThan(1);
   });
 
-  it('⭐ 이어 둔 연계 정의의 「보내지 못한 건수」를 함께 낸다', async () => {
+  it('⭐ 이어 둔 연계 정의의 대기·실패 건수를 따로 낸다 — 대기는 PENDING 만이다 (P-124)', async () => {
     await request(app.getHttpServer())
       .put('/api/integration/outbound-item-settings')
       .set('Cookie', cookie)
@@ -215,19 +217,8 @@ describe('송신 항목 설정 (e2e)', () => {
       .send({ items: [{ outboundItemCode: 'RETURN', enabled: true, interfaceDefinitionId: definitionId }] })
       .expect(200);
 
-    for (const suffix of ['A', 'B']) {
-      await prisma.integration_message.create({
-        data: {
-          message_key: `${PREFIX}-${suffix}`,
-          interface_code: `${PREFIX}_IF`,
-          direction_code: 'OUTBOUND',
-          target_type_code: 'ITEM',
-          target_id: 1,
-          payload: {},
-          status_code: 'FAILED',
-          available_at: new Date(),
-        },
-      });
+    for (const [suffix, status] of [['A', 'FAILED'], ['B', 'FAILED'], ['C', 'PENDING'], ['D', 'PROCESSING']]) {
+      await outboundMessage(`${PREFIX}-${suffix}`, `${PREFIX}_IF`, status);
     }
 
     const response = await request(app.getHttpServer())
@@ -236,13 +227,64 @@ describe('송신 항목 설정 (e2e)', () => {
       .expect(200);
     const item = response.body.items.find((i: Setting) => i.outboundItemCode === 'RETURN');
     // 확인 문구가 이 값을 쓴다 — 남은 것이 있는데 끄면 그대로 멈춘다(계약).
-    expect(item.pendingMessageCount).toBe(2);
+    expect(item).toMatchObject({
+      interfaceCode: `${PREFIX}_IF`,
+      pendingMessageCount: 1,
+      failedMessageCount: 2,
+    });
 
-    // 이어 두지 않은 항목은 0 이다.
+    // 실어 나를 인터페이스가 없는 항목은 코드가 null 이고 0 이다.
     const unlinked = response.body.items.find(
       (i: Setting) => i.outboundItemCode === 'STOCK_ADJUSTMENT',
     );
-    expect(unlinked.pendingMessageCount).toBe(0);
+    expect(unlinked).toMatchObject({ interfaceCode: null, pendingMessageCount: 0, failedMessageCount: 0 });
+  });
+
+  it('⭐⭐ 보내기가 있는 세 항목은 연계 정의 없이도 인터페이스 코드를 알고 센다 (P-124)', async () => {
+    const counts = async (): Promise<Map<string, Setting>> => {
+      const response = await request(app.getHttpServer())
+        .get('/api/integration/outbound-item-settings')
+        .set('Cookie', cookie)
+        .expect(200);
+      return new Map(response.body.items.map((i: Setting) => [i.outboundItemCode, i]));
+    };
+    // 다른 검사가 남긴 같은 인터페이스 메시지가 있을 수 있다 — 늘어난 만큼만 본다.
+    const before = await counts();
+    expect(before.get('PRODUCTION_RESULT')?.interfaceCode).toBe('IF-WO-CLOSE-SEND');
+    expect(before.get('GOODS_RECEIPT')?.interfaceCode).toBe('IF-GR-SEND');
+    expect(before.get('SHIPMENT_PGI')?.interfaceCode).toBe('IF-SHIPMENT-PGI-SEND');
+
+    await outboundMessage(`${PREFIX}-GR-P`, 'IF-GR-SEND', 'PENDING');
+    await outboundMessage(`${PREFIX}-GR-F`, 'IF-GR-SEND', 'FAILED');
+    const after = await counts();
+
+    const gr = (map: Map<string, Setting>) => map.get('GOODS_RECEIPT') as Setting;
+    expect(gr(after).pendingMessageCount - gr(before).pendingMessageCount).toBe(1);
+    expect(gr(after).failedMessageCount - gr(before).failedMessageCount).toBe(1);
+  });
+
+  it('⭐⭐ W-06-12 가 송신 예정 목록을 기간 없이 읽는다 — statusCode=PENDING 일 때만 (P-124)', async () => {
+    await outboundMessage(`${PREFIX}-LIST-P`, `${PREFIX}_IF`, 'PENDING');
+    await outboundMessage(`${PREFIX}-LIST-F`, `${PREFIX}_IF`, 'FAILED');
+
+    const pending = await request(app.getHttpServer())
+      .get(`/api/integration/messages?statusCode=PENDING&interfaceCode=${PREFIX}_IF&page=1&size=50`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const keys = pending.body.items.map((m: { messageKey: string }) => m.messageKey);
+    expect(keys).toContain(`${PREFIX}-LIST-P`);
+    expect(keys).not.toContain(`${PREFIX}-LIST-F`);
+    expect(pending.body.page.total).toBe(keys.length);
+
+    // 다른 상태는 여전히 기간이 필수다.
+    const failed = await request(app.getHttpServer())
+      .get(`/api/integration/messages?statusCode=FAILED&interfaceCode=${PREFIX}_IF`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(failed.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
+      'createdFrom',
+      'createdTo',
+    ]);
   });
 
   it('⛔ 없는 연계 정의·같은 항목 두 번은 400 이다', async () => {
@@ -314,6 +356,21 @@ describe('송신 항목 설정 (e2e)', () => {
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
     return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+  }
+
+  async function outboundMessage(messageKey: string, interfaceCode: string, status: string): Promise<void> {
+    await prisma.integration_message.create({
+      data: {
+        message_key: messageKey,
+        interface_code: interfaceCode,
+        direction_code: 'OUTBOUND',
+        target_type_code: 'ITEM',
+        target_id: 1,
+        payload: {},
+        status_code: status,
+        available_at: new Date(),
+      },
+    });
   }
 
   async function cleanup(): Promise<void> {
