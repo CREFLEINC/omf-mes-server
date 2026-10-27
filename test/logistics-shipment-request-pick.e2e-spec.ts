@@ -656,7 +656,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
         },
       ],
       // LOT 별 요약(장부 P-126) — 출하 배분이 없어 반납 가능이 피킹 전부다.
-      pickedLots: [{ lotId: s.lotId, lotNo: lot.lot_no, pickedQty: 12, shippedQty: 0, returnableQty: 12, limitedByBalance: false }],
+      pickedLots: [{ lotId: s.lotId, lotNo: lot.lot_no, pickedQty: 12, shippedQty: 0, returnableQty: 12, fromPickedQty: 12, limitedByBalance: false }],
     });
   });
 
@@ -734,8 +734,9 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     const validate = validator(':return-pick');
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
-    expect(response.body.line).toMatchObject({ pickedQty: 20, pickedLots: [{ lotId: s.lotId, pickedQty: 20, shippedQty: 0, returnableQty: 20 }] });
+    expect(response.body.line).toMatchObject({ pickedQty: 20, pickedLots: [{ lotId: s.lotId, pickedQty: 20, shippedQty: 0, returnableQty: 20, fromPickedQty: 20, limitedByBalance: false }] });
     expect(response.body.line.picks[0]).toMatchObject({ pickedQty: 30, releasedQty: 10 });
+    expect(response.body.returned).toEqual({ fromPickedQty: 10, reservationOnlyQty: 0 });
     const after = await balanceOf(s.lotId);
     expect(before.picked_qty.minus(after.picked_qty).toNumber()).toBe(10);
     expect(after.on_hand_qty.toNumber()).toBe(before.on_hand_qty.toNumber());
@@ -768,18 +769,18 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     await giveBack(s, { qty: 5 }).expect(200);
   });
 
-  it('R-4 잔액 피킹분이 모자라면 400 — 다른 지시가 그 피킹분을 출하에 썼을 수 있다고 안내한다', async () => {
+  it('R-4 잔액 피킹분이 모자라면 그만큼만 피킹 → 가용이고 나머지는 예약만 푼다 — 화면 값도 같은 몫으로 나눠 보인다', async () => {
     const s = await scenario({ onHand: 100 });
     await pick(s, { pickedQty: 30 });
     await prisma.inventory_balance.updateMany({ where: { lot_id: BigInt(s.lotId) }, data: { picked_qty: 3 } });
-
-    const short = await giveBack(s, { qty: 5 }).expect(400);
-
-    expect(short.body.errors[0].message).toContain('이 LOT 의 남은 피킹분(3)이 반납하려는 수량보다 적습니다');
-    // 화면 기본값도 같은 한도다 — 반납 가능 3 · 잔액 때문에 줄었다는 표시.
     const line = (await getRequest(s.requestId)).lines?.find((row) => row.shipmentRequestLineId === s.lineId) as unknown as { pickedLots: unknown[] };
-    expect(line.pickedLots).toEqual([expect.objectContaining({ pickedQty: 30, shippedQty: 0, returnableQty: 3, limitedByBalance: true })]);
-    await giveBack(s, { qty: 3 }).expect(200);
+    expect(line.pickedLots).toEqual([expect.objectContaining({ pickedQty: 30, shippedQty: 0, returnableQty: 30, fromPickedQty: 3, limitedByBalance: true })]);
+
+    const response = await giveBack(s, { qty: 5 }).expect(200);
+
+    expect(response.body.returned).toEqual({ fromPickedQty: 3, reservationOnlyQty: 2 });
+    expect(response.body.line.pickedQty).toBe(25);
+    expect((await balanceOf(s.lotId)).picked_qty.toNumber()).toBe(0);
   });
 
   it('R-5 사유 — 없는 코드는 400, 「기타」면 비고가 필수다', async () => {

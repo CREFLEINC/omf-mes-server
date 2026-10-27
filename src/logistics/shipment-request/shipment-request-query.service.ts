@@ -142,7 +142,7 @@ export class ShipmentRequestQueryService {
   }
 
   /**
-   * 헤더 id 집합 → 뷰. **세 질의**로 끝낸다 — 헤더+라인 1 · 예약 1 · 검사 1. ⛔ 건마다·라인마다
+   * 헤더 id 집합 → 뷰. 건 수와 무관한 몇 질의로 끝낸다 — 헤더+라인 · 예약 · 검사 · 출하 배분 · 잔액 피킹분. ⛔ 건마다·라인마다
    * 부르면 쪽 크기만큼 N+1 이다(e2e L-42 가 예약 조회 «횟수»를 센다). ⭐ 단건도 이 길을 쓴다.
    */
   private async views(ids: bigint[]): Promise<ShipmentRequestView[]> {
@@ -169,17 +169,6 @@ export class ShipmentRequestQueryService {
     });
   }
 
-  /**
-   * ⭐ 라인 id 를 **모아 한 방**으로 읽는다 — 라인마다 부르면 N+1 이다.
-   * ⛔ 축은 `(source_document_type_code, source_document_id)` **둘 다**다. 유형을 빼면 같은 id 를 쓰는
-   *    «자재» 예약이 섞여 들어와 수량이 부풀고 남의 LOT 이 `picks[]` 에 뜬다(#409 인계 · §11 ②).
-   *    `ix_reservation_source (type, id, status)` 가 그대로 탄다(§2-7).
-   * ⛔ `status_code` 로 좁히지 않는다 — 계약이 「누적 피킹 수량」이라 적었고 되돌림은 **수량 축**
-   *    (`released_qty`)이 감당하기로 한 자리다(§5-1 · R-14). ⚠ 그 되돌림이 **오늘은 일어나지
-   *    않는다** — `released_qty` 를 쓰는 코드가 저장소에 0개이고 ⓒ안에서 `consumed = reserved` 라
-   *    `ck_reservation_qty` 가 올리는 것 자체를 막는다(**통보 241** · §11 ①). 그래서 지금은 상태와
-   *    무관하게 예약 행 전건이 `pickedQty` 에 남는다 — I-23 이 되돌림 칸을 정할 때 함께 푼다.
-   */
   /** (지시 라인, LOT) 별 살아 있는 출하 배분 합 — 취소 완료된 출하는 뺀다. 반납 가능 수량이 쓴다(장부 P-126). */
   private async shippedByLineLot(lineIds: bigint[]): Promise<ShippedByLineLot> {
     if (lineIds.length === 0) return new Map();
@@ -193,15 +182,29 @@ export class ShipmentRequestQueryService {
     return new Map(rows.map((row) => [`${row.line_id}:${row.lot_id}`, new Prisma.Decimal(row.qty)]));
   }
 
-  /** LOT 별 잔액 피킹분 합 — 반납 가능을 서버 한도와 같게 낸다(장부 P-126). 제품 LOT 은 한 창고에만 선다. */
+  /** (공장, LOT) 별 잔액 피킹분 — 반납이 피킹 → 가용으로 옮길 수 있는 몫(장부 P-126). 공장 없는 지시용으로 모든 공장 합도 둔다. */
   private async balancePickedByLot(lotIds: bigint[]): Promise<BalancePickedByLot> {
     if (lotIds.length === 0) return new Map();
     const rows = await this.prisma.inventory_balance.groupBy({
-      by: ['lot_id'], where: { lot_id: { in: [...new Set(lotIds)] } }, _sum: { picked_qty: true },
+      by: ['plant_id', 'lot_id'], where: { lot_id: { in: [...new Set(lotIds)] } }, _sum: { picked_qty: true },
     });
-    return new Map(rows.map((row) => [String(row.lot_id), row._sum.picked_qty ?? new Prisma.Decimal(0)]));
+    const out: BalancePickedByLot = new Map();
+    for (const row of rows) {
+      const qty = row._sum.picked_qty ?? new Prisma.Decimal(0);
+      out.set(`${row.plant_id}:${row.lot_id}`, qty);
+      out.set(`*:${row.lot_id}`, (out.get(`*:${row.lot_id}`) ?? new Prisma.Decimal(0)).plus(qty));
+    }
+    return out;
   }
 
+  /**
+   * ⭐ 라인 id 를 **모아 한 방**으로 읽는다 — 라인마다 부르면 N+1 이다.
+   * ⛔ 축은 `(source_document_type_code, source_document_id)` **둘 다**다. 유형을 빼면 같은 id 를 쓰는
+   *    «자재» 예약이 섞여 들어와 수량이 부풀고 남의 LOT 이 `picks[]` 에 뜬다(#409 인계 · §11 ②).
+   *    `ix_reservation_source (type, id, status)` 가 그대로 탄다(§2-7).
+   * ⛔ `status_code` 로 좁히지 않는다 — 계약이 「누적 피킹 수량」이라 적었고 되돌림은 **수량 축**
+   *    (`released_qty`)이 감당한다(§5-1 · R-14). 출하 취소와 피킹 반납(장부 P-126)이 소진분을 `released_qty` 로 옮긴다.
+   */
   private async picksByLine(lineIds: bigint[]): Promise<ShipmentPicksByLine> {
     const rows = await this.prisma.inventory_reservation.findMany({
       where: {

@@ -53,12 +53,13 @@ export interface ShipmentLinePickedLotView {
 
 /** (지시 라인, LOT) → 살아 있는 출하 배분 합. 키는 `라인id:LOTid`. */
 export type ShippedByLineLot = Map<string, Prisma.Decimal>;
-/** LOT → 잔액 피킹분 합 — 피킹분은 지시끼리 함께 쓰므로 반납 한도가 된다. */
+/** (공장, LOT) → 잔액 피킹분 합. 키는 `공장id:LOTid` — 공장이 없는 지시는 `*:LOTid`(모든 공장 합). */
 export type BalancePickedByLot = Map<string, Prisma.Decimal>;
 
 /**
- * LOT 별 피킹·출하·반납 가능 — 반납 화면이 쓴다(장부 P-126). 반납 가능은 서버가 `:return-pick` 에서 받는 값과 같다 —
- * 「피킹 − 출하」와 잔액 피킹분 중 작은 쪽. 잔액 쪽이 더 작아 줄었으면 `limitedByBalance` 가 참이다.
+ * LOT 별 피킹·출하·반납 가능 — 반납 화면이 쓴다(장부 P-126). 반납 가능은 서버가 `:return-pick` 에서 받는 한도와 같다(피킹 − 출하).
+ * 그중 잔액 피킹분이 남은 만큼(`fromPickedQty`)만 피킹 → 가용으로 옮기고 나머지는 예약만 푼다 — 잔액이 모자라 일부가 예약만 풀리면
+ * `limitedByBalance` 가 참이다(다른 지시가 그 피킹분을 출하에 썼다).
  */
 export interface ShipmentLinePickedLotSummaryView {
   lotId: number;
@@ -66,6 +67,7 @@ export interface ShipmentLinePickedLotSummaryView {
   pickedQty: number;
   shippedQty: number;
   returnableQty: number;
+  fromPickedQty: number;
   limitedByBalance: boolean;
 }
 
@@ -126,11 +128,12 @@ export function shipmentRequestView(
     })),
   );
 
-  // ⭐ 라인이 집은 LOT 집합이 곧 검사 대상 축이다(§5-2) — `picks[].lotId` 를 그대로 넘긴다.
+  // ⭐ 라인이 집은 LOT 집합이 곧 검사 대상 축이다(§5-2). 다 반납·해제돼 남은 피킹이 0 인 예약은 뺀다(장부 P-126 —
+  //    반납한 LOT 이 검사 대상에 남지 않게 · `oqcPickedLots` 와 같은 기준).
   const inspectionLines: ShipmentInspectionLine[] = lines.map(({ line, picks }) => ({
     shipmentRequestId: row.shipment_request_id,
     shippingInspectionRequired: line.shipping_inspection_required,
-    lotIds: picks.flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id])),
+    lotIds: picks.flatMap((pick) => (pick.lot_id === null || !pick.reserved_qty.greaterThan(pick.released_qty) ? [] : [pick.lot_id])),
   }));
 
   return omitEmpty({
@@ -146,7 +149,7 @@ export function shipmentRequestView(
     timeSlotCode: row.ship_time_slot_code,
     shippingInspectionStatusCode: shipmentInspectionStatus(inspectionLines, inspections),
     shipmentProgressCode: shipmentProgressCode(totals),
-    lines: lines.map(({ line, picks }) => shipmentRequestLineView(line, picks, shipped, balancePicked)),
+    lines: lines.map(({ line, picks }) => shipmentRequestLineView(line, picks, shipped, balancePicked, row.fulfillment_plant_id)),
     versionNo: row.version_no,
   });
 }
@@ -160,6 +163,7 @@ export function shipmentRequestLineView(
   picks: ShipmentPickRow[],
   shipped: ShippedByLineLot = new Map(),
   balancePicked?: BalancePickedByLot,
+  plantId: bigint | null = null,
 ): ShipmentRequestLineView {
   return omitEmpty({
     shipmentRequestLineId: Number(row.shipment_request_line_id),
@@ -177,12 +181,12 @@ export function shipmentRequestLineView(
     shippingInspectionRequired: row.shipping_inspection_required,
     minimumRemainingShelfLifeDays: row.minimum_remaining_shelf_life_days,
     picks: picks.map(shipmentLinePickedLotView),
-    pickedLots: pickedLotsOf(row.shipment_request_line_id, picks, shipped, balancePicked),
+    pickedLots: pickedLotsOf(row.shipment_request_line_id, picks, shipped, balancePicked, plantId),
   });
 }
 
 function pickedLotsOf(
-  lineId: bigint, picks: ShipmentPickRow[], shipped: ShippedByLineLot, balancePicked?: BalancePickedByLot,
+  lineId: bigint, picks: ShipmentPickRow[], shipped: ShippedByLineLot, balancePicked: BalancePickedByLot | undefined, plantId: bigint | null,
 ): ShipmentLinePickedLotSummaryView[] {
   const byLot = new Map<string, { lotId: number; lotNo?: string; picked: Prisma.Decimal }>();
   for (const pick of picks) {
@@ -191,14 +195,15 @@ function pickedLotsOf(
     lot.picked = lot.picked.plus(pick.reserved_qty).minus(pick.released_qty);
     byLot.set(key, lot);
   }
-  return [...byLot.entries()].map(([lotKey, lot]) => {
+  // 다 반납해 남은 피킹이 0 인 LOT 은 보이지 않는다.
+  return [...byLot.entries()].filter(([, lot]) => lot.picked.greaterThan(0)).map(([lotKey, lot]) => {
     const out = shipped.get(`${lineId}:${lotKey}`) ?? new Prisma.Decimal(0);
     const unshipped = Prisma.Decimal.max(lot.picked.minus(out), 0);
-    const held = balancePicked?.get(lotKey);
-    const limitedByBalance = held !== undefined && held.lessThan(unshipped);
+    const held = balancePicked?.get(`${plantId ?? '*'}:${lotKey}`);
+    const fromPicked = held === undefined ? unshipped : Prisma.Decimal.min(unshipped, held);
     return omitEmpty({
       lotId: lot.lotId, lotNo: lot.lotNo, pickedQty: lot.picked.toNumber(), shippedQty: out.toNumber(),
-      returnableQty: (limitedByBalance ? held : unshipped).toNumber(), limitedByBalance,
+      returnableQty: unshipped.toNumber(), fromPickedQty: fromPicked.toNumber(), limitedByBalance: fromPicked.lessThan(unshipped),
     });
   });
 }

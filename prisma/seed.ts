@@ -1292,7 +1292,7 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // 피킹 반납 사유(장부 P-126) — 마이그 `20261027130000_pick_return_reason` 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
+    // 피킹 반납 사유(장부 P-126) — 마이그 `20261027150000_pick_return_reason` 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
     groupCode: 'PICK_RETURN_REASON',
     groupName: '피킹 반납 사유',
     values: [
