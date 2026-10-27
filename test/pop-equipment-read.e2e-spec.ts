@@ -43,7 +43,7 @@ describe('POP 옆 설비 읽기 (e2e)', () => {
   const get = (path: string, query: Record<string, unknown> = {}) =>
     request(app.getHttpServer()).get(`/api${path}`).query(query).set('Authorization', `Bearer ${token}`);
 
-  it('POP 이 같은 공장의 가동 설비 목록을 읽는다 — 공장·상태는 단말 기준으로 덮어쓴다', async () => {
+  it('POP 이 같은 공장의 가동·활성 설비 목록을 읽는다 — 공장·상태는 단말 기준으로 덮어쓴다', async () => {
     const response = await get('/mdm/equipments', { statusCode: 'RETIRED', size: 100 }).expect(200);
 
     const codes = (response.body.items as { equipmentCode: string }[]).map((item) => item.equipmentCode).filter((code) => code.startsWith(PREFIX));
@@ -77,12 +77,16 @@ describe('POP 옆 설비 읽기 (e2e)', () => {
     await get(`/mdm/equipments/${ids.e2}/inspection-items`).expect(200);
     await get(`/mdm/equipments/${ids.foreign}/inspection-items`).expect(401);
     await get(`/mdm/equipments/${ids.retired}/inspection-items`).expect(401);
+    await get(`/mdm/equipments/${ids.inactive}/inspection-items`).expect(401);
   });
 
   it('설비 붙은 POP 이 옆 설비로 작업을 시작한다 — 다른 공장·비가동·없는 설비는 같은 401 이고 문구에 조치가 있다', async () => {
     const foreign = await start(ids.foreign).expect(401);
     const retired = await start(ids.retired).expect(401);
     const missing = await start(999_999_999n).expect(401);
+    // IN_SERVICE 지만 비활성 — 단말 설비 목록에 안 보이는 설비라 시작도 막는다.
+    const inactive = await start(ids.inactive).expect(401);
+    expect(inactive.body).toEqual(foreign.body);
     expect(retired.body).toEqual(foreign.body);
     expect(missing.body).toEqual(foreign.body);
     expect(foreign.body.errors[0].message).toContain('가동 중(IN_SERVICE) 설비만');
@@ -107,13 +111,15 @@ describe('POP 옆 설비 읽기 (e2e)', () => {
     await prisma.worker.create({ data: {
       worker_no: `${PREFIX}-W1`, worker_name: PREFIX, business_unit_id: unit.business_unit_id, plant_id: ids.plant, status_code: 'EMPLOYED',
     } });
-    const equipment = async (code: string, plantId: bigint, status = 'IN_SERVICE') => (await prisma.equipment.create({ data: {
+    const equipment = async (code: string, plantId: bigint, status = 'IN_SERVICE', active = true) => (await prisma.equipment.create({ data: {
       plant_id: plantId, equipment_code: `${PREFIX}-${code}`, equipment_name: PREFIX, equipment_type_code: 'MACHINE', status_code: status,
+      is_active: active,
     } })).equipment_id;
     ids.e1 = await equipment('E1', ids.plant);
     ids.e2 = await equipment('E2', ids.plant);
     ids.retired = await equipment('E3', ids.plant, 'RETIRED');
     ids.foreign = await equipment('E4', ids.otherPlant);
+    ids.inactive = await equipment('E5', ids.plant, 'IN_SERVICE', false);
 
     const uom = await prisma.uom.findFirstOrThrow({ where: { decimal_scale: 0 } });
     const item = await prisma.item.create({ data: {

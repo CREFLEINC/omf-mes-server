@@ -13,11 +13,13 @@ const ALL_FLAGS = { can_start_work: true, can_input_material: true, can_input_re
 const terminal: TerminalContext = {
   terminalId: 7n, terminalCode: 'POP-7', plantId: 3n, terminalTypeCode: 'POP', equipmentId: 5n,
 };
-/** 공장 3 의 설비 — 5(단말 설비)·8(W/O 계획 설비)·61(옆 설비)은 가동 중, 62 는 비가동이다. 그 밖은 없거나 남의 공장이다. */
-const PLANT_EQUIPMENT: Record<string, string> = { 5: 'IN_SERVICE', 8: 'IN_SERVICE', 61: 'IN_SERVICE', 62: 'RETIRED' };
-const findEquipment = async ({ where }: { where: { equipment_id: bigint; plant_id: bigint; status_code?: string } }) => {
+/** 공장 3 의 설비 — 5(단말 설비)·8(W/O 계획 설비)·61(옆 설비)은 가동 중, 62 는 비가동, 63 은 가동이지만 비활성이다. 그 밖은 없거나 남의 공장이다. */
+const PLANT_EQUIPMENT: Record<string, string> = { 5: 'IN_SERVICE', 8: 'IN_SERVICE', 61: 'IN_SERVICE', 62: 'RETIRED', 63: 'IN_SERVICE' };
+const findEquipment = async ({ where }: { where: { equipment_id: bigint; plant_id: bigint; status_code?: string; is_active?: boolean } }) => {
   const status = where.plant_id === 3n ? PLANT_EQUIPMENT[String(where.equipment_id)] : undefined;
-  return status === undefined || (where.status_code !== undefined && where.status_code !== status) ? null : { equipment_id: where.equipment_id };
+  const active = where.equipment_id !== 63n;
+  return status === undefined || (where.status_code !== undefined && where.status_code !== status)
+    || (where.is_active !== undefined && where.is_active !== active) ? null : { equipment_id: where.equipment_id };
 };
 const prisma = {
   // `count` 는 「함께 일할 사람」 명단 중 단말 공장 재직자 수 — 기본은 명단 전원이다.
@@ -141,6 +143,7 @@ describe('POP production terminal scope', () => {
       await expect(precheck(61, terminal)).resolves.toBeUndefined();
       const denied = [await precheck(62, terminal).catch((e: unknown) => e), await precheck(99, terminal).catch((e: unknown) => e)];
       expect(denied).toEqual([expect.objectContaining({ status: 401 }), expect.objectContaining({ status: 401 })]);
+      await expect(precheck(63, terminal)).rejects.toMatchObject({ status: 401 });
       expect((denied[0] as { errors: unknown }).errors).toEqual((denied[1] as { errors: unknown }).errors);
       expect((denied[0] as { errors: { message: string }[] }).errors[0].message).toContain('가동 중(IN_SERVICE) 설비만');
     });
@@ -293,7 +296,7 @@ describe('POP production terminal scope', () => {
       const bare = { ...terminal, equipmentId: null };
       await expect(check(61, bare)).resolves.toBeUndefined();
       expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({
-        where: { equipment_id: 61n, plant_id: 3n, status_code: 'IN_SERVICE' }, select: { equipment_id: true },
+        where: { equipment_id: 61n, plant_id: 3n, status_code: 'IN_SERVICE', is_active: true }, select: { equipment_id: true },
       });
       (prisma.equipment.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(check(61, bare)).rejects.toMatchObject({ status: 401 });

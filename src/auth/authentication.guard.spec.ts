@@ -164,7 +164,7 @@ describe('FR-004/005 terminal bearer authentication', () => {
     expect(await guard.canActivate(context('GET /mdm/equipments/{equipmentId}/inspection-items',
       {}, { equipmentId: '6' }, `Bearer ${token}`).execution)).toBe(true);
     expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({
-      where: { equipment_id: 6n, plant_id: 3n, status_code: 'IN_SERVICE' }, select: { equipment_id: true },
+      where: { equipment_id: 6n, plant_id: 3n, status_code: 'IN_SERVICE', is_active: true }, select: { equipment_id: true },
     });
     (prisma.equipment.findFirst as jest.Mock).mockResolvedValueOnce(null);
     expect(await statusOf(guard.canActivate(context('GET /mdm/equipments/{equipmentId}/inspection-items',

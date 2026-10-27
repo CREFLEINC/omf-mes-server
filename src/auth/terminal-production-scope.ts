@@ -75,7 +75,7 @@ export async function assertTerminalProductionScope(
   /**
    * 작업 시작·작업 전 점검의 W/O 와 설비 — 칸마다 따로 가른다. 설비를 싣지 않으면 설비는 보지 않는다.
    * 단말 설비, 설비 없는 단말이면 W/O 의 계획 설비는 지금처럼 받고, 그 밖은 단말 공장의 가동 설비여야 한다 —
-   * 옆 설비의 작업을 대신 시작하는 현장 흐름(장부 P-123). 없는 설비·남의 공장 설비·비가동 설비가 같은 401 이라 있는지 드러나지 않는다.
+   * 옆 설비의 작업을 대신 시작하는 현장 흐름(장부 P-123). 없는·남의 공장·비가동·비활성 설비가 같은 401 이라 있는지 드러나지 않는다.
    */
   const startEquipment = async (workOrderId: unknown, equipmentId: unknown): Promise<void> => {
     const planned = given(workOrderId) ? await ownWorkOrder(workOrderId, 'can_start_work') : null;
@@ -83,7 +83,7 @@ export async function assertTerminalProductionScope(
     const id = positiveId(equipmentId);
     if (id !== null && id === (terminal.equipmentId ?? planned)) return;
     if (id === null || !await prisma.equipment.findFirst({
-      where: { equipment_id: id, plant_id: terminal.plantId, status_code: IN_SERVICE }, select: { equipment_id: true },
+      where: { equipment_id: id, plant_id: terminal.plantId, ...NEIGHBOR_EQUIPMENT }, select: { equipment_id: true },
     })) throw scopeDenied(UNUSABLE_EQUIPMENT);
   };
   /**
@@ -278,8 +278,10 @@ const FOREIGN_MOLD = '고른 금형이 이 단말 공장의 금형이 아닙니�
 const FOREIGN_SESSION = '고른 작업 세션은 이 단말이 연 세션이 아닙니다 — 이 단말의 작업 시작 화면에서 세션을 다시 연 뒤 실적을 다시 등록하세요.';
 const FOREIGN_EQUIPMENT = '고른 설비가 이 단말 공장의 설비가 아닙니다. 관리웹 기준정보 관리 › 설비 › 설비·설비그룹 마스터에서 설비의 공장을 확인하거나 다른 설비를 고르세요.';
 const UNUSABLE_EQUIPMENT = '고른 설비로 작업할 수 없습니다 — 이 단말 공장의 가동 중(IN_SERVICE) 설비만 실을 수 있습니다. 관리웹 기준정보 관리 › 설비 › 설비·설비그룹 마스터에서 설비의 공장·상태를 확인하거나 다른 설비를 고르세요.';
-/** 단말·계획 설비가 아닌 설비로 시작할 때 요구하는 상태 — 가동 중인 설비만 작업을 시작한다. */
-const IN_SERVICE = 'IN_SERVICE';
+/** POP 이 보는 설비 상태 — 가동 중인 설비만 작업을 시작한다. */
+export const IN_SERVICE = 'IN_SERVICE';
+/** 단말·계획 설비가 아닌 설비(옆 설비)로 시작·점검할 때의 범위 — 단말이 읽는 설비 목록(가동·활성)과 같다. */
+export const NEIGHBOR_EQUIPMENT = { status_code: IN_SERVICE, is_active: true } as const;
 
 function scopeDenied(message: string): ContractException {
   return new ContractException(HttpStatus.UNAUTHORIZED, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message }]);

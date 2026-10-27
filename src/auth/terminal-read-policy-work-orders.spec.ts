@@ -33,10 +33,12 @@ describe('POP MES W/O 목록 범위', () => {
     await expect(read(pop, { open: 'true' })).resolves.toBeUndefined();
   });
 
-  it('다른 공장 설비·없는 설비·형식이 틀린 id 는 같은 401 이다', async () => {
+  it('다른 공장 설비·없는 설비·형식이 틀린 id(중복 키·int64 초과 포함)는 같은 401 이다', async () => {
     await expect(read(pop, { open: 'true', plannedEquipmentId: '7' })).rejects.toMatchObject({ status: 401 });
     await expect(read(pop, { open: 'true', plannedEquipmentId: '999' })).rejects.toMatchObject({ status: 401 });
     await expect(read(pop, { open: 'true', plannedEquipmentId: 'x' })).rejects.toMatchObject({ status: 401 });
+    await expect(read(pop, { open: 'true', plannedEquipmentId: ['5', '6'] })).rejects.toMatchObject({ status: 401 });
+    await expect(read(pop, { open: 'true', plannedEquipmentId: '9223372036854775808' })).rejects.toMatchObject({ status: 401 });
   });
 
   it('열린 W/O 가 아니면 막는다', async () => {

@@ -4,11 +4,9 @@ import type { Request } from 'express';
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { TerminalContext } from './terminal-context';
+import { IN_SERVICE, NEIGHBOR_EQUIPMENT } from './terminal-production-scope';
 
 type TerminalType = 'POP' | 'MOBILE';
-
-/** POP 이 보는 설비 상태 — 가동 중인 설비만 작업을 시작한다. */
-const IN_SERVICE = 'IN_SERVICE';
 
 /** Explicit terminal GETs; each additional FR-005 group is reviewed for resource scope. */
 export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
@@ -89,7 +87,7 @@ export async function assertTerminalReadScope(
     if (!own && !precheck) throw denied();
     const neighbor = !own && terminal.equipmentId !== null;
     const row = await prisma.equipment.findFirst({
-      where: { equipment_id: id, plant_id: plantId, ...(neighbor ? { status_code: IN_SERVICE } : {}) },
+      where: { equipment_id: id, plant_id: plantId, ...(neighbor ? NEIGHBOR_EQUIPMENT : {}) },
       select: { equipment_id: true },
     });
     if (!row) throw denied();
@@ -120,7 +118,7 @@ export async function assertTerminalReadScope(
       break;
     case 'GET /production/work-orders':
       if (terminal.terminalTypeCode === 'POP') {
-        // 설비 없는 POP 도 목록을 본다(설비가 정해지지 않은 W/O 를 시작한다) — 설비를 걸 때만 자기 설비여야 한다.
+        // 설비 없는 POP 도 목록을 본다(설비가 정해지지 않은 W/O 를 시작한다).
         // 재작업 실적(P-04-03)은 배포 전(PLANNED) 재작업 W/O 도 «보이기만» 한다 — 지시가 났는지 현장이 알게(장부 P-113).
         //   고르기·저장은 배포된 것만이다(실적 저장이 PLANNED 를 받지 않는다).
         const plannedRework = query.workOrderTypeCode === 'REWORK' && query.statusCode === 'PLANNED';
