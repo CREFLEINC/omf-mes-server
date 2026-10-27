@@ -12,10 +12,11 @@ import { InboundReceiptUpdateService } from './inbound-receipt-update.service';
 
 type Args = Record<string, unknown>;
 
-/** 옛 라인 둘 — 901 은 P/O 101(부모 900), 902 는 P/O 102(부모 800)에 붙어 있다. */
+/** 옛 라인 둘 — 901 은 P/O 101(부모 900), 902 는 P/O 102(부모 800)에 붙어 있다. 옛 몫은 배정 표가 정본이다(장부 P-115). */
+const allocated = (purchaseOrderLineId: bigint, qty: number) => [{ purchase_order_line_id: purchaseOrderLineId, allocated_qty: new Prisma.Decimal(qty) }];
 const EXISTING = [
-  { inbound_receipt_line_id: 901n, purchase_order_line_id: 101n, received_qty: 10, lot_id: null },
-  { inbound_receipt_line_id: 902n, purchase_order_line_id: 102n, received_qty: 5, lot_id: null },
+  { inbound_receipt_line_id: 901n, purchase_order_line_id: 101n, received_qty: 10, lot_id: null as bigint | null, inbound_receipt_po_allocation: allocated(101n, 10) },
+  { inbound_receipt_line_id: 902n, purchase_order_line_id: 102n, received_qty: 5, lot_id: null as bigint | null, inbound_receipt_po_allocation: allocated(102n, 5) },
 ];
 const PO_LINES: Record<string, { parent: bigint; ordered: number; tolerance: number; received: number }> =
   {
@@ -121,7 +122,6 @@ function fake(options: Options = {}) {
             }))
           : existing.map((row) => ({
               inbound_receipt_excess: [],
-              inbound_receipt_po_allocation: [],
               ...row,
               received_qty: new Prisma.Decimal(row.received_qty),
             })),
@@ -283,7 +283,7 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
 
   // 옛 줄 901 은 20 을 받아 초과분 5 를 남겼다 — P/O 101 에는 15 가 들어가 있다(장부 P-100).
   const WITH_EXCESS = [
-    { ...EXISTING[0], received_qty: 20, inbound_receipt_excess: [{ excess_qty: new Prisma.Decimal(5) }] },
+    { ...EXISTING[0], received_qty: 20, inbound_receipt_excess: [{ excess_qty: new Prisma.Decimal(5) }], inbound_receipt_po_allocation: allocated(101n, 15) },
   ] as unknown as typeof EXISTING;
 
   it('초과분 — 치환은 옛 줄의 초과분을 뺀 몫을 내리고 새 초과분을 뺀 몫을 올린 뒤 초과분을 다시 적는다', async () => {
@@ -356,6 +356,27 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
     expect(recorded.calls.indexOf('lock')).toBeLessThan(recorded.calls.indexOf('delete'));
     expect(recorded.calls.indexOf('lock')).toBeLessThan(recorded.calls.indexOf('line'));
     expect(recorded.transactionOptions).toEqual({ timeout: 15_000, maxWait: 5_000 });
+  });
+
+  it('LOT 이 만들어진 줄의 받은 수량을 바꾸면 400 STATE_LOCKED 이고 수량 정정으로 보낸다 — 다른 칸은 고친다', async () => {
+    const withLot = [{ ...EXISTING[0], lot_id: 7001n }];
+    const { service } = fake({ existing: withLot });
+
+    const error = await thrown(() => service.replaceLines(500, 1, [item({ receivedQty: 12 })], 99));
+
+    expect((error as ContractException).errors[0]).toMatchObject({ field: 'items.0.receivedQty', code: ERROR_CODE.STATE_LOCKED });
+    expect((error as ContractException).errors[0].message).toContain('LOT 수량 정정');
+    await service.replaceLines(500, 1, [item({ receivedQty: 10 })], 99);
+  });
+
+  it('옛 몫은 배정 합으로 뺀다 — 수량 정정으로 받은 수량이 배정보다 커진 줄의 초과분만 바꿔도 P/O 받은 수량이 그대로다', async () => {
+    // 수량 정정이 받은 수량을 12 로 올렸고 P/O 101 배정은 10 그대로다(미배정 2).
+    const corrected = [{ ...EXISTING[0], received_qty: 12 }];
+    const { service, recorded } = fake({ existing: corrected });
+
+    await service.replaceLines(500, 1, [item({ receivedQty: 12, excessQty: 2 })], 99);
+
+    expect(recorded.increments).toEqual([]);
   });
 
   it('귀속 — 차분이 0 미만이면 400 RANGE 다(qty_t 하한이 500 으로 새지 않는다)', async () => {

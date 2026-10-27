@@ -249,7 +249,9 @@ export class LotService {
   async update(lotId: number, version: number, input: LotUpdate): Promise<{ detail: LotDetail; versionNo: number }> {
     const current = await this.row(lotId);
     if (!current.initial_qty.equals(input.initialQty)) {
-      throw one(field('initialQty', ERROR_CODE.INVALID, 'LOT 수량은 수량 정정으로 고칩니다 — 사유를 적어 수량 정정을 하세요.'));
+      throw one(field('initialQty', ERROR_CODE.INVALID, current.source_type_code === 'WORK_ORDER'
+        ? '생산 LOT 수량은 W/O 진행 상세의 실적 정정에서 고칩니다 — 사유를 적어 실적을 정정하세요.'
+        : 'LOT 수량은 정상품 입하 처리(W-01-10)의 LOT 수량 정정으로 고칩니다 — 사유를 적어 수량 정정을 하세요.'));
     }
 
     const updated = await this.prisma.lot.updateMany({
