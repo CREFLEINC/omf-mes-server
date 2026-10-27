@@ -358,15 +358,19 @@ describe('입하 등록 (e2e)', () => {
       expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 90]]);
     });
 
-    it('배정 — 라인 치환이 받은 수량만 바꿔도 몫이 따라간다', async () => {
+    it('배정 — LOT 이 만들어진 줄은 치환으로 받은 수량을 바꾸지 못한다(수량 정정으로) · P/O 받은 수량과 배정이 그대로다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
       const detail = await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 60 }] });
       expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 60]]);
+      expect(detail.lines[0].lotId).toEqual(expect.any(Number));
 
-      await replace(detail.inboundReceipt.inboundReceiptId, [itemOf(detail.lines[0], { receivedQty: 70 })]);
+      const etag = await receiptEtag(detail.inboundReceipt.inboundReceiptId);
+      const rejected = await putLines(detail.inboundReceipt.inboundReceiptId, etag, [itemOf(detail.lines[0], { receivedQty: 70 })]).expect(400);
 
-      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(70);
-      expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 70]]);
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'items.0.receivedQty', code: 'STATE_LOCKED' });
+      expect(rejected.body.errors[0].message).toContain('LOT 수량 정정');
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(60);
+      expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 60]]);
     });
   });
 

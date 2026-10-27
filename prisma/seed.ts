@@ -865,6 +865,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'QUANTITY_CHANGE', codeName: '재구성으로 수량 변경', order: 50 },
       // 실적 정정으로 생산 LOT 수량이 바뀐 재발행(장부 P-120) — 마이그 20261027100000 에도 같은 줄.
       { code: 'RESULT_CORRECTED', codeName: '실적 정정으로 수량 변경', order: 60 },
+      // 자재 LOT 수량 정정으로 라벨 수량이 바뀐 재발행(장부 P-121) — 마이그 20261027130000 에도 같은 줄.
+      { code: 'MATERIAL_QTY_CORRECTED', codeName: '자재 LOT 수량 정정', order: 70 },
     ],
   },
   {
