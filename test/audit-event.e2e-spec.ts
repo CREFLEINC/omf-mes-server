@@ -146,6 +146,24 @@ describe("감사 이력 조회 (e2e)", () => {
     });
   });
 
+  it("⭐ 업무 기록 대상(생산 실적·LOT·포장 단위)으로도 거른다 — 장부 P-120", async () => {
+    const response = await get({
+      targetTypeCode: "PRODUCTION_RESULT",
+      correlationId: `${PREFIX}-RECORD`,
+    });
+    expect(
+      response.body.items.map((item: { reason: string }) => item.reason),
+    ).toEqual(["RESULT-CORRECTED"]);
+    expect(validator()(response.body)).toBe(true);
+    for (const targetTypeCode of ["LOT", "HANDLING_UNIT"]) {
+      const other = await get({
+        targetTypeCode,
+        correlationId: `${PREFIX}-RECORD`,
+      });
+      expect(other.body.items).toHaveLength(1);
+    }
+  });
+
   it("⛔ 계약 enum 밖 targetTypeCode는 400이다", async () => {
     await request(app.getHttpServer())
       .get(range({ targetTypeCode: "WAREHOUSE" }))
@@ -312,6 +330,22 @@ describe("감사 이력 조회 (e2e)", () => {
       `${PREFIX}-OTHER`,
       "FILTER-CORRELATION",
     );
+
+    for (const [targetTypeCode, reason] of [
+      ["PRODUCTION_RESULT", "RESULT-CORRECTED"],
+      ["LOT", "LOT-COMPLETED"],
+      ["HANDLING_UNIT", "HU-CREATED"],
+    ]) {
+      await event(
+        25,
+        targetTypeCode,
+        9001,
+        "UPDATE",
+        performedBy,
+        `${PREFIX}-RECORD`,
+        reason,
+      );
+    }
 
     await prisma.audit_event.create({
       data: {

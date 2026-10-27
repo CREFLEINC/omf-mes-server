@@ -57,7 +57,7 @@ export interface InputMaterialNode extends LotHead, MaterialSide, Consumption {
 export interface BackwardFlow extends ProductSide {
   lot: LotHead;
   goodQty: number;
-  /** 투입 자재로 잇지 못하면(원천이 W/O 아님·실적 배분 없음·투입 없음) null. */
+  /** 투입 자재로 잇지 못하면(원천이 W/O 아님·실적 배분이 한 번도 없음·투입 없음) null. */
   basis: TraceBasis | null;
   /** 원천이 W/O 가 아닌 LOT(자재·분할)이면 null 이고 투입 자재도 없다. 실적 배분이 한 번도 없었던 생산 LOT 은 W/O 만 싣고 투입 자재는 비운다(0 으로 정정된 LOT 은 생산 0 으로 투입 자재가 남는다) — 정방향이 그 LOT 을 잇지 않는 것과 맞춘다. */
   workOrder: (WorkOrderHead & {
