@@ -12,6 +12,7 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { ShipmentRequestLineView } from './shipment-request-view';
+import { oqcSettledLots } from './shipment-oqc-lots';
 import { SHIPMENT_REQUEST_LINE, pickedQtyOf } from './shipment-progress';
 
 /** 계약 `ShipmentLinePick` — required 3 · 프로퍼티 3. ⛔ `businessDate`·`occurredAt` 이 «없다». */
@@ -90,7 +91,7 @@ export class ShipmentPickService {
     shipmentRequestLineId: number,
     body: ShipmentLinePick,
     context: ShipmentPickContext,
-  ): Promise<ShipmentRequestLineView> {
+  ): Promise<ShipmentRequestLineView & { notice?: string }> {
     // ① 가드가 헤더를 «안 본다»(`contract-validation.guard.ts:39`) — 서버가 유일한 그물이다.
     assertWorkerNoPresent(context.workerNo);
     // ③ ⭐ 04 는 `exclusiveMinimum` 이 «없다» — 01 과 달리 그물이 여기 하나뿐이다(R-6).
@@ -132,7 +133,20 @@ export class ShipmentPickService {
     // ⑭ 되읽기는 ③b 의 상세 뷰 그대로다 — 롤업이라 라인 한 줄로는 못 짓는다(§1-4-1).
     const detail = await this.queries.get(shipmentRequestId);
     const lines = detail.lines ?? [];
-    return lines.find((row) => row.shipmentRequestLineId === shipmentRequestLineId) as ShipmentRequestLineView;
+    const view = lines.find((row) => row.shipmentRequestLineId === shipmentRequestLineId) as ShipmentRequestLineView;
+    return { ...view, ...(await this.oqcNotice(view, shipmentRequestId, body.lotId)) };
+  }
+
+  /**
+   * 출하검사가 끝난 뒤(반납하고) 다시 집은 LOT 이 검사 때 대상이 아니었으면 알린다 — 막지는 않는다(장부 P-126 · 리드 결정).
+   * 출하 전에 그 LOT 의 품질을 확인하게 하려는 안내다.
+   */
+  private async oqcNotice(view: ShipmentRequestLineView, shipmentRequestId: number, lotId: number): Promise<{ notice?: string }> {
+    if (!view.shippingInspectionRequired) return {};
+    const lots = await oqcSettledLots(this.prisma, BigInt(shipmentRequestId));
+    if (lots === null || lots.has(String(lotId))) return {};
+    const lotNo = view.picks.find((pick) => pick.lotId === lotId)?.lotNo ?? String(lotId);
+    return { notice: `LOT ${lotNo}: 출하검사가 끝난 뒤 집은 LOT 이라 출하검사 이력에 없습니다 — 출하 전에 이 LOT 의 품질을 확인하세요.` };
   }
 
   /**

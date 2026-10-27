@@ -49,6 +49,7 @@ const SHARED = 'common/master/worker-no.ts';
 const PRESENCE_ONLY = [
   'logistics/picking/picking-pick.service.ts',
   'logistics/shipment-allocation/allocation-packing.service.ts',
+  'logistics/shipment-request/shipment-pick-return.service.ts',
   'logistics/shipment-request/shipment-pick.service.ts',
   'logistics/shopfloor-receipt/shopfloor-receipt.service.ts',
   'production/material-return/material-return.service.ts',
@@ -299,7 +300,8 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     // SHIP-UNIT-01 출하 단위 쓰기 셋(생성·상자 넣기·마감 · 장부 P-24): 37 → 40.
     // 판정은 `logisticsWriteActorOf` 가 한다 — 위 표들이 그 자리를 이미 덮는다.
     // 출하 단위 마감 되돌리기(`:reopen` · 장부 P-124)도 같은 판정이다: 40 → 41.
-    expect(required).toBe(41);
+    // 피킹 반납(`:return-pick` · 장부 P-126)도 같은 판정이다: 41 → 42.
+    expect(required).toBe(42);
   });
 });
 

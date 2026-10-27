@@ -17,6 +17,7 @@
  * ⚠ 다른 스위트와 같은 DB 를 쓰므로 정리는 접두어(`SRPKE2E`)로만 한다 — `TRUNCATE` 금지.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
@@ -33,6 +34,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-shipment-pick-probe';
 const NOPERM_ID = 'e2e-shipment-pick-noperm';
+/** 관리웹 출하 처리(`W-04-04`)만 가진 계정 — 피킹 반납을 그 화면에서도 부른다(장부 P-126). */
+const WEB_ID = 'e2e-shipment-pick-web';
 const PASSWORD = '제품피킹-비밀번호';
 const PREFIX = 'SRPKE2E';
 const ROLE = `${PREFIX}-ROLE`;
@@ -91,11 +94,11 @@ interface ConflictBody {
   conflictCause?: string;
 }
 
-function validator(): ValidateFunction {
+function validator(operation = ':pick'): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/shipment-04제품출하.json'), 'utf8'),
   ) as object;
-  const path = '/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick';
+  const path = `/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}${operation}`;
   const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/post/responses/200/content/application~1json/schema`;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
@@ -119,6 +122,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let webCookie: string[];
   let probeUserId = 0;
   let seq = 0;
   let actorUserId: bigint;
@@ -608,7 +612,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     expect(columns.map((row) => row.column_name)).not.toContain('picked_qty');
   });
 
-  it('P-39 ⭐⭐ 라인 13칸 + picks 5칸이 「제 출처」에서 온다', async () => {
+  it('P-39 ⭐⭐ 라인 14칸 + picks 6칸이 「제 출처」에서 온다', async () => {
     // ⭐ requested·allocated·shipped·picked 넷이 서로 «다른 값»이어야 뒤바꿈이 죽는다(§6-3 ⑵).
     const s = await scenario({
       onHand: 100,
@@ -646,10 +650,13 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
           lotId: s.lotId,
           lotNo: lot.lot_no,
           pickedQty: 12,
+          releasedQty: 0,
           uomId: ids.uom1,
           pickedAt: row.created_at.toISOString(),
         },
       ],
+      // LOT 별 요약(장부 P-126) — 출하 배분이 없어 반납 가능이 피킹 전부다.
+      pickedLots: [{ lotId: s.lotId, lotNo: lot.lot_no, pickedQty: 12, shippedQty: 0, returnableQty: 12, fromPickedQty: 12, limitedByBalance: false }],
     });
   });
 
@@ -690,6 +697,140 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
   });
 
   // ── M4 체인 마디 (§8-8 · PR ⑦b) ──────────────────────────────────────────
+
+
+  // ── 피킹 반납 `:return-pick` (장부 P-126) ──────────────────────────────────
+  function giveBack(s: Scenario, payload: Record<string, unknown>, session: string[] = cookie): request.Test {
+    return request(app.getHttpServer())
+      .post(`${BASE}/${s.requestId}/lines/${s.lineId}:return-pick`)
+      .set('Cookie', session)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', WORKER_NO)
+      .send({ lotId: s.lotId, uomId: ids.uom1, reasonCode: 'QTY_EXCESS', ...payload });
+  }
+
+  /** 출하 배분 한도를 보려고 원장 없이 출하·줄·배분만 심는다 — 반납은 배분 합만 읽는다. */
+  async function shippedRows(s: Scenario, qty: number, status = 'UNCONFIRMED'): Promise<void> {
+    seq += 1;
+    const shipment = await prisma.shipment.create({ data: {
+      shipment_no: `${PREFIX}-SH-${seq}`, shipment_request_id: BigInt(s.requestId), warehouse_id: ids.warehouse1, status_code: status,
+    } });
+    const line = await prisma.shipment_line.create({ data: {
+      shipment_id: shipment.shipment_id, line_no: 1, shipment_request_line_id: BigInt(s.lineId), item_id: BigInt(ids.item1),
+      shipped_qty: qty, uom_id: BigInt(ids.uom1),
+    } });
+    await prisma.shipment_lot_allocation.create({ data: {
+      shipment_line_id: line.shipment_line_id, lot_id: BigInt(s.lotId), allocated_qty: qty, uom_id: BigInt(ids.uom1),
+    } });
+  }
+
+  it('R-1 피킹분을 반납하면 잔액 피킹분이 가용으로 돌아가고 라인 피킹이 준다 — 이력·풀린 수량·LOT 별 요약이 남는다', async () => {
+    const s = await scenario({ onHand: 100 });
+    await pick(s, { pickedQty: 30 });
+    const before = await balanceOf(s.lotId);
+
+    const response = await giveBack(s, { qty: 10 }).expect(200);
+
+    const validate = validator(':return-pick');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(response.body.line).toMatchObject({ pickedQty: 20, pickedLots: [{ lotId: s.lotId, pickedQty: 20, shippedQty: 0, returnableQty: 20, fromPickedQty: 20, limitedByBalance: false }] });
+    expect(response.body.line.picks[0]).toMatchObject({ pickedQty: 30, releasedQty: 10 });
+    expect(response.body.returned).toEqual({ fromPickedQty: 10, reservationOnlyQty: 0 });
+    const after = await balanceOf(s.lotId);
+    expect(before.picked_qty.minus(after.picked_qty).toNumber()).toBe(10);
+    expect(after.on_hand_qty.toNumber()).toBe(before.on_hand_qty.toNumber());
+    expect(response.body.balance).toMatchObject({ lotId: s.lotId, pickedQty: after.picked_qty.toNumber(), onHandQty: 100, availableQty: 80 });
+    const audit = await prisma.audit_event.findFirstOrThrow({
+      where: { target_type_code: 'SHIPMENT_REQUEST_LINE', target_id: BigInt(s.lineId), event_type_code: 'PICK_RETURNED' },
+    });
+    expect(audit).toMatchObject({ reason: 'QTY_EXCESS', after_value: expect.objectContaining({ qty: '10', workerNo: WORKER_NO }) });
+  });
+
+  it('R-2 반납 뒤 같은 라인을 다시 피킹할 수 있다', async () => {
+    const s = await scenario({ onHand: 100, allocated: 30 });
+    await pick(s, { pickedQty: 30 });
+    await giveBack(s, { qty: 30 }).expect(200);
+
+    const again = await pick(s, { pickedQty: 30 });
+
+    expect(again.pickedQty).toBe(30);
+  });
+
+  it('R-3 출하에 배분된 몫은 반납할 수 없다 — 취소 완료된 출하의 배분은 세지 않는다', async () => {
+    const s = await scenario({ onHand: 100 });
+    await pick(s, { pickedQty: 30 });
+    await shippedRows(s, 25);
+    await shippedRows(s, 5, 'CANCELLED');
+
+    const over = await giveBack(s, { qty: 10 }).expect(400);
+    expect(over.body.errors[0]).toMatchObject({ field: 'qty', code: 'RANGE' });
+    expect(over.body.errors[0].message).toContain('출하하지 않은 피킹분은 5 입니다(피킹 30 · 출하 25)');
+    await giveBack(s, { qty: 5 }).expect(200);
+  });
+
+  it('R-4 잔액 피킹분이 모자라면 그만큼만 피킹 → 가용이고 나머지는 예약만 푼다 — 화면 값도 같은 몫으로 나눠 보인다', async () => {
+    const s = await scenario({ onHand: 100 });
+    await pick(s, { pickedQty: 30 });
+    await prisma.inventory_balance.updateMany({ where: { lot_id: BigInt(s.lotId) }, data: { picked_qty: 3 } });
+    const line = (await getRequest(s.requestId)).lines?.find((row) => row.shipmentRequestLineId === s.lineId) as unknown as { pickedLots: unknown[] };
+    expect(line.pickedLots).toEqual([expect.objectContaining({ pickedQty: 30, shippedQty: 0, returnableQty: 30, fromPickedQty: 3, limitedByBalance: true })]);
+
+    const response = await giveBack(s, { qty: 5 }).expect(200);
+
+    expect(response.body.returned).toEqual({ fromPickedQty: 3, reservationOnlyQty: 2 });
+    expect(response.body.line.pickedQty).toBe(25);
+    expect((await balanceOf(s.lotId)).picked_qty.toNumber()).toBe(0);
+  });
+
+  it('R-5 사유 — 없는 코드는 400, 「기타」면 비고가 필수다', async () => {
+    const s = await scenario({ onHand: 100 });
+    await pick(s, { pickedQty: 30 });
+
+    expect((await giveBack(s, { qty: 1, reasonCode: 'NOPE' }).expect(400)).body.errors[0]).toMatchObject({ field: 'reasonCode' });
+    expect((await giveBack(s, { qty: 1, reasonCode: 'OTHER' }).expect(400)).body.errors[0]).toMatchObject({ field: 'remarks', code: 'REQUIRED' });
+    await giveBack(s, { qty: 1, reasonCode: 'OTHER', remarks: '바닥에 떨어짐' }).expect(200);
+  });
+
+  it('R-6 관리웹 출하 처리(W-04-04) 권한으로도 반납하고, 권한이 없으면 403 이다', async () => {
+    const s = await scenario({ onHand: 100 });
+    await pick(s, { pickedQty: 30 });
+
+    await giveBack(s, { qty: 1 }, webCookie).expect(200);
+    await giveBack(s, { qty: 1 }, noPermCookie).expect(403);
+  });
+
+  it('R-7 MOBILE 단말은 자기 공장 지시만 반납한다 — 다른 공장 단말은 401 이고 아무것도 바뀌지 않는다, 같은 공장 단말은 된다', async () => {
+    const s = await scenario({ onHand: 100 });
+    await pick(s, { pickedQty: 30 });
+    const other = await prisma.plant.create({ data: {
+      legal_entity_id: ids.entity, plant_code: `${PREFIX}-P2`, plant_name: '다른공장', timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    await prisma.worker.create({ data: {
+      worker_no: `${PREFIX}-T1`, worker_name: '다른공장작업자', business_unit_id: ids.unit, plant_id: other.plant_id, status_code: 'EMPLOYED',
+    } });
+    await prisma.worker.create({ data: {
+      worker_no: `${PREFIX}-T2`, worker_name: '같은공장작업자', business_unit_id: ids.unit, plant_id: ids.plant, status_code: 'EMPLOYED',
+    } });
+    const mobile = async (code: string, plantId: bigint) => {
+      const terminal = await prisma.terminal.create({ data: { terminal_code: `${PREFIX}-${code}`, plant_id: plantId, terminal_type_code: 'MOBILE', status_code: 'RUNNING' } });
+      return app.get(JwtService).sign({
+        sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId: Number(plantId),
+      });
+    };
+    const send = (token: string, workerNo: string) => request(app.getHttpServer())
+      .post(`${BASE}/${s.requestId}/lines/${s.lineId}:return-pick`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', workerNo)
+      .send({ lotId: s.lotId, qty: 1, uomId: ids.uom1, reasonCode: 'QTY_EXCESS' });
+
+    await send(await mobile('MOB2', other.plant_id), `${PREFIX}-T1`).expect(401);
+    expect((await getRequest(s.requestId)).lines?.find((row) => row.shipmentRequestLineId === s.lineId)?.pickedQty).toBe(30);
+    // 대조 — 같은 공장의 MOBILE 단말이면 반납된다(401 이 단말 자체를 막아서가 아니다).
+    await send(await mobile('MOB1', ids.plant), `${PREFIX}-T2`).expect(200);
+    expect((await getRequest(s.requestId)).lines?.find((row) => row.shipmentRequestLineId === s.lineId)?.pickedQty).toBe(29);
+  });
 
   it('M4 ⭐⭐ 지시서 → 편성 → 피킹 이 HTTP 로 이어지고 진행이 PICKING → PICKED 로 오른다', async () => {
     // ⛔ 중간을 Prisma 로 «건너뛰지 않는다» — 편성·피킹·조회 셋 다 HTTP 다. LOT 과 잔액만 픽스처인데
@@ -1165,8 +1306,14 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: noPerm.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    const web = await prisma.app_user.create({ data: { login_id: WEB_ID, user_name: '출하처리검사', status_code: 'EMPLOYED' } });
+    await prisma.user_credential.create({ data: { app_user_id: web.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    const webRole = await prisma.role.create({ data: { role_code: `${ROLE}-WEB`, role_name: '출하처리검사용' } });
+    await prisma.role_permission.create({ data: { role_id: webRole.role_id, permission_code: 'W-04-04' } });
+    await prisma.user_role.create({ data: { app_user_id: web.app_user_id, role_id: webRole.role_id } });
     cookie = await login(LOGIN_ID);
     noPermCookie = await login(NOPERM_ID);
+    webCookie = await login(WEB_ID);
   }
 
   async function login(loginId: string): Promise<string[]> {
@@ -1188,6 +1335,12 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       // ⛔ 예약은 «품목» 축으로 지운다 — `reservation_no` 는 채번이 정하는 값이라 변이 하네스가
       //    바꾸는 바로 그 자리다(접두어로 지우면 실패한 회차의 행이 남아 FK 로 정리를 막는다).
       `DELETE FROM inventory.inventory_reservation WHERE item_id IN (${items})`,
+      // 피킹 반납(R-*)이 출하 배분 한도를 보려 심은 출하 — 원장 없이 표만 세웠다.
+      `DELETE FROM logistics.shipment_lot_allocation WHERE shipment_line_id IN (
+         SELECT shipment_line_id FROM logistics.shipment_line WHERE shipment_id IN (
+           SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'))`,
+      `DELETE FROM logistics.shipment_line WHERE shipment_id IN (SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'`,
       `DELETE FROM inventory.inventory_balance WHERE item_id IN (${items})`,
       `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (
          SELECT shipment_request_id FROM logistics.shipment_request
@@ -1204,6 +1357,10 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
       `DELETE FROM app.user_data_scope WHERE app_user_id IN (
          SELECT app_user_id FROM app.app_user WHERE login_id IN ('${LOGIN_ID}', '${NOPERM_ID}'))`,
+      // 피킹 반납 R-7 — 다른 공장의 MOBILE 단말과 그 작업자.
+      `DELETE FROM audit.audit_event WHERE terminal_id IN (SELECT terminal_id FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%')`,
+      `DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}-T%'`,
       `DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,
@@ -1213,7 +1370,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     ]) {
       await prisma.$executeRawUnsafe(sql);
     }
-    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+    for (const loginId of [LOGIN_ID, NOPERM_ID, WEB_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: loginId } });
       if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
@@ -1221,6 +1378,11 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       await prisma.user_data_scope.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
+    }
+    const webRole = await prisma.role.findUnique({ where: { role_code: `${ROLE}-WEB` } });
+    if (webRole) {
+      await prisma.role_permission.deleteMany({ where: { role_id: webRole.role_id } });
+      await prisma.role.delete({ where: { role_id: webRole.role_id } });
     }
     const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
     if (role) {

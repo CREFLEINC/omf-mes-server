@@ -6,3 +6,4 @@ export { ErrorResponseFilter } from './error.filter';
 export { field, one } from './field';
 export type { ErrorItem, ErrorResponse, ErrorScope } from './error-response';
 export { prismaErrorResponse } from './prisma-error';
+export { isOverlap, overlapsAsConflict } from './overlap-conflict';

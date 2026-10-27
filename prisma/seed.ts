@@ -1296,6 +1296,17 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // 피킹 반납 사유(장부 P-126) — 마이그 `20261027150000_pick_return_reason` 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
+    groupCode: 'PICK_RETURN_REASON',
+    groupName: '피킹 반납 사유',
+    values: [
+      { code: 'QTY_EXCESS', codeName: '수량 과다', order: 10 },
+      { code: 'WRONG_LOT', codeName: 'LOT 착오', order: 20 },
+      { code: 'PACK_CORRECTION', codeName: '포장 정정 잔량', order: 30 },
+      { code: 'OTHER', codeName: '기타', order: 40 },
+    ],
+  },
+  {
     // 4M 변경품의 변경 종류(omf-all-around#63 · 장부 P-86) — 고객 회신 전 기본 4종. 마이그
     // `20261021150000_lot_four_m_change` 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
     groupCode: 'FOUR_M_CHANGE_TYPE',

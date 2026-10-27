@@ -138,7 +138,8 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     // 제품 검사표 서명·승인·확인·승인 취소 4건도(#89 · 장부 P-102): 52 → 56.
     // 작업 세션 강제 종료 1건(장부 P-108): 56 → 57.
     // 출하 단위 마감 되돌리기(`:reopen`)가 마감과 같은 계열 409 를 쓴다(장부 P-124): 57 → 58.
-    expect(sites.filter((site) => site.passes)).toHaveLength(58);
+    // 피킹 반납(`:return-pick` · 장부 P-126)도 같은 계열 409 를 쓴다: 58 → 59.
+    expect(sites.filter((site) => site.passes)).toHaveLength(59);
   });
 
   it('⭐ 두 값이 계열 네 enum «전부»에 있다 — 계약에서 직접 읽는다', () => {

@@ -77,3 +77,37 @@ export function assertOqcPicked(picked: OqcPickedLots, action: '판정하세요'
     },
   ]);
 }
+
+/**
+ * 출하검사가 끝난(판정 확정·생략) 지시의 «검사 때 대상이던» LOT — 끝난 시각까지 검사 대상 라인이 집은 예약의 LOT 이다(장부 P-126).
+ * 반납 뒤 다시 집은 LOT 이 여기 없으면 화면에 알린다(막지는 않는다). 끝나지 않았으면 null.
+ */
+export async function oqcSettledLots(
+  prisma: Pick<Prisma.TransactionClient, 'inspection_result' | 'inspection_request' | 'inventory_reservation' | 'shipment_request_line'>,
+  shipmentRequestId: bigint,
+): Promise<Set<string> | null> {
+  const header = { inspection_type_code: 'OQC', target_type_code: 'SHIPMENT_REQUEST', target_id: shipmentRequestId };
+  const [judged, skipped] = await Promise.all([
+    prisma.inspection_result.aggregate({ where: { status_code: 'CONFIRMED', inspection_request: header }, _max: { confirmed_at: true, updated_at: true } }),
+    prisma.inspection_request.aggregate({ where: { ...header, status_code: 'SKIPPED' }, _max: { updated_at: true } }),
+  ]);
+  const times = [judged._max.confirmed_at ?? judged._max.updated_at, skipped._max.updated_at].filter((at): at is Date => at !== null);
+  if (times.length === 0) return null;
+  const settledAt = new Date(Math.max(...times.map((at) => at.getTime())));
+  const rows = await prisma.inventory_reservation.findMany({
+    where: {
+      source_document_type_code: SHIPMENT_REQUEST_LINE, created_at: { lte: settledAt },
+      source_document_id: { in: await linesNeedingOqc(prisma, shipmentRequestId) },
+    },
+    select: { lot_id: true },
+  });
+  return new Set(rows.flatMap((row) => (row.lot_id === null ? [] : [String(row.lot_id)])));
+}
+
+async function linesNeedingOqc(prisma: Pick<Prisma.TransactionClient, 'shipment_request_line'>, shipmentRequestId: bigint): Promise<bigint[]> {
+  const lines = await prisma.shipment_request_line.findMany({
+    where: { shipment_request_id: shipmentRequestId, shipping_inspection_required: true },
+    select: { shipment_request_line_id: true },
+  });
+  return lines.map((line) => line.shipment_request_line_id);
+}
