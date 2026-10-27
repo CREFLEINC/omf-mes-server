@@ -7,6 +7,7 @@ import { LockedBalanceRow, lockBalancesInOrder } from '../../core/inventory-post
 import { BalanceDimension } from '../../core/inventory-posting/reservation-qty';
 import { GoodsIssueLineWriteInput, postIssue } from '../goods-issue/issue-posting';
 import { CANCELLED, CONFIRMED, SHIPMENT_TARGET, Tx, hasOpenCancel, lockShipment } from './shipment-guards';
+import { CANCELLED_SO_LINE } from '../shipment-request/shipment-request.constants';
 import { AllocationChange, REORDER, RepackAllocation, netChanges } from './shipment-repack-plan';
 
 /**
@@ -15,8 +16,10 @@ import { AllocationChange, REORDER, RepackAllocation, netChanges } from './shipm
  * 줄인 몫은 «피킹됐지만 아직 출하 안 됨»으로 남는다 — 역전기로 돌아온 수량을 피킹으로 되돌리고 새 출고가 고친 수량만 소진한다.
  * 지시 라인의 피킹 예약은 건드리지 않는다(라인 피킹 = 예약 합, 출하 수량이 줄면 그만큼이 그 라인의 피킹 미출하분이다).
  *
- * 잠금 순서: 출하 → 출하의 배분 → (호출자) 상자 → 출하의 LOT 잔액(id 순 한 번에) → 지시 라인·수주 라인.
- * 배분에 상자를 잇는 경로가 배분 → 상자 순이고, 출하 등록이 잔액 → 지시 라인 순이라 그 순서에 맞춘다.
+ * 잠금 순서: 출하 → 출하의 배분 → (호출자) 상자 → 지시 라인(id 순) → 출하의 LOT 잔액(id 순 한 번에) → 수주 라인.
+ * 배분에 상자를 잇는 경로가 배분 → 상자 순이고, 피킹(M-04-01)이 지시 라인 → 잔액 순이라 그 순서에 맞춘다.
+ * ⚠ 출하 등록은 잔액 → 지시 라인 순이라 같은 지시 라인·LOT 에서 등록과 정정이 겹치면 교착할 수 있다 — 피킹과 등록이 이미 서로
+ *   반대라 둘 다 맞출 수는 없다. 교착은 호출자가 409 「다른 작업과 겹쳤습니다」로 바꾼다(장부 P-125).
  */
 
 const POSTED = 'POSTED';
@@ -154,6 +157,7 @@ export async function syncShipment(tx: Tx, posting: InventoryPostingService, inp
   if (old === null) throw new Error(`출하에 살아 있는 출고 전표가 없다: ${locked.shipmentNo}`);
   const oldLines = await tx.goods_issue_line.findMany({ where: { goods_issue_id: old.goods_issue_id }, select: { lot_id: true, source_location_id: true } });
   const locationOf = new Map(oldLines.map((line) => [line.lot_id, line.source_location_id]));
+  await lockRequestLines(tx, locked.shipmentId);
   const balances = await lockLotBalances(tx, locked, net.byLot, locationOf);
   await assertFits(tx, locked, net, balances);
 
@@ -177,6 +181,15 @@ export async function syncShipment(tx: Tx, posting: InventoryPostingService, inp
 }
 
 type LotBalance = LockedBalanceRow & { picked: Prisma.Decimal };
+
+/** 이 출하가 걸친 지시 라인을 id 순으로 잠근다 — 피킹과 같은 «지시 라인 → 잔액» 순서. */
+async function lockRequestLines(tx: Tx, shipmentId: bigint): Promise<void> {
+  await tx.$queryRaw`
+    SELECT shipment_request_line_id FROM logistics.shipment_request_line
+     WHERE shipment_request_line_id IN (SELECT shipment_request_line_id FROM logistics.shipment_line WHERE shipment_id = ${shipmentId})
+     ORDER BY shipment_request_line_id
+       FOR UPDATE`;
+}
 
 /** 출하의 LOT 잔액을 id 순으로 한 번에 잠근다. 창고에 그 LOT 의 잔액 행이 하나가 아니면 어느 것을 고칠지 정할 수 없다. */
 async function lockLotBalances(
@@ -214,7 +227,7 @@ async function assertFits(tx: Tx, locked: LockedRepack, net: ReturnType<typeof n
     where: { shipment_id: locked.shipmentId, shipment_line_id: { in: [...net.byLine.keys()] } },
     select: { shipment_line_id: true, shipment_request_line: { select: {
       line_no: true, allocated_qty: true, shipped_qty: true, shipment_request: { select: { shipment_request_no: true } },
-      sales_order_line: { select: { line_no: true, ordered_qty: true, shipped_qty: true, sales_order: { select: { sales_order_no: true } } } },
+      sales_order_line: { select: { line_no: true, ordered_qty: true, shipped_qty: true, cancelled_at: true, sales_order: { select: { sales_order_no: true } } } },
     } } },
   });
   for (const line of lines) {
@@ -226,7 +239,10 @@ async function assertFits(tx: Tx, locked: LockedRepack, net: ReturnType<typeof n
         + `(${request.allocated_qty.toString()})을 넘습니다 — 출하작업지시에서 배정을 늘리거나 수량을 줄이세요.`));
     }
     const order = request.sales_order_line;
-    if (order !== null && order.shipped_qty.plus(delta).greaterThan(order.ordered_qty)) {
+    if (order?.cancelled_at != null) {
+      errors.push(field('items', ERROR_CODE.INVALID, `수주 ${order.sales_order.sales_order_no} ${order.line_no}번 줄: ${CANCELLED_SO_LINE} `
+        + '— 늘리는 정정은 할 수 없으니 수량을 줄이거나 그대로 두세요.'));
+    } else if (order !== null && order.shipped_qty.plus(delta).greaterThan(order.ordered_qty)) {
       errors.push(field('items', ERROR_CODE.RANGE, `수주 ${order.sales_order.sales_order_no} ${order.line_no}번 줄의 수주 수량`
         + `(${order.ordered_qty.toString()})을 넘습니다 — 수량을 줄이세요.`));
     }

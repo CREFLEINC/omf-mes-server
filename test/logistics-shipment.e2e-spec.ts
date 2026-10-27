@@ -1121,6 +1121,15 @@ describe('출하 목록 (e2e)', () => {
     } finally {
       await prisma.inventory_balance.updateMany({ where: { lot_id: ids.lotRepack, warehouse_id: ids.warehouse }, data: { picked_qty: picked.picked_qty } });
     }
+    // 수주 라인이 ERP 에서 취소됐으면 늘리는 정정은 출하 등록과 같은 사유로 막는다 — 줄이는 정정은 된다.
+    const orderLine = await prisma.shipment_request_line.findUniqueOrThrow({ where: { shipment_request_line_id: BigInt(made.postRequestLine) }, select: { sales_order_line_id: true } });
+    await prisma.sales_order_line.update({ where: { sales_order_line_id: orderLine.sales_order_line_id as bigint }, data: { cancelled_at: new Date() } });
+    try {
+      const cancelledOrder = await repack(huId, contents(5, 6), '늘림', 400);
+      expect(cancelledOrder.body.errors[0].message).toContain('ERP 에서 취소한 수주 라인입니다.');
+    } finally {
+      await prisma.sales_order_line.update({ where: { sales_order_line_id: orderLine.sales_order_line_id as bigint }, data: { cancelled_at: null } });
+    }
     expect((await issuesOf(shipmentId)).map((issue) => issue.status_code)).toEqual(['POSTED']);
   });
 
@@ -1227,6 +1236,79 @@ describe('출하 목록 (e2e)', () => {
     await requestCancel(shipmentId, await versionOf(shipmentId), 200);
     await approveCancel(shipmentId);
     await cancelShipment(shipmentId, await versionOf(shipmentId), 200);
+    // 취소는 LOT 별 예약만 푼다 — A 는 5 중 3 을 풀어 2 가 피킹으로 남고, B 는 7 중 이 지시가 집은 5 만 푼다
+    // (늘린 2 는 다른 피킹분에서 소진했다 · 피킹분은 지시끼리 함께 쓴다).
+    expect(await linePicked()).toBe(2);
+  });
+
+
+  /** 시험마다 새 상자 정정용 지시(배정 10) — 앞 시험의 피킹이 배정을 채우지 않게. */
+  async function freshRepackRequest(): Promise<void> {
+    made.rpk = (made.rpk ?? 0) + 1;
+    const header = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-RPK${made.rpk}`, fulfillment_plant_id: ids.plant, customer_id: ids.customer,
+        ship_to_partner_id: ids.customer, requested_ship_date: new Date('2026-09-01T00:00:00.000Z'), status_code: 'REGISTERED',
+        shipment_request_line: { create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, requested_qty: 10, allocated_qty: 10 }] },
+      },
+      include: { shipment_request_line: true },
+    });
+    made.repackRequest = Number(header.shipment_request_id);
+    made.repackRequestLine = Number(header.shipment_request_line[0].shipment_request_line_id);
+  }
+
+  const reservationsOfLot = (lotId: bigint) => prisma.inventory_reservation.findMany({
+    where: { source_document_type_code: 'SHIPMENT_REQUEST_LINE', source_document_id: BigInt(made.repackRequestLine), lot_id: lotId },
+    orderBy: { inventory_reservation_id: 'desc' }, take: 1, select: { reserved_qty: true, consumed_qty: true, released_qty: true },
+  });
+  const cancelNow = async (shipmentId: number) => {
+    await requestCancel(shipmentId, await versionOf(shipmentId), 200);
+    await approveCancel(shipmentId);
+    await cancelShipment(shipmentId, await versionOf(shipmentId), 200);
+  };
+
+  it('G-10 줄인 뒤 같은 지시로 남은 피킹분 2 를 새로 출하하면 처음부터 10 을 출하한 것과 같다', async () => {
+    await freshRepackRequest();
+    const baseline = await balanceOf(ids.lotPost);
+    await pickFor(ids.lotPost, 5);
+    await pickFor(ids.lotRepack, 5);
+    const first = await packedShipment(made.repackRequest, made.repackRequestLine);
+    await repack(first.huId, contents(3, 5));
+
+    const second = await post(body({
+      shipmentRequestId: made.repackRequest,
+      lines: [{ shipmentRequestLineId: made.repackRequestLine, shippedQty: 2, uomId: Number(ids.uom),
+        allocations: [{ lotId: Number(ids.lotPost), allocatedQty: 2, uomId: Number(ids.uom) }] }],
+    }));
+
+    expect(await repackLineShipped()).toBe(10);
+    expect(await linePicked()).toBe(10);
+    // 피킹 5 를 집고 3 + 2 로 나갔다 — 잔액 피킹분은 피킹 전과 같고 보유는 5 줄었다.
+    const after = await balanceOf(ids.lotPost);
+    expect(after.picked_qty.toNumber()).toBe(baseline.picked_qty.toNumber());
+    expect(baseline.on_hand_qty.minus(after.on_hand_qty).toNumber()).toBe(5);
+    await cancelNow(second.shipmentId as number);
+    await cancelNow(first.shipmentId);
+    expect(await linePicked()).toBe(0);
+  });
+
+  it('G-11 8 로 줄인 채 취소하면 줄인 2 가 그 지시의 피킹으로 남는다 — 라인 피킹 2 · 잔액 피킹분 +2 · 예약 소진 2·해제 8', async () => {
+    await freshRepackRequest();
+    const baseline = await balanceOf(ids.lotPost);
+    await pickFor(ids.lotPost, 5);
+    await pickFor(ids.lotRepack, 5);
+    const { shipmentId, huId } = await packedShipment(made.repackRequest, made.repackRequestLine);
+    await repack(huId, contents(3, 5));
+
+    await cancelNow(shipmentId);
+
+    expect(await linePicked()).toBe(2);
+    expect(await repackLineShipped()).toBe(0);
+    expect((await balanceOf(ids.lotPost)).picked_qty.minus(baseline.picked_qty).toNumber()).toBe(2);
+    const [post_] = await reservationsOfLot(ids.lotPost);
+    const [repack_] = await reservationsOfLot(ids.lotRepack);
+    expect([post_, repack_].map((row) => [row.reserved_qty.toNumber(), row.consumed_qty.toNumber(), row.released_qty.toNumber()]))
+      .toEqual([[5, 2, 3], [5, 0, 5]]);
   });
 
   async function versionOf(shipmentId: unknown): Promise<number> {
