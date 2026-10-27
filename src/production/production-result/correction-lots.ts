@@ -36,20 +36,24 @@ export async function originalShare(tx: Tx, productionResultId: bigint): Promise
       where: { production_result_id: id }, select: { good_qty: true, corrects_production_result_id: true },
     });
     first ??= row.good_qty;
-    const rows = await tx.production_result_lot_allocation.findMany({
-      where: { production_result_id: id },
-      select: { lot_id: true, allocated_qty: true, lot: { select: { lot_no: true } } },
-      orderBy: { lot_id: 'asc' },
-    });
-    if (rows.length > 0) {
-      return {
-        allocations: rows.map((row) => ({ lotId: Number(row.lot_id), lotNo: row.lot.lot_no, allocatedQty: row.allocated_qty.toNumber() })),
-        goodQty: row.good_qty,
-      };
-    }
+    const allocations = await ownAllocations(tx, id);
+    if (allocations.length > 0) return { allocations, goodQty: row.good_qty };
     id = row.corrects_production_result_id;
   }
   return { allocations: [], goodQty: first ?? new Prisma.Decimal(0) };
+}
+
+/**
+ * 그 행 자신의 배분(없으면 빈 배열). 바뀌는 LOT·정정 전 수량·이력은 이것과 비교한다 — 조상 배분과 비교하면
+ * 0 정정을 다시 정정할 때 되살아나는 LOT 을 «안 바뀜»으로, 불량만 고친 0 정정을 «바뀜»으로 잘못 본다.
+ */
+export async function ownAllocations(tx: Tx, productionResultId: bigint): Promise<OriginalAllocation[]> {
+  const rows = await tx.production_result_lot_allocation.findMany({
+    where: { production_result_id: productionResultId },
+    select: { lot_id: true, allocated_qty: true, lot: { select: { lot_no: true } } },
+    orderBy: { lot_id: 'asc' },
+  });
+  return rows.map((row) => ({ lotId: Number(row.lot_id), lotNo: row.lot.lot_no, allocatedQty: row.allocated_qty.toNumber() }));
 }
 
 /**
@@ -187,29 +191,35 @@ export async function liveLotQuantities(tx: Tx, lotIds: readonly number[]): Prom
 
 /**
  * 완료된 LOT 의 수량이 바뀌면 완료 판정을 다시 본다. 미달이 됐는데 W/O 에 미달 사유가 없으면 완료를 풀어 다시 완료하게 한다
- * (완료 화면이 사유를 묻는다). 이 W/O 의 완료 LOT 중 미달이 하나도 안 남으면 W/O 의 미달 사유를 비운다.
- * 돌려주는 것은 완료를 푼 LOT.
+ * (완료 화면이 사유를 묻는다). 수량이 0 이 된 LOT 은 미달 사유가 있어도 완료를 푼다 — 빈 LOT 을 완료로 두지 않는다.
+ * 이 W/O 의 완료 LOT 중 미달이 하나도 안 남으면 W/O 의 미달 사유를 비운다. 돌려주는 것은 완료를 푼 LOT.
  */
-export async function recheckCompletion(tx: Tx, workOrderId: bigint, lotIds: readonly number[]): Promise<Set<number>> {
+export async function recheckCompletion(
+  tx: Tx, workOrderId: bigint, lotIds: readonly number[], appUserId?: number,
+): Promise<Set<number>> {
   const completed = await tx.lot.findMany({
     where: { source_type_code: 'WORK_ORDER', source_id: workOrderId, completed_at: { not: null } },
     select: { lot_id: true, initial_qty: true },
   });
   if (completed.length === 0) return new Set();
   const live = await liveLotQuantities(tx, completed.map((lot) => Number(lot.lot_id)));
-  const judged = completed.map((lot) => ({
-    lotId: Number(lot.lot_id),
+  const judged = completed.map((lot) => {
+    const qty = new Prisma.Decimal(live.get(Number(lot.lot_id)) ?? 0);
     // 완료 판정의 미달(`trace/lot/lot-progress.ts` 의 UNDER)과 같은 비교 — 도메인 간 import 를 하지 않는다.
-    under: new Prisma.Decimal(live.get(Number(lot.lot_id)) ?? 0).lessThan(lot.initial_qty),
-  }));
+    return { lotId: Number(lot.lot_id), under: qty.lessThan(lot.initial_qty), empty: qty.isZero() };
+  });
   const workOrder = await tx.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId }, select: { completion_variance_reason_code: true } });
   const changed = new Set(lotIds);
-  const reset = new Set(judged.filter((lot) => changed.has(lot.lotId) && lot.under && workOrder.completion_variance_reason_code === null).map((lot) => lot.lotId));
+  const noReason = workOrder.completion_variance_reason_code === null;
+  const reset = new Set(judged.filter((lot) => changed.has(lot.lotId) && (lot.empty || (lot.under && noReason))).map((lot) => lot.lotId));
   if (reset.size > 0) {
     await tx.lot.updateMany({ where: { lot_id: { in: [...reset].map(BigInt) } }, data: { completed_at: null, version_no: { increment: 1 } } });
   }
   if (workOrder.completion_variance_reason_code !== null && !judged.some((lot) => lot.under && !reset.has(lot.lotId))) {
-    await tx.work_order.update({ where: { work_order_id: workOrderId }, data: { completion_variance_reason_code: null } });
+    await tx.work_order.update({
+      where: { work_order_id: workOrderId },
+      data: { completion_variance_reason_code: null, version_no: { increment: 1 }, ...(appUserId === undefined ? {} : { updated_by: BigInt(appUserId) }) },
+    });
   }
   return reset;
 }

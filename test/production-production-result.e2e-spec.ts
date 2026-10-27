@@ -942,6 +942,29 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       expect(await progressOf(slots[0].lot_id)).toBe(20);
     });
 
+    it('보정 마이그레이션 — 옛 정정 체인을 런타임과 같은 식으로 채운다(가장 가까운 배분 조상 + 양품 차이 · 0 은 빈 배분)', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);
+      const original = await prisma.production_result.findUniqueOrThrow({ where: { production_result_id: BigInt(recorded.body.productionResultId) } });
+      const legacy = async (correctsId: bigint, goodQty: number, sequence: number) => prisma.production_result.create({ data: {
+        production_result_no: `${PREFIX}-LEGACY-${randomUUID().slice(0, 8)}`, work_order_id: original.work_order_id, result_sequence: sequence,
+        corrects_production_result_id: correctsId, good_qty: goodQty, uom_id: original.uom_id, result_source_code: 'MANUAL',
+        occurred_at: original.occurred_at, worker_id: original.worker_id, status_code: 'CONFIRMED', idempotency_key: randomUUID(),
+      } });
+      const zero = await legacy(original.production_result_id, 0, 97);
+      const revived = await legacy(zero.production_result_id, 25, 98);
+      const sql = readFileSync(join(__dirname, '../prisma/migrations/20261027110000_correction_backfill_zero/migration.sql'), 'utf8');
+
+      await prisma.$executeRawUnsafe(sql.slice(sql.indexOf('DO $$')));
+
+      const allocationsOf = (id: bigint) => prisma.production_result_lot_allocation.findMany({ where: { production_result_id: id } });
+      expect(await allocationsOf(zero.production_result_id)).toEqual([]);
+      // 기준은 0 행을 건너뛴 원본(L1:30, 양품 30) — 30 + (25 − 30) = 25.
+      expect((await allocationsOf(revived.production_result_id)).map((row) => [row.lot_id, row.allocated_qty.toNumber()]))
+        .toEqual([[slots[0].lot_id, 25]]);
+      expect(await progressOf(slots[0].lot_id)).toBe(25);
+    });
+
     it('정정 — LOT 이 여럿이면 LOT 별 수량을 받고, 원본이 양품을 다 담았으면 합이 양품과 같아야 한다', async () => {
       const { workOrderId, slots } = await released(100, 50);
       const recorded = await request(app.getHttpServer())
@@ -985,6 +1008,61 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       expect(await progressOf(slots[0].lot_id)).toBe(0);
       await record(workOrderId, slots[1].lot_id, 30).expect(201);
       expect(await progressOf(slots[1].lot_id)).toBe(30);
+    });
+
+    it('정정 — 0 정정을 같은 양품으로 다시 정정하면 LOT 이 되살아난 것으로 보고 하류 확인·라벨 판정을 거친다', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);
+      const zero = await correctResult(recorded.body.productionResultId, { goodQty: 0, note: '잘못 넣음' }).expect(201);
+      expect(zero.body.affectedLots).toMatchObject([{ lotId: Number(slots[0].lot_id), qtyBefore: 30, qtyAfter: 0 }]);
+
+      const revived = await correctResult(zero.body.productionResultId, { goodQty: 30, note: '되돌림' }).expect(201);
+
+      expect(revived.body.affectedLots).toMatchObject([{ lotId: Number(slots[0].lot_id), qtyBefore: 0, qtyAfter: 30 }]);
+      expect(await progressOf(slots[0].lot_id)).toBe(30);
+      const audit = await prisma.audit_event.findFirstOrThrow({
+        where: { target_type_code: 'PRODUCTION_RESULT', target_id: BigInt(zero.body.productionResultId), event_type_code: 'RESULT_CORRECTED' },
+      });
+      expect(audit.before_value).toMatchObject({ lotAllocations: [] });
+    });
+
+    it('정정 — 0 정정을 되살릴 때 그 LOT 이 포장에 담겼으면 400 이고, 불량만 고치면 LOT 이 안 바뀌어 통과한다', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);
+      const zero = await correctResult(recorded.body.productionResultId, { goodQty: 0, note: '잘못 넣음' }).expect(201);
+      const box = await prisma.handling_unit.create({ data: {
+        handling_unit_no: `${PREFIX}-HU-${randomUUID().slice(0, 8)}`, handling_unit_type_code: 'BOX', status_code: 'OPEN',
+        handling_unit_content: { create: [{ item_id: ids.item, lot_id: slots[0].lot_id, qty: 1, uom_id: ids.uom }] },
+      } });
+      try {
+        const rejected = await correctResult(zero.body.productionResultId, { goodQty: 30 }).expect(400);
+        expect(rejected.body.errors[0]).toMatchObject({ field: 'goodQty', code: 'STATE_LOCKED' });
+
+        const defectOnly = await correctResult(zero.body.productionResultId, { defectQty: 1, note: '불량만' }).expect(201);
+        expect(defectOnly.body.affectedLots).toEqual([]);
+      } finally {
+        await prisma.handling_unit_content.deleteMany({ where: { handling_unit_id: box.handling_unit_id } });
+        await prisma.handling_unit.delete({ where: { handling_unit_id: box.handling_unit_id } });
+      }
+    });
+
+    it('정정 — 수량이 0 이 된 완료 LOT 은 W/O 에 미달 사유가 있어도 완료를 푼다', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 50).expect(201);
+      await complete(slots[0].lot_id).expect(200);
+      const before = await prisma.work_order.update({
+        where: { work_order_id: BigInt(workOrderId) }, data: { completion_variance_reason_code: 'MATERIAL_SHORTAGE' }, select: { version_no: true },
+      });
+
+      const corrected = await correctResult(recorded.body.productionResultId, { goodQty: 0, note: '잘못 넣음' }).expect(201);
+
+      expect(corrected.body.affectedLots[0]).toMatchObject({ qtyAfter: 0, completionReset: true });
+      const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: slots[0].lot_id }, select: { completed_at: true } });
+      expect(lot.completed_at).toBeNull();
+      // 완료 LOT 중 미달이 안 남아 W/O 의 미달 사유를 비우고, 그 W/O 의 버전·수정자도 남긴다.
+      const workOrder = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      expect(workOrder).toMatchObject({ completion_variance_reason_code: null, version_no: before.version_no + 1 });
+      expect(workOrder.updated_by).not.toBeNull();
     });
 
     it('진척 — `GET /trace/lots/{lotId}?withProgress=true` 에 `progress` 4칸이 실리고 `false` 면 키가 없다(R-6)', async () => {
