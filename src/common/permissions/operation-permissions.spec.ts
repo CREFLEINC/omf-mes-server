@@ -126,6 +126,11 @@ describe('오퍼레이션 권한 매핑', () => {
     );
   });
 
+  // `:per-line` 이 빌려 쓰는 입하 등록 권한 — PDA(M-01-01)와 웹 입하 등록(W-01-03) 둘 다(장부 P-117).
+  it('⛔ 입하 등록에 PDA 와 웹 입하 등록 화면이 함께 있다 — 장부 P-117', () => {
+    expect(OPERATION_PERMISSIONS['POST /logistics/inbound-receipts']).toEqual(['M-01-01', 'W-01-03']);
+  });
+
   // P-06-01(창고 적재 위치 라벨 발행)은 설계 밖 화면이라 도출표가 영영 주지 않는다 — 장부 P-28.
   it('⛔ 발행 POST에 창고 적재 위치 라벨 발행 화면이 있다 — 장부 P-28', () => {
     expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toContain('P-06-01');
