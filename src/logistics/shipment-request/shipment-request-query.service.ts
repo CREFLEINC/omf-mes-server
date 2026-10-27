@@ -14,7 +14,7 @@ import {
   orderBySql,
   whereSql,
 } from './shipment-request-query.sql';
-import { ShipmentPicksByLine, ShipmentRequestView, shipmentRequestView } from './shipment-request-view';
+import { ShipmentPicksByLine, ShipmentRequestView, ShippedByLineLot, shipmentRequestView } from './shipment-request-view';
 
 /** 03 품질에서 이 축이 세는 것 — 출하검사뿐이다(§1-5). 좁히기용이고 판정은 ③a 가 다시 한다. */
 const OQC = 'OQC';
@@ -159,11 +159,12 @@ export class ShipmentRequestQueryService {
       .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     const inspections = await this.oqcResults(ids, lotIds);
+    const shipped = await this.shippedByLineLot(lines.map((line) => line.shipment_request_line_id));
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, shipped)];
     });
   }
 
@@ -178,6 +179,19 @@ export class ShipmentRequestQueryService {
    *    `ck_reservation_qty` 가 올리는 것 자체를 막는다(**통보 241** · §11 ①). 그래서 지금은 상태와
    *    무관하게 예약 행 전건이 `pickedQty` 에 남는다 — I-23 이 되돌림 칸을 정할 때 함께 푼다.
    */
+  /** (지시 라인, LOT) 별 살아 있는 출하 배분 합 — 취소 완료된 출하는 뺀다. 반납 가능 수량이 쓴다(장부 P-126). */
+  private async shippedByLineLot(lineIds: bigint[]): Promise<ShippedByLineLot> {
+    if (lineIds.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<{ line_id: bigint; lot_id: bigint; qty: Prisma.Decimal }[]>`
+      SELECT sl.shipment_request_line_id AS line_id, a.lot_id, SUM(a.allocated_qty) AS qty
+        FROM logistics.shipment_lot_allocation a
+        JOIN logistics.shipment_line sl ON sl.shipment_line_id = a.shipment_line_id
+        JOIN logistics.shipment s ON s.shipment_id = sl.shipment_id
+       WHERE sl.shipment_request_line_id = ANY(${lineIds}) AND s.status_code <> 'CANCELLED'
+       GROUP BY 1, 2`;
+    return new Map(rows.map((row) => [`${row.line_id}:${row.lot_id}`, new Prisma.Decimal(row.qty)]));
+  }
+
   private async picksByLine(lineIds: bigint[]): Promise<ShipmentPicksByLine> {
     const rows = await this.prisma.inventory_reservation.findMany({
       where: {

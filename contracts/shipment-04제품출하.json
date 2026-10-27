@@ -1301,6 +1301,105 @@
     }
    }
   },
+  "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:return-pick": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "피킹 반납",
+    "description": "그 라인이 집었지만 출하하지 않은 제품 LOT 수량을 가용 재고로 되돌린다. 같은 잔액 행에서 피킹분만 내리고(원장 없음 · 위치 그대로 — 실물을 옮기면 재고 이동을 따로 한다) 그 라인·LOT 의 피킹 예약을 «풀린 것»으로 옮긴다 — 라인의 pickedQty 가 준다. 한도는 「라인·LOT 의 피킹 − 살아 있는 출하 배분(취소 완료 제외)」과 그 LOT 의 남은 잔액 피킹분 중 작은 쪽이다(피킹분은 지시끼리 함께 쓴다). 사유 코드 필수(PICK_RETURN_REASON), OTHER 면 비고 필수. 지시 상태로는 막지 않는다. 출하검사가 끝난 라인도 반납되며 응답 notice 로 출하검사 이력 LOT 과 달라질 수 있음을 알린다. PDA M-04-01 · 관리웹 W-04-04. 근거: 서버 선행 · 장부 P-126",
+    "parameters": [
+     {
+      "name": "shipmentRequestId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "shipmentRequestLineId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShipmentLinePickReturn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "반납됨 — 갱신된 라인과 그 LOT 잔액",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentLinePickReturnResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 수량·한도·사유·LOT·재고 차원. 문구에 원인과 조치가 있다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "라인이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick": {
    "post": {
     "tags": [
@@ -4519,6 +4618,13 @@
       "description": "잔여 유효기간 하한. 피킹이 이것으로 LOT 을 거른다",
       "example": 1
      },
+     "pickedLots": {
+      "type": "array",
+      "description": "LOT 별 피킹·출하·반납 가능 — 피킹 반납 화면이 쓴다. 장부 P-126",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentLinePickedLotSummary"
+      }
+     },
      "picks": {
       "type": "array",
       "items": {
@@ -4639,6 +4745,115 @@
     ],
     "x-internal-note": "이름을 가른 이유: 앞 계열(app-공통·logistics-01·mdm)의 ConflictResponse 는 저장 충돌의 «원인»만 말하고, 이쪽은 거부의 «업무 사유»를 말한다. 두 축은 직교하며 겹치는 지점은 VERSION_CONFLICT ↔ conflictCause=user 하나다. 한 이름으로 두면 계약 병합이 멈춘다(구현팀 회신 omf-mes#166)."
    },
+   "ShipmentLinePickReturn": {
+    "type": "object",
+    "description": "피킹 반납 요청. 사번은 X-Worker-No 헤더로 보낸다. 장부 P-126",
+    "required": [
+     "lotId",
+     "qty",
+     "uomId",
+     "reasonCode"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "반납할 제품 LOT — 이 라인이 피킹한 LOT"
+     },
+     "qty": {
+      "type": "number",
+      "description": "반납 수량. 0 보다 크고 소수점 6자리까지"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "라인 단위와 같아야 한다(환산 없음)"
+     },
+     "reasonCode": {
+      "type": "string",
+      "description": "공통코드 PICK_RETURN_REASON — QTY_EXCESS(수량 과다) · WRONG_LOT(LOT 착오) · PACK_CORRECTION(포장 정정 잔량) · OTHER(기타)",
+      "x-code-key": "PICK_RETURN_REASON"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 500,
+      "description": "비고 — reasonCode 가 OTHER 면 필수"
+     }
+    }
+   },
+   "ShipmentLinePickReturnResult": {
+    "type": "object",
+    "description": "피킹 반납 결과. 장부 P-126",
+    "required": [
+     "line",
+     "balance"
+    ],
+    "properties": {
+     "line": {
+      "$ref": "#/components/schemas/ShipmentRequestLine"
+     },
+     "balance": {
+      "type": "object",
+      "description": "반납한 LOT 의 잔액(그 창고·위치) — 반납 뒤 값",
+      "required": [
+       "lotId",
+       "onHandQty",
+       "pickedQty",
+       "availableQty"
+      ],
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "onHandQty": {
+        "type": "number"
+       },
+       "pickedQty": {
+        "type": "number"
+       },
+       "availableQty": {
+        "type": "number"
+       }
+      }
+     },
+     "notice": {
+      "type": "string",
+      "description": "출하검사가 끝난 라인을 반납했을 때만 — 출하검사 이력 LOT 과 달라질 수 있다는 안내"
+     }
+    }
+   },
+   "ShipmentLinePickedLotSummary": {
+    "type": "object",
+    "description": "라인의 LOT 별 피킹·출하·반납 가능. 반납 가능 = 피킹 − 살아 있는 출하 배분(0 아래면 0) — 잔액 피킹분 한도는 반납 때 서버가 본다. 장부 P-126",
+    "required": [
+     "lotId",
+     "pickedQty",
+     "shippedQty",
+     "returnableQty"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "pickedQty": {
+      "type": "number"
+     },
+     "shippedQty": {
+      "type": "number"
+     },
+     "returnableQty": {
+      "type": "number"
+     }
+    }
+   },
    "ShipmentLinePick": {
     "type": "object",
     "description": "피킹 확정 요청. 사번은 본문이 아니라 X-Worker-No 헤더로 보낸다",
@@ -4678,6 +4893,11 @@
      "lotNo": {
       "type": "string",
       "example": "값"
+     },
+     "releasedQty": {
+      "type": "number",
+      "format": "double",
+      "description": "반납·출하 취소로 풀린 수량 — 이 행의 남은 피킹은 pickedQty − releasedQty. 장부 P-126"
      },
      "pickedQty": {
       "type": "number",

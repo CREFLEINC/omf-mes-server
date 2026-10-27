@@ -30,6 +30,7 @@ import {
 import { ShipmentRequestFilters, ShipmentRequestQuery } from './shipment-request-query.sql';
 import { ShipmentRequestLineView, ShipmentRequestView } from './shipment-request-view';
 import { ShipmentLinePick, ShipmentPickService } from './shipment-pick.service';
+import { ShipmentLinePickReturn, ShipmentPickReturnResult, ShipmentPickReturnService } from './shipment-pick-return.service';
 import { ShipmentOqcSkipService } from './shipment-oqc-skip.service';
 import {
   ShipmentRequestCreate,
@@ -52,6 +53,7 @@ export class ShipmentRequestController {
     private readonly queries: ShipmentRequestQueryService,
     private readonly requests: ShipmentRequestService,
     private readonly picks: ShipmentPickService,
+    private readonly pickReturns: ShipmentPickReturnService,
     private readonly oqcSkips: ShipmentOqcSkipService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -170,6 +172,24 @@ export class ShipmentRequestController {
         }),
       FAMILY_CONFLICT_CODE,
     );
+  }
+
+  /** 피킹 반납 — 출하하지 않은 피킹분을 가용 재고로 되돌린다(장부 P-126). PDA M-04-01 과 관리웹 출하 처리(W-04-04)가 부른다. */
+  @Post(':shipmentRequestId/lines/:shipmentRequestLineId\\:return-pick')
+  @Contract('POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:return-pick')
+  @HttpCode(HttpStatus.OK)
+  returnPick(
+    @Req() request: Request,
+    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
+    @Param('shipmentRequestLineId', ParseIntPipe) shipmentRequestLineId: number,
+    @Body() body: ShipmentLinePickReturn,
+  ): Promise<ShipmentPickReturnResult> {
+    const workerNo = request.headers['x-worker-no'];
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.pickReturns.returnPick(shipmentRequestId, shipmentRequestLineId, body, {
+        workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+        ...logisticsWriteActorOf(request, 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:return-pick'),
+      }), FAMILY_CONFLICT_CODE);
   }
 
   /**

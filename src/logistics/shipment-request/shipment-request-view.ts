@@ -45,8 +45,22 @@ export interface ShipmentLinePickedLotView {
   lotId: number;
   lotNo?: string;
   pickedQty: number;
+  /** 반납·출하 취소로 풀린 수량(장부 P-126). */
+  releasedQty: number;
   uomId: number;
   pickedAt: string;
+}
+
+/** (지시 라인, LOT) → 살아 있는 출하 배분 합. 키는 `라인id:LOTid`. */
+export type ShippedByLineLot = Map<string, Prisma.Decimal>;
+
+/** LOT 별 피킹·출하·반납 가능 — 반납 화면이 쓴다(장부 P-126). 반납 가능은 잔액 피킹분 한도를 빼지 않은 값이다. */
+export interface ShipmentLinePickedLotSummaryView {
+  lotId: number;
+  lotNo?: string;
+  pickedQty: number;
+  shippedQty: number;
+  returnableQty: number;
 }
 
 export interface ShipmentRequestLineView {
@@ -63,6 +77,7 @@ export interface ShipmentRequestLineView {
   shippingInspectionRequired: boolean;
   minimumRemainingShelfLifeDays: number | null;
   picks: ShipmentLinePickedLotView[];
+  pickedLots: ShipmentLinePickedLotSummaryView[];
 }
 
 export interface ShipmentRequestView {
@@ -85,6 +100,7 @@ export function shipmentRequestView(
   row: ShipmentRequestRow,
   picksByLine: ShipmentPicksByLine,
   inspections: OqcInspectionRow[],
+  shipped: ShippedByLineLot = new Map(),
 ): ShipmentRequestView {
   const lines = row.shipment_request_line.map((line) => ({
     line,
@@ -123,7 +139,7 @@ export function shipmentRequestView(
     timeSlotCode: row.ship_time_slot_code,
     shippingInspectionStatusCode: shipmentInspectionStatus(inspectionLines, inspections),
     shipmentProgressCode: shipmentProgressCode(totals),
-    lines: lines.map(({ line, picks }) => shipmentRequestLineView(line, picks)),
+    lines: lines.map(({ line, picks }) => shipmentRequestLineView(line, picks, shipped)),
     versionNo: row.version_no,
   });
 }
@@ -135,6 +151,7 @@ export function shipmentRequestView(
 export function shipmentRequestLineView(
   row: ShipmentRequestLineRow,
   picks: ShipmentPickRow[],
+  shipped: ShippedByLineLot = new Map(),
 ): ShipmentRequestLineView {
   return omitEmpty({
     shipmentRequestLineId: Number(row.shipment_request_line_id),
@@ -152,6 +169,24 @@ export function shipmentRequestLineView(
     shippingInspectionRequired: row.shipping_inspection_required,
     minimumRemainingShelfLifeDays: row.minimum_remaining_shelf_life_days,
     picks: picks.map(shipmentLinePickedLotView),
+    pickedLots: pickedLotsOf(row.shipment_request_line_id, picks, shipped),
+  });
+}
+
+function pickedLotsOf(lineId: bigint, picks: ShipmentPickRow[], shipped: ShippedByLineLot): ShipmentLinePickedLotSummaryView[] {
+  const byLot = new Map<string, { lotId: number; lotNo?: string; picked: Prisma.Decimal }>();
+  for (const pick of picks) {
+    const key = String(pick.lot_id);
+    const lot = byLot.get(key) ?? { lotId: Number(pick.lot_id), lotNo: pick.lot?.lot_no, picked: new Prisma.Decimal(0) };
+    lot.picked = lot.picked.plus(pick.reserved_qty).minus(pick.released_qty);
+    byLot.set(key, lot);
+  }
+  return [...byLot.entries()].map(([lotKey, lot]) => {
+    const out = shipped.get(`${lineId}:${lotKey}`) ?? new Prisma.Decimal(0);
+    return omitEmpty({
+      lotId: lot.lotId, lotNo: lot.lotNo, pickedQty: lot.picked.toNumber(), shippedQty: out.toNumber(),
+      returnableQty: Prisma.Decimal.max(lot.picked.minus(out), 0).toNumber(),
+    });
   });
 }
 
@@ -169,6 +204,7 @@ function shipmentLinePickedLotView(pick: ShipmentPickRow): ShipmentLinePickedLot
     lotId: Number(pick.lot_id),
     lotNo: pick.lot?.lot_no,
     pickedQty: Number(pick.reserved_qty),
+    releasedQty: Number(pick.released_qty),
     uomId: Number(pick.uom_id),
     pickedAt: pick.created_at.toISOString(),
   });
