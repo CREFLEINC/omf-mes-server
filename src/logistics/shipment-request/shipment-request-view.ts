@@ -53,14 +53,20 @@ export interface ShipmentLinePickedLotView {
 
 /** (지시 라인, LOT) → 살아 있는 출하 배분 합. 키는 `라인id:LOTid`. */
 export type ShippedByLineLot = Map<string, Prisma.Decimal>;
+/** LOT → 잔액 피킹분 합 — 피킹분은 지시끼리 함께 쓰므로 반납 한도가 된다. */
+export type BalancePickedByLot = Map<string, Prisma.Decimal>;
 
-/** LOT 별 피킹·출하·반납 가능 — 반납 화면이 쓴다(장부 P-126). 반납 가능은 잔액 피킹분 한도를 빼지 않은 값이다. */
+/**
+ * LOT 별 피킹·출하·반납 가능 — 반납 화면이 쓴다(장부 P-126). 반납 가능은 서버가 `:return-pick` 에서 받는 값과 같다 —
+ * 「피킹 − 출하」와 잔액 피킹분 중 작은 쪽. 잔액 쪽이 더 작아 줄었으면 `limitedByBalance` 가 참이다.
+ */
 export interface ShipmentLinePickedLotSummaryView {
   lotId: number;
   lotNo?: string;
   pickedQty: number;
   shippedQty: number;
   returnableQty: number;
+  limitedByBalance: boolean;
 }
 
 export interface ShipmentRequestLineView {
@@ -101,6 +107,7 @@ export function shipmentRequestView(
   picksByLine: ShipmentPicksByLine,
   inspections: OqcInspectionRow[],
   shipped: ShippedByLineLot = new Map(),
+  balancePicked?: BalancePickedByLot,
 ): ShipmentRequestView {
   const lines = row.shipment_request_line.map((line) => ({
     line,
@@ -139,7 +146,7 @@ export function shipmentRequestView(
     timeSlotCode: row.ship_time_slot_code,
     shippingInspectionStatusCode: shipmentInspectionStatus(inspectionLines, inspections),
     shipmentProgressCode: shipmentProgressCode(totals),
-    lines: lines.map(({ line, picks }) => shipmentRequestLineView(line, picks, shipped)),
+    lines: lines.map(({ line, picks }) => shipmentRequestLineView(line, picks, shipped, balancePicked)),
     versionNo: row.version_no,
   });
 }
@@ -152,6 +159,7 @@ export function shipmentRequestLineView(
   row: ShipmentRequestLineRow,
   picks: ShipmentPickRow[],
   shipped: ShippedByLineLot = new Map(),
+  balancePicked?: BalancePickedByLot,
 ): ShipmentRequestLineView {
   return omitEmpty({
     shipmentRequestLineId: Number(row.shipment_request_line_id),
@@ -169,11 +177,13 @@ export function shipmentRequestLineView(
     shippingInspectionRequired: row.shipping_inspection_required,
     minimumRemainingShelfLifeDays: row.minimum_remaining_shelf_life_days,
     picks: picks.map(shipmentLinePickedLotView),
-    pickedLots: pickedLotsOf(row.shipment_request_line_id, picks, shipped),
+    pickedLots: pickedLotsOf(row.shipment_request_line_id, picks, shipped, balancePicked),
   });
 }
 
-function pickedLotsOf(lineId: bigint, picks: ShipmentPickRow[], shipped: ShippedByLineLot): ShipmentLinePickedLotSummaryView[] {
+function pickedLotsOf(
+  lineId: bigint, picks: ShipmentPickRow[], shipped: ShippedByLineLot, balancePicked?: BalancePickedByLot,
+): ShipmentLinePickedLotSummaryView[] {
   const byLot = new Map<string, { lotId: number; lotNo?: string; picked: Prisma.Decimal }>();
   for (const pick of picks) {
     const key = String(pick.lot_id);
@@ -183,9 +193,12 @@ function pickedLotsOf(lineId: bigint, picks: ShipmentPickRow[], shipped: Shipped
   }
   return [...byLot.entries()].map(([lotKey, lot]) => {
     const out = shipped.get(`${lineId}:${lotKey}`) ?? new Prisma.Decimal(0);
+    const unshipped = Prisma.Decimal.max(lot.picked.minus(out), 0);
+    const held = balancePicked?.get(lotKey);
+    const limitedByBalance = held !== undefined && held.lessThan(unshipped);
     return omitEmpty({
       lotId: lot.lotId, lotNo: lot.lotNo, pickedQty: lot.picked.toNumber(), shippedQty: out.toNumber(),
-      returnableQty: Prisma.Decimal.max(lot.picked.minus(out), 0).toNumber(),
+      returnableQty: (limitedByBalance ? held : unshipped).toNumber(), limitedByBalance,
     });
   });
 }

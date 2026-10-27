@@ -154,7 +154,7 @@ describe('ShipmentRequest 뷰', () => {
       { lotId: 61, lotNo: 'LOT-0001', pickedQty: 15, releasedQty: 0, uomId: 21, pickedAt: T.toISOString() },
     ]);
     // LOT 별 요약 — 같은 LOT 두 행을 합쳐 남은 피킹 45, 출하 정보가 없으면 출하 0·반납 가능 45(장부 P-126).
-    expect(lineOf(view).pickedLots).toEqual([{ lotId: 61, lotNo: 'LOT-0001', pickedQty: 45, shippedQty: 0, returnableQty: 45 }]);
+    expect(lineOf(view).pickedLots).toEqual([{ lotId: 61, lotNo: 'LOT-0001', pickedQty: 45, shippedQty: 0, returnableQty: 45, limitedByBalance: false }]);
     // 예약이 0건인 라인은 롤업이 0 이다 — `picks` 는 빈 배열이지 키 생략이 아니다(required).
     const bare = shipmentRequestView(header(), new Map(), []);
     expect(lineOf(bare).pickedQty).toBe(0);
@@ -165,6 +165,15 @@ describe('ShipmentRequest 뷰', () => {
   it('반납 가능은 LOT 별 피킹 − 살아 있는 출하 배분이고 0 아래로 내려가지 않는다(장부 P-126)', () => {
     const view = shipmentRequestView(header(), picksOf(pick({ reserved_qty: new Prisma.Decimal(10), released_qty: new Prisma.Decimal(0) })), [],
       new Map([['501:61', new Prisma.Decimal(7)]]));
-    expect(lineOf(view).pickedLots).toEqual([{ lotId: 61, lotNo: 'LOT-0001', pickedQty: 10, shippedQty: 7, returnableQty: 3 }]);
+    expect(lineOf(view).pickedLots).toEqual([{ lotId: 61, lotNo: 'LOT-0001', pickedQty: 10, shippedQty: 7, returnableQty: 3, limitedByBalance: false }]);
+  });
+
+  it('잔액 피킹분이 「피킹 − 출하」보다 적으면 반납 가능이 잔액까지로 줄고 limitedByBalance 가 참이다 — 서버 한도와 같다', () => {
+    const picks = picksOf(pick({ reserved_qty: new Prisma.Decimal(10), released_qty: new Prisma.Decimal(0) }));
+    const limited = shipmentRequestView(header(), picks, [], new Map([['501:61', new Prisma.Decimal(2)]]), new Map([['61', new Prisma.Decimal(5)]]));
+    const enough = shipmentRequestView(header(), picks, [], new Map([['501:61', new Prisma.Decimal(2)]]), new Map([['61', new Prisma.Decimal(8)]]));
+
+    expect(lineOf(limited).pickedLots[0]).toMatchObject({ returnableQty: 5, limitedByBalance: true });
+    expect(lineOf(enough).pickedLots[0]).toMatchObject({ returnableQty: 8, limitedByBalance: false });
   });
 });

@@ -4828,12 +4828,13 @@
    },
    "ShipmentLinePickedLotSummary": {
     "type": "object",
-    "description": "라인의 LOT 별 피킹·출하·반납 가능. 반납 가능 = 피킹 − 살아 있는 출하 배분(0 아래면 0) — 잔액 피킹분 한도는 반납 때 서버가 본다. 장부 P-126",
+    "description": "라인의 LOT 별 피킹·출하·반납 가능. 반납 가능 = 「피킹 − 살아 있는 출하 배분」(0 아래면 0)과 그 LOT 의 잔액 피킹분 중 작은 쪽 — :return-pick 이 받는 한도와 같다. 잔액 쪽 때문에 줄었으면 limitedByBalance 가 참(다른 지시가 그 피킹분을 출하에 썼을 수 있다). 장부 P-126",
     "required": [
      "lotId",
      "pickedQty",
      "shippedQty",
-     "returnableQty"
+     "returnableQty",
+     "limitedByBalance"
     ],
     "properties": {
      "lotId": {
@@ -4851,6 +4852,10 @@
      },
      "returnableQty": {
       "type": "number"
+     },
+     "limitedByBalance": {
+      "type": "boolean",
+      "description": "반납 가능이 잔액 피킹분 때문에 「피킹 − 출하」보다 작아졌다"
      }
     }
    },

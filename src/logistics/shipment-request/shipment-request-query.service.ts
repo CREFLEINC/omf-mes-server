@@ -14,7 +14,7 @@ import {
   orderBySql,
   whereSql,
 } from './shipment-request-query.sql';
-import { ShipmentPicksByLine, ShipmentRequestView, ShippedByLineLot, shipmentRequestView } from './shipment-request-view';
+import { BalancePickedByLot, ShipmentPicksByLine, ShipmentRequestView, ShippedByLineLot, shipmentRequestView } from './shipment-request-view';
 
 /** 03 품질에서 이 축이 세는 것 — 출하검사뿐이다(§1-5). 좁히기용이고 판정은 ③a 가 다시 한다. */
 const OQC = 'OQC';
@@ -160,11 +160,12 @@ export class ShipmentRequestQueryService {
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     const inspections = await this.oqcResults(ids, lotIds);
     const shipped = await this.shippedByLineLot(lines.map((line) => line.shipment_request_line_id));
+    const balancePicked = await this.balancePickedByLot(lotIds);
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, shipped)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, shipped, balancePicked)];
     });
   }
 
@@ -190,6 +191,15 @@ export class ShipmentRequestQueryService {
        WHERE sl.shipment_request_line_id = ANY(${lineIds}) AND s.status_code <> 'CANCELLED'
        GROUP BY 1, 2`;
     return new Map(rows.map((row) => [`${row.line_id}:${row.lot_id}`, new Prisma.Decimal(row.qty)]));
+  }
+
+  /** LOT 별 잔액 피킹분 합 — 반납 가능을 서버 한도와 같게 낸다(장부 P-126). 제품 LOT 은 한 창고에만 선다. */
+  private async balancePickedByLot(lotIds: bigint[]): Promise<BalancePickedByLot> {
+    if (lotIds.length === 0) return new Map();
+    const rows = await this.prisma.inventory_balance.groupBy({
+      by: ['lot_id'], where: { lot_id: { in: [...new Set(lotIds)] } }, _sum: { picked_qty: true },
+    });
+    return new Map(rows.map((row) => [String(row.lot_id), row._sum.picked_qty ?? new Prisma.Decimal(0)]));
   }
 
   private async picksByLine(lineIds: bigint[]): Promise<ShipmentPicksByLine> {

@@ -17,6 +17,7 @@
  * ⚠ 다른 스위트와 같은 DB 를 쓰므로 정리는 접두어(`SRPKE2E`)로만 한다 — `TRUNCATE` 금지.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
@@ -93,11 +94,11 @@ interface ConflictBody {
   conflictCause?: string;
 }
 
-function validator(): ValidateFunction {
+function validator(operation = ':pick'): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/shipment-04제품출하.json'), 'utf8'),
   ) as object;
-  const path = '/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick';
+  const path = `/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}${operation}`;
   const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/post/responses/200/content/application~1json/schema`;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
@@ -655,7 +656,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
         },
       ],
       // LOT 별 요약(장부 P-126) — 출하 배분이 없어 반납 가능이 피킹 전부다.
-      pickedLots: [{ lotId: s.lotId, lotNo: lot.lot_no, pickedQty: 12, shippedQty: 0, returnableQty: 12 }],
+      pickedLots: [{ lotId: s.lotId, lotNo: lot.lot_no, pickedQty: 12, shippedQty: 0, returnableQty: 12, limitedByBalance: false }],
     });
   });
 
@@ -730,6 +731,9 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
 
     const response = await giveBack(s, { qty: 10 }).expect(200);
 
+    const validate = validator(':return-pick');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
     expect(response.body.line).toMatchObject({ pickedQty: 20, pickedLots: [{ lotId: s.lotId, pickedQty: 20, shippedQty: 0, returnableQty: 20 }] });
     expect(response.body.line.picks[0]).toMatchObject({ pickedQty: 30, releasedQty: 10 });
     const after = await balanceOf(s.lotId);
@@ -772,6 +776,10 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     const short = await giveBack(s, { qty: 5 }).expect(400);
 
     expect(short.body.errors[0].message).toContain('이 LOT 의 남은 피킹분(3)이 반납하려는 수량보다 적습니다');
+    // 화면 기본값도 같은 한도다 — 반납 가능 3 · 잔액 때문에 줄었다는 표시.
+    const line = (await getRequest(s.requestId)).lines?.find((row) => row.shipmentRequestLineId === s.lineId) as unknown as { pickedLots: unknown[] };
+    expect(line.pickedLots).toEqual([expect.objectContaining({ pickedQty: 30, shippedQty: 0, returnableQty: 3, limitedByBalance: true })]);
+    await giveBack(s, { qty: 3 }).expect(200);
   });
 
   it('R-5 사유 — 없는 코드는 400, 「기타」면 비고가 필수다', async () => {
@@ -789,6 +797,38 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
 
     await giveBack(s, { qty: 1 }, webCookie).expect(200);
     await giveBack(s, { qty: 1 }, noPermCookie).expect(403);
+  });
+
+  it('R-7 MOBILE 단말은 자기 공장 지시만 반납한다 — 다른 공장 단말은 401 이고 아무것도 바뀌지 않는다, 같은 공장 단말은 된다', async () => {
+    const s = await scenario({ onHand: 100 });
+    await pick(s, { pickedQty: 30 });
+    const other = await prisma.plant.create({ data: {
+      legal_entity_id: ids.entity, plant_code: `${PREFIX}-P2`, plant_name: '다른공장', timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    await prisma.worker.create({ data: {
+      worker_no: `${PREFIX}-T1`, worker_name: '다른공장작업자', business_unit_id: ids.unit, plant_id: other.plant_id, status_code: 'EMPLOYED',
+    } });
+    await prisma.worker.create({ data: {
+      worker_no: `${PREFIX}-T2`, worker_name: '같은공장작업자', business_unit_id: ids.unit, plant_id: ids.plant, status_code: 'EMPLOYED',
+    } });
+    const mobile = async (code: string, plantId: bigint) => {
+      const terminal = await prisma.terminal.create({ data: { terminal_code: `${PREFIX}-${code}`, plant_id: plantId, terminal_type_code: 'MOBILE', status_code: 'RUNNING' } });
+      return app.get(JwtService).sign({
+        sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId: Number(plantId),
+      });
+    };
+    const send = (token: string, workerNo: string) => request(app.getHttpServer())
+      .post(`${BASE}/${s.requestId}/lines/${s.lineId}:return-pick`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', workerNo)
+      .send({ lotId: s.lotId, qty: 1, uomId: ids.uom1, reasonCode: 'QTY_EXCESS' });
+
+    await send(await mobile('MOB2', other.plant_id), `${PREFIX}-T1`).expect(401);
+    expect((await getRequest(s.requestId)).lines?.find((row) => row.shipmentRequestLineId === s.lineId)?.pickedQty).toBe(30);
+    // 대조 — 같은 공장의 MOBILE 단말이면 반납된다(401 이 단말 자체를 막아서가 아니다).
+    await send(await mobile('MOB1', ids.plant), `${PREFIX}-T2`).expect(200);
+    expect((await getRequest(s.requestId)).lines?.find((row) => row.shipmentRequestLineId === s.lineId)?.pickedQty).toBe(29);
   });
 
   it('M4 ⭐⭐ 지시서 → 편성 → 피킹 이 HTTP 로 이어지고 진행이 PICKING → PICKED 로 오른다', async () => {
@@ -1316,6 +1356,10 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
       `DELETE FROM app.user_data_scope WHERE app_user_id IN (
          SELECT app_user_id FROM app.app_user WHERE login_id IN ('${LOGIN_ID}', '${NOPERM_ID}'))`,
+      // 피킹 반납 R-7 — 다른 공장의 MOBILE 단말과 그 작업자.
+      `DELETE FROM audit.audit_event WHERE terminal_id IN (SELECT terminal_id FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%')`,
+      `DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}-T%'`,
       `DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,
