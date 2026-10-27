@@ -201,6 +201,10 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   it('⭐ 몫을 다른 발주에도 배정한 LOT 은 두 발주 아래에 다 보인다 — 줄마다 그 발주의 라인을 가리킨다', async () => {
     // 받은 9 중 5 는 이 발주, 4 는 나중에 온 다른 발주에 배정했다(사용자 결정 2026-10-24).
     const shared = await registerLot('iqcItem', ids.orderLine, 9, 5);
+    const chips = async () =>
+      (await request(app.getHttpServer()).get('/api/logistics/purchase-orders:inbound-stage-counts').query({ q: PREFIX }).set('Cookie', cookie).expect(200))
+        .body.counts as Record<string, number>;
+    const before = await chips();
     await prisma.inbound_receipt_po_allocation.create({
       data: { inbound_receipt_line_id: BigInt(shared.lineId), purchase_order_line_id: ids.otherLine, allocated_qty: 4 },
     });
@@ -208,8 +212,11 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     const mine = (await progress(ids.order)).find((row) => row.lotId === shared.lotId);
     const theirs = (await progress(ids.otherOrder)).find((row) => row.lotId === shared.lotId);
 
-    expect(mine).toMatchObject({ purchaseOrderLineId: Number(ids.orderLine), receivedQty: 9 });
-    expect(theirs).toMatchObject({ purchaseOrderLineId: Number(ids.otherLine), receivedQty: 9 });
+    // receivedQty 는 LOT 전체, allocatedQty 는 그 발주의 몫(P-110 보강 · 사용자 결정 2026-10-27).
+    expect(mine).toMatchObject({ purchaseOrderLineId: Number(ids.orderLine), receivedQty: 9, allocatedQty: 5 });
+    expect(theirs).toMatchObject({ purchaseOrderLineId: Number(ids.otherLine), receivedQty: 9, allocatedQty: 4 });
+    // 칩은 「할 일 몇 건」 — 두 발주에 걸쳐도 LOT 하나는 한 번이다.
+    expect(await chips()).toEqual(before);
   });
 
   it('⭐ LOT 이 없는 입하 라인은 라벨 대기 한 줄이고, 라벨을 발행하면 그 줄이 LOT 줄로 바뀐다', async () => {
@@ -325,6 +332,23 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
       const response = await list({ q: Q, sort: 'orderDate,sideways' }).expect(400);
       expect(response.body.errors).toEqual([expect.objectContaining({ field: 'sort', code: 'INVALID' })]);
       await list({ q: Q, sort: 'nope' }).expect(400);
+    });
+
+    it('sort=supplierName — 대소문자·성조를 가리지 않는다: Samheung → SD → Sekwang → solum(장부 P-116)', async () => {
+      const q = `${PREFIX}-N-`;
+      for (const [index, name] of ['solum', 'SD Chemical Vina', 'Sekwang Việt Nam', 'Samheung'].entries()) {
+        const supplier = await prisma.partner.create({ data: { partner_code: `${PREFIX}-N${index}`, partner_name: name } });
+        await prisma.purchase_order.create({
+          data: {
+            purchase_order_no: `${q}${index}`, supplier_id: supplier.partner_id, business_unit_id: ids.unit, plant_id: ids.plant,
+            order_date: new Date(`${DAY}T00:00:00.000Z`), status_code: 'CONFIRMED',
+          },
+        });
+      }
+      const names = async (sort: string) =>
+        ((await list({ q, sort }).expect(200)).body.items as { supplierName: string }[]).map((item) => item.supplierName);
+      expect(await names('supplierName,asc')).toEqual(['Samheung', 'SD Chemical Vina', 'Sekwang Việt Nam', 'solum']);
+      expect(await names('supplierName,desc')).toEqual(['solum', 'Sekwang Việt Nam', 'SD Chemical Vina', 'Samheung']);
     });
 
     it('⛔ inboundStage 가 다섯 값 밖이면 400 이다 — 건수 경로도 목록과 같은 조건을 검사한다', async () => {

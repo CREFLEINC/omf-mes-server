@@ -22,6 +22,9 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-ir-probe';
 const NOPERM_ID = 'e2e-ir-noperm';
+/** 웹 입하 등록 화면(W-01-03) 권한만 가진 사무실 사용자 — `:per-line` 이 웹 입고 관리에서도 불린다(장부 P-117). */
+const WEB_ID = 'e2e-ir-web';
+const WEB_ROLE = 'E2E_IR_WEB';
 const PASSWORD = '입하-등록-검사-비밀번호';
 const PREFIX = 'IRE2E';
 /**
@@ -97,6 +100,7 @@ describe('입하 등록 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let webCookie: string[];
 
   let supplierId: number;
   let businessUnitId: number;
@@ -466,6 +470,43 @@ describe('입하 등록 (e2e)', () => {
       expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(1000);
       expect(Number((await poLine(source.purchaseOrderLineId)).received_qty)).toBe(0);
       expect(await allocationsOf(lineId)).toEqual([[added.purchaseOrderLineId, 1000]]);
+    });
+
+    it('excludeExceptionTypeCode — 그 유형의 입하 줄이 빠지고 예외 없는 줄은 남는다 · page.total 도 뺀 수', async () => {
+      const lineOf = async (exceptionTypeCode: string | null): Promise<number> => {
+        const source = await seedOrderLine(100);
+        const detail = await create({
+          exceptionTypeCode,
+          exceptionReason: exceptionTypeCode === null ? null : '시험',
+          lines: [{ ...(await lineDraft()), purchaseOrderLineId: source.purchaseOrderLineId, receivedQty: 110, excessQty: 10 }],
+        });
+        return detail.lines[0].inboundReceiptLineId;
+      };
+      const [customer, sample, over, plain] = [await lineOf('CUSTOMER_SUPPLY'), await lineOf('FREE_SAMPLE'), await lineOf('OVER_DELIVERY'), await lineOf(null)];
+      type Row = { inboundReceiptLineId: number; exceptionTypeCode: string | null };
+      const listOf = async (extra: string) => {
+        const body = (await api(`/inbound-unallocated?size=200&supplierId=${supplierId}${extra}`).expect(200)).body as { items: Row[]; page: { total: number } };
+        return { ids: body.items.map((row) => row.inboundReceiptLineId), types: body.items.map((row) => row.exceptionTypeCode), total: body.page.total };
+      };
+
+      const all = await listOf('');
+      const kept = await listOf('&excludeExceptionTypeCode=CUSTOMER_SUPPLY,FREE_SAMPLE');
+      const repeated = await listOf('&excludeExceptionTypeCode=CUSTOMER_SUPPLY&excludeExceptionTypeCode=FREE_SAMPLE');
+
+      expect(all.ids).toEqual(expect.arrayContaining([customer, sample, over, plain]));
+      expect(kept.ids).toEqual(expect.arrayContaining([over, plain]));
+      expect(kept.ids).not.toContain(customer);
+      expect(kept.ids).not.toContain(sample);
+      expect(kept.types).not.toContain('CUSTOMER_SUPPLY');
+      expect(kept.total).toBe(all.total - all.types.filter((type) => type === 'CUSTOMER_SUPPLY' || type === 'FREE_SAMPLE').length);
+      expect(repeated).toEqual(kept);
+    });
+
+    it('⛔ excludeExceptionTypeCode 가 비었거나 코드 모양이 아니면 400', async () => {
+      for (const bad of ['', 'customer_supply', 'CUSTOMER_SUPPLY,']) {
+        const response = await api(`/inbound-unallocated?excludeExceptionTypeCode=${bad}`).expect(400);
+        expect(response.body.errors).toEqual([expect.objectContaining({ field: 'excludeExceptionTypeCode', code: 'INVALID' })]);
+      }
     });
 
     it('권한 — 로그인 없으면 401, 화면 권한이 없으면 403', async () => {
@@ -1273,6 +1314,11 @@ describe('입하 등록 (e2e)', () => {
       await sendPerLine(await body(), noPermCookie).expect(403);
       await request(app.getHttpServer()).post('/api/logistics/inbound-receipts:per-line').send(await body()).expect(401);
     });
+
+    it('⭐ 웹 입하 등록 권한(W-01-03)만 있어도 등록한다 — 웹 입고 관리의 「라인 표에서 바로 입하」(사용자 결정 2026-10-27)', async () => {
+      const response = await sendPerLine(await body(), webCookie).expect(201);
+      expect((response.body as { created: Detail[] }).created).toHaveLength(1);
+    });
   });
 
   // 입하 건을 가로지르는 줄 목록 · 공급사별 수(장부 P-118) — POP 자재 LOT 라벨 발행(P-01-01).
@@ -1842,6 +1888,12 @@ function supplierLotNoOf(seq: number): string {
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
     noPermCookie = await login(NOPERM_ID);
+    const web = await prisma.app_user.create({ data: { login_id: WEB_ID, user_name: '웹입하만', status_code: 'EMPLOYED' } });
+    await prisma.user_credential.create({ data: { app_user_id: web.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    const webRole = await prisma.role.create({ data: { role_code: WEB_ROLE, role_name: '웹입하등록만' } });
+    await prisma.role_permission.create({ data: { role_id: webRole.role_id, permission_code: 'W-01-03' } });
+    await prisma.user_role.create({ data: { app_user_id: web.app_user_id, role_id: webRole.role_id } });
+    webCookie = await login(WEB_ID);
 
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '입하등록검사용' } });
     await prisma.role_permission.createMany({
@@ -1934,7 +1986,7 @@ function supplierLotNoOf(seq: number): string {
     await prisma.$executeRawUnsafe(
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,
     );
-    for (const id of [LOGIN_ID, NOPERM_ID]) {
+    for (const id of [LOGIN_ID, NOPERM_ID, WEB_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
@@ -1942,8 +1994,9 @@ function supplierLotNoOf(seq: number): string {
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
     }
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
+    for (const code of [ROLE, WEB_ROLE]) {
+      const role = await prisma.role.findUnique({ where: { role_code: code } });
+      if (!role) continue;
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }

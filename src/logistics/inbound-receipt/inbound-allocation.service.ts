@@ -60,7 +60,7 @@ export class InboundAllocationService {
 
   /**
    * 미배정이 남은 줄 — 받은 수량 > 배정 합. 취소(요청) 입하는 뺀다. 무발주 줄(예외 유형)도 들어가며 행이 유형을
-   * 싣는다 — 고객사급처럼 이을 일이 없는 줄은 화면이 가린다. 집계 비교는 Prisma `where` 로 못 적어 SQL 로 id 를 고른다.
+   * 싣는다 — 고객사급처럼 이을 일이 없는 줄은 화면이 `excludeExceptionTypeCode` 로 뺀다. 집계 비교는 Prisma `where` 로 못 적어 SQL 로 id 를 고른다.
    */
   async listUnallocated(query: UnallocatedQuery): Promise<PagedResponse<UnallocatedLineView>> {
     const page = pageRequest(query);
@@ -74,7 +74,12 @@ export class InboundAllocationService {
        AND l.received_qty > COALESCE(a.allocated, 0)
        ${query.plantId === undefined ? Prisma.empty : Prisma.sql`AND r.plant_id = ${query.plantId}`}
        ${query.supplierId === undefined ? Prisma.empty : Prisma.sql`AND r.supplier_id = ${query.supplierId}`}
-       ${query.itemId === undefined ? Prisma.empty : Prisma.sql`AND l.item_id = ${query.itemId}`}`;
+       ${query.itemId === undefined ? Prisma.empty : Prisma.sql`AND l.item_id = ${query.itemId}`}
+       ${
+         query.excludeExceptionTypeCodes === undefined
+           ? Prisma.empty
+           : Prisma.sql`AND (r.exception_type_code IS NULL OR r.exception_type_code NOT IN (${Prisma.join(query.excludeExceptionTypeCodes)}))`
+       }`;
     const [ids, [{ total }]] = await Promise.all([
       this.prisma.$queryRaw<{ inbound_receipt_line_id: bigint }[]>`
         SELECT l.inbound_receipt_line_id ${from}
