@@ -130,12 +130,20 @@ export class PurchaseOrderQueryService {
     return pagedResponse(items, total, page);
   }
 
-  /** 단계 칩의 수 — 목록과 같은 조건 전체의 LOT 묶음별 수(쪽·`inboundStage` 는 보지 않는다 · 장부 P-110). */
+  /**
+   * 단계 칩의 수 — 목록과 같은 조건 전체의 LOT 묶음별 수(쪽·`inboundStage` 는 보지 않는다 · 장부 P-110). 칩은 「할 일 몇 건」이라
+   * 발주 둘에 걸친 줄(입하 줄 · LOT)도 한 번 센다 — 행의 `inboundStageCounts` 는 발주마다라 그 합이 칩보다 클 수 있다.
+   */
   async inboundStageCounts(query: PurchaseOrderQuery, now = new Date()): Promise<Record<InboundStageGroup, number>> {
-    const counts = await this.stageCountsByOrder(await this.orderIds(await this.listWhere(query, now)));
+    const rows = await this.inboundProgress.lotsOf(await this.orderIds(await this.listWhere(query, now)));
     const totals = Object.fromEntries(INBOUND_STAGE_GROUPS.map((group) => [group, 0])) as Record<InboundStageGroup, number>;
-    for (const count of counts.values()) {
-      for (const group of INBOUND_STAGE_GROUPS) totals[group] += count[group] ?? 0;
+    const seen = new Set<string>();
+    for (const { progress } of rows) {
+      const group = stageGroupOf(progress.stageCode);
+      const key = `${progress.inboundReceiptLineId}:${progress.lotId ?? ''}`;
+      if (group === null || seen.has(key)) continue;
+      seen.add(key);
+      totals[group] += 1;
     }
     return totals;
   }
