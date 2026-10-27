@@ -1,9 +1,16 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
+import { InventoryPostingService } from '../../core/inventory-posting';
+import { NumberingService } from '../../core/numbering';
+import {
+  LinkedShipment, LockedRepack, RepackSync, assertNotInShippingUnit, countLiveAllocations, linkedShipmentOf, lockShipmentForRepack,
+  syncShipment,
+} from '../../logistics/shipment/shipment-repack';
+import { planAllocationChanges } from '../../logistics/shipment/shipment-repack-plan';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { HandlingUnitContentView, handlingUnitContentView } from './handling-unit-view';
@@ -46,7 +53,11 @@ interface RepackLine {
  */
 @Injectable()
 export class HandlingUnitContentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly posting: InventoryPostingService,
+    private readonly numbering: NumberingService,
+  ) {}
 
   /**
    * ⭐ `version` 이 **선택**이다 — 이 경로의 If-Match 는 `IfMatchVersionOptional` 이고
@@ -58,18 +69,27 @@ export class HandlingUnitContentService {
     version: number | undefined,
     items: HandlingUnitContentUpsert[],
     context: HandlingUnitContext,
-  ): Promise<{ items: HandlingUnitContentView[] }> {
+    reason?: string,
+  ): Promise<{ items: HandlingUnitContentView[]; shipmentCorrection?: RepackSync }> {
     await assertWorkerNoExists(this.prisma, context.workerNo);
     // 잠글 필요가 없는 검사는 트랜잭션 «밖»이다(형제 치환과 같은 순서 · §5-2 ③).
     assertNoDuplicateContent(items, 'items');
     assertContentQty(items, 'items');
+    const huId = BigInt(handlingUnitId);
+    // 출하에 배분된 상자는 출하·재고까지 맞춘다(장부 P-125). 채번은 트랜잭션 «밖»이다 — 출하 등록과 같은 이유.
+    const link = await linkedShipmentOf(this.prisma, huId);
+    const trimmed = reason?.trim() ?? '';
+    if (link !== null && trimmed === '') {
+      throw one(field('reason', ERROR_CODE.REQUIRED, '출하에 배분된 상자를 고치려면 사유를 입력하세요 — 사유는 출하 정정 이력에 남습니다.'));
+    }
+    const goodsIssueNo = link?.businessDate == null ? undefined
+      : await this.numbering.next('GOODS_ISSUE', link.plantId, link.businessDate);
 
-    return this.prisma.$transaction(async (tx) => {
+    return overlapsAsConflict(() => this.prisma.$transaction(async (tx) => {
+      const repack = link === null ? null : await lockShipmentForRepack(tx, link.shipmentId);
       const versionNo = await lockHandlingUnit(tx, handlingUnitId, version);
-      const linkedAllocations = await tx.shipment_lot_allocation.count({ where: { handling_unit_id: handlingUnitId } });
-      if (linkedAllocations > 0) {
-        throw new ConflictException('user', '출하에 배분된 취급 단위는 구성을 바꿀 수 없습니다.');
-      }
+      if (link !== null) await assertNotInShippingUnit(tx, huId);
+      await assertSameLink(tx, huId, link, repack);
       // ⭐ 잠근 «뒤»에 치환 전 구성을 읽는다 — 먼저 읽으면 두 치환이 겹칠 때 앞의 결과를
       //    못 보고 `qty_before` 를 잃는다(§5-2 ⑥ · 단위 3).
       const before = await tx.handling_unit_content.findMany({
@@ -77,6 +97,8 @@ export class HandlingUnitContentService {
         select: { item_id: true, lot_id: true, qty: true, uom_id: true },
       });
       await assertReferences(tx, items);
+      const sync = repack === null ? null
+        : await this.syncShipment(tx, huId, repack, before, items, goodsIssueNo, context);
 
       await tx.handling_unit_content.deleteMany({ where: { handling_unit_id: handlingUnitId } });
       await tx.handling_unit_content.createMany({
@@ -103,14 +125,81 @@ export class HandlingUnitContentService {
         actor: context.terminalAudit, targetTypeCode: 'HANDLING_UNIT', targetId: BigInt(handlingUnitId),
         eventTypeCode: 'REPACK',
       });
+      if (repack !== null) await writeCorrectionAudit(tx, huId, before, items, trimmed, sync, context);
 
       const rows = await tx.handling_unit_content.findMany({
         where: { handling_unit_id: handlingUnitId },
         orderBy: { handling_unit_content_id: 'asc' },
       });
-      return { items: rows.map(handlingUnitContentView) };
-    });
+      return { items: rows.map(handlingUnitContentView), ...(sync === null ? {} : { shipmentCorrection: sync }) };
+    }));
   }
+
+  private async syncShipment(
+    tx: Tx, huId: bigint, repack: LockedRepack,
+    before: { item_id: bigint; lot_id: bigint; qty: Prisma.Decimal; uom_id: bigint }[],
+    items: HandlingUnitContentUpsert[], goodsIssueNo: string | undefined, context: HandlingUnitContext,
+  ): Promise<RepackSync | null> {
+    const lotIds = [...new Set([...before.map((row) => row.lot_id), ...items.map((line) => BigInt(line.lotId))])];
+    const lots = await tx.lot.findMany({ where: { lot_id: { in: lotIds } }, select: { lot_id: true, lot_no: true } });
+    const lotNo = new Map(lots.map((lot) => [lot.lot_id, lot.lot_no]));
+    const changes = planAllocationChanges(
+      huId,
+      before.map((row) => ({ itemId: row.item_id, lotId: row.lot_id, uomId: row.uom_id, qty: row.qty })),
+      items.map((line) => ({ itemId: BigInt(line.itemId), lotId: BigInt(line.lotId), uomId: BigInt(line.uomId), qty: new Prisma.Decimal(line.qty) })),
+      repack.allocations,
+      (lotId) => lotNo.get(lotId) ?? String(lotId),
+    );
+    if (changes.length === 0) return null;
+    if (goodsIssueNo === undefined) throw new Error(`출하에 살아 있는 출고가 없어 새 출고 번호를 못 뽑았다: ${repack.shipmentNo}`);
+    return syncShipment(tx, this.posting, { locked: repack, changes, goodsIssueNo, appUserId: context.appUserId, now: new Date() });
+  }
+}
+
+/**
+ * 교착(40P01)을 409 로 — 출하 등록(잔액 → 지시 라인)과 이 정정(지시 라인 → 잔액)이 같은 라인·LOT 에서 겹칠 때 DB 가 한쪽을 끊는다.
+ * 다시 하면 풀리는 겹침이라 500 이 아니라 재시도 안내다.
+ */
+async function overlapsAsConflict<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    const text = error instanceof Error ? error.message : '';
+    if ((error as { code?: string }).code === 'P2034' || text.includes('40P01') || text.includes('deadlock detected')) {
+      throw new ConflictException('user', '다른 작업과 겹쳤습니다 — 잠시 뒤 다시 시도하세요.');
+    }
+    throw error;
+  }
+}
+
+/** 트랜잭션 밖에서 본 출하 연결이 잠근 뒤에도 같아야 한다 — 그사이 배분이 이어지거나 풀렸으면 다시 불러오게 한다. */
+async function assertSameLink(tx: Tx, huId: bigint, link: LinkedShipment | null, repack: LockedRepack | null): Promise<void> {
+  const linked = await countLiveAllocations(tx, huId);
+  const expected = repack === null ? 0 : repack.allocations.filter((row) => row.handlingUnitId === huId).length;
+  if (link === null ? linked === 0 : linked === expected && expected > 0) return;
+  throw new ConflictException('user', '그사이 이 상자의 출하 배분이 바뀌었습니다 — 상자를 다시 불러온 뒤 고치세요.');
+}
+
+/** 출하에 배분된 상자의 정정 — 고치기 전·후 구성, 사유, 출하·재고를 맞춘 결과(옛·새 출고 번호와 배분 증감). */
+async function writeCorrectionAudit(
+  tx: Tx, huId: bigint,
+  before: { item_id: bigint; lot_id: bigint; qty: Prisma.Decimal; uom_id: bigint }[],
+  items: HandlingUnitContentUpsert[], reason: string, sync: RepackSync | null, context: HandlingUnitContext,
+): Promise<void> {
+  await tx.audit_event.create({ data: {
+    occurred_at: new Date(),
+    target_type_code: 'HANDLING_UNIT',
+    target_id: huId,
+    event_type_code: 'HANDLING_UNIT_CONTENTS_CHANGED',
+    before_value: { contents: before.map((row) => ({
+      itemId: Number(row.item_id), lotId: Number(row.lot_id), qty: row.qty.toString(), uomId: Number(row.uom_id),
+    })) },
+    after_value: { contents: items.map((line) => ({ ...line, qty: String(line.qty) })), shipment: sync === null ? null : { ...sync } },
+    reason,
+    performed_by: context.appUserId === undefined ? null : BigInt(context.appUserId),
+    terminal_id: context.terminalAudit?.terminalId ?? null,
+    correlation_id: context.terminalAudit?.correlationId ?? null,
+  } });
 }
 
 /**

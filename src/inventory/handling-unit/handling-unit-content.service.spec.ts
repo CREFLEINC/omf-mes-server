@@ -138,12 +138,15 @@ function fake(
 
   const prisma = {
     worker: { findUnique: async () => ({ worker_id: 1n }) },
+    // 트랜잭션 밖에서 본 출하 연결 — 이 스펙은 출하에 안 이어진 상자다(이어진 상자는 e2e 가 본다).
+    shipment: { findMany: async () => [] },
     $transaction: async (work: (client: unknown) => Promise<unknown>) => {
       recorded.calls.push('transaction');
       return work(tx);
     },
   };
-  return { service: new HandlingUnitContentService(prisma as unknown as PrismaService), recorded };
+  const unused = {} as never;
+  return { service: new HandlingUnitContentService(prisma as unknown as PrismaService, unused, unused), recorded };
 }
 
 type Where<K extends string> = { where: Record<K, { in: number[] }> };
@@ -173,7 +176,7 @@ async function linesOf(
 }
 
 describe('구성 치환 — 자물쇠와 호출 순서(단위 3)', () => {
-  it('출하 배분에 연결된 HU는 잠금 안에서 거절하고 내용물을 건드리지 않는다', async () => {
+  it('잠근 뒤 출하 배분이 이어져 있으면(밖에서 본 것과 다르면) 409 이고 내용물을 건드리지 않는다', async () => {
     const { service, recorded } = fake([row(ITEM_A, LOT_1, '3', UOM_EA)], { version_no: 3 }, 1, 1);
 
     await expect(service.replace(HU, undefined, [], CONTEXT)).rejects.toBeInstanceOf(ConflictException);

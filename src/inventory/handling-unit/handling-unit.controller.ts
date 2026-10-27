@@ -26,6 +26,7 @@ import { HandlingUnitPack, HandlingUnitPackService } from './handling-unit-pack.
 import { HandlingUnitQuery, HandlingUnitQueryService } from './handling-unit-query.service';
 import { HandlingUnitContentView, HandlingUnitDetailView, HandlingUnitView } from './handling-unit-view';
 import { HandlingUnitRepackEventView } from './repack-event-view';
+import { RepackSync } from '../../logistics/shipment/shipment-repack';
 import { RepackEventService } from './repack-event.service';
 import {
   HandlingUnitContentUpsert,
@@ -107,12 +108,12 @@ export class HandlingUnitController {
   replaceContents(
     @Req() request: Request,
     @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
-    @Body() body: { items: HandlingUnitContentUpsert[] },
-  ): Promise<{ items: HandlingUnitContentView[] }> {
+    @Body() body: { items: HandlingUnitContentUpsert[]; reason?: string },
+  ): Promise<{ items: HandlingUnitContentView[]; shipmentCorrection?: RepackSync }> {
     const context = contextOf(request, 'PUT /inventory/handling-units/{handlingUnitId}/contents');
     const version = ifMatchVersion(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.contentWrites.replace(handlingUnitId, version, body.items, context),
+      this.contentWrites.replace(handlingUnitId, version, body.items, context, body.reason),
     );
   }
 
