@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, field } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LockedUnit, assertShipmentOpen, lockUnit } from './shipping-unit-lock';
 import { ShippingUnitQueryService } from './shipping-unit-query.service';
 import { ShippingUnitActor } from './shipping-unit.service';
 import {
@@ -13,17 +14,9 @@ import {
 
 /** 상자는 포장이 확정된 것만 들어간다. 취급 단위의 편도 끝 상태다. */
 const HANDLING_UNIT_PACKED = 'PACKED';
-const SHIPMENT_CANCELLED = 'CANCELLED';
 
 export interface ShippingUnitAddBox {
   handlingUnitNo: string;
-}
-
-interface LockedUnit {
-  shipping_unit_id: bigint;
-  shipment_id: bigint;
-  status_code: string;
-  version_no: number;
 }
 
 @Injectable()
@@ -52,7 +45,7 @@ export class ShippingUnitBoxService {
     await this.prisma.$transaction(async (tx) => {
       const unit = await lockUnit(tx, shippingUnitId);
       assertOpen(unit);
-      await assertShipmentLive(tx, unit.shipment_id);
+      assertShipmentOpen(unit);
 
       const box = await tx.handling_unit.findUnique({
         where: { handling_unit_no: input.handlingUnitNo },
@@ -115,6 +108,7 @@ export class ShippingUnitBoxService {
     await this.prisma.$transaction(async (tx) => {
       const unit = await lockUnit(tx, shippingUnitId);
       assertOpen(unit);
+      assertShipmentOpen(unit);
 
       const removed = await tx.shipping_unit_handling_unit.deleteMany({
         where: {
@@ -129,7 +123,7 @@ export class ShippingUnitBoxService {
   }
 
   /**
-   * 마감. ⛔ **되돌릴 수 없다** — 취소·해체 경로를 두지 않는다(취급 단위와 같은 태도 · 통보 142).
+   * 마감. 확정 전 출하에서만 `:reopen` 으로 되돌린다(`shipping-unit-reopen.service.ts`).
    * 마감돼야 납품 라벨을 발행할 수 있다.
    */
   async close(
@@ -140,7 +134,7 @@ export class ShippingUnitBoxService {
     await this.prisma.$transaction(async (tx) => {
       const unit = await lockUnit(tx, shippingUnitId);
       assertOpen(unit);
-      await assertShipmentLive(tx, unit.shipment_id);
+      assertShipmentOpen(unit);
       if (unit.version_no !== expectedVersion) {
         throw new ConflictException('user', '다른 사용자가 먼저 수정했습니다.', {
           currentVersion: String(unit.version_no),
@@ -172,38 +166,10 @@ export class ShippingUnitBoxService {
   }
 }
 
-/**
- * ⛔ 행을 잠근다 — 두 스캐너가 같은 단위에 동시에 넣으면 `seq` 가 겹치고, 마감과 넣기가
- * 겹치면 마감된 단위에 상자가 들어간다. 검사와 쓰기 사이를 이 잠금이 잇는다.
- */
-async function lockUnit(tx: Prisma.TransactionClient, shippingUnitId: number): Promise<LockedUnit> {
-  const rows = await tx.$queryRaw<LockedUnit[]>(Prisma.sql`
-    SELECT shipping_unit_id,shipment_id,status_code,version_no
-      FROM logistics.shipping_unit
-     WHERE shipping_unit_id=${BigInt(shippingUnitId)}
-     FOR UPDATE
-  `);
-  if (rows[0] === undefined) throw new NotFoundException('없는 출하 단위입니다.');
-  return rows[0];
-}
-
 function assertOpen(unit: LockedUnit): void {
   if (unit.status_code !== SHIPPING_UNIT_OPEN) {
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       field('shippingUnitId', ERROR_CODE.STATE_LOCKED, '이미 마감된 출하 단위입니다.'),
-    ]);
-  }
-}
-
-/** 단위를 연 뒤 출하가 취소될 수 있다 — 넣기와 마감에서 다시 본다. */
-async function assertShipmentLive(tx: Prisma.TransactionClient, shipmentId: bigint): Promise<void> {
-  const shipment = await tx.shipment.findUnique({
-    where: { shipment_id: shipmentId },
-    select: { status_code: true },
-  });
-  if (shipment?.status_code === SHIPMENT_CANCELLED) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      field('shipmentId', ERROR_CODE.STATE_LOCKED, '취소된 출하입니다.'),
     ]);
   }
 }

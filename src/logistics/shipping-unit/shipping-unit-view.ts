@@ -1,4 +1,4 @@
-/** 출하 단위는 열렸거나 마감됐거나 둘뿐이다. 편도다 — 되돌리는 경로를 두지 않는다. */
+/** 출하 단위는 열렸거나 마감됐거나 둘뿐이다. 마감은 확정 전 출하에서만 `:reopen` 으로 되돌린다. */
 export const SHIPPING_UNIT_OPEN = 'OPEN';
 export const SHIPPING_UNIT_CLOSED = 'CLOSED';
 
@@ -53,6 +53,8 @@ export interface ShippingUnitItemTotalView {
 export interface ShippingUnitDetailView extends ShippingUnitView {
   boxes: ShippingUnitBoxView[];
   itemTotals: ShippingUnitItemTotalView[];
+  /** 찍은 납품 라벨이 지금 구성과 다를 수 있다 — 다시 열려 있거나, 마지막 발행 뒤에 다시 마감했다. */
+  deliveryLabelReissueNeeded: boolean;
 }
 
 /** 상세 조회가 읽어 오는 행 모양(Prisma include 결과). */

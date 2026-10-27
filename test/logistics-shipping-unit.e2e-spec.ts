@@ -27,7 +27,7 @@ const LOGIN_ID = 'e2e-shipping-unit-probe';
 const PASSWORD = 'SU-출하단위-비밀번호';
 const PREFIX = 'SUE2E';
 const ROLE = `${PREFIX}-ROLE`;
-const PERMISSIONS = ['P-04-05'];
+const PERMISSIONS = ['P-04-05', 'W-04-12'];
 const BASE = '/api/logistics/shipping-units';
 const WORKER_NO = `${PREFIX}-W1`;
 const SESSION_COOKIE = 'omf_session';
@@ -560,6 +560,165 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
     expect(still?.shipping_unit_id).toBe(BigInt(other.shippingUnitId));
   });
 
+  // ── 마감 되돌리기 (장부 P-124) ─────────────────────────────────────────
+
+  it('U-22 ⭐ 마감을 되돌리면 상자를 다시 빼고 넣을 수 있고, 찍은 납품 라벨은 재발행이 필요하다고 알린다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 30);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const closed = await close(unit.shippingUnitId, added.body.versionNo, 200);
+    await issueDeliveryLabel(unit.shippingUnitId, 201);
+
+    const reopened = await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '상자 수량 오기' }, 200);
+
+    const validate = validator('/paths/~1logistics~1shipping-units~1{shippingUnitId}:reopen/post/responses/200/content/application~1json/schema');
+    expect(validate(reopened.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(reopened.body).toMatchObject({ statusCode: 'OPEN', deliveryLabelReissueNeeded: true });
+    // 응답 한 번이 아니라 상세의 파생값이다 — 다시 읽어도 같다.
+    const detail = await request(app.getHttpServer()).get(`${BASE}/${unit.shippingUnitId}`).set('Cookie', cookie).expect(200);
+    expect(detail.body.deliveryLabelReissueNeeded).toBe(true);
+    expect(reopened.body.closedAt).toBeUndefined();
+    expect(Number(reopened.headers.etag)).toBe(closed.body.versionNo + 1);
+    const audit = await prisma.audit_event.findFirstOrThrow({
+      where: { target_type_code: 'SHIPPING_UNIT', target_id: BigInt(unit.shippingUnitId), event_type_code: 'SHIPPING_UNIT_REOPENED' },
+    });
+    expect(audit).toMatchObject({ reason: '상자 수량 오기', terminal_id: null });
+    expect(audit.performed_by).not.toBeNull();
+
+    const removed = await request(app.getHttpServer())
+      .delete(`${BASE}/${unit.shippingUnitId}/boxes/${box.handlingUnitId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const again = await makePackedBox(shipment, 28);
+    const readded = await addBox(unit.shippingUnitId, again.handlingUnitNo);
+    expect(readded.body.versionNo).toBe(removed.body.versionNo + 1);
+    // 다시 마감해도 라벨은 그 전 구성이다 — 재발행 전까지 참이고, 재발행하면 거짓이다.
+    const reclosed = await close(unit.shippingUnitId, readded.body.versionNo, 200);
+    expect(reclosed.body.deliveryLabelReissueNeeded).toBe(true);
+    await issueDeliveryLabel(unit.shippingUnitId, 201, 'QUANTITY_CHANGE');
+    const fresh = await request(app.getHttpServer()).get(`${BASE}/${unit.shippingUnitId}`).set('Cookie', cookie).expect(200);
+    expect(fresh.body.deliveryLabelReissueNeeded).toBe(false);
+  });
+
+  it('U-23 ⛔ 되돌리기 거절 — 열린 단위·확정·취소된 출하는 400 · 사유 빈칸 400 · 낡은 버전 409', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const notClosed = await reopen(unit.shippingUnitId, unit.versionNo, { reason: '오기' }, 400);
+    expect(notClosed.body.errors[0]).toMatchObject({ field: 'shippingUnitId', code: 'STATE_LOCKED' });
+    expect(notClosed.body.errors[0].message).toContain(unit.shippingUnitNo);
+
+    const box = await makePackedBox(shipment, 10);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const closed = await close(unit.shippingUnitId, added.body.versionNo, 200);
+    expect((await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '  ' }, 400)).body.errors[0])
+      .toMatchObject({ field: 'reason', code: 'REQUIRED' });
+    expect((await reopen(unit.shippingUnitId, added.body.versionNo, { reason: '오기' }, 409)).body)
+      .toMatchObject({ conflictCause: 'user' });
+
+    await prisma.approval_request.create({ data: {
+      approval_request_no: `${PREFIX}-AP-${shipment.shipmentId}`, approval_type_code: 'SHIPMENT_CANCEL', target_type_code: 'SHIPMENT',
+      target_id: BigInt(shipment.shipmentId), requested_at: new Date(), status_code: 'PENDING', reason: '취소 요청',
+      requested_by: (await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } })).app_user_id,
+    } });
+    const pending = await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '오기' }, 400);
+    expect(pending.body.errors[0]).toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+    expect(pending.body.errors[0].message).toContain('취소 결재가 진행 중');
+    await prisma.approval_request.deleteMany({ where: { approval_request_no: `${PREFIX}-AP-${shipment.shipmentId}` } });
+
+    for (const status of ['CONFIRMED', 'CANCELLED']) {
+      await prisma.shipment.update({ where: { shipment_id: BigInt(shipment.shipmentId) }, data: { status_code: status } });
+      // 상태가 버전보다 먼저다 — 낡은 버전이어도 409 가 아니라 400 이다.
+      const blocked = await reopen(unit.shippingUnitId, added.body.versionNo, { reason: '오기' }, 400);
+      expect(blocked.body.errors[0]).toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+      expect(blocked.body.errors[0].message).toContain(`${PREFIX}-SH-`);
+    }
+    expect((await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '오기' }, 400)).body.errors[0].message)
+      .toContain('새 출하를 등록한 뒤 그 출하로 다시 포장하세요');
+  });
+
+  it('U-24 POP 단말도 자기 공장 단위를 되돌린다 — 이력에 단말·작업자가 남는다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 10);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const closed = await close(unit.shippingUnitId, added.body.versionNo, 200);
+
+    const reopened = await request(app.getHttpServer())
+      .post(`${BASE}/${unit.shippingUnitId}:reopen`)
+      .set('Authorization', `Bearer ${popToken}`)
+      .set('X-Worker-No', WORKER_NO)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(closed.body.versionNo))
+      .send({ reason: '상자 교체' })
+      .expect(200);
+    expect(reopened.body).toMatchObject({ statusCode: 'OPEN', deliveryLabelReissueNeeded: false });
+    const audit = await prisma.audit_event.findFirstOrThrow({
+      where: { target_type_code: 'SHIPPING_UNIT', target_id: BigInt(unit.shippingUnitId), event_type_code: 'SHIPPING_UNIT_REOPENED' },
+    });
+    expect(audit.performed_by).toBeNull();
+    expect(audit.terminal_id).not.toBeNull();
+    expect(audit.after_value).toMatchObject({ statusCode: 'OPEN', workerNo: WORKER_NO });
+  });
+
+  it('U-25 ⛔ 확정된 출하의 단위는 상자 넣기·빼기·마감이 400 이고 반품 화면을 안내한다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 10);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    await prisma.shipment.update({ where: { shipment_id: BigInt(shipment.shipmentId) }, data: { status_code: 'CONFIRMED' } });
+
+    const more = await makePackedBox(shipment, 5);
+    const rejected = (await addBox(unit.shippingUnitId, more.handlingUnitNo, 400)).body.errors[0];
+    expect(rejected).toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+    expect(rejected.message).toContain('반품·클레임 입고 등록(W-04-06)');
+    expect((await request(app.getHttpServer())
+      .delete(`${BASE}/${unit.shippingUnitId}/boxes/${box.handlingUnitId}`)
+      .set('Cookie', cookie)
+      .expect(400)).body.errors[0]).toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+    expect((await close(unit.shippingUnitId, added.body.versionNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+  });
+
+  it('U-26 ⭐ 다시 연 단위가 있는 출하는 확정이 409 이고, 다시 마감하면 확정된다', async () => {
+    const shipment = await makeShipment('UNCONFIRMED');
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 10);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const closed = await close(unit.shippingUnitId, added.body.versionNo, 200);
+    const reopened = await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '상자 확인' }, 200);
+    const confirm = async (expected: number) => {
+      const row = await prisma.shipment.findUniqueOrThrow({ where: { shipment_id: BigInt(shipment.shipmentId) }, select: { version_no: true } });
+      return request(app.getHttpServer())
+        .post(`/api/logistics/shipments/${shipment.shipmentId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', String(row.version_no))
+        .expect(expected);
+    };
+
+    const blocked = await confirm(409);
+    expect(blocked.body).toMatchObject({ code: 'INVALID_STATE' });
+    expect(blocked.body.message).toContain(unit.shippingUnitNo);
+    expect(blocked.body.message).toContain('포장 화면(P-04-05)에서 마감한 뒤 확정하세요');
+
+    await close(unit.shippingUnitId, reopened.body.versionNo, 200);
+    await confirm(200);
+  });
+
+  it('U-27 단위가 없는 출하의 확정은 그대로다', async () => {
+    const shipment = await makeShipment('UNCONFIRMED');
+    await makePackedBox(shipment, 10);
+    const row = await prisma.shipment.findUniqueOrThrow({ where: { shipment_id: BigInt(shipment.shipmentId) }, select: { version_no: true } });
+    await request(app.getHttpServer())
+      .post(`/api/logistics/shipments/${shipment.shipmentId}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(row.version_no))
+      .expect(200);
+  });
+
   it('U-19 ⛔ 출하 LOT 배분에는 더 이상 납품 라벨을 발행할 수 없다', async () => {
     const shipment = await makeShipment();
     const box = await makePackedBox(shipment, 10);
@@ -591,7 +750,7 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
 
   // ── 헬퍼 ────────────────────────────────────────────────────────────────
 
-  function issueDeliveryLabel(shippingUnitId: number, expected: number): request.Test {
+  function issueDeliveryLabel(shippingUnitId: number, expected: number, reissueReasonCode?: string): request.Test {
     return request(app.getHttpServer())
       .post('/api/app/document-issues')
       .set('Cookie', cookie)
@@ -599,6 +758,7 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
       .send({
         documentTypeCode: 'DELIVERY_LABEL',
         targets: [{ targetTypeCode: 'SHIPPING_UNIT', targetId: shippingUnitId }],
+        ...(reissueReasonCode === undefined ? {} : { reissueReasonCode }),
       })
       .expect(expected);
   }
@@ -614,6 +774,16 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
       .set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID())
       .send({ handlingUnitNo })
+      .expect(expected);
+  }
+
+  function reopen(shippingUnitId: number, version: number, body: object, expected: number): request.Test {
+    return request(app.getHttpServer())
+      .post(`${BASE}/${shippingUnitId}:reopen`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(version))
+      .send(body)
       .expect(expected);
   }
 
@@ -904,6 +1074,15 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
   }
 
   async function cleanup(): Promise<void> {
+    // 확정이 적재한 ERP 송신 — 키가 출하 번호라 다음 실행의 같은 번호 확정을 «이미 적재»로 막는다.
+    await prisma.$executeRawUnsafe(`DELETE FROM integration.integration_message WHERE message_key LIKE 'IF-SHIPMENT-PGI-SEND:${PREFIX}-%'`);
+    await prisma.approval_request.deleteMany({ where: { approval_request_no: { startsWith: `${PREFIX}-AP-` } } });
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM audit.audit_event
+       WHERE target_type_code = 'SHIPPING_UNIT'
+         AND target_id IN (SELECT shipping_unit_id FROM logistics.shipping_unit
+              WHERE shipment_id IN (SELECT shipment_id FROM logistics.shipment
+                     WHERE shipment_no LIKE '${PREFIX}%'))`);
     // ⛔ 발행 로그는 FK 가 없다(다형) — 단위를 지우기 «전»에 손으로 지운다.
     await prisma.$executeRawUnsafe(`
       DELETE FROM app.document_issue_log

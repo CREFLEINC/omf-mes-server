@@ -28,12 +28,12 @@ const prisma = (overrides: Record<string, unknown> = {}) => ({
 
 describe('terminal logistics scope', () => {
   it('enumerates the client logistics surface and denies an unlisted operation or channel', async () => {
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(43);
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(44);
     // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
     //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
     expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(
       (key) => key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE '),
-    )).toHaveLength(18);
+    )).toHaveLength(19);
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/shipments', mobile)).rejects.toBeDefined();
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/goods-issues', pop)).rejects.toBeDefined();
   });
@@ -45,6 +45,7 @@ describe('terminal logistics scope', () => {
       'POST /logistics/shipping-units/{shippingUnitId}:add-box',
       'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}',
       'POST /logistics/shipping-units/{shippingUnitId}:close',
+      'POST /logistics/shipping-units/{shippingUnitId}:reopen',
     ];
     for (const key of writes) {
       expect(TERMINAL_LOGISTICS_OPERATIONS[key]).toEqual(['POP']);
@@ -82,6 +83,19 @@ describe('terminal logistics scope', () => {
     expect(db.shipping_unit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { shipping_unit_id: 1n, shipment: { warehouse: { plant_id: 3n } } },
     }));
+  });
+
+  it('다른 공장의 출하 단위는 다시 열지 못하고, 자기 공장 단위는 작업자를 심고 지난다', async () => {
+    const key = 'POST /logistics/shipping-units/{shippingUnitId}:reopen';
+    const foreign = prisma({ shipping_unit: { findFirst: jest.fn().mockResolvedValue(null) } });
+    await expect(assertTerminalLogisticsScope(foreign, request({ shippingUnitId: '1' }), key, pop)).rejects.toBeDefined();
+    expect(foreign.shipping_unit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { shipping_unit_id: 1n, shipment: { warehouse: { plant_id: 3n } } },
+    }));
+    const own = prisma({ shipping_unit: { findFirst: jest.fn().mockResolvedValue({ shipping_unit_id: 1n }) } });
+    const req = request({ shippingUnitId: '1' });
+    await assertTerminalLogisticsScope(own, req, key, pop);
+    expect(currentTerminalLogisticsWorkerId(req)).toBe(5n);
   });
 
   it('rejects another plant goods issue before detail is returned', async () => {

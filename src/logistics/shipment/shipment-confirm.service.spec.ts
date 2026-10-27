@@ -24,6 +24,7 @@ interface Seed {
   openCancel?: boolean;
   alreadyQueued?: boolean;
   missing?: boolean;
+  openUnitNo?: string;
 }
 
 function build(seed: Seed = {}) {
@@ -50,6 +51,9 @@ function build(seed: Seed = {}) {
         approvalWhere.push(where);
         return Promise.resolve(seed.openCancel === true ? { approval_request_id: 1n } : null);
       },
+    },
+    shipping_unit: {
+      findFirst: () => Promise.resolve(seed.openUnitNo === undefined ? null : { shipping_unit_no: seed.openUnitNo }),
     },
     shipment: {
       update: (args: Row) => {
@@ -162,6 +166,18 @@ describe('출하 확정 — 409 순위와 아웃박스 적재', () => {
       approval_type_code: 'SHIPMENT_CANCEL',
       status_code: 'PENDING',
     });
+  });
+
+  it('열린 출하 단위가 있으면 판 번호보다 앞서 INVALID_STATE 이고 단위 번호와 할 일을 알린다', async () => {
+    const { service, updates, enqueued } = build({ openUnitNo: 'SU-20261027-0001', version: VERSION + 9 });
+
+    const failure = await conflictOf(() => service.confirm(SHIPMENT_ID, VERSION, USER_ID));
+
+    expect(failure.conflict.code).toBe('INVALID_STATE');
+    expect(failure.message).toContain('SU-20261027-0001');
+    expect(failure.message).toContain('포장 화면(P-04-05)에서 마감한 뒤 확정하세요');
+    expect(updates).toHaveLength(0);
+    expect(enqueued).toHaveLength(0);
   });
 
   it('순위 4 — 판 번호만 틀리면 VERSION_CONFLICT + currentVersion(문자열) + conflictCause user', async () => {

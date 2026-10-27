@@ -2932,6 +2932,111 @@
     }
    }
   },
+  "/logistics/shipping-units/{shippingUnitId}:reopen": {
+   "parameters": [
+    {
+     "name": "shippingUnitId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 7001
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 단위 마감 되돌리기",
+    "description": "⭐ 선행 구현(장부 P-124). CLOSED → OPEN. 출하가 확정·취소됐거나 취소 결재가 진행 중이면 400 이다. 다시 열면 상자를 넣고 빼서 포장을 고칠 수 있고, 다시 마감한 뒤 납품 라벨을 재발행한다(상세의 deliveryLabelReissueNeeded). 사유가 이력에 남는다",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShippingUnitReopen"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "다시 열렸다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShippingUnitDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "STATE_LOCKED/shippingUnitId = 마감되지 않음 · STATE_LOCKED/shipmentId = 출하 확정·취소·취소 결재 중 · REQUIRED/reason",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "단말이 범위 밖이다(남의 공장 단위·단말 작업자 없음). 근거: 장부 P-124",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 If-Match 를 새로 받는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "이력은 audit.audit_event(SHIPPING_UNIT · SHIPPING_UNIT_REOPENED). 장부 P-124."
+   }
+  },
   "/logistics/shipping-units/{shippingUnitId}:close": {
    "parameters": [
     {
@@ -2975,6 +3080,16 @@
      },
      "400": {
       "description": "STATE_LOCKED/shippingUnitId = 이미 마감 · INVALID/boxes = 상자가 한 개도 없다 · STATE_LOCKED/shipmentId = 취소된 출하",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "단말이 범위 밖이다(남의 공장 단위·단말 작업자 없음). 근거: 장부 P-124",
       "content": {
        "application/json": {
         "schema": {
@@ -5206,11 +5321,31 @@
         "items": {
          "$ref": "#/components/schemas/ShippingUnitItemTotal"
         }
+       },
+       "deliveryLabelReissueNeeded": {
+        "type": "boolean",
+        "description": "찍은 납품 라벨(출력 실패 제외)이 지금 구성과 다를 수 있다 — 단위가 다시 열려 있거나, 마지막 발행 뒤에 다시 마감했다. 참이면 마감한 뒤 납품 라벨을 재발행한다. 발행이 없으면 거짓. 근거: 장부 P-124"
        }
       }
      }
     ],
     "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 납품 라벨에 실을 값을 «전부» 담는다 — 서버는 값만 주고 POP 이 그린다(통보 277 §4 의 원칙을 납품 라벨로 넓힌 것)."
+   },
+   "ShippingUnitReopen": {
+    "type": "object",
+    "required": [
+     "reason"
+    ],
+    "description": "출하 단위 마감 되돌리기 요청. 근거: 장부 P-124",
+    "properties": {
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "다시 여는 사유 — 이력에 남는다",
+      "example": "상자 수량 오기"
+     }
+    }
    },
    "ShippingUnitAddBox": {
     "type": "object",

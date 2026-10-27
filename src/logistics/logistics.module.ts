@@ -66,6 +66,7 @@ import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-a
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
 import { ShippingUnitBoxService } from './shipping-unit/shipping-unit-box.service';
 import { ShippingUnitQueryService } from './shipping-unit/shipping-unit-query.service';
+import { ShippingUnitReopenService } from './shipping-unit/shipping-unit-reopen.service';
 import { ShippingUnitController } from './shipping-unit/shipping-unit.controller';
 import { ShippingUnitService } from './shipping-unit/shipping-unit.service';
 import { ShipmentLineListController } from './shipment/shipment-line-list.controller';
@@ -160,6 +161,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentAllocationQueryService,
     ShippingUnitBoxService,
     ShippingUnitQueryService,
+    ShippingUnitReopenService,
     ShippingUnitService,
     ShipmentPickService,
     ShipmentOqcSkipService,

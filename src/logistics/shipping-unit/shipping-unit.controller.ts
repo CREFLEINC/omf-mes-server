@@ -23,6 +23,7 @@ import { PagedResponse } from '../../common/pagination';
 import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { ShippingUnitAddBox, ShippingUnitBoxService } from './shipping-unit-box.service';
 import { ShippingUnitFilters, ShippingUnitQueryService } from './shipping-unit-query.service';
+import { ShippingUnitReopen, ShippingUnitReopenService } from './shipping-unit-reopen.service';
 import { ShippingUnitCreate, ShippingUnitService } from './shipping-unit.service';
 import { ShippingUnitDetailView, ShippingUnitView } from './shipping-unit-view';
 
@@ -43,6 +44,7 @@ export class ShippingUnitController {
     private readonly queries: ShippingUnitQueryService,
     private readonly units: ShippingUnitService,
     private readonly boxes: ShippingUnitBoxService,
+    private readonly reopens: ShippingUnitReopenService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -138,7 +140,7 @@ export class ShippingUnitController {
     return detail;
   }
 
-  /** 마감. ⛔ 되돌릴 수 없다 — 취소·해체 경로를 두지 않는다(통보 142 와 같은 태도). */
+  /** 마감. 확정 전 출하에서만 `:reopen` 으로 되돌린다. */
   @HttpCode(HttpStatus.OK)
   @Post(':shippingUnitId\\:close')
   @Contract('POST /logistics/shipping-units/{shippingUnitId}:close')
@@ -161,6 +163,29 @@ export class ShippingUnitController {
       }),
       // ⛔ 이 경로의 409 봉투는 계열이라 `code` 가 required 다 — 안 넘기면 멱등 충돌 409 에서
       //    그 칸이 빠진다. e2e 로는 반증되지 않아 `family-conflict-code.spec.ts` 가 유일한 그물이다.
+      FAMILY_CONFLICT_CODE,
+    );
+    setEtag(response, detail.versionNo);
+    return detail;
+  }
+
+  /** 마감을 되돌린다 — 확정 전 출하에서만. 상자를 빼서 포장을 고치려는 자리다. */
+  @HttpCode(HttpStatus.OK)
+  @Post(':shippingUnitId\\:reopen')
+  @Contract('POST /logistics/shipping-units/{shippingUnitId}:reopen')
+  async reopen(
+    @Req() request: Request,
+    @Param('shippingUnitId', ParseIntPipe) shippingUnitId: number,
+    @Body() body: ShippingUnitReopen,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShippingUnitDetailView> {
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/shipping-units/{shippingUnitId}:reopen');
+    const expected = ifMatchVersion(request);
+    if (expected === undefined) {
+      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+    }
+    const detail = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.reopens.reopen(shippingUnitId, expected, body, actor, currentTerminal(request)?.plantId),
       FAMILY_CONFLICT_CODE,
     );
     setEtag(response, detail.versionNo);
