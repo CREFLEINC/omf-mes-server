@@ -39,6 +39,7 @@ type CancelableDocument = 'GOODS_ISSUE' | 'GOODS_RECEIPT';
 const CANCEL_ACTION = 'shipment-cancel';
 const APPROVAL_DOCUMENT_TYPE = 'APPROVAL_REQUEST';
 const DOCUMENT_CANCELLED = 'CANCELLED';
+const POSTED = 'POSTED';
 const RELEASE_FIELD = 'shipmentId';
 
 export interface ShipmentCancelRequestBody {
@@ -135,8 +136,9 @@ export class ShipmentCancelService {
       // ⭐⭐ **역전기 순서가 거꾸로다**(§3-6 ⓕ) — 출고 역(+q)이 먼저, 입고 역(−q)이 나중이다.
       //    긴급 직행이면 입고분이 잔액을 세웠고 출고가 그것을 깎았다. 뒤집으면 입고 역이 0 에서 −q 를
       //    내려 코어가 거부한다. 평시는 입고가 없어 출고 역 하나다.
+      // 상자 정정(장부 P-125)이 옛 출고를 취소하고 새 출고를 세운다 — 살아 있는 출고 하나만 되돌린다.
       const issue = await tx.goods_issue.findFirst({
-        where: { source_document_type_code: SHIPMENT_TARGET, source_document_id: locked.shipment_id },
+        where: { source_document_type_code: SHIPMENT_TARGET, source_document_id: locked.shipment_id, status_code: POSTED },
         select: { goods_issue_id: true },
       });
       if (issue === null) {

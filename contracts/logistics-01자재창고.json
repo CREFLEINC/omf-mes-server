@@ -1446,6 +1446,7 @@
     ],
     "summary": "취급 단위 구성 치환",
     "description": "근거: 공유계약 A-5. ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /inventory/handling-units/{handlingUnitId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1. ⭐ 오프라인 대상 오퍼레이션이다 — 큐에 쌓인 요청은 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). 중복은 멱등키가 막고, 이미 처리된 건은 서버가 거부한다. ⭐ 결정 13 되살림(2026-08-30) — 이 치환은 서버가 HandlingUnitRepackEvent(헤더) + Line(수량 변경 전/후)을 함께 기록한다. 신규 발번·새 라벨 대상은 이 이벤트가 아니라 POST /inventory/handling-units(P-04-04)가 별도로 만든다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: M-04-03 §5-2",
+    "x-server-note": "⭐ 출하에 배분된 상자도 고친다 — 상자 구성의 증감을 그 상자에 이어진 배분에 옮기고, 출하 줄·출하작업지시 라인·수주 라인 출하 수량(줄별 순증감), 잔액 피킹분, 출고(옛 출고 역전기·취소 + 새 출고)를 같은 트랜잭션에서 맞춘다. 줄인 몫은 «피킹됐지만 출하 안 됨»으로 그 지시 라인에 남는다(잔액 피킹분으로 돌아오고 피킹 예약은 그대로) — 다시 늘리면 재피킹 없이 그 피킹분을 쓴다. 이때 reason 이 필수이고, 응답에 shipmentCorrection(옛·새 출고 번호·배분 증감·라벨 재발행 안내)이 실린다. 막는 경우 — 409: 출하 단위에 담긴 상자(P-04-05 에서 상자를 뺀 뒤 — 마감된 단위면 다시 열고) · 확정된 출하(반품·클레임 W-04-06) · 취소된 출하 · 취소 결재 중 · 긴급 직행 출하 · 출하 여러 건에 배분된 상자. 400: 배분되지 않은 LOT 을 넣음 · 고칠 배분을 하나로 정할 수 없음 · 출하 줄 배분이 모두 0 · 납품 라벨이 발행된 배분을 뺌 · 배정·수주 수량 초과(순증감) · 늘린 만큼 피킹분이 없음 · 재고 차원이 하나가 아님 · 사유 없음. 장부 P-125",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1467,6 +1468,11 @@
          "items"
         ],
         "properties": {
+         "reason": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "정정 사유 — 출하에 배분된 상자를 고칠 때 필수(공백뿐이면 400). 출하 정정 이력(audit HANDLING_UNIT_CONTENTS_CHANGED)에 남는다. 장부 P-125"
+         },
          "items": {
           "type": "array",
           "items": {
@@ -1484,7 +1490,73 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/HandlingUnitContentListResponse"
+          "allOf": [
+           {
+            "$ref": "#/components/schemas/HandlingUnitContentListResponse"
+           },
+           {
+            "type": "object",
+            "properties": {
+             "shipmentCorrection": {
+              "type": "object",
+              "description": "출하에 배분된 상자를 고쳐 출하·재고를 맞췄을 때만 온다. 장부 P-125",
+              "required": [
+               "shipmentNo",
+               "cancelledGoodsIssueNo",
+               "goodsIssueNo",
+               "changes",
+               "notice"
+              ],
+              "properties": {
+               "shipmentNo": {
+                "type": "string"
+               },
+               "cancelledGoodsIssueNo": {
+                "type": "string",
+                "description": "역전기·취소한 옛 출고 번호"
+               },
+               "goodsIssueNo": {
+                "type": "string",
+                "description": "고친 배분으로 세운 새 출고 번호"
+               },
+               "changes": {
+                "type": "array",
+                "items": {
+                 "type": "object",
+                 "required": [
+                  "lineNo",
+                  "lotNo",
+                  "before",
+                  "after"
+                 ],
+                 "properties": {
+                  "lineNo": {
+                   "type": "integer",
+                   "description": "출하 줄 번호"
+                  },
+                  "lotNo": {
+                   "type": "string"
+                  },
+                  "before": {
+                   "type": "string",
+                   "description": "고치기 전 배분 수량(10진 문자열)"
+                  },
+                  "after": {
+                   "type": "string",
+                   "description": "고친 뒤 배분 수량(10진 문자열) — 0 이면 배분이 없어졌다"
+                  }
+                 }
+                }
+               },
+               "notice": {
+                "type": "string",
+                "description": "출고 전표 QR·납품 라벨 재발행 안내 — 화면이 그대로 보인다"
+               }
+              }
+             }
+            }
+           }
+          ]
         }
        }
       }
