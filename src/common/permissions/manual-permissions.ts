@@ -327,6 +327,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['P-02-01'],
   // 작업 세션 강제 종료 — W/O 마감 화면(`W-02-05`)이 마감을 막는 열린 세션을 닫는다(장부 P-108).
   'POST /production/work-sessions/{workSessionId}:force-end': ['W-02-05'],
+  // 피킹 반납 — PDA 피킹(`M-04-01`)과 관리웹 출하 처리(`W-04-04`) 두 화면이 부른다(장부 P-126).
+  'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:return-pick': ['M-04-01', 'W-04-04'],
   // W/O 마감 상세의 일자별 실적 — 상세·누계를 보는 마감(`W-02-05`)·진행현황(`W-02-08`) 화면과 같은 권한(장부 P-122).
   'GET /production/work-orders/{workOrderId}/daily-results': ['W-02-05', 'W-02-08'],
 

@@ -14,7 +14,7 @@ import {
   orderBySql,
   whereSql,
 } from './shipment-request-query.sql';
-import { ShipmentPicksByLine, ShipmentRequestView, shipmentRequestView } from './shipment-request-view';
+import { BalancePickedByLot, ShipmentPicksByLine, ShipmentRequestView, ShippedByLineLot, shipmentRequestView } from './shipment-request-view';
 
 /** 03 품질에서 이 축이 세는 것 — 출하검사뿐이다(§1-5). 좁히기용이고 판정은 ③a 가 다시 한다. */
 const OQC = 'OQC';
@@ -142,7 +142,7 @@ export class ShipmentRequestQueryService {
   }
 
   /**
-   * 헤더 id 집합 → 뷰. **세 질의**로 끝낸다 — 헤더+라인 1 · 예약 1 · 검사 1. ⛔ 건마다·라인마다
+   * 헤더 id 집합 → 뷰. 건 수와 무관한 몇 질의로 끝낸다 — 헤더+라인 · 예약 · 검사 · 출하 배분 · 잔액 피킹분. ⛔ 건마다·라인마다
    * 부르면 쪽 크기만큼 N+1 이다(e2e L-42 가 예약 조회 «횟수»를 센다). ⭐ 단건도 이 길을 쓴다.
    */
   private async views(ids: bigint[]): Promise<ShipmentRequestView[]> {
@@ -159,12 +159,42 @@ export class ShipmentRequestQueryService {
       .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     const inspections = await this.oqcResults(ids, lotIds);
+    const shipped = await this.shippedByLineLot(lines.map((line) => line.shipment_request_line_id));
+    const balancePicked = await this.balancePickedByLot(lotIds);
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, shipped, balancePicked)];
     });
+  }
+
+  /** (지시 라인, LOT) 별 살아 있는 출하 배분 합 — 취소 완료된 출하는 뺀다. 반납 가능 수량이 쓴다(장부 P-126). */
+  private async shippedByLineLot(lineIds: bigint[]): Promise<ShippedByLineLot> {
+    if (lineIds.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<{ line_id: bigint; lot_id: bigint; qty: Prisma.Decimal }[]>`
+      SELECT sl.shipment_request_line_id AS line_id, a.lot_id, SUM(a.allocated_qty) AS qty
+        FROM logistics.shipment_lot_allocation a
+        JOIN logistics.shipment_line sl ON sl.shipment_line_id = a.shipment_line_id
+        JOIN logistics.shipment s ON s.shipment_id = sl.shipment_id
+       WHERE sl.shipment_request_line_id = ANY(${lineIds}) AND s.status_code <> 'CANCELLED'
+       GROUP BY 1, 2`;
+    return new Map(rows.map((row) => [`${row.line_id}:${row.lot_id}`, new Prisma.Decimal(row.qty)]));
+  }
+
+  /** (공장, LOT) 별 잔액 피킹분 — 반납이 피킹 → 가용으로 옮길 수 있는 몫(장부 P-126). 공장 없는 지시용으로 모든 공장 합도 둔다. */
+  private async balancePickedByLot(lotIds: bigint[]): Promise<BalancePickedByLot> {
+    if (lotIds.length === 0) return new Map();
+    const rows = await this.prisma.inventory_balance.groupBy({
+      by: ['plant_id', 'lot_id'], where: { lot_id: { in: [...new Set(lotIds)] } }, _sum: { picked_qty: true },
+    });
+    const out: BalancePickedByLot = new Map();
+    for (const row of rows) {
+      const qty = row._sum.picked_qty ?? new Prisma.Decimal(0);
+      out.set(`${row.plant_id}:${row.lot_id}`, qty);
+      out.set(`*:${row.lot_id}`, (out.get(`*:${row.lot_id}`) ?? new Prisma.Decimal(0)).plus(qty));
+    }
+    return out;
   }
 
   /**
@@ -173,10 +203,7 @@ export class ShipmentRequestQueryService {
    *    «자재» 예약이 섞여 들어와 수량이 부풀고 남의 LOT 이 `picks[]` 에 뜬다(#409 인계 · §11 ②).
    *    `ix_reservation_source (type, id, status)` 가 그대로 탄다(§2-7).
    * ⛔ `status_code` 로 좁히지 않는다 — 계약이 「누적 피킹 수량」이라 적었고 되돌림은 **수량 축**
-   *    (`released_qty`)이 감당하기로 한 자리다(§5-1 · R-14). ⚠ 그 되돌림이 **오늘은 일어나지
-   *    않는다** — `released_qty` 를 쓰는 코드가 저장소에 0개이고 ⓒ안에서 `consumed = reserved` 라
-   *    `ck_reservation_qty` 가 올리는 것 자체를 막는다(**통보 241** · §11 ①). 그래서 지금은 상태와
-   *    무관하게 예약 행 전건이 `pickedQty` 에 남는다 — I-23 이 되돌림 칸을 정할 때 함께 푼다.
+   *    (`released_qty`)이 감당한다(§5-1 · R-14). 출하 취소와 피킹 반납(장부 P-126)이 소진분을 `released_qty` 로 옮긴다.
    */
   private async picksByLine(lineIds: bigint[]): Promise<ShipmentPicksByLine> {
     const rows = await this.prisma.inventory_reservation.findMany({

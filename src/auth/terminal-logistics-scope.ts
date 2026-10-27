@@ -65,6 +65,8 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary': ['MOBILE'],
   'POST /logistics/recycle-entries': ['MOBILE'],
   'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick': ['MOBILE'],
+  // 피킹 반납(장부 P-126) — 피킹과 같은 범위: 단말 공장의 지시 라인만.
+  'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:return-pick': ['MOBILE'],
   'POST /logistics/shopfloor-receipts': ['MOBILE'],
   'POST /logistics/stock-transfers': ['MOBILE'],
   'POST /logistics/stock-transfers/{stockTransferId}:arrive': ['MOBILE'],
@@ -194,6 +196,7 @@ export async function assertTerminalLogisticsScope(
       // 재생재 본문에는 plantId가 없다. 실제 창고/위치 소유 공장으로 검증한다.
       await warehouse(b.warehouseId); break;
     case 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick':
+    case 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:return-pick':
       await shipmentRequest(p.shipmentRequestId);
       await check(await prisma.shipment_request_line.findFirst({ where: { shipment_request_line_id: id(p.shipmentRequestLineId), shipment_request_id: id(p.shipmentRequestId) }, select: { shipment_request_line_id: true } }));
       await optional(lot, b.lotId); break;

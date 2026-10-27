@@ -49,6 +49,7 @@ const SHARED = 'common/master/worker-no.ts';
 const PRESENCE_ONLY = [
   'logistics/picking/picking-pick.service.ts',
   'logistics/shipment-allocation/allocation-packing.service.ts',
+  'logistics/shipment-request/shipment-pick-return.service.ts',
   'logistics/shipment-request/shipment-pick.service.ts',
   'logistics/shopfloor-receipt/shopfloor-receipt.service.ts',
   'production/material-return/material-return.service.ts',
@@ -296,7 +297,7 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     // ⛔ 이 숫자가 늘었는데 위 세 표가 그대로면, 새 오퍼레이션이 판정을 «안 하고» 있다는 뜻이다.
     // SHIP-UNIT-01 출하 단위 쓰기 셋(생성·상자 넣기·마감 · 장부 P-24): 37 → 40.
     // 판정은 `logisticsWriteActorOf` 가 한다 — 위 표들이 그 자리를 이미 덮는다.
-    expect(required).toBe(40);
+    expect(required).toBe(41);
   });
 });
 

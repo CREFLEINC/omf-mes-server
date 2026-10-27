@@ -1173,6 +1173,91 @@ describe('출하 목록 (e2e)', () => {
     return created;
   }
 
+  // ── 피킹 반납과 출하·취소의 조합(장부 P-126) ─────────────────────────────────
+  /** 시험마다 새 지시(배정 10 · 수주 없음) — 앞 시험의 피킹이 배정을 채우지 않게. */
+  async function freshRequest(): Promise<{ requestId: number; lineId: number }> {
+    made.rq = (made.rq ?? 0) + 1;
+    const header = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-RQ${made.rq}`, fulfillment_plant_id: ids.plant, customer_id: ids.customer,
+        ship_to_partner_id: ids.customer, requested_ship_date: new Date('2026-09-01T00:00:00.000Z'), status_code: 'REGISTERED',
+        shipment_request_line: { create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, requested_qty: 10, allocated_qty: 10 }] },
+      },
+      include: { shipment_request_line: true },
+    });
+    return { requestId: Number(header.shipment_request_id), lineId: Number(header.shipment_request_line[0].shipment_request_line_id) };
+  }
+  const pickOn = (rq: { requestId: number; lineId: number }, lotId: bigint, qty: number) => request(app.getHttpServer())
+    .post(`/api/logistics/shipment-requests/${rq.requestId}/lines/${rq.lineId}:pick`)
+    .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('X-Worker-No', `${PREFIX}-W1`)
+    .send({ lotId: Number(lotId), pickedQty: qty, uomId: Number(ids.uom) })
+    .expect(200);
+  const returnOn = (rq: { requestId: number; lineId: number }, lotId: bigint, qty: number) => request(app.getHttpServer())
+    .post(`/api/logistics/shipment-requests/${rq.requestId}/lines/${rq.lineId}:return-pick`)
+    .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('X-Worker-No', `${PREFIX}-W1`)
+    .send({ lotId: Number(lotId), qty, uomId: Number(ids.uom), reasonCode: 'QTY_EXCESS' })
+    .expect(200);
+  const reservationOf = async (rq: { lineId: number }, lotId: bigint) => {
+    const rows = await prisma.inventory_reservation.findMany({
+      where: { source_document_type_code: 'SHIPMENT_REQUEST_LINE', source_document_id: BigInt(rq.lineId), lot_id: lotId },
+      select: { reserved_qty: true, consumed_qty: true, released_qty: true },
+    });
+    return rows.reduce((sum, row) => ({
+      reserved: sum.reserved + row.reserved_qty.toNumber(), consumed: sum.consumed + row.consumed_qty.toNumber(), released: sum.released + row.released_qty.toNumber(),
+    }), { reserved: 0, consumed: 0, released: 0 });
+  };
+  const pickedBalance = async (lotId: bigint) => (await prisma.inventory_balance.findFirstOrThrow({
+    where: { lot_id: lotId, warehouse_id: ids.warehouse }, select: { picked_qty: true },
+  })).picked_qty.toNumber();
+  const shipFrom = (rq: { requestId: number; lineId: number }, lotId: bigint, qty: number) => post(body({
+    shipmentRequestId: rq.requestId,
+    lines: [{ shipmentRequestLineId: rq.lineId, shippedQty: qty, uomId: Number(ids.uom), allocations: [{ lotId: Number(lotId), allocatedQty: qty, uomId: Number(ids.uom) }] }],
+  }));
+  const cancelAll = async (shipmentId: unknown) => {
+    await requestCancel(shipmentId, await versionOf(shipmentId), 200);
+    await approveCancel(shipmentId);
+    await cancelShipment(shipmentId, await versionOf(shipmentId), 200);
+  };
+
+  it('R-8 피킹 10 → 출하 8 → 반납 2 → 출하 취소 — 예약은 소진 0·해제 10, 라인 피킹 0, 잔액 피킹분은 피킹 전으로', async () => {
+    const rq = await freshRequest();
+    const baseline = await pickedBalance(ids.lotNoPick);
+    await pickOn(rq, ids.lotNoPick, 10);
+    const shipment = await shipFrom(rq, ids.lotNoPick, 8);
+
+    const returned = await returnOn(rq, ids.lotNoPick, 2);
+    expect(returned.body.returned).toEqual({ fromPickedQty: 2, reservationOnlyQty: 0 });
+    await cancelAll(shipment.shipmentId);
+
+    expect(await reservationOf(rq, ids.lotNoPick)).toEqual({ reserved: 10, consumed: 0, released: 10 });
+    expect(await pickedBalance(ids.lotNoPick)).toBe(baseline);
+  });
+
+  it('R-9 다른 지시가 그 피킹분으로 출하했다 취소하면 잔액은 이미 가용이다 — 남은 피킹은 예약만 풀어 반납한다', async () => {
+    const a = await freshRequest();
+    const b = await freshRequest();
+    const baseline = await pickedBalance(ids.lotNoPick);
+    await pickOn(a, ids.lotNoPick, 10);
+    // B 는 피킹 없이 A 가 집은 잔액 피킹분 8 로 출하한다(피킹분은 지시끼리 함께 쓴다).
+    const shipment = await shipFrom(b, ids.lotNoPick, 8);
+    expect((await returnOn(a, ids.lotNoPick, 2)).body.returned).toEqual({ fromPickedQty: 2, reservationOnlyQty: 0 });
+    await cancelAll(shipment.shipmentId);
+    expect(await pickedBalance(ids.lotNoPick)).toBe(baseline);
+
+    // A 는 피킹 8 이 남았는데 잔액 피킹분은 없다 — 예약만 풀린다(잔액은 그대로).
+    const rest = await returnOn(a, ids.lotNoPick, 8);
+
+    expect(rest.body.returned).toEqual({ fromPickedQty: 0, reservationOnlyQty: 8 });
+    expect(rest.body.line).toMatchObject({ pickedQty: 0, pickedLots: [] });
+    expect(await reservationOf(a, ids.lotNoPick)).toEqual({ reserved: 10, consumed: 0, released: 10 });
+    expect(await pickedBalance(ids.lotNoPick)).toBe(baseline);
+    const audit = await prisma.audit_event.findFirstOrThrow({
+      where: { target_type_code: 'SHIPMENT_REQUEST_LINE', target_id: BigInt(a.lineId), event_type_code: 'PICK_RETURNED' },
+      orderBy: { occurred_at: 'desc' },
+    });
+    expect(audit.after_value).toMatchObject({ fromPickedQty: '0', reservationOnlyQty: '8' });
+  });
+
   it('X-1 ⭐ 상신 — SHIPMENT_CANCEL 결재가 서고 출하는 «그대로» UNCONFIRMED · 판 번호도 그대로다', async () => {
     const created = await post(body());
     const version = await versionOf(created.shipmentId);
