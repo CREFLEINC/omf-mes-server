@@ -259,6 +259,29 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       expect(body).toMatchObject({ goodQty: 0, basis: null, workOrder: { workOrderNo: `${PREFIX}-WO-G` }, inputMaterials: [] });
     });
 
+    it('0 으로 정정된 LOT 은 생산 0 이어도 배분이 있었으니 투입 자재와 근거(추정)가 남는다', async () => {
+      // 뒤의 시험이 G2 를 쓰지 않아 여기서 G2 에 실적과 0 정정을 붙인다(목록 시험은 이미 지났다).
+      const { source_id: workOrderId } = await prisma.lot.findUniqueOrThrow({ where: { lot_id: ids.g2 } });
+      const at = await local(DAY, '11:30');
+      const row = (sequence: number) => ({
+        production_result_no: `${PREFIX}-PR-Z${sequence}`, work_order_id: workOrderId, result_sequence: sequence, uom_id: ids.uom,
+        result_source_code: 'POP', occurred_at: at, worker_id: ids.worker, status_code: 'CONFIRMED', idempotency_key: `${PREFIX}-PR-Z${sequence}-${randomUUID()}`,
+      });
+      const original = await prisma.production_result.create({ data: { ...row(2), good_qty: 5,
+        production_result_lot_allocation: { create: [{ lot_id: ids.g2, allocated_qty: 5, uom_id: ids.uom }] } } });
+      await prisma.lot_relation.create({ data: {
+        source_lot_id: ids.m1, target_lot_id: ids.g2, relation_type_code: 'CONSUMED', relation_qty: 5, uom_id: ids.uom,
+        source_event_type_code: 'PRODUCTION_RESULT', source_event_id: original.production_result_id, allocation_method_code: 'INPUT_TIME_WINDOW',
+        trace_accuracy_code: 'ESTIMATED', occurred_at: at,
+      } });
+      await prisma.production_result.create({ data: { ...row(3), good_qty: 0, corrects_production_result_id: original.production_result_id } });
+
+      const body = (await get(`lots/${ids.g2}/backward-flow`).expect(200)).body as Body;
+      conforms('/trace/lots/{lotId}/backward-flow', body);
+      expect(body).toMatchObject({ goodQty: 0, basis: 'LOT_GENEALOGY_ESTIMATE' });
+      expect(no(body.inputMaterials)).toEqual([`${PREFIX}-M1`]);
+    });
+
     it('계보 없는 W/O 의 생산 LOT 은 W/O 단위 추정으로 그 W/O 의 투입 자재 전부다', async () => {
       const body = (await get(`lots/${ids.l1}/backward-flow`).expect(200)).body as Body;
       expect(body.basis).toBe('WORK_ORDER_ESTIMATE');
