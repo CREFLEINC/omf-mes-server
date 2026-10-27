@@ -19,6 +19,7 @@ import {
 } from './shipment-guards';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentDetailView } from './shipment-view';
+import { SHIPPING_UNIT_OPEN } from '../shipping-unit/shipping-unit-view';
 
 /**
  * 출하 확정(`POST /logistics/shipments/{shipmentId}:confirm`) — 미확정 → 확정 + **ERP 송신 적재**.
@@ -64,6 +65,18 @@ export class ShipmentConfirmService {
     if (await hasOpenCancel(tx, locked.shipment_id)) {
       throw new ConflictException('user', '취소 결재가 진행 중이라 확정할 수 없습니다.', {
         code: CONFLICT_CODE.CANCEL_IN_PROGRESS,
+      });
+    }
+    // 출하 단위를 쓰는 출하만 본다 — 단위가 없는 출하의 확정은 그대로다. 단위는 출하를 FOR SHARE 로 잡고 고치므로
+    // 이 출하 잠금 아래에서 읽은 상태가 확정 뒤에 바뀌지 않는다(`shipping-unit-lock.ts`).
+    const openUnit = await tx.shipping_unit.findFirst({
+      where: { shipment_id: locked.shipment_id, status_code: SHIPPING_UNIT_OPEN },
+      orderBy: { shipping_unit_no: 'asc' },
+      select: { shipping_unit_no: true },
+    });
+    if (openUnit !== null) {
+      throw new ConflictException('user', `열려 있는 출하 단위가 있습니다(출하 단위 ${openUnit.shipping_unit_no}) — 포장 화면(P-04-05)에서 마감한 뒤 확정하세요.`, {
+        code: CONFLICT_CODE.INVALID_STATE,
       });
     }
     assertVersion(locked, version);

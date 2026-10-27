@@ -23,7 +23,7 @@ import { PagedResponse } from '../../common/pagination';
 import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { ShippingUnitAddBox, ShippingUnitBoxService } from './shipping-unit-box.service';
 import { ShippingUnitFilters, ShippingUnitQueryService } from './shipping-unit-query.service';
-import { ShippingUnitReopen, ShippingUnitReopened, ShippingUnitReopenService } from './shipping-unit-reopen.service';
+import { ShippingUnitReopen, ShippingUnitReopenService } from './shipping-unit-reopen.service';
 import { ShippingUnitCreate, ShippingUnitService } from './shipping-unit.service';
 import { ShippingUnitDetailView, ShippingUnitView } from './shipping-unit-view';
 
@@ -178,7 +178,7 @@ export class ShippingUnitController {
     @Param('shippingUnitId', ParseIntPipe) shippingUnitId: number,
     @Body() body: ShippingUnitReopen,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<ShippingUnitReopened> {
+  ): Promise<ShippingUnitDetailView> {
     const actor = logisticsWriteActorOf(request, 'POST /logistics/shipping-units/{shippingUnitId}:reopen');
     const expected = ifMatchVersion(request);
     if (expected === undefined) {

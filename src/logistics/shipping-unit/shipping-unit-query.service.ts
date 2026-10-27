@@ -5,6 +5,7 @@ import { PagedResponse, pageRequest, pagedResponse } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ShippingUnitBoxView,
+  SHIPPING_UNIT_OPEN,
   ShippingUnitDetailView,
   ShippingUnitItemTotalView,
   ShippingUnitRow,
@@ -92,7 +93,25 @@ export class ShippingUnitQueryService {
       ...shippingUnitView(unit as unknown as ShippingUnitRow, boxes.length),
       boxes,
       itemTotals: itemTotals(boxes),
+      deliveryLabelReissueNeeded: await this.labelStale(unit.shipping_unit_id, unit.status_code, unit.closed_at),
     };
+  }
+
+  /**
+   * 마지막 납품 라벨(출력 실패 제외 — 결과가 빈 옛 발행은 발행으로 센다)이 지금 구성을 담지 못할 수 있는가.
+   * 다시 연 단위는 상자가 바뀔 수 있고, 발행 뒤에 다시 마감했으면 그 사이 구성이 바뀌었을 수 있다.
+   */
+  private async labelStale(shippingUnitId: bigint, statusCode: string, closedAt: Date | null): Promise<boolean> {
+    const last = await this.prisma.document_issue_log.findFirst({
+      where: {
+        document_type_code: 'DELIVERY_LABEL', target_type_code: 'SHIPPING_UNIT', target_id: shippingUnitId,
+        OR: [{ print_outcome_code: null }, { print_outcome_code: { not: 'FAILED' } }],
+      },
+      orderBy: { issued_at: 'desc' },
+      select: { issued_at: true },
+    });
+    if (last === null) return false;
+    return statusCode === SHIPPING_UNIT_OPEN || (closedAt !== null && last.issued_at < closedAt);
   }
 
   /** 상자와 그 내용물. 스캔 순서(`seq`)로 읽는다 — 납품 라벨 본문이 이 순서를 쓴다. */

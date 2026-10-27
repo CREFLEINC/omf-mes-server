@@ -85,6 +85,19 @@ describe('terminal logistics scope', () => {
     }));
   });
 
+  it('다른 공장의 출하 단위는 다시 열지 못하고, 자기 공장 단위는 작업자를 심고 지난다', async () => {
+    const key = 'POST /logistics/shipping-units/{shippingUnitId}:reopen';
+    const foreign = prisma({ shipping_unit: { findFirst: jest.fn().mockResolvedValue(null) } });
+    await expect(assertTerminalLogisticsScope(foreign, request({ shippingUnitId: '1' }), key, pop)).rejects.toBeDefined();
+    expect(foreign.shipping_unit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { shipping_unit_id: 1n, shipment: { warehouse: { plant_id: 3n } } },
+    }));
+    const own = prisma({ shipping_unit: { findFirst: jest.fn().mockResolvedValue({ shipping_unit_id: 1n }) } });
+    const req = request({ shippingUnitId: '1' });
+    await assertTerminalLogisticsScope(own, req, key, pop);
+    expect(currentTerminalLogisticsWorkerId(req)).toBe(5n);
+  });
+
   it('rejects another plant goods issue before detail is returned', async () => {
     const db = prisma({ goods_issue: { findFirst: jest.fn().mockResolvedValue(null) } });
     await expect(assertTerminalLogisticsScope(db, request({ goodsIssueId: '11' }), 'GET /logistics/goods-issues/{goodsIssueId}', pop)).rejects.toBeDefined();

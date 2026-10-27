@@ -46,7 +46,6 @@ const SCHEMAS = [
   'ShippingUnitAddBox',
   'ShippingUnitList',
   'ShippingUnitReopen',
-  'ShippingUnitReopened',
 ];
 
 interface Contract {

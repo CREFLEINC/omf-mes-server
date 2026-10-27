@@ -53,6 +53,8 @@ export interface ShippingUnitItemTotalView {
 export interface ShippingUnitDetailView extends ShippingUnitView {
   boxes: ShippingUnitBoxView[];
   itemTotals: ShippingUnitItemTotalView[];
+  /** 찍은 납품 라벨이 지금 구성과 다를 수 있다 — 다시 열려 있거나, 마지막 발행 뒤에 다시 마감했다. */
+  deliveryLabelReissueNeeded: boolean;
 }
 
 /** 상세 조회가 읽어 오는 행 모양(Prisma include 결과). */
