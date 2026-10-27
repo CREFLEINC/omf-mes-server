@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one, overlapsAsConflict } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { InventoryPostingService } from '../../core/inventory-posting';
@@ -85,6 +85,7 @@ export class HandlingUnitContentService {
     const goodsIssueNo = link?.businessDate == null ? undefined
       : await this.numbering.next('GOODS_ISSUE', link.plantId, link.businessDate);
 
+    // 출하 등록(잔액 → 지시 라인)과 이 정정(지시 라인 → 잔액)이 같은 라인·LOT 에서 겹치면 DB 가 한쪽을 끊는다 — 409 재시도 안내.
     return overlapsAsConflict(() => this.prisma.$transaction(async (tx) => {
       const repack = link === null ? null : await lockShipmentForRepack(tx, link.shipmentId);
       const versionNo = await lockHandlingUnit(tx, handlingUnitId, version);
@@ -153,22 +154,6 @@ export class HandlingUnitContentService {
     if (changes.length === 0) return null;
     if (goodsIssueNo === undefined) throw new Error(`출하에 살아 있는 출고가 없어 새 출고 번호를 못 뽑았다: ${repack.shipmentNo}`);
     return syncShipment(tx, this.posting, { locked: repack, changes, goodsIssueNo, appUserId: context.appUserId, now: new Date() });
-  }
-}
-
-/**
- * 교착(40P01)을 409 로 — 출하 등록(잔액 → 지시 라인)과 이 정정(지시 라인 → 잔액)이 같은 라인·LOT 에서 겹칠 때 DB 가 한쪽을 끊는다.
- * 다시 하면 풀리는 겹침이라 500 이 아니라 재시도 안내다.
- */
-async function overlapsAsConflict<T>(run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    const text = error instanceof Error ? error.message : '';
-    if ((error as { code?: string }).code === 'P2034' || text.includes('40P01') || text.includes('deadlock detected')) {
-      throw new ConflictException('user', '다른 작업과 겹쳤습니다 — 잠시 뒤 다시 시도하세요.');
-    }
-    throw error;
   }
 }
 
