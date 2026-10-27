@@ -560,6 +560,87 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
     expect(still?.shipping_unit_id).toBe(BigInt(other.shippingUnitId));
   });
 
+  // ── 마감 되돌리기 (장부 P-124) ─────────────────────────────────────────
+
+  it('U-22 ⭐ 마감을 되돌리면 상자를 다시 빼고 넣을 수 있고, 찍은 납품 라벨은 재발행이 필요하다고 알린다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 30);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const closed = await close(unit.shippingUnitId, added.body.versionNo, 200);
+    await issueDeliveryLabel(unit.shippingUnitId, 201);
+
+    const reopened = await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '상자 수량 오기' }, 200);
+
+    const validate = validator('/paths/~1logistics~1shipping-units~1{shippingUnitId}:reopen/post/responses/200/content/application~1json/schema');
+    expect(validate(reopened.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(reopened.body).toMatchObject({ statusCode: 'OPEN', deliveryLabelReissueNeeded: true });
+    expect(reopened.body.closedAt).toBeUndefined();
+    expect(Number(reopened.headers.etag)).toBe(closed.body.versionNo + 1);
+    const audit = await prisma.audit_event.findFirstOrThrow({
+      where: { target_type_code: 'SHIPPING_UNIT', target_id: BigInt(unit.shippingUnitId), event_type_code: 'SHIPPING_UNIT_REOPENED' },
+    });
+    expect(audit).toMatchObject({ reason: '상자 수량 오기', terminal_id: null });
+    expect(audit.performed_by).not.toBeNull();
+
+    const removed = await request(app.getHttpServer())
+      .delete(`${BASE}/${unit.shippingUnitId}/boxes/${box.handlingUnitId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const again = await makePackedBox(shipment, 28);
+    const readded = await addBox(unit.shippingUnitId, again.handlingUnitNo);
+    expect(readded.body.versionNo).toBe(removed.body.versionNo + 1);
+    await close(unit.shippingUnitId, readded.body.versionNo, 200);
+  });
+
+  it('U-23 ⛔ 되돌리기 거절 — 열린 단위·확정·취소된 출하는 400 · 사유 빈칸 400 · 낡은 버전 409', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const notClosed = await reopen(unit.shippingUnitId, unit.versionNo, { reason: '오기' }, 400);
+    expect(notClosed.body.errors[0]).toMatchObject({ field: 'shippingUnitId', code: 'STATE_LOCKED' });
+    expect(notClosed.body.errors[0].message).toContain(unit.shippingUnitNo);
+
+    const box = await makePackedBox(shipment, 10);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const closed = await close(unit.shippingUnitId, added.body.versionNo, 200);
+    expect((await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '  ' }, 400)).body.errors[0])
+      .toMatchObject({ field: 'reason', code: 'REQUIRED' });
+    expect((await reopen(unit.shippingUnitId, added.body.versionNo, { reason: '오기' }, 409)).body)
+      .toMatchObject({ conflictCause: 'user' });
+
+    for (const status of ['CONFIRMED', 'CANCELLED']) {
+      await prisma.shipment.update({ where: { shipment_id: BigInt(shipment.shipmentId) }, data: { status_code: status } });
+      const blocked = await reopen(unit.shippingUnitId, closed.body.versionNo, { reason: '오기' }, 400);
+      expect(blocked.body.errors[0]).toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+      expect(blocked.body.errors[0].message).toContain(`${PREFIX}-SH-`);
+    }
+  });
+
+  it('U-24 POP 단말도 자기 공장 단위를 되돌린다 — 이력에 단말·작업자가 남는다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 10);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const closed = await close(unit.shippingUnitId, added.body.versionNo, 200);
+
+    const reopened = await request(app.getHttpServer())
+      .post(`${BASE}/${unit.shippingUnitId}:reopen`)
+      .set('Authorization', `Bearer ${popToken}`)
+      .set('X-Worker-No', WORKER_NO)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(closed.body.versionNo))
+      .send({ reason: '상자 교체' })
+      .expect(200);
+    expect(reopened.body).toMatchObject({ statusCode: 'OPEN', deliveryLabelReissueNeeded: false });
+    const audit = await prisma.audit_event.findFirstOrThrow({
+      where: { target_type_code: 'SHIPPING_UNIT', target_id: BigInt(unit.shippingUnitId), event_type_code: 'SHIPPING_UNIT_REOPENED' },
+    });
+    expect(audit.performed_by).toBeNull();
+    expect(audit.terminal_id).not.toBeNull();
+    expect(audit.after_value).toMatchObject({ statusCode: 'OPEN', workerNo: WORKER_NO });
+  });
+
   it('U-19 ⛔ 출하 LOT 배분에는 더 이상 납품 라벨을 발행할 수 없다', async () => {
     const shipment = await makeShipment();
     const box = await makePackedBox(shipment, 10);
@@ -614,6 +695,16 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
       .set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID())
       .send({ handlingUnitNo })
+      .expect(expected);
+  }
+
+  function reopen(shippingUnitId: number, version: number, body: object, expected: number): request.Test {
+    return request(app.getHttpServer())
+      .post(`${BASE}/${shippingUnitId}:reopen`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(version))
+      .send(body)
       .expect(expected);
   }
 
@@ -904,6 +995,12 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
   }
 
   async function cleanup(): Promise<void> {
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM audit.audit_event
+       WHERE target_type_code = 'SHIPPING_UNIT'
+         AND target_id IN (SELECT shipping_unit_id FROM logistics.shipping_unit
+              WHERE shipment_id IN (SELECT shipment_id FROM logistics.shipment
+                     WHERE shipment_no LIKE '${PREFIX}%'))`);
     // ⛔ 발행 로그는 FK 가 없다(다형) — 단위를 지우기 «전»에 손으로 지운다.
     await prisma.$executeRawUnsafe(`
       DELETE FROM app.document_issue_log

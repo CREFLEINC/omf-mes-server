@@ -25,7 +25,7 @@ import { join } from 'node:path';
 const SHIPMENT = join(__dirname, '../../../contracts/shipment-04제품출하.json');
 const APP = join(__dirname, '../../../contracts/app-공통.json');
 
-/** 경로 5개 · 오퍼레이션 6개. `/logistics/shipping-units` 하나가 GET·POST 둘을 문다. */
+/** 경로 6개 · 오퍼레이션 7개. `/logistics/shipping-units` 하나가 GET·POST 둘을 문다. */
 const OPERATIONS: [string, string][] = [
   ['/logistics/shipping-units', 'get'],
   ['/logistics/shipping-units', 'post'],
@@ -33,6 +33,7 @@ const OPERATIONS: [string, string][] = [
   ['/logistics/shipping-units/{shippingUnitId}:add-box', 'post'],
   ['/logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}', 'delete'],
   ['/logistics/shipping-units/{shippingUnitId}:close', 'post'],
+  ['/logistics/shipping-units/{shippingUnitId}:reopen', 'post'],
 ];
 
 const SCHEMAS = [
@@ -44,6 +45,8 @@ const SCHEMAS = [
   'ShippingUnitItemTotal',
   'ShippingUnitAddBox',
   'ShippingUnitList',
+  'ShippingUnitReopen',
+  'ShippingUnitReopened',
 ];
 
 interface Contract {

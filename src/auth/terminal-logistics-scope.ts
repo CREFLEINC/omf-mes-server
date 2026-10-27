@@ -50,6 +50,7 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'POST /logistics/shipping-units/{shippingUnitId}:add-box': ['POP'],
   'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['POP'],
   'POST /logistics/shipping-units/{shippingUnitId}:close': ['POP'],
+  'POST /logistics/shipping-units/{shippingUnitId}:reopen': ['POP'],
   'GET /logistics/shipments/{shipmentId}': ['POP'],
   'GET /logistics/shopfloor-receipts': ['POP', 'MOBILE'],
   'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}': ['POP'],
@@ -162,6 +163,7 @@ export async function assertTerminalLogisticsScope(
     // 쓰기 셋의 소유도 상세와 «같은 축»이다 — 출하 단위 → 출하 전표 → 창고의 공장.
     case 'POST /logistics/shipping-units/{shippingUnitId}:add-box':
     case 'POST /logistics/shipping-units/{shippingUnitId}:close':
+    case 'POST /logistics/shipping-units/{shippingUnitId}:reopen':
       await shippingUnit(p.shippingUnitId); break;
     // ⛔ 상자 제거는 한 단계 더 본다 — 그 상자가 «이 단위의» 자식인지까지. 공장만 맞으면
     //   남의 단위에 든 상자를 빼낼 수 있고, 링크 표는 상자 하나에 한 행뿐이라 되돌릴 수 없다.

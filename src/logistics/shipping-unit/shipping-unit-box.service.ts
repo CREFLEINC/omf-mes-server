@@ -129,7 +129,7 @@ export class ShippingUnitBoxService {
   }
 
   /**
-   * 마감. ⛔ **되돌릴 수 없다** — 취소·해체 경로를 두지 않는다(취급 단위와 같은 태도 · 통보 142).
+   * 마감. 확정 전 출하에서만 `:reopen` 으로 되돌린다(`shipping-unit-reopen.service.ts`).
    * 마감돼야 납품 라벨을 발행할 수 있다.
    */
   async close(

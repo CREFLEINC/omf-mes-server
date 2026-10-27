@@ -1,4 +1,4 @@
-/** 출하 단위는 열렸거나 마감됐거나 둘뿐이다. 편도다 — 되돌리는 경로를 두지 않는다. */
+/** 출하 단위는 열렸거나 마감됐거나 둘뿐이다. 마감은 확정 전 출하에서만 `:reopen` 으로 되돌린다. */
 export const SHIPPING_UNIT_OPEN = 'OPEN';
 export const SHIPPING_UNIT_CLOSED = 'CLOSED';
 

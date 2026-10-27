@@ -396,6 +396,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/shipping-units/{shippingUnitId}:add-box': ['P-04-05'],
   'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['P-04-05'],
   'POST /logistics/shipping-units/{shippingUnitId}:close': ['P-04-05'],
+  // 마감 되돌리기 — 마감한 같은 화면의 조작이다(장부 P-124).
+  'POST /logistics/shipping-units/{shippingUnitId}:reopen': ['P-04-05'],
   // `W-03-11` PQC 검사 등록·조회(설계 밖 관리웹 화면 · 장부 P-51) — 그 화면이 «스스로» PQC 판정을
   // 확정한다. 도출표의 `P-02-13`(POP)과 합집합이다. ⭐ 같은 화면이 부르는 조회(의뢰·회차·기준 항목·
   // 코드)는 계약에 403 이 없어 권한표가 보지 않으므로 적지 않는다.
