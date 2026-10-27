@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { RepackAllocation, RepackContent, planAllocationChanges } from './shipment-repack-plan';
+import { RepackAllocation, RepackContent, netChanges, planAllocationChanges } from './shipment-repack-plan';
 
 const HU = 900n;
 const OTHER_HU = 901n;
@@ -49,7 +49,7 @@ describe('planAllocationChanges — 상자 구성 증감을 배분에 옮긴다'
 
   it('출하에 배분되지 않은 LOT 을 넣으면 400 — 다른 LOT 은 출하를 다시 등록하라고 안내한다', () => {
     expect(messages(() => plan([content(1n, 10)], [content(1n, 10), content(3n, 2)], [allocation(101n, 1n, 10)])))
-      .toEqual(['LOT LOT-3: 이 상자에는 출하에 배분된 LOT 만 고칠 수 있습니다 — 다른 LOT 을 넣으려면 출하를 취소하고 다시 등록하세요.']);
+      .toEqual(['LOT LOT-3: 이 상자에는 출하에 배분된 LOT 만 고칠 수 있습니다 — 다른 LOT 을 넣으려면 출하를 취소하고 새 상자로 포장해 다시 등록하세요.']);
   });
 
   it('단위만 바꾸는 것도 새 LOT 을 넣는 것과 같다 — 막는다', () => {
@@ -70,12 +70,30 @@ describe('planAllocationChanges — 상자 구성 증감을 배분에 옮긴다'
 
   it('출하 줄의 배분이 모두 0 이 되면 400 — 줄을 비우려면 출하를 다시 등록한다', () => {
     expect(messages(() => plan([content(1n, 10)], [], [allocation(101n, 1n, 10)])))
-      .toEqual(['출하 1번 줄의 배분이 모두 0 이 됩니다 — 줄을 비우려면 출하를 취소하고 다시 등록하세요.']);
+      .toEqual(['출하 1번 줄의 배분이 모두 0 이 됩니다 — 줄을 비우려면 출하를 취소하고 새 상자로 포장해 다시 등록하세요.']);
   });
 
   it('납품 라벨이 발행된 배분은 뺄 수 없다 — 수량만 고칠 수 있다', () => {
     const labeled = [allocation(101n, 1n, 10), allocation(102n, 2n, 5, { deliveryLabelNo: 'DL-1' })];
     expect(messages(() => plan([content(1n, 10), content(2n, 5)], [content(1n, 10)], labeled))[0]).toContain('납품 라벨(DL-1)');
     expect(plan([content(1n, 10), content(2n, 5)], [content(1n, 10), content(2n, 4)], labeled)).toHaveLength(1);
+  });
+});
+
+describe('netChanges — 출하 줄·LOT 별 순증감', () => {
+  it('같은 줄 안에서 LOT 끼리 맞바꾸면 줄의 순증감은 0 이다 — 배정 판정·롤업이 맞바꿈을 늘림으로 보지 않는다', () => {
+    const allocations = [allocation(101n, 1n, 5), allocation(102n, 2n, 5)];
+    const net = netChanges(allocations, plan([content(1n, 5), content(2n, 5)], [content(1n, 3), content(2n, 7)], allocations));
+
+    expect([...net.byLine].map(([line, qty]) => [line, qty.toNumber()])).toEqual([[1n, 0]]);
+    expect([...net.byLot].map(([lot, row]) => [lot, row.before.toNumber(), row.after.toNumber()])).toEqual([[1n, 5, 3], [2n, 5, 7]]);
+  });
+
+  it('줄이 다르면 줄마다 따로 모으고, 같은 LOT 이 두 줄에 있으면 LOT 은 합친다', () => {
+    const allocations = [allocation(101n, 1n, 5), allocation(102n, 1n, 4, { shipmentLineId: 2n, lineNo: 2, handlingUnitId: OTHER_HU })];
+    const net = netChanges(allocations, [{ allocation: allocations[0], after: d(2) }]);
+
+    expect([...net.byLine].map(([line, qty]) => [line, qty.toNumber()])).toEqual([[1n, -3], [2n, 0]]);
+    expect(net.byLot.get(1n)).toMatchObject({ before: d(9), after: d(6) });
   });
 });

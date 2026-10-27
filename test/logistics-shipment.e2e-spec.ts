@@ -999,10 +999,13 @@ describe('출하 목록 (e2e)', () => {
 
   // ── 출하에 배분된 상자 정정 `PUT /inventory/handling-units/{id}/contents` (장부 P-125) ──────────────
   /** lotPost 5 · lotRepack 5 를 한 줄에 배분한 출하와, 두 배분이 이어진 확정 포장 상자. */
-  async function packedShipment(): Promise<{ shipmentId: number; huId: bigint; allocations: Record<string, bigint> }> {
+  async function packedShipment(
+    requestId = made.postRequest, requestLineId = made.postRequestLine,
+  ): Promise<{ shipmentId: number; huId: bigint; allocations: Record<string, bigint> }> {
     const created = await post(body({
+      shipmentRequestId: requestId,
       lines: [{
-        shipmentRequestLineId: made.postRequestLine, shippedQty: 10, uomId: Number(ids.uom),
+        shipmentRequestLineId: requestLineId, shippedQty: 10, uomId: Number(ids.uom),
         allocations: [
           { lotId: Number(ids.lotPost), allocatedQty: 5, uomId: Number(ids.uom) },
           { lotId: Number(ids.lotRepack), allocatedQty: 5, uomId: Number(ids.uom) },
@@ -1068,10 +1071,10 @@ describe('출하 목록 (e2e)', () => {
     expect(issues.map((issue) => issue.status_code)).toEqual(['CANCELLED', 'POSTED']);
     expect(issues[1].goods_issue_line.map((row) => row.issue_qty.toNumber())).toEqual([3, 5]);
     expect(line.goods_issue_line_id).toBe(issues[1].goods_issue_line[0].goods_issue_line_id);
-    // 줄인 2 는 가용으로 돌아온다 — 피킹분은 그대로다(출하 취소와 같은 뜻).
+    // 줄인 2 는 «피킹됐지만 출하 안 됨»으로 남는다 — 잔액이 그만큼 늘고 피킹분도 그만큼 늘어 가용은 그대로다.
     const after = await balanceOf(ids.lotPost);
     expect(after.on_hand_qty.minus(balanceBefore.on_hand_qty).toNumber()).toBe(2);
-    expect(after.picked_qty.toNumber()).toBe(balanceBefore.picked_qty.toNumber());
+    expect(after.picked_qty.minus(balanceBefore.picked_qty).toNumber()).toBe(2);
     const audit = await prisma.audit_event.findFirstOrThrow({
       where: { target_type_code: 'HANDLING_UNIT', target_id: huId, event_type_code: 'HANDLING_UNIT_CONTENTS_CHANGED' },
     });
@@ -1128,6 +1131,8 @@ describe('출하 목록 (e2e)', () => {
     } });
     await prisma.shipping_unit_handling_unit.create({ data: { shipping_unit_id: unit.shipping_unit_id, handling_unit_id: boxed.huId, seq: 1 } });
     expect((await repack(boxed.huId, contents(3, 5), '줄임', 409)).body.message).toContain('P-04-05 출하 단위에서 단위를 다시 열고 상자를 뺀 뒤');
+    await prisma.shipping_unit.update({ where: { shipping_unit_id: unit.shipping_unit_id }, data: { status_code: 'OPEN' } });
+    expect((await repack(boxed.huId, contents(3, 5), '줄임', 409)).body.message).toContain('P-04-05 출하 단위에서 상자를 뺀 뒤');
 
     const pending = await packedShipment();
     await requestCancel(pending.shipmentId, await versionOf(pending.shipmentId), 200);
@@ -1135,11 +1140,11 @@ describe('출하 목록 (e2e)', () => {
 
     const expedited = await packedShipment();
     await prisma.shipment.update({ where: { shipment_id: BigInt(expedited.shipmentId) }, data: { expedited: true, expedite_reason: '시험' } });
-    expect((await repack(expedited.huId, contents(3, 5), '줄임', 409)).body.message).toContain('출하를 취소하고 다시 등록하세요');
+    expect((await repack(expedited.huId, contents(3, 5), '줄임', 409)).body.message).toContain('출하를 취소하고 새 상자로 포장해 다시 등록하세요');
 
     const confirmed = await packedShipment();
     await confirmShipment(confirmed.shipmentId, await versionOf(confirmed.shipmentId), 200);
-    expect((await repack(confirmed.huId, contents(3, 5), '줄임', 409)).body.message).toContain('확정되어');
+    expect((await repack(confirmed.huId, contents(3, 5), '줄임', 409)).body.message).toContain('반품·클레임 입고 등록(W-04-06)');
   });
 
   it('G-6 정정한 출하도 취소하면 살아 있는 새 출고를 역전기한다 — 재고가 출하 전으로 돌아온다', async () => {
@@ -1163,6 +1168,65 @@ describe('출하 목록 (e2e)', () => {
 
     expect((await prisma.shipment_line.findFirstOrThrow({ where: { shipment_id: BigInt(shipmentId) } })).shipped_qty.toNumber()).toBe(8);
     expect(await prisma.integration_message.count({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) } })).toBe(1);
+  });
+
+
+  /** M-04-01 피킹 — 지시 라인 예약이 선다. */
+  const pickFor = (lotId: bigint, qty: number) => request(app.getHttpServer())
+    .post(`/api/logistics/shipment-requests/${made.repackRequest}/lines/${made.repackRequestLine}:pick`)
+    .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('X-Worker-No', `${PREFIX}-W1`)
+    .send({ lotId: Number(lotId), pickedQty: qty, uomId: Number(ids.uom) })
+    .expect(200);
+  const linePicked = async () => {
+    const rows = await prisma.inventory_reservation.findMany({
+      where: { source_document_type_code: 'SHIPMENT_REQUEST_LINE', source_document_id: BigInt(made.repackRequestLine) },
+      select: { reserved_qty: true, released_qty: true },
+    });
+    return rows.reduce((sum, row) => sum + row.reserved_qty.toNumber() - row.released_qty.toNumber(), 0);
+  };
+  const repackLineShipped = async () => (await prisma.shipment_request_line.findUniqueOrThrow({
+    where: { shipment_request_line_id: BigInt(made.repackRequestLine) }, select: { shipped_qty: true },
+  })).shipped_qty.toNumber();
+
+  it('G-8 피킹(예약)한 출하를 줄이면 그 몫이 지시의 피킹으로 남고, 다시 늘리면 재피킹 없이 통과한다 — 연속 정정·정정 뒤 취소', async () => {
+    await pickFor(ids.lotPost, 5);
+    await pickFor(ids.lotRepack, 5);
+    const { shipmentId, huId } = await packedShipment(made.repackRequest, made.repackRequestLine);
+    const shipped = await balanceOf(ids.lotPost);
+    expect(await linePicked()).toBe(10);
+
+    await repack(huId, contents(3, 5));
+    // 지시 라인 피킹(예약 합)은 그대로 10 이고 출하는 8 — 피킹 미출하분 2 가 잔액 피킹분으로 남는다.
+    expect(await linePicked()).toBe(10);
+    expect(await repackLineShipped()).toBe(8);
+    expect((await balanceOf(ids.lotPost)).picked_qty.minus(shipped.picked_qty).toNumber()).toBe(2);
+
+    // 다시 늘리기 — 남은 피킹분으로 통과하고 처음 출하한 상태로 돌아온다.
+    await repack(huId, contents(5, 5), '다시 셈');
+    expect(await repackLineShipped()).toBe(10);
+    expect((await balanceOf(ids.lotPost))).toEqual(shipped);
+    expect((await issuesOf(shipmentId)).map((issue) => issue.status_code)).toEqual(['CANCELLED', 'CANCELLED', 'POSTED']);
+
+    // 정정 뒤 취소 — 살아 있는 출고를 역전기하고 배분만큼 예약을 푼다(출하 취소의 뜻 그대로).
+    await requestCancel(shipmentId, await versionOf(shipmentId), 200);
+    await approveCancel(shipmentId);
+    await cancelShipment(shipmentId, await versionOf(shipmentId), 200);
+    expect(await linePicked()).toBe(0);
+    expect(await repackLineShipped()).toBe(0);
+  });
+
+  it('G-9 같은 줄 안에서 LOT 끼리 맞바꾸면 배정(10)을 꽉 채운 줄도 통과한다 — 순증감 0', async () => {
+    await pickFor(ids.lotPost, 5);
+    await pickFor(ids.lotRepack, 5);
+    const { shipmentId, huId } = await packedShipment(made.repackRequest, made.repackRequestLine);
+
+    await repack(huId, contents(3, 7));
+
+    expect(await repackLineShipped()).toBe(10);
+    expect((await issuesOf(shipmentId))[1].goods_issue_line.map((row) => row.issue_qty.toNumber())).toEqual([3, 7]);
+    await requestCancel(shipmentId, await versionOf(shipmentId), 200);
+    await approveCancel(shipmentId);
+    await cancelShipment(shipmentId, await versionOf(shipmentId), 200);
   });
 
   async function versionOf(shipmentId: unknown): Promise<number> {
@@ -1838,6 +1902,22 @@ describe('출하 목록 (e2e)', () => {
     made.pickRequest = Number(pickHeader.shipment_request_id);
     made.pickRequestLine = Number(pickHeader.shipment_request_line[0].shipment_request_line_id);
 
+    // 상자 정정(G-8·G-9) 전용 — 배정 10 · 수주 없음. 모바일 피킹(예약)을 거쳐 출하한다.
+    const repackHeader = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-RPK`,
+        fulfillment_plant_id: ids.plant,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
+        status_code: 'REGISTERED',
+        shipment_request_line: { create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, requested_qty: 10, allocated_qty: 10 }] },
+      },
+      include: { shipment_request_line: true },
+    });
+    made.repackRequest = Number(repackHeader.shipment_request_id);
+    made.repackRequestLine = Number(repackHeader.shipment_request_line[0].shipment_request_line_id);
+
     // ⭐ 「배정은 넉넉한데 수주가 모자란」 지시 — 두 한도를 «따로» 반증하는 축이다(P-7b).
     const tightOrder = await prisma.sales_order.create({
       data: {
@@ -2212,10 +2292,11 @@ describe('출하 목록 (e2e)', () => {
       `DELETE FROM logistics.sales_order_line WHERE sales_order_id IN (
          SELECT sales_order_id FROM logistics.sales_order WHERE sales_order_no LIKE '${PREFIX}%')`,
       `DELETE FROM logistics.sales_order WHERE sales_order_no LIKE '${PREFIX}%'`,
-      `DELETE FROM inventory.handling_unit_repack_event_line WHERE handling_unit_id IN (
-         SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%')`,
-      `DELETE FROM inventory.handling_unit_repack_event e WHERE NOT EXISTS (
-         SELECT 1 FROM inventory.handling_unit_repack_event_line l WHERE l.handling_unit_repack_event_id = e.handling_unit_repack_event_id)`,
+      // 이 스위트 상자의 재구성 이벤트만 — 한 문장에서 줄과 헤더를 함께 지운다(FK 는 문장 끝에 본다).
+      `WITH ev AS (SELECT DISTINCT handling_unit_repack_event_id AS id FROM inventory.handling_unit_repack_event_line
+                    WHERE handling_unit_id IN (SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%')),
+            gone AS (DELETE FROM inventory.handling_unit_repack_event_line WHERE handling_unit_repack_event_id IN (SELECT id FROM ev))
+       DELETE FROM inventory.handling_unit_repack_event WHERE handling_unit_repack_event_id IN (SELECT id FROM ev)`,
       `DELETE FROM inventory.handling_unit_content WHERE handling_unit_id IN (
          SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%')`,
       `DELETE FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'`,

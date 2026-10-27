@@ -7,7 +7,8 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
 import {
-  LinkedShipment, LockedRepack, RepackSync, assertNotInShippingUnit, linkedShipmentOf, lockShipmentForRepack, syncShipment,
+  LinkedShipment, LockedRepack, RepackSync, assertNotInShippingUnit, countLiveAllocations, linkedShipmentOf, lockShipmentForRepack,
+  syncShipment,
 } from '../../logistics/shipment/shipment-repack';
 import { planAllocationChanges } from '../../logistics/shipment/shipment-repack-plan';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -69,7 +70,7 @@ export class HandlingUnitContentService {
     items: HandlingUnitContentUpsert[],
     context: HandlingUnitContext,
     reason?: string,
-  ): Promise<{ items: HandlingUnitContentView[] }> {
+  ): Promise<{ items: HandlingUnitContentView[]; shipmentCorrection?: RepackSync }> {
     await assertWorkerNoExists(this.prisma, context.workerNo);
     // 잠글 필요가 없는 검사는 트랜잭션 «밖»이다(형제 치환과 같은 순서 · §5-2 ③).
     assertNoDuplicateContent(items, 'items');
@@ -77,7 +78,8 @@ export class HandlingUnitContentService {
     const huId = BigInt(handlingUnitId);
     // 출하에 배분된 상자는 출하·재고까지 맞춘다(장부 P-125). 채번은 트랜잭션 «밖»이다 — 출하 등록과 같은 이유.
     const link = await linkedShipmentOf(this.prisma, huId);
-    if (link !== null && (reason === undefined || reason.trim() === '')) {
+    const trimmed = reason?.trim() ?? '';
+    if (link !== null && trimmed === '') {
       throw one(field('reason', ERROR_CODE.REQUIRED, '출하에 배분된 상자를 고치려면 사유를 입력하세요 — 사유는 출하 정정 이력에 남습니다.'));
     }
     const goodsIssueNo = link?.businessDate == null ? undefined
@@ -85,8 +87,8 @@ export class HandlingUnitContentService {
 
     return this.prisma.$transaction(async (tx) => {
       const repack = link === null ? null : await lockShipmentForRepack(tx, link.shipmentId);
-      if (link !== null) await assertNotInShippingUnit(tx, huId);
       const versionNo = await lockHandlingUnit(tx, handlingUnitId, version);
+      if (link !== null) await assertNotInShippingUnit(tx, huId);
       await assertSameLink(tx, huId, link, repack);
       // ⭐ 잠근 «뒤»에 치환 전 구성을 읽는다 — 먼저 읽으면 두 치환이 겹칠 때 앞의 결과를
       //    못 보고 `qty_before` 를 잃는다(§5-2 ⑥ · 단위 3).
@@ -123,13 +125,13 @@ export class HandlingUnitContentService {
         actor: context.terminalAudit, targetTypeCode: 'HANDLING_UNIT', targetId: BigInt(handlingUnitId),
         eventTypeCode: 'REPACK',
       });
-      if (repack !== null) await writeCorrectionAudit(tx, huId, before, items, reason as string, sync, context);
+      if (repack !== null) await writeCorrectionAudit(tx, huId, before, items, trimmed, sync, context);
 
       const rows = await tx.handling_unit_content.findMany({
         where: { handling_unit_id: handlingUnitId },
         orderBy: { handling_unit_content_id: 'asc' },
       });
-      return { items: rows.map(handlingUnitContentView) };
+      return { items: rows.map(handlingUnitContentView), ...(sync === null ? {} : { shipmentCorrection: sync }) };
     });
   }
 
@@ -156,7 +158,7 @@ export class HandlingUnitContentService {
 
 /** 트랜잭션 밖에서 본 출하 연결이 잠근 뒤에도 같아야 한다 — 그사이 배분이 이어지거나 풀렸으면 다시 불러오게 한다. */
 async function assertSameLink(tx: Tx, huId: bigint, link: LinkedShipment | null, repack: LockedRepack | null): Promise<void> {
-  const linked = await tx.shipment_lot_allocation.count({ where: { handling_unit_id: huId } });
+  const linked = await countLiveAllocations(tx, huId);
   const expected = repack === null ? 0 : repack.allocations.filter((row) => row.handlingUnitId === huId).length;
   if (link === null ? linked === 0 : linked === expected && expected > 0) return;
   throw new ConflictException('user', '그사이 이 상자의 출하 배분이 바뀌었습니다 — 상자를 다시 불러온 뒤 고치세요.');
