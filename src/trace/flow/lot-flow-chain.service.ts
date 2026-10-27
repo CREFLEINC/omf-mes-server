@@ -5,7 +5,7 @@ import { CONSUMED_RELATION, tracedWorkOrders } from '../../core/lot/lot-genealog
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
-import { LIVE_CONSUMPTION, forwardLinksSql } from './flow-sql';
+import { LIVE_CONSUMPTION, estimateBasis, forwardLinksSql } from './flow-sql';
 import { LotHead, MaterialSide, Named, ProductSide, lotHeads, materialSides, productSides, pick } from './lot-flow-nodes';
 
 /** 한 호출이 싣는 생산 LOT 의 상한 — 넘으면 `truncated` 와 전체 수를 준다. */
@@ -36,7 +36,8 @@ export interface ProductionLotNode extends LotHead, ProductSide {
 
 export interface ForwardFlow extends MaterialSide {
   lot: LotHead;
-  basis: TraceBasis;
+  /** 이음이 하나도 없으면(투입 없음·투입만) null — 이음은 모두 추정이라 값이 있으면 「추정 포함」이다. */
+  basis: TraceBasis | null;
   workOrders: (WorkOrderHead & Consumption & {
     /** W/O 에 실적이 아직 없으면 null(투입만). 실적은 있는데 이 LOT 의 투입 구간과 겹치는 실적이 없으면 계보 근거에 빈 목록이다. */
     linkBasis: TraceBasis | null;
@@ -56,7 +57,8 @@ export interface InputMaterialNode extends LotHead, MaterialSide, Consumption {
 export interface BackwardFlow extends ProductSide {
   lot: LotHead;
   goodQty: number;
-  basis: TraceBasis;
+  /** 투입 자재로 잇지 못하면(원천이 W/O 아님·실적 배분이 한 번도 없음·투입 없음) null. */
+  basis: TraceBasis | null;
   /** 원천이 W/O 가 아닌 LOT(자재·분할)이면 null 이고 투입 자재도 없다. 실적 배분이 한 번도 없었던 생산 LOT 은 W/O 만 싣고 투입 자재는 비운다(0 으로 정정된 LOT 은 생산 0 으로 투입 자재가 남는다) — 정방향이 그 LOT 을 잇지 않는 것과 맞춘다. */
   workOrder: (WorkOrderHead & {
     results: { count: number; goodQty: number; defectQty: number; firstAt: string | null; lastAt: string | null };
@@ -108,7 +110,7 @@ export class LotFlowChainService {
     return {
       lot,
       ...pick(side, id),
-      basis: links.some((link) => link.basis === WORK_ORDER_BASIS) ? WORK_ORDER_BASIS : GENEALOGY_BASIS,
+      basis: estimateBasis(links.length > 0, links.some((link) => link.basis === WORK_ORDER_BASIS)),
       workOrders,
       truncated: shown.length < targets.length,
       totalProductionLotCount: targets.length,
@@ -121,7 +123,7 @@ export class LotFlowChainService {
     const source = await this.prisma.lot.findUniqueOrThrow({ where: { lot_id: id }, select: { source_type_code: true, source_id: true } });
     const [products, goodQty] = await Promise.all([productSides(this.prisma, [id]), this.goodQty([id])]);
     const base = { lot, goodQty: goodQty.get(id) ?? 0, ...pick(products, id) };
-    if (source.source_type_code !== WORK_ORDER_LOT_SOURCE) return { ...base, basis: GENEALOGY_BASIS, workOrder: null, inputMaterials: [] };
+    if (source.source_type_code !== WORK_ORDER_LOT_SOURCE) return { ...base, basis: null, workOrder: null, inputMaterials: [] };
 
     const workOrderId = source.source_id;
     const traced = (await tracedWorkOrders(this.prisma, [workOrderId])).size > 0;
@@ -144,7 +146,7 @@ export class LotFlowChainService {
     ]);
     return {
       ...base,
-      basis: linkBasis,
+      basis: estimateBasis(sources.length > 0, !traced),
       workOrder: { ...pick(orders, workOrderId), results },
       // 첫 투입 시각 → LOT 번호 — 화면이 투입 순서대로 그린다.
       inputMaterials: sources
