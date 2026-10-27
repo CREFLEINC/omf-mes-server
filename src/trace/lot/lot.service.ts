@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { omitEmpty } from '../../common/http/omit-empty';
 import { assertUpdated } from '../../common/optimistic-lock';
@@ -243,26 +243,18 @@ export class LotService {
   }
 
   /**
-   * ⛔ **이미 재고가 움직인 LOT 은 수량을 바꿀 수 없다**(계약). 원장에 그 LOT 의 라인이
-   * 있으면 400 이다 — 잔액과 초기 수량이 어긋나면 어느 쪽이 참인지 알 수 없어진다.
+   * ⛔ 수량은 이 경로로 바꾸지 않는다 — 사유·입하 줄·IQC 의뢰를 함께 고치는 수량 정정(`lot-qty-correct.service.ts`)만
+   * 수량을 바꾼다. 계약이 `initialQty` 를 필수로 두어 같은 값은 받는다.
    */
   async update(lotId: number, version: number, input: LotUpdate): Promise<{ detail: LotDetail; versionNo: number }> {
     const current = await this.row(lotId);
-    if (Number(current.initial_qty) !== input.initialQty && (await this.moved(lotId))) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        {
-          scope: 'field',
-          field: 'initialQty',
-          code: ERROR_CODE.STATE_LOCKED,
-          message: '이미 재고가 움직인 LOT 은 수량을 바꿀 수 없습니다.',
-        },
-      ]);
+    if (!current.initial_qty.equals(input.initialQty)) {
+      throw one(field('initialQty', ERROR_CODE.INVALID, 'LOT 수량은 수량 정정으로 고칩니다 — 사유를 적어 수량 정정을 하세요.'));
     }
 
     const updated = await this.prisma.lot.updateMany({
       where: { lot_id: lotId, version_no: version },
       data: {
-        initial_qty: input.initialQty,
         manufactured_at: optionalInstant(input.manufacturedAt),
         expiry_date: optionalDay(input.expiryDate),
         remarks: input.remarks ?? null,
@@ -284,15 +276,6 @@ export class LotService {
       _sum: { allocated_qty: true },
     });
     return lotProgress(row.initial_qty, sum._sum.allocated_qty ?? new Prisma.Decimal(0));
-  }
-
-  /** 원장이 그 LOT 을 건드린 적이 있는가 — A1 이 세운 표를 되읽는 자리다. */
-  private async moved(lotId: number): Promise<boolean> {
-    const line = await this.prisma.inventory_transaction_line.findFirst({
-      where: { lot_id: lotId },
-      select: { inventory_transaction_line_id: true },
-    });
-    return line !== null;
   }
 
   private async insert(
