@@ -17,7 +17,7 @@ const inboundLine = (overrides: Args = {}): Args => ({
   lot_id: 10n,
   inspection_required: true,
   // 줄이 어느 발주의 것인지는 배정이 안다 — 발주 1 의 라인 3 에 한 몫.
-  inbound_receipt_po_allocation: [{ purchase_order_line_id: 3n, purchase_order_line: { purchase_order_id: 1n } }],
+  inbound_receipt_po_allocation: [{ purchase_order_line_id: 3n, allocated_qty: decimal('50'), purchase_order_line: { purchase_order_id: 1n } }],
   inbound_receipt: {
     inbound_receipt_id: 5n,
     inbound_receipt_no: 'IR-1',
@@ -109,8 +109,8 @@ describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)',
   it('두 발주에 배정된 줄은 «물은 발주»마다 한 줄이고 그 발주의 라인을 가리킨다 — 묻지 않은 발주의 몫은 줄이 되지 않는다', async () => {
     const shared = inboundLine({
       inbound_receipt_po_allocation: [
-        { purchase_order_line_id: 3n, purchase_order_line: { purchase_order_id: 1n } },
-        { purchase_order_line_id: 8n, purchase_order_line: { purchase_order_id: 2n } },
+        { purchase_order_line_id: 3n, allocated_qty: decimal('5'), purchase_order_line: { purchase_order_id: 1n } },
+        { purchase_order_line_id: 8n, allocated_qty: decimal('4'), purchase_order_line: { purchase_order_id: 2n } },
       ],
     });
     const fixture = { lines: [shared], lots: [lotRow(10n, 'L-10', 'NORMAL', '9')], receivable: [[10n, '9']] as [bigint, string][] };
@@ -122,6 +122,29 @@ describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)',
     expect(both.map((row) => [row.purchaseOrderId, row.progress.purchaseOrderLineId])).toEqual([
       [1n, 3],
       [2n, 8],
+    ]);
+  });
+
+  it('allocatedQty 는 그 발주 라인들에 배정된 합이다 — receivedQty 는 LOT 전체 · 자식 LOT 은 조상 줄의 몫', async () => {
+    const shared = inboundLine({
+      inbound_receipt_po_allocation: [
+        { purchase_order_line_id: 3n, allocated_qty: decimal('20'), purchase_order_line: { purchase_order_id: 1n } },
+        { purchase_order_line_id: 4n, allocated_qty: decimal('10'), purchase_order_line: { purchase_order_id: 1n } },
+        { purchase_order_line_id: 8n, allocated_qty: decimal('5'), purchase_order_line: { purchase_order_id: 2n } },
+      ],
+    });
+    const rows = await service({
+      lines: [shared],
+      children: [{ lot_id: 11n, parent_lot_id: 10n }],
+      lots: [lotRow(10n, 'L-10', 'NORMAL', '30'), lotRow(11n, 'L-10-S1', 'DEFECTIVE', '5')],
+      receivable: [[10n, '30'], [11n, '5']],
+    }).lotsOf([1n, 2n]);
+
+    expect(rows.map((row) => [row.purchaseOrderId, row.progress.lotNo, row.progress.purchaseOrderLineId, row.progress.allocatedQty, row.progress.receivedQty])).toEqual([
+      [1n, 'L-10', 3, 30, 30],
+      [2n, 'L-10', 8, 5, 30],
+      [1n, 'L-10-S1', 3, 30, 5],
+      [2n, 'L-10-S1', 8, 5, 5],
     ]);
   });
 
@@ -206,6 +229,7 @@ describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)',
     ]);
     expect(rows[0]).toEqual({
       purchaseOrderLineId: 3,
+      allocatedQty: 50,
       inboundReceiptId: 5,
       inboundReceiptNo: 'IR-1',
       inboundReceiptLineId: 8,

@@ -201,11 +201,16 @@ describe('PurchaseOrderQueryService', () => {
   });
 
   describe('입고 단계 묶음(장부 P-110)', () => {
-    /** 발주 id 와 LOT 단계 — 판정은 `inbound-stage.spec.ts` 가 본다. */
-    const lots = (rows: [bigint, string][]): InboundProgressService =>
+    /** 발주 id 와 LOT 단계(+ 입하 줄 id — 없으면 줄마다 다르다). 판정은 `inbound-stage.spec.ts` 가 본다. */
+    const lots = (rows: [bigint, string, number?][]): InboundProgressService =>
       ({
         lotsOf: async (ids: bigint[]) =>
-          rows.filter(([id]) => ids.includes(id)).map(([purchaseOrderId, stageCode]) => ({ purchaseOrderId, progress: { stageCode } })),
+          rows
+            .map(([purchaseOrderId, stageCode, lineId], index) => ({
+              purchaseOrderId,
+              progress: { stageCode, inboundReceiptLineId: lineId ?? 1000 + index, lotId: null },
+            }))
+            .filter((row) => ids.includes(row.purchaseOrderId)),
       }) as unknown as InboundProgressService;
     const orders = [1n, 2n, 3n].map((id) => ({ ...listRow(), purchase_order_id: id }));
     const STAGES: [bigint, string][] = [
@@ -242,6 +247,23 @@ describe('PurchaseOrderQueryService', () => {
       const counts = await new PurchaseOrderQueryService(prisma, lots(STAGES)).inboundStageCounts({ inboundStage: 'HELD' });
 
       expect(counts).toEqual({ LABEL: 1, INSPECTION: 1, HELD: 1, RECEIPT: 2, PUTAWAY: 1 });
+    });
+
+    it('⭐ 발주 둘에 걸친 줄은 칩에서 한 번 · 행의 수는 발주마다', async () => {
+      // 입하 줄 7 이 발주 1·2 에 배정됐다 — 라벨 발행은 줄 하나에 한 번이다.
+      const shared = lots([
+        [1n, 'LABEL_PENDING', 7],
+        [2n, 'LABEL_PENDING', 7],
+        [2n, 'LABEL_PENDING', 8],
+      ]);
+      const { prisma } = listStub({ rows: orders });
+
+      expect(await new PurchaseOrderQueryService(prisma, shared).inboundStageCounts({})).toMatchObject({ LABEL: 2 });
+      expect((await new PurchaseOrderQueryService(prisma, shared).list({})).items.map((item) => item.inboundStageCounts)).toEqual([
+        { LABEL: 1 },
+        { LABEL: 2 },
+        {},
+      ]);
     });
   });
 

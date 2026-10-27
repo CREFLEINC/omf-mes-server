@@ -35,6 +35,8 @@ export interface InboundLotProgress {
   lotId: number | null;
   lotNo: string | null;
   receivedQty: number;
+  /** 이 입하 줄에서 이 발주(의 라인들)에 배정된 합 — `receivedQty` 는 줄·LOT 전체라 발주 둘에 걸치면 그 발주 몫이 아니다. 선별 자식 LOT 은 조상 줄의 몫. */
+  allocatedQty: number;
   receivableQty: number | null;
   uomCode: string;
   lotStatusCode: string | null;
@@ -65,7 +67,7 @@ const LINE_SELECT = {
   inspection_required: true,
   // 줄이 어느 발주의 것인지는 배정이 안다 — 한 줄(LOT 하나)이 발주 둘에 걸칠 수 있다.
   inbound_receipt_po_allocation: {
-    select: { purchase_order_line_id: true, purchase_order_line: { select: { purchase_order_id: true } } },
+    select: { purchase_order_line_id: true, allocated_qty: true, purchase_order_line: { select: { purchase_order_id: true } } },
     orderBy: { inbound_receipt_po_allocation_id: 'asc' },
   },
   inbound_receipt: {
@@ -137,7 +139,7 @@ export class InboundProgressService {
         receivableQty,
         putawayStatusCodes: putawayTasks.map((task) => task.statusCode),
       });
-      const progress: Omit<InboundLotProgress, 'purchaseOrderLineId'> = {
+      const progress: OrderlessProgress = {
         ...lineFields(line),
         lotId: Number(lot.lot_id),
         lotNo: lot.lot_no,
@@ -307,19 +309,26 @@ function byPutawayOrder(a: PutawayView, b: PutawayView): number {
  * 물은 발주마다 그 발주의 라인 — 한 줄(LOT 하나)이 발주 둘에 배정되면 두 발주 아래에 다 보인다.
  * 같은 발주의 라인 둘에 배정됐으면 먼저 배정한 라인으로 묶는다.
  */
-function ordersOf(line: InboundLine, wanted: ReadonlySet<bigint>): Map<bigint, bigint> {
-  const orders = new Map<bigint, bigint>();
+type OrderlessProgress = Omit<InboundLotProgress, 'purchaseOrderLineId' | 'allocatedQty'>;
+/** 발주마다 줄이 가리킬 첫 라인과 그 발주 라인들에 배정된 합. */
+type OrderShare = { purchaseOrderLineId: bigint; allocatedQty: Prisma.Decimal };
+
+function ordersOf(line: InboundLine, wanted: ReadonlySet<bigint>): Map<bigint, OrderShare> {
+  const orders = new Map<bigint, OrderShare>();
   for (const allocation of line.inbound_receipt_po_allocation) {
     const orderId = allocation.purchase_order_line.purchase_order_id;
-    if (wanted.has(orderId) && !orders.has(orderId)) orders.set(orderId, allocation.purchase_order_line_id);
+    if (!wanted.has(orderId)) continue;
+    const share = orders.get(orderId);
+    if (share === undefined) orders.set(orderId, { purchaseOrderLineId: allocation.purchase_order_line_id, allocatedQty: allocation.allocated_qty });
+    else share.allocatedQty = share.allocatedQty.plus(allocation.allocated_qty);
   }
   return orders;
 }
 
-function perOrder(orders: Map<bigint, bigint>, progress: Omit<InboundLotProgress, 'purchaseOrderLineId'>): InboundLotRow[] {
-  return [...orders].map(([purchaseOrderId, purchaseOrderLineId]) => ({
+function perOrder(orders: Map<bigint, OrderShare>, progress: OrderlessProgress): InboundLotRow[] {
+  return [...orders].map(([purchaseOrderId, share]) => ({
     purchaseOrderId,
-    progress: { purchaseOrderLineId: Number(purchaseOrderLineId), ...progress },
+    progress: { purchaseOrderLineId: Number(share.purchaseOrderLineId), allocatedQty: share.allocatedQty.toNumber(), ...progress },
   }));
 }
 
@@ -338,7 +347,7 @@ function lineFields(line: InboundLine): Pick<InboundLotProgress,
 function labelRow(line: LabelLine, wanted: ReadonlySet<bigint>): InboundLotRow[] {
   const orders = ordersOf(line, wanted);
   if (orders.size === 0) return [];
-  const progress: Omit<InboundLotProgress, 'purchaseOrderLineId'> = {
+  const progress: OrderlessProgress = {
     ...lineFields(line),
     lotId: null,
     lotNo: null,
