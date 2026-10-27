@@ -28,12 +28,12 @@ const prisma = (overrides: Record<string, unknown> = {}) => ({
 
 describe('terminal logistics scope', () => {
   it('enumerates the client logistics surface and denies an unlisted operation or channel', async () => {
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(44);
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(45);
     // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
     //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
     expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(
       (key) => key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE '),
-    )).toHaveLength(19);
+    )).toHaveLength(20);
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/shipments', mobile)).rejects.toBeDefined();
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/goods-issues', pop)).rejects.toBeDefined();
   });
