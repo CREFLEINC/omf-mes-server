@@ -6,11 +6,14 @@ import { assertTerminalReadScope } from './terminal-read-policy';
 const pop = { terminalId: 1n, terminalCode: 'POP-1', plantId: 3n, terminalTypeCode: 'POP', equipmentId: 5n };
 const bare = { ...pop, equipmentId: null };
 
-/** 단말 공장(3)의 설비는 5·8 이고 9 는 다른 공장 설비다. */
+/** 단말 공장(3)의 설비는 5·8(가동)과 7(비가동)이고 9 는 다른 공장 설비다. */
+const STATUS: Record<string, string> = { 5: 'IN_SERVICE', 8: 'IN_SERVICE', 7: 'RETIRED' };
 const prisma = {
   equipment: {
-    findFirst: jest.fn(async ({ where }: { where: { equipment_id: bigint; plant_id: bigint } }) =>
-      ([5n, 8n].includes(where.equipment_id) && where.plant_id === 3n ? { equipment_id: where.equipment_id } : null)),
+    findFirst: jest.fn(async ({ where }: { where: { equipment_id: bigint; plant_id: bigint; status_code?: string } }) => {
+      const status = where.plant_id === 3n ? STATUS[String(where.equipment_id)] : undefined;
+      return status === undefined || (where.status_code !== undefined && where.status_code !== status) ? null : { equipment_id: where.equipment_id };
+    }),
   },
 } as unknown as PrismaService;
 
@@ -31,11 +34,17 @@ describe('작업 전 점검 게이트의 설비 읽기 — POP 단말 범위', (
     }
   });
 
-  it('설비 있는 POP 은 그대로 자기 설비만 읽는다', async () => {
+  it('설비 있는 POP 은 자기 설비와 단말 공장의 가동 설비(옆 설비)를 읽는다 — 비가동·남의 공장 설비는 막는다', async () => {
     for (const call of gate) {
       await expect(call(pop, '5')).resolves.toBeUndefined();
-      await expect(call(pop, '8')).rejects.toMatchObject({ status: 401 });
+      await expect(call(pop, '8')).resolves.toBeUndefined();
+      await expect(call(pop, '7')).rejects.toMatchObject({ status: 401 });
+      await expect(call(pop, '9')).rejects.toMatchObject({ status: 401 });
     }
+  });
+
+  it('점검 게이트 밖의 설비 읽기(비가동 기록)는 설비 있는 POP 도 자기 설비만이다', async () => {
+    await expect(read(pop, 'GET /maintenance/downtimes', { equipmentId: '8' })).rejects.toMatchObject({ status: 401 });
   });
 
   it('점검 게이트 밖의 설비 읽기(비가동)는 설비 없는 POP 에게 열지 않는다', async () => {
