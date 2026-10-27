@@ -14,6 +14,8 @@ export interface UnallocatedQuery {
   plantId?: bigint;
   supplierId?: bigint;
   itemId?: bigint;
+  /** 입하의 예외 유형이 이 중 하나인 줄을 뺀다 — 예외 유형이 없는 줄은 남는다. 고객이 늘리는 공통코드라 무엇을 뺄지는 화면이 정한다. */
+  excludeExceptionTypeCodes?: string[];
   page?: number;
   size?: number;
 }
@@ -21,6 +23,7 @@ export interface UnallocatedQuery {
 const INT64_MAX = 2n ** 63n - 1n;
 const ID_FIELDS = ['plantId', 'supplierId', 'itemId'] as const;
 const PAGE_FIELDS = ['page', 'size'] as const;
+const CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,49}$/;
 
 export function parseUnallocatedQuery(raw: Record<string, unknown>): UnallocatedQuery {
   const errors: ErrorItem[] = [];
@@ -30,6 +33,13 @@ export function parseUnallocatedQuery(raw: Record<string, unknown>): Unallocated
     const value = readId(raw[name]);
     if (value === undefined) errors.push(invalid(name, '양의 정수여야 합니다.'));
     else parsed[name] = value;
+  }
+  const excluded = raw.excludeExceptionTypeCode;
+  if (excluded !== undefined) {
+    // 쉼표로도, 질의를 여러 번 보내도(Express 가 배열로 준다) 받는다.
+    const codes = (Array.isArray(excluded) ? excluded : [excluded]).flatMap((value) => (typeof value === 'string' ? value.split(',') : ['']));
+    if (codes.every((code) => CODE_PATTERN.test(code))) parsed.excludeExceptionTypeCodes = codes;
+    else errors.push(invalid('excludeExceptionTypeCode', '대문자 코드를 쉼표로 이어 보냅니다.'));
   }
   for (const name of PAGE_FIELDS) {
     const value = raw[name];
