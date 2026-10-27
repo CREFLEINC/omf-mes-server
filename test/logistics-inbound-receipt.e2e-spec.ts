@@ -22,6 +22,9 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-ir-probe';
 const NOPERM_ID = 'e2e-ir-noperm';
+/** 웹 입하 등록 화면(W-01-03) 권한만 가진 사무실 사용자 — `:per-line` 이 웹 입고 관리에서도 불린다(장부 P-117). */
+const WEB_ID = 'e2e-ir-web';
+const WEB_ROLE = 'E2E_IR_WEB';
 const PASSWORD = '입하-등록-검사-비밀번호';
 const PREFIX = 'IRE2E';
 /**
@@ -97,6 +100,7 @@ describe('입하 등록 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let webCookie: string[];
 
   let supplierId: number;
   let businessUnitId: number;
@@ -1310,6 +1314,11 @@ describe('입하 등록 (e2e)', () => {
       await sendPerLine(await body(), noPermCookie).expect(403);
       await request(app.getHttpServer()).post('/api/logistics/inbound-receipts:per-line').send(await body()).expect(401);
     });
+
+    it('⭐ 웹 입하 등록 권한(W-01-03)만 있어도 등록한다 — 웹 입고 관리의 「라인 표에서 바로 입하」(사용자 결정 2026-10-27)', async () => {
+      const response = await sendPerLine(await body(), webCookie).expect(201);
+      expect((response.body as { created: Detail[] }).created).toHaveLength(1);
+    });
   });
 
   // 입하 건을 가로지르는 줄 목록 · 공급사별 수(장부 P-118) — POP 자재 LOT 라벨 발행(P-01-01).
@@ -1879,6 +1888,12 @@ function supplierLotNoOf(seq: number): string {
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
     noPermCookie = await login(NOPERM_ID);
+    const web = await prisma.app_user.create({ data: { login_id: WEB_ID, user_name: '웹입하만', status_code: 'EMPLOYED' } });
+    await prisma.user_credential.create({ data: { app_user_id: web.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    const webRole = await prisma.role.create({ data: { role_code: WEB_ROLE, role_name: '웹입하등록만' } });
+    await prisma.role_permission.create({ data: { role_id: webRole.role_id, permission_code: 'W-01-03' } });
+    await prisma.user_role.create({ data: { app_user_id: web.app_user_id, role_id: webRole.role_id } });
+    webCookie = await login(WEB_ID);
 
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '입하등록검사용' } });
     await prisma.role_permission.createMany({
@@ -1971,7 +1986,7 @@ function supplierLotNoOf(seq: number): string {
     await prisma.$executeRawUnsafe(
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,
     );
-    for (const id of [LOGIN_ID, NOPERM_ID]) {
+    for (const id of [LOGIN_ID, NOPERM_ID, WEB_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
@@ -1979,8 +1994,9 @@ function supplierLotNoOf(seq: number): string {
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
     }
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
+    for (const code of [ROLE, WEB_ROLE]) {
+      const role = await prisma.role.findUnique({ where: { role_code: code } });
+      if (!role) continue;
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }
