@@ -29,6 +29,7 @@ import { ResourceRecommendations, recommendResources } from './resource-recommen
 import { ValidationReport, validateWorkOrder } from './validation';
 import { WorkOrderCancel, WorkOrderCancelService } from './work-order-cancel.service';
 import { WorkOrderCloseActor, WorkOrderCloseService } from './work-order-close.service';
+import { WorkOrderDailyResultsService } from './work-order-daily-results.service';
 import { WorkOrderListQuery } from './work-order-list-where';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
@@ -61,6 +62,7 @@ export class WorkOrderController {
     private readonly closes: WorkOrderCloseService,
     private readonly cancels: WorkOrderCancelService,
     private readonly resourcePlans: WorkOrderResourcePlanService,
+    private readonly dailyResults: WorkOrderDailyResultsService,
     private readonly idempotency: IdempotencyService,
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
     private readonly prisma: PrismaService,
@@ -82,6 +84,12 @@ export class WorkOrderController {
     const { view, versionNo } = await this.queries.detail(workOrderId, query);
     setEtag(response, versionNo);
     return view;
+  }
+
+  @Get(':workOrderId/daily-results')
+  @Contract('GET /production/work-orders/{workOrderId}/daily-results')
+  dailyResultsOf(@Param('workOrderId', ParseIntPipe) workOrderId: number) {
+    return this.dailyResults.dailyResults(workOrderId);
   }
 
   /** ⭐ 201 에 ETag 를 싣는다 — 발행 직후 `:release`·`PUT` 이 그 토큰을 그대로 쓴다(계약). */

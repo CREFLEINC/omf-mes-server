@@ -327,6 +327,23 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
       await list({ q: Q, sort: 'nope' }).expect(400);
     });
 
+    it('sort=supplierName — 대소문자·성조를 가리지 않는다: Samheung → SD → Sekwang → solum(장부 P-116)', async () => {
+      const q = `${PREFIX}-N-`;
+      for (const [index, name] of ['solum', 'SD Chemical Vina', 'Sekwang Việt Nam', 'Samheung'].entries()) {
+        const supplier = await prisma.partner.create({ data: { partner_code: `${PREFIX}-N${index}`, partner_name: name } });
+        await prisma.purchase_order.create({
+          data: {
+            purchase_order_no: `${q}${index}`, supplier_id: supplier.partner_id, business_unit_id: ids.unit, plant_id: ids.plant,
+            order_date: new Date(`${DAY}T00:00:00.000Z`), status_code: 'CONFIRMED',
+          },
+        });
+      }
+      const names = async (sort: string) =>
+        ((await list({ q, sort }).expect(200)).body.items as { supplierName: string }[]).map((item) => item.supplierName);
+      expect(await names('supplierName,asc')).toEqual(['Samheung', 'SD Chemical Vina', 'Sekwang Việt Nam', 'solum']);
+      expect(await names('supplierName,desc')).toEqual(['solum', 'Sekwang Việt Nam', 'SD Chemical Vina', 'Samheung']);
+    });
+
     it('⛔ inboundStage 가 다섯 값 밖이면 400 이다 — 건수 경로도 목록과 같은 조건을 검사한다', async () => {
       await list({ q: Q, inboundStage: 'COMPLETED' }).expect(400);
       await stageCounts({ q: Q, expectedReceiptDateFrom: '2026-02-30' }).expect(400);

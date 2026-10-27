@@ -226,7 +226,7 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
         const checked = await precheck(equipmentId).expect(401);
         const started = await begin(token, { workOrderId: 0, equipmentId }).expect(401);
         expect(checked.body).toEqual(started.body);
-        expect(checked.body.errors[0].message).toContain('고른 설비가 이 단말 공장의 설비가 아닙니다.');
+        expect(checked.body.errors[0].message).toContain('고른 설비로 작업할 수 없습니다 — 이 단말 공장의 가동 중(IN_SERVICE) 설비만');
       }
     });
 
@@ -246,14 +246,17 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       expect(response.body.errors[0].message).not.toContain(`${PREFIX}-MOLD`);
     });
 
-    it('설비가 단말·W/O 에 없거나 다르면 401 이고 단말기-공정 매핑을 짚는다', async () => {
+    // 장부 P-123 — 단말·W/O 계획 설비가 아니어도 단말 공장의 가동 설비면 시작한다(옆 설비로 대신 시작).
+    it('단말·W/O 설비가 아니면 단말 공장의 가동 설비만 — 비가동 설비는 401 이고 설비 마스터를 짚는다', async () => {
       const token = await terminal('EQ', { [String(ids.process)]: { can_start_work: true } });
+      const retired = (await prisma.equipment.create({ data: {
+        plant_id: ids.plant, equipment_code: `${PREFIX}-EQR`, equipment_name: PREFIX, equipment_type_code: 'PRESS', status_code: 'RETIRED',
+      } })).equipment_id;
 
-      const none = await begin(token, { equipmentId: Number(ids.equipment) }).expect(401);
-      expect(none.body.errors[0].message).toContain('이 단말에 연결된 설비도, 이 W/O 의 계획 설비도 없어');
-      const other = await begin(token, { workOrderId: Number(ids.plannedWorkOrder), equipmentId: Number(ids.otherEquipment) }).expect(401);
-      expect(other.body.errors[0].message).toContain('고른 설비가 이 단말의 설비');
-      expect(other.body.errors[0].message).toContain('관리웹 시스템 관리 › 단말기-공정 매핑');
+      await begin(token, { workOrderId: Number(ids.plannedWorkOrder), equipmentId: Number(ids.otherEquipment) }).expect(201);
+      const stopped = await begin(token, { workOrderId: Number(ids.plannedWorkOrder), equipmentId: Number(retired) }).expect(401);
+      expect(stopped.body.errors[0].message).toContain('가동 중(IN_SERVICE) 설비만');
+      expect(stopped.body.errors[0].message).toContain('관리웹 기준정보 관리 › 설비 › 설비·설비그룹 마스터');
     });
   });
 

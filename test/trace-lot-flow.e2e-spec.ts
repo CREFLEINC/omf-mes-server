@@ -99,7 +99,8 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
           productionReceived: { lotCount: 1 }, packed: { lotCount: 1, handlingUnitCount: 1 }, shipped: { lotCount: 1, shipmentCount: 2 },
         },
       });
-      expect(body.items[0]).toMatchObject({ currentStageCode: 'RECEIVED', basis: 'LOT_GENEALOGY_ESTIMATE' });
+      // 투입 없음 — 추정 이음이 없으니 근거도 없다(화면이 「추정 포함」을 띄우지 않는다).
+      expect(body.items[0]).toMatchObject({ currentStageCode: 'RECEIVED', basis: null });
     });
 
     it('단계로 거르면 그 단계만 오지만 단계별 건수는 그대로다', async () => {
@@ -255,13 +256,23 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       const body = (await get(`lots/${ids.g2}/backward-flow`).expect(200)).body as Body;
 
       conforms('/trace/lots/{lotId}/backward-flow', body);
-      expect(body).toMatchObject({ goodQty: 0, workOrder: { workOrderNo: `${PREFIX}-WO-G` }, inputMaterials: [] });
+      expect(body).toMatchObject({ goodQty: 0, basis: null, workOrder: { workOrderNo: `${PREFIX}-WO-G` }, inputMaterials: [] });
     });
 
     it('계보 없는 W/O 의 생산 LOT 은 W/O 단위 추정으로 그 W/O 의 투입 자재 전부다', async () => {
       const body = (await get(`lots/${ids.l1}/backward-flow`).expect(200)).body as Body;
       expect(body.basis).toBe('WORK_ORDER_ESTIMATE');
       expect(no(body.inputMaterials)).toEqual([`${PREFIX}-M1`]);
+    });
+
+    it('투입 없음 → 근거 null — 투입 없는 자재 LOT 의 정방향, 원천이 W/O 가 아닌 LOT 의 역방향', async () => {
+      const forward = (await get(`lots/${ids.m2}/forward-flow`).expect(200)).body as Body;
+      const backward = (await get(`lots/${ids.m2}/backward-flow`).expect(200)).body as Body;
+
+      conforms('/trace/lots/{lotId}/forward-flow', forward);
+      conforms('/trace/lots/{lotId}/backward-flow', backward);
+      expect(forward).toMatchObject({ basis: null, workOrders: [], totalProductionLotCount: 0 });
+      expect(backward).toMatchObject({ basis: null, workOrder: null, inputMaterials: [] });
     });
 
     it('권한이 없으면 403 이다', async () => {
@@ -287,7 +298,6 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
   async function makeMasters(): Promise<void> {
     const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     ids.plant = plant.plant_id;
-    ids.unit = plant.business_unit_id;
     const [uom] = await prisma.uom.findMany({ take: 1, orderBy: { uom_id: 'asc' } });
     ids.uom = uom.uom_id;
     const warehouse = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WH` }, {

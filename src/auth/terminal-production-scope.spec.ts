@@ -13,6 +13,14 @@ const ALL_FLAGS = { can_start_work: true, can_input_material: true, can_input_re
 const terminal: TerminalContext = {
   terminalId: 7n, terminalCode: 'POP-7', plantId: 3n, terminalTypeCode: 'POP', equipmentId: 5n,
 };
+/** 공장 3 의 설비 — 5(단말 설비)·8(W/O 계획 설비)·61(옆 설비)은 가동 중, 62 는 비가동, 63 은 가동이지만 비활성이다. 그 밖은 없거나 남의 공장이다. */
+const PLANT_EQUIPMENT: Record<string, string> = { 5: 'IN_SERVICE', 8: 'IN_SERVICE', 61: 'IN_SERVICE', 62: 'RETIRED', 63: 'IN_SERVICE' };
+const findEquipment = async ({ where }: { where: { equipment_id: bigint; plant_id: bigint; status_code?: string; is_active?: boolean } }) => {
+  const status = where.plant_id === 3n ? PLANT_EQUIPMENT[String(where.equipment_id)] : undefined;
+  const active = where.equipment_id !== 63n;
+  return status === undefined || (where.status_code !== undefined && where.status_code !== status)
+    || (where.is_active !== undefined && where.is_active !== active) ? null : { equipment_id: where.equipment_id };
+};
 const prisma = {
   // `count` 는 「함께 일할 사람」 명단 중 단말 공장 재직자 수 — 기본은 명단 전원이다.
   worker: {
@@ -23,7 +31,7 @@ const prisma = {
   work_session: { findFirst: jest.fn().mockResolvedValue({ work_session_id: 29n }) },
   lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 43n }) },
   mold: { findFirst: jest.fn().mockResolvedValue({ mold_id: 53n }) },
-  equipment: { findFirst: jest.fn().mockResolvedValue({ equipment_id: 61n }) },
+  equipment: { findFirst: jest.fn(findEquipment) },
   production_result: { findFirst: jest.fn() },
 } as unknown as PrismaService;
 
@@ -39,7 +47,7 @@ describe('POP production terminal scope', () => {
     (prisma.work_session.findFirst as jest.Mock).mockResolvedValue({ work_session_id: 29n });
     (prisma.lot.findFirst as jest.Mock).mockResolvedValue({ lot_id: 43n });
     (prisma.mold.findFirst as jest.Mock).mockResolvedValue({ mold_id: 53n });
-    (prisma.equipment.findFirst as jest.Mock).mockResolvedValue({ equipment_id: 61n });
+    (prisma.equipment.findFirst as jest.Mock).mockImplementation(findEquipment);
   });
 
   it('allows a mapped same-plant W/O and actual terminal equipment for session start', async () => {
@@ -97,9 +105,9 @@ describe('POP production terminal scope', () => {
     });
   });
 
-  it('rejects a different terminal equipment, worker plant, or unmapped W/O', async () => {
+  it('rejects a missing or foreign equipment, worker plant, or unmapped W/O', async () => {
     await expect(assertTerminalProductionScope(prisma,
-      request({ workOrderId: 11, equipmentId: 6 }, {}, '900028'),
+      request({ workOrderId: 11, equipmentId: 99 }, {}, '900028'),
       'POST /production/work-sessions', terminal)).rejects.toMatchObject({ status: 401 });
     (prisma.worker.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(assertTerminalProductionScope(prisma,
@@ -116,21 +124,29 @@ describe('POP production terminal scope', () => {
     const precheck = (equipmentId: unknown, who = bare) =>
       assertTerminalProductionScope(prisma, request({ workOrderId: 11, equipmentId }, {}, '900028'), 'POST /production/precheck-decisions', who);
 
-    it('설비 없는 단말은 W/O 의 계획 설비로 점검한다 — 다른 설비는 막는다', async () => {
+    it('설비 없는 단말은 W/O 의 계획 설비로 점검하고, 그 밖은 단말 공장의 가동 설비만이다', async () => {
       (prisma.work_order.findFirst as jest.Mock).mockResolvedValue(workOrder(8n));
       await expect(precheck(8)).resolves.toBeUndefined();
-      await expect(precheck(5)).rejects.toMatchObject({ status: 401 });
+      await expect(precheck(61)).resolves.toBeUndefined();
+      await expect(precheck(62)).rejects.toMatchObject({ status: 401 });
+      await expect(precheck(99)).rejects.toMatchObject({ status: 401 });
     });
 
-    it('W/O 에도 설비가 없으면 점검할 설비가 없다', async () => {
+    it('W/O 에도 설비가 없으면 단말 공장의 가동 설비만 실을 수 있다', async () => {
       (prisma.work_order.findFirst as jest.Mock).mockResolvedValue(workOrder(null));
-      await expect(precheck(8)).rejects.toMatchObject({ status: 401 });
+      await expect(precheck(61)).resolves.toBeUndefined();
+      await expect(precheck(99)).rejects.toMatchObject({ status: 401 });
     });
 
-    it('설비 단말은 W/O 계획 설비와 상관없이 자기 설비만이다', async () => {
+    it('설비 단말도 같은 공장의 가동 설비(옆 설비)로 점검·시작한다 — 비가동·없는·남의 공장 설비는 같은 401 이다', async () => {
       (prisma.work_order.findFirst as jest.Mock).mockResolvedValue(workOrder(8n));
       await expect(precheck(5, terminal)).resolves.toBeUndefined();
-      await expect(precheck(8, terminal)).rejects.toMatchObject({ status: 401 });
+      await expect(precheck(61, terminal)).resolves.toBeUndefined();
+      const denied = [await precheck(62, terminal).catch((e: unknown) => e), await precheck(99, terminal).catch((e: unknown) => e)];
+      expect(denied).toEqual([expect.objectContaining({ status: 401 }), expect.objectContaining({ status: 401 })]);
+      await expect(precheck(63, terminal)).rejects.toMatchObject({ status: 401 });
+      expect((denied[0] as { errors: unknown }).errors).toEqual((denied[1] as { errors: unknown }).errors);
+      expect((denied[0] as { errors: { message: string }[] }).errors[0].message).toContain('가동 중(IN_SERVICE) 설비만');
     });
 
     it('세션 설비도 같은 원칙이다 — 설비 없는 단말·설비 없는 W/O 는 설비 없이 연다', async () => {
@@ -138,10 +154,10 @@ describe('POP production terminal scope', () => {
         assertTerminalProductionScope(prisma, request({ workOrderId: 11, ...body }, {}, '900028'), 'POST /production/work-sessions', bare);
       (prisma.work_order.findFirst as jest.Mock).mockResolvedValue(workOrder(8n));
       await expect(start({ equipmentId: 8 })).resolves.toBeUndefined();
-      await expect(start({ equipmentId: 5 })).rejects.toMatchObject({ status: 401 });
+      await expect(start({ equipmentId: 62 })).rejects.toMatchObject({ status: 401 });
       (prisma.work_order.findFirst as jest.Mock).mockResolvedValue(workOrder(null));
       await expect(start({})).resolves.toBeUndefined();
-      await expect(start({ equipmentId: 8 })).rejects.toMatchObject({ status: 401 });
+      await expect(start({ equipmentId: 99 })).rejects.toMatchObject({ status: 401 });
     });
   });
 
@@ -272,15 +288,17 @@ describe('POP production terminal scope', () => {
         'POST /production/precheck-decisions', terminal)).rejects.toMatchObject({ status: 401 });
     });
 
-    it('W/O 를 가를 수 없어도 설비는 본다 — 단말 설비가 있으면 그 설비, 없으면 단말 공장 설비', async () => {
+    it('W/O 를 가를 수 없어도 설비는 본다 — 단말 설비, 그 밖은 단말 공장의 가동 설비', async () => {
       const check = (equipmentId: number, context: TerminalContext) => assertTerminalProductionScope(prisma,
         request({ workOrderId: 0, equipmentId }, {}, '900028'), 'POST /production/precheck-decisions', context);
 
       await expect(check(5, terminal)).resolves.toBeUndefined();
-      await expect(check(61, terminal)).rejects.toMatchObject({ status: 401 });
+      await expect(check(62, terminal)).rejects.toMatchObject({ status: 401 });
       const bare = { ...terminal, equipmentId: null };
       await expect(check(61, bare)).resolves.toBeUndefined();
-      expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({ where: { equipment_id: 61n, plant_id: 3n }, select: { equipment_id: true } });
+      expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({
+        where: { equipment_id: 61n, plant_id: 3n, status_code: 'IN_SERVICE', is_active: true }, select: { equipment_id: true },
+      });
       (prisma.equipment.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(check(61, bare)).rejects.toMatchObject({ status: 401 });
       expect(prisma.work_order.findFirst).not.toHaveBeenCalled();

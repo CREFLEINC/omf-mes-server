@@ -6,9 +6,9 @@ import { localPeriodSql, plantToday } from '../../common/period/plant-local-peri
 import { liveAllocationSql } from '../../core/lot/lot-allocation';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
-import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
+import { TraceBasis } from '../lot/lot-genealogy-query.service';
 import { BACKWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageFilter } from './flow-stage';
-import { SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, inputCountSql, tracedSql } from './flow-sql';
+import { SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, estimateBasis, inputCountSql, tracedSql } from './flow-sql';
 import { LotHead, Named, lotHeads, pick } from './lot-flow-nodes';
 
 /** 역방향 목록 — 실적 배분이 있는 생산 LOT. 기간 축은 첫 실적(기본) 또는 출하일. */
@@ -34,7 +34,8 @@ export interface ProductLotFlowRow extends LotHead {
   firstProducedAt: string;
   lastProducedAt: string;
   inputMaterialLotCount: number;
-  basis: TraceBasis;
+  /** 추정 이음이 없으면 null. */
+  basis: TraceBasis | null;
   stages: {
     productionReceived: { count: number; qty: number };
     packed: { handlingUnitCount: number; qty: number };
@@ -145,7 +146,7 @@ export class ProductLotFlowListService {
         firstProducedAt: row.first_produced_at.toISOString(),
         lastProducedAt: row.last_produced_at.toISOString(),
         inputMaterialLotCount: Number(row.input_count),
-        basis: row.traced ? GENEALOGY_BASIS : WORK_ORDER_BASIS,
+        basis: estimateBasis(Number(row.input_count) > 0, !row.traced),
         stages: {
           productionReceived: { count: Number(row.received_count), qty: Number(row.received_qty) },
           packed: { handlingUnitCount: Number(row.hu_count), qty: Number(row.packed_qty) },
