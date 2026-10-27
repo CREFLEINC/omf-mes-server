@@ -863,6 +863,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PRINT_FAILURE', codeName: '인쇄 실패', order: 30 },
       { code: 'PACKAGING', codeName: '포장', order: 40 },
       { code: 'QUANTITY_CHANGE', codeName: '재구성으로 수량 변경', order: 50 },
+      // 자재 LOT 수량 정정으로 라벨 수량이 바뀐 재발행(장부 P-121) — 마이그 20261027130000 에도 같은 줄.
+      { code: 'MATERIAL_QTY_CORRECTED', codeName: '자재 LOT 수량 정정', order: 70 },
     ],
   },
   {
