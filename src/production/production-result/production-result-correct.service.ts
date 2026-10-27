@@ -9,7 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { lockWorkOrder } from '../work-order/work-order-write.service';
 import {
   AffectedLot, CORRECTION_CLOSED_STATUSES, affectedLots, assertLotsNotMovedOn, changedLotIds, correctionAllocations, liveLotQuantities,
-  originalShare, recheckCompletion,
+  originalShare, ownAllocations, recheckCompletion,
 } from './correction-lots';
 import { lockResult } from './production-result-approval.service';
 import { ResultLotAllocation, assertAllocations, resultQuantities } from './production-result-rules';
@@ -113,10 +113,12 @@ export class ProductionResultCorrectService {
       scrapQty: body.scrapQty ?? original.scrap_qty.toNumber(),
       reworkQty: body.reworkQty ?? original.rework_qty.toNumber(),
     });
+    // 조상 배분은 기본 배분을 정하는 데만 쓴다 — 바뀌는 LOT·이력은 이 행 자신의 배분과 비교한다.
     const share = await originalShare(tx, original.production_result_id);
+    const own = await ownAllocations(tx, original.production_result_id);
     const allocations = correctionAllocations(share, body.lotAllocations, new Prisma.Decimal(quantities.good_qty));
     assertAllocations(allocations, quantities.good_qty);
-    const changed = changedLotIds(share.allocations, allocations);
+    const changed = changedLotIds(own, allocations);
     await assertLotsNotMovedOn(tx, changed, body.lotAllocations === undefined ? 'goodQty' : 'lotAllocations');
     const lotQtyBefore = await liveLotQuantities(tx, changed);
 
@@ -162,13 +164,13 @@ export class ProductionResultCorrectService {
       });
     }
     await allocateLikeOriginal(tx, row, original.production_result_id, context.appUserId);
-    const completionReset = await recheckCompletion(tx, original.work_order_id, changed);
+    const completionReset = await recheckCompletion(tx, original.work_order_id, changed, context.appUserId);
     await tx.audit_event.create({ data: {
       occurred_at: new Date(),
       target_type_code: 'PRODUCTION_RESULT',
       target_id: original.production_result_id,
       event_type_code: 'RESULT_CORRECTED',
-      before_value: { productionResultId: Number(original.production_result_id), ...quantitiesOf(original), lotAllocations: share.allocations.map((row) => ({ ...row })) },
+      before_value: { productionResultId: Number(original.production_result_id), ...quantitiesOf(original), lotAllocations: own.map((row) => ({ ...row })) },
       after_value: { productionResultId: Number(row.production_result_id), ...quantitiesOf(row), lotAllocations: allocations.map((allocation) => ({ ...allocation })) },
       reason: [body.reasonCode, body.note].filter((part) => part !== undefined && part !== '').join(' · '),
       performed_by: context.appUserId === undefined ? null : BigInt(context.appUserId),

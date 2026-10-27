@@ -1,6 +1,6 @@
 -- 실적 정정이 LOT 배분을 갖고, LOT 수량은 정정되지 않은 실적(잎)의 배분만 센다 — 장부 P-120. 추가만이라 옛 코드와 함께 산다.
 
--- 「이 실적을 정정한 행이 있는가」를 실적마다 묻는다(LOT 수량·완료 판정·라벨). 그 외래키 쪽에 인덱스가 없었다.
+-- 「이 실적을 정정한 행이 있는가」를 실적마다 묻는다(LOT 수량·완료 판정·라벨). 그 외래키에 인덱스를 둔다.
 CREATE INDEX ix_production_result_corrects ON production.production_result (corrects_production_result_id);
 
 -- 발행 순간의 라벨 수량. 생산 LOT 수량은 정정으로 바뀌므로, 찍힌 수량을 남겨야 「재발행 필요」를 가리고
