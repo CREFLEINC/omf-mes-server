@@ -204,5 +204,7 @@ function versionWrite(row: ImportRow): VersionWrite {
     acceptanceNumber: v.acceptanceNumber,
     rejectionNumber: v.rejectionNumber,
     inspectionFrequencyCode: v.inspectionFrequencyCode as string,
+    frequencyIntervalValue: v.frequencyIntervalValue,
+    frequencyIntervalUomCode: v.frequencyIntervalUomCode,
   };
 }

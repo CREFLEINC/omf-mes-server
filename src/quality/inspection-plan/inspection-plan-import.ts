@@ -1,13 +1,16 @@
-import { Workbook } from 'exceljs';
+import { Workbook, Worksheet } from 'exceljs';
 
 import { ERROR_CODE, ErrorItem } from '../../common/errors';
+import { cellText as text } from './inspection-plan-import-cell';
+import { isTcktSheet, parseTcktSheet } from './inspection-plan-tckt';
 
 /**
  * 검사기준 엑셀 한 장을 읽는다(omf-all-around#199 · 장부 P-131).
  *
- * ⚠ **현장 양식(TCKT)을 그대로 읽지 않는다.** 제품마다 열 위치가 다르고 기준값이 글로 적혀 있다
- * (「19.00+0.5/-0.0」). 툴 엑셀 올리기와 같이 머리글 이름으로 «찾고», 못 찾은 선택 열은 비운다.
- * 한 행 = 검사 항목 하나이고, 같은 기준코드 행들이 기준 하나·버전 하나가 된다.
+ * 두 서식을 받는다.
+ *   - 머리글 표: 툴 엑셀 올리기와 같이 머리글 이름으로 열을 «찾고», 못 찾은 선택 열은 비운다.
+ *     한 행 = 검사 항목 하나이고, 같은 기준코드 행들이 기준 하나·버전 하나가 된다.
+ *   - 고객사 검사기준서(TCKT): 첫 줄이 머리글 표가 아니면 `inspection-plan-tckt.ts` 가 읽는다.
  */
 
 /** 머리글 별명. 왼쪽이 필드, 오른쪽이 엑셀 머리글로 볼 만한 이름들이다(공백·괄호·_- 무시). */
@@ -50,6 +53,8 @@ export interface ImportRow {
   index: number;
   /** 엑셀이 매긴 실제 행 번호 — 빈 행을 건너뛰어도 사용자가 엑셀에서 보는 번호와 같다. */
   rowNumber: number;
+  /** 읽는 중에 이미 찾은 잘못(기준서 규격을 풀지 못함 등). 묶음 검사가 그대로 싣는다. */
+  errors: ErrorItem[];
   plan: {
     inspectionPlanCode: string;
     inspectionPlanName: string | null;
@@ -66,6 +71,8 @@ export interface ImportRow {
     acceptanceNumber: number | null;
     rejectionNumber: number | null;
     inspectionFrequencyCode: string | null;
+    frequencyIntervalValue: number | null;
+    frequencyIntervalUomCode: string | null;
   };
   item: {
     sequenceNo: number | null;
@@ -98,13 +105,19 @@ export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<Impor
   const column = mapColumns(sheet.rows[0]?.cells ?? []);
   const missing = REQUIRED_COLUMNS.filter((field) => column[field] === undefined);
   if (missing.length > 0) {
-    return { rows: [], error: unreadable('머리글에서 기준코드·항목코드·항목명 열을 찾지 못했습니다.') };
+    // 머리글 표가 아니면 고객사 검사기준서(TCKT) 서식인지 본다 — 품목마다 한 장인 현장 원본이다.
+    if (isTcktSheet(sheet.sheet)) return parseTcktSheet(sheet.sheet);
+    return {
+      rows: [],
+      error: unreadable('머리글에서 기준코드·항목코드·항목명 열을 찾지 못했습니다. 고객사 검사기준서(TCKT) 서식도 아닙니다.'),
+    };
   }
 
   const cell = (cells: unknown[], field: string): unknown => cells[column[field] ?? -1];
   const rows = sheet.rows.slice(1).map(({ cells, rowNumber }, index): ImportRow => ({
     index,
     rowNumber,
+    errors: [],
     plan: {
       inspectionPlanCode: text(cell(cells, 'inspectionPlanCode')) ?? '',
       inspectionPlanName: text(cell(cells, 'inspectionPlanName')),
@@ -121,6 +134,8 @@ export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<Impor
       acceptanceNumber: number(cell(cells, 'acceptanceNumber')),
       rejectionNumber: number(cell(cells, 'rejectionNumber')),
       inspectionFrequencyCode: upper(cell(cells, 'inspectionFrequencyCode')),
+      frequencyIntervalValue: null,
+      frequencyIntervalUomCode: null,
     },
     item: {
       sequenceNo: number(cell(cells, 'sequenceNo')),
@@ -150,7 +165,9 @@ export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<Impor
   };
 }
 
-async function firstSheet(buffer: Buffer): Promise<{ rows: { cells: unknown[]; rowNumber: number }[] } | null> {
+async function firstSheet(
+  buffer: Buffer,
+): Promise<{ sheet: Worksheet; rows: { cells: unknown[]; rowNumber: number }[] } | null> {
   try {
     const workbook = new Workbook();
     // exceljs 가 선언한 `Buffer` 와 이 저장소의 `@types/node` Buffer 가 제네릭까지는 맞지 않는다.
@@ -165,7 +182,7 @@ async function firstSheet(buffer: Buffer): Promise<{ rows: { cells: unknown[]; r
       });
       rows.push({ cells, rowNumber: row.number });
     });
-    return { rows };
+    return { sheet, rows };
   } catch {
     return null;
   }
@@ -181,19 +198,6 @@ function mapColumns(header: readonly unknown[]): Record<string, number | undefin
     }
   });
   return found;
-}
-
-/** 엑셀 셀은 수식·서식 객체로도 온다 — 사람이 보는 글자만 뽑는다. */
-function text(cell: unknown): string | null {
-  if (cell === null || cell === undefined) return null;
-  if (cell instanceof Date) return cell.toISOString().slice(0, 10);
-  if (typeof cell === 'object' && 'result' in cell) return text((cell as { result: unknown }).result);
-  if (typeof cell === 'object' && 'text' in cell) return text((cell as { text: unknown }).text);
-  if (typeof cell === 'object' && 'richText' in cell) {
-    return text((cell as { richText: { text: string }[] }).richText.map((part) => part.text).join(''));
-  }
-  const value = String(cell).trim();
-  return value === '' ? null : value;
 }
 
 /** 코드값은 대문자로 맞춘다 — 손으로 치면 `iqc`·`Numeric` 이 섞인다. */

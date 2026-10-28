@@ -31,7 +31,7 @@ export function checkGroup(group: ImportGroup): ErrorItem[] {
   if (group.key === '') errors.push(fail(first, 'inspectionPlanCode', ERROR_CODE.REQUIRED, '기준코드가 비어 있습니다.'));
   errors.push(...checkVersion(first));
   for (const row of group.rows) {
-    errors.push(...sameAsFirst(first, row), ...checkItem(row));
+    errors.push(...row.errors, ...sameAsFirst(first, row), ...checkItem(row));
   }
   return errors;
 }
@@ -45,7 +45,9 @@ function checkVersion(row: ImportRow): ErrorItem[] {
     ['inspectionFrequencyCode', '검사 주기'],
   ];
   for (const [field, label] of required) {
-    if (v[field] === null) errors.push(fail(row, field, ERROR_CODE.REQUIRED, `${label}이 비어 있습니다.`));
+    // 읽으면서 이미 사유를 단 칸(기준서 주기를 풀지 못함 등)에는 「비어 있다」를 겹쳐 달지 않는다.
+    const explained = row.errors.some((error) => error.field === field);
+    if (v[field] === null && !explained) errors.push(fail(row, field, ERROR_CODE.REQUIRED, `${label}이 비어 있습니다.`));
   }
   for (const field of ['effectiveFrom', 'effectiveTo'] as const) {
     const value = v[field];
