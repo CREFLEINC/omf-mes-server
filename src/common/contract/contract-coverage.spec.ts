@@ -69,7 +69,8 @@ describe('계약 커버리지', () => {
     // 정방향·역방향 목록·사슬 4 오퍼레이션(장부 P-119): 548 → 552.
     // W/O 일자별 실적 1 오퍼레이션(장부 P-122): 552 → 553.
     // 검사기준 작성중 버전 취소 1 오퍼레이션(#198 · 장부 P-128): 553 → 554.
-    expect(registry.size).toBe(554);
+    // 검사기준 엑셀 올리기 1 오퍼레이션(#199 · 장부 P-131): 554 → 555.
+    expect(registry.size).toBe(555);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
