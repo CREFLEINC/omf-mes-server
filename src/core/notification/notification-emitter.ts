@@ -139,15 +139,28 @@ export class NotificationEmitter {
   async emitHandover(tx: Tx, input: HandoverEmitInput): Promise<EmitResult> {
     const type = handoverAlertType(input.alertTypeCode);
     if (type === undefined) throw new Error(`인계 작업 종류 목록에 없는 코드입니다: ${input.alertTypeCode}`);
+    return this.guarded(
+      tx,
+      `${input.alertTypeCode} ${input.aggregateTypeCode} ${input.aggregateId}`,
+      () => this.writeHandover(tx, input, type.name),
+      { notificationEventId: null, skipReason: null, notificationCount: 0, zaloCount: 0 },
+    );
+  }
+
+  /**
+   * 인계 알림 일을 SAVEPOINT 안에서 돌린다 — 실패하면 그 일만 되돌리고 `fallback` 을 낸다. 업무 트랜잭션은 이어 간다(SC-005).
+   * 알림 값 모으기(대상 조회)도 이 안에서 한다 — 거기서 실패해도 업무를 실패시키지 않는다(FR-003). 겹쳐 불러도 된다.
+   */
+  async guarded<T>(tx: Tx, label: string, work: () => Promise<T>, fallback: T): Promise<T> {
     await tx.$executeRawUnsafe('SAVEPOINT handover_alert');
     try {
-      const result = await this.writeHandover(tx, input, type.name);
+      const result = await work();
       await tx.$executeRawUnsafe('RELEASE SAVEPOINT handover_alert');
       return result;
     } catch (error) {
       await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT handover_alert');
-      logger.error(`인계 작업 알림을 쓰지 못했습니다 — ${input.alertTypeCode} ${input.aggregateTypeCode} ${input.aggregateId}`, error);
-      return { notificationEventId: null, skipReason: null, notificationCount: 0, zaloCount: 0 };
+      logger.error(`인계 작업 알림을 쓰지 못했습니다 — ${label}`, error);
+      return fallback;
     }
   }
 
