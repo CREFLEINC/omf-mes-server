@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { omitEmpty } from '../../common/http/omit-empty';
 import { toDateString } from '../../common/master';
 import { AutoPlanView } from './auto-plan';
+import { ProductionOrderProgressStatus } from './production-order-progress';
 
 /** 계약 `ProductionOrder` 매퍼. ⛔ 파생 두 칸(expanded/plannedWorkOrderCount)은
  * 행이 없어도 0 을 낸다(키 생략이 아니다 — I-24.md §5-1). 나머지는 `omitEmpty`. */
@@ -40,6 +41,7 @@ export interface ProductionOrderAcknowledgement {
 export interface ProductionOrderExtras {
   expandedWorkOrderCount: number;
   plannedWorkOrderCount: number;
+  progressStatusCode?: ProductionOrderProgressStatus;
   acknowledgement?: ProductionOrderAcknowledgement;
   lastChange?: ProductionOrderLastChange;
   autoPlan?: AutoPlanView | null;
@@ -74,6 +76,8 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     versionNo: row.version_no,
     expandedWorkOrderCount: extras.expandedWorkOrderCount,
     plannedWorkOrderCount: extras.plannedWorkOrderCount,
+    // 계약 밖 칸(장부 P-133).
+    progressStatusCode: extras.progressStatusCode,
     lastChange: extras.lastChange,
     autoPlan: extras.autoPlan,
   });
