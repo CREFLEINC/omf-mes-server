@@ -40,6 +40,7 @@ interface VersionView {
   frequencyIntervalUomCode: string | null;
   statusCode: string;
   samplingRatio: number | null;
+  samplingQty: number | null;
 }
 
 export interface VersionWrite {
@@ -53,11 +54,12 @@ export interface VersionWrite {
   frequencyIntervalValue?: number | null;
   frequencyIntervalUomCode?: string | null;
   samplingRatio?: number | null;
+  samplingQty?: number | null;
 }
 
 /**
- * 엑셀 올리기 전용(omf-all-around#199 · 장부 P-140). 고객사 기준서는 샘플을 개수(n=5)로만 적어 비율(%)이 없다 —
- * 작성중 버전은 비율 없이 두고 확정이 막는다. 개수를 받을지는 omf-all-around#201 이 정한다.
+ * 엑셀 올리기 전용(omf-all-around#199 · 장부 P-140). 기준서에 샘플 비율·개수가 없을 수 있다(「1kg」) —
+ * 작성중 버전은 비워 두고 확정이 막는다.
  */
 export interface DraftOptions {
   allowMissingRatio?: boolean;
@@ -276,10 +278,11 @@ export class InspectionPlanVersionService {
   async confirm(versionId: number): Promise<number> {
     const row = await this.load(versionId);
     if (row.status_code !== REVISION_STATUS.DRAFT) throw locked('확정');
-    // 엑셀로 들어온 작성중 버전은 비율이 비어 있을 수 있다 — 확정 전에 화면에서 채우게 여기서 막는다.
+    // 엑셀로 들어온 작성중 버전은 비율·개수가 비어 있을 수 있다 — 확정 전에 화면에서 채우게 여기서 막는다.
     assertSamplingRatio({
       samplingMethodCode: row.sampling_method_code,
       samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
+      samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
     });
 
     const items = await this.prisma.inspection_item_spec.count({
@@ -597,6 +600,7 @@ function writeData(input: VersionWrite): VersionColumns {
     ...optional('frequency_interval_uom_code', input.frequencyIntervalUomCode),
     // ⛔ 백분율이다(0 초과 100 이하) — 비율이 아니다. 선행 마이그레이션이 CHECK 를 고쳤다.
     ...optional('sampling_ratio', input.samplingRatio),
+    ...optional('sampling_qty', input.samplingQty),
   } as VersionColumns;
 }
 
@@ -715,6 +719,7 @@ function view(row: VersionRow): VersionView {
     frequencyIntervalUomCode: row.frequency_interval_uom_code,
     statusCode: row.status_code,
     samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
+    samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
   };
 }
 
@@ -747,22 +752,26 @@ function itemView(row: SpecRow): ItemSpecView {
 const FULL_INSPECTION = 'FULL_INSPECTION';
 
 /**
- * 샘플링 방식과 비율(%)의 짝(omf-all-around#103 · 장부 P-37). 샘플 방식은 비율로 검사 수량을 환산하므로
- * 비율이 있어야 하고, 전수검사에 비율이 실리면 화면과 다른 기준이 저장된다. 기존 버전은 다시 저장하거나 확정할 때 걸린다.
+ * 샘플링 방식과 샘플 기준의 짝(omf-all-around#103 · 장부 P-37 · #201 · P-141). 샘플 방식은 **비율(%) 또는 개수 중
+ * 하나**로 검사 수량을 정한다 — 둘 다 있으면 어느 쪽으로 검사할지 갈리고, 전수검사에 실리면 화면과 다른 기준이 저장된다.
+ * 기존 버전은 다시 저장하거나 확정할 때 걸린다.
  */
 export function assertSamplingRatio(
-  input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio'>,
+  input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio' | 'samplingQty'>,
   options: DraftOptions = {},
 ): void {
   const hasRatio = input.samplingRatio != null;
-  if (input.samplingMethodCode === FULL_INSPECTION && hasRatio) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.INVALID, message: '전수검사에는 샘플 비율(%)을 넣지 않습니다.' },
-    ]);
+  const hasQty = input.samplingQty != null;
+  const fail = (field: string, code: ErrorItem['code'], message: string): never => {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'field', field, code, message }]);
+  };
+  if (input.samplingMethodCode === FULL_INSPECTION) {
+    if (hasRatio) fail('samplingRatio', ERROR_CODE.INVALID, '전수검사에는 샘플 비율(%)을 넣지 않습니다.');
+    if (hasQty) fail('samplingQty', ERROR_CODE.INVALID, '전수검사에는 샘플 개수를 넣지 않습니다.');
+    return;
   }
-  if (input.samplingMethodCode !== FULL_INSPECTION && !hasRatio && options.allowMissingRatio !== true) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.REQUIRED, message: '샘플링 방식이면 샘플 비율(%)을 입력하세요.' },
-    ]);
+  if (hasRatio && hasQty) fail('samplingQty', ERROR_CODE.INVALID, '샘플 비율(%)과 샘플 개수 중 하나만 입력하세요.');
+  if (!hasRatio && !hasQty && options.allowMissingRatio !== true) {
+    fail('samplingRatio', ERROR_CODE.REQUIRED, '샘플링 방식이면 샘플 비율(%) 또는 샘플 개수를 입력하세요.');
   }
 }

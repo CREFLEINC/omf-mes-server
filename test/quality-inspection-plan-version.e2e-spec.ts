@@ -176,6 +176,41 @@ describe('검사기준 버전 (e2e)', () => {
     expect((await post({ samplingMethodCode: 'FULL_INSPECTION', samplingRatio: null })).status).toBe(201);
   });
 
+  /* omf-all-around#201 — 샘플은 비율(%) 또는 개수 중 하나다(장부 P-141). */
+  it('⭐ 샘플 개수로만 정해도 되고, 비율과 함께 오면 400 samplingQty, 신규 버전이 개수를 물려받는다', async () => {
+    const post = (extra: Record<string, unknown>) =>
+      createPlan().then((planId) =>
+        request(app.getHttpServer())
+          .post('/api/quality/inspection-plan-versions')
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', key())
+          .send({ ...versionBody(planId), ...extra }),
+      );
+
+    const both = await post({ samplingRatio: 10, samplingQty: 5 });
+    expect(both.status).toBe(400);
+    expect(both.body.errors[0]).toMatchObject({ field: 'samplingQty', code: 'INVALID' });
+    const fullWithQty = await post({ samplingMethodCode: 'FULL_INSPECTION', samplingRatio: null, samplingQty: 5 });
+    expect(fullWithQty.body.errors[0]).toMatchObject({ field: 'samplingQty', code: 'INVALID' });
+
+    const planId = await createPlan();
+    const versionId = await createVersion(planId, { samplingRatio: null, samplingQty: 5 });
+    const detail = await request(app.getHttpServer())
+      .get(`/api/quality/inspection-plan-versions/${versionId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(detail.body.inspectionPlanVersion).toMatchObject({ samplingRatio: null, samplingQty: 5 });
+
+    await putItems(versionId, [item(versionId, 1, 'A')]);
+    await confirm(versionId);
+    const created = await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${versionId}:new-revision`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(201);
+    expect(created.body.samplingQty).toBe(5);
+  });
+
   it('⛔ 기준에 버전이 이미 있으면 등록이 400 이다 — 신규 버전은 다른 경로다', async () => {
     const planId = await createPlan();
     await createVersion(planId);

@@ -30,6 +30,8 @@ interface PqcPlanVersion {
   samplingMethodCode: string;
   /** **백분율**이다(0 초과 100 이하) — 비율이 아니다. */
   samplingRatio: Prisma.Decimal | null;
+  /** 샘플 개수(omf-all-around#201 · 장부 P-141). 비율과 둘 중 하나만 있다. */
+  samplingQty: Prisma.Decimal | null;
   /** 기준 헤더의 「PQC 생략 허용」(omf-all-around#119 · 장부 P-82). */
   pqcSkipAllowed: boolean;
 }
@@ -77,6 +79,7 @@ async function resolvePqcPlanVersion(
       inspection_plan_version_id: true,
       sampling_method_code: true,
       sampling_ratio: true,
+      sampling_qty: true,
       inspection_plan: { select: { process_id: true, routing_id: true, pqc_skip_allowed: true } },
     },
   });
@@ -96,12 +99,13 @@ async function resolvePqcPlanVersion(
     inspectionPlanVersionId: only.inspection_plan_version_id,
     samplingMethodCode: only.sampling_method_code,
     samplingRatio: only.sampling_ratio,
+    samplingQty: only.sampling_qty,
     pqcSkipAllowed: only.inspection_plan.pqc_skip_allowed,
   };
 }
 
 /**
- * 검사 수량 — 전수면 지시수량, 샘플이면 **비율(%)로 줄인 수**다.
+ * 검사 수량 — 전수면 지시수량, 샘플이면 **개수 또는 비율(%)로 줄인 수**다.
  *
  * ⛔ **`sampling_ratio` 는 비율(0~1)이 아니라 백분율(0 초과 100 이하)이다**(마이그
  *    `20260903800000_inspection_sampling_ratio_percent` · 계약 「샘플 비율(%)」 · 확정 2026-07-15).
@@ -110,11 +114,12 @@ async function resolvePqcPlanVersion(
  *
  * ⚠ 올림한다. 3.5% 로 지시가 100 이면 3.5 인데, 검사는 개수라 4 로 올려야 기준을 밑돌지 않는다.
  *
- * ⛔ **`sampling_qty` 는 보지 않는다.** 계약에 그 칸이 없고(「수량은 파생값이라 두지 않는다」 A-8)
- *    쓰기 경로도 없어 언제나 비어 있다 — 안 타는 분기를 규칙처럼 두면 다음 사람이 그것을 정본으로 읽는다.
+ * ⭐ **샘플 개수(`sampling_qty`)로 정한 기준은 그 개수다** — 지시수량보다 크면 지시수량(omf-all-around#201 · 장부 P-141).
+ *    비율과 개수는 둘 중 하나만 저장된다(`assertSamplingRatio`).
  */
-function inspectionQty(orderQty: Prisma.Decimal, version: PqcPlanVersion | null): Prisma.Decimal {
+export function inspectionQty(orderQty: Prisma.Decimal, version: PqcPlanVersion | null): Prisma.Decimal {
   if (version === null || version.samplingMethodCode === FULL_INSPECTION) return orderQty;
+  if (version.samplingQty !== null) return Prisma.Decimal.min(version.samplingQty, orderQty);
   if (version.samplingRatio === null) return orderQty;
 
   const sampled = orderQty.mul(version.samplingRatio).div(100).ceil();
