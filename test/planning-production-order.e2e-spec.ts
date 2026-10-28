@@ -686,6 +686,158 @@ describe('ERP W/O 조회 (e2e)', () => {
     });
   });
 
+  describe('진행 — progressStatusCode · progress 질의(계약 밖 · 장부 P-133)', () => {
+    /** 전개한 MES W/O 의 상태로만 판정한다 — 계획은 전부 확정·수량 충족이라 autoPlanStatus 는 DONE 이다. */
+    const CASES: [string, string, string[]][] = [
+      ['NONE', 'RECEIVED', []],
+      ['PART', 'RECEIVED', ['CLOSED', 'RELEASED']],
+      ['DONE', 'RECEIVED', ['CLOSED', 'CLOSED']],
+      ['MIX', 'UPDATED', ['CLOSED', 'CANCELLED']],
+      ['ALLCANC', 'RECEIVED', ['CANCELLED', 'CANCELLED']],
+      ['PRODDONE', 'RECEIVED', ['COMPLETED']],
+      ['ERPCANC', 'CANCELLED', ['RELEASED']],
+    ];
+    const OPEN = ['NONE', 'PART', 'ALLCANC', 'PRODDONE'];
+    const COMPLETED = ['DONE', 'MIX', 'ERPCANC'];
+    const idOf: Record<string, number> = {};
+
+    beforeAll(async () => {
+      const routing = await prisma.routing.findFirstOrThrow({ where: { routing_code: `${PREFIX}-RT` }, include: { routing_operation: true } });
+      const bom = await prisma.bom.findFirstOrThrow({ where: { bom_code: `${PREFIX}-BOM` } });
+      for (const [suffix, statusCode, workOrders] of CASES) {
+        const order = await prisma.production_order.create({
+          data: {
+            production_order_no: `${PREFIX}-PROG-${suffix}`,
+            business_unit_id: mainBusinessUnitId,
+            plant_id: plantId,
+            item_id: itemId,
+            order_qty: 10,
+            uom_id: uomId,
+            status_code: statusCode,
+          },
+        });
+        idOf[suffix] = Number(order.production_order_id);
+        if (workOrders.length === 0) continue;
+        const plan = await prisma.production_plan.create({
+          data: {
+            production_order_id: order.production_order_id,
+            plan_no: `${PREFIX}-PP-PROG-${suffix}`,
+            plan_date: new Date('2026-09-01T00:00:00.000Z'),
+            planned_qty: 10,
+            uom_id: uomId,
+            bom_id: bom.bom_id,
+            routing_id: routing.routing_id,
+            status_code: 'CONFIRMED',
+          },
+        });
+        await prisma.work_order.createMany({
+          data: workOrders.map((status, index) => ({
+            work_order_no: `${PREFIX}-WO-PROG-${suffix}-${index}`,
+            production_plan_id: plan.production_plan_id,
+            routing_operation_id: routing.routing_operation[index % routing.routing_operation.length].routing_operation_id,
+            item_id: itemId,
+            order_qty: 10,
+            uom_id: uomId,
+            status_code: status,
+            ...(status === 'CLOSED' ? { closed_at: new Date('2026-09-02T00:00:00.000Z') } : {}),
+          })),
+        });
+      }
+    });
+
+    const listOf = async (query: Record<string, unknown>): Promise<{ ids: number[]; total: number; codes: Record<number, string> }> => {
+      const response = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ businessUnitId: mainBusinessUnitId, q: 'PROG', size: 100, ...query })
+        .set('Cookie', cookie)
+        .expect(200);
+      const items = response.body.items as { productionOrderId: number; progressStatusCode: string }[];
+      return {
+        ids: items.map((item) => item.productionOrderId).sort((a, b) => a - b),
+        total: response.body.page.total,
+        codes: Object.fromEntries(items.map((item) => [item.productionOrderId, item.progressStatusCode])),
+      };
+    };
+    const idsOf = (...suffixes: string[]): number[] => suffixes.map((suffix) => idOf[suffix]).sort((a, b) => a - b);
+
+    it('⭐ 전개한 W/O 의 마감에 따라 progressStatusCode 가 갈린다 — 취소 W/O 는 뺀다', async () => {
+      const { codes } = await listOf({});
+      expect(codes).toEqual({
+        [idOf.NONE]: 'NOT_STARTED',
+        [idOf.PART]: 'PARTIAL',
+        [idOf.DONE]: 'COMPLETED',
+        [idOf.MIX]: 'COMPLETED',
+        [idOf.ALLCANC]: 'NOT_STARTED',
+        // MES W/O 의 COMPLETED(생산 완료)는 마감이 아니다.
+        [idOf.PRODDONE]: 'NOT_STARTED',
+        [idOf.ERPCANC]: 'CANCELLED',
+      });
+
+      const detail = await request(app.getHttpServer())
+        .get(`/api/planning/production-orders/${idOf.PART}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(detail.body.progressStatusCode).toBe('PARTIAL');
+    });
+
+    it('⭐ progress=OPEN 은 끝나지 않은 ERP W/O 만 낸다', async () => {
+      const open = await listOf({ progress: 'OPEN' });
+      expect(open.ids).toEqual(idsOf(...OPEN));
+      expect(open.total).toBe(OPEN.length);
+
+      // 쪽을 나눠도 total 이 거른 뒤의 수다 — DB 에서 거른다.
+      const firstPage = await listOf({ progress: 'OPEN', size: 1 });
+      expect(firstPage.total).toBe(OPEN.length);
+
+      // includeChildren 은 루트에 건다 — 하위 행에도 진행 코드가 실린다.
+      const tree = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ businessUnitId: treeBusinessUnitId, includeChildren: true, progress: 'OPEN' })
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(tree.body.page.total).toBe(1);
+      expect(tree.body.items.map((item: { progressStatusCode: string }) => item.progressStatusCode)).toEqual(['NOT_STARTED', 'NOT_STARTED']);
+    });
+
+    it('⭐ progress=COMPLETED 는 완료·취소를 내고 OPEN 과 겹치지 않는다', async () => {
+      const [all, open, completed] = await Promise.all([listOf({}), listOf({ progress: 'OPEN' }), listOf({ progress: 'COMPLETED' })]);
+      expect(completed.ids).toEqual(idsOf(...COMPLETED));
+      expect(completed.ids.filter((id) => open.ids.includes(id))).toEqual([]);
+      expect([...open.ids, ...completed.ids].sort((a, b) => a - b)).toEqual(all.ids);
+
+      const tree = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ businessUnitId: treeBusinessUnitId, includeChildren: true, progress: 'COMPLETED' })
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(tree.body.page.total).toBe(0);
+    });
+
+    it('⭐ autoPlanStatus 와 함께 걸어도 progress 가 듣는다', async () => {
+      // NONE 은 계획이 없고 ERPCANC 는 취소라 DONE 에 들지 않는다.
+      const open = await listOf({ autoPlanStatus: 'DONE', progress: 'OPEN' });
+      expect(open.ids).toEqual(idsOf('PART', 'ALLCANC', 'PRODDONE'));
+      expect(open.total).toBe(3);
+
+      const completed = await listOf({ autoPlanStatus: 'DONE', progress: 'COMPLETED' });
+      expect(completed.ids).toEqual(idsOf('DONE', 'MIX'));
+      expect(completed.total).toBe(2);
+    });
+
+    it('⛔ progress 가 OPEN·COMPLETED 가 아니면 400 이다', async () => {
+      for (const query of [{ progress: 'DONE' }, { progress: 'open' }, { progress: 'DONE', autoPlanStatus: 'DONE' }]) {
+        const response = await request(app.getHttpServer())
+          .get('/api/planning/production-orders')
+          .query(query)
+          .set('Cookie', cookie)
+          .expect(400);
+        expect(response.body.errors).toEqual([
+          expect.objectContaining({ scope: 'field', field: 'progress', code: 'INVALID', message: 'progress 는 OPEN 또는 COMPLETED 여야 합니다.' }),
+        ]);
+      }
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: 'PO조회검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },

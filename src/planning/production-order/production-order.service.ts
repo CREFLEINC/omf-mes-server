@@ -7,6 +7,7 @@ import { PageRequest, PagedResponse, pageRequest } from '../../common/pagination
 import { PrismaService } from '../../prisma/prisma.service';
 import { AutoPlanStatus } from './auto-plan';
 import { AutoPlanService } from './auto-plan.service';
+import { progressSql, progressStatusCode, progressWhere } from './production-order-progress';
 import {
   ProductionOrderChangeFieldRow,
   ProductionOrderLastChange,
@@ -18,6 +19,9 @@ import {
 
 interface DerivedRow {
   expanded: number;
+  /** 진행 판정(장부 P-133) — 취소 안 된 W/O 수 · 그중 마감(CLOSED) 수. */
+  live: number;
+  closed: number;
   planned: number;
   acknowledgedAt: Date | null;
   acknowledgedBy: bigint | null;
@@ -40,6 +44,8 @@ export interface ProductionOrderListQuery {
   includeChildren?: boolean;
   withLastChange?: boolean;
   autoPlanStatus?: AutoPlanStatus;
+  /** 계약 밖 질의(장부 P-133) — `OPEN`·`COMPLETED`. includeChildren 이면 루트에 건다. */
+  progress?: string;
   page?: number;
   size?: number;
 }
@@ -184,6 +190,7 @@ export class ProductionOrderService {
       return productionOrderView(row, {
         expandedWorkOrderCount: d?.expanded ?? 0,
         plannedWorkOrderCount: d?.planned ?? 0,
+        progressStatusCode: progressStatusCode(row.status_code, d?.live ?? 0, d?.closed ?? 0),
         acknowledgement: d?.acknowledgedAt === null || d?.acknowledgedAt === undefined ? undefined : { acknowledgedAt: d.acknowledgedAt, acknowledgedBy: d.acknowledgedBy, acknowledgeDecisionCode: d.acknowledgeDecisionCode },
         lastChange: changes.get(row.production_order_id),
         autoPlan: autoPlans.get(row.production_order_id) ?? null,
@@ -202,11 +209,15 @@ export class ProductionOrderService {
     // ⛔ 확인 3칸은 별칭이 필요하다 — `DerivedRow` 가 camelCase 라 스네이크 이름 그대로면 늘
     //    undefined 가 되어 확인 3칸이 응답에서 통째로 빠진다(PR ④ e2e 15 가 잡았다).
     const rows = await this.prisma.$queryRaw<({ production_order_id: bigint } & DerivedRow)[]>(Prisma.sql`
-      SELECT o.production_order_id, COALESCE(ewo.n, 0)::int AS expanded, COALESCE(pwo.n, 0)::int AS planned,
+      SELECT o.production_order_id, COALESCE(ewo.n, 0)::int AS expanded,
+             COALESCE(ewo.live, 0)::int AS live, COALESCE(ewo.closed, 0)::int AS closed, COALESCE(pwo.n, 0)::int AS planned,
              ack.acknowledged_at AS "acknowledgedAt", ack.acknowledged_by AS "acknowledgedBy",
              ack.acknowledge_decision_code AS "acknowledgeDecisionCode"
         FROM planning.production_order o
-        LEFT JOIN (SELECT p.production_order_id, count(*) n FROM production.work_order w
+        LEFT JOIN (SELECT p.production_order_id, count(*) n,
+                          count(*) FILTER (WHERE w.status_code <> 'CANCELLED') live,
+                          count(*) FILTER (WHERE w.status_code = 'CLOSED') closed
+                     FROM production.work_order w
                      JOIN planning.production_plan p ON p.production_plan_id = w.production_plan_id
                     WHERE p.production_order_id IN (${Prisma.join(ids)}) GROUP BY 1) ewo
           ON ewo.production_order_id = o.production_order_id
@@ -284,6 +295,8 @@ function filterSql(query: ProductionOrderListQuery): Prisma.Sql[] {
        WHERE a.production_order_id = o.production_order_id AND a.acknowledged_at IS NOT NULL
          AND (o.last_change_received_at IS NULL OR a.acknowledged_at >= o.last_change_received_at))`);
   }
+  const progress = progressSql(query.progress);
+  if (progress !== undefined) conditions.push(progress);
   return conditions;
 }
 
@@ -307,6 +320,7 @@ function buildWhere(query: ProductionOrderListQuery): Prisma.production_orderWhe
     ...plannedStartDateWhere(query.plannedStartDateFrom, query.plannedStartDateTo),
     // 「P/O 번호 검색」(계약) — 부분일치.
     ...(query.q === undefined ? {} : { production_order_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } }),
+    ...progressWhere(query.progress),
   };
 }
 
