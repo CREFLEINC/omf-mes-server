@@ -16,6 +16,12 @@
 --   * Five external warehouses cannot be linked reliably to an ERP partner.
 --     Deterministic EXTWH_* placeholder partners are created for them.
 --   * ERP item group Mold remains an item classification. No mdm.mold rows are made.
+--   * Item AD0404-00022 (HA100038-2510 WW) is inserted explicitly; it is present in
+--     the ERP source but does not come through the bulk item load.
+--   * Six items are marked inspection_required; the ERP source carries no such flag.
+--   * ERP warehouse codes carry no plant. WH* go to PL11 and S<digit>* to PL13. External
+--     warehouses go to PL11, except 100667 and 100668, which the customer warehouse list
+--     (2026-10-29) assigns to PL13.
 
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -35037,6 +35043,24 @@ FROM deduplicated source
 JOIN mdm.uom unit ON unit.uom_code = source.basic_unit
 ON CONFLICT (item_code) DO NOTHING;
 
+-- AD0404-00022 는 ERP 원본에 있으면서 위 적재에서 빠진다. 하노이 현장이 쓰는 자재라
+-- 여기서 명시로 채운다(원본에 다시 들어오면 위 INSERT 가 먼저 잡고 이 블록은 비활성).
+INSERT INTO mdm.item
+  (item_code, item_name, name_vi, item_type_code, base_uom_id)
+SELECT 'AD0404-00022', 'HA100038-2510 WW', 'HA100038-2510 WW', 'RAW_MATERIAL',
+       unit.uom_id
+FROM mdm.uom unit
+WHERE unit.uom_code = 'EA'
+ON CONFLICT (item_code) DO NOTHING;
+
+-- IQC 대상 자재. ERP 원본에 검사 여부가 없어 여기서 지정한다.
+UPDATE mdm.item
+   SET inspection_required = true
+ WHERE item_code IN (
+   'AD0303-00037', 'AD0303-00038', 'AD0404-00022',
+   'AD0509-00058', '040101-00064', 'AD9001-00041'
+ );
+
 INSERT INTO mdm.item_external_code
   (item_id, external_system_code, external_item_code)
 SELECT item.item_id, 'ERP', item.item_code
@@ -35052,6 +35076,7 @@ INSERT INTO mdm.warehouse
 SELECT
   CASE WHEN source.code LIKE 'WH%' THEN parts.plant_id
        WHEN source.code ~ '^S[0-9]' THEN oa.plant_id
+       WHEN source.code IN ('100667', '100668') THEN oa.plant_id
        ELSE parts.plant_id END,
   unit.business_unit_id,
   source.code,
@@ -35158,6 +35183,15 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO actual_count FROM mdm.item
+  WHERE inspection_required
+    AND item_code IN ('AD0303-00037', 'AD0303-00038', 'AD0404-00022',
+                      'AD0509-00058', '040101-00064', 'AD9001-00041');
+  IF actual_count <> 6 THEN
+    RAISE EXCEPTION 'IQC item count: expected 6, got %', actual_count;
+  END IF;
+
+  -- 스냅숏에 있는 품목만 센다. AD0404-00022 는 스냅숏에 없어 위 IQC 검사가 본다.
+  SELECT count(*) INTO actual_count FROM mdm.item
   WHERE item_code IN (SELECT item_cd FROM erp_seed.erp_item);
   IF actual_count <> 9269 THEN
     RAISE EXCEPTION 'item target count: expected 9269, got %', actual_count;
@@ -35171,6 +35205,14 @@ BEGIN
   );
   IF actual_count <> 33 THEN
     RAISE EXCEPTION 'warehouse target count: expected 33, got %', actual_count;
+  END IF;
+
+  SELECT count(*) INTO actual_count
+  FROM mdm.warehouse warehouse
+  JOIN mdm.plant plant ON plant.plant_id = warehouse.plant_id
+  WHERE warehouse.warehouse_code IN ('100667', '100668') AND plant.plant_code = 'PL13';
+  IF actual_count <> 2 THEN
+    RAISE EXCEPTION 'PL13 external warehouse count: expected 2, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count FROM planning.bom
