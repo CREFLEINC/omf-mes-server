@@ -204,7 +204,11 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   });
 
   it('US1-5 T10 POST /trace/lots 단건 등록이 IQC 의뢰를 세우면 LOT 1건에 알림 1건', async () => {
-    const receipt = await prisma.inbound_receipt.findFirstOrThrow({ where: { plant_id: ids.plant }, select: { inbound_receipt_id: true } });
+    // 공장을 다시 쓰므로 이 실행의 공급사가 만든 입하에 줄을 단다.
+    const receipt = await prisma.inbound_receipt.findFirstOrThrow({
+      where: { plant_id: ids.plant, supplier_id: ids.supplier },
+      select: { inbound_receipt_id: true },
+    });
     const line = await prisma.inbound_receipt_line.create({
       data: {
         inbound_receipt_id: receipt.inbound_receipt_id,
