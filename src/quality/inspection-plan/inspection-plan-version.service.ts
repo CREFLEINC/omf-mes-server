@@ -302,6 +302,44 @@ export class InspectionPlanVersionService {
   }
 
   /**
+   * 작성중 버전을 지운다 — 잘못 발행한 신규 버전을 되돌리는 길이다(omf-all-around#198 · 장부 P-128).
+   * 검사는 확정 버전만 쓰므로 작성중 버전을 가리키는 의뢰·측정은 정상 경로로는 생기지 않는다.
+   * ⛔ 그래도 세어 막는다 — 지운 뒤 FK 위반이 500 으로 새지 않게.
+   */
+  async discard(versionId: number): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // ⛔ `FOR UPDATE` — 판정과 삭제 사이에 확정이 끼면 확정 버전이 지워진다.
+      const rows = await tx.$queryRaw<{ status_code: string }[]>`
+        SELECT status_code
+          FROM quality.inspection_plan_version
+         WHERE inspection_plan_version_id = ${BigInt(versionId)}
+           FOR UPDATE`;
+      if (rows.length === 0) throw new NotFoundException('없는 검사기준 버전입니다.');
+      if (rows[0].status_code !== REVISION_STATUS.DRAFT) throw locked('작성 취소');
+
+      const specs = { inspection_plan_version_id: versionId };
+      const [requested, measured, mapped] = await Promise.all([
+        tx.inspection_request.count({ where: specs }),
+        tx.inspection_measurement.count({ where: { inspection_item_spec: specs } }),
+        tx.collection_channel.count({ where: { inspection_item: specs } }),
+      ]);
+      if (requested > 0 || measured > 0) throw locked('작성 취소');
+      if (mapped > 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          {
+            scope: 'screen',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: '수집 채널이 연결된 검사 항목이 있어 작성을 취소할 수 없습니다. 연결을 먼저 해제하세요.',
+          },
+        ]);
+      }
+
+      await tx.inspection_item_spec.deleteMany({ where: specs });
+      await tx.inspection_plan_version.delete({ where: specs });
+    });
+  }
+
+  /**
    * 확정 버전을 복사해 작성중 버전을 새로 만든다 — 샘플링·판정 설정과 검사 항목 전부.
    *
    * ⚠ 새 번호는 「원본 +1」이 아니라 **기준의 최댓값 +1** 이다. 최신이 아닌 확정 버전에서
