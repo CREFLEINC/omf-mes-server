@@ -31,6 +31,8 @@ export interface EmitInput {
   optOut?: boolean;
   /** data-model §6 의 파라미터 값(`event_time` 은 생성기가 만든다). */
   values: NotificationValues;
+  /** Zalo `template_data` 에만 쓰는 값(`ZALO_PARAMS` 이 읽는 키) — payload·알림센터 문장에는 남지 않는다(server #878). */
+  zaloValues?: NotificationValues;
   /** 값 말고 함께 남길 ID(예: `breakdownId`). */
   refs?: Record<string, number>;
 }
@@ -63,6 +65,8 @@ interface WriteInput {
   occurredAt: Date;
   departmentId: bigint | null;
   values: NotificationValues;
+  /** 6종만 — `EmitInput.zaloValues` 그대로. */
+  zaloValues?: NotificationValues;
   refs?: Record<string, number>;
   priority: number;
   skipReason: SkipReason | null;
@@ -122,6 +126,7 @@ export class NotificationEmitter {
       occurredAt: input.occurredAt,
       departmentId: input.departmentId,
       values: input.values,
+      zaloValues: input.zaloValues,
       refs: input.refs,
       priority: EVENT_PRIORITY,
       skipReason,
@@ -297,6 +302,7 @@ export class NotificationEmitter {
       input.values,
       input.occurredAt,
       connection?.param_max_length ?? DEFAULT_PARAM_MAX_LENGTH,
+      input.zaloValues,
     );
     const ids = await tx.$queryRaw<{ id: bigint }[]>(Prisma.sql`
       SELECT nextval(pg_get_serial_sequence('app.zalo_delivery', 'zalo_delivery_id')) AS id

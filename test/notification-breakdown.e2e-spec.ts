@@ -60,12 +60,10 @@ describe('고장 알림 (e2e)', () => {
 
     const [delivery] = await prisma.zalo_delivery.findMany({ where: { notification_event_id: event.notification_event_id } });
     expect(delivery.template_data).toEqual({
-      equipment: `${PREFIX}-EQ 사출기1`,
-      location: '고장검사공장 > 성형동 > 고장라인',
       line: '고장라인',
-      symptom: '유압 누유',
-      event_time: '09/09/2026 07:30',
-      actor: '고장작업자',
+      equipment: '사출기1',
+      event_time: '07:30:00 09/09/2026',
+      description: '유압 누유',
     });
   });
 
