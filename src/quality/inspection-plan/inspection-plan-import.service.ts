@@ -109,7 +109,7 @@ export class InspectionPlanImportService {
   }
 
   private async createVersion(planId: number, row: ImportRow, items: Omit<ItemSpecUpsert, 'inspectionPlanVersionId'>[]): Promise<void> {
-    const created = await this.versions.create({ inspectionPlanId: planId, ...versionWrite(row) });
+    const created = await this.versions.create({ inspectionPlanId: planId, ...versionWrite(row) }, DRAFT);
     await this.fill(created.inspectionPlanVersionId, row, items, false);
   }
 
@@ -123,8 +123,11 @@ export class InspectionPlanImportService {
     try {
       if (copied) {
         // 발행은 원본 설정을 복사한다 — 엑셀의 버전 칸으로 덮는다.
-        const { versionNo } = await this.versions.get(versionId);
-        await this.versions.update(versionId, versionNo, versionWrite(row));
+        const { versionNo, inspectionPlanVersion: { samplingRatio } } = await this.versions.get(versionId);
+        const write = versionWrite(row);
+        // 엑셀에 비율이 없으면 확정 버전에서 사람이 넣은 비율을 이어 쓴다 — 다시 올릴 때마다 비율을 새로 넣지 않게.
+        if (write.samplingRatio == null && write.samplingMethodCode !== 'FULL_INSPECTION') write.samplingRatio = samplingRatio;
+        await this.versions.update(versionId, versionNo, write, DRAFT);
       }
       // 복사된 항목은 id 를 싣지 않았으므로 치환에서 빠진다 — 엑셀 항목만 남는다.
       await this.versions.replaceItems(versionId, items.map((item) => ({ ...item, inspectionPlanVersionId: versionId })));
@@ -192,6 +195,9 @@ export class InspectionPlanImportService {
     return Number(found);
   }
 }
+
+/** 샘플 비율은 비워도 된다 — 확정할 때 막는다(고객사 기준서는 개수뿐 · omf-all-around#201). */
+const DRAFT = { allowMissingRatio: true } as const;
 
 function versionWrite(row: ImportRow): VersionWrite {
   const v = row.version;

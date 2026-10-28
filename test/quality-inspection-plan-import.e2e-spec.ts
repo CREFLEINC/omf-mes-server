@@ -130,6 +130,37 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
     expect(await prisma.inspection_plan_version.count({ where: { inspection_plan_id: plan.inspection_plan_id } })).toBe(1);
   });
 
+  it('⭐ 샘플 비율이 없어도 작성중으로 들어가고, 확정이 비율을 요구하며, 다시 올리면 확정 버전의 비율을 이어 쓴다', async () => {
+    const noRatio = (seq: number, item: string): unknown[] => {
+      const r = row('NORATIO', seq, item, 'NUMERIC', 1, 2);
+      r[5] = null;
+      return r;
+    };
+    expect(await upload([noRatio(1, 'A')])).toEqual({ succeeded: 1, failed: [] });
+    const plan = await prisma.inspection_plan.findUniqueOrThrow({ where: { inspection_plan_code: `${PREFIX}-NORATIO` } });
+    const v1 = await prisma.inspection_plan_version.findFirstOrThrow({ where: { inspection_plan_id: plan.inspection_plan_id } });
+    expect(v1.sampling_ratio).toBeNull();
+
+    const blocked = await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${v1.inspection_plan_version_id}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(400);
+    expect(blocked.body.errors[0]).toMatchObject({ field: 'samplingRatio', code: 'REQUIRED' });
+
+    // 화면에서 비율을 넣은 셈 — 이 경로의 관심은 확정·재업로드다.
+    await prisma.inspection_plan_version.update({ where: { inspection_plan_version_id: v1.inspection_plan_version_id }, data: { sampling_ratio: 15 } });
+    await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${v1.inspection_plan_version_id}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(200);
+
+    expect(await upload([noRatio(1, 'B')])).toEqual({ succeeded: 1, failed: [] });
+    const v2 = await prisma.inspection_plan_version.findFirstOrThrow({ where: { inspection_plan_id: plan.inspection_plan_id, plan_version: 2 } });
+    expect(Number(v2.sampling_ratio)).toBe(15);
+  });
+
   it('⛔ 권한이 없으면 403, 파일이 없거나 읽을 수 없으면 400 이다', async () => {
     await request(app.getHttpServer())
       .post('/api/quality/inspection-plans:import')
