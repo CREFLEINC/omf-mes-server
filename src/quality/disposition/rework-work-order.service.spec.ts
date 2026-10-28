@@ -4,6 +4,7 @@ import { ContractException } from '../../common/errors';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReworkWorkOrderService } from './rework-work-order.service';
+import { WorkOrderHandoverNotifier } from '../../production/work-order/work-order-handover';
 
 /**
  * 재작업 W/O 발행 — **판정이 정한 잔량이 상한이다**(omf-all-around#47 · 사용자 결정 2026-09-21).
@@ -92,7 +93,7 @@ function stub(options: {
     },
   } as unknown as NumberingService;
 
-  return { service: new ReworkWorkOrderService(prisma, numbering), created, calls, operationWheres };
+  return { service: new ReworkWorkOrderService(prisma, numbering, { reworkCreated: async () => undefined } as unknown as WorkOrderHandoverNotifier), created, calls, operationWheres };
 }
 
 const issue = (harness: ReturnType<typeof stub>, orderQty = 40) =>

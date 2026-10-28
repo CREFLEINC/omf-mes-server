@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
-import { LotHoldService, LotRegistryService } from '../../core/lot';
+import { IqcHandoverNotifier, LotHoldService, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InboundReceiptSplitInput, InboundReceiptSplitService } from './inbound-receipt-split.service';
@@ -188,6 +188,7 @@ function fake(codeValues?: string[]) {
     prisma as unknown as PrismaService,
     numbering,
     new LotRegistryService(new LotHoldService()),
+    { notify: async () => undefined } as unknown as IqcHandoverNotifier,
   );
   const service = new InboundReceiptSplitService(prisma as unknown as PrismaService, numbering, receipts);
   return { service, receipts, recorded };

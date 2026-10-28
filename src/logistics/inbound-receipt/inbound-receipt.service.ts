@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
-import { LotRegistryService } from '../../core/lot';
+import { IqcHandoverNotifier, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
@@ -38,6 +38,7 @@ export class InboundReceiptService {
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
     private readonly lots: LotRegistryService,
+    private readonly iqcNotices: IqcHandoverNotifier,
   ) {}
 
   async create(
@@ -109,6 +110,7 @@ export class InboundReceiptService {
       },
     });
 
+    let iqcLotCount = 0;
     for (const [index, line] of input.lines.entries()) {
       const created = await tx.inbound_receipt_line.create({
         data: {
@@ -157,6 +159,7 @@ export class InboundReceiptService {
       }
 
       if (!attachesLot(line)) continue;
+      if (inspection.get(BigInt(line.itemId)) === true) iqcLotCount += 1;
       // ⛔ `POST /trace/lots` 를 HTTP 로 부르지 않는다 — 같은 `tx` 안에 서야 한다. 라인의
       //    `lot_id` 는 코어가 채운다(직접 UPDATE 하지 않는다 · R-1). ⛔ `manufactured_at`
       //    은 비운다 — 날짜를 시각으로 올리는 타임존 캐스팅이다(I-3.md §5-1).
@@ -200,6 +203,16 @@ export class InboundReceiptService {
       actor: actor.terminalAudit, targetTypeCode: 'INBOUND_RECEIPT',
       targetId: header.inbound_receipt_id, eventTypeCode: 'CREATE',
     });
+    if (iqcLotCount > 0) {
+      await this.iqcNotices.notify(tx, {
+        aggregateTypeCode: 'INBOUND_RECEIPT',
+        aggregateId: header.inbound_receipt_id,
+        plantId: BigInt(input.plantId),
+        receiptNo: inboundReceiptNo,
+        lotCount: iqcLotCount,
+        inboundReceiptId: header.inbound_receipt_id,
+      });
+    }
     return header.inbound_receipt_id;
   }
 

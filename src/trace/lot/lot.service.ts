@@ -10,6 +10,7 @@ import {
   ExternalIdentifierInput,
   LotRegisterInput,
   LotRegisterActor,
+  IqcHandoverNotifier,
   LotRegistryService,
   nextInboundMaterialLotNo,
   optionalDay,
@@ -105,6 +106,7 @@ export class LotService {
     private readonly prisma: PrismaService,
     private readonly registry: LotRegistryService,
     private readonly numbering: NumberingService,
+    private readonly iqcNotices: IqcHandoverNotifier,
   ) {}
 
   async list(query: LotQuery): Promise<PagedResponse<LotView>> {
@@ -301,8 +303,8 @@ export class LotService {
     iqcRequestNo: string | undefined,
     actor: LotRegisterActor,
   ): Promise<LotRow> {
-    return this.prisma.$transaction((tx) =>
-      this.registry.createWithin(
+    return this.prisma.$transaction(async (tx) => {
+      const lot = await this.registry.createWithin(
         tx,
         {
           ...input,
@@ -313,8 +315,27 @@ export class LotService {
               : { requestNo: iqcRequestNo, effectiveDate: input.businessDate, requestedAt: input.occurredAt },
         },
         actor,
-      ),
-    );
+      );
+      if (iqcRequestNo !== undefined) await this.notifyIqc(tx, lot);
+      return lot;
+    });
+  }
+
+  /** T10 — `POST /trace/lots` 단건 등록이 IQC 의뢰를 세웠다. 대상은 LOT 1건(omf-all-around#190). */
+  private async notifyIqc(tx: Prisma.TransactionClient, lot: LotRow): Promise<void> {
+    const line = await tx.inbound_receipt_line.findUnique({
+      where: { inbound_receipt_line_id: lot.source_id },
+      select: { inbound_receipt_id: true },
+    });
+    if (line === null) return;
+    await this.iqcNotices.notify(tx, {
+      aggregateTypeCode: 'LOT',
+      aggregateId: lot.lot_id,
+      plantId: lot.plant_id,
+      receiptNo: lot.lot_no,
+      lotCount: 1,
+      inboundReceiptId: line.inbound_receipt_id,
+    });
   }
 
   private async insertInboundMes(
@@ -332,7 +353,7 @@ export class LotService {
         supplierId: Number(source.inbound_receipt.supplier_id),
         businessDate: current.businessDate,
       });
-      return this.registry.createWithin(
+      const lot = await this.registry.createWithin(
         tx,
         {
           ...current,
@@ -347,6 +368,8 @@ export class LotService {
         },
         actor,
       );
+      if (source.inspection_required) await this.notifyIqc(tx, lot);
+      return lot;
     });
   }
 

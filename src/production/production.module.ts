@@ -31,6 +31,7 @@ import { ProductionResultCorrectService } from './production-result/production-r
 import { ProductionResultQueryService } from './production-result/production-result-query.service';
 import { ProductionResultService } from './production-result/production-result.service';
 import { ProductionResultController } from './production-result/production-result.controller';
+import { WorkOrderHandoverNotifier } from './work-order/work-order-handover';
 import { WorkOrderCancelService } from './work-order/work-order-cancel.service';
 import { WorkOrderCloseService } from './work-order/work-order-close.service';
 import { WorkOrderDailyResultsService } from './work-order/work-order-daily-results.service';
@@ -89,6 +90,7 @@ import { WorkSessionService } from './work-session/work-session.service';
   ],
   providers: [
     PickingHandoverNotifier,
+    WorkOrderHandoverNotifier,
     WorkOrderQueryService,
     WorkOrderWriteService,
     WorkOrderTransitionService,

@@ -5,7 +5,10 @@ import { ShipmentRequestView } from './shipment-request-view';
 import { ShipmentRequestCreate, ShipmentRequestService } from './shipment-request.service';
 import { LogisticsHandoverNotifier } from '../logistics-handover';
 
-const HANDOVER = { shipmentPicking: async () => undefined } as unknown as LogisticsHandoverNotifier;
+const HANDOVER = {
+  shipmentPicking: async () => undefined,
+  oqcRequested: async () => undefined,
+} as unknown as LogisticsHandoverNotifier;
 
 const ACTOR = { appUserId: 3, scopes: [] };
 

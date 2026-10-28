@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { LotRegistryService } from '../../core/lot';
+import { IqcHandoverNotifier, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LotCreate, LotService } from './lot.service';
@@ -104,6 +104,7 @@ function fake(receivedQty = 100, existingLotNoSuffix = '0009', inspectionRequire
     prisma as unknown as PrismaService,
     registry as unknown as LotRegistryService,
     numbering as unknown as NumberingService,
+    { notify: async () => undefined } as unknown as IqcHandoverNotifier,
   );
   jest.spyOn(service, 'get').mockResolvedValue({
     detail: { lot: {} as never, externalIdentifiers: [], holds: [] },
