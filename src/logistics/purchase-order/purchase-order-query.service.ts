@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -23,6 +24,8 @@ import {
   purchaseOrderLineView,
   purchaseOrderView,
 } from './purchase-order-view';
+
+const ORDER_TYPE_GROUP = 'ORDER_TYPE';
 
 const LIST_INCLUDE = {
   partner: { select: { partner_code: true, partner_name: true } },
@@ -62,6 +65,7 @@ export interface PurchaseOrderQuery {
   sort?: OrderSort;
   /** `openOnly` 와 따로 AND 로 건다 — `openOnly=true&progress=COMPLETED` 는 0건이다(장부 P-131). */
   progress?: OrderProgress;
+  erpOrderTypeCode?: string;
   page?: number;
   size?: number;
 }
@@ -178,8 +182,10 @@ export class PurchaseOrderQueryService {
       supplierWhere(query.supplierQ),
       query.overdueOnly ? { OR: await overdueOrderWhere(this.prisma, query.plantId, now) } : {},
     ].filter((c) => Object.keys(c).length > 0);
+    await this.assertOrderType(query.erpOrderTypeCode);
     return {
       ...filter('supplier_id', query.supplierId),
+      ...(query.erpOrderTypeCode === undefined ? {} : { erp_order_type_code: query.erpOrderTypeCode }),
       ...filter('plant_id', query.plantId),
       // `statusCode` 는 `type: string` 이다(enum 아니다) — 값 목록 검사를 하지 않는다.
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
@@ -192,6 +198,19 @@ export class PurchaseOrderQueryService {
         ? {}
         : { purchase_order_no: { contains: query.q, mode: 'insensitive' } }),
     };
+  }
+
+  /**
+   * 없는 유형을 무시하면 전체가 나와 걸러진 것처럼 보인다 — 400 으로 막는다. 사용 중지된 유형은 받는다
+   * (지난 발주를 그 유형으로 찾을 수 있어야 한다).
+   */
+  private async assertOrderType(code: string | undefined): Promise<void> {
+    if (code === undefined) return;
+    const found = await this.prisma.code_value.count({ where: { code, code_group: { group_code: ORDER_TYPE_GROUP } } });
+    if (found > 0) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field: 'erpOrderTypeCode', code: ERROR_CODE.INVALID, message: `${ORDER_TYPE_GROUP} 에 없는 코드입니다.` },
+    ]);
   }
 
   async get(purchaseOrderId: number): Promise<{ detail: PurchaseOrderDetail; versionNo: number }> {

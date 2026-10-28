@@ -232,6 +232,7 @@ api 안에서 주기로 돈다(`src/integration/erp/`). 기본은 꺼져 있다.
 | `ERP_DB_HOST`·`ERP_DB_USER`·`ERP_DB_PASSWORD`·`ERP_DB_NAME` | — | 받기·보내기 중 하나라도 켜져 있는데 하나라도 비면 api 가 기동하지 않는다 |
 | `ERP_DB_PORT` | `1433` | |
 | `ERP_DB_ENCRYPT` | `true` | `false` 일 때만 TLS 를 끈다. 서버 인증서는 검사하지 않는다 |
+| `ERP_CC_FUNCTION` | — | ERP 통관번호 함수(`DB.dbo.ufn_M_CC_DTL_GetCC`). 중계 DB 연결로 부른다 — 같은 SQL Server 에 있어야 한다. 비면 외자 구매입고도 통관번호를 빈 값으로 보낸다 |
 | `ERP_SYNC_MASTER_INTERVAL_SEC` | `43200` | 기준정보 5종(공통코드·사원·품목·거래처·BOM). 회차가 끝나고 이만큼 뒤에 다음 회차 |
 | `ERP_SYNC_ORDER_INTERVAL_SEC` | `900` | 전표 3종(발주·수주·ERP W/O) |
 

@@ -17,6 +17,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
+import { changedFields, itemChanges, recordPlanVersionAudit } from './inspection-plan-version-audit';
 
 /** `quality.inspection_plan_version` 을 FK 로 가리키는 자리 전부. e2e 가 대조한다. */
 export const PLAN_VERSION_REFERRERS: readonly Referrer[] = [
@@ -152,7 +153,7 @@ export class InspectionPlanVersionService {
   }
 
   /** 「기준에 아직 버전이 하나도 없을 때만 쓴다」(계약). 두 번째부터는 `:new-revision`. */
-  async create(input: VersionCreate, options: DraftOptions = {}): Promise<VersionView> {
+  async create(input: VersionCreate, options: DraftOptions = {}, actorId?: number | null): Promise<VersionView> {
     await this.assertWritable(input, options);
     const plan = await this.prisma.inspection_plan.findUnique({
       where: { inspection_plan_id: input.inspectionPlanId },
@@ -185,27 +186,55 @@ export class InspectionPlanVersionService {
       ]);
     }
 
-    return view(
-      await this.prisma.inspection_plan_version.create({
-        data: {
-          inspection_plan_id: input.inspectionPlanId,
-          plan_version: 1,
-          status_code: REVISION_STATUS.DRAFT,
-          ...writeData(input),
-        },
-      }),
-    );
+    return this.prisma.$transaction(async (tx) => {
+      const created = view(
+        await tx.inspection_plan_version.create({
+          data: {
+            inspection_plan_id: input.inspectionPlanId,
+            plan_version: 1,
+            status_code: REVISION_STATUS.DRAFT,
+            ...writeData(input),
+          },
+        }),
+      );
+      await recordPlanVersionAudit(tx, {
+        versionId: created.inspectionPlanVersionId,
+        eventTypeCode: 'CREATE',
+        actorId,
+        after: changedFields({}, { ...created }, VERSION_AUDIT_IGNORED).after,
+      });
+      return created;
+    });
   }
 
   /** 「상태=작성중일 때만 허용한다」(계약 §5-4). */
-  async update(versionId: number, version: number, input: VersionWrite, options: DraftOptions = {}): Promise<VersionResult> {
+  async update(
+    versionId: number,
+    version: number,
+    input: VersionWrite,
+    options: DraftOptions = {},
+    actorId?: number | null,
+  ): Promise<VersionResult> {
     await this.assertWritable(input, options);
     await this.assertDraft(versionId, '수정');
+    const before = view(await this.load(versionId));
 
-    const updated = await this.prisma.inspection_plan_version.updateMany({
-      // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
-      where: { inspection_plan_version_id: versionId, version_no: version },
-      data: { ...writeData(input), version_no: { increment: 1 } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.inspection_plan_version.updateMany({
+        // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
+        where: { inspection_plan_version_id: versionId, version_no: version },
+        data: { ...writeData(input), version_no: { increment: 1 } },
+      });
+      const row = result.count === 0
+        ? null
+        : await tx.inspection_plan_version.findUnique({ where: { inspection_plan_version_id: versionId } });
+      if (row) {
+        const diff = changedFields({ ...before }, { ...view(row) }, VERSION_AUDIT_IGNORED);
+        if (Object.keys(diff.after).length > 0 || Object.keys(diff.before).length > 0) {
+          await recordPlanVersionAudit(tx, { versionId, eventTypeCode: 'UPDATE', actorId, ...diff });
+        }
+      }
+      return result;
     });
     await this.assertExists(versionId, updated.count);
     return this.get(versionId);
@@ -223,8 +252,9 @@ export class InspectionPlanVersionService {
    * NOT NULL FK 로 참조하므로 서버는 기존 행을 유지하며 순서만 갱신해야 한다」.
    * 공정 라인(`routing_operation`)과 같은 형태이고 같은 수법을 쓴다.
    */
-  async replaceItems(versionId: number, items: ItemSpecUpsert[]): Promise<ItemSpecView[]> {
+  async replaceItems(versionId: number, items: ItemSpecUpsert[], actorId?: number | null): Promise<ItemSpecView[]> {
     await this.assertDraft(versionId, '검사 항목을 저장');
+    const beforeItems = await this.readItems(versionId);
     const existing = await this.prisma.inspection_item_spec.findMany({
       where: { inspection_plan_version_id: versionId },
       select: { inspection_item_spec_id: true },
@@ -263,6 +293,15 @@ export class InspectionPlanVersionService {
             data: itemData(versionId, item),
           });
         }
+        const afterRows = await tx.inspection_item_spec.findMany({
+          where: { inspection_plan_version_id: versionId },
+          orderBy: { sequence_no: 'asc' },
+        });
+        const diff = itemChanges(
+          beforeItems.map((item) => ({ ...item })),
+          afterRows.map((row) => ({ ...itemView(row) })),
+        );
+        if (diff) await recordPlanVersionAudit(tx, { versionId, eventTypeCode: 'UPDATE', actorId, ...diff });
       });
     } catch (error) {
       if (isCollectionChannelItemReferenceError(error)) throw itemReferenceLocked();
@@ -275,7 +314,7 @@ export class InspectionPlanVersionService {
   // ── 상태 전이 ───────────────────────────────────────────────────────────
 
   /** 작성중 → 확정. 「검사 항목이 1건 이상이어야 한다」(계약 — 400 `LINE_REQUIRED`). */
-  async confirm(versionId: number): Promise<number> {
+  async confirm(versionId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(versionId);
     if (row.status_code !== REVISION_STATUS.DRAFT) throw locked('확정');
     // 엑셀로 들어온 작성중 버전은 비율·개수가 비어 있을 수 있다 — 확정 전에 화면에서 채우게 여기서 막는다.
@@ -298,23 +337,34 @@ export class InspectionPlanVersionService {
       ]);
     }
 
-    await this.prisma.inspection_plan_version.update({
-      where: { inspection_plan_version_id: versionId },
-      data: { status_code: REVISION_STATUS.CONFIRMED, version_no: { increment: 1 } },
-    });
+    await this.transition(versionId, REVISION_STATUS.DRAFT, REVISION_STATUS.CONFIRMED, actorId);
     return versionId;
   }
 
   /** 확정 → 폐기. ⛔ 되돌릴 수 없다(계약). */
-  async obsolete(versionId: number): Promise<number> {
+  async obsolete(versionId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(versionId);
     if (row.status_code !== REVISION_STATUS.CONFIRMED) throw locked('폐기');
 
-    await this.prisma.inspection_plan_version.update({
-      where: { inspection_plan_version_id: versionId },
-      data: { status_code: REVISION_STATUS.OBSOLETE, version_no: { increment: 1 } },
-    });
+    await this.transition(versionId, REVISION_STATUS.CONFIRMED, REVISION_STATUS.OBSOLETE, actorId);
     return versionId;
+  }
+
+  /** 상태만 바꾸고 그 사실을 같은 트랜잭션에서 이력으로 남긴다(#196). */
+  private async transition(versionId: number, from: string, to: string, actorId?: number | null): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.inspection_plan_version.update({
+        where: { inspection_plan_version_id: versionId },
+        data: { status_code: to, version_no: { increment: 1 } },
+      });
+      await recordPlanVersionAudit(tx, {
+        versionId,
+        eventTypeCode: 'UPDATE',
+        actorId,
+        before: { statusCode: from },
+        after: { statusCode: to },
+      });
+    });
   }
 
   /**
@@ -322,11 +372,11 @@ export class InspectionPlanVersionService {
    * 검사는 확정 버전만 쓰므로 작성중 버전을 가리키는 의뢰·측정은 정상 경로로는 생기지 않는다.
    * ⛔ 그래도 세어 막는다 — 지운 뒤 FK 위반이 500 으로 새지 않게.
    */
-  async discard(versionId: number): Promise<void> {
+  async discard(versionId: number, actorId?: number | null): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       // ⛔ `FOR UPDATE` — 판정과 삭제 사이에 확정이 끼면 확정 버전이 지워진다.
-      const rows = await tx.$queryRaw<{ status_code: string }[]>`
-        SELECT status_code
+      const rows = await tx.$queryRaw<{ status_code: string; plan_version: number }[]>`
+        SELECT status_code, plan_version
           FROM quality.inspection_plan_version
          WHERE inspection_plan_version_id = ${BigInt(versionId)}
            FOR UPDATE`;
@@ -352,6 +402,12 @@ export class InspectionPlanVersionService {
 
       await tx.inspection_item_spec.deleteMany({ where: specs });
       await tx.inspection_plan_version.delete({ where: specs });
+      await recordPlanVersionAudit(tx, {
+        versionId,
+        eventTypeCode: 'DELETE',
+        actorId,
+        before: { planVersion: Number(rows[0].plan_version), statusCode: rows[0].status_code },
+      });
     });
   }
 
@@ -362,7 +418,7 @@ export class InspectionPlanVersionService {
    * 부르면 원본 +1 이 이미 있어 `uq_inspection_plan_version` 이 깨진다(Routing 과 같은 판단 ·
    * 되돌림 §S-4).
    */
-  async newRevision(versionId: number): Promise<number> {
+  async newRevision(versionId: number, actorId?: number | null): Promise<number> {
     const source = await this.load(versionId);
     if (source.status_code !== REVISION_STATUS.CONFIRMED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
@@ -408,6 +464,12 @@ export class InspectionPlanVersionService {
         });
       }
 
+      await recordPlanVersionAudit(tx, {
+        versionId: Number(created.inspection_plan_version_id),
+        eventTypeCode: 'CREATE',
+        actorId,
+        after: { planVersion: created.plan_version, statusCode: created.status_code },
+      });
       return Number(created.inspection_plan_version_id);
     });
   }
@@ -556,6 +618,9 @@ export function isCollectionChannelItemReferenceError(error: unknown): boolean {
   const meta = (error.meta ?? {}) as Record<string, unknown>;
   return meta.constraint === COLLECTION_CHANNEL_ITEM_FK;
 }
+
+/** 버전 이력에서 견주지 않는 칸 — 식별자다. */
+const VERSION_AUDIT_IGNORED = ['inspectionPlanVersionId', 'inspectionPlanId'];
 
 function itemReferenceLocked(): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [

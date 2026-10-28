@@ -24,6 +24,7 @@ const PASSWORD = '사용자-검사-비밀번호';
 const PREFIX = 'e2e-appuser-made';
 const ROLE = 'E2E_APPUSER';
 const DEPARTMENT_CODE = 'E2E_APPUSER_DEPT';
+const WORKER_NO = 'E2E-APPUSER-WK';
 
 function validator(operation: string): ValidateFunction {
   const contract = JSON.parse(
@@ -709,6 +710,36 @@ describe('사용자 마스터 (e2e)', () => {
       .expect(404);
   });
 
+  // ── 작업자 연결 ─────────────────────────────────────────────────────────
+
+  it('⭐ 로그인한 관리자가 «자기» 계정에 작업자를 연결한다 — 멱등 기록이 잡은 계정 행과 엇갈려 멈추지 않는다', async () => {
+    const me = await prisma.app_user.findUniqueOrThrow({
+      where: { login_id: LOGIN_ID },
+      select: { app_user_id: true },
+    });
+    const worker = await prisma.worker.create({
+      data: {
+        worker_no: WORKER_NO,
+        worker_name: '연결검사',
+        business_unit_id: BigInt(businessUnitId),
+        plant_id: BigInt(plantId),
+        status_code: 'ACTIVE',
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .put(`/api/app/users/${me.app_user_id}/worker`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ workerId: Number(worker.worker_id) })
+      .expect(200);
+    expect(response.body).toEqual({
+      workerId: Number(worker.worker_id),
+      workerNo: WORKER_NO,
+      workerName: '연결검사',
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   async function spareRole(suffix: string): Promise<number> {
@@ -810,6 +841,7 @@ describe('사용자 마스터 (e2e)', () => {
       select: { app_user_id: true },
     });
     const ids = [...made, ...generated].map((row) => row.app_user_id);
+    await prisma.worker.deleteMany({ where: { worker_no: WORKER_NO } });
     await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: ids } } });
     await prisma.user_data_scope.deleteMany({ where: { app_user_id: { in: ids } } });
     await prisma.user_role.deleteMany({ where: { app_user_id: { in: ids } } });
