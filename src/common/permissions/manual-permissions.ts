@@ -263,7 +263,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /integration/messages/{integrationMessageId}': ['W-06-10'],
   'POST /integration/messages/{integrationMessageId}:retry': ['W-06-10'],
   // `W-06-12` ERP 송신 — 고른 송신 항목의 송신 예정 목록(`statusCode=PENDING`)을 읽는다.
-  // 요구서 §3 에 없는 자리다(사용자 지시 2026-10-27 · 장부 P-128).
+  // 요구서 §3 에 없는 자리다(사용자 지시 2026-10-27 · 장부 P-129).
   'GET /integration/messages': ['W-06-12'],
 
   // `W-06-15` 결재선 정의 — 그 화면이 결재선·결재단계의 마스터를 소유한다(§0 범위:

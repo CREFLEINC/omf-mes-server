@@ -39,7 +39,7 @@ export class ContractValidationGuard implements CanActivate {
     // and all other query fields while admitting the forward-only TSPL format.
     const forwardTspl = key === 'GET /app/document-issues/{documentIssueLogId}/rendition'
       && query.format === 'tspl';
-    // P-128: 송신 예정(PENDING)은 기간 없이 읽는다. 빠진 기간만 자리 값으로 채워 검증하고
+    // P-129: 송신 예정(PENDING)은 기간 없이 읽는다. 빠진 기간만 자리 값으로 채워 검증하고
     // 뒤에 지운다 — 사본을 따로 만들면 ajv 가 바꾼 page·size 의 타입이 핸들러에 안 간다.
     const filled = key === 'GET /integration/messages' && query.statusCode === 'PENDING'
       ? (['createdFrom', 'createdTo'] as const).filter((name) => query[name] === undefined)

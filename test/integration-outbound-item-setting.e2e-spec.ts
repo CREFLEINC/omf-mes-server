@@ -131,7 +131,7 @@ describe('송신 항목 설정 (e2e)', () => {
     expect(response.body.items.every((i: Setting) => i.enabled)).toBe(true);
   });
 
-  it('⭐ 보내기 실행기의 켜짐(ERP_SEND_ENABLED)을 조회·저장 응답에 함께 싣는다 (P-128)', async () => {
+  it('⭐ 보내기 실행기의 켜짐(ERP_SEND_ENABLED)을 조회·저장 응답에 함께 싣는다 (P-129)', async () => {
     // e2e 는 global-setup 이 보내기를 끈다 — 켜져 있다고 답하면 서버가 환경을 안 읽은 것이다.
     const listed = await request(app.getHttpServer())
       .get('/api/integration/outbound-item-settings')
@@ -226,7 +226,7 @@ describe('송신 항목 설정 (e2e)', () => {
     expect(rows[0].version_no).toBeGreaterThan(1);
   });
 
-  it('⭐ 이어 둔 연계 정의의 대기·실패 건수를 따로 낸다 — 대기는 PENDING 만이다 (P-128)', async () => {
+  it('⭐ 이어 둔 연계 정의의 대기·실패 건수를 따로 낸다 — 대기는 PENDING 만이다 (P-129)', async () => {
     await request(app.getHttpServer())
       .put('/api/integration/outbound-item-settings')
       .set('Cookie', cookie)
@@ -257,7 +257,7 @@ describe('송신 항목 설정 (e2e)', () => {
     expect(unlinked).toMatchObject({ interfaceCode: null, pendingMessageCount: 0, failedMessageCount: 0 });
   });
 
-  it('⭐⭐ 보내기가 있는 세 항목은 연계 정의 없이도 인터페이스 코드를 알고 센다 (P-128)', async () => {
+  it('⭐⭐ 보내기가 있는 세 항목은 연계 정의 없이도 인터페이스 코드를 알고 센다 (P-129)', async () => {
     const counts = async (): Promise<Map<string, Setting>> => {
       const response = await request(app.getHttpServer())
         .get('/api/integration/outbound-item-settings')
@@ -280,7 +280,7 @@ describe('송신 항목 설정 (e2e)', () => {
     expect(gr(after).failedMessageCount - gr(before).failedMessageCount).toBe(1);
   });
 
-  it('⭐⭐ W-06-12 가 송신 예정 목록을 기간 없이 읽는다 — statusCode=PENDING 일 때만 (P-128)', async () => {
+  it('⭐⭐ W-06-12 가 송신 예정 목록을 기간 없이 읽는다 — statusCode=PENDING 일 때만 (P-129)', async () => {
     await outboundMessage(`${PREFIX}-LIST-P`, `${PREFIX}_IF`, 'PENDING');
     await outboundMessage(`${PREFIX}-LIST-F`, `${PREFIX}_IF`, 'FAILED');
 
