@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,6 +13,8 @@ export interface SalesOrderQuery {
   orderDateFrom?: string;
   orderDateTo?: string;
   unassignedOnly?: boolean;
+  /** 계약 밖 질의(장부 P-132) — 가드가 거르지 않아 서버가 값을 가른다. */
+  progress?: string;
   q?: string;
   page?: number;
   size?: number;
@@ -40,6 +43,7 @@ export class SalesOrderQueryService {
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...orderDateWhere(query.orderDateFrom, query.orderDateTo),
       ...unassignedWhere(query.unassignedOnly),
+      ...this.progressWhere(query.progress),
       // 계약이 「지시서 번호 검색」으로 좁혔다 — `erp_sales_order_no` 는 안 본다.
       ...(query.q === undefined
         ? {}
@@ -68,6 +72,27 @@ export class SalesOrderQueryService {
     });
     if (!row) throw new NotFoundException('없는 출하지시서입니다.');
     return salesOrderView(row);
+  }
+
+  /**
+   * OPEN = 출하가 남은 수주 · COMPLETED = 그 나머지(전량 출하 + 취소). 둘을 합치면 전체다.
+   * DB where 로 거른다 — 메모리에서 거르면 `page.total` 과 쪽 나누기가 어긋난다.
+   */
+  private progressWhere(progress: string | undefined): Prisma.sales_orderWhereInput {
+    if (progress === undefined) return {};
+    // ⛔ 틀린 값을 무시하지 않는다 — 걸러지지 않은 전체가 한쪽만 거른 것처럼 보인다.
+    if (progress !== 'OPEN' && progress !== 'COMPLETED') {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'field', field: 'progress', code: ERROR_CODE.INVALID, message: 'progress 는 OPEN 또는 COMPLETED 여야 합니다.' },
+      ]);
+    }
+    const open: Prisma.sales_orderWhereInput = {
+      status_code: { not: 'CANCELLED' },
+      sales_order_line: {
+        some: { cancelled_at: null, shipped_qty: { lt: this.prisma.sales_order_line.fields.ordered_qty } },
+      },
+    };
+    return progress === 'OPEN' ? open : { NOT: open };
   }
 }
 
