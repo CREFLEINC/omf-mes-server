@@ -27,7 +27,7 @@ export class HandoverAlertSettingController {
   @Get()
   @Contract('GET /app/handover-alert-settings')
   summary(@Req() request: Request, @Query('plantId') plantId: number): Promise<HandoverAlertSettingSummary> {
-    return this.settings.summary(plantId, currentSession(request)?.scopes ?? []);
+    return this.settings.summary(plantId, sessionUserId(request));
   }
 
   @Get(':plantId/:alertTypeCode')
@@ -38,7 +38,7 @@ export class HandoverAlertSettingController {
     @Param('plantId', ParseIntPipe) plantId: number,
     @Param('alertTypeCode') alertTypeCode: string,
   ): Promise<HandoverAlertSettingView> {
-    const { setting, versionNo } = await this.settings.detail(plantId, alertTypeCode, currentSession(request)?.scopes ?? []);
+    const { setting, versionNo } = await this.settings.detail(plantId, alertTypeCode, sessionUserId(request));
     setEtag(response, versionNo);
     return setting;
   }
@@ -52,19 +52,18 @@ export class HandoverAlertSettingController {
     @Param('alertTypeCode') alertTypeCode: string,
     @Body() body: HandoverAlertSettingReplace,
   ): Promise<HandoverAlertSettingView> {
-    const session = currentSession(request);
+    const actorId = sessionUserId(request);
     const { setting, versionNo } = await runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) =>
-      this.settings.replaceWithin(
-        tx,
-        plantId,
-        alertTypeCode,
-        ifMatchVersion(request),
-        body,
-        session?.scopes ?? [],
-        session?.userId,
-      ),
+      this.settings.replaceWithin(tx, plantId, alertTypeCode, ifMatchVersion(request), body, actorId),
     );
     setEtag(response, versionNo);
     return setting;
   }
+}
+
+/** 세 경로 모두 계정 세션 전용이다(W-CO-14 권한 가드 뒤). */
+function sessionUserId(request: Request): number {
+  const session = currentSession(request);
+  if (session === undefined) throw new Error('세션 없이 권한 가드를 지났다');
+  return session.userId;
 }

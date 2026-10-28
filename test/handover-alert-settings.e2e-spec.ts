@@ -52,6 +52,8 @@ describe('인계작업 알림 설정 (e2e)', () => {
   let cookie: string;
   let deniedCookie: string;
   let pickerOnlyCookie: string;
+  let unscopedCookie: string;
+  let plantOnlyCookie: string;
   let plantId: number;
   let otherPlantId: number;
   const users: Record<string, number> = {};
@@ -84,12 +86,20 @@ describe('인계작업 알림 설정 (e2e)', () => {
     });
     await grant(admin, 'W-CO-14');
     await grant(pickerOnly, 'W-CO-11');
+    // 범위 행이 없는 관리자 · 사업부 없이 공장만 지정한 줄(세션 scopes 가 버리는 줄)
+    const unscoped = await makeUser('NOSCOPE', null);
+    const plantOnly = await makeUser('PLANTONLY', null);
+    await prisma.user_data_scope.create({ data: { app_user_id: plantOnly, plant_id: plant.plant_id } });
+    await grant(unscoped, 'W-CO-14');
+    await grant(plantOnly, 'W-CO-14');
 
     const jwt = app.get(JwtService);
     const sign = (id: bigint) => `${SESSION_COOKIE}=${jwt.sign({ sub: Number(id), typ: 'session' })}`;
     cookie = sign(admin);
     deniedCookie = sign(denied);
     pickerOnlyCookie = sign(pickerOnly);
+    unscopedCookie = sign(unscoped);
+    plantOnlyCookie = sign(plantOnly);
   });
 
   afterAll(async () => {
@@ -214,6 +224,17 @@ describe('인계작업 알림 설정 (e2e)', () => {
     expect(unknown.body.errors[0]).toMatchObject({ field: 'alertTypeCode', code: 'INVALID' });
   });
 
+  it('US2-3 데이터 범위는 DB 의 user_data_scope 로 본다 — 행이 없으면 모든 공장, 공장만 지정한 줄은 그 공장만', async () => {
+    for (const plant of [plantId, otherPlantId]) {
+      await request(app.getHttpServer()).get(PATH).query({ plantId: plant }).set('Cookie', unscopedCookie).expect(200);
+      await request(app.getHttpServer()).get(`${PATH}/${plant}/${TYPE}`).set('Cookie', unscopedCookie).expect(200);
+    }
+    await request(app.getHttpServer()).get(PATH).query({ plantId }).set('Cookie', plantOnlyCookie).expect(200);
+    await request(app.getHttpServer()).get(`${PATH}/${plantId}/${TYPE}`).set('Cookie', plantOnlyCookie).expect(200);
+    const denied = await request(app.getHttpServer()).get(PATH).query({ plantId: otherPlantId }).set('Cookie', plantOnlyCookie).expect(403);
+    expect(denied.body.errors[0]).toMatchObject({ field: 'plantId', code: 'PERMISSION_DENIED' });
+  });
+
   it('US2-4 상세는 전화번호 없는 담당자를 hasPhone=false 로, 요약은 noPhoneCount·inactiveCount 로 보인다', async () => {
     await prisma.app_user.update({ where: { app_user_id: users.U5 }, data: { is_active: false } });
     try {
@@ -286,7 +307,7 @@ describe('인계작업 알림 설정 (e2e)', () => {
 
   async function grant(appUserId: bigint, permission: string): Promise<void> {
     const role = await prisma.role.create({
-      data: { role_code: `${PREFIX}_${permission}`, role_name: `인계 설정 시험 ${permission}` },
+      data: { role_code: `${PREFIX}_${permission}_${appUserId}`, role_name: `인계 설정 시험 ${permission}` },
     });
     roleIds.push(role.role_id);
     await prisma.role_permission.create({ data: { role_id: role.role_id, permission_code: permission } });

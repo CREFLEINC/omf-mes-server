@@ -19,35 +19,39 @@ export class WorkOrderHandoverNotifier {
 
   /** T6 일반 · T7 긴급 W/O 배포. 재작업 W/O 는 발행 때 T9 로 이미 알렸다. */
   async released(tx: Tx, workOrderId: bigint): Promise<void> {
-    const { plantId, workOrderTypeCode, values } = await workOrderValues(tx, workOrderId);
-    if (plantId === null || workOrderTypeCode === REWORK_TYPE) return;
-    await this.emitter.emitHandover(tx, {
-      alertTypeCode: workOrderTypeCode === EMERGENCY_TYPE ? 'EMERGENCY_WORK_ORDER_RELEASED' : 'WORK_ORDER_RELEASED',
-      plantId,
-      aggregateTypeCode: 'WORK_ORDER',
-      aggregateId: workOrderId,
-      occurredAt: new Date(),
-      values,
-    });
+    await this.emitter.guarded(tx, `WORK_ORDER ${workOrderId}`, async () => {
+      const { plantId, workOrderTypeCode, values } = await workOrderValues(tx, workOrderId);
+      if (plantId === null || workOrderTypeCode === REWORK_TYPE) return;
+      await this.emitter.emitHandover(tx, {
+        alertTypeCode: workOrderTypeCode === EMERGENCY_TYPE ? 'EMERGENCY_WORK_ORDER_RELEASED' : 'WORK_ORDER_RELEASED',
+        plantId,
+        aggregateTypeCode: 'WORK_ORDER',
+        aggregateId: workOrderId,
+        occurredAt: new Date(),
+        values,
+      });
+    }, undefined);
   }
 
   /** T9 재작업 W/O 생성 — 원천 부적합 번호와 발행한 사람을 함께 싣는다. */
   async reworkCreated(tx: Tx, workOrderId: bigint, nonconformanceId: bigint, appUserId: number): Promise<void> {
-    const { plantId, values } = await workOrderValues(tx, workOrderId);
-    if (plantId === null) return;
-    const nonconformance = await tx.nonconformance.findUniqueOrThrow({
-      where: { nonconformance_id: nonconformanceId },
-      select: { nonconformance_no: true },
-    });
-    const user = await tx.app_user.findUnique({ where: { app_user_id: appUserId }, select: { user_name: true } });
-    await this.emitter.emitHandover(tx, {
-      alertTypeCode: 'REWORK_WORK_ORDER_CREATED',
-      plantId,
-      aggregateTypeCode: 'WORK_ORDER',
-      aggregateId: workOrderId,
-      occurredAt: new Date(),
-      values: { ...values, qty: values.plan_qty, ncr_no: nonconformance.nonconformance_no, actor: user?.user_name },
-    });
+    await this.emitter.guarded(tx, `REWORK_WORK_ORDER_CREATED ${workOrderId}`, async () => {
+      const { plantId, values } = await workOrderValues(tx, workOrderId);
+      if (plantId === null) return;
+      const nonconformance = await tx.nonconformance.findUniqueOrThrow({
+        where: { nonconformance_id: nonconformanceId },
+        select: { nonconformance_no: true },
+      });
+      const user = await tx.app_user.findUnique({ where: { app_user_id: appUserId }, select: { user_name: true } });
+      await this.emitter.emitHandover(tx, {
+        alertTypeCode: 'REWORK_WORK_ORDER_CREATED',
+        plantId,
+        aggregateTypeCode: 'WORK_ORDER',
+        aggregateId: workOrderId,
+        occurredAt: new Date(),
+        values: { ...values, qty: values.plan_qty, ncr_no: nonconformance.nonconformance_no, actor: user?.user_name },
+      });
+    }, undefined);
   }
 }
 
