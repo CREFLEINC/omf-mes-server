@@ -55,6 +55,14 @@ export interface VersionWrite {
   samplingRatio?: number | null;
 }
 
+/**
+ * 엑셀 올리기 전용(omf-all-around#199 · 장부 P-140). 고객사 기준서는 샘플을 개수(n=5)로만 적어 비율(%)이 없다 —
+ * 작성중 버전은 비율 없이 두고 확정이 막는다. 개수를 받을지는 omf-all-around#201 이 정한다.
+ */
+export interface DraftOptions {
+  allowMissingRatio?: boolean;
+}
+
 export interface VersionCreate extends VersionWrite {
   inspectionPlanId: number;
 }
@@ -142,8 +150,8 @@ export class InspectionPlanVersionService {
   }
 
   /** 「기준에 아직 버전이 하나도 없을 때만 쓴다」(계약). 두 번째부터는 `:new-revision`. */
-  async create(input: VersionCreate): Promise<VersionView> {
-    await this.assertWritable(input);
+  async create(input: VersionCreate, options: DraftOptions = {}): Promise<VersionView> {
+    await this.assertWritable(input, options);
     const plan = await this.prisma.inspection_plan.findUnique({
       where: { inspection_plan_id: input.inspectionPlanId },
       select: { inspection_plan_id: true },
@@ -188,8 +196,8 @@ export class InspectionPlanVersionService {
   }
 
   /** 「상태=작성중일 때만 허용한다」(계약 §5-4). */
-  async update(versionId: number, version: number, input: VersionWrite): Promise<VersionResult> {
-    await this.assertWritable(input);
+  async update(versionId: number, version: number, input: VersionWrite, options: DraftOptions = {}): Promise<VersionResult> {
+    await this.assertWritable(input, options);
     await this.assertDraft(versionId, '수정');
 
     const updated = await this.prisma.inspection_plan_version.updateMany({
@@ -268,6 +276,11 @@ export class InspectionPlanVersionService {
   async confirm(versionId: number): Promise<number> {
     const row = await this.load(versionId);
     if (row.status_code !== REVISION_STATUS.DRAFT) throw locked('확정');
+    // 엑셀로 들어온 작성중 버전은 비율이 비어 있을 수 있다 — 확정 전에 화면에서 채우게 여기서 막는다.
+    assertSamplingRatio({
+      samplingMethodCode: row.sampling_method_code,
+      samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
+    });
 
     const items = await this.prisma.inspection_item_spec.count({
       where: { inspection_plan_version_id: versionId },
@@ -423,7 +436,7 @@ export class InspectionPlanVersionService {
     throw locked(action);
   }
 
-  private async assertWritable(input: VersionWrite): Promise<void> {
+  private async assertWritable(input: VersionWrite, options: DraftOptions): Promise<void> {
     await assertCodeValues(this.prisma, [
       {
         field: 'samplingMethodCode',
@@ -436,7 +449,7 @@ export class InspectionPlanVersionService {
         groupCode: 'INSPECTION_FREQUENCY',
       },
     ]);
-    assertSamplingRatio(input);
+    assertSamplingRatio(input, options);
     if (input.effectiveTo != null && input.effectiveTo < input.effectiveFrom) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
@@ -735,16 +748,19 @@ const FULL_INSPECTION = 'FULL_INSPECTION';
 
 /**
  * 샘플링 방식과 비율(%)의 짝(omf-all-around#103 · 장부 P-37). 샘플 방식은 비율로 검사 수량을 환산하므로
- * 비율이 있어야 하고, 전수검사에 비율이 실리면 화면과 다른 기준이 저장된다. 기존 버전은 다시 저장할 때만 걸린다.
+ * 비율이 있어야 하고, 전수검사에 비율이 실리면 화면과 다른 기준이 저장된다. 기존 버전은 다시 저장하거나 확정할 때 걸린다.
  */
-export function assertSamplingRatio(input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio'>): void {
+export function assertSamplingRatio(
+  input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio'>,
+  options: DraftOptions = {},
+): void {
   const hasRatio = input.samplingRatio != null;
   if (input.samplingMethodCode === FULL_INSPECTION && hasRatio) {
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.INVALID, message: '전수검사에는 샘플 비율(%)을 넣지 않습니다.' },
     ]);
   }
-  if (input.samplingMethodCode !== FULL_INSPECTION && !hasRatio) {
+  if (input.samplingMethodCode !== FULL_INSPECTION && !hasRatio && options.allowMissingRatio !== true) {
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.REQUIRED, message: '샘플링 방식이면 샘플 비율(%)을 입력하세요.' },
     ]);
