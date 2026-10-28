@@ -153,8 +153,10 @@ describe('단말 작업 수 (e2e)', () => {
     const unit = await prisma.business_unit.findFirstOrThrow({ orderBy: { business_unit_id: 'asc' } });
     ids.businessUnit = unit.business_unit_id;
     ids.plant = (
+      // 공장은 고정 코드로 다시 쓴다 — 원장이 붙어 지울 수 없어, 실행마다 새로 만들면 공장 목록의 쪽을 밀어낸다.
+      (await prisma.plant.findFirst({ where: { plant_code: `${ROOT}-P` } })) ??
       await prisma.plant.create({
-        data: { plant_code: `${PREFIX}-P`, plant_name: `${PREFIX} 공장`, legal_entity_id: base.legal_entity_id, business_unit_id: unit.business_unit_id, timezone_code: 'Asia/Ho_Chi_Minh' },
+        data: { plant_code: `${ROOT}-P`, plant_name: `${ROOT} 공장`, legal_entity_id: base.legal_entity_id, business_unit_id: unit.business_unit_id, timezone_code: 'Asia/Ho_Chi_Minh' },
       })
     ).plant_id;
     ids.uom = (await prisma.uom.findFirstOrThrow()).uom_id;
