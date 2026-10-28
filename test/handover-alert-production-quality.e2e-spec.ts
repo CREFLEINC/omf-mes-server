@@ -451,5 +451,22 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role_permission.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role.deleteMany({ where: { role_id: { in: roleIds } } });
+    await deleteDocuments();
+  }
+
+  /**
+   * 전역 집계(대시보드 출하·검사 등)에 끼어드는 전표는 지운다 — 공장 미지정 출하지시는 «어느 공장을 골라도» 집계된다.
+   * 이전 실행의 찌꺼기까지 접두어 뿌리로 짚는다. ⛔ 원장·LOT 은 남긴다(원장 트리거가 삭제를 막는다).
+   */
+  async function deleteDocuments(): Promise<void> {
+    const requests = `SELECT shipment_request_id FROM logistics.shipment_request WHERE customer_id IN (SELECT partner_id FROM mdm.partner WHERE partner_code LIKE '${ROOT}%')`;
+    const lots = `SELECT lot_id FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${ROOT}%')`;
+    for (const statement of [
+      `DELETE FROM quality.inspection_request WHERE (target_type_code = 'SHIPMENT_REQUEST' AND target_id IN (${requests})) OR lot_id IN (${lots})`,
+      `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (${requests})`,
+      `DELETE FROM logistics.shipment_request WHERE shipment_request_id IN (${requests})`,
+    ]) {
+      await prisma.$executeRawUnsafe(statement);
+    }
   }
 });
