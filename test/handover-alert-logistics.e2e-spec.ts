@@ -211,6 +211,48 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     expect(await prisma.zalo_delivery.count({ where: { notification_event_id: event.notification_event_id, priority: 1 } })).toBe(1);
   });
 
+  it('US1-5 T5 긴급 직행 출하도 포장 알림 1건이고, 직행이 장부상 만든 입고에는 적치 알림(T1)이 없다', async () => {
+    await configure(ids.plant1, 'SHIPMENT_PACKING_REQUESTED', [users.U1], false);
+    await configure(ids.plant1, 'PUTAWAY_REQUESTED', [users.U1], false);
+    const unit = ids.businessUnit;
+    const warehouse = await prisma.warehouse.create({
+      data: { plant_id: ids.plant1, business_unit_id: unit, warehouse_code: `${PREFIX}-FG`, warehouse_name: `${PREFIX} 제품창고`, warehouse_type_code: 'FINISHED', management_level_code: 'WAREHOUSE' },
+    });
+    await prisma.location.create({
+      data: { warehouse_id: warehouse.warehouse_id, location_code: `${PREFIX}-LFG`, location_name: 'FG', location_type_code: 'DEFAULT' },
+    });
+    const lot = await prisma.lot.create({
+      data: { lot_no: `${PREFIX}-EXPLOT`, item_id: ids.itemA, lot_type_code: 'PRODUCTION', plant_id: ids.plant1, initial_qty: 10, uom_id: ids.uom, source_type_code: 'WORK_ORDER', source_id: 1, status_code: 'NORMAL' },
+    });
+    const requestId = await createShipmentRequest(ids.plant1);
+    const line = await prisma.shipment_request_line.findFirstOrThrow({ where: { shipment_request_id: requestId } });
+
+    const response = await request(app.getHttpServer())
+      .post('/api/logistics/shipments')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        shipmentRequestId: Number(requestId),
+        warehouseId: Number(warehouse.warehouse_id),
+        expedited: true,
+        expediteReason: '고객 라인 정지',
+        businessDate: DAY,
+        occurredAt: AT,
+        lines: [{
+          shipmentRequestLineId: Number(line.shipment_request_line_id),
+          shippedQty: 3,
+          uomId: Number(ids.uom),
+          allocations: [{ lotId: Number(lot.lot_id), allocatedQty: 3, uomId: Number(ids.uom) }],
+        }],
+      })
+      .expect(201);
+    const shipmentId = BigInt(response.body.shipmentId);
+
+    expect(await eventsOf('SHIPMENT_PACKING_REQUESTED', 'SHIPMENT', shipmentId)).toHaveLength(1);
+    const receipt = await prisma.goods_receipt.findFirstOrThrow({ where: { source_document_type_code: 'SHIPMENT', source_document_id: shipmentId } });
+    expect(await eventsOf('PUTAWAY_REQUESTED', 'GOODS_RECEIPT', receipt.goods_receipt_id)).toHaveLength(0);
+  });
+
   it('FR-002 같은 대상·같은 종류는 다시 불러도 한 번이다', async () => {
     const requestId = await createShipmentRequest(ids.plant1);
     await prisma.$transaction((tx) => app.get(LogisticsHandoverNotifier).shipmentPicking(tx, requestId));
@@ -466,7 +508,7 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     const role = await prisma.role.create({ data: { role_code: `${PREFIX}_R`, role_name: '인계 물류 시험' } });
     roleIds.push(role.role_id);
     await prisma.role_permission.createMany({
-      data: ['W-CO-14', 'M-04-04', 'W-02-10', 'M-01-10', 'W-04-01'].map((code) => ({ role_id: role.role_id, permission_code: code })),
+      data: ['W-CO-14', 'M-04-04', 'W-02-10', 'M-01-10', 'W-04-01', 'W-04-04', 'W-04-05'].map((code) => ({ role_id: role.role_id, permission_code: code })),
     });
     await prisma.user_role.create({ data: { app_user_id: users.ADMIN, role_id: role.role_id } });
     cookie = userCookie(users.ADMIN);
@@ -506,7 +548,10 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
    * ⛔ 원장은 트리거가 행 삭제를 막아 남기고, 원장이 FK 로 붙잡는 마스터(창고·품목·LOT)도 남긴다.
    */
   async function deleteDocuments(): Promise<void> {
-    const wh = `SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${ROOT}%'`;
+    const wh = `SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${ROOT}%' AND warehouse_type_code = 'MATERIAL'`;
+    const requests = `SELECT r.shipment_request_id FROM logistics.shipment_request r
+      WHERE r.customer_id IN (SELECT partner_id FROM mdm.partner WHERE partner_code LIKE '${ROOT}%')
+        AND NOT EXISTS (SELECT 1 FROM logistics.shipment s WHERE s.shipment_request_id = r.shipment_request_id AND s.shipment_no NOT LIKE '${ROOT}%')`;
     const sql = [
       `DELETE FROM logistics.stock_transfer_line WHERE stock_transfer_id IN (SELECT stock_transfer_id FROM logistics.stock_transfer WHERE from_warehouse_id IN (${wh}))`,
       `DELETE FROM logistics.stock_transfer WHERE from_warehouse_id IN (${wh})`,
@@ -515,8 +560,9 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
       `DELETE FROM logistics.material_issue_request_line WHERE material_issue_request_id IN (SELECT material_issue_request_id FROM logistics.material_issue_request r JOIN production.work_order w USING (work_order_id) WHERE w.work_order_no LIKE '${ROOT}%')`,
       `DELETE FROM logistics.material_issue_request WHERE work_order_id IN (SELECT work_order_id FROM production.work_order WHERE work_order_no LIKE '${ROOT}%')`,
       `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${ROOT}%'`,
-      `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (SELECT shipment_request_id FROM logistics.shipment_request WHERE customer_id IN (SELECT partner_id FROM mdm.partner WHERE partner_code LIKE '${ROOT}%'))`,
-      `DELETE FROM logistics.shipment_request WHERE customer_id IN (SELECT partner_id FROM mdm.partner WHERE partner_code LIKE '${ROOT}%')`,
+      // 실제 출하(원장)가 붙은 지시는 남긴다 — 원장이 삭제를 막는다. 이 지시들은 공장이 정해져 전역 집계에 끼지 않는다.
+      `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (${requests})`,
+      `DELETE FROM logistics.shipment_request WHERE shipment_request_id IN (${requests})`,
       `DELETE FROM logistics.putaway_task WHERE goods_receipt_line_id IN (SELECT goods_receipt_line_id FROM logistics.goods_receipt_line l JOIN logistics.goods_receipt g USING (goods_receipt_id) WHERE g.warehouse_id IN (${wh}))`,
       `DELETE FROM logistics.goods_receipt_line WHERE goods_receipt_id IN (SELECT goods_receipt_id FROM logistics.goods_receipt WHERE warehouse_id IN (${wh}))`,
       `DELETE FROM logistics.goods_receipt WHERE warehouse_id IN (${wh})`,
