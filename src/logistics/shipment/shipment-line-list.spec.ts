@@ -1,3 +1,4 @@
+import { ContractException } from '../../common/errors';
 import { shipmentLineWhere } from './shipment-line-list.service';
 
 const TODAY = '2026-10-26';
@@ -27,5 +28,28 @@ describe('출하 줄 목록의 조건', () => {
     expect(sql).toContain('s.shipment_no ILIKE $7');
     expect(sql).toContain('ql.lot_no ILIKE $7');
     expect(params).toEqual(['2026-10-01', 'CANCELLED', 1, 2, 3, 4, '%LOT-9%']);
+  });
+
+  it('LOT 번호·출하 번호·W/O 번호로 집으면 기간 없이도 되고, 아직 출하하지 않은 출하는 뺀다', () => {
+    const { sql, params } = shipmentLineWhere({ lotNo: 'L-1', shipmentNo: 'SH-1', workOrderNo: 'WO-1' }, TODAY);
+
+    expect(sql).toContain('s.shipped_at IS NOT NULL');
+    expect(sql).not.toContain('AT TIME ZONE');
+    expect(sql).toContain('s.shipment_no = $2');
+    expect(sql).toContain('la.lot_no = $3');
+    expect(sql).toContain('lw.work_order_no = $4');
+    expect(params).toEqual(['CANCELLED', 'SH-1', 'L-1', 'WO-1']);
+  });
+
+  it('기간도 집는 번호도 없으면 shipDateFrom 을 짚는 400 이다 — 품목·고객만으로는 부족하다', () => {
+    try {
+      shipmentLineWhere({ itemId: 3, customerId: 4 }, TODAY);
+      throw new Error('던지지 않았다');
+    } catch (error) {
+      expect((error as ContractException).errors).toEqual([{
+        scope: 'field', field: 'shipDateFrom', code: 'REQUIRED',
+        message: '조회 기간이 없습니다. 출하일 시작(shipDateFrom)을 넣거나 LOT 번호(lotNo), 출하 번호(shipmentNo), W/O 번호(workOrderNo) 중 하나를 넣어 다시 조회하세요. 기간은 최대 366일입니다.',
+      }]);
+    }
   });
 });

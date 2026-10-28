@@ -43,6 +43,27 @@ export function localPeriod(from: string | undefined, to: string | undefined, fi
 }
 
 /**
+ * 목록의 범위는 기간이나 LOT 을 집는 번호다. 기간만 넣으면 그 기간 전체를 본다(길이 상한은 `MAX_PERIOD_DAYS`).
+ * 번호로 하나를 집으면 기간 없이도 좁으니 그때만 기간이 선택이다. `pins` 는 그 번호 칸들을 알리는 문구다.
+ */
+export function periodUnlessPinned(
+  from: string | undefined,
+  to: string | undefined,
+  fields: PeriodFields,
+  pinned: boolean,
+  pins: string,
+  today: string,
+): LocalPeriod | undefined {
+  if (from === undefined) {
+    if (pinned) return undefined;
+    throw one(field(fields.from, ERROR_CODE.REQUIRED,
+      `조회 기간이 없습니다. ${fields.label} 시작(${fields.from})을 넣거나 ${pins} 중 하나를 넣어 다시 조회하세요. ` +
+        `기간은 최대 ${MAX_PERIOD_DAYS}일입니다.`));
+  }
+  return localPeriod(from, to, fields, today);
+}
+
+/**
  * 공장 현지 오늘(YYYY-MM-DD). 공장을 고르지 않았으면 가장 앞선 공장의 오늘 — 기간 길이만 재는 데 쓰니 하루 넉넉한 쪽이다.
  */
 export async function plantToday(prisma: PrismaService, plantId?: number): Promise<string> {

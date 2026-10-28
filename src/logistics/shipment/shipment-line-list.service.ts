@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriod, localPeriodSql, plantToday } from '../../common/period/plant-local-period';
+import { localPeriodSql, periodUnlessPinned, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, Named, PagedWithTotals, UomTotalRow, lineTotals, named } from '../line-list';
 
@@ -17,6 +17,11 @@ export interface ShipmentLineListQuery {
   warehouseId?: number;
   itemId?: number;
   customerId?: number;
+  /** 줄에 배분된 LOT 의 번호 정확 일치 — 집는 번호라 기간이 선택이 된다(아래 셋 모두). */
+  lotNo?: string;
+  shipmentNo?: string;
+  /** 줄에 배분된 LOT 의 원천 W/O 번호. */
+  workOrderNo?: string;
   statusCode?: string;
   q?: string;
   page?: number;
@@ -46,6 +51,7 @@ export interface ShipmentLineListItem {
 export const LOTS_SHOWN = 5;
 /** 상태를 고르지 않으면 취소된 출하는 뺀다. */
 const CANCELLED = 'CANCELLED';
+const WORK_ORDER_LOT_SOURCE = 'WORK_ORDER';
 
 const FROM = `
   FROM logistics.shipment_line sl
@@ -55,16 +61,30 @@ const FROM = `
   JOIN logistics.shipment_request sr ON sr.shipment_request_id = s.shipment_request_id`;
 
 export function shipmentLineWhere(query: ShipmentLineListQuery, today: string): BuiltSql {
-  const period = localPeriod(query.shipDateFrom, query.shipDateTo,
-    { from: 'shipDateFrom', to: 'shipDateTo', label: '출하일' }, today);
+  const period = periodUnlessPinned(query.shipDateFrom, query.shipDateTo,
+    { from: 'shipDateFrom', to: 'shipDateTo', label: '출하일' },
+    query.lotNo !== undefined || query.shipmentNo !== undefined || query.workOrderNo !== undefined,
+    'LOT 번호(lotNo), 출하 번호(shipmentNo), W/O 번호(workOrderNo)', today);
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
-  const and = [localPeriodSql('s.shipped_at', 'p.timezone_code', period, bind)];
+  // 기간 없이 번호로 집어도 아직 출하하지 않은 출하(출하 일시 없음)는 기간이 있을 때처럼 뺀다.
+  const and = [period === undefined ? 's.shipped_at IS NOT NULL' : localPeriodSql('s.shipped_at', 'p.timezone_code', period, bind)];
   and.push(query.statusCode === undefined ? `s.status_code <> ${bind(CANCELLED)}` : `s.status_code = ${bind(query.statusCode)}`);
   if (query.plantId !== undefined) and.push(`w.plant_id = ${bind(query.plantId)}::bigint`);
   if (query.warehouseId !== undefined) and.push(`s.warehouse_id = ${bind(query.warehouseId)}::bigint`);
   if (query.itemId !== undefined) and.push(`sl.item_id = ${bind(query.itemId)}::bigint`);
   if (query.customerId !== undefined) and.push(`sr.customer_id = ${bind(query.customerId)}::bigint`);
+  if (query.shipmentNo !== undefined) and.push(`s.shipment_no = ${bind(query.shipmentNo)}`);
+  const lot: string[] = [];
+  if (query.lotNo !== undefined) lot.push(`la.lot_no = ${bind(query.lotNo)}`);
+  if (query.workOrderNo !== undefined) {
+    lot.push(`EXISTS (SELECT 1 FROM production.work_order lw
+      WHERE la.source_type_code = '${WORK_ORDER_LOT_SOURCE}' AND lw.work_order_id = la.source_id AND lw.work_order_no = ${bind(query.workOrderNo)})`);
+  }
+  if (lot.length > 0) {
+    and.push(`EXISTS (SELECT 1 FROM logistics.shipment_lot_allocation lx JOIN trace.lot la ON la.lot_id = lx.lot_id
+      WHERE lx.shipment_line_id = sl.shipment_line_id AND ${lot.join(' AND ')})`);
+  }
   if (query.q !== undefined && query.q.trim() !== '') {
     const like = bind(`%${query.q.trim()}%`);
     and.push(`(s.shipment_no ILIKE ${like} OR EXISTS (SELECT 1 FROM logistics.shipment_lot_allocation qa

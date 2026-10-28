@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriod, localPeriodSql, plantToday } from '../../common/period/plant-local-period';
+import { localPeriodSql, periodUnlessPinned, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, LineTotals, Named, PagedResponseWith, UomTotalRow, lineTotals, named } from '../line-list';
 
@@ -18,6 +18,11 @@ export interface GoodsReceiptLineListQuery {
   warehouseId?: number;
   itemId?: number;
   supplierId?: number;
+  /** LOT 번호 정확 일치 — 집는 번호라 기간이 선택이 된다(아래 셋 모두). */
+  lotNo?: string;
+  inboundReceiptNo?: string;
+  /** 생산입고의 LOT 원천 W/O 번호. */
+  workOrderNo?: string;
   statusCode?: string;
   q?: string;
   page?: number;
@@ -61,11 +66,13 @@ const FROM = `
   JOIN trace.lot lt ON lt.lot_id = l.lot_id`;
 
 export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today: string): BuiltSql {
-  const period = localPeriod(query.receiptDateFrom, query.receiptDateTo,
-    { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' }, today);
+  const period = periodUnlessPinned(query.receiptDateFrom, query.receiptDateTo,
+    { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' },
+    query.lotNo !== undefined || query.inboundReceiptNo !== undefined || query.workOrderNo !== undefined,
+    'LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo)', today);
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
-  const and = [localPeriodSql('gr.receipt_datetime', 'p.timezone_code', period, bind)];
+  const and = period === undefined ? [] : [localPeriodSql('gr.receipt_datetime', 'p.timezone_code', period, bind)];
   and.push(query.statusCode === undefined
     ? `gr.status_code <> ${bind(CANCELLED)}`
     : `gr.status_code = ${bind(query.statusCode)}`);
@@ -77,6 +84,16 @@ export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today: s
     and.push(`EXISTS (SELECT 1 FROM logistics.inbound_receipt_line irl
       JOIN logistics.inbound_receipt ir ON ir.inbound_receipt_id = irl.inbound_receipt_id
       WHERE irl.inbound_receipt_line_id = l.inbound_receipt_line_id AND ir.supplier_id = ${bind(query.supplierId)}::bigint)`);
+  }
+  if (query.lotNo !== undefined) and.push(`lt.lot_no = ${bind(query.lotNo)}`);
+  if (query.inboundReceiptNo !== undefined) {
+    and.push(`EXISTS (SELECT 1 FROM logistics.inbound_receipt_line nrl
+      JOIN logistics.inbound_receipt nr ON nr.inbound_receipt_id = nrl.inbound_receipt_id
+      WHERE nrl.inbound_receipt_line_id = l.inbound_receipt_line_id AND nr.inbound_receipt_no = ${bind(query.inboundReceiptNo)})`);
+  }
+  if (query.workOrderNo !== undefined) {
+    and.push(`EXISTS (SELECT 1 FROM production.work_order qw
+      WHERE lt.source_type_code = '${WORK_ORDER_LOT_SOURCE}' AND qw.work_order_id = lt.source_id AND qw.work_order_no = ${bind(query.workOrderNo)})`);
   }
   if (query.q !== undefined && query.q.trim() !== '') {
     const like = bind(`%${query.q.trim()}%`);

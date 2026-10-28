@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriodSql, plantToday, utcMarginSql } from '../../common/period/plant-local-period';
+import { localPeriodSql, periodUnlessPinned, plantToday, utcMarginSql } from '../../common/period/plant-local-period';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TraceBasis } from '../lot/lot-genealogy-query.service';
-import { BACKWARD_STAGES, periodUnlessPinned, stageCaseSql, stageFilter } from './flow-stage';
+import { BACKWARD_STAGES, stageCaseSql, stageFilter } from './flow-stage';
 import { SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, estimateBasis, inputCountSql, tracedSql } from './flow-sql';
 import { LotHead, Named, lotHeads, pick } from './lot-flow-nodes';
 
