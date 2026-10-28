@@ -1,11 +1,11 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import type { SessionScope } from '../../auth/session.types';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { HANDOVER_ALERT_TYPES, handoverAlertType } from '../../core/notification/handover-alert-types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { scopedPlantWhere } from '../dashboard/dashboard-scope';
 import { INITIAL_SETTING_VERSION } from './notification-setting.service';
 
 /** 공장 × 종류 담당자 상한(FR-006). 화면도 같은 수로 잠근다. */
@@ -72,8 +72,8 @@ type RecipientRow = Prisma.handover_alert_recipientGetPayload<{ include: typeof 
 export class HandoverAlertSettingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async summary(plantId: number, scopes: readonly SessionScope[]): Promise<HandoverAlertSettingSummary> {
-    const plant = await this.plant(plantId, scopes);
+  async summary(plantId: number, actorUserId: number): Promise<HandoverAlertSettingSummary> {
+    const plant = await this.plant(plantId, actorUserId);
     const [settings, zaloStatus] = await Promise.all([
       this.prisma.handover_alert_setting.findMany({
         where: { plant_id: plantId },
@@ -107,10 +107,10 @@ export class HandoverAlertSettingService {
   async detail(
     plantId: number,
     alertTypeCode: string,
-    scopes: readonly SessionScope[],
+    actorUserId: number,
   ): Promise<{ setting: HandoverAlertSettingView; versionNo: number }> {
     readType(alertTypeCode);
-    await this.plant(plantId, scopes);
+    await this.plant(plantId, actorUserId);
     const row = await this.prisma.handover_alert_setting.findUnique({
       where: { plant_id_alert_type_code: { plant_id: plantId, alert_type_code: alertTypeCode } },
       include: { recipients: RECIPIENTS },
@@ -131,11 +131,10 @@ export class HandoverAlertSettingService {
     alertTypeCode: string,
     expectedVersion: number | undefined,
     input: HandoverAlertSettingReplace,
-    scopes: readonly SessionScope[],
-    actorId?: number,
+    actorId: number,
   ): Promise<{ setting: HandoverAlertSettingView; versionNo: number }> {
     readType(alertTypeCode);
-    await this.plant(plantId, scopes, tx);
+    await this.plant(plantId, actorId, tx);
     if (input.zaloEnabled && !input.enabled) {
       throw fieldError('zaloEnabled', ERROR_CODE.INVALID, '알림이 꺼져 있으면 Zalo 를 켤 수 없습니다.');
     }
@@ -143,7 +142,7 @@ export class HandoverAlertSettingService {
 
     const inserted = await tx.$executeRaw(Prisma.sql`
       INSERT INTO app.handover_alert_setting (plant_id, alert_type_code, created_by, updated_by)
-      VALUES (${plantId}, ${alertTypeCode}, ${actorId ?? null}, ${actorId ?? null})
+      VALUES (${plantId}, ${alertTypeCode}, ${actorId}, ${actorId})
       ON CONFLICT (plant_id, alert_type_code) DO NOTHING
     `);
     const [header] = await tx.$queryRaw<{ handover_alert_setting_id: bigint; version_no: number }[]>(Prisma.sql`
@@ -164,7 +163,7 @@ export class HandoverAlertSettingService {
         data: input.recipientUserIds.map((appUserId) => ({
           handover_alert_setting_id: settingId,
           app_user_id: appUserId,
-          created_by: actorId ?? null,
+          created_by: actorId,
         })),
       });
     }
@@ -174,7 +173,7 @@ export class HandoverAlertSettingService {
         is_enabled: input.enabled,
         zalo_enabled: input.zaloEnabled,
         updated_at: new Date(),
-        updated_by: actorId ?? null,
+        updated_by: actorId,
         version_no: { increment: 1 },
       },
       include: { recipients: RECIPIENTS },
@@ -182,24 +181,19 @@ export class HandoverAlertSettingService {
     return { setting: settingView(plantId, alertTypeCode, saved), versionNo: saved.version_no };
   }
 
-  /** 없는 공장은 404, 세션 데이터 범위 밖이면 403(출하지시 이행 공장 지정과 같은 판정). */
+  /**
+   * 없는 공장은 404, 사용자 데이터 범위 밖이면 403. 범위는 대시보드와 같은 규칙(`scopedPlantWhere`) —
+   * DB 의 `user_data_scope` 를 읽고, 줄이 없으면 제한 없음, 줄마다 공장 > 사업부 > 법인으로 본다.
+   */
   private async plant(
     plantId: number,
-    scopes: readonly SessionScope[],
+    actorUserId: number,
     client: Prisma.TransactionClient = this.prisma,
   ): Promise<{ plant_name: string }> {
-    const row = await client.plant.findUnique({
-      where: { plant_id: plantId },
-      select: { plant_name: true, business_unit_id: true },
-    });
+    const row = await client.plant.findUnique({ where: { plant_id: plantId }, select: { plant_name: true } });
     if (!row) throw new NotFoundException('없는 공장입니다.');
-    const authorized = scopes.some(
-      (scope) =>
-        scope.plantId === plantId ||
-        (scope.plantId === undefined &&
-          row.business_unit_id !== null &&
-          scope.businessUnitId === Number(row.business_unit_id)),
-    );
+    const scoped = await scopedPlantWhere(client, actorUserId);
+    const authorized = scoped === null || (await client.plant.count({ where: { AND: [{ plant_id: plantId }, scoped] } })) > 0;
     if (!authorized) {
       throw new ContractException(HttpStatus.FORBIDDEN, [
         { scope: 'field', field: 'plantId', code: ERROR_CODE.PERMISSION_DENIED, message: '이 공장에 대한 데이터 권한이 없습니다.' },
