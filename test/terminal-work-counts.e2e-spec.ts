@@ -97,8 +97,10 @@ describe('단말 작업 수 (e2e)', () => {
 
   it('FR-019 인계작업 알림 설정을 모두 켜도 꺼도 수는 같다', async () => {
     const before = await countsOf('M1');
-    const setting = await prisma.handover_alert_setting.create({
-      data: { plant_id: ids.plant, alert_type_code: 'PUTAWAY_REQUESTED', is_enabled: true },
+    const setting = await prisma.handover_alert_setting.upsert({
+      where: { plant_id_alert_type_code: { plant_id: ids.plant, alert_type_code: 'PUTAWAY_REQUESTED' } },
+      create: { plant_id: ids.plant, alert_type_code: 'PUTAWAY_REQUESTED', is_enabled: true },
+      update: { is_enabled: true },
     });
     const after = await countsOf('M1');
     await prisma.handover_alert_setting.delete({ where: { handover_alert_setting_id: setting.handover_alert_setting_id } });
@@ -334,6 +336,7 @@ describe('단말 작업 수 (e2e)', () => {
     const wh = `SELECT warehouse_id FROM mdm.warehouse WHERE plant_id IN (${plants})`;
     const requests = `SELECT shipment_request_id FROM logistics.shipment_request WHERE fulfillment_plant_id IN (${plants})`;
     for (const statement of [
+      `DELETE FROM app.handover_alert_setting WHERE plant_id IN (${plants})`,
       `DELETE FROM quality.inspection_request WHERE target_type_code = 'SHIPMENT_REQUEST' AND target_id IN (${requests})`,
       `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (${requests})`,
       `DELETE FROM logistics.shipment_request WHERE shipment_request_id IN (${requests})`,
