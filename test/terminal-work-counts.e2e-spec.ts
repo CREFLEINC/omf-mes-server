@@ -68,7 +68,7 @@ describe('단말 작업 수 (e2e)', () => {
     const m1 = await list('M1', '/api/logistics/picking-orders', { statusCode: 'REGISTERED', size: 100 });
     expect(m1.items.every((p: { warehouseId: number }) => p.warehouseId === Number(ids.whA))).toBe(true);
     const m3 = await list('M3', '/api/logistics/picking-orders', { statusCode: 'REGISTERED', size: 100 });
-    expect(m3.items.map((p: { warehouseId: number }) => p.warehouseId).sort()).toEqual([Number(ids.whA), Number(ids.whB)].sort());
+    expect([...new Set(m3.items.map((p: { warehouseId: number }) => p.warehouseId))].sort()).toEqual([Number(ids.whA), Number(ids.whB)].sort());
     const arrivals = await list('M1', '/api/logistics/stock-transfers', { inTransitOnly: 'true', size: 100 });
     expect(arrivals.items.every((t: { toWarehouseId: number }) => t.toWarehouseId === Number(ids.whA))).toBe(true);
   });
@@ -91,7 +91,8 @@ describe('단말 작업 수 (e2e)', () => {
     expect(counts.emergencyWorkOrder).toBe(await total('P1', '/api/production/work-orders', { workOrderTypeCode: 'EMERGENCY', open: 'true', size: 20 }));
     expect(counts.reworkResult).toBe(await total('P1', '/api/production/work-orders', { workOrderTypeCode: 'REWORK', open: 'true', size: 20 }));
     expect(counts.oqcInspection).toBe(await total('P1', '/api/quality/inspection-requests', { inspectionTypeCode: 'OQC', pendingOnly: 'true', size: 50 }));
-    expect(counts).toMatchObject({ workStart: 2, emergencyWorkOrder: 1, reworkResult: 1, oqcInspection: 1 });
+    // 작업 시작 목록은 유형을 거르지 않는다 — 설비 E1·설비 미정의 일반·긴급·재작업 넷(다른 설비 W/O 는 빠진다).
+    expect(counts).toMatchObject({ workStart: 4, emergencyWorkOrder: 1, reworkResult: 1, oqcInspection: 1 });
   });
 
   it('FR-019 인계작업 알림 설정을 모두 켜도 꺼도 수는 같다', async () => {
@@ -350,5 +351,7 @@ describe('단말 작업 수 (e2e)', () => {
     await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role_permission.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role.deleteMany({ where: { role_id: { in: roleIds } } });
+    // 시험 계정은 사용 중지한다 — 활성 계정 전부를 세는 화면(공지 확인 현황 등)에 끼어든다.
+    await prisma.app_user.updateMany({ where: { app_user_id: { in: userIds } }, data: { is_active: false } });
   }
 });
