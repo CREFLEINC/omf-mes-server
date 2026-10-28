@@ -40,3 +40,15 @@ it('limits IQC skip to an inbound LOT in the terminal plant', async () => {
   await expect(assertTerminalLotWriteScope(db, request({}, '13'),
     'POST /trace/lots/{lotId}:request-iqc-skip', terminal)).rejects.toHaveProperty('status', 401);
 });
+
+it('lets POP and mobile terminals correct the quantity of an inbound LOT in their plant', async () => {
+  const db = prisma();
+  const key = 'POST /trace/lots/{lotId}:correct-qty';
+  await assertTerminalLotWriteScope(db, request({}, '12'), key, { ...terminal, terminalTypeCode: 'POP' });
+  await assertTerminalLotWriteScope(db, request({}, '12'), key, terminal);
+  expect(db.lot.findFirst).toHaveBeenLastCalledWith({ where: {
+    lot_id: 12n, plant_id: 3n, source_type_code: 'INBOUND_RECEIPT_LINE',
+  }, select: { lot_id: true } });
+  (db.lot.findFirst as jest.Mock).mockResolvedValueOnce(null);
+  await expect(assertTerminalLotWriteScope(db, request({}, '13'), key, terminal)).rejects.toHaveProperty('status', 401);
+});

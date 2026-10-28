@@ -16,8 +16,6 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
-import { InventoryPostingModule, InventoryPostingService } from '../src/core/inventory-posting';
-import { PostingEndpoint } from '../src/core/inventory-posting/posting.types';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
 
@@ -63,7 +61,6 @@ interface LotBody {
 describe('LOT (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let posting: InventoryPostingService;
   let cookie: string[];
   let noPermCookie: string[];
   // PR ② — 상신 주체와 `IQC_SKIP` 결재선(DB 에 0행이라 픽스처가 세운다 · 시드는 안 고친다).
@@ -73,19 +70,17 @@ describe('LOT (e2e)', () => {
   let plantId: number;
   let itemId: number;
   let uomId: number;
-  let here: PostingEndpoint;
   let inboundReceiptId: bigint;
   let lineNo = 0;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AppModule, InventoryPostingModule],
+      imports: [AppModule],
     }).compile();
     app = moduleRef.createNestApplication();
     configureApp(app, 'api');
     await app.init();
     prisma = app.get(PrismaService);
-    posting = app.get(InventoryPostingService);
 
     await cleanup();
     await makeUsers();
@@ -286,24 +281,9 @@ describe('LOT (e2e)', () => {
     expect(ids).not.toContain(released.lotId);
   });
 
-  it('⛔ 원장이 움직인 LOT 은 수량을 바꿀 수 없다 — A1 이 세운 표를 되읽는다', async () => {
+  it('⛔ 수정 경로로는 수량을 바꿀 수 없다 — 수량 정정으로 안내한다', async () => {
     const lot = await create({ numberSourceCode: 'MES' });
     const etag = await etagOf(lot.lotId);
-
-    await prisma.$transaction((tx) =>
-      posting.post(tx, {
-        businessDate: DAY,
-        occurredAt: new Date(`${DAY}T02:00:00.000Z`),
-        transactionTypeCode: 'RECEIPT',
-        transactionNo: `${PREFIX}-GR-${lot.lotId}`,
-        statusCode: 'POSTED',
-        plantId,
-        sourceDocumentTypeCode: 'GOODS_RECEIPT',
-        sourceDocumentId: 1,
-        idempotencyKey: `${PREFIX}-${randomUUID()}`,
-        lines: [{ itemId, lotId: lot.lotId, qty: 5, uomId, to: here, ownershipTypeCode: 'OWNED' }],
-      }),
-    );
 
     const rejected = await request(app.getHttpServer())
       .put(`/api/trace/lots/${lot.lotId}`)
@@ -312,13 +292,11 @@ describe('LOT (e2e)', () => {
       .set('If-Match', etag)
       .send({ initialQty: 99 })
       .expect(400);
-    expect(rejected.body.errors[0]).toMatchObject({
-      field: 'initialQty',
-      code: 'STATE_LOCKED',
-    });
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'initialQty', code: 'INVALID' });
+    expect(rejected.body.errors[0].message).toContain('수량 정정');
   });
 
-  it('⭐ 원장이 안 움직였으면 수량을 고칠 수 있다', async () => {
+  it('⭐ 수량이 같으면 다른 칸은 고칠 수 있다', async () => {
     const lot = await create({ numberSourceCode: 'MES' });
     const etag = await etagOf(lot.lotId);
 
@@ -327,9 +305,9 @@ describe('LOT (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', etag)
-      .send({ initialQty: 42, remarks: '고침' })
+      .send({ initialQty: lot.initialQty, remarks: '고침' })
       .expect(200);
-    expect(updated.body.lot.initialQty).toBe(42);
+    expect(updated.body.lot.initialQty).toBe(lot.initialQty);
     expect(Number(updated.headers.etag)).toBe(Number(etag) + 1);
   });
 
@@ -342,7 +320,7 @@ describe('LOT (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', etag)
-      .send({ initialQty: 7 })
+      .send({ initialQty: lot.initialQty, remarks: '첫 수정' })
       .expect(200);
 
     const stale = await request(app.getHttpServer())
@@ -350,7 +328,7 @@ describe('LOT (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', etag)
-      .send({ initialQty: 8 })
+      .send({ initialQty: lot.initialQty, remarks: '낡은 수정' })
       .expect(409);
     expect(stale.body.conflictCause).toBe('user');
   });
@@ -938,7 +916,7 @@ describe('LOT (e2e)', () => {
         timezone_code: 'Asia/Ho_Chi_Minh',
       },
     });
-    const unit = await prisma.business_unit.create({
+    await prisma.business_unit.create({
       data: {
         legal_entity_id: entity.legal_entity_id,
         business_unit_code: `${PREFIX}-BU`,
@@ -968,30 +946,6 @@ describe('LOT (e2e)', () => {
     });
     itemId = Number(item.item_id);
 
-    const warehouse = await prisma.warehouse.create({
-      data: {
-        plant_id: plant.plant_id,
-        business_unit_id: unit.business_unit_id,
-        warehouse_code: `${PREFIX}-WH`,
-        warehouse_name: 'LOT검사창고',
-        warehouse_type_code: 'RAW',
-        management_level_code: 'LOCATION',
-      },
-    });
-    const location = await prisma.location.create({
-      data: {
-        warehouse_id: warehouse.warehouse_id,
-        location_code: `${PREFIX}-LOC`,
-        location_name: 'LOT검사위치',
-        location_type_code: 'BIN',
-      },
-    });
-    here = {
-      warehouseId: Number(warehouse.warehouse_id),
-      locationId: Number(location.location_id),
-      qualityStatusCode: 'NORMAL',
-      inventoryStatusCode: 'AVAILABLE',
-    };
 
     // 등록이 채우는 `inbound_receipt_line.lot_id` 의 상대 — 등록 경로가 없어 직접 심는다.
     const supplier = await prisma.partner.create({

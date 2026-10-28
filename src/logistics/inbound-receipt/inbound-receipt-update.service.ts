@@ -54,6 +54,7 @@ const EXISTING_LINE_SELECT = {
   received_qty: true,
   lot_id: true,
   inbound_receipt_excess: { select: { excess_qty: true } },
+  inbound_receipt_po_allocation: { select: { purchase_order_line_id: true, allocated_qty: true } },
 } satisfies Prisma.inbound_receipt_lineSelect;
 type ExistingLine = Prisma.inbound_receipt_lineGetPayload<{ select: typeof EXISTING_LINE_SELECT }>;
 
@@ -144,6 +145,7 @@ export class InboundReceiptUpdateService {
       });
       const known = new Map(existing.map((row) => [Number(row.inbound_receipt_line_id), row]));
       assertOwnLines(items, known);
+      assertLotQtyUnchanged(items, known);
       // 계약 「요청에서 빠진 기존 행은 삭제한다」.
       const requested = new Set(items.map((item) => item.inboundReceiptLineId));
       const gone = existing.filter((row) => !requested.has(Number(row.inbound_receipt_line_id)));
@@ -339,12 +341,38 @@ function attributionsOf(existing: ExistingLine[], items: InboundReceiptLineWrite
     const sum = (carried?.qty ?? new Prisma.Decimal(0)).plus(qty);
     attributions.set(key, { qty: sum, index: carried?.index ?? index });
   };
-  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어간다(장부 P-100).
-  for (const row of existing) add(row.purchase_order_line_id, excessOf(row).minus(row.received_qty));
+  const requested = new Map(items.flatMap((item) => (item.inboundReceiptLineId === undefined ? [] : [[item.inboundReceiptLineId, item] as const])));
+  // 옛 몫은 배정 표가 정본이다(장부 P-115) — 받은 수량 − 초과분으로 다시 세면 수량 정정(P-121)·배정 경로가 바꾼 줄에서
+  // 어긋난다. 배정을 다시 적는 줄(`writeExcesses` 와 같은 판정)과 지워지는 줄만 옛 배정을 빼고 새 몫을 더한다.
+  for (const row of existing) {
+    const item = requested.get(Number(row.inbound_receipt_line_id));
+    if (item !== undefined && !allocationStale(row, item)) continue;
+    for (const allocation of row.inbound_receipt_po_allocation) add(allocation.purchase_order_line_id, allocation.allocated_qty.negated());
+  }
+  const known = new Map(existing.map((row) => [Number(row.inbound_receipt_line_id), row]));
   for (const [index, item] of items.entries()) {
+    const row = item.inboundReceiptLineId === undefined ? undefined : known.get(item.inboundReceiptLineId);
+    if (row !== undefined && !allocationStale(row, item)) continue;
     add(item.purchaseOrderLineId == null ? null : BigInt(item.purchaseOrderLineId), attributedQtyOf(item), index);
   }
   return attributions;
+}
+
+/** 배정을 다시 적는 기존 줄 — 초과분·P/O 라인·받은 수량 중 하나라도 바뀌었다. */
+function allocationStale(row: ExistingLine, item: InboundReceiptLineWriteInput): boolean {
+  return excessChanged(row, item) || !row.received_qty.equals(item.receivedQty);
+}
+
+/** LOT 이 만들어진 줄의 받은 수량은 LOT 수량과 함께 고친다 — 사유·IQC 의뢰·라벨을 따라 고치는 수량 정정(장부 P-121)으로 보낸다. */
+function assertLotQtyUnchanged(items: InboundReceiptLineWriteInput[], known: Map<number, ExistingLine>): void {
+  const errors: ErrorItem[] = [];
+  for (const [index, item] of items.entries()) {
+    const row = item.inboundReceiptLineId === undefined ? undefined : known.get(item.inboundReceiptLineId);
+    if (row === undefined || row.lot_id === null || row.received_qty.equals(item.receivedQty)) continue;
+    errors.push(field(`items.${index}.receivedQty`, ERROR_CODE.STATE_LOCKED,
+      'LOT 이 만들어진 줄의 받은 수량은 여기서 고치지 않습니다. 정상품 입하 처리(W-01-10)의 LOT 수량 정정에서 사유와 함께 고치세요.'));
+  }
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
 /** 수량·초과분·P/O 라인이 달라진 «기존» 라인 — 삭제와 같은 자물쇠를 받는다(§7-4 · 장부 P-100). */
@@ -390,8 +418,7 @@ async function writeExcesses(
   for (const [index, item] of items.entries()) {
     const row = item.inboundReceiptLineId === undefined ? undefined : known.get(item.inboundReceiptLineId);
     const excessStale = row === undefined || excessChanged(row, item);
-    const allocationStale = row === undefined || excessStale || !row.received_qty.equals(item.receivedQty);
-    if (!allocationStale) continue;
+    if (row !== undefined && !allocationStale(row, item)) continue;
     const lineId = row?.inbound_receipt_line_id ?? created.find((line) => line.line_no === index + 1)?.inbound_receipt_line_id;
     if (lineId === undefined) continue;
     if (excessStale) {

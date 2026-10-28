@@ -8,6 +8,7 @@ import type { TerminalContext } from './terminal-context';
 export const TERMINAL_LOT_WRITE_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
   'POST /trace/lots': ['POP', 'MOBILE'],
   'POST /trace/lots/{lotId}:request-iqc-skip': ['MOBILE'],
+  'POST /trace/lots/{lotId}:correct-qty': ['POP', 'MOBILE'],
 };
 
 const WORKER = Symbol('terminalLotWorkerId');
