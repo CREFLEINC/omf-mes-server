@@ -306,6 +306,73 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     });
   });
 
+  describe('기간별 이력 GET /trace/material-input-lines · /trace/packing-lines', () => {
+    const inputs = (query: Record<string, string | number>) => get('material-input-lines', { inputDateFrom: DAY, inputDateTo: DAY, ...query });
+    const packings = (query: Record<string, string | number>) => get('packing-lines', { packedDateFrom: DAY, packedDateTo: DAY, ...query });
+
+    it('투입: 기간 안의 투입 기록을 LOT·품목·W/O·수량과 함께 싣고, 합계는 필터 전체다', async () => {
+      const body = (await inputs({ lotNo: `${PREFIX}-M1` }).expect(200)).body as Body;
+
+      conforms('/trace/material-input-lines', body);
+      expect(body.items).toHaveLength(5);
+      expect(body.items[0]).toMatchObject({
+        lotId: Number(ids.m1), lotNo: `${PREFIX}-M1`, item: { code: `${PREFIX}-MAT` }, inputQty: 10, correctsConsumptionId: null,
+        plantId: Number(ids.plant),
+      });
+      expect(body.items.map((row: Body) => row.workOrder.workOrderNo).sort())
+        .toEqual(['G', 'L', 'N', 'S', 'T'].map((suffix) => `${PREFIX}-WO-${suffix}`));
+      expect(body.totals).toMatchObject({ lineCount: 5, qtyByUom: [{ uomId: Number(ids.uom), qty: 50 }] });
+      expect(body.page.total).toBe(5);
+    });
+
+    it('투입: 정정된 원 투입은 빼고 정정 투입을 싣는다 · 기간 밖이면 없다 · 검색어는 W/O 번호도 본다', async () => {
+      const corrected = (await inputs({ lotNo: `${PREFIX}-C1` }).expect(200)).body as Body;
+      expect(corrected.items).toHaveLength(1);
+      expect(corrected.items[0]).toMatchObject({ inputQty: 2, workOrder: { workOrderNo: `${PREFIX}-WO-C` } });
+      expect(corrected.items[0].correctsConsumptionId).toEqual(expect.any(Number));
+
+      expect((await inputs({ q: `${PREFIX}-WO-G` }).expect(200)).body.items).toHaveLength(2);
+      expect((await get('material-input-lines', { inputDateFrom: '2026-08-11', inputDateTo: '2026-08-11', lotNo: `${PREFIX}-M1` })
+        .expect(200)).body.items).toEqual([]);
+    });
+
+    it('포장: 확정된 상자의 구성 줄만 — 취급 단위·출하 단위·W/O 번호를 싣는다', async () => {
+      const body = (await packings({ lotNo: `${PREFIX}-G1` }).expect(200)).body as Body;
+
+      conforms('/trace/packing-lines', body);
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]).toMatchObject({
+        handlingUnitNo: `${PREFIX}-HU1`, lotId: Number(ids.g1), lotNo: `${PREFIX}-G1`, item: { code: `${PREFIX}-FG` }, qty: 30,
+        workOrder: { workOrderNo: `${PREFIX}-WO-G` }, shippingUnit: { shippingUnitNo: `${PREFIX}-SU1` },
+      });
+      expect(body.totals).toMatchObject({ lineCount: 1, qtyByUom: [{ qty: 30 }] });
+      expect((await packings({ q: `${PREFIX}-HU2` }).expect(200)).body.items).toEqual([]);
+    });
+
+    it('집는 번호(LOT·W/O·입하·출하 번호)가 있으면 기간 없이도 되고, 공급사·고객으로도 거른다', async () => {
+      const count = async (path: string, query: Record<string, string | number>) => ((await get(path, query).expect(200)).body as Body).page.total as number;
+
+      expect(await count('material-input-lines', { lotNo: `${PREFIX}-M1` })).toBe(5);
+      expect(await count('material-input-lines', { workOrderNo: `${PREFIX}-WO-G` })).toBe(2);
+      expect(await count('material-input-lines', { inboundReceiptNo: `${PREFIX}-IR` })).toBe(5);
+      expect(await count('material-input-lines', { inputDateFrom: DAY, inputDateTo: DAY, supplierId: Number(ids.supplier) })).toBe(5);
+
+      const bySh = (await get('packing-lines', { shipmentNo: `${PREFIX}-SH1` }).expect(200)).body as Body;
+      expect(bySh.items.map((row: Body) => [row.handlingUnitNo, row.handlingUnitStatusCode])).toEqual([[`${PREFIX}-HU1`, 'PACKED']]);
+      expect(await count('packing-lines', { workOrderNo: `${PREFIX}-WO-G` })).toBe(1);
+      expect(await count('packing-lines', { packedDateFrom: DAY, packedDateTo: DAY, customerId: Number(ids.customer) })).toBe(1);
+    });
+
+    it('기간도 집는 번호도 없으면 그 칸을 짚는 400, 권한이 없으면 403 이다', async () => {
+      expect((await get('material-input-lines', { supplierId: Number(ids.supplier) }).expect(400)).body.errors[0])
+        .toMatchObject({ field: 'inputDateFrom', code: 'REQUIRED' });
+      expect((await get('packing-lines', { customerId: Number(ids.customer) }).expect(400)).body.errors[0])
+        .toMatchObject({ field: 'packedDateFrom', code: 'REQUIRED' });
+      await get('material-input-lines', { inputDateFrom: DAY }, 'denied').expect(403);
+      await get('packing-lines', { packedDateFrom: DAY }, 'denied').expect(403);
+    });
+  });
+
   async function local(day: string, time: string): Promise<Date> {
     const [row] = await prisma.$queryRawUnsafe<{ at: Date }[]>(
       `SELECT ($1::timestamp AT TIME ZONE p.timezone_code) AS at FROM mdm.plant p WHERE p.plant_id = $2::bigint`, `${day} ${time}`, ids.plant,
@@ -431,6 +498,14 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     await consume(wo.G, ids.s1, ids.semi, 5, at);
     await consume(wo.T, ids.s1, ids.semi, 5, at);
     await consume(wo.C, ids.c1, ids.semi, 1, at);
+    // 정정 — 원 투입은 기간별 이력에서 빠지고 정정 투입만 남는다(장부 P-140).
+    const original = await prisma.material_consumption.findFirstOrThrow({ where: { work_order_id: wo.C, lot_id: ids.c1 } });
+    seq += 1;
+    await prisma.material_consumption.create({ data: {
+      consumption_no: `${PREFIX}-MC-${seq}`, work_order_id: wo.C, item_id: ids.semi, lot_id: ids.c1, consumption_type_code: 'NORMAL',
+      input_qty: 2, uom_id: ids.uom, occurred_at: await local(DAY, '10:30'), worker_id: ids.worker, status_code: 'RECORDED',
+      idempotency_key: `${PREFIX}-MC-${seq}-${randomUUID()}`, corrects_consumption_id: original.material_consumption_id,
+    } });
     const later = await local(DAY, '11:00');
     await produce(wo.S, ids.s1, 20, later, [ids.m1]);
     await produce(wo.G, ids.g1, 40, later, [ids.m1, ids.s1]);
@@ -442,11 +517,13 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
 
     await receive('G1', 'PRODUCT', ids.g1, ids.product, 40, await local(DAY, '12:00'));
     await receive('G1-CXL', 'PRODUCT', ids.g1, ids.product, 9, await local(DAY, '12:30'), undefined, 'CANCELLED');
+    // 구성 줄 생성 시각이 포장 시각이다(기간별 이력의 포장 줄 · 장부 P-140).
+    const packedAt = await local(DAY, '13:00');
     const box = await prisma.handling_unit.create({ data: { handling_unit_no: `${PREFIX}-HU1`, handling_unit_type_code: 'BOX', status_code: 'PACKED',
-      handling_unit_content: { create: [{ item_id: ids.product, lot_id: ids.g1, qty: 30, uom_id: ids.uom }] } } });
+      handling_unit_content: { create: [{ item_id: ids.product, lot_id: ids.g1, qty: 30, uom_id: ids.uom, created_at: packedAt }] } } });
     // 아직 확정 안 된 상자 — packages 에는 「포장 중」으로 실리지만 포장 단계·수에는 들지 않는다.
     await prisma.handling_unit.create({ data: { handling_unit_no: `${PREFIX}-HU2`, handling_unit_type_code: 'BOX', status_code: 'OPEN',
-      handling_unit_content: { create: [{ item_id: ids.product, lot_id: ids.g1, qty: 5, uom_id: ids.uom }] } } });
+      handling_unit_content: { create: [{ item_id: ids.product, lot_id: ids.g1, qty: 5, uom_id: ids.uom, created_at: packedAt }] } } });
     const shipmentRequest = await prisma.shipment_request.create({
       data: { shipment_request_no: `${PREFIX}-SR`, customer_id: ids.customer, ship_to_partner_id: ids.customer, requested_ship_date: new Date(`${DAY}T00:00:00.000Z`),
         status_code: 'CONFIRMED', shipment_request_line: { create: [{ line_no: 1, item_id: ids.product, requested_qty: 30, uom_id: ids.uom }] } },
@@ -460,6 +537,9 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     } });
     await ship('SH1', 'CONFIRMED', '15:00', 30, box.handling_unit_id);
     // 포장 없이 LOT 을 직접 배분한 출하 · 취소된 출하.
+    const sh1 = await prisma.shipment.findFirstOrThrow({ where: { shipment_no: `${PREFIX}-SH1` } });
+    await prisma.shipping_unit.create({ data: { shipping_unit_no: `${PREFIX}-SU1`, shipment_id: sh1.shipment_id, shipping_unit_type_code: 'PALLET',
+      status_code: 'OPEN', shipping_unit_handling_unit: { create: [{ handling_unit_id: box.handling_unit_id, seq: 1 }] } } });
     await ship('SH2', 'CONFIRMED', '16:00', 5, null);
     await ship('SH-CXL', 'CANCELLED', '17:00', 7, null);
   }
@@ -482,6 +562,9 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     for (const sql of [
       `DELETE FROM logistics.shipment_lot_allocation WHERE lot_id IN (${OUR_LOTS})`,
       `DELETE FROM logistics.shipment_line WHERE shipment_id IN (SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipping_unit_handling_unit WHERE shipping_unit_id IN (
+         SELECT shipping_unit_id FROM logistics.shipping_unit WHERE shipping_unit_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipping_unit WHERE shipping_unit_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (
          SELECT shipment_request_id FROM logistics.shipment_request WHERE shipment_request_no LIKE '${PREFIX}%')`,

@@ -2902,7 +2902,7 @@
      "logistics"
     ],
     "summary": "입고 줄 목록(자재입고·생산입고 현황)",
-    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 시작이 필수, 최대 366일이다 — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소 완료(CANCELLED) 입고만 뺀다 — 취소요청 중인 입고는 재고가 그대로라 보인다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119",
+    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·inboundReceiptNo·workOrderNo 로 집으면 기간은 선택(장부 P-140) — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소 완료(CANCELLED) 입고만 뺀다 — 취소요청 중인 입고는 재고가 그대로라 보인다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119",
     "parameters": [
      {
       "name": "receiptTypeCode",
@@ -2919,7 +2919,7 @@
        "type": "string",
        "format": "date"
       },
-      "description": "입고일 시작(공장 현지 날짜) · 필수"
+      "description": "입고일 시작(공장 현지 날짜) · lotNo·inboundReceiptNo·workOrderNo 가 없으면 필수"
      },
      {
       "name": "receiptDateTo",
@@ -2962,6 +2962,30 @@
        "format": "int64"
       },
       "description": "입하 줄에서 온 입고(자재입고)의 공급사"
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호 정확 일치(장부 P-140)"
+     },
+     {
+      "name": "inboundReceiptNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입하 번호 정확 일치 — 그 입하 줄에서 온 자재입고(장부 P-140)"
+     },
+     {
+      "name": "workOrderNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "W/O 번호 정확 일치 — LOT 원천이 그 W/O 인 생산입고(장부 P-140)"
      },
      {
       "name": "statusCode",
@@ -3233,7 +3257,7 @@
       }
      },
      "400": {
-      "description": "검증 실패 — 기간 시작 없음·종료가 시작보다 앞섬·366일 초과. 고쳐야 풀린다",
+      "description": "검증 실패 — 기간 시작과 집는 번호가 모두 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
       "content": {
        "application/json": {
         "schema": {
@@ -7317,6 +7341,614 @@
      }
     },
     "x-internal-note": "서버 선행 · 장부 P-119."
+   }
+  },
+  "/trace/material-input-lines": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "투입 줄 목록(기간별 이력)",
+    "description": "자재 투입 기록을 기간으로 거른 목록. 기간은 투입 시각의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·inboundReceiptNo 로 집으면 기간은 선택이다. 투입에는 취소 상태가 없어 정정된 원 투입은 빼고 정정 투입을 싣는다(정방향 목록의 투입량과 같은 셈). 정렬: 투입 시각 내림차순. 근거: 서버 선행 · 장부 P-140",
+    "parameters": [
+     {
+      "name": "inputDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "투입일 시작(공장 현지 날짜) · lotNo·workOrderNo·inboundReceiptNo 가 없으면 필수"
+     },
+     {
+      "name": "inputDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "투입일 종료(공장 현지 날짜, 포함)"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "LOT 의 공장"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호 정확 일치(투입한 LOT · 담긴 LOT)"
+     },
+     {
+      "name": "workOrderNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "투입한 W/O 번호 정확 일치"
+     },
+     {
+      "name": "inboundReceiptNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "투입한 LOT 이 들어온 입하 번호 정확 일치"
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "투입한 LOT 이 들어온 입하의 공급사"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호·W/O 번호 부분 검색"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "totals"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "materialConsumptionId",
+             "consumptionNo",
+             "occurredAt",
+             "statusCode",
+             "consumptionTypeCode",
+             "correctsConsumptionId",
+             "plantId",
+             "workOrder",
+             "item",
+             "lotId",
+             "lotNo",
+             "inputQty",
+             "uomId",
+             "uomCode"
+            ],
+            "properties": {
+             "materialConsumptionId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "consumptionNo": {
+              "type": "string"
+             },
+             "occurredAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "투입 시각"
+             },
+             "statusCode": {
+              "type": "string"
+             },
+             "consumptionTypeCode": {
+              "type": "string"
+             },
+             "correctsConsumptionId": {
+              "type": [
+               "integer",
+               "null"
+              ],
+              "format": "int64",
+              "description": "정정 투입이면 그 원 투입. 아니면 null"
+             },
+             "plantId": {
+              "type": "integer",
+              "format": "int64",
+              "description": "투입한 LOT 의 공장"
+             },
+             "workOrder": {
+              "type": "object",
+              "required": [
+               "workOrderId",
+               "workOrderNo"
+              ],
+              "description": "투입한 W/O",
+              "properties": {
+               "workOrderId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "workOrderNo": {
+                "type": "string"
+               }
+              }
+             },
+             "item": {
+              "type": "object",
+              "required": [
+               "id",
+               "code",
+               "name"
+              ],
+              "description": "투입 자재 품목",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "code": {
+                "type": "string"
+               },
+               "name": {
+                "type": "string"
+               }
+              }
+             },
+             "lotId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "lotNo": {
+              "type": "string"
+             },
+             "inputQty": {
+              "type": "number"
+             },
+             "uomId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "uomCode": {
+              "type": "string"
+             }
+            }
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "totals": {
+           "type": "object",
+           "required": [
+            "lineCount",
+            "qtyByUom"
+           ],
+           "description": "필터 전체(쪽과 무관)의 합계. 단위가 섞이면 더할 수 없어 단위마다 둔다.",
+           "properties": {
+            "lineCount": {
+             "type": "integer",
+             "description": "줄 수. page.total 과 같다"
+            },
+            "qtyByUom": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "required": [
+               "uomId",
+               "uomCode",
+               "qty"
+              ],
+              "properties": {
+               "uomId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "uomCode": {
+                "type": "string"
+               },
+               "qty": {
+                "type": "number"
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 기간 시작과 집는 번호가 모두 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-140."
+   }
+  },
+  "/trace/packing-lines": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "포장 줄 목록(기간별 이력)",
+    "description": "확정(PACKED)된 취급 단위의 구성 줄을 기간으로 거른 목록. 한 행은 상자 하나에 담긴 LOT 하나다. 기간은 packedAt 의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·shipmentNo 로 집으면 기간은 선택이다. 열린 상자(포장 중)는 싣지 않는다. 정렬: packedAt 내림차순 → 취급 단위 번호. 근거: 서버 선행 · 장부 P-140",
+    "parameters": [
+     {
+      "name": "packedDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "포장일 시작(공장 현지 날짜) · lotNo·workOrderNo·shipmentNo 가 없으면 필수"
+     },
+     {
+      "name": "packedDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "포장일 종료(공장 현지 날짜, 포함)"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "LOT 의 공장"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호 정확 일치(투입한 LOT · 담긴 LOT)"
+     },
+     {
+      "name": "workOrderNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "담긴 LOT 의 원천 W/O 번호 정확 일치"
+     },
+     {
+      "name": "shipmentNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "상자가 담긴 출하 단위의 출하 번호 정확 일치"
+     },
+     {
+      "name": "customerId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "상자가 담긴 출하 단위의 출하 고객"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호·취급 단위 번호 부분 검색"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "totals"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "handlingUnitContentId",
+             "handlingUnitId",
+             "handlingUnitNo",
+             "handlingUnitTypeCode",
+             "handlingUnitStatusCode",
+             "packedAt",
+             "plantId",
+             "item",
+             "lotId",
+             "lotNo",
+             "qty",
+             "uomId",
+             "uomCode",
+             "workOrder",
+             "shippingUnit"
+            ],
+            "properties": {
+             "handlingUnitContentId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "handlingUnitId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "handlingUnitNo": {
+              "type": "string",
+              "description": "취급 단위(상자) 번호"
+             },
+             "handlingUnitTypeCode": {
+              "type": "string"
+             },
+             "handlingUnitStatusCode": {
+              "type": "string",
+              "description": "취급 단위 상태. 확정(PACKED)된 상자만 실어 지금은 늘 PACKED 다"
+             },
+             "packedAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "구성 줄 생성 시각. 포장 확정과 구성 치환(포장 재구성)이 구성 줄을 다시 만들어, 확정 시각이거나 그 뒤 마지막으로 구성을 고친 시각이다"
+             },
+             "plantId": {
+              "type": "integer",
+              "format": "int64",
+              "description": "담긴 LOT 의 공장"
+             },
+             "item": {
+              "type": "object",
+              "required": [
+               "id",
+               "code",
+               "name"
+              ],
+              "description": "품목",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "code": {
+                "type": "string"
+               },
+               "name": {
+                "type": "string"
+               }
+              }
+             },
+             "lotId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "lotNo": {
+              "type": "string"
+             },
+             "qty": {
+              "type": "number"
+             },
+             "uomId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "uomCode": {
+              "type": "string"
+             },
+             "workOrder": {
+              "type": [
+               "object",
+               "null"
+              ],
+              "required": [
+               "workOrderId",
+               "workOrderNo"
+              ],
+              "description": "LOT 원천이 W/O 일 때만. 아니면 null",
+              "properties": {
+               "workOrderId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "workOrderNo": {
+                "type": "string"
+               }
+              }
+             },
+             "shippingUnit": {
+              "type": [
+               "object",
+               "null"
+              ],
+              "required": [
+               "shippingUnitId",
+               "shippingUnitNo"
+              ],
+              "description": "상자가 출하 단위에 담겼을 때만. 아니면 null",
+              "properties": {
+               "shippingUnitId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "shippingUnitNo": {
+                "type": "string"
+               }
+              }
+             }
+            }
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "totals": {
+           "type": "object",
+           "required": [
+            "lineCount",
+            "qtyByUom"
+           ],
+           "description": "필터 전체(쪽과 무관)의 합계. 단위가 섞이면 더할 수 없어 단위마다 둔다.",
+           "properties": {
+            "lineCount": {
+             "type": "integer",
+             "description": "줄 수. page.total 과 같다"
+            },
+            "qtyByUom": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "required": [
+               "uomId",
+               "uomCode",
+               "qty"
+              ],
+              "properties": {
+               "uomId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "uomCode": {
+                "type": "string"
+               },
+               "qty": {
+                "type": "number"
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 기간 시작과 집는 번호가 모두 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-140."
    }
   },
   "/trace/lots": {
