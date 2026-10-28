@@ -379,6 +379,88 @@ describe('검사기준 버전 (e2e)', () => {
     }
   });
 
+  it('⭐ 작성중 버전 취소가 버전과 항목을 지우고, 다시 신규 버전을 발행할 수 있다', async () => {
+    const planId = await createPlan();
+    const versionId = await createVersion(planId);
+    await putItems(versionId, [item(versionId, 1, 'A')]);
+    await confirm(versionId);
+    const draft = await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${versionId}:new-revision`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(201);
+    const draftId = draft.body.inspectionPlanVersionId as number;
+
+    await request(app.getHttpServer())
+      .delete(`/api/quality/inspection-plan-versions/${draftId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(204);
+    await request(app.getHttpServer())
+      .get(`/api/quality/inspection-plan-versions/${draftId}`)
+      .set('Cookie', cookie)
+      .expect(404);
+    expect(
+      await prisma.inspection_item_spec.count({ where: { inspection_plan_version_id: draftId } }),
+    ).toBe(0);
+
+    const again = await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${versionId}:new-revision`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(201);
+    expect(again.body.planVersion).toBe(2);
+  });
+
+  it('⛔ 작성중이 아니거나 수집 채널이 연결된 버전은 취소가 400 STATE_LOCKED 다', async () => {
+    const confirmedId = await createVersion(await createPlan());
+    await putItems(confirmedId, [item(confirmedId, 1, 'A')]);
+    await confirm(confirmedId);
+    const notDraft = await request(app.getHttpServer())
+      .delete(`/api/quality/inspection-plan-versions/${confirmedId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(400);
+    expect(notDraft.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+
+    const draftId = await createVersion(await createPlan());
+    const saved = await putItems(draftId, [item(draftId, 1, 'CHANNEL')]);
+    const plant = await prisma.plant.findFirstOrThrow();
+    const equipment = await prisma.equipment.create({
+      data: {
+        plant_id: plant.plant_id,
+        equipment_code: `${PREFIX}-DISCARD-EQ`,
+        equipment_name: '취소 참조 설비',
+        equipment_type_code: 'MACHINE',
+        status_code: 'IN_SERVICE',
+      },
+    });
+    await prisma.collection_channel.create({
+      data: {
+        equipment_id: equipment.equipment_id,
+        channel_key: `${PREFIX}-DISCARD`,
+        inspection_item_id: saved.body.items[0].inspectionItemSpecId,
+      },
+    });
+    const mapped = await request(app.getHttpServer())
+      .delete(`/api/quality/inspection-plan-versions/${draftId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(400);
+    expect(mapped.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+
+    await request(app.getHttpServer())
+      .delete(`/api/quality/inspection-plan-versions/${draftId}`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .expect(403);
+    await request(app.getHttpServer())
+      .delete('/api/quality/inspection-plan-versions/999999999')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(404);
+  });
+
   it('⛔ 어휘 밖 샘플링·주기 코드는 400 이다', async () => {
     const planId = await createPlan();
 

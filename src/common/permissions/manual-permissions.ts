@@ -235,6 +235,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:confirm': ['W-06-02'],
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:obsolete': ['W-06-02'],
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:new-revision': ['W-06-02'],
+  // 작성중 버전 취소(장부 P-128) — 신규 버전 발행의 되돌림이라 같은 화면이다.
+  'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['W-06-02'],
 
   // `W-06-14` 적치 규칙 마스터 — §3 이 「규칙 추가」만 적어 수정·활성 전이가 도출표에
   // 안 들어왔다. 셋 다 이 화면이 소유한 자원의 같은 자리다.

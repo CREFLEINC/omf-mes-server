@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -75,6 +76,19 @@ export class InspectionPlanVersionController {
       'inspectionPlanVersion',
       (version) => this.versions.update(versionId, version, body),
     );
+  }
+
+  @Delete(':inspectionPlanVersionId')
+  @Contract('DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async discard(
+    @Req() request: Request,
+    @Param('inspectionPlanVersionId', ParseIntPipe) versionId: number,
+  ): Promise<void> {
+    await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
+      await this.versions.discard(versionId);
+      return undefined;
+    });
   }
 
   @Get(':inspectionPlanVersionId/items')
