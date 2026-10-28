@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -33,7 +34,18 @@ export interface SettingUpdate {
  */
 @Injectable()
 export class OutboundItemSettingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * 이 서버에서 ERP 보내기 실행기가 켜져 있는가(`ERP_SEND_ENABLED`). 항목의 `enabled` 와 별개다 —
+   * 항목이 켜져 있어도 이것이 꺼지면 메시지가 대기로 쌓이기만 한다(장부 P-128).
+   */
+  sendEnabled(): boolean {
+    return this.config.get<string>('ERP_SEND_ENABLED') === 'true';
+  }
 
   /** 「송신 항목 다섯의 켜짐·꺼짐과 잠금 여부」(계약). 저장된 줄이 없어도 다섯을 낸다. */
   async list(): Promise<SettingView[]> {
@@ -73,7 +85,7 @@ export class OutboundItemSettingService {
         ...(definitionId === null ? {} : { interfaceDefinitionId: Number(definitionId) }),
         interfaceCode,
         // 「대기」는 아직 안 보낸 것(PENDING)만이다 — 송신 예정 목록(`statusCode=PENDING`)의
-        // 건수와 같아야 한다(사용자 결정 2026-10-27 · 장부 P-124). 실패는 따로 센다.
+        // 건수와 같아야 한다(사용자 결정 2026-10-27 · 장부 P-128). 실패는 따로 센다.
         pendingMessageCount: count(MESSAGE_STATUS.PENDING),
         failedMessageCount: count(MESSAGE_STATUS.FAILED),
       };
