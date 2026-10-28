@@ -45,8 +45,9 @@ interface MessageView {
 }
 
 export interface MessageQuery {
-  createdFrom: string;
-  createdTo: string;
+  /** `statusCode=PENDING` 일 때만 비울 수 있다 — 계약 검증 가드가 그 밖은 막는다(장부 P-129). */
+  createdFrom?: string;
+  createdTo?: string;
   statusCode?: string;
   interfaceCode?: string;
   directionCode?: string;
@@ -72,11 +73,16 @@ export class IntegrationMessageService {
   /**
    * 「이 화면의 본질은 «비동기 워커의 상태를 사람이 읽고 개입하는 창»이다」(계약).
    * `createdFrom`·`createdTo` 는 필수다 — 「기간 미지정 조회는 제공하지 않는다」.
+   * ⚠ 예외 하나: `statusCode=PENDING` 이면 비울 수 있다. 「아직 안 보낸 것」은 기간과 상관없고
+   *   쌓여도 워커가 곧 비운다(사용자 결정 2026-10-27 · 장부 P-129 · `W-06-12` 송신 예정 목록).
    */
   async list(query: MessageQuery): Promise<PagedResponse<MessageView>> {
     const page = pageRequest(query);
     const where: Prisma.integration_messageWhereInput = {
-      created_at: { gte: new Date(query.createdFrom), lte: new Date(query.createdTo) },
+      created_at: {
+        ...(query.createdFrom === undefined ? {} : { gte: new Date(query.createdFrom) }),
+        ...(query.createdTo === undefined ? {} : { lte: new Date(query.createdTo) }),
+      },
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...(query.interfaceCode === undefined ? {} : { interface_code: query.interfaceCode }),
       ...(query.directionCode === undefined ? {} : { direction_code: query.directionCode }),
