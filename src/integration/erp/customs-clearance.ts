@@ -27,6 +27,14 @@ export interface CustomsLine {
   purchase_order: { erp_purchase_order_no: string | null; erp_order_type_code: string | null };
 }
 
+export const CUSTOMS_LINE = {
+  purchase_order_line_id: true,
+  line_no: true,
+  erp_customs_clearance_no: true,
+  erp_customs_clearance_seq: true,
+  purchase_order: { select: { erp_purchase_order_no: true, erp_order_type_code: true } },
+} as const;
+
 /** ERP 에 물은 결과 — 하나면 라인에 적었다. 없거나 여럿이면 라인은 그대로다. */
 export type CustomsFetch =
   | { result: 'SAVED'; clearance: CustomsClearance }

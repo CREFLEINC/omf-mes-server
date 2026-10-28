@@ -14,6 +14,7 @@ import { productionOrderTable } from './apply/production-order.apply';
 import { purchaseOrderTable } from './apply/purchase-order.apply';
 import { salesOrderTable } from './apply/sales-order.apply';
 import { CUSTOMS_LOOKUP, CustomsClearances, CustomsLookup } from './customs-clearance';
+import { CustomsClearanceService } from './customs-clearance.service';
 import { ERP_SYNC_LANES, ErpSyncStatusService } from './erp-sync-status.service';
 import { ERP_SEND_LEASE, ErpSendRunner } from './erp-send.runner';
 import { erpSyncConfig } from './erp-sync.config';
@@ -86,11 +87,12 @@ import { SyncState } from './sync-state';
         const settings = erpSyncConfig(config);
         const fn = settings.customsFunction;
         if (fn === null) return null;
-        // 보내기 실행기의 연결 풀과 나눈다 — 화면에서도 부를 자리다.
+        // 화면 버튼과 구매입고 보내기가 함께 쓴다 — 보내기 실행기의 연결 풀과 나눈다.
         const relay = new RelayClient(settings.relay);
         return { find: (poNo, poSeq) => relay.customsClearances(fn, poNo, poSeq), onModuleDestroy: () => relay.close() };
       },
     },
+    CustomsClearanceService,
     {
       provide: ErpSendRunner,
       inject: [ConfigService, PrismaService, CUSTOMS_LOOKUP],

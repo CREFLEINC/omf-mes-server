@@ -42,6 +42,10 @@ export interface PurchaseOrderLineView {
   /** ERP 입고창고(SL_CD)·ERP 가 이 라인을 취소한 시각 — 계약 밖 칸(장부 P-75). */
   erpStorageLocationCode: string | null;
   cancelledAt: string | null;
+  /** 외자 발주 라인의 ERP 통관번호·순번·받은 시각(장부 P-143) — 계약 밖 칸. 받기 전·외자가 아니면 널. */
+  erpCustomsClearanceNo: string | null;
+  erpCustomsClearanceSeq: number | null;
+  erpCustomsClearanceFetchedAt: string | null;
 }
 
 export interface PurchaseOrderDetail {
@@ -81,6 +85,9 @@ export function purchaseOrderLineView(row: PurchaseOrderLineRow): PurchaseOrderL
     toleranceUnderQty: Number(row.tolerance_under_qty),
     erpStorageLocationCode: row.erp_storage_location_code,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    erpCustomsClearanceNo: row.erp_customs_clearance_no,
+    erpCustomsClearanceSeq: row.erp_customs_clearance_seq,
+    erpCustomsClearanceFetchedAt: row.erp_customs_clearance_fetched_at?.toISOString() ?? null,
   };
 }
 
