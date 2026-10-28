@@ -96,6 +96,18 @@ describe('POP 옆 설비 읽기 (e2e)', () => {
     expect(started.body).toMatchObject({ equipmentId: Number(ids.e2), terminalId: Number(ids.terminal) });
   });
 
+  // 맞지 않는 단말 유형 — 「로그인이 필요합니다」가 아니라 맞는 단말·화면을 알린다(상태는 401 그대로).
+  it('POP 단말로 PDA 전용 경로(상자 구성 정정)를 부르면 401 이고 PDA 화면을 안내한다', async () => {
+    const response = await request(app.getHttpServer())
+      .put('/api/inventory/handling-units/1/contents')
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', randomUUID()).set('X-Worker-No', `${PREFIX}-W1`)
+      .send({ items: [] })
+      .expect(401);
+
+    expect(response.body.errors[0].message)
+      .toBe('이 기능은 PDA(모바일 단말)에서만 쓸 수 있습니다(지금 단말: POP 단말) — PDA(모바일 단말) 포장 재구성 스캔(M-04-03)에서 하세요.');
+  });
+
   async function fixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({ data: {
       legal_entity_code: `${PREFIX}-LE`, legal_entity_name: PREFIX, country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh',
