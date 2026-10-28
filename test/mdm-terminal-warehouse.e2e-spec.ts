@@ -22,7 +22,6 @@ describe('단말 창고 (e2e)', () => {
   const ids: Record<string, bigint> = {};
   const roleIds: bigint[] = [];
   const userIds: bigint[] = [];
-  const terminalIds: bigint[] = [];
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -65,7 +64,7 @@ describe('단말 창고 (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.terminal.deleteMany({ where: { terminal_id: { in: terminalIds } } });
+    await prisma.terminal.deleteMany({ where: { terminal_code: { startsWith: PREFIX } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: userIds } } });
     await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
@@ -106,14 +105,12 @@ describe('단말 창고 (e2e)', () => {
     expect(moved.body.errors[0]).toMatchObject({ field: 'warehouseId', code: 'PLANT_MISMATCH' });
   });
 
-  async function create(suffix: string, extra: object) {
-    const response = await request(app.getHttpServer())
+  function create(suffix: string, extra: object) {
+    return request(app.getHttpServer())
       .post(PATH)
       .set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID())
       .send({ terminalCode: `${PREFIX}-${suffix}`, plantId: Number(ids.plant1), terminalTypeCode: 'MOBILE', statusCode: 'RUNNING', ...extra });
-    if (response.status === 201) terminalIds.push(BigInt(response.body.terminalId));
-    return { expect: (status: number) => (expect(response.status).toBe(status), response) };
   }
 
   function update(terminalId: number, version: string, extra: object) {
