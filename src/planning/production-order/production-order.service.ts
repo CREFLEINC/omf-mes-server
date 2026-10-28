@@ -8,7 +8,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AutoPlanStatus } from './auto-plan';
 import { AutoPlanService } from './auto-plan.service';
 import { progressSql, progressStatusCode, progressWhere } from './production-order-progress';
-import { WorklistState, assertWorklistState, worklistStateSql } from './production-order-worklist';
+import {
+  WorklistReason,
+  WorklistReasonCounts,
+  WorklistState,
+  assertWorklistState,
+  worklistReasonCountsSql,
+  worklistReasonsOf,
+  worklistStateSql,
+} from './production-order-worklist';
 import {
   ProductionOrderChangeFieldRow,
   ProductionOrderLastChange,
@@ -201,7 +209,8 @@ export class ProductionOrderService {
         acknowledgement: d?.acknowledgedAt === null || d?.acknowledgedAt === undefined ? undefined : { acknowledgedAt: d.acknowledgedAt, acknowledgedBy: d.acknowledgedBy, acknowledgeDecisionCode: d.acknowledgeDecisionCode },
         lastChange: changes.get(row.production_order_id),
         autoPlan: autoPlans.get(row.production_order_id) ?? null,
-        worklistState: worklist.get(row.production_order_id),
+        worklistState: worklist.get(row.production_order_id)?.state,
+        worklistReasons: worklist.get(row.production_order_id)?.reasons,
       });
     });
   }
@@ -243,13 +252,13 @@ export class ProductionOrderService {
     return map;
   }
 
-  /** 페이지의 칩 판정 — 목록 필터와 같은 식(`worklistStateSql`)을 한 질의로. */
-  private async worklistStatesOf(ids: bigint[]): Promise<Map<bigint, WorklistState>> {
+  /** 페이지의 칩 판정과 조치 필요 까닭 — 목록 필터와 같은 식(`worklistStateSql`)을 한 질의로. */
+  private async worklistStatesOf(ids: bigint[]): Promise<Map<bigint, { state: WorklistState; reasons?: WorklistReason[] }>> {
     if (ids.length === 0) return new Map();
-    const rows = await this.prisma.$queryRaw<{ production_order_id: bigint; state: WorklistState }[]>(Prisma.sql`
-      SELECT o.production_order_id, ${worklistStateSql()} AS state
+    const rows = await this.prisma.$queryRaw<({ production_order_id: bigint; state: WorklistState } & WorklistReasonCounts)[]>(Prisma.sql`
+      SELECT o.production_order_id, ${worklistStateSql()} AS state, ${worklistReasonCountsSql()}
         FROM planning.production_order o WHERE o.production_order_id IN (${Prisma.join(ids)})`);
-    return new Map(rows.map((row) => [row.production_order_id, row.state]));
+    return new Map(rows.map((row) => [row.production_order_id, { state: row.state, reasons: worklistReasonsOf(row.state, row) }]));
   }
 
   /** §5-4 — `withLastChange=true` 일 때만. `last_change_received_at` 이 널이면 지도에 없다(키 생략). */

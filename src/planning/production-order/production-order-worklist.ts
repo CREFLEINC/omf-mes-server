@@ -22,12 +22,14 @@ const ORDER_WORK_ORDERS = Prisma.sql`production.work_order w
 const PENDING = Prisma.sql`w.released_at IS NULL AND w.status_code IN ('PLANNED', 'CONFIRMED')`;
 
 /**
- * 배포 전제 검사(`release-plan.ts`)가 막는 것 — 생산 라인 없음 · 라인의 공장이 오더 공장과 다름 · 기본 위치 셋(WIP·완제품·스크랩) 중 빈 것.
- * 이런 W/O 가 하나라도 있으면 배포 대기가 아니라 조치 필요다(배포가 400 이 난다).
+ * 배포 전제 검사(`release-plan.ts` 의 기본 위치 검사·`lineErrors`)가 막는 것 — 셋 중 하나라도 걸린 배포 전 W/O 가 있으면 배포 대기가
+ * 아니라 조치 필요다(배포가 400 이 난다). ⛔ 배포 전제 검사를 바꾸면 이 셋도 함께 고친다 — 갈리면 「배포 대기」를 눌러도 배포가 막힌다.
  */
-const BLOCKED = Prisma.sql`(w.production_line_id IS NULL
-  OR w.default_wip_location_id IS NULL OR w.default_fg_location_id IS NULL OR w.default_scrap_location_id IS NULL
-  OR NOT EXISTS (SELECT 1 FROM mdm.production_line l WHERE l.production_line_id = w.production_line_id AND l.plant_id = o.plant_id))`;
+const LINE_MISSING = Prisma.sql`w.production_line_id IS NULL`;
+const LOCATION_MISSING = Prisma.sql`(w.default_wip_location_id IS NULL OR w.default_fg_location_id IS NULL OR w.default_scrap_location_id IS NULL)`;
+const LINE_PLANT_MISMATCH = Prisma.sql`(w.production_line_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM mdm.production_line l WHERE l.production_line_id = w.production_line_id AND l.plant_id = o.plant_id))`;
+const BLOCKED = Prisma.sql`(${LINE_MISSING} OR ${LOCATION_MISSING} OR ${LINE_PLANT_MISMATCH})`;
 
 /**
  * 오더 별칭 `o` 의 판정 식. 목록 필터(`WHERE … = 값`)와 응답 칸이 같은 식을 쓴다 — 두 벌이면 칩 건수와 행 표시가 갈린다.
@@ -54,4 +56,32 @@ export function assertWorklistState(value: string | undefined): WorklistState | 
     scope: 'field', field: 'worklistState', code: ERROR_CODE.INVALID,
     message: `작업지시 목록 칩 값이 아닙니다(${value}) — ${WORKLIST_STATES.join('·')} 중 하나로 다시 조회하세요.`,
   }]);
+}
+
+/** 자동 계획은 끝났는데(DONE) 조치 필요인 까닭. 자동 계획 확인 필요의 까닭은 `autoPlan.reasons` 가 맡는다. */
+export const WORKLIST_REASON_CODES = ['NO_LIVE_WORK_ORDER', 'WORK_ORDER_LINE_MISSING', 'WORK_ORDER_LOCATION_MISSING', 'LINE_PLANT_MISMATCH'] as const;
+export type WorklistReasonCode = (typeof WORKLIST_REASON_CODES)[number];
+export interface WorklistReason { code: WorklistReasonCode; workOrderCount: number }
+
+/** 판정(`worklistStateSql`)과 같은 조각으로 센다 — 칩과 까닭이 갈리지 않는다. */
+export function worklistReasonCountsSql(): Prisma.Sql {
+  return Prisma.sql`(${DONE}) AS done,
+    (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE w.status_code <> 'CANCELLED')::int AS live,
+    (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LINE_MISSING})::int AS line_missing,
+    (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LOCATION_MISSING})::int AS location_missing,
+    (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LINE_PLANT_MISMATCH})::int AS plant_mismatch`;
+}
+
+export interface WorklistReasonCounts { done: boolean; live: number; line_missing: number; location_missing: number; plant_mismatch: number }
+
+/** 조치 필요이고 자동 계획이 DONE 일 때만 낸다. W/O 하나가 여러 까닭에 함께 세일 수 있다. */
+export function worklistReasonsOf(state: WorklistState, counts: WorklistReasonCounts): WorklistReason[] | undefined {
+  if (state !== 'ACTION_REQUIRED' || !counts.done) return undefined;
+  if (counts.live === 0) return [{ code: 'NO_LIVE_WORK_ORDER', workOrderCount: 0 }];
+  const reasons: WorklistReason[] = [
+    { code: 'WORK_ORDER_LINE_MISSING', workOrderCount: counts.line_missing },
+    { code: 'WORK_ORDER_LOCATION_MISSING', workOrderCount: counts.location_missing },
+    { code: 'LINE_PLANT_MISMATCH', workOrderCount: counts.plant_mismatch },
+  ];
+  return reasons.filter((reason) => reason.workOrderCount > 0);
 }

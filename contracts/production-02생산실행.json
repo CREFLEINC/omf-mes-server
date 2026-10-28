@@ -5901,6 +5901,34 @@
       "description": "작업지시 목록(W-02-01) 칩 판정 — 조회 때 계산한다. BEFORE_PLAN 계획 전(자동 계획 시도도 계획도 없음) · ACTION_REQUIRED 조치 필요(자동 계획 확인 필요, 또는 계획은 다 됐는데 W/O 가 없거나 배포 전 W/O 중 생산 라인·기본 위치(WIP·완제품·스크랩)가 비었거나 라인이 다른 공장 것) · RELEASE_PENDING 배포 대기(배포 전 W/O 가 있고 모두 배포 가능) · RELEASED 배포 완료(배포 전 W/O 없음) · CANCELLED 취소된 ERP W/O. 배포 전 W/O = 아직 배포되지 않은 PLANNED·CONFIRMED W/O. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
       "example": "RELEASE_PENDING"
      },
+     "worklistReasons": {
+      "type": "array",
+      "description": "조치 필요(worklistState ACTION_REQUIRED)인데 자동 계획은 끝난(autoPlan.status DONE) 까닭. 그 밖에는 키가 없다 — 자동 계획 확인 필요의 까닭은 autoPlan.reasons 다. 화면 문구는 코드로 정한다. NO_LIVE_WORK_ORDER W/O 가 없거나 모두 취소(workOrderCount 0) · WORK_ORDER_LINE_MISSING 배포 전 W/O 중 생산 라인이 빔 · WORK_ORDER_LOCATION_MISSING 배포 전 W/O 중 기본 위치(WIP·완제품·스크랩) 가운데 빈 것이 있음 · LINE_PLANT_MISMATCH 배포 전 W/O 의 라인 공장이 ERP W/O 공장과 다름. W/O 하나가 여러 까닭에 함께 세일 수 있다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
+      "items": {
+       "type": "object",
+       "required": [
+        "code",
+        "workOrderCount"
+       ],
+       "properties": {
+        "code": {
+         "type": "string",
+         "enum": [
+          "NO_LIVE_WORK_ORDER",
+          "WORK_ORDER_LINE_MISSING",
+          "WORK_ORDER_LOCATION_MISSING",
+          "LINE_PLANT_MISMATCH"
+         ],
+         "example": "WORK_ORDER_LINE_MISSING"
+        },
+        "workOrderCount": {
+         "type": "integer",
+         "description": "그 까닭에 걸린 배포 전 W/O 수",
+         "example": 1
+        }
+       }
+      }
+     },
      "lastChange": {
       "$ref": "#/components/schemas/ProductionOrderChange"
      }

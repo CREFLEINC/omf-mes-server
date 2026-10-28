@@ -3,6 +3,7 @@
  *
  * 다섯 판정의 경계: 계획 전 · 자동 계획 확인 필요 · W/O 0건 DONE · 일부 배포 · 라인 빈 W/O 와 정상 W/O 섞임 ·
  * 다른 공장 라인 · 전부 배포(취소 W/O 섞임) · 취소된 오더. 칩 건수는 `size=1` 의 total 로 센다(클라이언트와 같다).
+ * 조치 필요 까닭 `worklistReasons` 와, 그 까닭이 배포 전제 검사(`releasePlan`)가 실제로 막는 W/O 와 같은지도 본다.
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -12,18 +13,22 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { NumberingService } from '../src/core/numbering/numbering.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { releasePlan } from '../src/production/work-order/release-plan';
 
 const PREFIX = 'WLS204';
 const BASE = '/api/planning/production-orders';
 
-interface Row { productionOrderNo: string; worklistState: string }
+interface Row { productionOrderNo: string; worklistState: string; worklistReasons?: { code: string; workOrderCount: number }[] }
 
 describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string;
   const ids: Record<string, bigint> = {};
+  /** 배포 전 W/O 와 그 W/O 의 배포가 막히는지(픽스처가 정한 기대). */
+  const pending: { workOrderId: bigint; blocked: boolean }[] = [];
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -60,6 +65,38 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       DONE: 'RELEASED',
       CANCEL: 'CANCELLED',
     });
+  });
+
+  it('조치 필요이고 자동 계획 DONE 이면 worklistReasons 에 까닭과 W/O 수를 싣는다', async () => {
+    const body = (await list({}).expect(200)).body as { items: Row[] };
+    const reasons = Object.fromEntries(body.items.map((row) => [row.productionOrderNo.replace(`${PREFIX}-`, ''), row.worklistReasons]));
+
+    expect(reasons).toEqual({
+      BEFORE: undefined,
+      REVIEW: undefined,
+      NOWO: [{ code: 'NO_LIVE_WORK_ORDER', workOrderCount: 0 }],
+      PARTIAL: undefined,
+      MIXED: [
+        { code: 'WORK_ORDER_LINE_MISSING', workOrderCount: 1 },
+        { code: 'WORK_ORDER_LOCATION_MISSING', workOrderCount: 1 },
+      ],
+      OTHERPLANT: [{ code: 'LINE_PLANT_MISMATCH', workOrderCount: 1 }],
+      DONE: undefined,
+      CANCEL: undefined,
+    });
+  });
+
+  it('배포 대기·조치 필요 판정이 배포 전제 검사와 같다 — 막힌다고 본 W/O 만 releasePlan 이 400 이다', async () => {
+    const numbering = app.get(NumberingService);
+    const actual = [];
+    for (const row of pending) {
+      const blocked = await releasePlan(prisma, numbering, Number(row.workOrderId), 1).then(() => false, (error: { getStatus?: () => number }) => {
+        if (error.getStatus?.() !== 400) throw error;
+        return true;
+      });
+      actual.push({ workOrderId: row.workOrderId, blocked });
+    }
+    expect(actual).toEqual(pending);
   });
 
   it('worklistState 로 거르면 그 판정만 오고, size=1 의 total 이 칩 건수다', async () => {
@@ -133,10 +170,10 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       } });
       return { orderId: row.production_order_id, planId: plan.production_plan_id };
     };
-    const workOrder = (planId: bigint | null, opts: { released?: boolean; status?: string; line?: bigint | null; locations?: boolean } = {}) => {
+    const workOrder = async (planId: bigint | null, opts: { released?: boolean; status?: string; line?: bigint | null; locations?: boolean } = {}) => {
       seq += 1;
       const withLocations = opts.locations ?? true;
-      return prisma.work_order.create({ data: {
+      const row = await prisma.work_order.create({ data: {
         work_order_no: `${PREFIX}-WO-${seq}`, production_plan_id: planId, routing_operation_id: operation.routing_operation_id,
         item_id: item.item_id, order_qty: 5, uom_id: uom.uom_id,
         status_code: opts.status ?? (opts.released === true ? 'RELEASED' : 'PLANNED'),
@@ -146,6 +183,9 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
         default_fg_location_id: withLocations ? location : null,
         default_scrap_location_id: withLocations ? location : null,
       } });
+      if (opts.released !== true && opts.status === undefined) {
+        pending.push({ workOrderId: row.work_order_id, blocked: opts.line !== undefined || !withLocations });
+      }
     };
 
     await order('BEFORE');
@@ -157,6 +197,7 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
     const mixed = await order('MIXED', { planned: 10 });
     await workOrder(mixed.planId);
     await workOrder(mixed.planId, { line: null });
+    await workOrder(mixed.planId, { locations: false });
     const otherPlantLine = await order('OTHERPLANT', { planned: 10 });
     await workOrder(otherPlantLine.planId, { line: foreignLine });
     const done = await order('DONE', { planned: 10 });
