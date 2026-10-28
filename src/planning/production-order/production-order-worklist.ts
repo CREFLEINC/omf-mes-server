@@ -25,6 +25,8 @@ export const AUTO_PLAN_UNTOUCHED_SQL = Prisma.sql`(o.auto_plan_attempted_at IS N
 const ORDER_WORK_ORDERS = Prisma.sql`production.work_order w
   JOIN planning.production_plan pp ON pp.production_plan_id = w.production_plan_id AND pp.production_order_id = o.production_order_id`;
 
+const LIVE = Prisma.sql`w.status_code <> 'CANCELLED'`;
+
 /** 배포 전 W/O — 아직 배포되지 않았고(W/O 목록 `released=false`) 배포 전이가 받는 상태(PLANNED·CONFIRMED)인 것. 취소는 빠진다. */
 const PENDING = Prisma.sql`w.released_at IS NULL AND w.status_code IN ('PLANNED', 'CONFIRMED')`;
 
@@ -47,7 +49,7 @@ export function worklistStateSql(): Prisma.Sql {
     WHEN o.status_code = 'CANCELLED' THEN 'CANCELLED'
     WHEN NOT (${AUTO_PLAN_DONE_SQL}) AND ${AUTO_PLAN_UNTOUCHED_SQL} THEN 'BEFORE_PLAN'
     WHEN NOT (${AUTO_PLAN_DONE_SQL}) THEN 'ACTION_REQUIRED'
-    WHEN NOT EXISTS (SELECT 1 FROM ${ORDER_WORK_ORDERS} WHERE w.status_code <> 'CANCELLED') THEN 'ACTION_REQUIRED'
+    WHEN NOT EXISTS (SELECT 1 FROM ${ORDER_WORK_ORDERS} WHERE ${LIVE}) THEN 'ACTION_REQUIRED'
     WHEN EXISTS (SELECT 1 FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${BLOCKED}) THEN 'ACTION_REQUIRED'
     WHEN EXISTS (SELECT 1 FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING}) THEN 'RELEASE_PENDING'
     ELSE 'RELEASED'
@@ -69,16 +71,17 @@ export const WORKLIST_REASON_CODES = ['NO_LIVE_WORK_ORDER', 'WORK_ORDER_LINE_MIS
 export type WorklistReasonCode = (typeof WORKLIST_REASON_CODES)[number];
 export interface WorklistReason { code: WorklistReasonCode; workOrderCount: number }
 
-/** 판정(`worklistStateSql`)과 같은 조각으로 센다 — 칩과 까닭이 갈리지 않는다. */
+/** 판정(`worklistStateSql`)과 같은 조각으로 센다 — 칩·까닭·W/O 수가 갈리지 않는다. */
 export function worklistReasonCountsSql(): Prisma.Sql {
   return Prisma.sql`(${AUTO_PLAN_DONE_SQL}) AS done,
-    (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE w.status_code <> 'CANCELLED')::int AS live,
+    (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${LIVE})::int AS live,
+    (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING})::int AS pending,
     (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LINE_MISSING})::int AS line_missing,
     (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LOCATION_MISSING})::int AS location_missing,
     (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LINE_PLANT_MISMATCH})::int AS plant_mismatch`;
 }
 
-export interface WorklistReasonCounts { done: boolean; live: number; line_missing: number; location_missing: number; plant_mismatch: number }
+export interface WorklistReasonCounts { done: boolean; live: number; pending: number; line_missing: number; location_missing: number; plant_mismatch: number }
 
 /** 조치 필요이고 자동 계획이 DONE 일 때만 낸다. W/O 하나가 여러 까닭에 함께 세일 수 있다. */
 export function worklistReasonsOf(state: WorklistState, counts: WorklistReasonCounts): WorklistReason[] | undefined {

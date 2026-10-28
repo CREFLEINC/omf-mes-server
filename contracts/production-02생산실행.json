@@ -5929,6 +5929,16 @@
        }
       }
      },
+     "releasePendingWorkOrderCount": {
+      "type": "integer",
+      "description": "배포 전 W/O 수 — 아직 배포되지 않은 PLANNED·CONFIRMED W/O(worklistState 와 같은 정의). W/O 가 없으면 0. 화면 「배포 전 W/O」 열의 분자. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
+      "example": 1
+     },
+     "liveWorkOrderCount": {
+      "type": "integer",
+      "description": "취소되지 않은 W/O 수(배포된 것 포함). W/O 가 없거나 모두 취소면 0. 화면 「배포 전 W/O」 열의 분모. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
+      "example": 2
+     },
      "lastChange": {
       "$ref": "#/components/schemas/ProductionOrderChange"
      }

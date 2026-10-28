@@ -213,6 +213,8 @@ export class ProductionOrderService {
         autoPlan: autoPlans.get(row.production_order_id) ?? null,
         worklistState: worklist.get(row.production_order_id)?.state,
         worklistReasons: worklist.get(row.production_order_id)?.reasons,
+        releasePendingWorkOrderCount: worklist.get(row.production_order_id)?.pending,
+        liveWorkOrderCount: worklist.get(row.production_order_id)?.live,
       });
     });
   }
@@ -254,13 +256,13 @@ export class ProductionOrderService {
     return map;
   }
 
-  /** 페이지의 칩 판정과 조치 필요 까닭 — 목록 필터와 같은 식(`worklistStateSql`)을 한 질의로. */
-  private async worklistStatesOf(ids: bigint[]): Promise<Map<bigint, { state: WorklistState; reasons?: WorklistReason[] }>> {
+  /** 페이지의 칩 판정·조치 필요 까닭·W/O 수 — 목록 필터와 같은 식(`worklistStateSql`)을 한 질의로. */
+  private async worklistStatesOf(ids: bigint[]): Promise<Map<bigint, { state: WorklistState; reasons?: WorklistReason[]; pending: number; live: number }>> {
     if (ids.length === 0) return new Map();
     const rows = await this.prisma.$queryRaw<({ production_order_id: bigint; state: WorklistState } & WorklistReasonCounts)[]>(Prisma.sql`
       SELECT o.production_order_id, ${worklistStateSql()} AS state, ${worklistReasonCountsSql()}
         FROM planning.production_order o WHERE o.production_order_id IN (${Prisma.join(ids)})`);
-    return new Map(rows.map((row) => [row.production_order_id, { state: row.state, reasons: worklistReasonsOf(row.state, row) }]));
+    return new Map(rows.map((row) => [row.production_order_id, { state: row.state, reasons: worklistReasonsOf(row.state, row), pending: row.pending, live: row.live }]));
   }
 
   /** §5-4 — `withLastChange=true` 일 때만. `last_change_received_at` 이 널이면 지도에 없다(키 생략). */

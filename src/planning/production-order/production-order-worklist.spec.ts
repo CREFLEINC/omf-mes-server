@@ -25,7 +25,7 @@ describe('assertWorklistState — 작업지시 목록 칩 값', () => {
 });
 
 describe('worklistReasonsOf — 자동 계획 DONE 뒤의 조치 필요 까닭', () => {
-  const counts = { done: true, live: 3, line_missing: 0, location_missing: 0, plant_mismatch: 0 };
+  const counts = { done: true, live: 3, pending: 2, line_missing: 0, location_missing: 0, plant_mismatch: 0 };
 
   it('살아 있는 W/O 가 없으면 NO_LIVE_WORK_ORDER 하나만', () => {
     expect(worklistReasonsOf('ACTION_REQUIRED', { ...counts, live: 0 })).toEqual([{ code: 'NO_LIVE_WORK_ORDER', workOrderCount: 0 }]);

@@ -20,7 +20,7 @@ import { releasePlan } from '../src/production/work-order/release-plan';
 const PREFIX = 'WLS204';
 const BASE = '/api/planning/production-orders';
 
-interface Row { productionOrderNo: string; worklistState: string; autoPlan: { status: string; reasons: string[] } | null; worklistReasons?: { code: string; workOrderCount: number }[] }
+interface Row { productionOrderNo: string; worklistState: string; autoPlan: { status: string; reasons: string[] } | null; worklistReasons?: { code: string; workOrderCount: number }[]; releasePendingWorkOrderCount: number; liveWorkOrderCount: number }
 
 describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
   let app: INestApplication;
@@ -87,6 +87,26 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       RERUN: undefined,
       DONE: undefined,
       CANCEL: undefined,
+    });
+  });
+
+  it('모든 행에 배포 전 W/O 수 / 살아 있는 W/O 수를 싣는다 — 판정과 같은 정의', async () => {
+    const body = (await list({}).expect(200)).body as { items: Row[] };
+    const counts = Object.fromEntries(body.items.map((row) => [
+      row.productionOrderNo.replace(`${PREFIX}-`, ''), `${row.releasePendingWorkOrderCount}/${row.liveWorkOrderCount}`,
+    ]));
+
+    expect(counts).toEqual({
+      BEFORE: '0/0',
+      REVIEW: '0/0',
+      NOWO: '0/0',
+      PARTIAL: '1/2',
+      MIXED: '3/3',
+      OTHERPLANT: '1/1',
+      ALLCANCELLED: '0/0',
+      RERUN: '0/0',
+      DONE: '0/1',
+      CANCEL: '0/0',
     });
   });
 
