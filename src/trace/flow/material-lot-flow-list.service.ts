@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriodSql, plantToday } from '../../common/period/plant-local-period';
+import { localPeriodSql, plantToday, utcMarginSql } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
-import { FORWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageFilter } from './flow-stage';
+import { FORWARD_STAGES, periodUnlessPinned, stageCaseSql, stageFilter } from './flow-stage';
 import { HU_PACKED, LIVE_CONSUMPTION, RECEIPT_CANCELLED, SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, estimateBasis, forwardLinksSql } from './flow-sql';
 import { LotHead, MaterialSide, lotHeads, materialSides, pick } from './lot-flow-nodes';
 
@@ -60,11 +60,18 @@ interface StagedRow {
 }
 
 export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) => string, today: string): string {
-  requireEntry(query as Record<string, unknown>, ['itemId', 'lotNo', 'inboundReceiptNo', 'q'],
-    '자재 품목(itemId) · 자재 LOT 번호(lotNo) · 입하 번호(inboundReceiptNo) · LOT 번호 일부(q)');
   const period = periodUnlessPinned(query.receiptDateFrom, query.receiptDateTo,
-    { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' }, query.lotNo !== undefined || query.inboundReceiptNo !== undefined, today);
+    { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' }, query.lotNo !== undefined || query.inboundReceiptNo !== undefined,
+    '자재 LOT 번호(lotNo), 입하 번호(inboundReceiptNo)', today);
   const and = [`gr.receipt_type_code = 'MATERIAL'`, `gr.status_code <> ${RECEIPT_CANCELLED}`];
+  // 기간은 첫 자재입고(MIN)에 걸려 집계 뒤에야 정확히 거른다. 기간만으로 불러도 공장 전체 LOT 을 모으지 않도록
+  // 기간(UTC 여유) 안에 자재입고가 있는 LOT 만 먼저 고른다. 첫 자재입고가 기간 안이면 그 입고도 여기에 든다.
+  if (period !== undefined) {
+    and.push(`EXISTS (SELECT 1 FROM logistics.goods_receipt_line pl
+      JOIN logistics.goods_receipt pg ON pg.goods_receipt_id = pl.goods_receipt_id
+      WHERE pl.lot_id = lt.lot_id AND pg.receipt_type_code = 'MATERIAL' AND pg.status_code <> ${RECEIPT_CANCELLED}
+        AND ${utcMarginSql('pg.receipt_datetime', period, bind)})`);
+  }
   if (query.itemId !== undefined) and.push(`lt.item_id = ${bind(query.itemId)}::bigint`);
   if (query.lotNo !== undefined) and.push(`lt.lot_no = ${bind(query.lotNo)}`);
   if (query.q !== undefined && query.q.trim() !== '') and.push(`lt.lot_no ILIKE ${bind(`%${query.q.trim()}%`)}`);

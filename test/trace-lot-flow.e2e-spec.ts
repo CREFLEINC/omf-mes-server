@@ -123,14 +123,25 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       expect(no(body.items)).toEqual([`${PREFIX}-M1`]);
     });
 
-    it('진입점이 없으면 400 — itemId 칸을 짚고 넣을 수 있는 칸을 알린다 · 품목만이면 기간 시작이 필수다', async () => {
-      const none = await get('material-lot-flows', { receiptDateFrom: DAY }).expect(400);
-      expect(none.body.errors).toEqual([{
-        scope: 'field', field: 'itemId', code: 'REQUIRED',
-        message: '찾을 대상이 없습니다. 자재 품목(itemId) · 자재 LOT 번호(lotNo) · 입하 번호(inboundReceiptNo) · LOT 번호 일부(q) 중 하나를 넣어 다시 조회하세요.',
-      }]);
-      const noPeriod = await get('material-lot-flows', { itemId: Number(ids.material) }).expect(400);
-      expect(noPeriod.body.errors[0]).toMatchObject({ field: 'receiptDateFrom', code: 'REQUIRED' });
+    it('기간만으로 조회한다 — 품목·번호 없이 그 기간의 자재 LOT 전체이고, 다른 칸은 거르는 조건이다', async () => {
+      const all = (await get('material-lot-flows', { receiptDateFrom: DAY, receiptDateTo: DAY }).expect(200)).body as Body;
+      conforms('/trace/material-lot-flows', all);
+      expect(all.page.total).toBeGreaterThanOrEqual(2);
+      expect(Object.values(all.stageCounts as Record<string, number>).reduce((sum, n) => sum + n, 0)).toBe(all.page.total);
+
+      const inWarehouse = (await get('material-lot-flows', { receiptDateFrom: DAY, receiptDateTo: DAY, warehouseId: Number(ids.warehouse) }).expect(200)).body as Body;
+      expect(no(inWarehouse.items)).toEqual([`${PREFIX}-M2`, `${PREFIX}-M1`]);
+      // 기간 밖이면 없다 — 기간은 SQL 에서 건다.
+      const before = (await get('material-lot-flows', { receiptDateFrom: '2026-08-11', receiptDateTo: '2026-08-11', warehouseId: Number(ids.warehouse) }).expect(200)).body as Body;
+      expect(before.items).toEqual([]);
+    });
+
+    it('기간도 번호도 없으면 400 — receiptDateFrom 칸을 짚고 넣을 칸을 알린다 · 품목이나 LOT 번호 일부만으로는 부족하다', async () => {
+      const message = '조회 기간이 없습니다. 입고일 시작(receiptDateFrom)을 넣거나 자재 LOT 번호(lotNo), 입하 번호(inboundReceiptNo) 중 하나를 넣어 다시 조회하세요. 기간은 최대 366일입니다.';
+      for (const query of [{}, { itemId: Number(ids.material) }, { q: `${PREFIX}-M` }] as Record<string, string | number>[]) {
+        const response = await get('material-lot-flows', query).expect(400);
+        expect(response.body.errors).toEqual([{ scope: 'field', field: 'receiptDateFrom', code: 'REQUIRED', message }]);
+      }
     });
 
     it('LOT 추적 권한이 없으면 403 이다', async () => {
@@ -223,9 +234,24 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       expect(no((await get('product-lot-flows', { ...query(), currentStageCode: 'PRODUCED' }).expect(200)).body.items)).toEqual([`${PREFIX}-L1`]);
     });
 
-    it('진입점이 없으면 400 이고 itemId 칸을 짚는다', async () => {
-      const response = await get('product-lot-flows', { dateFrom: DAY }).expect(400);
-      expect(response.body.errors[0]).toMatchObject({ scope: 'field', field: 'itemId', code: 'REQUIRED' });
+    it('기간만으로 조회한다 — 생산일 축·출하일 축 모두, 다른 칸은 거르는 조건이다', async () => {
+      const all = (await get('product-lot-flows', { dateFrom: DAY, dateTo: DAY }).expect(200)).body as Body;
+      conforms('/trace/product-lot-flows', all);
+      expect(all.page.total).toBeGreaterThanOrEqual(2);
+
+      const customer = Number(ids.customer);
+      expect(no((await get('product-lot-flows', { dateFrom: DAY, dateTo: DAY, customerId: customer }).expect(200)).body.items)).toEqual([`${PREFIX}-G1`]);
+      expect(no((await get('product-lot-flows', { dateAxis: 'SHIPPED', dateFrom: DAY, dateTo: DAY, customerId: customer }).expect(200)).body.items))
+        .toEqual([`${PREFIX}-G1`]);
+      expect((await get('product-lot-flows', { dateFrom: '2026-08-11', dateTo: '2026-08-11', customerId: customer }).expect(200)).body.items).toEqual([]);
+    });
+
+    it('기간도 번호도 없으면 400 이고 dateFrom 칸을 짚는다 — 문구는 축의 이름을 쓴다', async () => {
+      const response = await get('product-lot-flows', { itemId: Number(ids.product), dateAxis: 'SHIPPED' }).expect(400);
+      expect(response.body.errors).toEqual([{
+        scope: 'field', field: 'dateFrom', code: 'REQUIRED',
+        message: '조회 기간이 없습니다. 출하일 시작(dateFrom)을 넣거나 생산 LOT 번호(lotNo), 출하 번호(shipmentNo), W/O 번호(workOrderNo) 중 하나를 넣어 다시 조회하세요. 기간은 최대 366일입니다.',
+      }]);
     });
   });
 

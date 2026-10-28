@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriodSql, plantToday } from '../../common/period/plant-local-period';
+import { localPeriodSql, plantToday, utcMarginSql } from '../../common/period/plant-local-period';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TraceBasis } from '../lot/lot-genealogy-query.service';
-import { BACKWARD_STAGES, periodUnlessPinned, requireEntry, stageCaseSql, stageFilter } from './flow-stage';
+import { BACKWARD_STAGES, periodUnlessPinned, stageCaseSql, stageFilter } from './flow-stage';
 import { SHIPMENT_CANCELLED, stagedPage, downstreamLateralSql, estimateBasis, inputCountSql, tracedSql } from './flow-sql';
 import { LotHead, Named, lotHeads, pick } from './lot-flow-nodes';
 
@@ -67,16 +67,22 @@ interface StagedRow {
 }
 
 export function stagedSql(query: ProductLotFlowQuery, bind: (value: unknown) => string, today: string): string {
-  requireEntry(query as Record<string, unknown>, ['itemId', 'lotNo', 'shipmentNo', 'workOrderNo', 'q'],
-    '제품 품목(itemId) · 생산 LOT 번호(lotNo) · 출하 번호(shipmentNo) · W/O 번호(workOrderNo) · LOT 번호 일부(q)');
   const axis = query.dateAxis ?? 'PRODUCED';
   if (axis !== 'PRODUCED' && axis !== 'SHIPPED') {
     throw one(field('dateAxis', ERROR_CODE.INVALID, `기간 기준 ${String(axis)} 은 쓸 수 없습니다. PRODUCED(첫 실적) 또는 SHIPPED(출하일)로 보내세요.`));
   }
   const period = periodUnlessPinned(query.dateFrom, query.dateTo,
     { from: 'dateFrom', to: 'dateTo', label: axis === 'PRODUCED' ? '생산일' : '출하일' },
-    query.lotNo !== undefined || query.shipmentNo !== undefined || query.workOrderNo !== undefined, today);
+    query.lotNo !== undefined || query.shipmentNo !== undefined || query.workOrderNo !== undefined,
+    '생산 LOT 번호(lotNo), 출하 번호(shipmentNo), W/O 번호(workOrderNo)', today);
   const and = [`lt.source_type_code = '${WORK_ORDER_LOT_SOURCE}'`];
+  // 생산일 축은 첫 실적(MIN)에 걸려 집계 뒤에야 정확히 거른다. 기간만으로 불러도 공장 전체 생산 LOT 을 모으지 않도록
+  // 기간(UTC 여유) 안에 실적 배분이 있는 LOT 만 먼저 고른다. 출하일 축은 아래 출하 EXISTS 가 출하 일시로 좁힌다.
+  if (period !== undefined && axis === 'PRODUCED') {
+    and.push(`EXISTS (SELECT 1 FROM production.production_result_lot_allocation qa
+      JOIN production.production_result qr ON qr.production_result_id = qa.production_result_id
+      WHERE qa.lot_id = lt.lot_id AND ${utcMarginSql('qr.occurred_at', period, bind)})`);
+  }
   if (query.itemId !== undefined) and.push(`lt.item_id = ${bind(query.itemId)}::bigint`);
   if (query.lotNo !== undefined) and.push(`lt.lot_no = ${bind(query.lotNo)}`);
   if (query.q !== undefined && query.q.trim() !== '') and.push(`lt.lot_no ILIKE ${bind(`%${query.q.trim()}%`)}`);

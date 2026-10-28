@@ -1,5 +1,5 @@
 import { ERROR_CODE, field, one } from '../../common/errors';
-import { LocalPeriod, PeriodFields, localPeriod } from '../../common/period/plant-local-period';
+import { LocalPeriod, MAX_PERIOD_DAYS, PeriodFields, localPeriod } from '../../common/period/plant-local-period';
 
 /**
  * LOT 추적의 단계 — 앞에서 뒤로. 한 LOT 의 「현재 단계」는 하위 사슬에서 가장 멀리 간 단계다
@@ -35,26 +35,22 @@ export function stageFilter(value: string[] | string | undefined): string[] | un
 }
 
 /**
- * 목록의 진입점 — 이것 없이 부르면 공장 전체 LOT 을 훑는다. 진입점 칸들 중 첫 칸을 짚는다.
+ * 목록의 범위는 기간이나 LOT 을 집는 번호다. 기간만 넣으면 그 기간 전체를 본다(길이 상한은 `MAX_PERIOD_DAYS`).
+ * 번호로 하나를 집으면 기간 없이도 좁으니 그때만 기간이 선택이다. `pins` 는 그 번호 칸들을 알리는 문구다.
  */
-export function requireEntry(query: Record<string, unknown>, names: readonly string[], labels: string): void {
-  const given = names.some((name) => {
-    const value = query[name];
-    return value !== undefined && !(typeof value === 'string' && value.trim() === '');
-  });
-  if (!given) {
-    throw one(field(names[0], ERROR_CODE.REQUIRED, `찾을 대상이 없습니다. ${labels} 중 하나를 넣어 다시 조회하세요.`));
-  }
-}
-
-/** 번호로 하나를 집으면 기간 없이도 좁다 — 그때만 기간이 선택이다. */
 export function periodUnlessPinned(
   from: string | undefined,
   to: string | undefined,
   fields: PeriodFields,
   pinned: boolean,
+  pins: string,
   today: string,
 ): LocalPeriod | undefined {
-  if (pinned && from === undefined) return undefined;
+  if (from === undefined) {
+    if (pinned) return undefined;
+    throw one(field(fields.from, ERROR_CODE.REQUIRED,
+      `조회 기간이 없습니다. ${fields.label} 시작(${fields.from})을 넣거나 ${pins} 중 하나를 넣어 다시 조회하세요. ` +
+        `기간은 최대 ${MAX_PERIOD_DAYS}일입니다.`));
+  }
   return localPeriod(from, to, fields, today);
 }

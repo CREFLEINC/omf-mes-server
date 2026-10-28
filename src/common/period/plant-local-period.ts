@@ -74,3 +74,13 @@ export function localPeriodSql(column: string, timezone: string, period: LocalPe
   }
   return and.join(' AND ');
 }
+
+/**
+ * `localPeriodSql` 의 UTC 하루 여유 경계만 건다. 어느 공장의 현지 기간이든 이 안에 들어서, 공장 시간대를 아직 모르는
+ * 자리(집계 전에 후보를 좁힐 때)에서 인덱스 범위 검색으로 쓴다. 정확한 경계는 바깥에서 `localPeriodSql` 로 다시 건다.
+ */
+export function utcMarginSql(column: string, period: LocalPeriod, bind: (value: unknown) => string): string {
+  const and = [`${column} >= ((${bind(period.from)}::date - 1)::timestamp AT TIME ZONE 'UTC')`];
+  if (period.to !== undefined) and.push(`${column} < ((${bind(period.to)}::date + 2)::timestamp AT TIME ZONE 'UTC')`);
+  return and.join(' AND ');
+}
