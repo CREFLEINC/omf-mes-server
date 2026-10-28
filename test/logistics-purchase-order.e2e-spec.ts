@@ -216,6 +216,48 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
       .not.toContain(id);
   });
 
+  it('⭐ progress=OPEN 은 openOnly=true 와 같은 줄을 낸다', async () => {
+    const open = await newOrder();
+    const completed = await completedOrder();
+
+    const byProgress = await orderIds(`plantId=${plantId}&progress=OPEN`);
+    expect(byProgress).toEqual(await orderIds(`plantId=${plantId}&openOnly=true`));
+    expect(byProgress).toContain(open);
+    expect(byProgress).not.toContain(completed);
+  });
+
+  it('⭐ progress=COMPLETED 는 완료·취소를 내고 OPEN 과 겹치지 않는다', async () => {
+    const open = await newOrder();
+    const completed = await completedOrder();
+    const cancelled = await newOrder();
+    await prisma.purchase_order.update({
+      where: { purchase_order_id: BigInt(cancelled) },
+      data: { status_code: 'CANCELLED' },
+    });
+
+    const done = await orderIds(`plantId=${plantId}&progress=COMPLETED`);
+    expect(done).toEqual(expect.arrayContaining([completed, cancelled]));
+    expect(done).not.toContain(open);
+    const opened = await orderIds(`plantId=${plantId}&progress=OPEN`);
+    expect(opened.filter((id) => done.includes(id))).toEqual([]);
+    expect([...opened, ...done].sort((a, b) => a - b)).toEqual(await orderIds(`plantId=${plantId}`));
+  });
+
+  it('⛔ progress 가 OPEN·COMPLETED 가 아니면 400 이다', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/logistics/purchase-orders?progress=DONE')
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({
+        scope: 'field',
+        field: 'progress',
+        code: 'INVALID',
+        message: 'progress 는 OPEN 또는 COMPLETED 여야 합니다.',
+      }),
+    ]);
+  });
+
   it('P/O — 헤더 수정에 If-Match 가 없으면 400 이다', async () => {
     const detail = await create();
     await request(app.getHttpServer())
@@ -749,6 +791,21 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     return response.body as { items: OrderBody[] };
+  }
+
+  /** 이 스위트가 한 공장에 발주를 계속 쌓는다 — 한 쪽에 다 담아 비교한다. */
+  async function orderIds(query: string): Promise<number[]> {
+    const { items } = await list(`${query}&size=200`);
+    return items.map((row) => row.purchaseOrderId).sort((a, b) => a - b);
+  }
+
+  async function completedOrder(): Promise<number> {
+    const id = await newOrder();
+    await prisma.purchase_order_line.updateMany({
+      where: { purchase_order_id: BigInt(id) },
+      data: { received_qty: 100 },
+    });
+    return id;
   }
 
   function body(): Draft {
