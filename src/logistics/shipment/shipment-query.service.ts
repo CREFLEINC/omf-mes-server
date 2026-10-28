@@ -3,12 +3,13 @@ import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalListScope } from '../terminal-list-scope';
 import {
   ShipmentAllocationRow,
   shipmentLotAllocationView,
 } from '../shipment-allocation/shipment-allocation-view';
 import { oqcPassedByLine } from '../shipment-request/shipment-oqc';
-import { FROM_SQL, ShipmentQuery, orderBySql, whereSql } from './shipment-query.sql';
+import { BuiltWhere, FROM_SQL, ShipmentQuery, orderBySql, whereSql } from './shipment-query.sql';
 import {
   ShipmentDetailView,
   ShipmentView,
@@ -65,13 +66,9 @@ export class ShipmentQueryService {
    * ⛔ **`lines` 를 싣지 않는다**(§4-3) — `Shipment.required` 에 없고 목록 화면 어느 열도 라인을
    * 읽지 않는다. 상세(PR ②b)가 싣는다.
    */
-  async list(query: ShipmentQuery, terminalPlantId?: bigint): Promise<PagedResponse<ShipmentView>> {
+  async list(query: ShipmentQuery, terminal?: TerminalListScope): Promise<PagedResponse<ShipmentView>> {
     const page = pageRequest(query);
-    const where = whereSql(query);
-    if (terminalPlantId !== undefined) {
-      where.sql = `(${where.sql}) AND EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)`;
-      where.params.push(terminalPlantId);
-    }
+    const where = shipmentWhereSql(query, terminal);
     const order = orderBySql(query.sort);
     // ⛔ `count(*) OVER ()` 로 세지 마라 — 범위 «밖» 쪽은 행이 0개라 `total` 이 0 으로 접히고
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다. `total` 은 쪽이 아니라 필터
@@ -173,4 +170,18 @@ export class ShipmentQueryService {
     `);
     return new Map(rows.map((row) => [row.shipment_id.toString(), row.count]));
   }
+}
+
+/** 출하 목록의 조건 + 단말 범위 — 단말 작업 수(POP 출하 포장)가 같은 함수로 센다(omf-all-around#190). */
+export function shipmentWhereSql(query: ShipmentQuery, terminal?: TerminalListScope): BuiltWhere {
+  const where = whereSql(query);
+  if (terminal !== undefined) {
+    where.sql = `(${where.sql}) AND EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)`;
+    where.params.push(terminal.plantId);
+  }
+  if (terminal?.warehouseId != null) {
+    where.sql = `${where.sql} AND s.warehouse_id = $${where.params.length + 1}::bigint`;
+    where.params.push(terminal.warehouseId);
+  }
+  return where;
 }

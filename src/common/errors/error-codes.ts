@@ -87,6 +87,9 @@ export const ERROR_CODE = {
   // 인계 작업 알림 담당자는 최대 5명이다(omf-all-around#190 · 장부 P-134). `INVALID` 와 갈라야 화면이
   // 「한도를 넘었다」를 따로 말한다.
   RECIPIENT_LIMIT: 'RECIPIENT_LIMIT',
+  // 단말의 창고가 단말 공장의 것이 아니다(omf-all-around#190 · 장부 P-136). `INVALID`(없는·사용 중지 창고)와 갈라
+  // 화면이 「공장을 먼저 맞추라」를 따로 말한다.
+  PLANT_MISMATCH: 'PLANT_MISMATCH',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */

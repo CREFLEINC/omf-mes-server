@@ -4183,6 +4183,27 @@
     }
    }
   },
+  "/app/terminal-work-counts": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "단말 작업 수",
+    "description": "단말 토큰(POP·MOBILE) 전용 — 질의 없음. 범위는 단말의 공장·창고·설비·공정이다. 계정 세션으로 부르면 401. 근거: 서버 선행 · 장부 P-137 · omf-all-around#190(피처 002 대기 작업 배지)",
+    "responses": {
+     "200": {
+      "description": "작업 수",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TerminalWorkCounts"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/app/zalo-connection": {
    "get": {
     "tags": [
@@ -6518,6 +6539,66 @@
        12
       ],
       "description": "담당자 사용자 ID, 최대 5명 — 넘으면 400 recipientUserIds RECIPIENT_LIMIT. 중복·없는·사용 중지 사용자는 400 recipientUserIds INVALID."
+     }
+    }
+   },
+   "TerminalWorkCounts": {
+    "type": "object",
+    "description": "단말 작업 화면의 남은 작업 수. 단말 유형에 맞는 키만 온다(모바일 4 · POP 5). 각 수는 그 화면 목록과 같은 조건으로 센다(배지 = 목록). 「오늘」은 공장 시간대. 알림 설정과 무관하다. 근거: 서버 선행 · 장부 P-137 · omf-all-around#190(피처 002 대기 작업 배지)",
+    "properties": {
+     "putaway": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "모바일 적치 — 적치 지시 PENDING(단말 공장, 창고가 있으면 그 창고의 입고)."
+     },
+     "materialPicking": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "모바일 자재 출고·피킹 — 자재 출고 요청의 피킹 지시 REGISTERED(단말 공장·창고)."
+     },
+     "stockTransferArrival": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "모바일 재고 이동 — 반출됐고 도착 안 한 이동(출발·도착 모두 단말 공장, 창고가 있으면 도착 창고)."
+     },
+     "shipmentPicking": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "모바일 제품 출하 피킹 — 오늘 출하일 · 이행 공장 = 단말 공장 · 피킹 미완료 출하지시."
+     },
+     "shipmentPacking": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "POP 출하 포장 — 오늘 출하 · 피킹 완료(pickedOnly) · 단말 공장(창고가 있으면 그 창고)."
+     },
+     "workStart": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "POP 작업 시작 — 열린 W/O(단말 공장 · 작업 시작 공정 · 설비가 있으면 그 설비 + 설비 미정)."
+     },
+     "emergencyWorkOrder": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "POP 긴급 W/O — 열린 긴급 W/O."
+     },
+     "reworkResult": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "POP 재작업 실적 — 열린 재작업 W/O(실적 입력 공정)."
+     },
+     "oqcInspection": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 3,
+      "description": "POP OQC — OQC 대기·진행 의뢰(단말 공장)."
      }
     }
    },

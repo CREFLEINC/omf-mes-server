@@ -20938,6 +20938,23 @@
       "example": 1001,
       "description": "설치 위치. 비어 있을 수 있다"
      },
+     "warehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 3001,
+      "description": "단말의 창고. 없으면 null(공장 전체). 근거: 서버 선행 · 장부 P-136 · omf-all-around#190(피처 002 단말 창고)"
+     },
+     "warehouseName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "자재창고 A",
+      "description": "단말 창고의 이름(목록 표시용). 근거: 서버 선행 · 장부 P-136 · omf-all-around#190(피처 002 단말 창고)"
+     },
      "equipmentId": {
       "x-source-column": "equipment_id",
       "type": [
@@ -21028,6 +21045,15 @@
       "format": "int64",
       "example": 1001
      },
+     "warehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 3001,
+      "description": "단말의 창고(POP·모바일). 단말 공장의 사용 중인 창고만 — 다른 공장이면 400 warehouseId PLANT_MISMATCH, 없거나 중지된 창고는 400 warehouseId INVALID. 비우면(null) 공장 전체 작업을 본다. 있으면 그 단말이 부르는 적치·피킹·재고 이동(도착)·출하 포장 목록과 작업 수가 이 창고로 걸러진다. 근거: 서버 선행 · 장부 P-136 · omf-all-around#190(피처 002 단말 창고)"
+     },
      "equipmentId": {
       "x-source-column": "equipment_id",
       "type": [
@@ -21070,6 +21096,15 @@
       "type": "integer",
       "format": "int64",
       "example": 1001
+     },
+     "warehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 3001,
+      "description": "단말의 창고(POP·모바일). 단말 공장의 사용 중인 창고만 — 다른 공장이면 400 warehouseId PLANT_MISMATCH, 없거나 중지된 창고는 400 warehouseId INVALID. 비우면(null) 공장 전체 작업을 본다. 있으면 그 단말이 부르는 적치·피킹·재고 이동(도착)·출하 포장 목록과 작업 수가 이 창고로 걸러진다. 근거: 서버 선행 · 장부 P-136 · omf-all-around#190(피처 002 단말 창고)"
      },
      "equipmentId": {
       "x-source-column": "equipment_id",
