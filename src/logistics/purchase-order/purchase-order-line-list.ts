@@ -82,7 +82,12 @@ export interface OrderListExtras {
   inboundStage?: InboundStageGroup;
   /** 열 정렬 `sort=열,방향`(장부 P-116). 없으면 발주일 최신순. */
   sort?: OrderSort;
+  /** `OPEN` 은 `openOnly=true` 와 같은 줄, `COMPLETED` 는 그 나머지(장부 P-131). */
+  progress?: OrderProgress;
 }
+
+export const ORDER_PROGRESSES = ['OPEN', 'COMPLETED'] as const;
+export type OrderProgress = (typeof ORDER_PROGRESSES)[number];
 
 export function parseOrderListExtras(raw: Record<string, unknown>): OrderListExtras {
   const errors: ErrorItem[] = [];
@@ -94,6 +99,7 @@ export function parseOrderListExtras(raw: Record<string, unknown>): OrderListExt
     supplierQ: readText(raw, 'supplierQ', errors),
     inboundStage: readStage(raw, errors),
     sort: readSort(raw, errors),
+    progress: readProgress(raw, errors),
   };
 
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
@@ -122,6 +128,15 @@ function readStage(raw: Record<string, unknown>, errors: ErrorItem[]): InboundSt
   const stage = INBOUND_STAGE_GROUPS.find((group) => group === value);
   if (stage !== undefined) return stage;
   errors.push(invalid('inboundStage', `${INBOUND_STAGE_GROUPS.join('·')} 중 하나입니다.`));
+  return undefined;
+}
+
+function readProgress(raw: Record<string, unknown>, errors: ErrorItem[]): OrderProgress | undefined {
+  const value = raw.progress;
+  if (value === undefined) return undefined;
+  const progress = ORDER_PROGRESSES.find((code) => code === value);
+  if (progress !== undefined) return progress;
+  errors.push(invalid('progress', 'progress 는 OPEN 또는 COMPLETED 여야 합니다.'));
   return undefined;
 }
 
