@@ -5,7 +5,7 @@ import { BackwardFlow, ForwardFlow, LotFlowChainService } from './lot-flow-chain
 import { MaterialLotFlowList, MaterialLotFlowListService, MaterialLotFlowQuery } from './material-lot-flow-list.service';
 import { ProductLotFlowList, ProductLotFlowListService, ProductLotFlowQuery } from './product-lot-flow-list.service';
 
-/** LOT 추적 화면(W-02-09)의 정방향·역방향 — 목록과 LOT 하나의 사슬(장부 P-119). 관리웹 세션 전용이다. */
+/** LOT 생산 이력 조회 화면(W-02-09)의 정방향·역방향 — 목록과 LOT 하나의 사슬(장부 P-119). 관리웹 세션 전용이다. */
 @Controller('trace')
 export class LotFlowController {
   constructor(

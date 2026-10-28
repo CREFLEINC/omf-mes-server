@@ -488,7 +488,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — LOT 추적 화면 권한",
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
       "content": {
        "application/json": {
         "schema": {
