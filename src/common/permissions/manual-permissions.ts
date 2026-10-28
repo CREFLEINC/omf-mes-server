@@ -264,6 +264,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 단건 재처리가 도출표에 안 들어왔다. 셋 다 한 화면의 같은 자리다.
   'GET /integration/messages/{integrationMessageId}': ['W-06-10'],
   'POST /integration/messages/{integrationMessageId}:retry': ['W-06-10'],
+  // `W-06-12` ERP 송신 — 고른 송신 항목의 송신 예정 목록(`statusCode=PENDING`)을 읽는다.
+  // 요구서 §3 에 없는 자리다(사용자 지시 2026-10-27 · 장부 P-129).
+  'GET /integration/messages': ['W-06-12'],
 
   // `W-06-15` 결재선 정의 — 그 화면이 결재선·결재단계의 마스터를 소유한다(§0 범위:
   // 「결재선 **정의**(`approval_route` + `approval_route_step`)만」). 도출표는 요구서 §3 의

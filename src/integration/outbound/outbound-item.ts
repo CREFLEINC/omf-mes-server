@@ -1,3 +1,5 @@
+import { IF_GOODS_RECEIPT, IF_SHIPMENT_PGI, IF_WO_CLOSE } from '../../core/outbox';
+
 /**
  * 송신 항목 다섯. **앱이 소유한다** — 고객이 늘리거나 지우지 않는다.
  *
@@ -21,6 +23,8 @@
 export interface OutboundItem {
   code: string;
   name: string;
+  /** 이 항목을 실어 나르는 아웃박스 인터페이스. 보내기 실행기가 아직 없는 항목은 비운다. */
+  interfaceCode?: string;
   locked: boolean;
   lockReason?: string;
   sendTimingNote?: string;
@@ -30,16 +34,18 @@ export const OUTBOUND_ITEMS: readonly OutboundItem[] = [
   {
     code: 'PRODUCTION_RESULT',
     name: '생산 실적',
+    interfaceCode: IF_WO_CLOSE,
     locked: true,
     lockReason: '생산 실적 송신은 필수입니다 (2026-07-04 확정 QA #35). 개발품은 품목 마스터에서 제외합니다.',
   },
   {
     code: 'GOODS_RECEIPT',
     name: '입고 (G/R)',
+    interfaceCode: IF_GOODS_RECEIPT,
     locked: false,
     sendTimingNote: 'IQC 합격 직후 건별로 즉시 보냅니다 (QA #1).',
   },
-  { code: 'SHIPMENT_PGI', name: '출하 (PGI)', locked: false },
+  { code: 'SHIPMENT_PGI', name: '출하 (PGI)', interfaceCode: IF_SHIPMENT_PGI, locked: false },
   { code: 'RETURN', name: '반품', locked: false },
   { code: 'STOCK_ADJUSTMENT', name: '실사 조정', locked: false },
 ];

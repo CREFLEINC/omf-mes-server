@@ -18,7 +18,7 @@ export class OutboundItemSettingController {
   @Get()
   @Contract('GET /integration/outbound-item-settings')
   async list(): Promise<unknown> {
-    return { items: await this.settings.list() };
+    return { sendEnabled: this.settings.sendEnabled(), items: await this.settings.list() };
   }
 
   @Put()
@@ -30,6 +30,7 @@ export class OutboundItemSettingController {
     // ⚠ 계약이 저장 충돌 보호를 두지 않았다 — 「항목이 다섯인 고정 목록이고 행을 오가며
     // 편집하는 형태가 아니다」. 그래서 If-Match 가 없고 멱등 흡수만 탄다.
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => ({
+      sendEnabled: this.settings.sendEnabled(),
       items: await this.settings.replace(body.items, currentSession(request)?.userId),
     }));
   }

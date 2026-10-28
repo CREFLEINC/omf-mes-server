@@ -6,6 +6,8 @@ import { ContractException } from '../errors';
 import { contractOperationOf } from './contract.decorator';
 import { ContractValidator } from './contract-validator';
 
+const OPEN_PERIOD = '2000-01-01T00:00:00.000Z';
+
 /**
  * `@Contract` 가 붙은 핸들러의 요청을 계약대로 검증한다.
  *
@@ -37,9 +39,16 @@ export class ContractValidationGuard implements CanActivate {
     // and all other query fields while admitting the forward-only TSPL format.
     const forwardTspl = key === 'GET /app/document-issues/{documentIssueLogId}/rendition'
       && query.format === 'tspl';
+    // P-129: 송신 예정(PENDING)은 기간 없이 읽는다. 빠진 기간만 자리 값으로 채워 검증하고
+    // 뒤에 지운다 — 사본을 따로 만들면 ajv 가 바꾼 page·size 의 타입이 핸들러에 안 간다.
+    const filled = key === 'GET /integration/messages' && query.statusCode === 'PENDING'
+      ? (['createdFrom', 'createdTo'] as const).filter((name) => query[name] === undefined)
+      : [];
+    for (const name of filled) query[name] = OPEN_PERIOD;
     const validatedQuery = forwardTspl ? { ...query, format: 'png' } : query;
     const errors = this.validator.validate(key, { body: request.body, query: validatedQuery, params });
     if (forwardTspl) query.format = 'tspl';
+    for (const name of filled) delete query[name];
     if (errors.length > 0) {
       throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     }
