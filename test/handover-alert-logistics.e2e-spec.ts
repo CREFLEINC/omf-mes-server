@@ -496,6 +496,8 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role_permission.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role.deleteMany({ where: { role_id: { in: roleIds } } });
+    // 시험 계정은 사용 중지한다 — 활성 계정 전부를 세는 화면(공지 확인 현황 등)의 쪽에 끼어든다.
+    await prisma.app_user.updateMany({ where: { app_user_id: { in: userIds } }, data: { is_active: false } });
     await deleteDocuments();
   }
 
