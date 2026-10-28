@@ -27,6 +27,8 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string;
   let seq = 0;
+  /** 공급사 LOT 번호의 번호 칸 — 앞 시험이 0001·0002 를 쓴다. */
+  let lotSerial = 2;
   const ids: Record<string, bigint> = {};
   const users: Record<string, bigint> = {};
   const roleIds: bigint[] = [];
@@ -155,6 +157,91 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     const notes = await prisma.notification.findMany({ where: { notification_event_id: events[0].notification_event_id } });
     expect(notes.map((n) => n.title)).toEqual(['IQC 수입검사', 'IQC 수입검사']);
   });
+
+  it('US1-5 FR-002 T10 :split·:per-line 도 입하 1건에 알림 1건이다', async () => {
+    const part = () => ({ supplierId: Number(ids.supplier), plantId: Number(ids.plant), receiptDatetime: AT, lines: [iqcLine()] });
+    const split = await request(app.getHttpServer())
+      .post('/api/logistics/inbound-receipts:split')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ mode: 'BOTH', normal: part(), excess: part(), businessDate: DAY, occurredAt: AT })
+      .expect(201);
+    const perLine = await request(app.getHttpServer())
+      .post('/api/logistics/inbound-receipts:per-line')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        supplierId: Number(ids.supplier),
+        plantId: Number(ids.plant),
+        receiptDatetime: AT,
+        businessDate: DAY,
+        occurredAt: AT,
+        exceptionTypeCode: 'CUSTOMER_SUPPLY',
+        exceptionReason: '무발주 도착',
+        lines: [iqcLine(), iqcLine()],
+      })
+      .expect(201);
+
+    const receiptIds = [
+      ...split.body.created.map((r: { inboundReceiptId: number }) => r.inboundReceiptId),
+      ...perLine.body.created.map((r: { inboundReceipt: { inboundReceiptId: number } }) => r.inboundReceipt.inboundReceiptId),
+    ];
+    expect(receiptIds).toHaveLength(4);
+    for (const receiptId of receiptIds) {
+      const events = await eventsOf('IQC_INSPECTION_REQUESTED', 'INBOUND_RECEIPT', BigInt(receiptId));
+      expect(events).toHaveLength(1);
+      expect(events[0].payload).toMatchObject({ lot_count: 1 });
+    }
+  });
+
+  it('US1-5 T10 POST /trace/lots 단건 등록이 IQC 의뢰를 세우면 LOT 1건에 알림 1건', async () => {
+    const receipt = await prisma.inbound_receipt.findFirstOrThrow({ where: { plant_id: ids.plant }, select: { inbound_receipt_id: true } });
+    const line = await prisma.inbound_receipt_line.create({
+      data: {
+        inbound_receipt_id: receipt.inbound_receipt_id,
+        line_no: 99,
+        item_id: ids.itemIqc,
+        received_qty: 10,
+        uom_id: ids.uom,
+        supplier_lot_label_attached: false,
+        inspection_required: true,
+        status_code: 'REGISTERED',
+      },
+    });
+    const created = await request(app.getHttpServer())
+      .post('/api/trace/lots')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        itemId: Number(ids.itemIqc),
+        lotTypeCode: 'MATERIAL',
+        plantId: Number(ids.plant),
+        initialQty: 10,
+        uomId: Number(ids.uom),
+        sourceTypeCode: 'INBOUND_RECEIPT_LINE',
+        sourceId: Number(line.inbound_receipt_line_id),
+        numberSourceCode: 'MES',
+        businessDate: DAY,
+        occurredAt: AT,
+      })
+      .expect(201);
+    const lotId = BigInt(created.body.lot.lotId);
+
+    const events = await eventsOf('IQC_INSPECTION_REQUESTED', 'LOT', lotId);
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).toMatchObject({ receipt_no: created.body.lot.lotNo, lot_count: 1, supplier: `${PREFIX} 공급사` });
+  });
+
+  function iqcLine() {
+    lotSerial += 1;
+    return {
+      itemId: Number(ids.itemIqc),
+      receivedQty: 10,
+      uomId: Number(ids.uom),
+      supplierLotNo: `${PREFIX}IQC|10|261028|${PREFIX}S|${String(lotSerial).padStart(4, '0')}`,
+      supplierLotMissing: false,
+    };
+  }
 
   async function eventsOf(type: string, aggregate: string, id: bigint) {
     return prisma.notification_event.findMany({ where: { event_type_code: type, aggregate_type_code: aggregate, aggregate_id: id } });
@@ -426,7 +513,7 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     const role = await prisma.role.create({ data: { role_code: `${PREFIX}_R`, role_name: '인계 생산 시험' } });
     roleIds.push(role.role_id);
     await prisma.role_permission.createMany({
-      data: ['W-CO-14', 'W-02-04', 'W-01-03', 'W-04-01', 'W-03-10'].map((code) => ({ role_id: role.role_id, permission_code: code })),
+      data: ['W-CO-14', 'W-02-04', 'W-01-03', 'W-04-01', 'W-03-10', 'M-01-01'].map((code) => ({ role_id: role.role_id, permission_code: code })),
     });
     await prisma.user_role.create({ data: { app_user_id: users.ADMIN, role_id: role.role_id } });
     cookie = `${SESSION_COOKIE}=${app.get(JwtService).sign({ sub: Number(users.ADMIN), typ: 'session' })}`;
