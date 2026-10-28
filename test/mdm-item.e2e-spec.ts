@@ -126,6 +126,44 @@ describe('품목 마스터 (e2e)', () => {
     expect(withIds).not.toContain(plainItemId);
   });
 
+  it('⭐ hasBom 은 그 품목을 모품목으로 하는 BOM 이 있는가로 거른다 — 계약 밖(장부 P-130)', async () => {
+    const parentId = await createItem(`${PREFIX}-B`);
+    await prisma.bom.create({
+      data: {
+        parent_item_id: parentId,
+        bom_code: `${PREFIX}-BOM`,
+        bom_version: 1,
+        status_code: 'ACTIVE',
+        effective_from: new Date('2026-01-01'),
+        base_qty: 1,
+        base_uom_id: baseUomId,
+      },
+    });
+    const listed = async (hasBom: string): Promise<number[]> =>
+      (
+        await request(app.getHttpServer())
+          .get(`/api/mdm/items?q=${PREFIX}&includeInactive=true&size=50&hasBom=${hasBom}`)
+          .set('Cookie', cookie)
+          .expect(200)
+      ).body.items.map((i: { itemId: number }) => i.itemId);
+
+    const withBom = await listed('true');
+    expect(withBom).toContain(parentId);
+    expect(withBom).not.toContain(plainItemId);
+
+    const withoutBom = await listed('false');
+    expect(withoutBom).toContain(plainItemId);
+    expect(withoutBom).not.toContain(parentId);
+  });
+
+  it('⛔ hasBom 이 true·false 가 아니면 400 이다 — 무시하면 전 품목이 걸러진 것처럼 보인다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .get(`/api/mdm/items?q=${PREFIX}&hasBom=yes`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['hasBom']);
+  });
+
   it('ERP 규격·품목그룹이 목록·상세에 실린다 · 없으면 null 이다 — 계약 밖(장부 P-75)', async () => {
     await prisma.item.update({
       where: { item_id: BigInt(plainItemId) },
@@ -369,6 +407,7 @@ describe('품목 마스터 (e2e)', () => {
     });
     const ids = items.map((i) => i.item_id);
     await prisma.routing.deleteMany({ where: { item_id: { in: ids } } });
+    await prisma.bom.deleteMany({ where: { parent_item_id: { in: ids } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });

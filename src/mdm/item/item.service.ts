@@ -54,6 +54,8 @@ export interface ItemUpdate {
 export interface ItemQuery extends ReferenceQuery {
   itemTypeCode?: string;
   hasRouting?: boolean;
+  /** 계약에 없는 조건이라 검증 가드가 불리언으로 바꾸지 않는다 — 문자열로 온다(장부 P-130). */
+  hasBom?: string;
 }
 
 type ItemRow = Prisma.itemGetPayload<object>;
@@ -84,6 +86,8 @@ export class ItemService {
       ...(query.hasRouting === undefined
         ? {}
         : { routing: query.hasRouting ? { some: {} } : { none: {} } }),
+      // ERP 연동 현황 › BOM 탭의 모품목 목록 — 이 품목을 모품목으로 하는 BOM 이 있는가.
+      ...withBom(query.hasBom),
     });
     const [rows, total] = await Promise.all([
       this.prisma.item.findMany({
@@ -220,4 +224,15 @@ function view(row: ItemRow): ItemView {
     erpSpec: row.erp_spec,
     erpItemGroupCode: row.erp_item_group_code,
   };
+}
+
+function withBom(value: string | undefined): Prisma.itemWhereInput {
+  if (value === undefined) return {};
+  // ⛔ 틀린 값을 무시하지 않는다 — 걸러지지 않은 전 품목이 「BOM 있는 품목」처럼 보인다.
+  if (value !== 'true' && value !== 'false') {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field: 'hasBom', code: ERROR_CODE.INVALID, message: 'hasBom 은 true 또는 false 여야 합니다.' },
+    ]);
+  }
+  return { bom: value === 'true' ? { some: {} } : { none: {} } };
 }
