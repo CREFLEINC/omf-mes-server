@@ -187,6 +187,29 @@ describe('창고 마스터 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'warehouseCode', code: 'REQUIRED' });
   });
 
+  it('⛔ 거래처는 받지 않는다 — partnerId 는 400 · 외부창고는 거래처 없이 저장되고 응답에 거래처가 없다(장부 P-146)', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/warehouses')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-EXT`, { isExternal: true, partnerId: 1 }))
+      .expect(400);
+    expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'partnerId', code: 'INVALID' })]);
+
+    const { id, etag } = await createWarehouse(`${PREFIX}-EXT`, { isExternal: true, partnerId: null });
+    const stored = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id }, select: { is_external: true } });
+    expect(stored.is_external).toBe(true);
+    const updated = await request(app.getHttpServer())
+      .put(`/api/mdm/warehouses/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send({ ...body(`${PREFIX}-EXT`), plantId: undefined, isExternal: false, isDefect: false })
+      .expect(200);
+    expect(updated.body.isExternal).toBe(false);
+    expect(updated.body).not.toHaveProperty('partnerId');
+  });
+
   it('⛔ 마스터에 없는 공통코드는 400 이다 — 계약이 enum 을 안 적었다', async () => {
     const rejected = await request(app.getHttpServer())
       .post('/api/mdm/warehouses')
