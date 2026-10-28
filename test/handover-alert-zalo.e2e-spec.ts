@@ -187,11 +187,28 @@ describe('인계 작업 알림 — Zalo (e2e · 대역)', () => {
       .expect(200);
     expect(kept.body.handoverTemplates).toEqual(handoverTemplates);
 
-    const bad = await request(app.getHttpServer())
+    const cleared = await request(app.getHttpServer())
       .put('/api/app/zalo-connection')
       .set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID())
       .set('If-Match', kept.headers.etag as string)
+      .send({ appId: 'APP-1', paramMaxLength: 100, templates: [], handoverTemplates: [{ alertTypeCode: 'PUTAWAY_REQUESTED', templateId: null }] })
+      .expect(200);
+    const putaway = cleared.body.handoverTemplates.find((t: { alertTypeCode: string }) => t.alertTypeCode === 'PUTAWAY_REQUESTED');
+    expect(putaway.templateId).toBeNull();
+    const restored = await request(app.getHttpServer())
+      .put('/api/app/zalo-connection')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', cleared.headers.etag as string)
+      .send({ appId: 'APP-1', paramMaxLength: 100, templates: [], handoverTemplates })
+      .expect(200);
+
+    const bad = await request(app.getHttpServer())
+      .put('/api/app/zalo-connection')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', restored.headers.etag as string)
       .send({ appId: 'APP-1', paramMaxLength: 100, templates: [], handoverTemplates: [{ alertTypeCode: 'WORK_SESSION_STARTED', templateId: 'X' }] })
       .expect(400);
     expect(bad.body.errors[0]).toMatchObject({ field: 'handoverTemplates', code: 'INVALID' });

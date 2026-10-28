@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { HANDOVER_PARAMS } from '../../core/notification';
+import { handoverAlertType } from '../../core/notification';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 조회 기간 상한 — 화면이 기본 7일·최대 31일로 묻는다(W-CO-13). */
@@ -175,7 +175,7 @@ function period(query: DispatchQuery): Prisma.DateTimeFilter {
 function targetLabel(aggregateType: string, payload: Payload, eventCode: string): string | null {
   const value = payload[TARGET_LABEL_KEY[aggregateType] ?? ''];
   const label = typeof value === 'string' && value !== '' ? value : null;
-  if (label === null || HANDOVER_PARAMS[eventCode] === undefined) return label;
+  if (label === null || handoverAlertType(eventCode) === undefined) return label;
   const warehouse = payload.warehouse ?? payload.to_warehouse;
   return typeof warehouse === 'string' && warehouse !== '' ? `${label} · ${warehouse}` : label;
 }
