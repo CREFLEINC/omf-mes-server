@@ -164,6 +164,34 @@ describe('품목 마스터 (e2e)', () => {
     expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['hasBom']);
   });
 
+  it('⭐ inspectionRequired 는 품목의 IQC 대상 여부로 거른다 — 계약 밖(장부 P-138)', async () => {
+    const inspectedId = await createItem(`${PREFIX}-I`);
+    await prisma.item.update({ where: { item_id: BigInt(inspectedId) }, data: { inspection_required: true } });
+    const listed = async (value: string): Promise<number[]> =>
+      (
+        await request(app.getHttpServer())
+          .get(`/api/mdm/items?q=${PREFIX}&includeInactive=true&size=50&inspectionRequired=${value}`)
+          .set('Cookie', cookie)
+          .expect(200)
+      ).body.items.map((i: { itemId: number }) => i.itemId);
+
+    const inspected = await listed('true');
+    expect(inspected).toContain(inspectedId);
+    expect(inspected).not.toContain(plainItemId);
+
+    const notInspected = await listed('false');
+    expect(notInspected).toContain(plainItemId);
+    expect(notInspected).not.toContain(inspectedId);
+  });
+
+  it('⛔ inspectionRequired 가 true·false 가 아니면 400 이다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .get(`/api/mdm/items?q=${PREFIX}&inspectionRequired=Y`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['inspectionRequired']);
+  });
+
   it('ERP 규격·품목그룹이 목록·상세에 실린다 · 없으면 null 이다 — 계약 밖(장부 P-75)', async () => {
     await prisma.item.update({
       where: { item_id: BigInt(plainItemId) },
