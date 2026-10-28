@@ -41,7 +41,6 @@ export class LogisticsHandoverNotifier {
       where: { stock_transfer_id: stockTransferId },
       select: {
         stock_transfer_no: true,
-        shipped_at: true,
         warehouse_stock_transfer_from_warehouse_idTowarehouse: { select: { warehouse_name: true } },
         warehouse_stock_transfer_to_warehouse_idTowarehouse: { select: { warehouse_name: true, plant_id: true } },
         _count: { select: { stock_transfer_line: true } },
@@ -53,7 +52,8 @@ export class LogisticsHandoverNotifier {
       plantId: to.plant_id,
       aggregateTypeCode: 'STOCK_TRANSFER',
       aggregateId: stockTransferId,
-      occurredAt: transfer.shipped_at ?? new Date(),
+      // 반출 시각(단말이 보낸 값)이 아니라 지금이다 — 오프라인 재전송분이 Zalo 유효 24시간을 이미 넘겨 버리지 않게.
+      occurredAt: new Date(),
       values: {
         transfer_no: transfer.stock_transfer_no,
         from_warehouse: transfer.warehouse_stock_transfer_from_warehouse_idTowarehouse.warehouse_name,

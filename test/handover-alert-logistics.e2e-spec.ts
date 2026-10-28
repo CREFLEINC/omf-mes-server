@@ -18,7 +18,8 @@ import { NotificationEmitter } from '../src/core/notification';
 import { LogisticsHandoverNotifier } from '../src/logistics/logistics-handover';
 import { PrismaService } from '../src/prisma/prisma.service';
 
-const PREFIX = `E2E_HOLOG_${randomUUID().slice(0, 6)}`;
+const ROOT = 'E2E_HOLOG_';
+const PREFIX = `${ROOT}${randomUUID().slice(0, 6)}`;
 const DAY = '2026-10-28';
 const AT = '2026-10-28T02:00:00.000Z';
 const WORKER_NO = `${PREFIX}W`;
@@ -495,6 +496,29 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role_permission.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role.deleteMany({ where: { role_id: { in: roleIds } } });
-    // 업무 행(입고·원장·피킹·이동·출하지시)은 접두어 공장·창고에 묶여 남는다 — 다른 스위트의 축과 겹치지 않는다.
+    await deleteDocuments();
+  }
+
+  /**
+   * 전표는 지운다 — 전역 목록을 단언하는 스위트(재고 이동 등)에 끼어든다. 이전 실행의 찌꺼기까지 접두어 뿌리로 짚는다.
+   * ⛔ 원장은 트리거가 행 삭제를 막아 남기고, 원장이 FK 로 붙잡는 마스터(창고·품목·LOT)도 남긴다.
+   */
+  async function deleteDocuments(): Promise<void> {
+    const wh = `SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${ROOT}%'`;
+    const sql = [
+      `DELETE FROM logistics.stock_transfer_line WHERE stock_transfer_id IN (SELECT stock_transfer_id FROM logistics.stock_transfer WHERE from_warehouse_id IN (${wh}))`,
+      `DELETE FROM logistics.stock_transfer WHERE from_warehouse_id IN (${wh})`,
+      `DELETE FROM logistics.picking_line WHERE picking_order_id IN (SELECT picking_order_id FROM logistics.picking_order WHERE warehouse_id IN (${wh}))`,
+      `DELETE FROM logistics.picking_order WHERE warehouse_id IN (${wh})`,
+      `DELETE FROM logistics.material_issue_request_line WHERE material_issue_request_id IN (SELECT material_issue_request_id FROM logistics.material_issue_request r JOIN production.work_order w USING (work_order_id) WHERE w.work_order_no LIKE '${ROOT}%')`,
+      `DELETE FROM logistics.material_issue_request WHERE work_order_id IN (SELECT work_order_id FROM production.work_order WHERE work_order_no LIKE '${ROOT}%')`,
+      `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${ROOT}%'`,
+      `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (SELECT shipment_request_id FROM logistics.shipment_request WHERE customer_id IN (SELECT partner_id FROM mdm.partner WHERE partner_code LIKE '${ROOT}%'))`,
+      `DELETE FROM logistics.shipment_request WHERE customer_id IN (SELECT partner_id FROM mdm.partner WHERE partner_code LIKE '${ROOT}%')`,
+      `DELETE FROM logistics.putaway_task WHERE goods_receipt_line_id IN (SELECT goods_receipt_line_id FROM logistics.goods_receipt_line l JOIN logistics.goods_receipt g USING (goods_receipt_id) WHERE g.warehouse_id IN (${wh}))`,
+      `DELETE FROM logistics.goods_receipt_line WHERE goods_receipt_id IN (SELECT goods_receipt_id FROM logistics.goods_receipt WHERE warehouse_id IN (${wh}))`,
+      `DELETE FROM logistics.goods_receipt WHERE warehouse_id IN (${wh})`,
+    ];
+    for (const statement of sql) await prisma.$executeRawUnsafe(statement);
   }
 });
