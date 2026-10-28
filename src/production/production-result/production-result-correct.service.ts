@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
-import { assertNotBlank, optional } from '../../common/master';
+import { assertNotBlank, optional, resolveWorkerId } from '../../common/master';
 import { Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -34,10 +34,12 @@ export interface ProductionResultCorrect {
 
 export type ProductionResultCorrection = ProductionResultView & { affectedLots: AffectedLot[] };
 
-/** 본문 밖에서 오는 것. ⛔ If-Match·X-Worker-No 는 계약이 이 오퍼레이션에서 걷었다(§1-1). */
+/** 본문 밖에서 오는 것. ⛔ If-Match 는 계약이 걷었다(§1-1). POP 단말이면 단말과 정정한 작업자 사번이 온다. */
 export interface CorrectContext {
   idempotencyKey: string;
   appUserId: number | undefined;
+  terminalId?: bigint;
+  workerNo?: string;
 }
 
 /**
@@ -79,8 +81,10 @@ export class ProductionResultCorrectService {
     const workOrderId = Number(original.work_order_id);
     const defectQty = resolveDefectQty(body);
     const defectProcessId = await assertDefectCodes(this.prisma, workOrderId, body.defects ?? []);
+    // 단말은 계정이 없어 정정한 사람을 작업자로 남긴다 — 재직·공장 판정은 인증 가드가 했다.
+    const workerId = context.terminalId === undefined ? undefined : await resolveWorkerId(this.prisma, context.workerNo);
     return this.prisma.$transaction((tx) =>
-      this.commit(tx, { productionResultId, workOrderId, body, context, productionResultNo, defectQty, defectProcessId }),
+      this.commit(tx, { productionResultId, workOrderId, body, context, productionResultNo, defectQty, defectProcessId, workerId }),
     );
   }
 
@@ -171,9 +175,15 @@ export class ProductionResultCorrectService {
       target_id: original.production_result_id,
       event_type_code: 'RESULT_CORRECTED',
       before_value: { productionResultId: Number(original.production_result_id), ...quantitiesOf(original), lotAllocations: own.map((row) => ({ ...row })) },
-      after_value: { productionResultId: Number(row.production_result_id), ...quantitiesOf(row), lotAllocations: allocations.map((allocation) => ({ ...allocation })) },
+      after_value: {
+        productionResultId: Number(row.production_result_id), ...quantitiesOf(row),
+        lotAllocations: allocations.map((allocation) => ({ ...allocation })),
+        // 단말 정정은 계정이 없어 작업자를 남긴다 — workerId·workerNo 만 터미널 감사(`terminal-worker-audit.ts`)와 같은 꼴이다.
+        ...(prepared.workerId === undefined ? {} : { workerId: prepared.workerId.toString(), workerNo: context.workerNo }),
+      },
       reason: [body.reasonCode, body.note].filter((part) => part !== undefined && part !== '').join(' · '),
       performed_by: context.appUserId === undefined ? null : BigInt(context.appUserId),
+      terminal_id: context.terminalId ?? null,
     } });
     // 유형을 실으면 그것이 정정본의 내역이다. 안 실으면 불량수량이 같을 때만 원본 내역을 옮긴다 — 수량이 바뀌면
     // 옛 내역과 합이 어긋나 내역 없이 수량만 남긴다(관리웹 정정 화면이 유형을 받지 않는다 · 장부 P-95).
@@ -199,6 +209,8 @@ interface PreparedCorrection {
   /** 본문 `defectQty`, 없으면 `defects` 합 — 둘 다 없으면 원본을 승계한다. */
   defectQty: number | undefined;
   defectProcessId: bigint | null;
+  /** POP 단말이 정정했으면 그 작업자. */
+  workerId: bigint | undefined;
 }
 
 function badRequest(code: string, message: string): ContractException {

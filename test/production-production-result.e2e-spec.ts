@@ -810,6 +810,27 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       }
     });
 
+    it('정정 — 관리웹 세션이 X-Worker-No 를 보내도 무시한다(정정한 계정이 남고 단말은 비어 있다)', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      const recorded = await record(workOrderId, slots[0].lot_id, 10).expect(201);
+
+      await request(app.getHttpServer())
+        .post(`${RESULTS}/${recorded.body.productionResultId}:correct`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Worker-No', `${PREFIX}-WK`)
+        .send({ reasonCode: 'MISCOUNT', goodQty: 9, note: '웹 정정' })
+        .expect(201);
+
+      const user = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
+      const audit = await prisma.audit_event.findFirstOrThrow({
+        where: { target_type_code: 'PRODUCTION_RESULT', target_id: BigInt(recorded.body.productionResultId), event_type_code: 'RESULT_CORRECTED' },
+      });
+      expect(audit).toMatchObject({ performed_by: user.app_user_id, terminal_id: null });
+      expect(audit.after_value).not.toHaveProperty('workerNo');
+      expect(audit.after_value).not.toHaveProperty('workerId');
+    });
+
     it('정정 — 마감된 W/O 는 400 STATE_LOCKED 이고 LOT 수량은 그대로다', async () => {
       const { workOrderId, slots } = await released(100, 50);
       const recorded = await record(workOrderId, slots[0].lot_id, 30).expect(201);

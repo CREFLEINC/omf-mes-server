@@ -1985,7 +1985,7 @@
      "production"
     ],
     "summary": "실적 정정",
-    "description": "원본을 고치지 않고 정정 레코드를 덧붙인다. 관리웹 세션이 부른다. 정정본이 LOT 배분을 갖고(lotAllocations) LOT 수량은 정정되지 않은 실적의 배분만 센다. 다섯 수량이 모두 0 인 정정도 받는다(잘못 넣은 실적 지우기 · 다른 LOT 으로 옮기려면 0 으로 정정하고 새 실적 등록) — 그때 배분은 없다. W/O 가 마감·취소되면 400 STATE_LOCKED. 수량이 바뀌는 LOT 이 생산입고(취소 완료 제외)·포장·출하(취소 제외)·선별 분할·다음 공정 투입·OQC 의뢰(취소 제외)로 넘어갔으면 400 STATE_LOCKED(본문에 lotAllocations 가 있으면 그 칸, 없으면 goodQty) — 문구가 그 번호와 할 일(생산입고 취소·포장 해체·출하 취소 등)을 알린다. 완료된 LOT 이 미달이 됐는데 W/O 에 미달 사유가 없으면 완료를 풀고(affectedLots.completionReset) 다시 완료하게 한다. 수량 정정에 승인이 필요 없고 사유만 필수다. 근거: 공유계약 G-18 · W-02-05 §5 · 서버 선행 장부 P-120",
+    "description": "원본을 고치지 않고 정정 레코드를 덧붙인다. 관리웹 세션과 POP 단말(X-Worker-No 필수) 모두 부른다. 정정본이 LOT 배분을 갖고(lotAllocations) LOT 수량은 정정되지 않은 실적의 배분만 센다. 다섯 수량이 모두 0 인 정정도 받는다(잘못 넣은 실적 지우기 · 다른 LOT 으로 옮기려면 0 으로 정정하고 새 실적 등록) — 그때 배분은 없다. W/O 가 마감·취소되면 400 STATE_LOCKED. 수량이 바뀌는 LOT 이 생산입고(취소 완료 제외)·포장·출하(취소 제외)·선별 분할·다음 공정 투입·OQC 의뢰(취소 제외)로 넘어갔으면 400 STATE_LOCKED(본문에 lotAllocations 가 있으면 그 칸, 없으면 goodQty) — 문구가 그 번호와 할 일(생산입고 취소·포장 해체·출하 취소 등)을 알린다. 완료된 LOT 이 미달이 됐는데 W/O 에 미달 사유가 없으면 완료를 풀고(affectedLots.completionReset) 다시 완료하게 한다. 수량 정정에 승인이 필요 없고 사유만 필수다. 근거: 공유계약 G-18 · W-02-05 §5 · 서버 선행 장부 P-120",
     "parameters": [
      {
       "name": "productionResultId",
@@ -1999,6 +1999,16 @@
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "POP 단말 토큰으로 부를 때 필수 — 정정한 작업자 사번(그 단말 공장의 재직 작업자). 관리웹 세션은 보내지 않는다(정정한 계정이 남는다). 단말은 그 단말 공장의 W/O 이고 그 W/O 공정의 이 단말 매핑에 「실적 입력」(can_input_result)이 켜져 있어야 하며, 아니면 401 이다. 근거: 서버 선행 · 장부 P-120(사용자 결정 2026-10-26)"
      }
     ],
     "requestBody": {

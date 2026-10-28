@@ -12,6 +12,7 @@ import {
 import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -72,7 +73,10 @@ export class ProductionResultController {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.results.create(body, context), FAMILY_CONFLICT_CODE);
   }
 
-  /** 정정. 새 «전표»가 서므로 201 이다. ⛔ If-Match·X-Worker-No 를 안 읽는다 — 계약이 둘 다 걷었다(2026-09-04). */
+  /**
+   * 정정. 새 «전표»가 서므로 201 이다. ⛔ If-Match 는 안 읽는다(계약이 걷었다).
+   * POP 단말은 X-Worker-No 로 정정한 작업자를 남긴다 — 단말 범위·재직 판정은 인증 가드가 먼저 한다(장부 P-120).
+   */
   @Post(':productionResultId\\:correct')
   @Contract('POST /production/production-results/{productionResultId}:correct')
   correct(
@@ -80,7 +84,13 @@ export class ProductionResultController {
     @Param('productionResultId', ParseIntPipe) productionResultId: number,
     @Body() body: ProductionResultCorrect,
   ): Promise<ProductionResultCorrection> {
-    const context = { idempotencyKey: String(request.headers['idempotency-key']), appUserId: currentSession(request)?.userId };
+    const workerNo = request.headers['x-worker-no'];
+    const terminal = currentTerminal(request);
+    const context = {
+      idempotencyKey: String(request.headers['idempotency-key']),
+      appUserId: currentSession(request)?.userId,
+      ...(terminal === undefined ? {} : { terminalId: terminal.terminalId, workerNo: typeof workerNo === 'string' ? workerNo.trim() : undefined }),
+    };
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
       this.corrections.correct(productionResultId, body, context), FAMILY_CONFLICT_CODE);
   }
