@@ -748,7 +748,7 @@ const FULL_INSPECTION = 'FULL_INSPECTION';
 
 /**
  * 샘플링 방식과 비율(%)의 짝(omf-all-around#103 · 장부 P-37). 샘플 방식은 비율로 검사 수량을 환산하므로
- * 비율이 있어야 하고, 전수검사에 비율이 실리면 화면과 다른 기준이 저장된다. 기존 버전은 다시 저장할 때만 걸린다.
+ * 비율이 있어야 하고, 전수검사에 비율이 실리면 화면과 다른 기준이 저장된다. 기존 버전은 다시 저장하거나 확정할 때 걸린다.
  */
 export function assertSamplingRatio(
   input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio'>,
