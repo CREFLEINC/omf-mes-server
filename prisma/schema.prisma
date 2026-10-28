@@ -1271,6 +1271,9 @@ model purchase_order_line {
   version_no             Int                    @default(1)
   erp_storage_location_code String?   @db.VarChar(7)
   cancelled_at              DateTime? @db.Timestamptz(6)
+  erp_customs_clearance_no         String?   @db.VarChar(18)
+  erp_customs_clearance_seq        Int?
+  erp_customs_clearance_fetched_at DateTime? @db.Timestamptz(6)
   asn_line               asn_line[]
   inbound_receipt_line   inbound_receipt_line[]
   inbound_receipt_excess inbound_receipt_excess[]
