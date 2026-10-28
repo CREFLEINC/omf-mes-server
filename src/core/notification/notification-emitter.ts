@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { NotificationValues, notificationMessage, templateData } from './message-format';
+import { HandoverAggregate, handoverAlertType } from './handover-alert-types';
 import { notificationEvent } from './notification-events';
 
 type Tx = Prisma.TransactionClient;
@@ -42,6 +43,33 @@ export interface EmitResult {
   zaloCount: number;
 }
 
+export interface HandoverEmitInput {
+  alertTypeCode: string;
+  /** 담당자 설정을 찾는 공장 — 종류마다 정해진 공장(research R-3 표). */
+  plantId: bigint;
+  aggregateTypeCode: HandoverAggregate;
+  aggregateId: bigint;
+  occurredAt: Date;
+  /** zalo-templates.md 의 파라미터 값(`event_time` 은 생성기가 만든다). */
+  values: NotificationValues;
+  refs?: Record<string, number>;
+}
+
+interface WriteInput {
+  eventCode: string;
+  title: string;
+  aggregateTypeCode: string;
+  aggregateId: bigint;
+  occurredAt: Date;
+  departmentId: bigint | null;
+  values: NotificationValues;
+  refs?: Record<string, number>;
+  priority: number;
+  skipReason: SkipReason | null;
+  recipients: Recipient[];
+  zaloEnabled: boolean;
+}
+
 interface Recipient {
   app_user_id: bigint;
   is_active: boolean;
@@ -53,6 +81,11 @@ const ZALO_CONNECTION_ID = 1;
 const DEFAULT_PARAM_MAX_LENGTH = 100;
 const ZALO_TTL_MS = 24 * 60 * 60 * 1000;
 const RECIPIENT_SELECT = { app_user_id: true, is_active: true, phone_number: true } as const;
+/** Zalo 발송 순서 — 작을수록 먼저. 기존 6종이 인계 알림 몰림에 밀리지 않게 한다(FR-023 · SC-008). */
+const EVENT_PRIORITY = 0;
+const HANDOVER_PRIORITY = 1;
+
+const logger = new Logger('NotificationEmitter');
 
 /**
  * 알림 생성기 — 업무 트랜잭션 «안»에서 부른다(research R-5). 업무가 롤백되면 알림도 없다(FR-008).
@@ -81,6 +114,92 @@ export class NotificationEmitter {
     if (existing !== null) return { notificationEventId: null, skipReason: null, notificationCount: 0, zaloCount: 0 };
 
     const { skipReason, recipients, zaloEnabled } = await this.decide(tx, input, event.recipientMode);
+    return this.write(tx, {
+      eventCode: input.eventCode,
+      title: event.eventName,
+      aggregateTypeCode: input.aggregateTypeCode,
+      aggregateId: input.aggregateId,
+      occurredAt: input.occurredAt,
+      departmentId: input.departmentId,
+      values: input.values,
+      refs: input.refs,
+      priority: EVENT_PRIORITY,
+      skipReason,
+      recipients,
+      zaloEnabled,
+    });
+  }
+
+  /**
+   * 인계 작업 알림(omf-all-around#190) — 수신자는 공장 × 종류 담당자다(부서 판정 없음 · research R-2).
+   * 같은 (종류, 대상) 사건이 있으면 쓰지 않는다 — 발생 시각이 달라도 대상 기준 한 번이다(FR-002).
+   *
+   * ⭐ SAVEPOINT 로 감싼다 — 알림을 못 써도 업무 트랜잭션은 이어 간다(SC-005). 외부 호출은 없다.
+   */
+  async emitHandover(tx: Tx, input: HandoverEmitInput): Promise<EmitResult> {
+    const type = handoverAlertType(input.alertTypeCode);
+    if (type === undefined) throw new Error(`인계 작업 종류 목록에 없는 코드입니다: ${input.alertTypeCode}`);
+    await tx.$executeRawUnsafe('SAVEPOINT handover_alert');
+    try {
+      const result = await this.writeHandover(tx, input, type.name);
+      await tx.$executeRawUnsafe('RELEASE SAVEPOINT handover_alert');
+      return result;
+    } catch (error) {
+      await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT handover_alert');
+      logger.error(`인계 작업 알림을 쓰지 못했습니다 — ${input.alertTypeCode} ${input.aggregateTypeCode} ${input.aggregateId}`, error);
+      return { notificationEventId: null, skipReason: null, notificationCount: 0, zaloCount: 0 };
+    }
+  }
+
+  private async writeHandover(tx: Tx, input: HandoverEmitInput, title: string): Promise<EmitResult> {
+    const existing = await tx.notification_event.findFirst({
+      where: {
+        event_type_code: input.alertTypeCode,
+        aggregate_type_code: input.aggregateTypeCode,
+        aggregate_id: input.aggregateId,
+      },
+      select: { notification_event_id: true },
+    });
+    if (existing !== null) return { notificationEventId: null, skipReason: null, notificationCount: 0, zaloCount: 0 };
+
+    const decision = await this.decideHandover(tx, input);
+    return this.write(tx, {
+      eventCode: input.alertTypeCode,
+      title,
+      aggregateTypeCode: input.aggregateTypeCode,
+      aggregateId: input.aggregateId,
+      occurredAt: input.occurredAt,
+      departmentId: null,
+      values: input.values,
+      refs: input.refs,
+      priority: HANDOVER_PRIORITY,
+      ...decision,
+    });
+  }
+
+  /** 설정 없음·꺼짐 → `EVENT_DISABLED`, 활성 담당자 0 → `NO_RECIPIENTS` — 기존 건너뜀 값 그대로(FR-024). */
+  private async decideHandover(
+    tx: Tx,
+    input: HandoverEmitInput,
+  ): Promise<{ skipReason: SkipReason | null; recipients: Recipient[]; zaloEnabled: boolean }> {
+    const skip = (skipReason: SkipReason) => ({ skipReason, recipients: [], zaloEnabled: false });
+    const setting = await tx.handover_alert_setting.findUnique({
+      where: { plant_id_alert_type_code: { plant_id: input.plantId, alert_type_code: input.alertTypeCode } },
+      select: {
+        is_enabled: true,
+        zalo_enabled: true,
+        recipients: { orderBy: { app_user_id: 'asc' }, select: { app_user: { select: RECIPIENT_SELECT } } },
+      },
+    });
+    if (setting === null || !setting.is_enabled) return skip('EVENT_DISABLED');
+    const recipients = setting.recipients.map((r) => r.app_user).filter((user) => user.is_active);
+    if (recipients.length === 0) return skip('NO_RECIPIENTS');
+    return { skipReason: null, recipients, zaloEnabled: setting.zalo_enabled };
+  }
+
+  /** 사건·알림센터 알림·Zalo 대기 쓰기 — `emit`·`emitHandover` 가 함께 쓴다(수신자 판정만 다르다). */
+  private async write(tx: Tx, input: WriteInput): Promise<EmitResult> {
+    const { skipReason, recipients, zaloEnabled } = input;
     const created = await tx.notification_event.create({
       data: {
         event_type_code: input.eventCode,
@@ -107,7 +226,7 @@ export class NotificationEmitter {
       data: recipients.map((recipient) => ({
         notification_event_id: eventId,
         recipient_user_id: recipient.app_user_id,
-        title: event.eventName,
+        title: input.title,
         message,
       })),
     });
@@ -155,7 +274,7 @@ export class NotificationEmitter {
    * `tracking_id` 가 `zd-{id}` 라 id 를 먼저 뽑는다 — 식별 칸이 `BY DEFAULT` 라 명시 id 를 받는다.
    * 템플릿 ID·연결 상태는 여기서 보지 않는다 — 러너가 보낼 때 판정해 건의 실패로 남긴다.
    */
-  private async queueZalo(tx: Tx, eventId: bigint, input: EmitInput, targets: Recipient[]): Promise<void> {
+  private async queueZalo(tx: Tx, eventId: bigint, input: WriteInput, targets: Recipient[]): Promise<void> {
     const connection = await tx.zalo_connection.findUnique({
       where: { zalo_connection_id: ZALO_CONNECTION_ID },
       select: { param_max_length: true },
@@ -182,6 +301,7 @@ export class NotificationEmitter {
         template_data: data,
         tracking_id: `zd-${ids[index].id}`,
         expires_at: new Date(input.occurredAt.getTime() + ZALO_TTL_MS),
+        priority: input.priority,
       })),
     });
   }

@@ -9,6 +9,7 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { LogisticsWriteActor } from '../logistics-write-actor';
+import { LogisticsHandoverNotifier } from '../logistics-handover';
 import { StockTransferQueryService } from './stock-transfer-query.service';
 import { StockTransferDetail } from './stock-transfer-view';
 import { TransferLineWriteInput, postTransferIssue } from './transfer-posting';
@@ -59,6 +60,7 @@ export class StockTransferService {
     private readonly queries: StockTransferQueryService,
     private readonly posting: InventoryPostingService,
     private readonly numbering: NumberingService,
+    private readonly handover: LogisticsHandoverNotifier,
   ) {}
 
   async create(
@@ -172,6 +174,7 @@ export class StockTransferService {
       actor: actor.terminalAudit, targetTypeCode: 'STOCK_TRANSFER', targetId: header.stock_transfer_id,
       eventTypeCode: 'CREATE',
     });
+    await this.handover.stockTransferArrival(tx, header.stock_transfer_id, actor);
     return header.stock_transfer_id;
   }
 

@@ -3,7 +3,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { DocumentStateService } from '../../core/document-state';
 import { LotRegistryService, nextMesLotNos, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
-import { PickingPlan, planPicking, writePicking } from '../../core/picking';
+import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ISSUE_REGISTERED, MaterialIssueLine, materialRequirements } from './material-issue';
 import { PqcRequestPlan, preparePqcRequest, writePqcRequest } from './work-order-pqc-request';
@@ -39,6 +39,7 @@ export class WorkOrderReleaseService {
     private readonly documentState: DocumentStateService,
     private readonly numbering: NumberingService,
     private readonly lots: LotRegistryService,
+    private readonly pickingNotices: PickingHandoverNotifier,
   ) {}
 
   async release(
@@ -172,7 +173,7 @@ export class WorkOrderReleaseService {
       where: { material_issue_request_id: header.material_issue_request_id },
       select: { material_issue_request_line_id: true, line_no: true },
     });
-    await writePicking(
+    const pickings = await writePicking(
       tx,
       issue.picking,
       {
@@ -184,5 +185,6 @@ export class WorkOrderReleaseService {
       },
       appUserId,
     );
+    await this.pickingNotices.notify(tx, pickings, { workOrderId: BigInt(workOrderId), requiredAt: null });
   }
 }

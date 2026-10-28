@@ -6,9 +6,12 @@ import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { LotRegistryModule } from '../core/lot';
+import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
+import { PickingHandoverNotifier } from '../core/picking';
 import { PrismaModule } from '../prisma/prisma.module';
+import { LogisticsHandoverNotifier } from './logistics-handover';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { DocumentProgressModule } from './document-progress/document-progress.module';
@@ -107,6 +110,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
+    // 인계 작업 알림(omf-all-around#190) — 입고·이동·출고 요청·출하지시·출하가 같은 tx 에서 알림을 쓴다.
+    NotificationCoreModule,
     // 입하 예정 라인 목록(P-78)이 가드 밖이라 세션을 직접 푼다.
     AuthModule,
   ],
@@ -141,6 +146,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     StockTransferController,
   ],
   providers: [
+    LogisticsHandoverNotifier,
+    PickingHandoverNotifier,
     GoodsIssueQueryService,
     GoodsIssueService,
     GoodsIssueUpdateService,
