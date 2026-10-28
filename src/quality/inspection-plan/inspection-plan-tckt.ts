@@ -11,8 +11,8 @@ import type { ImportParse, ImportRow } from './inspection-plan-import';
  * ⚠ 표가 아니라 «서식»이다 — 파일마다 칸 위치가 다르다. 그래서 위치가 아니라 **라벨 글자**로 찾는다
  *   (「Số quản lý」 오른쪽 또는 바로 아래 칸이 관리번호). 라벨은 베트남어 그대로다.
  * ⚠ 기준서 한 장 = 기준 하나. Code No. 가 여럿(「A/B/C」)이면 같은 항목으로 품목마다 기준을 하나씩 세운다.
- * ⛔ 샘플은 개수(n=5)뿐이라 샘플 비율(%)을 채우지 않는다 — 작성중 버전은 비율 없이 들어가고 확정이 막는다
- *   (사용자 결정 2026-10-28). 개수를 받을지는 omf-all-around#201 이 정한다.
+ * ⭐ 샘플은 개수(n=5)로 읽는다(omf-all-around#201 · 장부 P-141). 「1kg」·「n=2g」처럼 개수가 아니면 비워 두고
+ *   확정이 막는다 — 화면에서 비율이나 개수를 넣는다.
  */
 
 type Grid = Map<number, Map<number, string>>;
@@ -241,6 +241,7 @@ export function parseSpec(spec: string): { target: number; lower: number; upper:
 /**
  * 버전 하나에 샘플·주기가 하나뿐이다 — 기준서는 항목마다 다르므로 **치수 항목**을 따른다(없으면 첫 항목).
  * AQL 은 어느 항목이든 적힌 값(보통 외관), 합격판정개수는 「c=0」의 수, 불합격판정개수는 그다음 수다.
+ * 샘플 개수는 「n=5」·「n=1shot」·「1 Shot」의 수 — 「n=2g」처럼 무게면 개수가 아니다.
  */
 function versionOf(lines: Line[], type: string, issued: string | null): { write: ImportRow['version']; problems: { field: string; message: string }[] } {
   const lead = lines.find((l) => l.numeric && l.frequency !== null) ?? lines.find((l) => l.frequency !== null) ?? lines[0];
@@ -248,6 +249,7 @@ function versionOf(lines: Line[], type: string, issued: string | null): { write:
   const aqlValue = aql === undefined ? null : Number((aql.match(/\d+(?:[.,]\d+)?/g) ?? []).at(-1)?.replace(',', '.') ?? NaN);
   const c = /c\s*=\s*(\d+)/i.exec(lead.sample ?? '') ?? lines.map((l) => /c\s*=\s*(\d+)/i.exec(l.sample ?? '')).find((m) => m !== null) ?? null;
   const acceptance = c === null ? null : Number(c[1]);
+  const count = sampleCountOf(lead.sample) ?? lines.map((l) => sampleCountOf(l.sample)).find((n) => n !== null) ?? null;
   const frequency = frequencyOf(lead.frequency, type);
   return {
     write: {
@@ -255,6 +257,7 @@ function versionOf(lines: Line[], type: string, issued: string | null): { write:
       effectiveTo: null,
       samplingMethodCode: /SHOT/i.test(lead.sample ?? '') ? 'SAMPLE_BY_UNIT' : 'SAMPLE_BY_LOT',
       samplingRatio: null,
+      samplingQty: count,
       aqlValue: aqlValue === null || Number.isNaN(aqlValue) ? null : aqlValue,
       acceptanceNumber: acceptance,
       rejectionNumber: acceptance === null ? null : acceptance + 1,
@@ -266,6 +269,11 @@ function versionOf(lines: Line[], type: string, issued: string | null): { write:
       ? [{ field: 'inspectionFrequencyCode', message: `검사 주기를 읽을 수 없습니다: ${lead.frequency ?? '(빈 칸)'}. 「Mỗi LOT」·「6 lần/ngày」·「2 lần/ca」 중 하나로 적으세요.` }]
       : [],
   };
+}
+
+function sampleCountOf(text: string | null): number | null {
+  const m = /n\s*=\s*(\d+)(?![\d.])(?!\s*k?g\b)/i.exec(text ?? '') ?? /^(\d+)\s*shot/i.exec((text ?? '').trim());
+  return m === null || Number(m[1]) < 1 ? null : Number(m[1]);
 }
 
 /** 「Mỗi LOT」=LOT마다(IQC 는 자재 LOT), 「N lần/ngày」=24÷N시간마다, 「N lần/ca」=근무조별 */

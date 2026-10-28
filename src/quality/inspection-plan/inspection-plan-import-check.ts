@@ -58,6 +58,9 @@ function checkVersion(row: ImportRow): ErrorItem[] {
   if (v.samplingRatio !== null && !(v.samplingRatio > 0 && v.samplingRatio <= 100)) {
     errors.push(fail(row, 'samplingRatio', ERROR_CODE.INVALID, '샘플 비율(%)은 0 초과 100 이하여야 합니다.'));
   }
+  if (v.samplingQty !== null && !(Number.isInteger(v.samplingQty) && v.samplingQty >= 1)) {
+    errors.push(fail(row, 'samplingQty', ERROR_CODE.INVALID, '샘플 개수는 1 이상의 정수여야 합니다.'));
+  }
   if (v.acceptanceNumber !== null && !(Number.isInteger(v.acceptanceNumber) && v.acceptanceNumber >= 0)) {
     errors.push(fail(row, 'acceptanceNumber', ERROR_CODE.INVALID, '합격판정개수는 0 이상의 정수여야 합니다.'));
   }

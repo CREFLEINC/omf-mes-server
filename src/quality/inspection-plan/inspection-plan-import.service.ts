@@ -123,10 +123,13 @@ export class InspectionPlanImportService {
     try {
       if (copied) {
         // 발행은 원본 설정을 복사한다 — 엑셀의 버전 칸으로 덮는다.
-        const { versionNo, inspectionPlanVersion: { samplingRatio } } = await this.versions.get(versionId);
+        const { versionNo, inspectionPlanVersion: copiedFrom } = await this.versions.get(versionId);
         const write = versionWrite(row);
-        // 엑셀에 비율이 없으면 확정 버전에서 사람이 넣은 비율을 이어 쓴다 — 다시 올릴 때마다 비율을 새로 넣지 않게.
-        if (write.samplingRatio == null && write.samplingMethodCode !== 'FULL_INSPECTION') write.samplingRatio = samplingRatio;
+        // 엑셀에 비율·개수가 없으면 확정 버전에서 사람이 넣은 값을 이어 쓴다 — 다시 올릴 때마다 새로 넣지 않게.
+        if (write.samplingRatio == null && write.samplingQty == null && write.samplingMethodCode !== 'FULL_INSPECTION') {
+          write.samplingRatio = copiedFrom.samplingRatio;
+          write.samplingQty = copiedFrom.samplingQty;
+        }
         await this.versions.update(versionId, versionNo, write, DRAFT);
       }
       // 복사된 항목은 id 를 싣지 않았으므로 치환에서 빠진다 — 엑셀 항목만 남는다.
@@ -196,7 +199,7 @@ export class InspectionPlanImportService {
   }
 }
 
-/** 샘플 비율은 비워도 된다 — 확정할 때 막는다(고객사 기준서는 개수뿐 · omf-all-around#201). */
+/** 샘플 비율·개수는 비워도 된다 — 확정할 때 막는다(기준서의 「1kg」처럼 개수로 못 읽는 샘플). */
 const DRAFT = { allowMissingRatio: true } as const;
 
 function versionWrite(row: ImportRow): VersionWrite {
@@ -206,6 +209,7 @@ function versionWrite(row: ImportRow): VersionWrite {
     effectiveTo: v.effectiveTo,
     samplingMethodCode: v.samplingMethodCode as string,
     samplingRatio: v.samplingRatio,
+    samplingQty: v.samplingQty,
     aqlValue: v.aqlValue,
     acceptanceNumber: v.acceptanceNumber,
     rejectionNumber: v.rejectionNumber,

@@ -24,6 +24,7 @@ const HEADERS: Record<string, readonly string[]> = {
   effectiveTo: ['유효종료일', '적용종료일', 'effectiveto'],
   samplingMethodCode: ['샘플링방식', '샘플방식', 'samplingmethodcode'],
   samplingRatio: ['샘플비율', '샘플비율%', 'samplingratio'],
+  samplingQty: ['샘플개수', '샘플수', '샘플수량', 'samplingqty'],
   aqlValue: ['aql', 'aqlvalue'],
   acceptanceNumber: ['합격판정개수', 'ac', 'acceptancenumber'],
   rejectionNumber: ['불합격판정개수', 're', 'rejectionnumber'],
@@ -67,6 +68,7 @@ export interface ImportRow {
     effectiveTo: string | null;
     samplingMethodCode: string | null;
     samplingRatio: number | null;
+    samplingQty: number | null;
     aqlValue: number | null;
     acceptanceNumber: number | null;
     rejectionNumber: number | null;
@@ -130,6 +132,7 @@ export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<Impor
       effectiveTo: date(cell(cells, 'effectiveTo')),
       samplingMethodCode: upper(cell(cells, 'samplingMethodCode')),
       samplingRatio: number(cell(cells, 'samplingRatio')),
+      samplingQty: number(cell(cells, 'samplingQty')),
       aqlValue: number(cell(cells, 'aqlValue')),
       acceptanceNumber: number(cell(cells, 'acceptanceNumber')),
       rejectionNumber: number(cell(cells, 'rejectionNumber')),

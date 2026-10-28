@@ -38,7 +38,7 @@ describe('고객사 검사기준서(TCKT) 읽기', () => {
     expect(group.rows[0]).toMatchObject({
       plan: { inspectionPlanName: 'REAR COVER (FS-534)', inspectionTypeCode: 'OQC', itemCode: 'P-1' },
       version: {
-        effectiveFrom: '2023-11-25', samplingMethodCode: 'SAMPLE_BY_LOT', samplingRatio: null,
+        effectiveFrom: '2023-11-25', samplingMethodCode: 'SAMPLE_BY_LOT', samplingRatio: null, samplingQty: 4,
         aqlValue: 0.4, acceptanceNumber: 0, rejectionNumber: 1, inspectionFrequencyCode: 'PRODUCTION_LOT',
       },
     });
@@ -62,7 +62,7 @@ describe('고객사 검사기준서(TCKT) 읽기', () => {
     const groups = groupRows(parsed.rows);
     expect(groups.map((g) => [g.key, g.rows[0].plan.itemCode])).toEqual([['SJS-QIQ-113-PQC-A1', 'A1'], ['SJS-QIQ-113-PQC-A2', 'A2']]);
     expect(groups[0].rows[0].version).toMatchObject({
-      samplingMethodCode: 'SAMPLE_BY_UNIT', inspectionFrequencyCode: 'TIME_INTERVAL', frequencyIntervalValue: 4, frequencyIntervalUomCode: 'HOUR',
+      samplingMethodCode: 'SAMPLE_BY_UNIT', samplingQty: 1, inspectionFrequencyCode: 'TIME_INTERVAL', frequencyIntervalValue: 4, frequencyIntervalUomCode: 'HOUR',
     });
   });
 
@@ -76,6 +76,8 @@ describe('고객사 검사기준서(TCKT) 읽기', () => {
     }));
     const [group] = groupRows(parsed.rows);
     expect(group.rows[0].item.inspectionItemName).toBe('Repot Test ①Temp; 300°c / ②Weight; 1200g');
+    // 「n=2g」는 무게라 개수가 아니다 — 다음 줄의 「n=1」을 쓴다.
+    expect(group.rows[0].version.samplingQty).toBe(1);
     const errors = checkGroup(group);
     expect(errors.map((e) => [e.field, e.message.slice(0, 7)])).toEqual(expect.arrayContaining([
       ['inspectionFrequencyCode', '엑셀 8행: '],
