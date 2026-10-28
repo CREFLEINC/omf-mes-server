@@ -389,11 +389,14 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     const unit = await prisma.business_unit.findFirstOrThrow({ orderBy: { business_unit_id: 'asc' } });
     ids.businessUnit = unit.business_unit_id;
     for (const key of ['plant1', 'plant2'] as const) {
+      // 공장은 고정 코드로 다시 쓴다 — 원장이 붙어 지울 수 없어, 실행마다 새로 만들면 공장 목록(mdm-reference 등)의 쪽을 밀어낸다.
+      const code = `${ROOT}${key}`;
       ids[key] = (
+        (await prisma.plant.findFirst({ where: { plant_code: code } })) ??
         await prisma.plant.create({
           data: {
-            plant_code: `${PREFIX}-${key}`,
-            plant_name: `${PREFIX} ${key}`,
+            plant_code: code,
+            plant_name: `${ROOT} ${key}`,
             legal_entity_id: base.legal_entity_id,
             business_unit_id: unit.business_unit_id,
             timezone_code: 'Asia/Ho_Chi_Minh',

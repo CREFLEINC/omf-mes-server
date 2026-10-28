@@ -369,11 +369,13 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   async function fixtures(): Promise<void> {
     const base = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     const unit = await prisma.business_unit.findFirstOrThrow({ orderBy: { business_unit_id: 'asc' } });
+    // 공장은 고정 코드로 다시 쓴다 — 원장이 붙어 지울 수 없어, 실행마다 새로 만들면 공장 목록(mdm-reference 등)의 쪽을 밀어낸다.
     ids.plant = (
+      (await prisma.plant.findFirst({ where: { plant_code: `${ROOT}-P` } })) ??
       await prisma.plant.create({
         data: {
-          plant_code: `${PREFIX}-P`,
-          plant_name: `${PREFIX} 공장`,
+          plant_code: `${ROOT}-P`,
+          plant_name: `${ROOT} 공장`,
           legal_entity_id: base.legal_entity_id,
           business_unit_id: unit.business_unit_id,
           timezone_code: 'Asia/Ho_Chi_Minh',
