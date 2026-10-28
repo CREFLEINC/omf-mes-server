@@ -8,6 +8,8 @@ import { layoutMaterialLotLabel, type MaterialLotLabelValues } from './material-
 export interface MaterialLotLabelRow {
   issue_seq: number;
   issued_at: Date;
+  /** 발행 때 찍은 수량 — 그 칸이 서기 전 발행은 비어 있다. */
+  label_qty?: Prisma.Decimal | null;
   lot: {
     lot_no: string;
     lot_type_code: string;
@@ -26,7 +28,8 @@ export function materialLotLabelValues(issue: MaterialLotLabelRow): MaterialLotL
     type: lot.lot_type_code === 'MATERIAL' ? 'RAW' : 'WIP',
     status: lot.status_code,
     partNo: lot.item.item_code,
-    qty: labelQty(lot.initial_qty, lot.uom.uom_code),
+    // 발행 때 찍은 수량이 있으면 그것 — 같은 발행 기록을 다시 그려도 그때 수량이 나온다(장부 P-120).
+    qty: labelQty(issue.label_qty ?? lot.initial_qty, lot.uom.uom_code),
     lotNo: lot.lot_no,
     mfgDt: labelDateTime(lot.manufactured_at ?? issue.issued_at, lot.plant.timezone_code),
     issueSeq: issue.issue_seq,

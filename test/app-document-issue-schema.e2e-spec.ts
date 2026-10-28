@@ -119,7 +119,8 @@ describe("I-27 A9 발행 결과·귀속 물리 계약 (e2e)", () => {
              character_maximum_length,datetime_precision
       FROM information_schema.columns
       WHERE table_schema='app' AND table_name='document_issue_log'`;
-    expect(columns).toHaveLength(18);
+    // 발행 순간의 LOT 라벨 수량 `label_qty` 가 더해졌다(장부 P-120): 18 → 19.
+    expect(columns).toHaveLength(19);
     const byName = Object.fromEntries(
       columns.map((column) => [column.column_name, column]),
     );

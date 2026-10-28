@@ -14,8 +14,10 @@ import { PrismaService } from "../src/prisma/prisma.service";
 
 const LOGIN_ID = "e2e-audit-event-probe";
 const NOPERM_ID = "e2e-audit-event-noperm";
+const CORRECTOR_ID = "e2e-audit-event-corrector";
 const PASSWORD = "감사이력-검사-비밀번호";
 const ROLE = "E2E_AUDIT_EVENT";
+const CORRECTOR_ROLE = "E2E_AUDIT_EVENT_CORRECTOR";
 const PREFIX = "AUDIT-E2E";
 const PATH = "/api/audit/events";
 const BASE = "2026-04-01T00:00:00.000Z";
@@ -51,6 +53,7 @@ describe("감사 이력 조회 (e2e)", () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let correctorCookie: string[];
   let performedBy: number;
   let sortIds: number[];
 
@@ -146,6 +149,34 @@ describe("감사 이력 조회 (e2e)", () => {
     });
   });
 
+  it("⭐ 업무 기록 대상(생산 실적·LOT·포장 단위)으로도 거른다 — 장부 P-120", async () => {
+    const response = await get({
+      targetTypeCode: "PRODUCTION_RESULT",
+      correlationId: `${PREFIX}-RECORD`,
+    });
+    expect(
+      response.body.items.map((item: { reason: string }) => item.reason),
+    ).toEqual(["RESULT-CORRECTED"]);
+    expect(validator()(response.body)).toBe(true);
+    for (const targetTypeCode of ["LOT", "HANDLING_UNIT"]) {
+      const other = await get({
+        targetTypeCode,
+        correlationId: `${PREFIX}-RECORD`,
+      });
+      expect(other.body.items).toHaveLength(1);
+    }
+  });
+
+  it("⭐ 정정 화면(W-02-05 실적 정정 · W-01-10 입고 관리) 권한만으로 정정 이력을 본다", async () => {
+    for (const targetTypeCode of ["PRODUCTION_RESULT", "LOT"]) {
+      const response = await request(app.getHttpServer())
+        .get(range({ targetTypeCode, correlationId: `${PREFIX}-RECORD` }))
+        .set("Cookie", correctorCookie)
+        .expect(200);
+      expect(response.body.items).toHaveLength(1);
+    }
+  });
+
   it("⛔ 계약 enum 밖 targetTypeCode는 400이다", async () => {
     await request(app.getHttpServer())
       .get(range({ targetTypeCode: "WAREHOUSE" }))
@@ -216,8 +247,37 @@ describe("감사 이력 조회 (e2e)", () => {
     await prisma.user_role.create({
       data: { app_user_id: user.app_user_id, role_id: role.role_id },
     });
+    const corrector = await prisma.app_user.create({
+      data: {
+        login_id: CORRECTOR_ID,
+        user_name: "감사정정화면",
+        status_code: "EMPLOYED",
+      },
+    });
+    await prisma.user_credential.create({
+      data: {
+        app_user_id: corrector.app_user_id,
+        password_hash: await hashPassword(PASSWORD),
+      },
+    });
+    const correctorRole = await prisma.role.create({
+      data: { role_code: CORRECTOR_ROLE, role_name: "감사정정화면검사용" },
+    });
+    await prisma.role_permission.createMany({
+      data: ["W-02-05", "W-01-10"].map((permission_code) => ({
+        role_id: correctorRole.role_id,
+        permission_code,
+      })),
+    });
+    await prisma.user_role.create({
+      data: {
+        app_user_id: corrector.app_user_id,
+        role_id: correctorRole.role_id,
+      },
+    });
     cookie = await login(LOGIN_ID);
     noPermCookie = await login(NOPERM_ID);
+    correctorCookie = await login(CORRECTOR_ID);
 
     await event(
       0,
@@ -313,6 +373,22 @@ describe("감사 이력 조회 (e2e)", () => {
       "FILTER-CORRELATION",
     );
 
+    for (const [targetTypeCode, reason] of [
+      ["PRODUCTION_RESULT", "RESULT-CORRECTED"],
+      ["LOT", "LOT-COMPLETED"],
+      ["HANDLING_UNIT", "HU-CREATED"],
+    ]) {
+      await event(
+        25,
+        targetTypeCode,
+        9001,
+        "UPDATE",
+        performedBy,
+        `${PREFIX}-RECORD`,
+        reason,
+      );
+    }
+
     await prisma.audit_event.create({
       data: {
         occurred_at: at(40),
@@ -355,7 +431,7 @@ describe("감사 이력 조회 (e2e)", () => {
       where: { correlation_id: { startsWith: PREFIX } },
     });
     const users = await prisma.app_user.findMany({
-      where: { login_id: { in: [LOGIN_ID, NOPERM_ID] } },
+      where: { login_id: { in: [LOGIN_ID, NOPERM_ID, CORRECTOR_ID] } },
       select: { app_user_id: true },
     });
     const userIds = users.map((user) => user.app_user_id);
@@ -372,7 +448,7 @@ describe("감사 이력 조회 (e2e)", () => {
       where: { app_user_id: { in: userIds } },
     });
     const roles = await prisma.role.findMany({
-      where: { role_code: ROLE },
+      where: { role_code: { in: [ROLE, CORRECTOR_ROLE] } },
       select: { role_id: true },
     });
     const roleIds = roles.map((role) => role.role_id);

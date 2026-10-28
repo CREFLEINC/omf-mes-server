@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 
 import { ContractException, ERROR_CODE, field } from "../../common/errors";
+import { LIVE_ALLOCATION } from '../../core/lot/lot-allocation';
 import {
   DocumentIssueCreateInput,
   DocumentIssueTargetFacts,
@@ -82,6 +83,7 @@ export class DocumentIssueWriteService {
     );
     const workerId = await resolveWorker(tx, context.workerNo);
     const reason = await resolveReason(tx, input, qualified);
+    const labelQty = await labelQuantities(tx, input.documentTypeCode, qualified.map(({ lotId }) => lotId));
     const now = new Date();
     const created = await tx.document_issue_log.createManyAndReturn({
       data: qualified.map(({ target, lotId, sequence }) => ({
@@ -102,6 +104,7 @@ export class DocumentIssueWriteService {
         issued_worker_id: workerId,
         print_reported_worker_id: null,
         print_reported_by: null,
+        label_qty: lotId === null ? null : labelQty.get(lotId) ?? null,
       })),
       select: {
         document_issue_log_id: true,
@@ -262,3 +265,28 @@ function issueKey(
 ): string {
   return `${documentTypeCode}:${targetTypeCode}:${targetId}:${issueSeq}`;
 }
+
+/**
+ * 발행 순간의 라벨 수량(장부 P-120). 생산 LOT 은 잎 배분 합계(0 으로 정정됐으면 0 — 계획 수량으로 갈음하지 않는다),
+ * 자재 LOT 은 초기 수량. 생산 LOT 수량은 실적 정정으로 바뀌므로 찍힌 수량을 남겨 「재발행 필요」를 가린다.
+ */
+async function labelQuantities(
+  tx: Prisma.TransactionClient,
+  documentTypeCode: string,
+  lotIds: readonly (bigint | null)[],
+): Promise<Map<bigint, Prisma.Decimal>> {
+  const ids = lotIds.filter((lotId): lotId is bigint => lotId !== null);
+  if (ids.length === 0 || !LABEL_QTY_TYPES.has(documentTypeCode)) return new Map();
+  const lots = await tx.lot.findMany({ where: { lot_id: { in: ids } }, select: { lot_id: true, initial_qty: true } });
+  const quantities = new Map(lots.map((lot) => [lot.lot_id, lot.initial_qty]));
+  if (documentTypeCode !== PRODUCTION_LOT_LABEL) return quantities;
+  for (const lotId of ids) quantities.set(lotId, new Prisma.Decimal(0));
+  const sums = await tx.production_result_lot_allocation.groupBy({
+    by: ['lot_id'], where: { lot_id: { in: ids }, ...LIVE_ALLOCATION }, _sum: { allocated_qty: true },
+  });
+  for (const row of sums) if (row._sum.allocated_qty !== null) quantities.set(row.lot_id, row._sum.allocated_qty);
+  return quantities;
+}
+
+const PRODUCTION_LOT_LABEL = 'PRODUCTION_LOT_LABEL';
+const LABEL_QTY_TYPES = new Set([PRODUCTION_LOT_LABEL, 'MATERIAL_LOT_LABEL', 'IQC_LABEL']);

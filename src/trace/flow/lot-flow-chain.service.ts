@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
+import { LIVE_ALLOCATION } from '../../core/lot/lot-allocation';
 import { CONSUMED_RELATION, tracedWorkOrders } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -56,9 +57,9 @@ export interface InputMaterialNode extends LotHead, MaterialSide, Consumption {
 export interface BackwardFlow extends ProductSide {
   lot: LotHead;
   goodQty: number;
-  /** 투입 자재로 잇지 못하면(원천이 W/O 아님·실적 배분 없음·투입 없음) null. */
+  /** 투입 자재로 잇지 못하면(원천이 W/O 아님·실적 배분이 한 번도 없음·투입 없음) null. */
   basis: TraceBasis | null;
-  /** 원천이 W/O 가 아닌 LOT(자재·분할)이면 null 이고 투입 자재도 없다. 실적 배분이 없는 생산 LOT 은 W/O 만 싣고 투입 자재는 비운다 — 정방향이 그 LOT 을 잇지 않는 것과 맞춘다. */
+  /** 원천이 W/O 가 아닌 LOT(자재·분할)이면 null 이고 투입 자재도 없다. 실적 배분이 한 번도 없었던 생산 LOT 은 W/O 만 싣고 투입 자재는 비운다(0 으로 정정된 LOT 은 생산 0 으로 투입 자재가 남는다) — 정방향이 그 LOT 을 잇지 않는 것과 맞춘다. */
   workOrder: (WorkOrderHead & {
     results: { count: number; goodQty: number; defectQty: number; firstAt: string | null; lastAt: string | null };
   }) | null;
@@ -126,7 +127,8 @@ export class LotFlowChainService {
 
     const workOrderId = source.source_id;
     const traced = (await tracedWorkOrders(this.prisma, [workOrderId])).size > 0;
-    const sources = !goodQty.has(id) ? [] : traced
+    const everProduced = (await this.prisma.production_result_lot_allocation.count({ where: { lot_id: id } })) > 0;
+    const sources = !everProduced ? [] : traced
       ? (await this.prisma.lot_relation.findMany({
           where: { target_lot_id: id, relation_type_code: CONSUMED_RELATION }, distinct: ['source_lot_id'], select: { source_lot_id: true },
         })).map((row) => row.source_lot_id)
@@ -208,7 +210,7 @@ export class LotFlowChainService {
 
   private async goodQty(lotIds: bigint[]): Promise<Map<bigint, number>> {
     const rows = await this.prisma.production_result_lot_allocation.groupBy({
-      by: ['lot_id'], where: { lot_id: { in: lotIds } }, _sum: { allocated_qty: true },
+      by: ['lot_id'], where: { lot_id: { in: lotIds }, ...LIVE_ALLOCATION }, _sum: { allocated_qty: true },
     });
     return new Map(rows.map((row) => [row.lot_id, Number(row._sum.allocated_qty ?? 0)]));
   }

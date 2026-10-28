@@ -241,6 +241,7 @@ model document_issue_log {
   issued_worker_id         BigInt?
   print_reported_worker_id BigInt?
   print_reported_by        BigInt?
+  label_qty                Decimal?  @db.Decimal(20, 6)
   app_user                 app_user? @relation("document_issue_log_issued_by", fields: [issued_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   print_reported_user      app_user? @relation("document_issue_log_print_reported_by", fields: [print_reported_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   issued_worker            worker?   @relation("document_issue_log_issued_worker", fields: [issued_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3197,6 +3198,7 @@ model production_result {
 
   @@unique([work_order_id, result_sequence], map: "uq_production_result_seq")
   @@index([work_order_id, occurred_at(sort: Desc)], map: "ix_production_result_work_order")
+  @@index([corrects_production_result_id], map: "ix_production_result_corrects")
   @@schema("production")
 }
 

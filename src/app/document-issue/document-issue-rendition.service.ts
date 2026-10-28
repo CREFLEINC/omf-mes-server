@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 
+import { LIVE_ALLOCATION } from '../../core/lot/lot-allocation';
 import { PrismaService } from '../../prisma/prisma.service';
 import { locationLabelPng, locationLabelValues } from './location-label';
 import type { LocationLabelValues } from './location-label-layout';
@@ -73,11 +74,11 @@ export class DocumentIssueRenditionService {
     }
     const [allocated, latest, workOrder] = await Promise.all([
       this.prisma.production_result_lot_allocation.aggregate({
-        where: { lot_id: lot.lot_id },
+        where: { lot_id: lot.lot_id, ...LIVE_ALLOCATION },
         _sum: { allocated_qty: true },
       }),
       this.prisma.production_result_lot_allocation.findFirst({
-        where: { lot_id: lot.lot_id },
+        where: { lot_id: lot.lot_id, ...LIVE_ALLOCATION },
         orderBy: { production_result_lot_allocation_id: 'desc' },
         select: { production_result: { select: { occurred_at: true } } },
       }),
@@ -94,7 +95,7 @@ export class DocumentIssueRenditionService {
       issued_at: issue.issued_at,
       lot,
       allocation: {
-        qty: allocated._sum.allocated_qty,
+        qty: issue.label_qty ?? allocated._sum.allocated_qty,
         occurredAt: latest?.production_result.occurred_at ?? null,
       },
       workOrderNo: workOrder?.work_order_no ?? '',

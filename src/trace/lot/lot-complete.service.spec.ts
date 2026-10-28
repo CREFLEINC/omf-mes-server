@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LotComplete, LotCompleteService } from './lot-complete.service';
+import { LIVE_ALLOCATION } from '../../core/lot/lot-allocation';
 
 const LOT_ID = 7;
 const WORK_ORDER_ID = 900n;
@@ -139,7 +140,8 @@ describe('생산 LOT 완료 (I-7 PR ④)', () => {
     await harness.service.complete(LOT_ID, body(), context());
 
     // 누적은 «이 LOT 에 배분된 것»만 센다 — W/O 축(실적 양품 합)과 섞으면 슬롯이 둘일 때 두 배가 된다.
-    expect(harness.allocationWheres).toEqual([{ lot_id: BigInt(LOT_ID) }]);
+    // 정정된 실적의 배분은 빼고 잎만 센다(장부 P-120).
+    expect(harness.allocationWheres).toEqual([{ lot_id: BigInt(LOT_ID), ...LIVE_ALLOCATION }]);
     expect(harness.resultAggregates).toEqual([]);
   });
 

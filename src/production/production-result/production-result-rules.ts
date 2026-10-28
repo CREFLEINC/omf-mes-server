@@ -49,7 +49,7 @@ const NO_SLOT_STATUS: readonly string[] = ['PLANNED', 'CONFIRMED', 'CANCELLED'];
  * «앞당겨» 막는다 — CHECK 위반은 `PrismaClientUnknownRequestError` 라 공용 그물에 안 걸려 500 이
  * 샌다. 생략한 칸은 **0**(`P-02-04` §4).
  */
-export function resultQuantities(body: ResultQuantityInput): Record<string, number> {
+export function resultQuantities(body: ResultQuantityInput & { allowZero?: boolean }): Record<string, number> {
   const columns: Record<string, number> = {};
   let sum = 0;
   for (const [name, column] of Object.entries(QTY_COLUMNS)) {
@@ -58,7 +58,7 @@ export function resultQuantities(body: ResultQuantityInput): Record<string, numb
     columns[column] = value;
     sum += value;
   }
-  if (sum === 0) {
+  if (sum === 0 && body.allowZero !== true) {
     throw one(field('goodQty', ERROR_CODE.INVALID, '다섯 수량의 합이 0일 수 없습니다.'));
   }
   return columns;
