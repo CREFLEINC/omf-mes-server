@@ -20,7 +20,7 @@ import { releasePlan } from '../src/production/work-order/release-plan';
 const PREFIX = 'WLS204';
 const BASE = '/api/planning/production-orders';
 
-interface Row { productionOrderNo: string; worklistState: string; worklistReasons?: { code: string; workOrderCount: number }[] }
+interface Row { productionOrderNo: string; worklistState: string; autoPlan: { status: string } | null; worklistReasons?: { code: string; workOrderCount: number }[] }
 
 describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
   let app: INestApplication;
@@ -84,6 +84,14 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       DONE: undefined,
       CANCEL: undefined,
     });
+  });
+
+  it('까닭은 판정과 함께만 온다 — DONE 인 조치 필요는 까닭이 늘 있고, 까닭이 있으면 조치 필요다', async () => {
+    const body = (await list({}).expect(200)).body as { items: Row[] };
+    for (const row of body.items) {
+      const expectsReasons = row.worklistState === 'ACTION_REQUIRED' && row.autoPlan?.status === 'DONE';
+      expect({ no: row.productionOrderNo, hasReasons: (row.worklistReasons?.length ?? 0) > 0 }).toEqual({ no: row.productionOrderNo, hasReasons: expectsReasons });
+    }
   });
 
   it('배포 대기·조치 필요 판정이 배포 전제 검사와 같다 — 막힌다고 본 W/O 만 releasePlan 이 400 이다', async () => {
