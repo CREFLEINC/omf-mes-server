@@ -237,7 +237,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:new-revision': ['W-06-02'],
   // 작성중 버전 취소(장부 P-128) — 신규 버전 발행의 되돌림이라 같은 화면이다.
   'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['W-06-02'],
-  // 검사기준 엑셀 올리기(장부 P-131) — 같은 화면 헤더의 [엑셀 올리기]다.
+  // 검사기준 엑셀 올리기(장부 P-140) — 같은 화면 헤더의 [엑셀 올리기]다.
   'POST /quality/inspection-plans:import': ['W-06-02'],
 
   // `W-06-14` 적치 규칙 마스터 — §3 이 「규칙 추가」만 적어 수정·활성 전이가 도출표에

@@ -5,7 +5,7 @@ import { cellText as text } from './inspection-plan-import-cell';
 import { isTcktSheet, parseTcktSheet } from './inspection-plan-tckt';
 
 /**
- * 검사기준 엑셀 한 장을 읽는다(omf-all-around#199 · 장부 P-131).
+ * 검사기준 엑셀 한 장을 읽는다(omf-all-around#199 · 장부 P-140).
  *
  * 두 서식을 받는다.
  *   - 머리글 표: 툴 엑셀 올리기와 같이 머리글 이름으로 열을 «찾고», 못 찾은 선택 열은 비운다.
