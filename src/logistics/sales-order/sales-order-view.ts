@@ -44,7 +44,14 @@ export interface SalesOrderView {
   erpOrderTypeCode?: string;
   erpMovementTypeCode?: string;
   erpSalesGroupCode?: string;
+  /** 출하 진행 — 계약 밖 칸(장부 P-132). 취소된 라인은 세지 않는다. */
+  shipStatusCode: ShipStatusCode;
+  lineCount: number;
+  openLineCount: number;
 }
+
+/** P/O 입하 진행(`purchase-order-receipt.ts`)과 같은 넷이다 — 출하 수량으로 판정한다. */
+export type ShipStatusCode = 'NOT_STARTED' | 'PARTIAL' | 'COMPLETED' | 'CANCELLED';
 
 /**
  * ⭐ 목록도 `lines` 를 싣는다(I-22 R-9) — `W-04-01` §3 ① 이 목록 행에 「3라인」을 그리는데
@@ -67,7 +74,22 @@ export function salesOrderView(row: SalesOrderRow): SalesOrderView {
     erpOrderTypeCode: row.erp_order_type_code ?? undefined,
     erpMovementTypeCode: row.erp_movement_type_code ?? undefined,
     erpSalesGroupCode: row.erp_sales_group_code ?? undefined,
+    ...shipProgress(row),
   });
+}
+
+function shipProgress(row: SalesOrderRow): Pick<SalesOrderView, 'shipStatusCode' | 'lineCount' | 'openLineCount'> {
+  const live = row.sales_order_line.filter((line) => line.cancelled_at === null);
+  const unshipped = live.filter((line) => line.shipped_qty.lessThan(line.ordered_qty)).length;
+  const shipStatusCode = shipStatus(row.status_code, live, unshipped);
+  // 취소된 수주는 남은 라인이 있어도 출하할 것이 없다 — `progress=OPEN` 에 안 걸리는 것과 맞춘다.
+  return { shipStatusCode, lineCount: live.length, openLineCount: shipStatusCode === 'CANCELLED' ? 0 : unshipped };
+}
+
+function shipStatus(statusCode: string, live: SalesOrderLineRow[], openLineCount: number): ShipStatusCode {
+  if (statusCode === 'CANCELLED' || live.length === 0) return 'CANCELLED';
+  if (openLineCount === 0) return 'COMPLETED';
+  return live.some((line) => line.shipped_qty.greaterThan(0)) ? 'PARTIAL' : 'NOT_STARTED';
 }
 
 /** `shipped_qty` 는 `DEFAULT 0` 이라 생략된 적이 없다 — Decimal 0 을 그대로 낸다(널 아님). */

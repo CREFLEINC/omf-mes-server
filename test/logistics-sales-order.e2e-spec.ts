@@ -75,6 +75,9 @@ describe('고객사 출하지시서 조회 (e2e)', () => {
   const ids = { c1: 0, c2: 0, ship1: 0, ship2: 0, item1: 0, item2: 0, uom1: 0, uom2: 0 };
   /** `SO1` 편성됨 · `SO2` 미편성 · `SO3` 널 작업지시가 «안» 가리킴 · `SO2L`·`SO3L` 라인 2·3 */
   const so = { SO1: 0, SO2: 0, SO3: 0, SO2L: 0, SO3L: 0 };
+  /** 출하 진행(장부 P-132) — 번호가 `-PG` 라 `MINE` 에 안 걸린다. */
+  const pg = { NONE: 0, PART: 0, DONE: 0, CXL: 0, ALLCXL: 0 };
+  const PROGRESS = `q=${PREFIX}-PG`;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -336,6 +339,52 @@ describe('고객사 출하지시서 조회 (e2e)', () => {
     ]);
   });
 
+  // ── 출하 진행 · progress(계약 밖 · 장부 P-132) ─────────────────────────────
+  it('⭐ 라인 출하에 따라 shipStatusCode 가 넷으로 갈린다', async () => {
+    type Progress = { shipStatusCode: string; lineCount: number; openLineCount: number };
+    const body = await list(PROGRESS);
+    const progressOf = (id: number): Progress => {
+      const { shipStatusCode, lineCount, openLineCount } = row(body, id) as unknown as Progress;
+      return { shipStatusCode, lineCount, openLineCount };
+    };
+
+    // 취소된 라인(출하 일부 · 미출하)은 판정에도 수에도 안 들어간다.
+    expect(progressOf(pg.NONE)).toEqual({ shipStatusCode: 'NOT_STARTED', lineCount: 2, openLineCount: 2 });
+    expect(progressOf(pg.PART)).toEqual({ shipStatusCode: 'PARTIAL', lineCount: 2, openLineCount: 1 });
+    expect(progressOf(pg.DONE)).toEqual({ shipStatusCode: 'COMPLETED', lineCount: 2, openLineCount: 0 });
+    expect(progressOf(pg.CXL)).toEqual({ shipStatusCode: 'CANCELLED', lineCount: 1, openLineCount: 0 });
+    expect(progressOf(pg.ALLCXL)).toEqual({ shipStatusCode: 'CANCELLED', lineCount: 0, openLineCount: 0 });
+    expect(validator('GET /logistics/sales-orders')(body)).toBe(true);
+    expect(await detail(pg.PART)).toMatchObject({ shipStatusCode: 'PARTIAL', lineCount: 2, openLineCount: 1 });
+  });
+
+  it('⭐ progress=OPEN 은 출하가 남은 수주만 낸다', async () => {
+    const body = await list(`${PROGRESS}&progress=OPEN`);
+
+    expect(idsOf(body)).toEqual([pg.PART, pg.NONE]);
+    expect(body.page.total).toBe(2);
+  });
+
+  it('⭐ progress=COMPLETED 는 완료·취소를 내고 OPEN 과 겹치지 않는다', async () => {
+    const completed = await list(`${PROGRESS}&progress=COMPLETED`);
+    const open = await list(`${PROGRESS}&progress=OPEN`);
+    const all = await list(PROGRESS);
+
+    expect(idsOf(completed)).toEqual([pg.ALLCXL, pg.CXL, pg.DONE]);
+    expect(idsOf(completed).filter((id) => idsOf(open).includes(id))).toEqual([]);
+    expect(completed.page.total + open.page.total).toBe(all.page.total);
+  });
+
+  it('⛔ progress 가 OPEN·COMPLETED 가 아니면 400 이다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .get(`${BASE}?${PROGRESS}&progress=open`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(rejected.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'progress', code: 'INVALID' }),
+    ]);
+  });
+
   // ── 헬퍼 ────────────────────────────────────────────────────────────────
   async function list(query: string): Promise<ListBody> {
     const response = await request(app.getHttpServer())
@@ -408,6 +457,40 @@ describe('고객사 출하지시서 조회 (e2e)', () => {
     await shipmentRequest('SR-ASSIGNED', so.SO1);
     // ⭐ `sales_order_id` 가 NULL 인 작업지시 — `NOT IN` 이면 목록이 통째로 빈다(S-9).
     await shipmentRequest('SR-NULL', null);
+
+    // [주문, 출하, 라인 취소] — 취소 라인은 출하가 남았거나 일부 나가도 세지 않는다.
+    pg.NONE = await progressOrder('PG-NONE', 'RECEIVED', [[100, 0], [50, 0], [100, 40, true]]);
+    pg.PART = await progressOrder('PG-PART', 'RECEIVED', [[100, 100], [100, 40], [100, 0, true]]);
+    pg.DONE = await progressOrder('PG-DONE', 'RECEIVED', [[100, 100], [50, 50], [100, 0, true]]);
+    pg.CXL = await progressOrder('PG-CXL', 'CANCELLED', [[100, 0]]);
+    pg.ALLCXL = await progressOrder('PG-ALLCXL', 'RECEIVED', [[100, 0, true]]);
+  }
+
+  async function progressOrder(
+    key: string,
+    statusCode: string,
+    lines: [ordered: number, shipped: number, cancelled?: boolean][],
+  ): Promise<number> {
+    const created = await prisma.sales_order.create({
+      data: {
+        sales_order_no: `${PREFIX}-${key}`,
+        customer_id: BigInt(ids.c1),
+        ship_to_partner_id: BigInt(ids.ship1),
+        order_date: new Date('2026-08-11T00:00:00.000Z'),
+        status_code: statusCode,
+        sales_order_line: {
+          create: lines.map(([ordered, shipped, cancelled], index) => ({
+            line_no: index + 1,
+            item_id: BigInt(ids.item1),
+            uom_id: BigInt(ids.uom1),
+            ordered_qty: ordered,
+            shipped_qty: shipped,
+            cancelled_at: cancelled ? new Date('2026-08-12T00:00:00.000Z') : null,
+          })),
+        },
+      },
+    });
+    return Number(created.sales_order_id);
   }
 
   async function order(
