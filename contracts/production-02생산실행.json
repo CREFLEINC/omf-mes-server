@@ -6017,9 +6017,10 @@
      "ROUTING_AMBIGUOUS",
      "LINE_UNKNOWN",
      "PLAN_NOT_CONFIRMED",
-     "QTY_REMAINING"
+     "QTY_REMAINING",
+     "AUTO_PLAN_RERUN_NEEDED"
     ],
-    "description": "⚠ 개발팀 선행(P-67). BOM_MISSING = 품목의 기본 BOM 이 없다 · ROUTING_MISSING = 쓸 수 있는(확정·유효 기간 안) Routing 이 없다 · ROUTING_AMBIGUOUS = 쓸 수 있는 Routing 이 여럿인데 기본이 없다 · LINE_UNKNOWN = 계획 라인이 없고 기본 매핑 설비도 라인에 속하지 않아 W/O 라인이 정해지지 않는다 · PLAN_NOT_CONFIRMED = 작성중 계획이 있다 · QTY_REMAINING = 확정 계획이 오더 수량에 못 미친다"
+    "description": "⚠ 개발팀 선행(P-67). BOM_MISSING = 품목의 기본 BOM 이 없다 · ROUTING_MISSING = 쓸 수 있는(확정·유효 기간 안) Routing 이 없다 · ROUTING_AMBIGUOUS = 쓸 수 있는 Routing 이 여럿인데 기본이 없다 · LINE_UNKNOWN = 계획 라인이 없고 기본 매핑 설비도 라인에 속하지 않아 W/O 라인이 정해지지 않는다 · PLAN_NOT_CONFIRMED = 작성중 계획이 있다 · QTY_REMAINING = 확정 계획이 오더 수량에 못 미친다 · AUTO_PLAN_RERUN_NEEDED = 계획이 없는데 막던 기준정보가 이제 갖춰졌다 — 자동 계획을 다시 실행한다(P-142). 확인 필요(NEEDS_REVIEW)는 이유가 늘 하나 이상이다"
    },
    "ProductionOrderCreate": {
     "type": "object",

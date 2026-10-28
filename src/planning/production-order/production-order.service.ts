@@ -9,6 +9,8 @@ import { AutoPlanStatus } from './auto-plan';
 import { AutoPlanService } from './auto-plan.service';
 import { progressSql, progressStatusCode, progressWhere } from './production-order-progress';
 import {
+  AUTO_PLAN_DONE_SQL,
+  AUTO_PLAN_UNTOUCHED_SQL,
   WorklistReason,
   WorklistReasonCounts,
   WorklistState,
@@ -315,10 +317,12 @@ function filterSql(query: ProductionOrderListQuery): Prisma.Sql[] {
   if (query.dueDateFrom !== undefined) conditions.push(Prisma.sql`o.due_date >= ${query.dueDateFrom}::date`);
   if (query.dueDateTo !== undefined) conditions.push(Prisma.sql`o.due_date <= ${query.dueDateTo}::date`);
   if (query.plannedStartDateFrom !== undefined) {
-    conditions.push(Prisma.sql`o.planned_start_date >= ${dateQuery('plannedStartDateFrom', query.plannedStartDateFrom)}::date`);
+    dateQuery('plannedStartDateFrom', query.plannedStartDateFrom);
+    conditions.push(Prisma.sql`o.planned_start_date >= ${query.plannedStartDateFrom}::date`);
   }
   if (query.plannedStartDateTo !== undefined) {
-    conditions.push(Prisma.sql`o.planned_start_date <= ${dateQuery('plannedStartDateTo', query.plannedStartDateTo)}::date`);
+    dateQuery('plannedStartDateTo', query.plannedStartDateTo);
+    conditions.push(Prisma.sql`o.planned_start_date <= ${query.plannedStartDateTo}::date`);
   }
   if (query.q !== undefined) conditions.push(Prisma.sql`strpos(lower(o.production_order_no), lower(${query.q})) > 0`);
   if (query.unacknowledgedOnly === true) {
@@ -339,14 +343,10 @@ function sqlFilters(autoPlanStatus: AutoPlanStatus | undefined, worklistState: W
   ];
 }
 
-/** `AutoPlanService.viewsOf` 와 같은 판정 — DONE 은 확정 계획 수량 합 ≥ 오더 수량, 취소된 오더와 시도도 계획도 없는 오더는 상태가 없다. */
+/** `AutoPlanService.viewsOf` 와 같은 판정 — 취소된 오더와 시도도 계획도 없는 오더는 상태가 없다. 조각은 칩 판정과 같이 쓴다. */
 function autoPlanStatusSql(status: AutoPlanStatus): Prisma.Sql {
-  const done = Prisma.sql`COALESCE((SELECT sum(p.planned_qty) FROM planning.production_plan p
-     WHERE p.production_order_id = o.production_order_id AND p.status_code = 'CONFIRMED'), 0) >= o.order_qty`;
-  if (status === 'DONE') return Prisma.sql`(o.status_code <> 'CANCELLED' AND ${done})`;
-  return Prisma.sql`(o.status_code <> 'CANCELLED' AND NOT (${done})
-    AND (o.auto_plan_attempted_at IS NOT NULL
-         OR EXISTS (SELECT 1 FROM planning.production_plan p WHERE p.production_order_id = o.production_order_id)))`;
+  if (status === 'DONE') return Prisma.sql`(o.status_code <> 'CANCELLED' AND ${AUTO_PLAN_DONE_SQL})`;
+  return Prisma.sql`(o.status_code <> 'CANCELLED' AND NOT (${AUTO_PLAN_DONE_SQL}) AND NOT ${AUTO_PLAN_UNTOUCHED_SQL})`;
 }
 
 function buildWhere(query: ProductionOrderListQuery): Prisma.production_orderWhereInput {

@@ -135,7 +135,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       const orderId = response.body.productionOrderId as number;
 
       // 시도는 했으나 계획이 없고 막는 것도 없다 — 사유 없는 확인 필요.
-      expect(response.body.autoPlan).toEqual({ status: 'NEEDS_REVIEW', reasons: [] });
+      expect(response.body.autoPlan).toEqual({ status: 'NEEDS_REVIEW', reasons: ['AUTO_PLAN_RERUN_NEEDED'] });
       expect(await plansOf(orderId)).toEqual([]);
 
       const retry = await autoPlan(orderId).expect(200);

@@ -10,9 +10,16 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 export const WORKLIST_STATES = ['BEFORE_PLAN', 'ACTION_REQUIRED', 'RELEASE_PENDING', 'RELEASED', 'CANCELLED'] as const;
 export type WorklistState = (typeof WORKLIST_STATES)[number];
 
-/** 자동 계획 DONE 과 같은 판정 — 확정 계획 수량 합이 오더 수량 이상(`autoPlanStatusSql`·`AutoPlanService.viewsOf`). */
-const DONE = Prisma.sql`COALESCE((SELECT sum(p.planned_qty) FROM planning.production_plan p
+/**
+ * 자동 계획 DONE — 확정 계획 수량 합이 오더 수량 이상. 오더 별칭 `o`. 목록 필터 `autoPlanStatus` 도 이 식을 쓴다.
+ * ⛔ TS 판정 `autoPlanView` 와 같이 고친다 — 갈리면 `autoPlanStatus` 필터와 응답 `autoPlan.status` 가 다르다.
+ */
+export const AUTO_PLAN_DONE_SQL = Prisma.sql`COALESCE((SELECT sum(p.planned_qty) FROM planning.production_plan p
    WHERE p.production_order_id = o.production_order_id AND p.status_code = 'CONFIRMED'), 0) >= o.order_qty`;
+
+/** 자동 계획 상태가 없는(`autoPlan` null) 미완료 오더 — 시도도 계획도 없다. 취소는 따로 본다. */
+export const AUTO_PLAN_UNTOUCHED_SQL = Prisma.sql`(o.auto_plan_attempted_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM planning.production_plan p WHERE p.production_order_id = o.production_order_id))`;
 
 /** 이 오더의 계획에서 나온 W/O. */
 const ORDER_WORK_ORDERS = Prisma.sql`production.work_order w
@@ -38,9 +45,8 @@ const BLOCKED = Prisma.sql`(${LINE_MISSING} OR ${LOCATION_MISSING} OR ${LINE_PLA
 export function worklistStateSql(): Prisma.Sql {
   return Prisma.sql`CASE
     WHEN o.status_code = 'CANCELLED' THEN 'CANCELLED'
-    WHEN NOT (${DONE}) AND o.auto_plan_attempted_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM planning.production_plan p WHERE p.production_order_id = o.production_order_id) THEN 'BEFORE_PLAN'
-    WHEN NOT (${DONE}) THEN 'ACTION_REQUIRED'
+    WHEN NOT (${AUTO_PLAN_DONE_SQL}) AND ${AUTO_PLAN_UNTOUCHED_SQL} THEN 'BEFORE_PLAN'
+    WHEN NOT (${AUTO_PLAN_DONE_SQL}) THEN 'ACTION_REQUIRED'
     WHEN NOT EXISTS (SELECT 1 FROM ${ORDER_WORK_ORDERS} WHERE w.status_code <> 'CANCELLED') THEN 'ACTION_REQUIRED'
     WHEN EXISTS (SELECT 1 FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${BLOCKED}) THEN 'ACTION_REQUIRED'
     WHEN EXISTS (SELECT 1 FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING}) THEN 'RELEASE_PENDING'
@@ -65,7 +71,7 @@ export interface WorklistReason { code: WorklistReasonCode; workOrderCount: numb
 
 /** 판정(`worklistStateSql`)과 같은 조각으로 센다 — 칩과 까닭이 갈리지 않는다. */
 export function worklistReasonCountsSql(): Prisma.Sql {
-  return Prisma.sql`(${DONE}) AS done,
+  return Prisma.sql`(${AUTO_PLAN_DONE_SQL}) AS done,
     (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE w.status_code <> 'CANCELLED')::int AS live,
     (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LINE_MISSING})::int AS line_missing,
     (SELECT count(*) FROM ${ORDER_WORK_ORDERS} WHERE ${PENDING} AND ${LOCATION_MISSING})::int AS location_missing,

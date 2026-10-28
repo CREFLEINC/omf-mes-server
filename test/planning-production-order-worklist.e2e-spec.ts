@@ -2,7 +2,7 @@
  * ERP W/O 목록의 「작업지시 목록」 칩 판정 `worklistState` — 응답 칸과 필터(장부 P-142) (e2e).
  *
  * 다섯 판정의 경계: 계획 전 · 자동 계획 확인 필요 · W/O 0건 DONE · 일부 배포 · 라인 빈 W/O 와 정상 W/O 섞임 ·
- * 다른 공장 라인 · 전부 배포(취소 W/O 섞임) · 취소된 오더. 칩 건수는 `size=1` 의 total 로 센다(클라이언트와 같다).
+ * 다른 공장 라인 · W/O 전부 취소 · 전부 배포(취소 W/O 섞임) · 취소된 오더 · 기준정보가 뒤늦게 갖춰진 자동 계획 확인 필요. 칩 건수는 `size=1` 의 total 로 센다(클라이언트와 같다).
  * 조치 필요 까닭 `worklistReasons` 와, 그 까닭이 배포 전제 검사(`releasePlan`)가 실제로 막는 W/O 와 같은지도 본다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -20,7 +20,7 @@ import { releasePlan } from '../src/production/work-order/release-plan';
 const PREFIX = 'WLS204';
 const BASE = '/api/planning/production-orders';
 
-interface Row { productionOrderNo: string; worklistState: string; autoPlan: { status: string } | null; worklistReasons?: { code: string; workOrderCount: number }[] }
+interface Row { productionOrderNo: string; worklistState: string; autoPlan: { status: string; reasons: string[] } | null; worklistReasons?: { code: string; workOrderCount: number }[] }
 
 describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
   let app: INestApplication;
@@ -62,6 +62,8 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       PARTIAL: 'RELEASE_PENDING',
       MIXED: 'ACTION_REQUIRED',
       OTHERPLANT: 'ACTION_REQUIRED',
+      ALLCANCELLED: 'ACTION_REQUIRED',
+      RERUN: 'ACTION_REQUIRED',
       DONE: 'RELEASED',
       CANCEL: 'CANCELLED',
     });
@@ -81,17 +83,26 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
         { code: 'WORK_ORDER_LOCATION_MISSING', workOrderCount: 1 },
       ],
       OTHERPLANT: [{ code: 'LINE_PLANT_MISMATCH', workOrderCount: 1 }],
+      ALLCANCELLED: [{ code: 'NO_LIVE_WORK_ORDER', workOrderCount: 0 }],
+      RERUN: undefined,
       DONE: undefined,
       CANCEL: undefined,
     });
   });
 
-  it('까닭은 판정과 함께만 온다 — DONE 인 조치 필요는 까닭이 늘 있고, 까닭이 있으면 조치 필요다', async () => {
+  it('조치 필요는 까닭이 늘 있다 — DONE 이면 worklistReasons, 확인 필요면 autoPlan.reasons. 까닭이 있으면 조치 필요다', async () => {
     const body = (await list({}).expect(200)).body as { items: Row[] };
     for (const row of body.items) {
-      const expectsReasons = row.worklistState === 'ACTION_REQUIRED' && row.autoPlan?.status === 'DONE';
-      expect({ no: row.productionOrderNo, hasReasons: (row.worklistReasons?.length ?? 0) > 0 }).toEqual({ no: row.productionOrderNo, hasReasons: expectsReasons });
+      const done = row.worklistState === 'ACTION_REQUIRED' && row.autoPlan?.status === 'DONE';
+      const review = row.worklistState === 'ACTION_REQUIRED' && row.autoPlan?.status === 'NEEDS_REVIEW';
+      expect({ no: row.productionOrderNo, worklist: (row.worklistReasons?.length ?? 0) > 0, autoPlan: (row.autoPlan?.reasons.length ?? 0) > 0 })
+        .toEqual({ no: row.productionOrderNo, worklist: done, autoPlan: review });
     }
+  });
+
+  it('시도했지만 계획이 없고 기준정보가 이제 갖춰졌으면 autoPlan.reasons 가 AUTO_PLAN_RERUN_NEEDED 다', async () => {
+    const body = (await list({ q: `${PREFIX}-RERUN` }).expect(200)).body as { items: Row[] };
+    expect(body.items.map((row) => row.autoPlan)).toEqual([{ status: 'NEEDS_REVIEW', reasons: ['AUTO_PLAN_RERUN_NEEDED'] }]);
   });
 
   it('배포 대기·조치 필요 판정이 배포 전제 검사와 같다 — 막힌다고 본 W/O 만 releasePlan 이 400 이다', async () => {
@@ -115,12 +126,22 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       totals[state] = ((await list({ worklistState: state, size: 1 }).expect(200)).body as { page: { total: number } }).page.total;
       expect(totals[state]).toBe(all.items.length);
     }
-    expect(totals).toEqual({ BEFORE_PLAN: 1, ACTION_REQUIRED: 4, RELEASE_PENDING: 1, RELEASED: 1, CANCELLED: 1 });
+    expect(totals).toEqual({ BEFORE_PLAN: 1, ACTION_REQUIRED: 6, RELEASE_PENDING: 1, RELEASED: 1, CANCELLED: 1 });
   });
 
   it('autoPlanStatus 와 함께 걸린다 — DONE 중 배포 대기만', async () => {
     const body = (await list({ autoPlanStatus: 'DONE', worklistState: 'RELEASE_PENDING' }).expect(200)).body as { items: Row[] };
     expect(body.items.map((row) => row.productionOrderNo)).toEqual([`${PREFIX}-PARTIAL`]);
+  });
+
+  it('계획 시작일 필터가 autoPlanStatus·worklistState 와 함께 걸린다 — 하나는 남고 하나는 빠진다', async () => {
+    const numbers = async (query: Record<string, unknown>) =>
+      ((await list(query).expect(200)).body as { items: Row[] }).items.map((row) => row.productionOrderNo.replace(`${PREFIX}-`, '')).sort();
+
+    expect(await numbers({ autoPlanStatus: 'DONE', plannedStartDateFrom: '2026-10-15' })).toEqual(['PARTIAL']);
+    expect(await numbers({ autoPlanStatus: 'DONE', plannedStartDateTo: '2026-10-15' })).toEqual(['DONE']);
+    expect(await numbers({ worklistState: 'RELEASED', plannedStartDateFrom: '2026-10-15' })).toEqual([]);
+    expect(await numbers({ worklistState: 'RELEASED', plannedStartDateTo: '2026-10-15' })).toEqual(['DONE']);
   });
 
   it('칩 값이 아니면 400 이고 고칠 값을 알린다', async () => {
@@ -163,12 +184,28 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       warehouse_id: warehouse.warehouse_id, location_code: `${PREFIX}-LOC`, location_name: PREFIX, location_type_code: 'DEFAULT',
     } })).location_id;
 
+    // 자동 계획이 지금 돌면 확정까지 가는 품목 — 기본 BOM · 확정 Routing · 라인에 속한 기본 매핑 설비.
+    const readyItem = await prisma.item.create({ data: { item_code: `${PREFIX}-IT-RR`, item_name: PREFIX, item_type_code: 'FINISHED_GOOD', base_uom_id: uom.uom_id } });
+    await prisma.bom.create({ data: {
+      parent_item_id: readyItem.item_id, bom_code: `${PREFIX}-BOM-RR`, bom_version: 1, status_code: 'CONFIRMED', is_default: true,
+      effective_from: new Date('2026-01-01T00:00:00.000Z'), base_qty: 1, base_uom_id: uom.uom_id,
+    } });
+    const readyRouting = await prisma.routing.create({ data: { item_id: readyItem.item_id, routing_code: `${PREFIX}-RT-RR`, routing_version: 1, status_code: 'CONFIRMED' } });
+    await prisma.routing_operation.create({ data: {
+      routing_id: readyRouting.routing_id, operation_seq: 10, process_id: process.process_id, operation_name: PREFIX, equipment_required: true,
+    } });
+    const equipment = await prisma.equipment.create({ data: {
+      plant_id: ids.plant, equipment_code: `${PREFIX}-EQ`, equipment_name: PREFIX, equipment_type_code: 'PRESS', status_code: 'IN_SERVICE', production_line_id: line,
+    } });
+    await prisma.item_resource_map.create({ data: { plant_id: ids.plant, item_id: readyItem.item_id, equipment_id: equipment.equipment_id, is_default: true } });
+
     let seq = 0;
-    const order = async (key: string, opts: { status?: string; attempted?: boolean; planned?: number } = {}) => {
+    const order = async (key: string, opts: { status?: string; attempted?: boolean; planned?: number; itemId?: bigint; plannedStart?: string } = {}) => {
       const row = await prisma.production_order.create({ data: {
-        production_order_no: `${PREFIX}-${key}`, business_unit_id: unit.business_unit_id, plant_id: ids.plant, item_id: item.item_id,
+        production_order_no: `${PREFIX}-${key}`, business_unit_id: unit.business_unit_id, plant_id: ids.plant, item_id: opts.itemId ?? item.item_id,
         order_qty: 10, uom_id: uom.uom_id, status_code: opts.status ?? 'CONFIRMED',
         auto_plan_attempted_at: opts.attempted === true ? new Date() : null,
+        planned_start_date: opts.plannedStart === undefined ? null : new Date(`${opts.plannedStart}T00:00:00.000Z`),
       } });
       if (opts.planned === undefined) return { orderId: row.production_order_id, planId: null };
       const plan = await prisma.production_plan.create({ data: {
@@ -199,7 +236,7 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
     await order('BEFORE');
     await order('REVIEW', { attempted: true, planned: 4 });
     await order('NOWO', { planned: 10 });
-    const partial = await order('PARTIAL', { planned: 10 });
+    const partial = await order('PARTIAL', { planned: 10, plannedStart: '2026-11-01' });
     await workOrder(partial.planId, { released: true });
     await workOrder(partial.planId);
     const mixed = await order('MIXED', { planned: 10 });
@@ -208,11 +245,14 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
     await workOrder(mixed.planId, { locations: false });
     const otherPlantLine = await order('OTHERPLANT', { planned: 10 });
     await workOrder(otherPlantLine.planId, { line: foreignLine });
-    const done = await order('DONE', { planned: 10 });
+    const done = await order('DONE', { planned: 10, plannedStart: '2026-10-01' });
     await workOrder(done.planId, { released: true });
     // 취소된 W/O 는 배포 전으로 세지 않는다 — 라인·위치가 비어 있어도.
     await workOrder(done.planId, { status: 'CANCELLED', line: null, locations: false });
+    const allCancelled = await order('ALLCANCELLED', { planned: 10 });
+    await workOrder(allCancelled.planId, { status: 'CANCELLED' });
     await order('CANCEL', { status: 'CANCELLED', planned: 10 });
+    await order('RERUN', { attempted: true, itemId: readyItem.item_id });
   }
 
   async function cleanup(): Promise<void> {
@@ -225,6 +265,8 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
     await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.item_resource_map.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
