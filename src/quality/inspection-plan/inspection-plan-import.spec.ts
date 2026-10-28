@@ -28,9 +28,10 @@ describe('검사기준 엑셀 읽기', () => {
     });
   });
 
-  it('빈 행은 건너뛰고, 필수 머리글이 없으면 읽을 수 없다', async () => {
+  it('빈 행은 건너뛰되 엑셀 행 번호는 그대로 두고, 필수 머리글이 없으면 읽을 수 없다', async () => {
     const parsed = await parseInspectionPlanWorkbook(await workbook([[], ['P-1', '', '', '', '', '', '', 'A', '외관']]));
     expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0].rowNumber).toBe(3);
     const missing = await parseInspectionPlanWorkbook(await workbook([['x']], ['아무 열']));
     expect(missing.error?.message).toContain('기준코드');
     const broken = await parseInspectionPlanWorkbook(Buffer.from('not a workbook'));

@@ -48,6 +48,8 @@ const REQUIRED_COLUMNS = ['inspectionPlanCode', 'inspectionItemCode', 'inspectio
 export interface ImportRow {
   /** 머리글을 제외한 자료 행의 순번(0부터). 실패 목록이 이 값을 그대로 돌려준다(계약). */
   index: number;
+  /** 엑셀이 매긴 실제 행 번호 — 빈 행을 건너뛰어도 사용자가 엑셀에서 보는 번호와 같다. */
+  rowNumber: number;
   plan: {
     inspectionPlanCode: string;
     inspectionPlanName: string | null;
@@ -93,15 +95,16 @@ export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<Impor
   const sheet = await firstSheet(buffer);
   if (sheet === null) return { rows: [], error: unreadable('엑셀 파일을 열 수 없습니다. .xlsx 파일인지 확인하세요.') };
 
-  const column = mapColumns(sheet.rows[0] ?? []);
+  const column = mapColumns(sheet.rows[0]?.cells ?? []);
   const missing = REQUIRED_COLUMNS.filter((field) => column[field] === undefined);
   if (missing.length > 0) {
     return { rows: [], error: unreadable('머리글에서 기준코드·항목코드·항목명 열을 찾지 못했습니다.') };
   }
 
   const cell = (cells: unknown[], field: string): unknown => cells[column[field] ?? -1];
-  const rows = sheet.rows.slice(1).map((cells, index): ImportRow => ({
+  const rows = sheet.rows.slice(1).map(({ cells, rowNumber }, index): ImportRow => ({
     index,
+    rowNumber,
     plan: {
       inspectionPlanCode: text(cell(cells, 'inspectionPlanCode')) ?? '',
       inspectionPlanName: text(cell(cells, 'inspectionPlanName')),
@@ -147,20 +150,20 @@ export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<Impor
   };
 }
 
-async function firstSheet(buffer: Buffer): Promise<{ rows: unknown[][] } | null> {
+async function firstSheet(buffer: Buffer): Promise<{ rows: { cells: unknown[]; rowNumber: number }[] } | null> {
   try {
     const workbook = new Workbook();
     // exceljs 가 선언한 `Buffer` 와 이 저장소의 `@types/node` Buffer 가 제네릭까지는 맞지 않는다.
     await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
     const sheet = workbook.worksheets[0];
     if (sheet === undefined) return null;
-    const rows: unknown[][] = [];
+    const rows: { cells: unknown[]; rowNumber: number }[] = [];
     sheet.eachRow((row) => {
       const cells: unknown[] = [];
       row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
         cells[columnNumber - 1] = cell.value;
       });
-      rows.push(cells);
+      rows.push({ cells, rowNumber: row.number });
     });
     return { rows };
   } catch {

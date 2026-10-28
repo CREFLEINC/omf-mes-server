@@ -116,7 +116,7 @@ function isDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-/** 엑셀 행 번호(머리글 1행 + 자료 순번)를 문구에 붙인다 — 사용자가 엑셀에서 찾는 번호다. */
+/** 엑셀이 매긴 행 번호를 문구에 붙인다 — 사용자가 엑셀에서 찾는 번호다. */
 export function fail(row: ImportRow, field: string, code: ErrorItem['code'], message: string): ErrorItem {
-  return { scope: 'field', field, code, message: `엑셀 ${row.index + 2}행: ${message}` };
+  return { scope: 'field', field, code, message: `엑셀 ${row.rowNumber}행: ${message}` };
 }
