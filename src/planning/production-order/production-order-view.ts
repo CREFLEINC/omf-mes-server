@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { WorklistState } from './production-order-worklist';
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import { toDateString } from '../../common/master';
@@ -45,6 +46,7 @@ export interface ProductionOrderExtras {
   acknowledgement?: ProductionOrderAcknowledgement;
   lastChange?: ProductionOrderLastChange;
   autoPlan?: AutoPlanView | null;
+  worklistState?: WorklistState;
 }
 
 export type ProductionOrderView = ReturnType<typeof productionOrderView>;
@@ -80,6 +82,8 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     progressStatusCode: extras.progressStatusCode,
     lastChange: extras.lastChange,
     autoPlan: extras.autoPlan,
+    // 「작업지시 목록」 칩 판정(장부 P-142).
+    worklistState: extras.worklistState,
   });
 }
 

@@ -1,0 +1,191 @@
+/**
+ * ERP W/O 목록의 「작업지시 목록」 칩 판정 `worklistState` — 응답 칸과 필터(장부 P-142) (e2e).
+ *
+ * 다섯 판정의 경계: 계획 전 · 자동 계획 확인 필요 · W/O 0건 DONE · 일부 배포 · 라인 빈 W/O 와 정상 W/O 섞임 ·
+ * 다른 공장 라인 · 전부 배포(취소 W/O 섞임) · 취소된 오더. 칩 건수는 `size=1` 의 total 로 센다(클라이언트와 같다).
+ */
+import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+
+import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
+import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { PrismaService } from '../src/prisma/prisma.service';
+
+const PREFIX = 'WLS204';
+const BASE = '/api/planning/production-orders';
+
+interface Row { productionOrderNo: string; worklistState: string }
+
+describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let cookie: string;
+  const ids: Record<string, bigint> = {};
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configureApp(app, 'api');
+    await app.init();
+    prisma = app.get(PrismaService);
+    await cleanup();
+    await fixtures();
+  }, 120_000);
+
+  afterAll(async () => {
+    try {
+      await cleanup();
+    } finally {
+      await app.close();
+    }
+  });
+
+  const list = (query: Record<string, unknown>) =>
+    request(app.getHttpServer()).get(BASE).query({ plantId: Number(ids.plant), size: 100, ...query }).set('Cookie', cookie);
+  const stateOf = (rows: Row[]) => Object.fromEntries(rows.map((row) => [row.productionOrderNo.replace(`${PREFIX}-`, ''), row.worklistState]));
+
+  it('목록 행마다 worklistState 를 싣는다 — 다섯 판정의 경계', async () => {
+    const body = (await list({}).expect(200)).body as { items: Row[] };
+
+    expect(stateOf(body.items)).toEqual({
+      BEFORE: 'BEFORE_PLAN',
+      REVIEW: 'ACTION_REQUIRED',
+      NOWO: 'ACTION_REQUIRED',
+      PARTIAL: 'RELEASE_PENDING',
+      MIXED: 'ACTION_REQUIRED',
+      OTHERPLANT: 'ACTION_REQUIRED',
+      DONE: 'RELEASED',
+      CANCEL: 'CANCELLED',
+    });
+  });
+
+  it('worklistState 로 거르면 그 판정만 오고, size=1 의 total 이 칩 건수다', async () => {
+    const totals: Record<string, number> = {};
+    for (const state of ['BEFORE_PLAN', 'ACTION_REQUIRED', 'RELEASE_PENDING', 'RELEASED', 'CANCELLED']) {
+      const all = (await list({ worklistState: state }).expect(200)).body as { items: Row[] };
+      expect(all.items.every((row) => row.worklistState === state)).toBe(true);
+      totals[state] = ((await list({ worklistState: state, size: 1 }).expect(200)).body as { page: { total: number } }).page.total;
+      expect(totals[state]).toBe(all.items.length);
+    }
+    expect(totals).toEqual({ BEFORE_PLAN: 1, ACTION_REQUIRED: 4, RELEASE_PENDING: 1, RELEASED: 1, CANCELLED: 1 });
+  });
+
+  it('autoPlanStatus 와 함께 걸린다 — DONE 중 배포 대기만', async () => {
+    const body = (await list({ autoPlanStatus: 'DONE', worklistState: 'RELEASE_PENDING' }).expect(200)).body as { items: Row[] };
+    expect(body.items.map((row) => row.productionOrderNo)).toEqual([`${PREFIX}-PARTIAL`]);
+  });
+
+  it('칩 값이 아니면 400 이고 고칠 값을 알린다', async () => {
+    const response = await list({ worklistState: 'NOPE' }).expect(400);
+    expect(JSON.stringify(response.body)).toContain('worklistState');
+  });
+
+  async function fixtures(): Promise<void> {
+    const user = await prisma.app_user.create({ data: { login_id: `${PREFIX}-USER`, user_name: PREFIX, status_code: 'EMPLOYED' } });
+    const role = await prisma.role.create({ data: { role_code: `${PREFIX}-ROLE`, role_name: PREFIX } });
+    await prisma.role_permission.create({ data: { role_id: role.role_id, permission_code: 'W-02-01' } });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+    cookie = `${SESSION_COOKIE}=${app.get(JwtService).sign({ sub: Number(user.app_user_id), typ: 'session' })}`;
+
+    const entity = await prisma.legal_entity.create({ data: {
+      legal_entity_code: `${PREFIX}-LE`, legal_entity_name: PREFIX, country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    const unit = await prisma.business_unit.create({ data: { legal_entity_id: entity.legal_entity_id, business_unit_code: `${PREFIX}-BU`, business_unit_name: PREFIX } });
+    const plant = (code: string) => prisma.plant.create({ data: {
+      legal_entity_id: entity.legal_entity_id, business_unit_id: unit.business_unit_id, plant_code: `${PREFIX}-${code}`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    ids.plant = (await plant('P1')).plant_id;
+    const otherPlant = (await plant('P2')).plant_id;
+    const uom = await prisma.uom.findFirstOrThrow({ where: { decimal_scale: 0 } });
+    const item = await prisma.item.create({ data: { item_code: `${PREFIX}-IT`, item_name: PREFIX, item_type_code: 'FINISHED_GOOD', base_uom_id: uom.uom_id } });
+    const process = await prisma.process.create({ data: { process_code: `${PREFIX}-PR`, process_name: PREFIX, process_type_code: 'PRODUCTION' } });
+    const routing = await prisma.routing.create({ data: { item_id: item.item_id, routing_code: `${PREFIX}-RT`, routing_version: 1, status_code: 'ACTIVE' } });
+    const operation = await prisma.routing_operation.create({ data: { routing_id: routing.routing_id, operation_seq: 10, process_id: process.process_id, operation_name: PREFIX } });
+    const bom = await prisma.bom.create({ data: {
+      parent_item_id: item.item_id, bom_code: `${PREFIX}-BOM`, bom_version: 1, status_code: 'ACTIVE',
+      effective_from: new Date('2026-01-01T00:00:00.000Z'), base_qty: 1, base_uom_id: uom.uom_id,
+    } });
+    const line = (await prisma.production_line.create({ data: { plant_id: ids.plant, line_code: `${PREFIX}-L1`, line_name: PREFIX } })).production_line_id;
+    const foreignLine = (await prisma.production_line.create({ data: { plant_id: otherPlant, line_code: `${PREFIX}-L2`, line_name: PREFIX } })).production_line_id;
+    const warehouse = await prisma.warehouse.create({ data: {
+      plant_id: ids.plant, business_unit_id: unit.business_unit_id, warehouse_code: `${PREFIX}-WH`, warehouse_name: PREFIX,
+      warehouse_type_code: 'FINISHED', management_level_code: 'LOCATION',
+    } });
+    const location = (await prisma.location.create({ data: {
+      warehouse_id: warehouse.warehouse_id, location_code: `${PREFIX}-LOC`, location_name: PREFIX, location_type_code: 'DEFAULT',
+    } })).location_id;
+
+    let seq = 0;
+    const order = async (key: string, opts: { status?: string; attempted?: boolean; planned?: number } = {}) => {
+      const row = await prisma.production_order.create({ data: {
+        production_order_no: `${PREFIX}-${key}`, business_unit_id: unit.business_unit_id, plant_id: ids.plant, item_id: item.item_id,
+        order_qty: 10, uom_id: uom.uom_id, status_code: opts.status ?? 'CONFIRMED',
+        auto_plan_attempted_at: opts.attempted === true ? new Date() : null,
+      } });
+      if (opts.planned === undefined) return { orderId: row.production_order_id, planId: null };
+      const plan = await prisma.production_plan.create({ data: {
+        production_order_id: row.production_order_id, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date('2026-10-28T00:00:00.000Z'),
+        planned_qty: opts.planned, uom_id: uom.uom_id, bom_id: bom.bom_id, routing_id: routing.routing_id,
+        status_code: 'CONFIRMED', confirmed_at: new Date(),
+      } });
+      return { orderId: row.production_order_id, planId: plan.production_plan_id };
+    };
+    const workOrder = (planId: bigint | null, opts: { released?: boolean; status?: string; line?: bigint | null; locations?: boolean } = {}) => {
+      seq += 1;
+      const withLocations = opts.locations ?? true;
+      return prisma.work_order.create({ data: {
+        work_order_no: `${PREFIX}-WO-${seq}`, production_plan_id: planId, routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id, order_qty: 5, uom_id: uom.uom_id,
+        status_code: opts.status ?? (opts.released === true ? 'RELEASED' : 'PLANNED'),
+        released_at: opts.released === true ? new Date() : null,
+        production_line_id: opts.line === undefined ? line : opts.line,
+        default_wip_location_id: withLocations ? location : null,
+        default_fg_location_id: withLocations ? location : null,
+        default_scrap_location_id: withLocations ? location : null,
+      } });
+    };
+
+    await order('BEFORE');
+    await order('REVIEW', { attempted: true, planned: 4 });
+    await order('NOWO', { planned: 10 });
+    const partial = await order('PARTIAL', { planned: 10 });
+    await workOrder(partial.planId, { released: true });
+    await workOrder(partial.planId);
+    const mixed = await order('MIXED', { planned: 10 });
+    await workOrder(mixed.planId);
+    await workOrder(mixed.planId, { line: null });
+    const otherPlantLine = await order('OTHERPLANT', { planned: 10 });
+    await workOrder(otherPlantLine.planId, { line: foreignLine });
+    const done = await order('DONE', { planned: 10 });
+    await workOrder(done.planId, { released: true });
+    // 취소된 W/O 는 배포 전으로 세지 않는다 — 라인·위치가 비어 있어도.
+    await workOrder(done.planId, { status: 'CANCELLED', line: null, locations: false });
+    await order('CANCEL', { status: 'CANCELLED', planned: 10 });
+  }
+
+  async function cleanup(): Promise<void> {
+    if (!prisma) return;
+    await prisma.work_order.deleteMany({ where: { work_order_no: { startsWith: PREFIX } } });
+    await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
+    await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
+    await prisma.bom.deleteMany({ where: { bom_code: { startsWith: PREFIX } } });
+    await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
+    await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
+    await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
+    await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
+    await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
+    await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
+    await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
+    const users = await prisma.app_user.findMany({ where: { login_id: { startsWith: `${PREFIX}-` } } });
+    await prisma.user_role.deleteMany({ where: { app_user_id: { in: users.map((row) => row.app_user_id) } } });
+    await prisma.role_permission.deleteMany({ where: { role: { role_code: `${PREFIX}-ROLE` } } });
+    await prisma.role.deleteMany({ where: { role_code: `${PREFIX}-ROLE` } });
+    await prisma.app_user.deleteMany({ where: { login_id: { startsWith: `${PREFIX}-` } } });
+  }
+});
