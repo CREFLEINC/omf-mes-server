@@ -1495,6 +1495,17 @@ describe('출하 목록 (e2e)', () => {
     return (await delegate.findFirst({ where })) ?? (await delegate.create({ data }));
   }
 
+  /**
+   * 옛 창고 모양 — 관리수준 WAREHOUSE 인데 서버의 「창고 전체」가 없다. 마이그레이션은 활성 위치가 있는 창고에
+   * 창고 전체를 두지 않는다(장부 P-145). 이 시험들이 가르는 것은 그 위치 수다.
+   */
+  async function withoutWholeLocation(warehouseId: bigint): Promise<void> {
+    await prisma.location.updateMany({
+      where: { warehouse_id: warehouseId, system_role_code: 'WAREHOUSE_WHOLE' },
+      data: { is_active: false },
+    });
+  }
+
   async function makeMasters(): Promise<void> {
     const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     const unit = await prisma.business_unit.findFirstOrThrow({
@@ -1514,6 +1525,7 @@ describe('출하 목록 (e2e)', () => {
           management_level_code: 'WAREHOUSE',
       });
       ids[key] = warehouse.warehouse_id;
+      await withoutWholeLocation(warehouse.warehouse_id);
     }
     const [uom] = await prisma.uom.findMany({ take: 1, orderBy: { uom_id: 'asc' } });
     ids.uom = uom.uom_id;
@@ -1724,6 +1736,7 @@ describe('출하 목록 (e2e)', () => {
     ids.warehouseCell = cell.warehouse_id;
     const two = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WHT` }, warehouse(`${PREFIX}-WHT`, 'WAREHOUSE'));
     ids.warehouseTwo = two.warehouse_id;
+    await withoutWholeLocation(two.warehouse_id);
     for (const suffix of ['T1', 'T2']) {
       await ensure(prisma.location, { location_code: `${PREFIX}-LOC-${suffix}` }, {
         warehouse_id: two.warehouse_id,

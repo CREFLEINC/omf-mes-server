@@ -132,11 +132,12 @@ export class WarehouseService {
     const row = await this.prisma.warehouse.findUnique({ where: { warehouse_id: warehouseId } });
     if (!row) throw new NotFoundException('없는 창고입니다.');
 
-    const referenceCount = await countReferences(
-      this.prisma,
-      WAREHOUSE_REFERRERS,
-      row.warehouse_id,
-    );
+    const [references, systemLocations] = await Promise.all([
+      countReferences(this.prisma, WAREHOUSE_REFERRERS, row.warehouse_id),
+      // 서버가 만든 위치(장부 P-145)는 창고와 함께 생긴다 — 세면 모든 창고 코드가 처음부터 잠긴다.
+      this.prisma.location.count({ where: { warehouse_id: row.warehouse_id, NOT: { system_role_code: null } } }),
+    ]);
+    const referenceCount = references - systemLocations;
     return {
       warehouse: view(row),
       // 창고 코드를 «글자»로 부르는 자리는 계약에 0곳이라 FK 건수가 곧 답이다(#114 와 같다).
@@ -208,11 +209,11 @@ export class WarehouseService {
     return this.get(warehouseId);
   }
 
-  /** 활성 위치가 둘 이상인 창고. */
+  /** 활성 위치가 둘 이상인 창고 — 서버가 만든 위치(장부 P-145)는 나눈 것이 아니라 세지 않는다. */
   private async dividedIds(): Promise<bigint[]> {
     const rows = await this.prisma.location.groupBy({
       by: ['warehouse_id'],
-      where: { is_active: true },
+      where: { is_active: true, system_role_code: null },
       _count: { location_id: true },
       having: { location_id: { _count: { gt: 1 } } },
     });

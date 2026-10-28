@@ -81,6 +81,11 @@ describe('재고 재등록 (e2e)', () => {
         is_defect: isDefect,
       });
       ids[key] = row.warehouse_id;
+      // 옛 창고 모양 — 활성 위치가 있는 창고에는 마이그레이션이 「창고 전체」를 두지 않는다(장부 P-145).
+      await prisma.location.updateMany({
+        where: { warehouse_id: row.warehouse_id, system_role_code: 'WAREHOUSE_WHOLE' },
+        data: { is_active: false },
+      });
       const location = await ensure(prisma.location, { location_code: `${PREFIX}-LOC-${code}` }, {
         warehouse_id: row.warehouse_id,
         location_code: `${PREFIX}-LOC-${code}`,
