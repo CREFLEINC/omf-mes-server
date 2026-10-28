@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { InboundProgressService } from './inbound-progress.service';
 import { OrderSort, isComputedSort, orderByOf, sortComputed } from './purchase-order-list-sort';
 import { INBOUND_STAGE_GROUPS, InboundStageGroup, stageGroupOf } from './inbound-stage';
+import { OrderProgress } from './purchase-order-line-list';
 import {
   CLOSED_ORDER_STATUSES,
   OrderReceiptSummary,
@@ -59,6 +60,8 @@ export interface PurchaseOrderQuery {
   inboundStage?: InboundStageGroup;
   /** 열 정렬(장부 P-116). 건수 경로는 보지 않는다. */
   sort?: OrderSort;
+  /** `openOnly` 와 따로 AND 로 건다 — `openOnly=true&progress=COMPLETED` 는 0건이다(장부 P-131). */
+  progress?: OrderProgress;
   page?: number;
   size?: number;
 }
@@ -167,10 +170,11 @@ export class PurchaseOrderQueryService {
 
   private async listWhere(query: PurchaseOrderQuery, now: Date): Promise<Prisma.purchase_orderWhereInput> {
     const open = query.openOnly === true || query.overdueOnly === true;
-    // itemId·openOnly·overdueOnly·supplierQ 는 관계·OR 필터라 스프레드로 합치면 뒤가 앞을 덮는다 — AND 로 합친다.
+    // itemId·openOnly·progress·overdueOnly·supplierQ 는 관계·OR 필터라 스프레드로 합치면 뒤가 앞을 덮는다 — AND 로 합친다.
     const lineFilters = [
       itemWhere(query.itemId),
       this.openWhere(open),
+      this.progressWhere(query.progress),
       supplierWhere(query.supplierQ),
       query.overdueOnly ? { OR: await overdueOrderWhere(this.prisma, query.plantId, now) } : {},
     ].filter((c) => Object.keys(c).length > 0);
@@ -226,6 +230,12 @@ export class PurchaseOrderQueryService {
       // ERP 가 취소한 라인은 입하할 수 없다(장부 P-73) — 남은 수량이 있어도 「열린」 라인이 아니다.
       purchase_order_line: { some: openLineWhere(this.prisma) },
     };
+  }
+
+  /** `COMPLETED` 는 `OPEN` 의 여집합이다 — 다 받은 것뿐 아니라 취소·CLOSED 헤더도 들어간다(장부 P-131). */
+  private progressWhere(progress: OrderProgress | undefined): Prisma.purchase_orderWhereInput {
+    if (progress === undefined) return {};
+    return progress === 'OPEN' ? this.openWhere(true) : { NOT: this.openWhere(true) };
   }
 }
 
