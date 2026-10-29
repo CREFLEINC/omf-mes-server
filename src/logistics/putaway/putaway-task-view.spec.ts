@@ -22,7 +22,7 @@ function row(overrides: Partial<TaskRow> = {}): TaskRow {
     reason_code: null,
     version_no: 1,
     goods_receipt_line: {
-      goods_receipt: { warehouse_id: 61n, warehouse: { management_level_code: 'RACK' } },
+      goods_receipt: { warehouse_id: 61n },
     },
     ...overrides,
   } as TaskRow;
@@ -31,16 +31,16 @@ function row(overrides: Partial<TaskRow> = {}): TaskRow {
 describe('taskView', () => {
   it('⭐ warehouseId 는 goods_receipt.warehouse_id 다 — from_location_id 가 아니다', () => {
     const view = taskView(
-      row({ from_location_id: 999n, goods_receipt_line: { goods_receipt: { warehouse_id: 61n, warehouse: { management_level_code: 'ZONE' } } } }),
+      row({ from_location_id: 999n, goods_receipt_line: { goods_receipt: { warehouse_id: 61n } } }),
     );
 
     expect(view.warehouseId).toBe(61);
-    expect(view.warehouseManagementLevelCode).toBe('ZONE');
   });
 
-  it('응답에 reasonCode·inventoryTransactionLineId·versionNo 가 없다', () => {
+  it('응답에 reasonCode·inventoryTransactionLineId·versionNo·warehouseManagementLevelCode 가 없다', () => {
     const view = taskView(row()) as unknown as Record<string, unknown>;
 
+    expect(view).not.toHaveProperty('warehouseManagementLevelCode');
     expect(view).not.toHaveProperty('reasonCode');
     expect(view).not.toHaveProperty('inventoryTransactionLineId');
     expect(view).not.toHaveProperty('versionNo');

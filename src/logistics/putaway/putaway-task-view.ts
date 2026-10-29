@@ -3,13 +3,13 @@ import { Prisma } from '@prisma/client';
 /**
  * 계약 `PutawayTask` 로 옮기는 자리 — 필수 11 · 프로퍼티 18. `inventoryTransactionLineId`·
  * `reasonCode`·`versionNo` 는 물리에 있어도 응답 스키마에 없다(문의 059+2) — 안 싣는다.
- * `warehouseManagementLevelCode` 는 required 밖이지만 NOT NULL 이라 언제나 채운다.
+ * `warehouseManagementLevelCode`(required 밖)는 싣지 않는다 — 창고 관리수준을 없앴다(장부 P-153).
  */
 export const TASK_INCLUDE = {
   goods_receipt_line: {
     select: {
       goods_receipt: {
-        select: { warehouse_id: true, warehouse: { select: { management_level_code: true } } },
+        select: { warehouse_id: true },
       },
     },
   },
@@ -23,7 +23,7 @@ export interface PutawayTaskView {
   recommendedLocationId: number | null; appliedPutawayRuleId: number | null; actualLocationId: number | null;
   /** 원천은 `goods_receipt.warehouse_id` 다 — `fromLocationId`(하역장)는 다른 창고일 수 있다. */
   warehouseId: number;
-  warehouseManagementLevelCode: string; priorityNo: number; assignedWorkerId: number | null;
+  priorityNo: number; assignedWorkerId: number | null;
   statusCode: string; completedAt: string | null; remarks: string | null;
 }
 
@@ -38,7 +38,6 @@ export function taskView(row: TaskRow): PutawayTaskView {
     recommendedLocationId: id(row.recommended_location_id), appliedPutawayRuleId: id(row.applied_putaway_rule_id),
     actualLocationId: id(row.actual_location_id),
     warehouseId: Number(row.goods_receipt_line.goods_receipt.warehouse_id),
-    warehouseManagementLevelCode: row.goods_receipt_line.goods_receipt.warehouse.management_level_code,
     priorityNo: row.priority_no, assignedWorkerId: id(row.assigned_worker_id),
     statusCode: row.status_code,
     completedAt: row.completed_at === null ? null : row.completed_at.toISOString(),

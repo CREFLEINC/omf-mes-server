@@ -106,7 +106,7 @@ export class ShipmentService {
     const [warehouse, request, lines] = await Promise.all([
       this.prisma.warehouse.findFirst({
         where: { warehouse_id: BigInt(input.warehouseId), is_active: true },
-        select: { plant_id: true, management_level_code: true },
+        select: { plant_id: true },
       }),
       this.prisma.shipment_request.findUnique({
         where: { shipment_request_id: BigInt(input.shipmentRequestId) },
@@ -175,17 +175,15 @@ export class ShipmentService {
       }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-    const found = warehouse as { plant_id: bigint; management_level_code: string };
+    const found = warehouse as { plant_id: bigint };
     return {
       plantId: Number(found.plant_id),
       itemIdByLine,
       ...(input.expedited === true
         ? {
-            // ⭐ 재등록(PR ⑧)과 «같은» 해소기다 — 계약 「창고면 위치를 받지 않고, 셀이면 셀까지 받는다」.
-            //   ⛔ 긴급 직행은 본문에 위치 칸이 0개라 더 깊게 관리하는 창고면 창고 칸에 400 REQUIRED 다.
+            // ⭐ 재등록(PR ⑧)과 «같은» 해소기다. ⛔ 긴급 직행은 본문에 위치 칸이 0개라 위치를 나눈 창고면 창고 칸에 400 REQUIRED 다.
             receiptLocationId: await resolveDestinationLocation(this.prisma, {
               warehouseId: input.warehouseId,
-              managementLevelCode: found.management_level_code,
               warehouseField: 'warehouseId',
             }),
           }

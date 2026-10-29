@@ -297,7 +297,7 @@ export class LocationService {
     }
   }
 
-  /** 적치 대기 자리는 입고 기본 위치다 — 끄면 그 창고의 입고 기본값이 빈다. 「창고 전체」는 관리수준을 바꾸면 사람이 끈다. */
+  /** 적치 대기 자리는 입고 기본 위치다 — 끄면 그 창고의 입고 기본값이 빈다. 「창고 전체」는 사람이 끈다. */
   private async assertNotStaging(locationId: number): Promise<void> {
     const row = await this.prisma.location.findUnique({
       where: { location_id: locationId },

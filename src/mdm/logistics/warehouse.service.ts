@@ -7,6 +7,7 @@ import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   Editability,
+  PUTAWAY_STAGING,
   ReferenceQuery,
   Referrer,
   aliasOf,
@@ -54,6 +55,7 @@ interface WarehouseView {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
+  /** 받은 값 그대로 — 어떤 판단에도 쓰지 않는다(장부 P-153). 계약이 바뀌면 걷어낸다. */
   managementLevelCode: string;
   isExternal: boolean;
   isDefect: boolean;
@@ -230,28 +232,25 @@ export class WarehouseService {
     return this.get(warehouseId);
   }
 
-  /** 활성 위치가 둘 이상인 창고 — 서버가 만든 위치(장부 P-145)는 나눈 것이 아니라 세지 않는다. */
+  /**
+   * 고를 수 있는 활성 위치가 둘 이상인 창고 — 적치 대기 자리(장부 P-145)는 놓기 전 자리라 세지 않는다.
+   * 「창고 전체」는 센다 — 모든 창고에 생기므로(장부 P-153) 구역을 하나 만들면 둘이 된다.
+   */
   private async dividedIds(): Promise<bigint[]> {
     const rows = await this.prisma.location.groupBy({
       by: ['warehouse_id'],
-      where: { is_active: true, system_role_code: null },
+      // `not` 만 걸면 SQL `<>` 라 역할이 없는(NULL) 사람의 위치까지 빠진다.
+      where: { is_active: true, OR: [{ system_role_code: null }, { system_role_code: { not: PUTAWAY_STAGING } }] },
       _count: { location_id: true },
       having: { location_id: { _count: { gt: 1 } } },
     });
     return rows.map((row) => row.warehouse_id);
   }
 
-  private assertCodes(input: {
-    warehouseTypeCode: string;
-    managementLevelCode: string;
-  }): Promise<void> {
+  /** `managementLevelCode` 는 보지 않는다 — 관리수준을 없앴고 계약이 필수라 받기만 한다(장부 P-153). */
+  private assertCodes(input: { warehouseTypeCode: string }): Promise<void> {
     return assertCodeValues(this.prisma, [
       { field: 'warehouseTypeCode', value: input.warehouseTypeCode, groupCode: 'WAREHOUSE_TYPE' },
-      {
-        field: 'managementLevelCode',
-        value: input.managementLevelCode,
-        groupCode: 'MANAGEMENT_LEVEL',
-      },
     ]);
   }
 
