@@ -130,18 +130,22 @@ export class InspectionPlanService {
     await this.assertWritable(input, null);
 
     return view(
-      await this.prisma.inspection_plan.create({
-        data: {
-          inspection_plan_code: input.inspectionPlanCode,
-          inspection_plan_name: input.inspectionPlanName,
-          inspection_type_code: input.inspectionTypeCode,
-          ...optional('name_ko', input.nameKo),
-          ...optional('name_vi', input.nameVi),
-          ...optional('item_id', input.itemId),
-          ...optional('process_id', input.processId),
-          ...optional('routing_id', input.routingId),
-          ...defaultSkipData(input),
-        },
+      await this.prisma.$transaction(async (tx) => {
+        const row = await tx.inspection_plan.create({
+          data: {
+            inspection_plan_code: input.inspectionPlanCode,
+            inspection_plan_name: input.inspectionPlanName,
+            inspection_type_code: input.inspectionTypeCode,
+            ...optional('name_ko', input.nameKo),
+            ...optional('name_vi', input.nameVi),
+            ...optional('item_id', input.itemId),
+            ...optional('process_id', input.processId),
+            ...optional('routing_id', input.routingId),
+            ...defaultSkipData(input),
+          },
+        });
+        await syncItemInspectionRequired(tx, input);
+        return row;
       }),
     );
   }
@@ -153,21 +157,25 @@ export class InspectionPlanService {
   ): Promise<InspectionPlanResult> {
     await this.assertWritable(input, inspectionPlanId);
 
-    const updated = await this.prisma.inspection_plan.updateMany({
-      // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
-      where: { inspection_plan_id: inspectionPlanId, version_no: version },
-      data: {
-        inspection_plan_code: input.inspectionPlanCode,
-        inspection_plan_name: input.inspectionPlanName,
-        inspection_type_code: input.inspectionTypeCode,
-        ...optional('name_ko', input.nameKo),
-        ...optional('name_vi', input.nameVi),
-        ...optional('item_id', input.itemId),
-        ...optional('process_id', input.processId),
-        ...optional('routing_id', input.routingId),
-        ...defaultSkipData(input),
-        version_no: { increment: 1 },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.inspection_plan.updateMany({
+        // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
+        where: { inspection_plan_id: inspectionPlanId, version_no: version },
+        data: {
+          inspection_plan_code: input.inspectionPlanCode,
+          inspection_plan_name: input.inspectionPlanName,
+          inspection_type_code: input.inspectionTypeCode,
+          ...optional('name_ko', input.nameKo),
+          ...optional('name_vi', input.nameVi),
+          ...optional('item_id', input.itemId),
+          ...optional('process_id', input.processId),
+          ...optional('routing_id', input.routingId),
+          ...defaultSkipData(input),
+          version_no: { increment: 1 },
+        },
+      });
+      if (result.count > 0) await syncItemInspectionRequired(tx, input);
+      return result;
     });
     await this.assertExists(inspectionPlanId, updated.count);
     return this.get(inspectionPlanId);
@@ -324,6 +332,21 @@ function view(row: PlanRow): InspectionPlanView {
     pqcSkipAllowed: row.default_skip,
     isActive: row.is_active,
   };
+}
+
+/**
+ * 품목 전용 IQC 기준의 「기본 생략」에 품목 「수입검사 대상」을 반대로 맞춘다 — 두 설정은 같은 뜻이다(omf-all-around#215).
+ * 공통 기준(품목 없음)·PQC·OQC 는 맞추지 않는다. 이미 맞으면 품목 행을 건드리지 않는다(품목 화면의 저장 토큰을 지킨다).
+ */
+async function syncItemInspectionRequired(tx: Prisma.TransactionClient, input: InspectionPlanWrite): Promise<void> {
+  const skip = input.defaultSkip ?? input.pqcSkipAllowed;
+  if (input.inspectionTypeCode !== 'IQC' || input.itemId === undefined || input.itemId === null || skip === undefined) {
+    return;
+  }
+  await tx.item.updateMany({
+    where: { item_id: input.itemId, inspection_required: skip },
+    data: { inspection_required: !skip, version_no: { increment: 1 } },
+  });
 }
 
 /**

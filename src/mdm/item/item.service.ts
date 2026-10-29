@@ -130,26 +130,38 @@ export class ItemService {
   ): Promise<{ item: ItemView; editability: Editability; versionNo: number }> {
     await this.assertWritable(input);
 
-    const updated = await this.prisma.item.updateMany({
-      // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
-      where: { item_id: itemId, version_no: version },
-      data: {
-        lot_controlled: input.lotControlled,
-        serial_control_type_code: input.serialControlTypeCode,
-        inspection_required: input.inspectionRequired,
-        fifo_policy_code: input.fifoPolicyCode,
-        negative_stock_allowed: input.negativeStockAllowed,
-        is_active: input.isActive,
-        ...optional('shelf_life_days', input.shelfLifeDays),
-        ...optional('storage_condition_code', input.storageConditionCode),
-        ...optional('opened_shelf_life_hours', input.openedShelfLifeHours),
-        ...optional('is_development_item', input.developmentItem),
-        ...optional('default_lot_storage_uom_id', input.defaultLotStorageUomId),
-        ...optional('default_production_lot_size', lotSizeOf(input)),
-        ...optional('name_ko', input.nameKo),
-        ...optional('name_vi', input.nameVi),
-        version_no: { increment: 1 },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.item.updateMany({
+        // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
+        where: { item_id: itemId, version_no: version },
+        data: {
+          lot_controlled: input.lotControlled,
+          serial_control_type_code: input.serialControlTypeCode,
+          inspection_required: input.inspectionRequired,
+          fifo_policy_code: input.fifoPolicyCode,
+          negative_stock_allowed: input.negativeStockAllowed,
+          is_active: input.isActive,
+          ...optional('shelf_life_days', input.shelfLifeDays),
+          ...optional('storage_condition_code', input.storageConditionCode),
+          ...optional('opened_shelf_life_hours', input.openedShelfLifeHours),
+          ...optional('is_development_item', input.developmentItem),
+          ...optional('default_lot_storage_uom_id', input.defaultLotStorageUomId),
+          ...optional('default_production_lot_size', lotSizeOf(input)),
+          ...optional('name_ko', input.nameKo),
+          ...optional('name_vi', input.nameVi),
+          version_no: { increment: 1 },
+        },
+      });
+      if (result.count > 0) {
+        // 그 품목 전용 IQC 기준의 「기본 생략」을 「수입검사 대상」의 반대로 맞춘다 — 두 설정은 같은 뜻이다(omf-all-around#215).
+        // 공통 기준(품목 없음)은 맞추지 않는다. 이미 맞는 기준은 건드리지 않는다(기준 화면의 저장 토큰을 지킨다).
+        const skip = !input.inspectionRequired;
+        await tx.inspection_plan.updateMany({
+          where: { item_id: itemId, inspection_type_code: 'IQC', is_active: true, default_skip: !skip },
+          data: { default_skip: skip, pqc_skip_allowed: skip, version_no: { increment: 1 } },
+        });
+      }
+      return result;
     });
     await this.assertExists(itemId, updated.count);
     return this.get(itemId);

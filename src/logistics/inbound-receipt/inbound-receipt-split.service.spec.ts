@@ -124,6 +124,8 @@ function fake(codeValues?: string[]) {
     item: {
       findMany: async () => [{ item_id: 40n, inspection_required: false }],
     },
+    // 무검사 품목의 전용 IQC 기준 조회(#215) — 기본 생략 기준이 없다.
+    inspection_plan_version: { findMany: async () => [] },
     inbound_receipt: {
       create: async ({ data }: { data: Args }) => {
         recorded.headers.push(data);
@@ -150,6 +152,7 @@ function fake(codeValues?: string[]) {
     item: {
       findMany: async () => [{ item_id: 40n, item_code: '040101-00023S', inspection_required: false }],
     },
+    inspection_plan_version: { findMany: async () => [] },
     partner: {
       findMany: async () => [{ partner_id: 10n, partner_code: '100020' }],
     },

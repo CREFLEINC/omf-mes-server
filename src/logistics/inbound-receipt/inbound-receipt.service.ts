@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { INITIAL_LOT_STATUS, IqcHandoverNotifier, LotRegistryService } from '../../core/lot';
+import { itemIqcDefaultSkipped } from '../../core/quality/inspection-plan-version';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
@@ -89,6 +90,7 @@ export class InboundReceiptService {
     const actor: LogisticsWriteActor = typeof actorOrUser === 'number' ? { appUserId: actorOrUser } : actorOrUser;
     const deltas = await this.lockAttribution(tx, input.lines, at);
     const inspection = await inspectionFlags(tx, input.lines);
+    const iqcRecords = await iqcRecordFlags(tx, input.lines, businessDate);
 
     const header = await tx.inbound_receipt.create({
       data: {
@@ -176,7 +178,7 @@ export class InboundReceiptService {
           sourceTypeCode: 'INBOUND_RECEIPT_LINE',
           sourceId: Number(created.inbound_receipt_line_id),
           incomingIqc:
-            inspection.get(BigInt(line.itemId)) === true
+            iqcRecords.get(BigInt(line.itemId)) === true
               ? {
                   requestNo: requiredIqcValue(iqcRequestNos[index], '의뢰번호'),
                   effectiveDate: requiredIqcValue(businessDate, '업무일자'),
@@ -221,7 +223,7 @@ export class InboundReceiptService {
     input: InboundReceiptHeaderWriteInput,
     businessDate: string,
   ): Promise<(string | undefined)[]> {
-    const flags = await inspectionFlags(this.prisma, input.lines);
+    const flags = await iqcRecordFlags(this.prisma, input.lines, businessDate);
     return Promise.all(
       input.lines.map(async (line) =>
         attachesLot(line) && flags.get(BigInt(line.itemId)) === true
@@ -355,6 +357,24 @@ export async function inspectionFlags(
     select: { item_id: true, inspection_required: true },
   });
   return new Map(rows.map((row) => [row.item_id, row.inspection_required]));
+}
+
+/**
+ * IQC 의뢰(생략 기록 포함)를 세울 품목. 품목 「수입검사 대상」이거나, 꺼져 있어도 품목 전용 IQC 기준이 「기본 생략」이면
+ * 참이다 — 그 경우 의뢰는 생략(DEFAULT)으로 선다(omf-all-around#215). 입하 라인의 `inspection_required` 는 품목 값 그대로다.
+ */
+export async function iqcRecordFlags(
+  tx: Prisma.TransactionClient,
+  lines: InboundReceiptLineWriteInput[],
+  businessDate: string | undefined,
+): Promise<Map<bigint, boolean>> {
+  const flags = await inspectionFlags(tx, lines);
+  if (businessDate === undefined) return flags;
+  const result = new Map(flags);
+  for (const [itemId, required] of flags) {
+    if (!required && (await itemIqcDefaultSkipped(tx, Number(itemId), businessDate))) result.set(itemId, true);
+  }
+  return result;
 }
 
 function bigintOrNull(value: number | null | undefined): bigint | null {

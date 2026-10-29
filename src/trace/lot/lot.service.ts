@@ -18,6 +18,7 @@ import {
   optionalInstant,
 } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
+import { itemIqcDefaultSkipped } from '../../core/quality/inspection-plan-version';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   assertDay,
@@ -221,8 +222,13 @@ export class LotService {
     // ⭐ IQC 의뢰는 번호 출처와 상관없이 입하 라인의 검사 여부를 따른다 — SUPPLIER(사전부착)도
     //    MES 와 같이 의뢰를 만든다. 안 만들면 보류만 걸리고 검사할 의뢰가 없다(omf-all-around#18).
     const iqcSource = inboundSource ?? (await this.inboundLine(input.sourceId));
+    // 품목이 수입검사 대상이 아니어도 품목 전용 IQC 기준이 「기본 생략」이면 생략 기록을 남긴다(omf-all-around#215).
+    const iqcRecorded =
+      iqcSource !== undefined &&
+      (iqcSource.inspection_required ||
+        (await itemIqcDefaultSkipped(this.prisma, effectiveInput.itemId, input.businessDate)));
     const iqcRequestNo =
-      iqcSource?.inspection_required === true
+      iqcSource !== undefined && iqcRecorded
         ? await this.numbering.next('INSPECTION_REQUEST', iqcSource.inbound_receipt.plant_id, input.businessDate)
         : undefined;
 
@@ -360,7 +366,8 @@ export class LotService {
         {
           ...current,
           lotNo,
-          incomingIqc: source.inspection_required
+          // 번호는 IQC 기록 대상일 때만 미리 뽑혔다 — 판정은 `create` 의 `iqcRecorded` 하나다.
+          incomingIqc: iqcRequestNo !== undefined
             ? {
                 requestNo: requiredIqcRequestNo(iqcRequestNo),
                 effectiveDate: current.businessDate,
@@ -370,7 +377,7 @@ export class LotService {
         },
         actor,
       );
-      if (source.inspection_required && lot.status_code === INITIAL_LOT_STATUS) await this.notifyIqc(tx, lot);
+      if (iqcRequestNo !== undefined && lot.status_code === INITIAL_LOT_STATUS) await this.notifyIqc(tx, lot);
       return lot;
     });
   }

@@ -68,6 +68,28 @@ export async function planDefaultSkip(
   return row?.inspection_plan.default_skip === true;
 }
 
+/**
+ * 품목 전용 IQC 기준(공통 기준 제외)이 그 날짜에 하나로 정해지고 「기본 생략」인가(omf-all-around#215).
+ * 품목 「수입검사 대상」이 꺼져 있어도 이것이 참이면 입하가 생략 기록을 남긴다 — 두 설정은 저장 때 서로 맞춰진다.
+ */
+export async function itemIqcDefaultSkipped(
+  tx: Pick<Prisma.TransactionClient, 'inspection_plan_version'>,
+  itemId: number,
+  effectiveDate: string,
+): Promise<boolean> {
+  const date = day('businessDate', effectiveDate);
+  const versions = await tx.inspection_plan_version.findMany({
+    where: {
+      status_code: 'CONFIRMED',
+      effective_from: { lte: date },
+      OR: [{ effective_to: null }, { effective_to: { gte: date } }],
+      inspection_plan: { item_id: itemId, inspection_type_code: 'IQC', is_active: true },
+    },
+    select: { inspection_plan: { select: { default_skip: true } } },
+  });
+  return versions.length === 1 && versions[0].inspection_plan.default_skip;
+}
+
 async function candidatePlanVersions(
   tx: Prisma.TransactionClient,
   inspectionTypeCode: string,

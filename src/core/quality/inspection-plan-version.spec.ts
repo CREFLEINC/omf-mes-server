@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { resolveInspectionPlanVersion } from './inspection-plan-version';
+import { itemIqcDefaultSkipped, resolveInspectionPlanVersion } from './inspection-plan-version';
 
 /** 품목 칸 값(`item_id`)별로 활성 버전 id 를 돌려주는 스텁. `null` 은 「전 품목 공통」이다. */
 function stub(byItem: Map<number | null, bigint[]>) {
@@ -48,5 +48,26 @@ describe('resolveInspectionPlanVersion — 전 품목 공통 기준 (omf-all-aro
     const { tx } = stub(new Map([[null, [2n, 3n]]]));
 
     await expect(resolveInspectionPlanVersion(tx, 'IQC', 10, '2026-10-16')).rejects.toBeInstanceOf(ContractException);
+  });
+});
+
+describe('itemIqcDefaultSkipped — 품목 전용 IQC 기준의 기본 생략 (omf-all-around#215)', () => {
+  const tx = (rows: { inspection_plan: { default_skip: boolean } }[]) => {
+    const findMany = jest.fn().mockResolvedValue(rows);
+    return { tx: { inspection_plan_version: { findMany } } as unknown as Prisma.TransactionClient, findMany };
+  };
+
+  it('품목 전용 기준 하나가 기본 생략이면 참 — 공통 기준(품목 없음)은 묻지 않는다', async () => {
+    const { tx: client, findMany } = tx([{ inspection_plan: { default_skip: true } }]);
+    await expect(itemIqcDefaultSkipped(client, 10, '2026-10-29')).resolves.toBe(true);
+    expect(findMany.mock.calls[0][0].where.inspection_plan).toEqual({ item_id: 10, inspection_type_code: 'IQC', is_active: true });
+  });
+
+  it.each([
+    ['기본 생략이 아니면', [{ inspection_plan: { default_skip: false } }]],
+    ['기준이 없으면', []],
+    ['둘 이상이면(고르지 않는다)', [{ inspection_plan: { default_skip: true } }, { inspection_plan: { default_skip: true } }]],
+  ])('%s 거짓', async (_label, rows) => {
+    await expect(itemIqcDefaultSkipped(tx(rows).tx, 10, '2026-10-29')).resolves.toBe(false);
   });
 });
