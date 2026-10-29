@@ -14474,7 +14474,6 @@
      "warehouseCode",
      "warehouseName",
      "warehouseTypeCode",
-     "managementLevelCode",
      "isExternal",
      "isDefect",
      "isActive"
@@ -14520,14 +14519,6 @@
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
-     "managementLevelCode": {
-      "x-source-column": "management_level_code",
-      "type": "string",
-      "maxLength": 50,
-      "example": "WAREHOUSE",
-      "description": "창고 관리 수준. ✅ **값 목록 확정 2026-08-31(사용자)** — 창고(WAREHOUSE) · 구역(ZONE) · 랙(RACK) · 셀(CELL) 넷이며 **이 순서가 계층 깊이를 뜻한다**. 이 값이 위치 입력을 가른다 — 창고면 위치를 받지 않고, 셀이면 셀까지 받는다(W-06-07 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=MANAGEMENT_LEVEL 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-code-key": "CD-MANAGEMENT-LEVEL"
-     },
      "isExternal": {
       "x-source-column": "is_external",
       "type": "boolean",
@@ -14568,8 +14559,7 @@
      "businessUnitId",
      "warehouseCode",
      "warehouseName",
-     "warehouseTypeCode",
-     "managementLevelCode"
+     "warehouseTypeCode"
     ],
     "description": "창고 등록 요청. isActive 는 받지 않는다(신규는 항상 사용 중). 근거: W-06-07 §4-A · §5-1 「창고 추가」",
     "properties": {
@@ -14608,14 +14598,6 @@
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
-     "managementLevelCode": {
-      "x-source-column": "management_level_code",
-      "type": "string",
-      "maxLength": 50,
-      "example": "WAREHOUSE",
-      "description": "창고 관리 수준. ✅ **값 목록 확정 2026-08-31(사용자)** — 창고(WAREHOUSE) · 구역(ZONE) · 랙(RACK) · 셀(CELL) 넷이며 **이 순서가 계층 깊이를 뜻한다**. 이 값이 위치 입력을 가른다 — 창고면 위치를 받지 않고, 셀이면 셀까지 받는다(W-06-07 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=MANAGEMENT_LEVEL 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-code-key": "CD-MANAGEMENT-LEVEL"
-     },
      "isExternal": {
       "x-source-column": "is_external",
       "type": "boolean",
@@ -14649,7 +14631,6 @@
      "warehouseCode",
      "warehouseName",
      "warehouseTypeCode",
-     "managementLevelCode",
      "isExternal",
      "isDefect"
     ],
@@ -14683,14 +14664,6 @@
       "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
-     },
-     "managementLevelCode": {
-      "x-source-column": "management_level_code",
-      "type": "string",
-      "maxLength": 50,
-      "example": "WAREHOUSE",
-      "description": "창고 관리 수준. ✅ **값 목록 확정 2026-08-31(사용자)** — 창고(WAREHOUSE) · 구역(ZONE) · 랙(RACK) · 셀(CELL) 넷이며 **이 순서가 계층 깊이를 뜻한다**. 이 값이 위치 입력을 가른다 — 창고면 위치를 받지 않고, 셀이면 셀까지 받는다(W-06-07 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=MANAGEMENT_LEVEL 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-code-key": "CD-MANAGEMENT-LEVEL"
      },
      "isExternal": {
       "x-source-column": "is_external",

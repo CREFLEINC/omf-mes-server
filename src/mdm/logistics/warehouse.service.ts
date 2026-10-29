@@ -55,8 +55,6 @@ interface WarehouseView {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  /** 받은 값 그대로 — 어떤 판단에도 쓰지 않는다(장부 P-153). 계약이 바뀌면 걷어낸다. */
-  managementLevelCode: string;
   isExternal: boolean;
   isDefect: boolean;
   isActive: boolean;
@@ -70,7 +68,6 @@ interface WarehouseCreate {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  managementLevelCode: string;
   isExternal?: boolean;
   isDefect?: boolean;
   partnerId?: number | null;
@@ -83,7 +80,6 @@ interface WarehouseUpdate {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  managementLevelCode: string;
   isExternal: boolean;
   isDefect: boolean;
   partnerId?: number | null;
@@ -98,6 +94,9 @@ export interface WarehouseQuery extends ReferenceQuery {
 }
 
 type WarehouseRow = Prisma.warehouseGetPayload<object>;
+
+/** 관리수준은 없앴다(#884). 칸이 NOT NULL 이라 지울 때(#898)까지 자리만 채운다 — 아무도 읽지 않는다. */
+const UNUSED_MANAGEMENT_LEVEL = 'NONE';
 
 export type WarehouseResult = {
   warehouse: WarehouseView;
@@ -177,7 +176,7 @@ export class WarehouseService {
           warehouse_code: input.warehouseCode,
           warehouse_name: input.warehouseName,
           warehouse_type_code: input.warehouseTypeCode,
-          management_level_code: input.managementLevelCode,
+          management_level_code: UNUSED_MANAGEMENT_LEVEL,
           ...optional('is_external', input.isExternal),
           ...optional('is_defect', input.isDefect),
           ...optional('alias_name', aliasName),
@@ -208,7 +207,6 @@ export class WarehouseService {
         warehouse_code: input.warehouseCode,
         warehouse_name: input.warehouseName,
         warehouse_type_code: input.warehouseTypeCode,
-        management_level_code: input.managementLevelCode,
         is_external: input.isExternal,
         is_defect: input.isDefect,
         ...optional('alias_name', aliasName),
@@ -247,7 +245,6 @@ export class WarehouseService {
     return rows.map((row) => row.warehouse_id);
   }
 
-  /** `managementLevelCode` 는 보지 않는다 — 관리수준을 없앴고 계약이 필수라 받기만 한다(장부 P-153). */
   private assertCodes(input: { warehouseTypeCode: string }): Promise<void> {
     return assertCodeValues(this.prisma, [
       { field: 'warehouseTypeCode', value: input.warehouseTypeCode, groupCode: 'WAREHOUSE_TYPE' },
@@ -285,7 +282,6 @@ function view(row: WarehouseRow): WarehouseView {
     warehouseCode: row.warehouse_code,
     warehouseName: row.warehouse_name,
     warehouseTypeCode: row.warehouse_type_code,
-    managementLevelCode: row.management_level_code,
     isExternal: row.is_external,
     isDefect: row.is_defect,
     isActive: row.is_active,
