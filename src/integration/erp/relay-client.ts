@@ -184,6 +184,20 @@ export class RelayClient {
     return replies;
   }
 
+  /**
+   * ERP 통관번호 함수(`ufn_M_CC_DTL_GetCC`) — 외자이고 아직 다 입고되지 않은 발주 라인의 통관번호·순번.
+   * 함수 이름은 설정(`ERP_CC_FUNCTION`)이 글자 모양을 거른 것만 들어온다 — 값만 매개변수로 넘긴다.
+   */
+  async customsClearances(fn: string, poNo: string, poSeq: number): Promise<{ no: string; seq: number }[]> {
+    const request = (await this.connect()).request();
+    request.input('poNo', mssql.NVarChar(18), poNo);
+    request.input('poSeq', mssql.Int, poSeq);
+    const result = await request.query<{ CC_NO: string; CC_SEQ: number }>(
+      `SELECT CC_NO, CC_SEQ FROM ${fn}(@poNo, @poSeq) ORDER BY CC_NO, CC_SEQ`,
+    );
+    return result.recordset.map((row) => ({ no: row.CC_NO, seq: Number(row.CC_SEQ) }));
+  }
+
   async close(): Promise<void> {
     const pool = this.pool;
     this.pool = undefined;

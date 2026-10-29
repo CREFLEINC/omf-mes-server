@@ -7,6 +7,8 @@ export interface ErpSyncConfig {
   /** 보내기(MES→ERP). 받기와 따로 켠다 — 받기만 켜 두고 보내기는 고객 확인 뒤에 켤 수 있다. */
   sendEnabled: boolean;
   relay: RelayConfig;
+  /** ERP 통관번호 함수 — 비면 구매입고의 통관번호를 빈 값으로 보낸다(외자도). */
+  customsFunction: string | null;
   masterIntervalMs: number;
   orderIntervalMs: number;
 }
@@ -15,6 +17,9 @@ export interface ErpSyncConfig {
 const MASTER_INTERVAL_SEC = 43_200;
 /** 전표(발주·수주·ERP W/O)는 15분 — ERP 가 넣은 발주를 현장이 그날 안에 받아야 한다. */
 const ORDER_INTERVAL_SEC = 900;
+
+/** `DB.dbo.함수` — 이름이 SQL 에 그대로 들어가므로 영문·숫자·밑줄과 점만 받는다. */
+const CUSTOMS_FUNCTION = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){1,2}$/;
 
 /**
  * ⛔ 켜져 있는데 접속 정보가 비면 부팅에서 죽는다. 조용히 뜨면 ERP 기준정보가 안 들어오는
@@ -32,6 +37,10 @@ export function erpSyncConfig(config: ConfigService): ErpSyncConfig {
     }
     return found;
   };
+  const customsFunction = config.get<string>('ERP_CC_FUNCTION')?.trim() ?? '';
+  if (customsFunction !== '' && !CUSTOMS_FUNCTION.test(customsFunction)) {
+    throw new Error(`ERP_CC_FUNCTION(${customsFunction}) 은 「DB.dbo.함수」 모양이어야 한다 — 영문·숫자·밑줄과 점만`);
+  }
   return {
     enabled,
     sendEnabled,
@@ -43,6 +52,7 @@ export function erpSyncConfig(config: ConfigService): ErpSyncConfig {
       database: value('ERP_DB_NAME'),
       encrypt: config.get<string>('ERP_DB_ENCRYPT') !== 'false',
     },
+    customsFunction: customsFunction === '' ? null : customsFunction,
     masterIntervalMs:
       (Number(config.get('ERP_SYNC_MASTER_INTERVAL_SEC')) || MASTER_INTERVAL_SEC) * 1000,
     orderIntervalMs:

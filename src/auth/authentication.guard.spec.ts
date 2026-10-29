@@ -171,6 +171,14 @@ describe('FR-004/005 terminal bearer authentication', () => {
       {}, { equipmentId: '6' }, `Bearer ${token}`).execution))).toBe(401);
   });
 
+  it('a terminal of the wrong type gets 401 that names the right device and screen, not a login prompt', async () => {
+    const { guard, token } = setup('POP');
+    const error = await guard.canActivate(context('PUT /inventory/handling-units/{handlingUnitId}/contents', {}, { handlingUnitId: '9' }, `Bearer ${token}`).execution)
+      .catch((caught: unknown) => caught) as ContractException;
+    expect(error.getStatus()).toBe(401);
+    expect(error.errors[0].message).toContain('PDA(모바일 단말) 포장 재구성 스캔(M-04-03)에서 하세요');
+  });
+
   it('denies cross-plant, reissued, inactive, and session-typed bearer tokens', async () => {
     const normal = setup();
     expect(await statusOf(normal.guard.canActivate(context('GET /mdm/workers', { plantId: '4' }, {}, `Bearer ${normal.token}`).execution))).toBe(401);

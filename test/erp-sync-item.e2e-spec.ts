@@ -105,6 +105,7 @@ describeRelay('ERP 품목 받기 (e2e · 중계 DB)', () => {
       item_type_code: 'RAW_MATERIAL',
       erp_spec: 'PC, ER1006FH, 5VA, WHITE',
       erp_item_group_code: 'ZZ400',
+      inspection_required: true,
     });
     expect(items[0].uom.uom_code).toBe('GR');
     const rows = await relayRows();
@@ -126,6 +127,16 @@ describeRelay('ERP 품목 받기 (e2e · 중계 DB)', () => {
       MES_APPLY_ERROR: '단위 BX 이 없다',
       UPDT_USER_ID: 'MES',
     });
+  });
+
+  it('IQC 를 끈 품목은 ERP 가 다시 보내도 꺼진 채로 둔다', async () => {
+    await prisma.item.update({ where: { item_code: `${PREFIX}001` }, data: { inspection_required: false } });
+    await insertRow(sa, COPY, item('001', { ITEM_NM: 'RESIN PC RENAMED' }));
+
+    await cycle.run(TABLE);
+
+    const row = await prisma.item.findUniqueOrThrow({ where: { item_code: `${PREFIX}001` } });
+    expect(row).toMatchObject({ item_name: 'RESIN PC RENAMED', inspection_required: false });
   });
 
   it('취소(C)가 오면 품목을 끈다', async () => {
