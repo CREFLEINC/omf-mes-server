@@ -74,7 +74,8 @@ describe('계약 커버리지', () => {
     // 검사기준 엑셀 올리기 1 오퍼레이션(#199 · 장부 P-140): 559 → 560.
     // 기간별 이력의 투입 줄·포장 줄 2 오퍼레이션(장부 P-151): 560 → 562.
     // PQC 생략 요청·실행 2 오퍼레이션(#212 · 장부 P-152): 562 → 564.
-    expect(registry.size).toBe(564);
+    // 위치 랙 만들기·지우기 2 오퍼레이션(위치 ③b): 564 → 566.
+    expect(registry.size).toBe(566);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

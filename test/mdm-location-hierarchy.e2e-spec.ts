@@ -180,6 +180,70 @@ describe('위치 계층 (e2e)', () => {
     expect(await detail(zone.locationId)).toMatchObject({ isLeaf: true });
   });
 
+  it('⭐ 랙 하나 만들기 — 랙 1 · 층 3 · 층마다 셀 2 를 한 번에, 코드는 {구역}-R001-L01-C01 꼴', async () => {
+    const zone = await create();
+
+    const rack = await buildRack(zone.locationId, 3, 2, 201);
+
+    expect(rack).toMatchObject({ locationCode: `${zone.locationCode}-R001`, locationLevelCode: 'RACK', isLeaf: false });
+    const levels = await childrenOf(rack.locationId as number);
+    expect(levels.map((row) => row.location_code)).toEqual(['L01', 'L02', 'L03'].map((tail) => `${rack.locationCode}-${tail}`));
+    const cells = await childrenOf(Number(levels[2].location_id));
+    expect(cells.map((row) => [row.location_code, row.location_level_code]))
+      .toEqual([[`${rack.locationCode}-L03-C01`, 'CELL'], [`${rack.locationCode}-L03-C02`, 'CELL']]);
+  });
+
+  it('⛔ 랙은 사람이 만든 켜진 구역 밑에만 — 랙 밑 · 서버가 만든 자리 밑 400 INVALID · 재고 있는 구역 400 STATE_LOCKED · 하나도 안 만든다', async () => {
+    const zone = await create();
+    const rack = await create(zone.locationId);
+    const staging = await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: warehouseId, system_role_code: 'PUTAWAY_STAGING' },
+      select: { location_id: true },
+    });
+    const stocked = await create();
+    await stock(stocked.locationId, 4);
+    const before = await prisma.location.count({ where: { warehouse_id: warehouseId } });
+
+    for (const parent of [rack.locationId, Number(staging.location_id)]) {
+      const rejected = await buildRack(parent, 2, 2, 400);
+      expect(rejected.errors).toEqual([expect.objectContaining({ field: 'parentLocationId', code: 'INVALID' })]);
+    }
+    const full = await buildRack(stocked.locationId, 2, 2, 400);
+    expect(full.errors).toEqual([expect.objectContaining({ field: 'parentLocationId', code: 'STATE_LOCKED' })]);
+    expect(await prisma.location.count({ where: { warehouse_id: warehouseId } })).toBe(before);
+  });
+
+  it('⭐ 안 쓰인 위치는 밑의 위치까지 함께 지운다 — 지운 번호는 다시 발행된다', async () => {
+    const zone = await create();
+    const rack = await buildRack(zone.locationId, 2, 3, 201);
+
+    await removeLocation(rack.locationId as number, 204);
+
+    expect(await prisma.location.count({ where: { warehouse_id: warehouseId, location_code: { startsWith: rack.locationCode as string } } })).toBe(0);
+    const again = await buildRack(zone.locationId, 1, 1, 201);
+    expect(again.locationCode).toBe(rack.locationCode);
+    await removeLocation(zone.locationId, 204);
+    expect(await prisma.location.count({ where: { warehouse_id: warehouseId, location_code: { startsWith: zone.locationCode } } })).toBe(0);
+  });
+
+  it('⛔ 가지 안의 하나라도 쓰였으면 지우지 않는다 — 400 STATE_LOCKED · 하나도 안 지운다 · 서버가 만든 자리도 400', async () => {
+    const zone = await create();
+    const rack = await buildRack(zone.locationId, 1, 2, 201);
+    const [level] = await childrenOf(rack.locationId as number);
+    const [cell] = await childrenOf(Number(level.location_id));
+    await stock(Number(cell.location_id), 0);
+
+    const rejected = await removeLocation(zone.locationId, 400);
+
+    expect(rejected.errors).toEqual([expect.objectContaining({ scope: 'screen', code: 'STATE_LOCKED' })]);
+    expect(await prisma.location.count({ where: { warehouse_id: warehouseId, location_code: { startsWith: zone.locationCode } } })).toBe(5);
+    const staging = await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: warehouseId, system_role_code: 'PUTAWAY_STAGING' },
+      select: { location_id: true },
+    });
+    await removeLocation(Number(staging.location_id), 400);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   async function create(parentLocationId?: number): Promise<LocationBody> {
@@ -241,6 +305,38 @@ describe('위치 계층 (e2e)', () => {
       .set('If-Match', current.headers.etag)
       .expect(expected);
     return response.body as Record<string, unknown>;
+  }
+
+  async function buildRack(
+    parentLocationId: number,
+    levelCount: number,
+    cellCountPerLevel: number,
+    expected: number,
+  ): Promise<Record<string, unknown>> {
+    const response = await request(app.getHttpServer())
+      .post('/api/mdm/locations:rack')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ parentLocationId, levelCount, cellCountPerLevel })
+      .expect(expected);
+    return response.body as Record<string, unknown>;
+  }
+
+  async function removeLocation(locationId: number, expected: number): Promise<Record<string, unknown>> {
+    const response = await request(app.getHttpServer())
+      .delete(`/api/mdm/locations/${locationId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(expected);
+    return response.body as Record<string, unknown>;
+  }
+
+  function childrenOf(locationId: number): Promise<{ location_id: bigint; location_code: string; location_level_code: string | null }[]> {
+    return prisma.location.findMany({
+      where: { parent_location_id: locationId },
+      select: { location_id: true, location_code: true, location_level_code: true },
+      orderBy: { location_code: 'asc' },
+    });
   }
 
   async function list(inWarehouse: number, query: Record<string, string>): Promise<LocationBody[]> {

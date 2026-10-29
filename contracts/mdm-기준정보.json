@@ -624,6 +624,62 @@
     "x-internal-note": "공유계약 A-1(유일 위반은 범위를 담아 응답)"
    }
   },
+  "/mdm/locations:rack": {
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "랙 하나 만들기 — 랙과 그 밑 층·셀",
+    "description": "구역 밑에 랙 1개와 층 levelCount 개, 층마다 셀 cellCountPerLevel 개를 한 번에 만든다. 응답은 만든 랙이다 — 층·셀은 GET /mdm/locations?parentLocationId= 로 받는다. 400: 구역이 아니거나(사람이 만든 켜진 구역만) 구역에 재고가 있을 때(parentLocationId)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LocationRackCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "만든 랙",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Location"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-07",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/mdm/locations/{locationId}": {
    "parameters": [
     {
@@ -742,6 +798,53 @@
      }
     },
     "x-internal-note": "공유계약 B-1(낙관적 잠금 — 덮어쓰기 강제는 제공하지 않는다)"
+   },
+   "delete": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "위치 지우기 — 아무 데서도 쓰이지 않은 위치",
+    "description": "그 위치와 그 밑의 위치를 함께 지운다. 그중 하나라도 재고·원장·전표·규칙·설비 등 어디에서 쓰였으면 400 STATE_LOCKED — 그때는 사용 중지(:deactivate)한다. 서버가 만든 자리(적치 대기·창고 전체)도 400 STATE_LOCKED. 지운 번호는 다시 발행될 수 있다(쓰인 적 없는 번호). 근거: 사용자 결정 2026-10-29",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "지웠다"
+     },
+     "400": {
+      "description": "쓰인 위치이거나 서버가 만든 자리",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-07",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 위치",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/mdm/locations/{locationId}:deactivate": {
@@ -24746,6 +24849,37 @@
       "type": "integer",
       "format": "int64",
       "description": "이 칸의 후보 LOT 을 찾을 자재 품목"
+     }
+    }
+   },
+   "LocationRackCreate": {
+    "type": "object",
+    "required": [
+     "parentLocationId",
+     "levelCount",
+     "cellCountPerLevel"
+    ],
+    "description": "랙 하나 만들기 — 구역 밑에 랙 1개와 그 밑 층·셀을 한 번에 만든다. 코드는 서버가 발행하고(랙 {구역}-R001 · 층 -L01… · 셀 -C01…) 이름은 코드와 같다. 하나라도 틀리면 하나도 만들지 않는다. 근거: 사용자 결정 2026-10-29",
+    "properties": {
+     "parentLocationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "랙을 둘 구역 — 사람이 만든 켜진 구역이고 재고가 없어야 한다"
+     },
+     "levelCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 99,
+      "example": 5,
+      "description": "층 수"
+     },
+     "cellCountPerLevel": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 99,
+      "example": 10,
+      "description": "층마다 셀 수 — 0 이면 층이 맨 아래 위치다"
      }
     }
    }
