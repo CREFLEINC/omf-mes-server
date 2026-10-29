@@ -4708,10 +4708,21 @@
       "name": "itemTypeCode",
       "in": "query",
       "schema": {
-       "type": "string"
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "maxLength": 50
+       }
       },
+      "style": "form",
+      "explode": false,
+      "example": [
+       "RAW_MATERIAL",
+       "SUBSIDIARY_MATERIAL"
+      ],
       "x-code-key": "CD-ITEM-TYPE",
-      "description": "품목 유형 — 원자재(RAW_MATERIAL) · 반제품(SEMI_FINISHED) · 제품(FINISHED) · 상품(MERCHANDISE). ⭐ 고객이 늘릴 수 있다 — 아래는 초기값(기본값)이지 닫힌 목록이 아니다. ⛔ 예비품을 이 값으로 대신하지 않는다 — QA #7 이 「품목 통합 아님」으로 확정했고, 예비품은 W-06-08 예비품 마스터가 갖는다. 값 목록은 GET /mdm/code-values?codeGroupCode=ITEM_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+      "description": "품목 유형으로 거른다 — 값 여럿을 쉼표로 이어 보낸다(같은 키를 되풀이해도 된다). 위치 보관 품목 칸이 창고 유형에 맞는 유형 묶음만 보인다(사용자 결정 2026-10-29). 원자재(RAW_MATERIAL) · 반제품(SEMI_FINISHED) · 제품(FINISHED) · 상품(MERCHANDISE). ⭐ 고객이 늘릴 수 있다 — 아래는 초기값(기본값)이지 닫힌 목록이 아니다. ⛔ 예비품을 이 값으로 대신하지 않는다 — QA #7 이 「품목 통합 아님」으로 확정했고, 예비품은 W-06-08 예비품 마스터가 갖는다. 값 목록은 GET /mdm/code-values?codeGroupCode=ITEM_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      {
       "name": "hasRouting",

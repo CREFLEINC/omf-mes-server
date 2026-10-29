@@ -108,6 +108,23 @@ describe('품목 마스터 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
   });
 
+  it('⭐ itemTypeCode 는 여러 값을 받는다 — 쉼표로 잇거나 같은 키를 되풀이한다(위치 보관 품목 칸 · 2026-10-29)', async () => {
+    const raw = await createItem(`${PREFIX}-TYPE-RAW`, 'RAW_MATERIAL');
+    const sub = await createItem(`${PREFIX}-TYPE-SUB`, 'SUBSIDIARY_MATERIAL');
+    const fin = await createItem(`${PREFIX}-TYPE-FIN`, 'FINISHED');
+    const idsOf = async (query: string): Promise<number[]> => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/mdm/items?q=${PREFIX}-TYPE&${query}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      return response.body.items.map((i: { itemId: number }) => i.itemId).sort();
+    };
+
+    expect(await idsOf('itemTypeCode=RAW_MATERIAL,SUBSIDIARY_MATERIAL')).toEqual([raw, sub].sort());
+    expect(await idsOf('itemTypeCode=SUBSIDIARY_MATERIAL&itemTypeCode=FINISHED')).toEqual([sub, fin].sort());
+    expect(await idsOf('itemTypeCode=FINISHED')).toEqual([fin]);
+  });
+
   it('⭐ hasRouting=false 는 Routing 이 «한 건도 없는» 품목만 낸다', async () => {
     const without = await request(app.getHttpServer())
       .get(`/api/mdm/items?q=${PREFIX}&hasRouting=false`)
@@ -446,12 +463,12 @@ describe('품목 마스터 (e2e)', () => {
     return { etag: detail.headers.etag, body: detail.body };
   }
 
-  async function createItem(itemCode: string): Promise<number> {
+  async function createItem(itemCode: string, itemTypeCode = 'RAW_MATERIAL'): Promise<number> {
     const created = await prisma.item.create({
       data: {
         item_code: itemCode,
         item_name: itemCode,
-        item_type_code: 'RAW_MATERIAL',
+        item_type_code: itemTypeCode,
         base_uom_id: baseUomId,
         lot_controlled: true,
       },
