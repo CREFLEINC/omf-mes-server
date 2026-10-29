@@ -32,8 +32,8 @@ interface PqcPlanVersion {
   samplingRatio: Prisma.Decimal | null;
   /** 샘플 개수(omf-all-around#201 · 장부 P-141). 비율과 둘 중 하나만 있다. */
   samplingQty: Prisma.Decimal | null;
-  /** 기준 헤더의 「PQC 생략 허용」(omf-all-around#119 · 장부 P-82). */
-  pqcSkipAllowed: boolean;
+  /** 기준 헤더의 「기본 생략」(omf-all-around#119 · #212 · 장부 P-82 · P-152). */
+  defaultSkip: boolean;
 }
 
 /** 트랜잭션을 열기 전에 다 정해 두는 값 — 트랜잭션 안은 쓰기만 한다(배포 §4-1 규율). */
@@ -41,7 +41,7 @@ export interface PqcRequestPlan {
   requestNo: string;
   inspectionPlanVersionId: bigint | null;
   targetQty: Prisma.Decimal;
-  /** 고른 기준이 생략 허용이면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다(#119 · P-82). */
+  /** 고른 기준이 기본 생략이면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다(#119 · P-82). */
   skipped: boolean;
 }
 
@@ -80,7 +80,7 @@ async function resolvePqcPlanVersion(
       sampling_method_code: true,
       sampling_ratio: true,
       sampling_qty: true,
-      inspection_plan: { select: { process_id: true, routing_id: true, pqc_skip_allowed: true } },
+      inspection_plan: { select: { process_id: true, routing_id: true, default_skip: true } },
     },
   });
   if (versions.length === 0) return null;
@@ -100,7 +100,7 @@ async function resolvePqcPlanVersion(
     samplingMethodCode: only.sampling_method_code,
     samplingRatio: only.sampling_ratio,
     samplingQty: only.sampling_qty,
-    pqcSkipAllowed: only.inspection_plan.pqc_skip_allowed,
+    defaultSkip: only.inspection_plan.default_skip,
   };
 }
 
@@ -160,7 +160,7 @@ export async function preparePqcRequest(
     requestNo,
     inspectionPlanVersionId: version?.inspectionPlanVersionId ?? null,
     targetQty: inspectionQty(input.orderQty, version),
-    skipped: version?.pqcSkipAllowed === true,
+    skipped: version?.defaultSkip === true,
   };
 }
 
@@ -207,6 +207,7 @@ export async function writePqcRequest(
       target_qty: input.plan.targetQty,
       uom_id: input.uomId,
       status_code: input.plan.skipped ? 'SKIPPED' : 'REQUESTED',
+      skip_basis_code: input.plan.skipped ? 'DEFAULT' : null,
       requested_at: new Date(),
       created_by: appUserId,
     },

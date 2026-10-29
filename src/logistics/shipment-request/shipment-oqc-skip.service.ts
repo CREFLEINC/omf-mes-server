@@ -86,7 +86,7 @@ export class ShipmentOqcSkipService {
       const by = BigInt(appUserId);
       await tx.inspection_request.updateMany({
         where: skippableWhere(id),
-        data: { status_code: SKIPPED, updated_by: by, version_no: { increment: 1 } },
+        data: { status_code: SKIPPED, skip_basis_code: 'APPROVAL', updated_by: by, version_no: { increment: 1 } },
       });
       await this.qualities.moveWithin(tx, picked.lotIds, 'oqc-skipped', {
         changedBy: by,

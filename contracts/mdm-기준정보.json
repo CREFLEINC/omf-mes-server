@@ -18264,11 +18264,18 @@
       "description": "approvedBy 와 짝(CHECK 없음 — 서버가 항상 함께 기록해 보장)",
       "example": "2026-08-04T09:12:00+09:00"
      },
+     "defaultSkip": {
+      "x-source-column": "default_skip",
+      "type": "boolean",
+      "default": false,
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212",
+      "example": false
+     },
      "pqcSkipAllowed": {
       "x-source-column": "pqc_skip_allowed",
       "type": "boolean",
       "default": false,
-      "description": "PQC 생략 허용 — QA #4 「품목·공정 단위 생략 설정」(itemId·processId와 함께 축을 이룬다). Routing에 PQC 공정 미명시 시 생략(RoutingOperation.inspectionManaged)과는 다른 축이다. 2026-08-30 되살림. 물리 컬럼은 quality.inspection_plan 헤더에 이미 있다(omf-mes-server#42 2026-08-28 확인). 근거: W-06-02 §4-A",
+      "description": "⚠ 호환용 — defaultSkip 과 같은 값이다(omf-all-around#212 · 장부 P-152). 새 화면은 defaultSkip 을 쓴다. PQC 생략 허용 — QA #4 「품목·공정 단위 생략 설정」(itemId·processId와 함께 축을 이룬다). Routing에 PQC 공정 미명시 시 생략(RoutingOperation.inspectionManaged)과는 다른 축이다. 2026-08-30 되살림. 물리 컬럼은 quality.inspection_plan 헤더에 이미 있다(omf-mes-server#42 2026-08-28 확인). 근거: W-06-02 §4-A",
       "example": false
      },
      "isActive": {
@@ -18358,11 +18365,18 @@
       "description": "공통코드 — IQC/PQC(공정·초중종·자주)/OQC ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=QUALITY_INSPECTION_TYPE 로 받는다(IQC·PQC·OQC). ⚠ 설비 점검의 inspectionTypeCode(DAILY·MONTHLY·MAINTENANCE)와 «같은 이름 다른 값» 이라 그룹을 가른다. 근거: omf-mes#186",
       "x-code-key": "CD-QUALITY-INSPECTION-TYPE"
      },
+     "defaultSkip": {
+      "x-source-column": "default_skip",
+      "type": "boolean",
+      "default": false,
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212",
+      "example": false
+     },
      "pqcSkipAllowed": {
       "x-source-column": "pqc_skip_allowed",
       "type": "boolean",
       "example": false,
-      "description": "PQC 생략 허용 — QA #4. 2026-08-30 되살림"
+      "description": "⚠ 호환용 — defaultSkip 과 같은 값이다(omf-all-around#212 · 장부 P-152). 새 화면은 defaultSkip 을 쓴다. PQC 생략 허용 — QA #4. 2026-08-30 되살림"
      }
     }
    },
@@ -18444,11 +18458,18 @@
       "description": "공통코드 — IQC/PQC(공정·초중종·자주)/OQC ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=QUALITY_INSPECTION_TYPE 로 받는다(IQC·PQC·OQC). ⚠ 설비 점검의 inspectionTypeCode(DAILY·MONTHLY·MAINTENANCE)와 «같은 이름 다른 값» 이라 그룹을 가른다. 근거: omf-mes#186",
       "x-code-key": "CD-QUALITY-INSPECTION-TYPE"
      },
+     "defaultSkip": {
+      "x-source-column": "default_skip",
+      "type": "boolean",
+      "default": false,
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212",
+      "example": false
+     },
      "pqcSkipAllowed": {
       "x-source-column": "pqc_skip_allowed",
       "type": "boolean",
       "example": false,
-      "description": "PQC 생략 허용 — QA #4. 2026-08-30 되살림"
+      "description": "⚠ 호환용 — defaultSkip 과 같은 값이다(omf-all-around#212 · 장부 P-152). 새 화면은 defaultSkip 을 쓴다. PQC 생략 허용 — QA #4. 2026-08-30 되살림"
      }
     }
    },
