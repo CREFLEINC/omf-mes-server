@@ -21,7 +21,7 @@ export class InboundStageCountController {
     @Req() request: Request,
     @Query() query: PurchaseOrderQuery,
   ): Promise<{ counts: Record<InboundStageGroup, number> }> {
-    // 목록과 같은 조건 — 계약 밖 조건(장부 P-85)도 목록처럼 여기서 검사한다.
+    // 목록과 같은 조건을 목록처럼 읽는다. inboundStage·sort 는 이 경로의 계약에 없다 — 받아도 보지 않는다(틀리면 400 만).
     const extras = parseOrderListExtras(query as unknown as Record<string, unknown>);
     return { counts: await this.queries.inboundStageCounts(plantQuery({ ...query, ...extras }, request)) };
   }

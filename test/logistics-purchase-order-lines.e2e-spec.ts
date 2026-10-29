@@ -85,7 +85,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     expect(errors.sort()).toEqual(['expectedReceiptDateTo:INVALID', 'openOnly:INVALID', 'plantId:INVALID']);
   });
 
-  it('⛔ P/O 목록에 더한 조건(계약 밖)도 서버가 검사한다', async () => {
+  it('⛔ P/O 목록의 납기·지연만 조건도 칸마다 400 INVALID 다', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/logistics/purchase-orders')
       .query({ expectedReceiptDateFrom: '2026-02-30', overdueOnly: 'yes' })
@@ -233,7 +233,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
         'C',
       ]);
       expect(Object.keys(await orders({ overdueOnly: 'true' }))).toEqual(['A']);
-      // 문자열 'false' 를 참으로 읽으면 안 된다 — 계약 밖 질의라 가드가 형을 바꿔 주지 않는다.
+      // 가드가 계약대로 boolean 으로 바꿔 넘긴다 — 글자 'false' 가 참이 되면 안 된다.
       expect(Object.keys(await orders({ overdueOnly: 'false' })).sort()).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
       expect(Object.keys(await orders({ supplierQ: '공급사2' }))).toEqual(['D']);
       expect(Object.keys(await orders({ supplierQ: `${PREFIX.toLowerCase()}-sup2` }))).toEqual(['D']);

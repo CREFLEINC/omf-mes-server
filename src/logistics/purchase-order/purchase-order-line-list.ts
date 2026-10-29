@@ -70,8 +70,9 @@ export function parseLineListQuery(raw: Record<string, unknown>): PurchaseOrderL
 }
 
 /**
- * 계약 P/O 목록(`GET /logistics/purchase-orders`)에 서버가 먼저 더한 조건(장부 P-85).
- * ⛔ 가드는 계약에 없는 질의를 막지도 형을 바꾸지도 않는다 — 문자열 그대로 오므로 여기서 검사한다.
+ * P/O 목록(`GET /logistics/purchase-orders`)의 조건 가운데 가드가 넘긴 값을 서버 형으로 옮겨야 하는 것 — `sort` 는
+ * `열,방향` 을 나누고 날짜는 실제 있는 날인지 본다. `:inbound-stage-counts` 는 `inboundStage`·`sort` 를 계약에 적지
+ * 않아 문자열 그대로 온다 — 받아도 보지 않는다(틀리면 400 만).
  */
 export interface OrderListExtras {
   expectedReceiptDateFrom?: string;
@@ -120,6 +121,8 @@ function readDate(raw: Record<string, unknown>, name: string, errors: ErrorItem[
 function readFlag(raw: Record<string, unknown>, name: string, errors: ErrorItem[]): boolean | undefined {
   const value = raw[name];
   if (value === undefined) return undefined;
+  // 계약이 boolean 으로 적은 질의는 가드가 바꿔 넘기고, 적지 않은 질의는 문자열 그대로 온다.
+  if (typeof value === 'boolean') return value;
   if (value === 'true' || value === 'false') return value === 'true';
   errors.push(invalid(name, 'true 나 false 여야 합니다.'));
   return undefined;
