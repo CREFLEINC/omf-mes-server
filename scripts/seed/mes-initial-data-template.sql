@@ -19,6 +19,9 @@
 --   * Item AD0404-00022 (HA100038-2510 WW) is inserted explicitly; it is present in
 --     the ERP source but does not come through the bulk item load.
 --   * Six items are marked inspection_required; the ERP source carries no such flag.
+--   * ERP warehouse codes carry no plant. WH* go to PL11 and S<digit>* to PL13. External
+--     warehouses go to PL11, except 100667 and 100668, which the customer warehouse list
+--     (2026-10-29) assigns to PL13.
 
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -490,6 +493,7 @@ INSERT INTO mdm.warehouse
 SELECT
   CASE WHEN source.code LIKE 'WH%' THEN parts.plant_id
        WHEN source.code ~ '^S[0-9]' THEN oa.plant_id
+       WHEN source.code IN ('100667', '100668') THEN oa.plant_id
        ELSE parts.plant_id END,
   unit.business_unit_id,
   source.code,
@@ -603,10 +607,11 @@ BEGIN
     RAISE EXCEPTION 'IQC item count: expected 6, got %', actual_count;
   END IF;
 
+  -- 스냅숏에 있는 품목만 센다. AD0404-00022 는 스냅숏에 없어 위 IQC 검사가 본다.
   SELECT count(*) INTO actual_count FROM mdm.item
   WHERE item_code IN (SELECT item_cd FROM erp_seed.erp_item);
-  IF actual_count <> 9270 THEN
-    RAISE EXCEPTION 'item target count: expected 9270, got %', actual_count;
+  IF actual_count <> 9269 THEN
+    RAISE EXCEPTION 'item target count: expected 9269, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count
@@ -617,6 +622,14 @@ BEGIN
   );
   IF actual_count <> 33 THEN
     RAISE EXCEPTION 'warehouse target count: expected 33, got %', actual_count;
+  END IF;
+
+  SELECT count(*) INTO actual_count
+  FROM mdm.warehouse warehouse
+  JOIN mdm.plant plant ON plant.plant_id = warehouse.plant_id
+  WHERE warehouse.warehouse_code IN ('100667', '100668') AND plant.plant_code = 'PL13';
+  IF actual_count <> 2 THEN
+    RAISE EXCEPTION 'PL13 external warehouse count: expected 2, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count FROM planning.bom

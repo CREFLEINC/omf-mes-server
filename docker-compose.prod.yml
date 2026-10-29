@@ -79,6 +79,7 @@ x-api: &api
     ERP_DB_PASSWORD: ${ERP_DB_PASSWORD:-}
     ERP_DB_NAME: ${ERP_DB_NAME:-}
     ERP_DB_ENCRYPT: ${ERP_DB_ENCRYPT:-true}
+    ERP_CC_FUNCTION: ${ERP_CC_FUNCTION:-}
     ERP_SYNC_MASTER_INTERVAL_SEC: ${ERP_SYNC_MASTER_INTERVAL_SEC:-43200}
     ERP_SYNC_ORDER_INTERVAL_SEC: ${ERP_SYNC_ORDER_INTERVAL_SEC:-900}
     # Zalo 알림 발송(omf-all-around#160). 기본은 꺼짐이고, 켜면 암호화 키가 비었을 때 api 가 기동하지 않는다.

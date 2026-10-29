@@ -29,6 +29,8 @@ import { InspectionLevelController } from './inspection-level/inspection-level.c
 import { InspectionLevelService } from './inspection-level/inspection-level.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
+import { InspectionPlanImportController } from './inspection-plan/inspection-plan-import.controller';
+import { InspectionPlanImportService } from './inspection-plan/inspection-plan-import.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
 import { InspectionSheetTemplateController } from './inspection-sheet-template/inspection-sheet-template.controller';
@@ -84,6 +86,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
   controllers: [
     DefectCodeController,
     CauseCodeController,
+    InspectionPlanImportController, // `inspection-plans:import` — 리터럴 경로라 `:inspectionPlanId` 앞에 둔다.
     InspectionPlanController,
     InspectionSheetTemplateController,
     InspectionSheetController,
@@ -112,6 +115,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     CauseCodeService,
     DefectCodeProcessService,
     InspectionPlanService,
+    InspectionPlanImportService,
     InspectionSheetTemplateService,
     InspectionSheetEntryService,
     InspectionSheetAccess,

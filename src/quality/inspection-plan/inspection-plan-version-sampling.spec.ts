@@ -30,6 +30,18 @@ describe('assertSamplingRatio', () => {
     });
   });
 
+  it('엑셀 올리기 작성중(allowMissingRatio)은 샘플 방식 + 비율 없음을 통과시키되, 전수검사 + 비율은 막는다', () => {
+    const draft = { allowMissingRatio: true };
+    expect(fieldOf(() => assertSamplingRatio({ samplingMethodCode: 'SAMPLE_BY_LOT', samplingRatio: null }, draft))).toBeUndefined();
+    expect(fieldOf(() => assertSamplingRatio({ samplingMethodCode: 'FULL_INSPECTION', samplingRatio: 10 }, draft))).toMatchObject({ code: 'INVALID' });
+  });
+
+  it('샘플 방식은 비율 또는 개수 중 하나만 — 둘 다면 samplingQty INVALID, 전수 + 개수도 INVALID 다', () => {
+    expect(fieldOf(() => assertSamplingRatio({ samplingMethodCode: 'SAMPLE_BY_LOT', samplingRatio: null, samplingQty: 5 }))).toBeUndefined();
+    expect(fieldOf(() => assertSamplingRatio({ samplingMethodCode: 'SAMPLE_BY_LOT', samplingRatio: 10, samplingQty: 5 }))).toMatchObject({ field: 'samplingQty', code: 'INVALID' });
+    expect(fieldOf(() => assertSamplingRatio({ samplingMethodCode: 'FULL_INSPECTION', samplingRatio: null, samplingQty: 5 }))).toMatchObject({ field: 'samplingQty', code: 'INVALID' });
+  });
+
   it('샘플 방식 + 비율은 통과한다', () => {
     expect(fieldOf(() => assertSamplingRatio({ samplingMethodCode: 'SAMPLE_BY_LOT', samplingRatio: 10 }))).toBeUndefined();
   });
