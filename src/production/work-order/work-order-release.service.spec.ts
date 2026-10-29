@@ -306,7 +306,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
   });
 
   /* #119 · 장부 P-82 — 고른 기준이 「PQC 생략 허용」이면 의뢰를 생략(SKIPPED)으로 만든다(번호·기준은 남긴다). */
-  it('PQC — 고른 기준이 생략 허용이면 의뢰를 SKIPPED 로 만든다', async () => {
+  it('PQC — 고른 기준이 기본 생략이면 의뢰를 SKIPPED(근거 DEFAULT)로 만든다', async () => {
     const harness = stub({
       inspectionManaged: true,
       pqcVersions: [
@@ -315,7 +315,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
           sampling_method_code: 'FULL_INSPECTION',
           sampling_ratio: null,
           sampling_qty: null,
-          inspection_plan: { process_id: 66n, routing_id: null, pqc_skip_allowed: true },
+          inspection_plan: { process_id: 66n, routing_id: null, default_skip: true },
         },
       ],
     });
@@ -326,6 +326,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
       inspection_request_no: 'IRQ-20260921-0001',
       inspection_plan_version_id: 701n,
       status_code: 'SKIPPED',
+      skip_basis_code: 'DEFAULT',
     });
   });
 

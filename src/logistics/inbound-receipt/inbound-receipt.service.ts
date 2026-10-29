@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
-import { IqcHandoverNotifier, LotRegistryService } from '../../core/lot';
+import { INITIAL_LOT_STATUS, IqcHandoverNotifier, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
@@ -159,11 +159,10 @@ export class InboundReceiptService {
       }
 
       if (!attachesLot(line)) continue;
-      if (inspection.get(BigInt(line.itemId)) === true) iqcLotCount += 1;
       // ⛔ `POST /trace/lots` 를 HTTP 로 부르지 않는다 — 같은 `tx` 안에 서야 한다. 라인의
       //    `lot_id` 는 코어가 채운다(직접 UPDATE 하지 않는다 · R-1). ⛔ `manufactured_at`
       //    은 비운다 — 날짜를 시각으로 올리는 타임존 캐스팅이다(I-3.md §5-1).
-      await this.lots.createWithin(
+      const lot = await this.lots.createWithin(
         tx,
         {
           // 사전부착 LOT의 기존 계약은 원문 번호 자체가 LOT 번호다.
@@ -188,6 +187,8 @@ export class InboundReceiptService {
         actor.terminalAudit === undefined ? actor.appUserId as number
           : { workerId: actor.workerId, terminalAudit: actor.terminalAudit },
       );
+      // 기본 생략으로 정상이 된 LOT 은 IQC 알림 건수에서 뺀다(omf-all-around#212).
+      if (lot.status_code === INITIAL_LOT_STATUS) iqcLotCount += 1;
     }
 
     for (const [purchaseOrderLineId, delta] of deltas) {

@@ -10,6 +10,7 @@ import {
   ExternalIdentifierInput,
   LotRegisterInput,
   LotRegisterActor,
+  INITIAL_LOT_STATUS,
   IqcHandoverNotifier,
   LotRegistryService,
   nextInboundMaterialLotNo,
@@ -316,7 +317,8 @@ export class LotService {
         },
         actor,
       );
-      if (iqcRequestNo !== undefined) await this.notifyIqc(tx, lot);
+      // 기본 생략으로 정상이 된 LOT 은 검사할 일이 없다 — IQC 알림을 보내지 않는다(omf-all-around#212).
+      if (iqcRequestNo !== undefined && lot.status_code === INITIAL_LOT_STATUS) await this.notifyIqc(tx, lot);
       return lot;
     });
   }
@@ -368,7 +370,7 @@ export class LotService {
         },
         actor,
       );
-      if (source.inspection_required) await this.notifyIqc(tx, lot);
+      if (source.inspection_required && lot.status_code === INITIAL_LOT_STATUS) await this.notifyIqc(tx, lot);
       return lot;
     });
   }

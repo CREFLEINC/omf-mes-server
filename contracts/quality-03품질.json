@@ -5400,6 +5400,20 @@
       "x-internal-note": "확정 전문: uiux/2026-08-21-검사의뢰상태-확정/검사의뢰상태-확정기록.md — 표기 근거(계약 enum 76개 중 한글 1개) · SKIPPED/CANCELLED 분리 이유 · 공통코드 시드 요청문이 그 문서에 있다",
       "x-code-key": "CD-INSPECTION-REQUEST-STATUS"
      },
+     "skipBasisCode": {
+      "x-source-column": "skip_basis_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DEFAULT",
+       "APPROVAL",
+       null
+      ],
+      "description": "생략 근거 — statusCode=SKIPPED 일 때만 싣는다. DEFAULT=검사 기준의 기본 생략 · APPROVAL=건별 생략 결재 승인 뒤 실행. 서버 선행 · 장부 P-152 · omf-all-around#212",
+      "example": "DEFAULT"
+     },
      "requestedAt": {
       "type": "string",
       "format": "date-time",

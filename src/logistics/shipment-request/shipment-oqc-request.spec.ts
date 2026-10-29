@@ -48,6 +48,7 @@ describe('출하검사 의뢰 준비', () => {
   const prisma = {
     inspection_plan_version: {
       findMany: jest.fn().mockResolvedValue([{ inspection_plan_version_id: 77n }]),
+      findUnique: jest.fn().mockResolvedValue({ inspection_plan: { default_skip: false } }),
     },
   } as unknown as Prisma.TransactionClient;
 
@@ -63,10 +64,19 @@ describe('출하검사 의뢰 준비', () => {
 
     // 품목 오름차순 — 번호가 붙는 순서를 결정론으로 둔다.
     expect(prepared).toEqual([
-      { requestNo: 'IRQ-20260916-0001', itemId: 10, uomId: 1, targetQty: 150, planVersionId: 77n },
-      { requestNo: 'IRQ-20260916-0002', itemId: 20, uomId: 1, targetQty: 5, planVersionId: 77n },
+      { requestNo: 'IRQ-20260916-0001', itemId: 10, uomId: 1, targetQty: 150, planVersionId: 77n, defaultSkip: false },
+      { requestNo: 'IRQ-20260916-0002', itemId: 20, uomId: 1, targetQty: 5, planVersionId: 77n, defaultSkip: false },
     ]);
     expect(numbering.nextMany).toHaveBeenCalledWith('INSPECTION_REQUEST', null, '2026-09-16', 2);
+  });
+
+  /* omf-all-around#212 — 고른 기준이 「기본 생략」이면 그 품목 의뢰를 생략으로 세운다고 표시한다. */
+  it('고른 기준이 기본 생략이면 defaultSkip 을 켠다', async () => {
+    (prisma.inspection_plan_version.findUnique as jest.Mock).mockResolvedValueOnce({ inspection_plan: { default_skip: true } });
+
+    const [prepared] = await prepareOqcRequests(prisma, numbering, [line(10, 3)], '2026-09-16');
+
+    expect(prepared.defaultSkip).toBe(true);
   });
 
   it('필수 라인이 없으면 채번도 기준 조회도 하지 않는다', async () => {
@@ -100,8 +110,8 @@ describe('출하검사 의뢰 준비', () => {
 
 describe('출하검사 의뢰 쓰기', () => {
   const prepared = [
-    { requestNo: 'IRQ-1', itemId: 10, uomId: 1, targetQty: 150, planVersionId: 77n },
-    { requestNo: 'IRQ-2', itemId: 20, uomId: 1, targetQty: 5, planVersionId: 78n },
+    { requestNo: 'IRQ-1', itemId: 10, uomId: 1, targetQty: 150, planVersionId: 77n, defaultSkip: false },
+    { requestNo: 'IRQ-2', itemId: 20, uomId: 1, targetQty: 5, planVersionId: 78n, defaultSkip: false },
   ];
   const tx = (existing: { item_id: bigint }[] = []) => ({
     inspection_request: {
@@ -129,6 +139,14 @@ describe('출하검사 의뢰 쓰기', () => {
       status_code: 'REQUESTED',
       created_by: 9,
     });
+  });
+
+  it('기본 생략 품목은 SKIPPED · 근거 DEFAULT 로 세운다(omf-all-around#212)', async () => {
+    const client = tx();
+    await writeOqcRequests(client, 555n, [{ ...prepared[0], defaultSkip: true }], 9, new Date());
+
+    const [[only]] = (client.inspection_request.create as jest.Mock).mock.calls;
+    expect(only.data).toMatchObject({ status_code: 'SKIPPED', skip_basis_code: 'DEFAULT' });
   });
 
   /** ⛔ OQC 에는 IQC 의 `uq_iqc_inspection_request_lot` 같은 DB 제약이 없다 — 서버가 지킨다. */

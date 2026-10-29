@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { NumberingService } from '../../core/numbering/numbering.service';
-import { resolveInspectionPlanVersion } from '../../core/quality/inspection-plan-version';
+import { planDefaultSkip, resolveInspectionPlanVersion } from '../../core/quality/inspection-plan-version';
 
 /** 출하검사. 의뢰·결과·판정이 모두 이 문자열로 묶인다(`shipment-oqc.ts` 와 같은 값). */
 const OQC = 'OQC';
@@ -9,6 +9,9 @@ const OQC = 'OQC';
 const INSPECTION_REQUEST_DOCUMENT_TYPE = 'INSPECTION_REQUEST';
 /** 의뢰가 서는 첫 상태(시드 `INSPECTION_REQUEST_STATUS`). IQC 선례와 같다. */
 const REQUESTED = 'REQUESTED';
+const SKIPPED = 'SKIPPED';
+/** 생략 근거 — 기준의 기본 생략(omf-all-around#212). 결재 승인 실행은 `APPROVAL` 이다. */
+const DEFAULT_SKIP = 'DEFAULT';
 
 /** 편성 본문에서 이 모듈이 보는 것만. */
 export interface OqcRequestLine {
@@ -25,6 +28,8 @@ export interface PreparedOqcRequest {
   uomId: number;
   targetQty: number;
   planVersionId: bigint;
+  /** 고른 기준이 「기본 생략」 — 의뢰를 생략(SKIPPED · 근거 DEFAULT)으로 세운다. 관문이 합격으로 읽는다(omf-all-around#212). */
+  defaultSkip: boolean;
 }
 
 /**
@@ -81,6 +86,7 @@ export async function prepareOqcRequests(
   const planVersions = await Promise.all(
     items.map(([itemId]) => resolveInspectionPlanVersion(prisma, OQC, itemId, requestedShipDate)),
   );
+  const defaultSkips = await Promise.all(planVersions.map((versionId) => planDefaultSkip(prisma, versionId)));
   const numbers = await numbering.nextMany(
     INSPECTION_REQUEST_DOCUMENT_TYPE,
     null,
@@ -94,6 +100,7 @@ export async function prepareOqcRequests(
     uomId,
     targetQty: qty,
     planVersionId: planVersions[index],
+    defaultSkip: defaultSkips[index],
   }));
 }
 
@@ -117,7 +124,8 @@ export async function writeOqcRequests(
       inspection_type_code: OQC,
       target_type_code: 'SHIPMENT_REQUEST',
       target_id: shipmentRequestId,
-      status_code: REQUESTED,
+      // 기본 생략 의뢰도 «살아 있는» 의뢰다 — 다시 와도 하나만 둔다(PQC 배포와 같은 규칙 · #212).
+      OR: [{ status_code: REQUESTED }, { status_code: SKIPPED, skip_basis_code: DEFAULT_SKIP }],
     },
     select: { item_id: true },
   });
@@ -138,7 +146,8 @@ export async function writeOqcRequests(
         lot_id: null,
         target_qty: request.targetQty,
         uom_id: BigInt(request.uomId),
-        status_code: REQUESTED,
+        status_code: request.defaultSkip ? SKIPPED : REQUESTED,
+        skip_basis_code: request.defaultSkip ? DEFAULT_SKIP : null,
         requested_at: requestedAt,
         created_by: appUserId,
       },

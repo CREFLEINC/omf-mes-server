@@ -53,6 +53,21 @@ export async function findInspectionPlanVersion(
   return plans.length === 1 ? plans[0] : null;
 }
 
+/**
+ * 고른 기준 버전의 헤더가 「기본 생략」인가(omf-all-around#212 · 장부 P-152). 켜져 있으면 의뢰를 «검사할 일»로 세우지 않고
+ * 생략(SKIPPED · 근거 DEFAULT) 기록만 남긴다 — 기록이 있어야 검사 목록이 그 건을 보이고 출하 관문이 통과로 읽는다.
+ */
+export async function planDefaultSkip(
+  tx: Pick<Prisma.TransactionClient, 'inspection_plan_version'>,
+  inspectionPlanVersionId: bigint,
+): Promise<boolean> {
+  const row = await tx.inspection_plan_version.findUnique({
+    where: { inspection_plan_version_id: inspectionPlanVersionId },
+    select: { inspection_plan: { select: { default_skip: true } } },
+  });
+  return row?.inspection_plan.default_skip === true;
+}
+
 async function candidatePlanVersions(
   tx: Prisma.TransactionClient,
   inspectionTypeCode: string,

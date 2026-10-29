@@ -65,6 +65,7 @@ import { WorkSessionService } from './work-session/work-session.service';
  * 사건 적재(PR ④)도 상태기계 코어만 부르고, 작업자 참여·이탈은 코어를 하나도 안 부른다.
  * 통제 판정 기록(I-11 PR ⑤)은 세션·전이표·단말 토큰을 하나도 안 쓴다 — 단일 INSERT.
  */
+import { WorkOrderPqcSkipService } from './work-order/work-order-pqc-skip.service';
 @Module({
   imports: [
     PrismaModule,
@@ -89,6 +90,7 @@ import { WorkSessionService } from './work-session/work-session.service';
     RepairExecutionController,
   ],
   providers: [
+    WorkOrderPqcSkipService,
     PickingHandoverNotifier,
     WorkOrderHandoverNotifier,
     WorkOrderQueryService,

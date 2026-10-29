@@ -164,6 +164,7 @@ function fake(options: Options = {}) {
     lot_external_identifier: { create: async () => ({}) },
     inspection_plan_version: {
       findMany: async () => [{ inspection_plan_version_id: 6000n }],
+      findUnique: async () => ({ inspection_plan: { default_skip: false } }),
     },
     inspection_request: {
       create: async ({ data }: { data: Args }) => {

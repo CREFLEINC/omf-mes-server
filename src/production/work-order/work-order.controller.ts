@@ -31,6 +31,7 @@ import { WorkOrderCancel, WorkOrderCancelService } from './work-order-cancel.ser
 import { WorkOrderCloseActor, WorkOrderCloseService } from './work-order-close.service';
 import { WorkOrderDailyResultsService } from './work-order-daily-results.service';
 import { WorkOrderListQuery } from './work-order-list-where';
+import { WorkOrderPqcSkipService } from './work-order-pqc-skip.service';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
 import { WorkOrderRelease, WorkOrderReleaseService } from './work-order-release.service';
@@ -63,6 +64,7 @@ export class WorkOrderController {
     private readonly cancels: WorkOrderCancelService,
     private readonly resourcePlans: WorkOrderResourcePlanService,
     private readonly dailyResults: WorkOrderDailyResultsService,
+    private readonly pqcSkips: WorkOrderPqcSkipService,
     private readonly idempotency: IdempotencyService,
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
     private readonly prisma: PrismaService,
@@ -200,6 +202,41 @@ export class WorkOrderController {
       await this.closes.close(workOrderId, version, body, closeActor(request));
       return (await this.queries.detail(workOrderId, {})).view;
     }, FAMILY_CONFLICT_CODE);
+  }
+
+  /**
+   * PQC 건별 생략 요청 — PQC 검사 조회·판정(W-03-11)이 결재를 상신한다(omf-all-around#212 · 장부 P-152). 의뢰·LOT 은 옮기지 않는다(J-8).
+   */
+  @Post(':workOrderId\\:request-pqc-skip')
+  @Contract('POST /production/work-orders/{workOrderId}:request-pqc-skip')
+  @HttpCode(HttpStatus.ACCEPTED)
+  requestPqcSkip(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    @Body() body: { reason: string },
+  ): Promise<{ approvalRequestId: number }> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
+      this.pqcSkips.requestSkip(workOrderId, body.reason, appUserId),
+    );
+  }
+
+  /**
+   * 승인된 PQC 생략의 실행 — 열린 PQC 의뢰를 생략으로 닫고 검사 대기 생산LOT 을 정상(C28)으로 올린다(장부 P-152).
+   * ⛔ If-Match 를 안 읽는다 — W/O 를 잠근 뒤 상태로 판정한다(두 번째 실행은 400).
+   */
+  @Post(':workOrderId\\:skip-pqc')
+  @Contract('POST /production/work-orders/{workOrderId}:skip-pqc')
+  @HttpCode(HttpStatus.OK)
+  skipPqc(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+  ): Promise<WorkOrderView> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.pqcSkips.execute(workOrderId, appUserId);
+      return (await this.queries.detail(workOrderId, {})).view;
+    });
   }
 
   @Post(':workOrderId\\:cancel')

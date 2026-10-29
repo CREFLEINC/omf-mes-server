@@ -250,6 +250,10 @@ export const TRANSITIONS: TransitionRegistry = {
     // OQC 는 헤더 대상이라 LOT 은 이미 정상이다 — 상태는 그대로 두고 이력만 쌓는다(C4 의 정상 → 정상과 같은 자리).
     'oqc-skipped': { from: ['NORMAL'], to: 'NORMAL',
       transitionCode: 'C27', sourceOperation: 'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc' },
+    // 승인된 PQC 생략 실행 — 실행 «전»에 실적이 나 검사 대기로 남은 생산LOT 을 정상으로 올린다(omf-all-around#212 · 장부 P-152).
+    // 기본 생략(C26)과 이력 코드로 가른다 — IQC(C22)·OQC(C27) 결재 생략과 같은 자리다.
+    'pqc-skip-approved': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
+      transitionCode: 'C28', sourceOperation: 'POST /production/work-orders/{workOrderId}:skip-pqc' },
 
     // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
     // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.
