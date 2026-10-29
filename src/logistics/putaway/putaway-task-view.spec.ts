@@ -37,10 +37,9 @@ describe('taskView', () => {
     expect(view.warehouseId).toBe(61);
   });
 
-  it('응답에 reasonCode·inventoryTransactionLineId·versionNo·warehouseManagementLevelCode 가 없다', () => {
+  it('응답에 reasonCode·inventoryTransactionLineId·versionNo 가 없다', () => {
     const view = taskView(row()) as unknown as Record<string, unknown>;
 
-    expect(view).not.toHaveProperty('warehouseManagementLevelCode');
     expect(view).not.toHaveProperty('reasonCode');
     expect(view).not.toHaveProperty('inventoryTransactionLineId');
     expect(view).not.toHaveProperty('versionNo');

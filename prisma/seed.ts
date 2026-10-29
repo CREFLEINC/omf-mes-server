@@ -190,6 +190,18 @@ const SEED: CodeGroupSeed[] = [
     retired: ['ZONE', 'CELL', 'DOCK'],
   },
   {
+    // 위치 계층의 단계 — 서버가 상위를 보고 정한다(장부 P-154). 마이그 `20261029150000_location_level` 도 같은 값을 넣는다.
+    groupCode: 'LOCATION_LEVEL',
+    groupName: '위치 단계',
+    isSystemOwned: true,
+    values: [
+      { code: 'ZONE', codeName: '구역', order: 10 },
+      { code: 'RACK', codeName: '랙', order: 20 },
+      { code: 'LEVEL', codeName: '층', order: 30 },
+      { code: 'CELL', codeName: '셀', order: 40 },
+    ],
+  },
+  {
     groupCode: 'QUALITY_ZONE',
     groupName: '품질구역',
     values: [

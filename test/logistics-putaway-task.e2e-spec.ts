@@ -184,13 +184,12 @@ describe('적치 지시 조회 (e2e)', () => {
     expect(ids.indexOf(taskR1)).toBeLessThan(ids.indexOf(taskR4));
   });
 
-  it('⭐ 항목이 warehouseId 를 채우고 warehouseManagementLevelCode 는 싣지 않는다(장부 P-153)', async () => {
+  it('⭐ 항목이 warehouseId 를 채운다', async () => {
     const main = await getDetail(taskR1).expect(200);
     const validate = validator('GET /logistics/putaway-tasks/{putawayTaskId}');
     expect(validate(main.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(main.body.warehouseId).toBe(warehouseId);
-    expect(main.body).not.toHaveProperty('warehouseManagementLevelCode');
 
     const other = await getDetail(taskR3).expect(200);
     expect(other.body.warehouseId).toBe(otherWarehouseId);

@@ -2187,6 +2187,7 @@ model location {
   version_no                                                                        Int                          @default(1)
   system_role_code                                                                  String?                      @db.VarChar(30)
   alias_name                                                                        String?                      @db.VarChar(200)
+  location_level_code                                                               String?                      @db.VarChar(30)
   handling_unit                                                                     handling_unit[]
   inventory_adjustment_line                                                         inventory_adjustment_line[]
   inventory_balance                                                                 inventory_balance[]

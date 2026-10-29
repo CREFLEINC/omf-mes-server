@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertMove, assertNoStock, assertParentEmpty, assertSentLevel, levelUnder, parentError } from './location-hierarchy';
 import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, aliasOf, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
@@ -66,6 +67,10 @@ interface LocationView {
   systemRoleCode: string | null;
   /** MES 별칭 — 계약 밖(장부 P-145). */
   aliasName: string | null;
+  /** 구역·랙·층·셀 — 계약 밖(장부 P-154). 넷보다 깊던 옛 위치만 null. */
+  locationLevelCode: string | null;
+  /** 켜진 하위가 없다 — 재고를 둘 수 있는 맨 아래 위치. 계약 밖(장부 P-154). */
+  isLeaf: boolean;
 }
 
 interface LocationWrite {
@@ -81,12 +86,14 @@ interface LocationWrite {
   capacityUomId?: number | null;
   /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
   aliasName?: unknown;
+  /** 계약 밖 · 선택 — 보냈으면 상위로 정해지는 단계와 같아야 한다(장부 P-154). */
+  locationLevelCode?: unknown;
 }
 
 /** 서버가 만든 위치에서 바뀌어 오면 막는 칸 — 별칭만 고친다(사용자 결정 2026-10-29). */
 const SYSTEM_KEPT = [
   'locationCode', 'locationName', 'locationTypeCode', 'parentLocationId', 'qualityZoneCode',
-  'storageConditionCode', 'allowMixedItem', 'allowMixedLot', 'capacityQty', 'capacityUomId',
+  'storageConditionCode', 'allowMixedItem', 'allowMixedLot', 'capacityQty', 'capacityUomId', 'locationLevelCode',
 ] as const;
 
 export interface LocationQuery extends ReferenceQuery {
@@ -95,6 +102,12 @@ export interface LocationQuery extends ReferenceQuery {
 }
 
 type LocationRow = Prisma.locationGetPayload<object>;
+
+/** `isLeaf` 를 위해 켜진 하위 수를 함께 읽는다. */
+const WITH_CHILDREN = {
+  _count: { select: { child_locations: { where: { is_active: true } } } },
+} satisfies Prisma.locationInclude;
+type LocationWithChildren = Prisma.locationGetPayload<{ include: typeof WITH_CHILDREN }>;
 
 export type LocationResult = {
   location: LocationView;
@@ -118,23 +131,27 @@ export class LocationService {
     const [rows, total] = await Promise.all([
       this.prisma.location.findMany({
         where,
+        include: WITH_CHILDREN,
         orderBy: { location_code: 'asc' },
         skip: page.skip,
         take: page.take,
       }),
       this.prisma.location.count({ where }),
     ]);
-    return pagedResponse(rows.map(view), total, page);
+    return pagedResponse(rows.map((row) => view(row, row._count.child_locations)), total, page);
   }
 
   async get(locationId: number): Promise<LocationResult> {
-    const row = await this.prisma.location.findUnique({ where: { location_id: locationId } });
+    const row: LocationWithChildren | null = await this.prisma.location.findUnique({
+      where: { location_id: locationId },
+      include: WITH_CHILDREN,
+    });
     if (!row) throw new NotFoundException('없는 위치입니다.');
 
     const referenceCount = await countReferences(this.prisma, LOCATION_REFERRERS, row.location_id);
     const systemOwned = row.system_role_code !== null;
     return {
-      location: view(row),
+      location: view(row, row._count.child_locations),
       editability: {
         codeEditable: !systemOwned && referenceCount === 0,
         reason: systemOwned ? 'SYSTEM_OWNED' : referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
@@ -147,13 +164,16 @@ export class LocationService {
   async create(input: LocationWrite & { warehouseId: number }): Promise<LocationView> {
     const aliasName = aliasOf(input.aliasName);
     await this.assertWritable(input);
-    if (input.parentLocationId != null) {
-      await this.assertParent(input.warehouseId, input.parentLocationId, null);
-    }
+    const parentId = input.parentLocationId ?? null;
+    if (parentId !== null) await this.assertParent(input.warehouseId, parentId, null);
+    const level = await levelUnder(this.prisma, parentId);
+    assertSentLevel(input.locationLevelCode, level);
+    if (parentId !== null) await assertNoStock(this.prisma, parentId, 'parentLocationId');
     return view(
       await this.prisma.location.create({
         data: {
           warehouse_id: input.warehouseId,
+          location_level_code: level,
           location_code: input.locationCode,
           location_name: input.locationName,
           location_type_code: input.locationTypeCode,
@@ -167,6 +187,7 @@ export class LocationService {
           ...optional('alias_name', aliasName),
         },
       }),
+      0,
     );
   }
 
@@ -183,6 +204,7 @@ export class LocationService {
     if (input.parentLocationId != null) {
       await this.assertParent(Number(current.warehouse_id), input.parentLocationId, locationId);
     }
+    await assertMove(this.prisma, current, input);
 
     const updated = await this.prisma.location.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
@@ -210,7 +232,7 @@ export class LocationService {
   private async updateAlias(
     current: LocationRow, version: number, input: LocationWrite, aliasName: string | null | undefined,
   ): Promise<LocationResult> {
-    const stored = view(current);
+    const stored = view(current, 0);
     const errors = SYSTEM_KEPT.filter((key) => input[key] !== undefined && input[key] !== stored[key]).map(
       (key): ErrorItem => ({
         scope: 'field', field: key, code: ERROR_CODE.STATE_LOCKED, message: '서버가 만든 위치는 별칭만 고칠 수 있습니다.',
@@ -228,6 +250,7 @@ export class LocationService {
 
   async setActive(locationId: number, version: number, isActive: boolean): Promise<LocationResult> {
     if (!isActive) await this.assertNotStaging(locationId);
+    if (isActive) await assertParentEmpty(this.prisma, locationId);
     const updated = await this.prisma.location.updateMany({
       where: { location_id: locationId, version_no: version },
       data: { is_active: isActive, version_no: { increment: 1 } },
@@ -321,13 +344,7 @@ export class LocationService {
   }
 }
 
-function parentError(message: string): ContractException {
-  return new ContractException(HttpStatus.BAD_REQUEST, [
-    { scope: 'field', field: 'parentLocationId', code: ERROR_CODE.INVALID, message },
-  ]);
-}
-
-function view(row: LocationRow): LocationView {
+function view(row: LocationRow, activeChildren: number): LocationView {
   return {
     locationId: Number(row.location_id),
     warehouseId: Number(row.warehouse_id),
@@ -344,5 +361,7 @@ function view(row: LocationRow): LocationView {
     isActive: row.is_active,
     systemRoleCode: row.system_role_code,
     aliasName: row.alias_name,
+    locationLevelCode: row.location_level_code,
+    isLeaf: activeChildren === 0,
   };
 }
