@@ -4,6 +4,9 @@ import { checkGroup, groupRows } from './inspection-plan-import-check';
 import { parseInspectionPlanWorkbook } from './inspection-plan-import';
 import { parseSpec } from './inspection-plan-tckt';
 
+/** 1×1 PNG */
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+
 /** 고객사 기준서와 같은 짜임의 합성 서식 — 칸 위치는 파일마다 달라 라벨로 찾는지를 본다. */
 async function tckt(cells: Record<string, unknown>, merges: string[] = []): Promise<Buffer> {
   const book = new Workbook();
@@ -18,6 +21,24 @@ const HEAD = {
 };
 
 describe('고객사 검사기준서(TCKT) 읽기', () => {
+  /* #211 — 부품 IQC 화면이 측정 항목 번호를 도면과 맞춰 본다. 머리 오른쪽 위의 결재 도장 그림은 도면이 아니다. */
+  it('⭐ 「Bản vẽ」 아래 · 항목 표 왼쪽의 그림만 도면으로 꺼낸다', async () => {
+    const book = new Workbook();
+    const sheet = book.addWorksheet('TCKT');
+    Object.entries({
+      A1: 'Số quản lý', B1: 'SJS-QIQ-315', H1: 'BẢNG TIÊU CHUẨN KIỂM TRA NHẬP HÀNG', A7: 'Bản vẽ', ...HEAD,
+      J8: '2. Kích thước', L8: '① 1.0±0.20', R8: '3D', S8: 'n=5c=0', T8: 'Mỗi LOT',
+    }).forEach(([address, value]) => { sheet.getCell(address).value = value; });
+    const image = book.addImage({ buffer: PNG as never, extension: 'png' });
+    sheet.addImage(image, { tl: { col: 0, row: 8 }, ext: { width: 10, height: 10 } });
+    sheet.addImage(image, { tl: { col: 18, row: 0 }, ext: { width: 10, height: 10 } });
+
+    const parsed = await parseInspectionPlanWorkbook(Buffer.from(await book.xlsx.writeBuffer()));
+
+    expect(parsed.drawings?.map((d) => d.mime)).toEqual(['image/png']);
+    expect(parsed.drawings?.[0].bytes.equals(PNG)).toBe(true);
+  });
+
   it('⭐ 라벨 오른쪽·아래 칸에서 머리를 읽고, 치수는 수치 항목·나머지는 합격/불합격 항목이 된다', async () => {
     const parsed = await parseInspectionPlanWorkbook(await tckt({
       // 관리번호·발행일은 라벨 «아래» 줄에 있다(PQC A865B 짜임). 병합된 제목이 오른쪽 칸을 덮는다.
@@ -27,7 +48,7 @@ describe('고객사 검사기준서(TCKT) 읽기', () => {
       ...HEAD,
       J8: '1. Ngoại quan', L8: 'Yêu cầu tốt', R8: 'Mắt nhìn', S8: 'AQL : 0,4', T8: 'MỖI LOT',
       J9: '2. Kích thước', L9: '【2】 169.4 ±0.3', R9: '3D', S9: 'n=4c=0', T9: 'MỖI LOT',
-      L10: '(12)(13) 26.40+0.1/-0.5', R10: 'VC', S10: 'n=4c=0', T10: 'MỖI LOT',
+      L10: '(12)(13) 26.40+0.1/-0.5', R10: 'VC', S10: 'n=4c=1', T10: 'MỖI LOT',
       J11: '4.RoHS', L11: 'Phù hợp tiêu chuẩn quản lý RoHS', R11: 'Mỗi LOT',
       J12: 'Vấn đề cần nhớ: 800 ~ 1000LUX', L13: '99 ±1',
     }, ['H1:N2']));
@@ -49,6 +70,8 @@ describe('고객사 검사기준서(TCKT) 읽기', () => {
       [11, 'CHK-04', 'BOOLEAN', null, null, null],
     ]);
     expect(group.rows.map((r) => r.item.inspectionMethodCode)).toEqual(['VISUAL', 'MEASUREMENT', 'MEASUREMENT', null]);
+    // 치수 항목은 시료 칸의 n·c 를 항목마다 갖는다(#211) — 같은 장 안에서 c 가 다를 수 있다.
+    expect(group.rows.map((r) => [r.item.measurementCount, r.item.acceptanceNumber])).toEqual([[null, null], [4, 0], [4, 1], [null, null]]);
     expect(checkGroup(group)).toEqual([]);
   });
 

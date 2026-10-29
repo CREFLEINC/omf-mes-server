@@ -1,6 +1,7 @@
 import { Worksheet } from 'exceljs';
 
 import { ERROR_CODE, ErrorItem } from '../../common/errors';
+import { drawingsOf } from './inspection-plan-drawing';
 import { cellText } from './inspection-plan-import-cell';
 import { fail } from './inspection-plan-import-check';
 import type { ImportParse, ImportRow } from './inspection-plan-import';
@@ -78,7 +79,10 @@ export function parseTcktSheet(sheet: Worksheet): ImportParse {
       return row;
     }),
   );
-  return { rows };
+  const head = find(grid, (v) => v === 'HẠNG MỤC KIỂM TRA');
+  const drawingLabel = find(grid, (v) => v === 'BẢN VẼ');
+  const drawings = head === null || drawingLabel === null ? [] : drawingsOf(sheet, drawingLabel, head.col);
+  return { rows, drawings };
 }
 
 // ── 칸 찾기 ─────────────────────────────────────────────────────────────
@@ -201,7 +205,9 @@ function itemLines(grid: Grid): Line[] | null {
         targetValue: parsed?.target ?? null,
         lowerLimit: parsed?.lower ?? null,
         upperLimit: parsed?.upper ?? null,
-        measurementCount: null,
+        // 치수 항목은 시료 칸의 n·c 가 그 항목의 측정 횟수·허용 불량 수다(「n=5c=1」 · #211). 외관(AQL)은 버전 샘플이 맡는다.
+        measurementCount: numeric ? sampleCountOf(at(col.sample)) : null,
+        acceptanceNumber: numeric ? acceptanceOf(at(col.sample)) : null,
         inspectionMethodCode: equipment !== null && norm(equipment) === 'MẮT NHÌN' ? 'VISUAL' : numeric ? 'MEASUREMENT' : null,
         requiredFlag: null,
         automaticJudgment: null,
@@ -269,6 +275,11 @@ function versionOf(lines: Line[], type: string, issued: string | null): { write:
       ? [{ field: 'inspectionFrequencyCode', message: `검사 주기를 읽을 수 없습니다: ${lead.frequency ?? '(빈 칸)'}. 「Mỗi LOT」·「6 lần/ngày」·「2 lần/ca」 중 하나로 적으세요.` }]
       : [],
   };
+}
+
+function acceptanceOf(text: string | null): number | null {
+  const m = /c\s*=\s*(\d+)/i.exec(text ?? '');
+  return m === null ? null : Number(m[1]);
 }
 
 function sampleCountOf(text: string | null): number | null {

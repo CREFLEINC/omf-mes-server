@@ -8,6 +8,9 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Workbook } from 'exceljs';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -24,14 +27,20 @@ const ROLE = 'E2E_IPIMP_ROLE';
 const HEADER = ['기준코드', '기준명', '검사유형', '유효시작일', '샘플링방식', '샘플비율', '검사주기', '순서', '항목코드', '항목명', '데이터유형', '단위', '하한', '상한'];
 
 const key = (): string => randomUUID();
+/** 1×1 PNG — 기준서 도면 자리(#211). */
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082', 'hex');
 
 describe('검사기준 엑셀 올리기 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  const previousRoot = process.env.ATTACHMENT_STORAGE_ROOT;
+  let root: string;
 
   beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), 'e2e-ipimp-drawing-'));
+    process.env.ATTACHMENT_STORAGE_ROOT = root;
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     configureApp(app, 'api');
@@ -54,6 +63,9 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
   afterAll(async () => {
     await cleanup();
     await app.close();
+    await rm(root, { recursive: true, force: true });
+    if (previousRoot === undefined) delete process.env.ATTACHMENT_STORAGE_ROOT;
+    else process.env.ATTACHMENT_STORAGE_ROOT = previousRoot;
   });
 
   it('⭐ 새 기준코드는 기준·작성중 버전·항목이 생긴다', async () => {
@@ -161,6 +173,64 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
     expect(Number(v2.sampling_ratio)).toBe(15);
   });
 
+  /* omf-all-around#211 · 장부 P-155 — 부품 IQC 화면이 항목별 n·c 와 도면을 쓴다. */
+  it('⭐ 기준서(TCKT)는 치수 항목마다 n·c 를 측정 횟수·허용 불량 수로 넣고, 도면을 버전에 붙이며, 발행이 도면을 잇는다', async () => {
+    const book = new Workbook();
+    const sheet = book.addWorksheet('TCKT');
+    Object.entries({
+      A1: 'Số quản lý', B1: `${PREFIX}-DRW`, D1: 'Ngày ban hành', E1: '2026.07.13', H1: 'BẢNG TIÊU CHUẨN KIỂM TRA NHẬP HÀNG',
+      F5: 'Tên sản phẩm', G5: 'PLUG PIN', A7: 'Bản vẽ', J7: 'Hạng mục kiểm tra', L7: 'Quy cách', R7: 'Thiết bị đo lường', S7: 'Số mẫu', T7: 'Ghi chú',
+      J8: '1.Bề ngoài', L8: 'Yêu cầu tốt', R8: 'Mắt nhìn', S8: 'AQL GII 0.4', T8: 'Mỗi LOT',
+      J9: '2. Kích thước', L9: '① 6.76±0.10', R9: '3D', S9: 'n=5c=0', T9: 'Mỗi LOT',
+      L10: '② 2.32±0.1', R10: '3D', S10: 'n=5c=1', T10: 'Mỗi LOT',
+    }).forEach(([address, value]) => { sheet.getCell(address).value = value; });
+    sheet.addImage(book.addImage({ buffer: PNG as never, extension: 'png' }), { tl: { col: 0, row: 8 }, ext: { width: 10, height: 10 } });
+    const response = await request(app.getHttpServer())
+      .post('/api/quality/inspection-plans:import')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .attach('file', Buffer.from(await book.xlsx.writeBuffer()), 'tckt.xlsx')
+      .expect(200);
+    expect(response.body).toEqual({ succeeded: 1, failed: [] });
+
+    const version = await prisma.inspection_plan_version.findFirstOrThrow({
+      where: { inspection_plan: { inspection_plan_code: `${PREFIX}-DRW-IQC` } },
+      include: { inspection_item_spec: { orderBy: { sequence_no: 'asc' } } },
+    });
+    expect(version.inspection_item_spec.map((i) => [i.data_type_code, i.measurement_count, i.acceptance_number])).toEqual([
+      ['BOOLEAN', 1, null],
+      ['NUMERIC', 5, 0],
+      ['NUMERIC', 5, 1],
+    ]);
+
+    const listed = await request(app.getHttpServer())
+      .get(`/api/app/attachments?targetTypeCode=INSPECTION_PLAN_VERSION&targetId=${String(version.inspection_plan_version_id)}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.items[0]).toMatchObject({ targetTypeCode: 'INSPECTION_PLAN_VERSION', contentType: 'image/png' });
+    const content = await request(app.getHttpServer())
+      .get(`/api/app/attachments/${String(listed.body.items[0].attachmentId)}/content`)
+      .set('Cookie', cookie)
+      .buffer(true)
+      .expect(200);
+    expect(Buffer.compare(content.body as Buffer, PNG)).toBe(0);
+
+    // 확정 → 신규 버전 발행은 도면 행을 복사한다(같은 파일).
+    await prisma.inspection_plan_version.update({
+      where: { inspection_plan_version_id: version.inspection_plan_version_id },
+      data: { status_code: REVISION_STATUS.CONFIRMED, sampling_qty: 5 },
+    });
+    const revised = await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${String(version.inspection_plan_version_id)}:new-revision`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(201);
+    const next = BigInt(revised.body.inspectionPlanVersionId);
+    const copied = await prisma.attachment.findMany({ where: { target_type_code: 'INSPECTION_PLAN_VERSION', target_id: next } });
+    expect(copied).toHaveLength(1);
+  });
+
   it('⛔ 권한이 없으면 403, 파일이 없거나 읽을 수 없으면 400 이다', async () => {
     await request(app.getHttpServer())
       .post('/api/quality/inspection-plans:import')
@@ -229,6 +299,7 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
       select: { inspection_plan_version_id: true },
     });
     const versionIds = versions.map((v) => v.inspection_plan_version_id);
+    await prisma.attachment.deleteMany({ where: { target_type_code: 'INSPECTION_PLAN_VERSION', target_id: { in: versionIds } } });
     await prisma.inspection_item_spec.deleteMany({ where: { inspection_plan_version_id: { in: versionIds } } });
     await prisma.inspection_plan_version.deleteMany({ where: { inspection_plan_version_id: { in: versionIds } } });
     await prisma.inspection_plan.deleteMany({ where: { inspection_plan_id: { in: planIds } } });
