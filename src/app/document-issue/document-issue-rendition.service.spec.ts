@@ -92,7 +92,9 @@ describe('DocumentIssueRenditionService', () => {
   const locationRow = {
     location_code: 'A-01-03',
     location_name: 'RACK A1',
-    warehouse: { warehouse_code: 'WH01' },
+    alias_name: null,
+    location_level_code: 'RACK',
+    warehouse: { warehouse_code: 'WH01', warehouse_name: 'MAIN' },
   };
 
   it('LOCATION_LABEL은 png를 낸다', async () => {
@@ -119,7 +121,7 @@ describe('DocumentIssueRenditionService', () => {
     const text = (await new DocumentIssueRenditionService(prisma).rendition(11, 'tspl')).toString('ascii');
 
     expect(text.startsWith('SIZE ')).toBe(true);
-    expect(text).toContain('QRCODE 599,40,M,8,A,0,M2,S7,"A-01-03"');
+    expect(text).toContain('QRCODE 51,114,M,12,A,0,M2,S7,"A-01-03"');
   });
 
   it('대상 유형이 LOCATION이 아니면 422다', async () => {

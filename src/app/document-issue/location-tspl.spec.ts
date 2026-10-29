@@ -3,8 +3,10 @@ import { locationTspl } from './location-tspl';
 
 const STANDARD: LocationLabelValues = {
   warehouseCode: 'S230',
+  warehouseName: 'MATERIAL WH',
   locationCode: 'S230-01',
   locationName: 'MATERIAL DEFAULT LOC',
+  levelCode: 'CELL',
   issueSeq: 1,
 };
 
@@ -27,10 +29,10 @@ describe('locationTspl', () => {
       ),
     );
     expect(textLines).toEqual([
-      'TEXT 40,32,"0",0,12,12,"WH: S230"',
-      'TEXT 40,104,"0",0,28,28,"S230-01"',
-      'TEXT 40,240,"0",0,13,13,"MATERIAL DEFAULT LOC"',
-      'TEXT 40,320,"0",0,11,11,"ISSUE NO.: 1"',
+      'TEXT 351,114,"0",0,11,11,"CELL"',
+      'TEXT 351,169,"0",0,27,27,"S230-01"',
+      'TEXT 351,269,"0",0,15,15,"MATERIAL DEFAULT LOC"',
+      'TEXT 351,335,"0",0,11,11,"S230 | MATERIAL WH | #1"',
     ]);
   });
 
@@ -39,7 +41,7 @@ describe('locationTspl', () => {
     const qrLine = lines(locationTspl(STANDARD)).find((line) => line.startsWith('QRCODE '));
 
     expect(qrLine).toBe(`QRCODE ${String(qr.x)},${String(qr.y)},M,${String(qr.cell)},A,0,M2,S7,"${locationQrPayload(STANDARD)}"`);
-    expect(qrLine).toBe('QRCODE 599,40,M,8,A,0,M2,S7,"S230-01"');
+    expect(qrLine).toBe('QRCODE 51,114,M,12,A,0,M2,S7,"S230-01"');
   });
 
   it('BOX 가 라벨 경계다', () => {

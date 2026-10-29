@@ -112,7 +112,13 @@ export class DocumentIssueRenditionService {
     }
     const location = await this.prisma.location.findUnique({
       where: { location_id: issue.target_id },
-      select: { location_code: true, location_name: true, warehouse: { select: { warehouse_code: true } } },
+      select: {
+        location_code: true,
+        location_name: true,
+        alias_name: true,
+        location_level_code: true,
+        warehouse: { select: { warehouse_code: true, warehouse_name: true } },
+      },
     });
     // 발행 뒤 위치가 지워졌을 수 있다 — 기록은 남아 있어도 그릴 값이 없다.
     if (!location) throw new UnprocessableEntityException('없는 위치입니다.');
