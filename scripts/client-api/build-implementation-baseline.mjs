@@ -17,7 +17,9 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
 const GENERATED_ON = "2026-10-29";
-const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${GENERATED_ON}`);
+// 같은 날 둘째 전달본 — 폴더만 `-2` 를 붙인다(manifest 의 generatedOn 은 날짜 그대로).
+const DELIVERY_DIR = "2026-10-29-2";
+const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${DELIVERY_DIR}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
 // 기준 커밋이 태그보다 앞선다 — v0.1.21 뒤의 미출시 지점이라 「-next」로 적는다.
@@ -26,10 +28,11 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 작업 브랜치의 커밋을 적으면 squash 병합이나
 // 브랜치 자동 삭제로 해시가 사라질 수 있고, 그러면 아래 assertSourceMatchesServerCommit 의
 // `git rev-parse <sha>:src` 가 새 클론에서 죽는다. 그래서 전달본은 «병합된 뒤» main 의 커밋을 적어 뽑는다.
-// 지금 적힌 것은 main 의 병합 커밋이다 — LOT 생산 이력 조회의 기간별 이력(#865 · 장부 P-151)이 들어간 지점(병합 06b0507).
+// 지금 적힌 것은 main 의 병합 커밋이다 — 적치 규칙 제거(#907)·REQUEST_IQC 정리(#909)가 들어간 지점(병합 49a5441f). 그 앞에 위치 계층(#884~#905)·
+// 적치 지시 allowedLocations(#906)·입고 상한 잠금(#903)이 있다.
 const SERVER_VERSION = "v0.1.21-next";
-const SERVER_COMMIT = "06b0507d6b6156a61288740d80edc553bc0c8eb5";
-const GENERATED_VERSION = "0.1.21-next-server.20261029";
+const SERVER_COMMIT = "49a5441f4df3c255e1fe3d06928973533a4ba8f9";
+const GENERATED_VERSION = "0.1.21-next-server.20261029.2";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -788,6 +791,7 @@ function build() {
   //    2026-10-27 전달본: P-101~P-122 가 더한 오퍼레이션을 합쳐 **553** 이다 — `contract-registry.spec.ts` 의 수치와 같다.
   //    2026-10-28 전달본: 그 뒤 장부 P-항목들이 더한 오퍼레이션을 합쳐 **555** 다.
   //    2026-10-29 전달본: 그 뒤 P-134(4건)·P-137(1건)·P-151(2건)이 더한 오퍼레이션을 합쳐 **562** 다 — `contract-registry.spec.ts` 의 수치와 같다.
+  //    2026-10-29 둘째 전달본: 위치 계층이 7건을 더해 569 가 됐다가 적치 규칙 7건을 지워(#907) 다시 **562** 다.
   assert(
     documentsByOperation.size === 562,
     `계약 오퍼레이션 수가 562이 아닙니다: ${documentsByOperation.size}`,
