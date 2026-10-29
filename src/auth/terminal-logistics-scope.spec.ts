@@ -28,7 +28,8 @@ const prisma = (overrides: Record<string, unknown> = {}) => ({
 
 describe('terminal logistics scope', () => {
   it('enumerates the client logistics surface and denies an unlisted operation or channel', async () => {
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(43);
+    // 적치 규칙 조회 2건을 뺐다(사용자 결정 2026-10-29): 43 → 41.
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(41);
     // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
     //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
     expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(

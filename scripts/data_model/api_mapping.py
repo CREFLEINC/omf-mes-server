@@ -130,8 +130,7 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "logistics.purchase_order",
         "logistics.purchase_order_line",
     ],
-    "/logistics/putaway-rules": ["logistics.putaway_rule"],
-    "/logistics/putaway-tasks": ["logistics.putaway_task", "logistics.putaway_rule"],
+    "/logistics/putaway-tasks": ["logistics.putaway_task"],
     "/logistics/recycle-entries": ["logistics.recycle_entry"],
     "/logistics/sales-orders": ["logistics.sales_order", "logistics.sales_order_line"],
     "/logistics/shipment-lot-allocations": [

@@ -258,12 +258,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 검사기준 엑셀 올리기(장부 P-140) — 같은 화면 헤더의 [엑셀 올리기]다.
   'POST /quality/inspection-plans:import': ['W-06-02'],
 
-  // `W-06-14` 적치 규칙 마스터 — §3 이 「규칙 추가」만 적어 수정·활성 전이가 도출표에
-  // 안 들어왔다. 셋 다 이 화면이 소유한 자원의 같은 자리다.
-  'PUT /logistics/putaway-rules/{putawayRuleId}': ['W-06-14'],
-  'POST /logistics/putaway-rules/{putawayRuleId}:activate': ['W-06-14'],
-  'POST /logistics/putaway-rules/{putawayRuleId}:deactivate': ['W-06-14'],
-
   // `M-01-05` 적치·입고 완료 — ⭐ 도출표에 «이미 있는» 키에 화면을 더하는 둘째 자리다
   // (`GET /app/users` 선례). 도출표는 제품 입고(`M-04-04`)만 적었는데 자재 적치를 소유한
   // 화면은 `M-01-05` 다(§5-7 액션 [적치 완료]) — 없으면 물류담당이 403 을 받는다.
