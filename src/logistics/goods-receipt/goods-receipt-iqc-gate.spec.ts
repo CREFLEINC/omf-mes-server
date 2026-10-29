@@ -7,6 +7,7 @@ import { OutboxService } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoodsReceiptService } from './goods-receipt.service';
 import { GoodsReceiptCreate } from './receipt-posting';
+import { LogisticsHandoverNotifier } from '../logistics-handover';
 
 // 코드값 검사는 이 검사의 관심이 아니다 — 시드 없이 통과시킨다.
 jest.mock('../../common/master', () => ({
@@ -63,6 +64,7 @@ function stub(lot: Record<string, unknown>, inspectionRequired: boolean | null, 
     {} as InventoryPostingService,
     numbering as unknown as NumberingService,
     {} as OutboxService,
+    { putaway: async () => undefined } as unknown as LogisticsHandoverNotifier,
   );
 }
 

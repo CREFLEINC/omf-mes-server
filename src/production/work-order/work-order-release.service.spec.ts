@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { materialRequirements } from './material-issue';
 import { operationSettings } from './release-plan';
 import { WorkOrderReleaseService } from './work-order-release.service';
+import { PickingHandoverNotifier } from '../../core/picking';
 
 const WORK_ORDER = 900;
 const ROUTING_OPERATION = 33n;
@@ -150,6 +151,7 @@ function stub(options: {
     new DocumentStateService(),
     numbering,
     new LotRegistryService(new LotHoldService()),
+    { notify: async () => undefined } as unknown as PickingHandoverNotifier,
   );
   return { service, calls, updated, lots, requests, lines, componentWheres, inspectionRequests };
 }

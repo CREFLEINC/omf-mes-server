@@ -160,6 +160,8 @@ const WORKER_TABLE_READERS = [
   // ERP 사원 수신 — 원본 행의 사번으로 작업자를 만들고 고친다. 사번 헤더 판정이 아니다.
   'integration/erp/apply/employee.apply.ts',
   'inventory/count/inventory-count-update.service.ts',
+  // 인계 알림의 처리자 이름 — 이미 판정된 작업자 id 로 이름만 읽는다(omf-all-around#190). 사번 판정이 아니다.
+  'logistics/logistics-handover.ts',
   // 첨부는 같은 트랜잭션에서 작업자를 재확인하고, LOT 완료는 감사 기록이 재확인한다.
   'maintenance/breakdown/breakdown-attachment.service.ts',
   'maintenance/breakdown/breakdown-create.service.ts',

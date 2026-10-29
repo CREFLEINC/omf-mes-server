@@ -7,6 +7,7 @@ import { DocumentStateModule } from '../core/document-state';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
 import { NotificationCoreModule } from '../core/notification';
+import { PickingHandoverNotifier } from '../core/picking';
 import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MaterialConsumptionQueryService } from './material-consumption/material-consumption-query.service';
@@ -87,6 +88,7 @@ import { WorkSessionService } from './work-session/work-session.service';
     RepairExecutionController,
   ],
   providers: [
+    PickingHandoverNotifier,
     WorkOrderQueryService,
     WorkOrderWriteService,
     WorkOrderTransitionService,

@@ -7,6 +7,7 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { resolveDestinationLocation } from '../destination-location';
 import { CANCELLED_SO_LINE } from '../shipment-request/shipment-request.constants';
+import { LogisticsHandoverNotifier } from '../logistics-handover';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentCreateWrite, postShipment } from './shipment-posting';
 import { assertAllocationSum, assertShipmentQty } from './shipment-rules';
@@ -27,6 +28,7 @@ export class ShipmentService {
     private readonly posting: InventoryPostingService,
     private readonly numbering: NumberingService,
     private readonly queries: ShipmentQueryService,
+    private readonly handover: LogisticsHandoverNotifier,
   ) {}
 
   async create(input: ShipmentCreateWrite, appUserId: number): Promise<ShipmentDetailView> {
@@ -54,6 +56,7 @@ export class ShipmentService {
             appUserId,
           });
           await this.rollUp(tx, input);
+          await this.handover.shipmentPacking(tx, created, appUserId);
           return created;
         });
         return (await this.queries.get(Number(shipmentId))).view;

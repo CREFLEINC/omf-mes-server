@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ErrorItem } from '../../common/errors';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PickingHandoverNotifier } from '../../core/picking';
 import {
   MaterialIssueRequestCreate,
   MaterialIssueRequestService,
@@ -85,6 +86,7 @@ function stub(options: { status?: string; reasonCodes?: string[] } = {}) {
     service: new MaterialIssueRequestService(
       prisma as unknown as PrismaService,
       numbering as unknown as NumberingService,
+      { notify: async () => undefined } as unknown as PickingHandoverNotifier,
     ),
     created,
     periods,

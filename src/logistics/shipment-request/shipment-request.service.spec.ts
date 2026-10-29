@@ -3,6 +3,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { ShipmentRequestView } from './shipment-request-view';
 import { ShipmentRequestCreate, ShipmentRequestService } from './shipment-request.service';
+import { LogisticsHandoverNotifier } from '../logistics-handover';
+
+const HANDOVER = { shipmentPicking: async () => undefined } as unknown as LogisticsHandoverNotifier;
 
 const ACTOR = { appUserId: 3, scopes: [] };
 
@@ -93,6 +96,7 @@ function stub() {
       prisma as unknown as PrismaService,
       numbering as unknown as NumberingService,
       queries as unknown as ShipmentRequestQueryService,
+      HANDOVER,
     ),
     recorded,
   };
@@ -232,7 +236,7 @@ describe('출하작업지시 이행 공장 재지정', () => {
       }),
     };
     const service = new ShipmentRequestService(prisma as unknown as PrismaService,
-      {} as NumberingService, {} as ShipmentRequestQueryService);
+      {} as NumberingService, {} as ShipmentRequestQueryService, HANDOVER);
     return { service, updateMany };
   }
 

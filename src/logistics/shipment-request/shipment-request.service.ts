@@ -7,6 +7,7 @@ import { assertCodeValues, day } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LogisticsHandoverNotifier } from '../logistics-handover';
 import { prepareOqcRequests, writeOqcRequests } from './shipment-oqc-request';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { ShipmentRequestView } from './shipment-request-view';
@@ -65,6 +66,7 @@ export class ShipmentRequestService {
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
     private readonly queries: ShipmentRequestQueryService,
+    private readonly handover: LogisticsHandoverNotifier,
   ) {}
 
   async create(input: ShipmentRequestCreate, actor: ShipmentRequestActor): Promise<ShipmentRequestView> {
@@ -91,6 +93,7 @@ export class ShipmentRequestService {
     const shipmentRequestId = await this.prisma.$transaction(async (tx) => {
       const id = await this.write(tx, input, no, actor.appUserId);
       await writeOqcRequests(tx, id, oqc, actor.appUserId, requestedAt);
+      await this.handover.shipmentPicking(tx, id);
       return id;
     });
     // ⭐ 201 본문은 ③b 의 상세 뷰 **그대로**다 — 파생 축 둘(진행·검사)을 여기서 다시 판정하면
@@ -176,6 +179,8 @@ export class ShipmentRequestService {
         code: 'VERSION_CONFLICT',
         currentVersion: String(request.version_no),
       });
+      // 공장이 «처음» 정해질 때만 — 바꾸는 것은 새 인계가 아니다(research R-3 T4).
+      if (request.fulfillment_plant_id === null) await this.handover.shipmentPicking(tx, request.shipment_request_id);
       return { versionNo: expectedVersion + 1 };
     });
     const shipmentRequest = await this.queries.get(shipmentRequestId);

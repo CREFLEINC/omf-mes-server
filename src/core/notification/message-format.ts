@@ -15,6 +15,38 @@ export const EVENT_PARAMS: Readonly<Record<string, readonly string[]>> = {
   APPROVAL_ACTION_REQUIRED: ['approval_type', 'request_no', 'requester', 'reason', 'step'],
 };
 
+/**
+ * 인계 작업 10종의 Zalo 파라미터 — 템플릿마다 «전부»를 적는다(omf-all-around#190 · specs/002 zalo-templates.md).
+ * 6종과 달리 `event_time`·`actor` 를 덧붙이지 않는다 — 템플릿에 없는 파라미터를 실으면 키 집합이 표와 달라진다(SC-006).
+ * `EVENT_PARAMS`(6종) 키 집합은 그대로다.
+ */
+export const HANDOVER_PARAMS: Readonly<Record<string, readonly string[]>> = {
+  PUTAWAY_REQUESTED: ['receipt_no', 'warehouse', 'task_count', 'event_time', 'actor'],
+  MATERIAL_PICKING_REQUESTED: ['picking_no', 'wo_no', 'item_count', 'warehouse', 'required_at', 'event_time'],
+  STOCK_TRANSFER_ARRIVAL_PENDING: ['transfer_no', 'from_warehouse', 'to_warehouse', 'item_count', 'event_time', 'actor'],
+  SHIPMENT_PICKING_REQUESTED: ['request_no', 'customer', 'item_count', 'ship_date', 'event_time'],
+  SHIPMENT_PACKING_REQUESTED: ['shipment_no', 'warehouse', 'ship_date', 'event_time', 'actor'],
+  WORK_ORDER_RELEASED: ['wo_no', 'item', 'plan_qty', 'process', 'equipment', 'event_time'],
+  EMERGENCY_WORK_ORDER_RELEASED: ['wo_no', 'item', 'plan_qty', 'process', 'equipment', 'event_time'],
+  OQC_INSPECTION_REQUESTED: ['request_no', 'request_count', 'ship_date', 'event_time'],
+  REWORK_WORK_ORDER_CREATED: ['wo_no', 'item', 'qty', 'ncr_no', 'process', 'event_time', 'actor'],
+  IQC_INSPECTION_REQUESTED: ['receipt_no', 'lot_count', 'supplier', 'event_time'],
+};
+
+/** 인계 알림센터 문장의 라벨 — 6종 키와 겹치지 않는 키만 둔다(6종 문장 불변). */
+const HANDOVER_LABELS: Readonly<Record<string, string>> = {
+  task_count: '적치 ',
+  item_count: '품목 ',
+  lot_count: 'LOT ',
+  request_count: '의뢰 ',
+  required_at: '필요 ',
+  ship_date: '출하일 ',
+  from_warehouse: '출발 ',
+  to_warehouse: '도착 ',
+  qty: '수량 ',
+  ncr_no: '부적합 ',
+};
+
 export const COMMON_PARAMS = ['event_time', 'actor'] as const;
 
 /** 문장에서 값 앞에 붙는 라벨. 없는 키는 값만 쓴다. */
@@ -69,7 +101,10 @@ function text(value: string | number | null | undefined): string {
   return String(value).trim();
 }
 
+/** 문장에 이을 고유 파라미터(공통 둘 제외). */
 function paramsOf(eventCode: string): readonly string[] {
+  const handover = HANDOVER_PARAMS[eventCode];
+  if (handover !== undefined) return handover.filter((key) => !(COMMON_PARAMS as readonly string[]).includes(key));
   const params = EVENT_PARAMS[eventCode];
   if (params === undefined) throw new Error(`알림 파라미터 정의가 없는 이벤트입니다: ${eventCode}`);
   return params;
@@ -87,7 +122,7 @@ export function templateData(
 ): Record<string, string> {
   const all: NotificationValues = { ...values, event_time: formatEventTime(occurredAt) };
   const data: Record<string, string> = {};
-  for (const key of [...paramsOf(eventCode), ...COMMON_PARAMS]) {
+  for (const key of HANDOVER_PARAMS[eventCode] ?? [...paramsOf(eventCode), ...COMMON_PARAMS]) {
     const value = text(all[key]);
     // 코드 포인트로 자른다 — UTF-16 단위로 자르면 이모지 한가운데가 잘려 홀로 남은 서로게이트가 실린다.
     data[key] = value === '' ? EMPTY_PARAM : Array.from(value).slice(0, maxLength).join('');
@@ -100,7 +135,7 @@ export function templateData(
  * 빈 값은 건너뛴다. 결재는 `actor` 가 `requester` 와 같아 한 번만 쓴다.
  */
 export function notificationMessage(eventCode: string, values: NotificationValues, occurredAt: Date): string {
-  const labels = { ...LABELS, ...EVENT_LABELS[eventCode] };
+  const labels = HANDOVER_PARAMS[eventCode] === undefined ? { ...LABELS, ...EVENT_LABELS[eventCode] } : { ...LABELS, ...HANDOVER_LABELS };
   const parts = paramsOf(eventCode)
     .map((key) => [key, text(values[key])] as const)
     .filter(([, value]) => value !== '')
@@ -109,4 +144,21 @@ export function notificationMessage(eventCode: string, values: NotificationValue
   if (actor !== '' && eventCode !== 'APPROVAL_ACTION_REQUIRED') parts.push(actor);
   parts.push(shortTime(occurredAt));
   return parts.join(' · ');
+}
+
+/** 달력 날짜(`@db.Date`, UTC 자정) — `dd/MM/yyyy`. 시간대를 옮기지 않는다. */
+export function formatCalendarDate(date: Date | null | undefined): string | null {
+  if (date === null || date === undefined) return null;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(date.getUTCDate())}/${two(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`;
+}
+
+/** 수량 + 단위 — 천 단위 쉼표, 소수 끝 0 은 뺀다(예: `1,200 EA`). */
+export function formatQty(qty: { toString(): string } | null | undefined, uomCode: string | null | undefined): string | null {
+  if (qty === null || qty === undefined) return null;
+  const [whole, fraction = ''] = qty.toString().split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const trimmed = fraction.replace(/0+$/, '');
+  const number = trimmed === '' ? grouped : `${grouped}.${trimmed}`;
+  return uomCode ? `${number} ${uomCode}` : number;
 }
