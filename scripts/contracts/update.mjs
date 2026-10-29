@@ -14,6 +14,10 @@ import { writeFileSync } from 'node:fs';
 import { CONTRACTS, COMMIT_FILE, localPath, localCommit, operations } from './contracts.mjs';
 import { ghAvailable, resolveRef, fetchContract } from './fetch.mjs';
 
+// 2026-10-29 부터 contracts/ 가 서버가 고치는 정본이다 — 설계 저장소에서 받아오면 서버가 고친 계약을 덮어쓴다.
+console.error('contracts/ 는 서버가 고치는 정본이다(2026-10-29) — 설계 저장소에서 받아오지 않는다. contracts/README.md 를 본다.');
+process.exit(1);
+
 if (!(await ghAvailable())) {
   console.error('gh 에 로그인돼 있지 않다. `gh auth login` 후 다시 실행한다.');
   console.error('설계 저장소가 비공개라 읽기 권한이 있는 계정이어야 한다.');

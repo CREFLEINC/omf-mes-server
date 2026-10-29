@@ -10,8 +10,9 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 | `docs/server-architecture.md` | 서버 내부 구조 — 코어 6건·모듈 배치. **도메인 구현 전 필독** |
 | `docs/development-strategy.md` | 개발 순서 전략 |
 | `docs/계약-되돌림-mdm.md` | mdm 구현 중 계약에 되돌릴 것 — 답이 필요한 5건 · 알려둘 8건 |
-| `docs/계약-선행-수정항목.md` | ⭐ `contracts:update` **전에 필독** — 서버가 계약보다 앞서 나간 자리. 계속 쌓는 «열린» 장부. ⛔ `contracts/` 는 읽기 전용이다 — 고치지 말고 여기 적는다(`pnpm contracts:drift` 로 확인) |
-| `docs/coverage-100/계약-사본-당길-때.md` | `contracts:update` 전에 함께 읽는다 — 마감된 루틴(2026-09-10)이 남긴 목록. ⛔ 여기 «덧붙이지» 않는다 |
+| `contracts/` | ⭐ API 계약 **정본 — 서버가 고친다**(사용자 결정 2026-10-29 · 설계 저장소 정본은 더 이상 쓰지 않는다). 동작을 바꾸는 PR 에서 코드와 함께 고치고 `pnpm contracts:generate` 로 타입을 다시 만든다. 서버 입구 검사가 이 파일로 요청을 거른다 |
+| `docs/계약-선행-수정항목.md` | **마감된 장부**(P-1~P-154) — 계약이 사본이던 때 서버가 앞서 나간 자리. ⛔ 새 항목을 쌓지 않는다. 남은 항목은 그 기능을 다시 만질 때 `contracts/` 에 옮기고, 그 항목에 「계약에 옮김」을 적는다 |
+| `docs/coverage-100/계약-사본-당길-때.md` | 마감된 루틴(2026-09-10)의 기록 — 참고용 |
 | `docs/deployment.md` | 배포 구조·서버·운영. 배포/인프라 파일 수정 전 필독 |
 | `deploy/RELEASE.md` | 하노이 배포 런북 |
 | `deploy/HANDOFF.md` | 남은 작업 인계 |

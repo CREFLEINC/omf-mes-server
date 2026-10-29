@@ -1,8 +1,22 @@
-# 계약 사본
+# API 계약 정본
+
+**2026-10-29 부터 여기 7개가 정본이고 서버가 고친다**(사용자 결정 — 설계 저장소 정본은 더 이상 쓰지 않는다).
+
+- 동작을 바꾸는 PR 에서 코드와 함께 고친다. 고친 뒤 `pnpm contracts:generate` 로 `src/contracts/*.d.ts` 를 다시 만든다.
+- 서버 입구 검사(`src/common/contract/contract-validator.ts`)가 이 파일로 요청을 거른다 — 서버가 없앤 칸을
+  여기 남겨 두면 화면은 그 칸을 계속 보내야 한다.
+- `pnpm contracts:update` 는 막아 두었다 — 설계 저장소에서 받아오면 서버가 고친 계약을 덮어쓴다.
+  `contracts:check`·`contracts:drift` 는 설계 저장소·`COMMIT.txt`(마지막으로 받아온 설계 커밋) 와 대조할 뿐이라 쓰지 않는다.
+- 사본이던 때 서버가 앞서 나간 자리는 `docs/계약-선행-수정항목.md`(마감)에 남아 있다. 그 기능을 다시 만질 때 여기로 옮긴다.
+
+아래는 사본이던 때의 기록이다.
+
+---
+
+# (지난 기록) 계약 사본
 
 정본은 설계 저장소 [CREFLEINC/omf-mes](https://github.com/CREFLEINC/omf-mes) 의
-`design/wiki/api-contracts/openapi/` 다. 여기 있는 7개는 **읽기 전용 사본**이며
-손으로 고치지 않는다. 고칠 것이 있으면 설계 저장소에 알린다.
+`design/wiki/api-contracts/openapi/` 였다. 여기 있는 7개는 **읽기 전용 사본**이었다.
 
 ## 왜 커밋하나
 
