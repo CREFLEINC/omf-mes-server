@@ -65,7 +65,7 @@ export class LotIqcSkipExecuteService {
       const by = BigInt(appUserId);
       await tx.inspection_request.updateMany({
         where: { lot_id: BigInt(lotId), inspection_type_code: 'IQC', status_code: { in: OPEN_REQUEST_STATUSES } },
-        data: { status_code: SKIPPED, updated_by: by, version_no: { increment: 1 } },
+        data: { status_code: SKIPPED, skip_basis_code: 'APPROVAL', updated_by: by, version_no: { increment: 1 } },
       });
       const locked = await this.holds.lockLotsWithin(tx, [BigInt(lotId)]);
       const { openAfter } = await this.holds.releaseWithin(

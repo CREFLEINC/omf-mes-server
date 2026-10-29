@@ -941,7 +941,7 @@ describe('출하 목록 (e2e)', () => {
     expect(await prisma.putaway_task.count({ where: { goods_receipt_line_id: { in: lineIds } } })).toBe(0);
   });
 
-  it('E-6 ⛔ 입고 위치를 하나로 못 정하면 400 — 위치 0 은 RANGE · 고를 자리 둘은 REQUIRED(장부 P-152)', async () => {
+  it('E-6 ⛔ 입고 위치를 하나로 못 정하면 400 — 위치 0 은 RANGE · 고를 자리 둘은 REQUIRED(장부 P-153)', async () => {
     // 긴급 직행엔 위치 칸이 없다 — 위치를 나눈 창고면 창고 칸을 짚는다.
     const none = await post(expeditedBody({ warehouseId: Number(ids.warehouse2) }), 400);
     expect(firstError(none)).toMatchObject({ field: 'warehouseId', code: 'RANGE' });

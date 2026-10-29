@@ -22,6 +22,8 @@ type Args = Record<string, unknown>;
 type Seed = {
   line?: { lot_id: bigint | null };
   iqcPlans?: { inspection_plan_version_id: bigint }[];
+  /** 고른 IQC 기준의 「기본 생략」(omf-all-around#212). */
+  defaultSkip?: boolean;
 };
 
 /**
@@ -71,6 +73,7 @@ function fake(seed: Seed) {
     },
     inspection_plan_version: {
       findMany: record('iqc.plan.findMany', () => seed.iqcPlans ?? []),
+      findUnique: async () => ({ inspection_plan: { default_skip: seed.defaultSkip === true } }),
     },
     inspection_request: { create: record('iqc.request.create', () => ({ inspection_request_id: 88n })) },
     worker: { findFirst: record('worker.findFirst', () => ({ worker_id: 23n })) },
@@ -248,6 +251,34 @@ describe('LotRegistryService', () => {
       lot_id: LOT_ID,
       target_qty: 10,
       status_code: 'REQUESTED',
+    });
+  });
+
+  /* omf-all-around#212 — 고른 IQC 기준이 「기본 생략」이면 검사 대기·보류 없이 정상으로 세우고, 의뢰는 생략 기록만 남긴다. */
+  it('LOT 코어 — IQC 기준이 기본 생략이면 LOT 은 정상 · 보류 없음 · 의뢰는 SKIPPED(DEFAULT)', async () => {
+    const { tx, calls, args } = fake({
+      line: { lot_id: null },
+      iqcPlans: [{ inspection_plan_version_id: 55n }],
+      defaultSkip: true,
+    });
+
+    await service.createWithin(
+      tx,
+      input({
+        incomingIqc: {
+          requestNo: 'IRQ-20260911-0001',
+          effectiveDate: '2026-09-11',
+          requestedAt: '2026-09-11T01:00:00.000Z',
+        },
+      }),
+      7,
+    );
+
+    expect(args[calls.indexOf('lot.create')].data).toMatchObject({ status_code: 'NORMAL' });
+    expect(calls).not.toContain('lot_hold.create');
+    expect(args[calls.indexOf('iqc.request.create')].data).toMatchObject({
+      status_code: 'SKIPPED',
+      skip_basis_code: 'DEFAULT',
     });
   });
 

@@ -3680,6 +3680,7 @@ model inspection_plan {
   updated_by              BigInt?
   version_no              Int                       @default(1)
   pqc_skip_allowed        Boolean                   @default(false)
+  default_skip            Boolean                   @default(false)
   skip_reason_code        String?                   @db.VarChar(50)
   simple_judgment_allowed Boolean                   @default(false)
   name_ko                 String?                   @db.VarChar(200)
@@ -3747,6 +3748,7 @@ model inspection_request {
   updated_by                 BigInt?
   version_no                 Int                      @default(1)
   inspection_level_code      String?                  @db.VarChar(50)
+  skip_basis_code            String?                  @db.VarChar(50)
   inspection_plan_version    inspection_plan_version? @relation(fields: [inspection_plan_version_id], references: [inspection_plan_version_id], onDelete: NoAction, onUpdate: NoAction)
   item                       item                     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   lot                        lot?                     @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)

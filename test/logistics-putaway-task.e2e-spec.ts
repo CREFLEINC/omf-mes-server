@@ -184,7 +184,7 @@ describe('적치 지시 조회 (e2e)', () => {
     expect(ids.indexOf(taskR1)).toBeLessThan(ids.indexOf(taskR4));
   });
 
-  it('⭐ 항목이 warehouseId 를 채우고 warehouseManagementLevelCode 는 싣지 않는다(장부 P-152)', async () => {
+  it('⭐ 항목이 warehouseId 를 채우고 warehouseManagementLevelCode 는 싣지 않는다(장부 P-153)', async () => {
     const main = await getDetail(taskR1).expect(200);
     const validate = validator('GET /logistics/putaway-tasks/{putawayTaskId}');
     expect(validate(main.body)).toBe(true);

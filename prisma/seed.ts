@@ -572,6 +572,7 @@ const SEED: CodeGroupSeed[] = [
       { code: 'C26', codeName: 'PQC 생략 → 정상', order: 190 },
       // OQC 생략 실행(omf-all-around#119) — 마이그 20261021130000 에도 같은 줄이 있다.
       { code: 'C27', codeName: 'OQC 생략 → 정상', order: 200 },
+      { code: 'C28', codeName: 'PQC 생략(결재) → 정상', order: 210 },
     ],
   },
   {

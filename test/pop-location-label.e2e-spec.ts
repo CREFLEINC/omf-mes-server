@@ -98,7 +98,7 @@ describe('POP 창고 적재 위치 라벨 (장부 P-28 e2e)', () => {
     const validate = validator('GET /mdm/locations');
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
-    // 서버가 만든 적치 대기·창고 전체 자리도 그 창고의 위치다(장부 P-145 · P-152).
+    // 서버가 만든 적치 대기·창고 전체 자리도 그 창고의 위치다(장부 P-145 · P-153).
     const system = await prisma.location.findMany({
       where: { warehouse_id: ids.warehouse, NOT: { system_role_code: null } },
       select: { location_id: true },

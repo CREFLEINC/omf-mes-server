@@ -588,7 +588,8 @@ describe('DocumentStateService', () => {
       // +1 — LOT 품질 축에 특채 적용(C25 · omf-all-around#84 · 장부 P-79).
       // +1 — PQC 생략 허용(C26 · omf-all-around#119 · 장부 P-82).
       // +1 — 승인된 OQC 생략 실행(C27 · omf-all-around#119 · 장부 P-83).
-      expect(service.registered()).toHaveLength(59);
+      // +1 — 승인된 PQC 생략 실행(C28 · omf-all-around#212 · 장부 P-152).
+      expect(service.registered()).toHaveLength(60);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

@@ -3582,6 +3582,150 @@
     }
    }
   },
+  "/production/work-orders/{workOrderId}:request-pqc-skip": {
+   "post": {
+    "tags": [
+     "production"
+    ],
+    "summary": "PQC 생략 요청",
+    "description": "작업지시의 공정검사(PQC)를 생략하도록 결재를 요청한다. 요청을 만들기만 하고 의뢰·LOT 은 옮기지 않는다(공유계약 J-8). 확정 결과가 없는 열린 PQC 의뢰(REQUESTED·IN_PROGRESS)가 없으면 400(code=STATE_LOCKED), 결재선이 없으면 400(code=ROUTE_NOT_FOUND), 진행 중인 요청이 있으면 400(code=APPROVAL_IN_PROGRESS). 근거: W-03-11 · omf-all-around#212 (서버 선행 · 장부 P-152)",
+    "parameters": [
+     {
+      "name": "workOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApprovalRequestCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "요청됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApprovalRequestRef"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 작업지시",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "approval_type_code=PQC_SKIP · target_type_code=WORK_ORDER · target_id=work_order_id 로 서버가 채운다(서버 선행 · 장부 P-152)."
+   }
+  },
+  "/production/work-orders/{workOrderId}:skip-pqc": {
+   "post": {
+    "tags": [
+     "production"
+    ],
+    "summary": "승인된 PQC 생략 실행",
+    "description": "PQC 생략 요청이 **승인된** 작업지시의 공정검사를 생략한다 — 확정 결과가 없는 열린 PQC 의뢰(REQUESTED·IN_PROGRESS)를 `SKIPPED`(skipBasisCode=APPROVAL)로 닫고, 이미 실적이 나 검사 대기인 생산LOT 을 정상으로 올린다(전이 C28 · 다른 열린 보류가 있는 LOT 은 그대로). 실행 뒤의 실적은 기본 생략과 같이 정상(C26)이 된다. ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8). 승인된 요청이 없거나 생략할 열린 의뢰가 없으면 400(code=STATE_LOCKED). 근거: W-03-11 · omf-all-around#212 (서버 선행 · 장부 P-152)",
+    "parameters": [
+     {
+      "name": "workOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "생략 실행됨 — 실행 뒤 작업지시 상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkOrder"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 작업지시",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "승인 조회: approval_type_code=PQC_SKIP · target_type_code=WORK_ORDER · target_id=work_order_id · status_code=APPROVED. 서버 선행(장부 P-152)."
+   }
+  },
   "/production/work-orders/{workOrderId}:resume": {
    "post": {
     "tags": [

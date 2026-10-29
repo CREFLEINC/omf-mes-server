@@ -38,6 +38,9 @@ interface InspectionPlanView {
   inspectionTypeCode: string;
   approvedBy: number | null;
   approvedAt: string | null;
+  /** 검사 유형 공통 「기본 생략」(omf-all-around#212 · 장부 P-152). */
+  defaultSkip: boolean;
+  /** ⚠ 호환용 — `defaultSkip` 과 같은 값이다(#212 전 화면·POP 가 읽는다). */
   pqcSkipAllowed: boolean;
   isActive: boolean;
 }
@@ -51,6 +54,8 @@ export interface InspectionPlanWrite {
   processId?: number | null;
   routingId?: number | null;
   inspectionTypeCode: string;
+  defaultSkip?: boolean;
+  /** 호환용 — `defaultSkip` 이 없을 때만 그 값으로 쓴다. */
   pqcSkipAllowed?: boolean;
 }
 
@@ -135,7 +140,7 @@ export class InspectionPlanService {
           ...optional('item_id', input.itemId),
           ...optional('process_id', input.processId),
           ...optional('routing_id', input.routingId),
-          ...optional('pqc_skip_allowed', input.pqcSkipAllowed),
+          ...defaultSkipData(input),
         },
       }),
     );
@@ -160,7 +165,7 @@ export class InspectionPlanService {
         ...optional('item_id', input.itemId),
         ...optional('process_id', input.processId),
         ...optional('routing_id', input.routingId),
-        ...optional('pqc_skip_allowed', input.pqcSkipAllowed),
+        ...defaultSkipData(input),
         version_no: { increment: 1 },
       },
     });
@@ -315,7 +320,17 @@ function view(row: PlanRow): InspectionPlanView {
     inspectionTypeCode: row.inspection_type_code,
     approvedBy: row.approved_by === null ? null : Number(row.approved_by),
     approvedAt: row.approved_at === null ? null : row.approved_at.toISOString(),
-    pqcSkipAllowed: row.pqc_skip_allowed,
+    defaultSkip: row.default_skip,
+    pqcSkipAllowed: row.default_skip,
     isActive: row.is_active,
   };
+}
+
+/**
+ * 「기본 생략」 쓰기. 옛 칸(`pqc_skip_allowed`)에도 같은 값을 쓴다 — 블루-그린 전환 중 옛 코드가 그 칸을 읽는다
+ * (omf-all-around#212 · 다음 릴리스에서 칸 삭제).
+ */
+function defaultSkipData(input: InspectionPlanWrite): { default_skip?: boolean; pqc_skip_allowed?: boolean } {
+  const value = input.defaultSkip ?? input.pqcSkipAllowed;
+  return value === undefined ? {} : { default_skip: value, pqc_skip_allowed: value };
 }

@@ -55,7 +55,7 @@ interface WarehouseView {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  /** 받은 값 그대로 — 어떤 판단에도 쓰지 않는다(장부 P-152). 계약이 바뀌면 걷어낸다. */
+  /** 받은 값 그대로 — 어떤 판단에도 쓰지 않는다(장부 P-153). 계약이 바뀌면 걷어낸다. */
   managementLevelCode: string;
   isExternal: boolean;
   isDefect: boolean;
@@ -234,7 +234,7 @@ export class WarehouseService {
 
   /**
    * 고를 수 있는 활성 위치가 둘 이상인 창고 — 적치 대기 자리(장부 P-145)는 놓기 전 자리라 세지 않는다.
-   * 「창고 전체」는 센다 — 모든 창고에 생기므로(장부 P-152) 구역을 하나 만들면 둘이 된다.
+   * 「창고 전체」는 센다 — 모든 창고에 생기므로(장부 P-153) 구역을 하나 만들면 둘이 된다.
    */
   private async dividedIds(): Promise<bigint[]> {
     const rows = await this.prisma.location.groupBy({
@@ -247,7 +247,7 @@ export class WarehouseService {
     return rows.map((row) => row.warehouse_id);
   }
 
-  /** `managementLevelCode` 는 보지 않는다 — 관리수준을 없앴고 계약이 필수라 받기만 한다(장부 P-152). */
+  /** `managementLevelCode` 는 보지 않는다 — 관리수준을 없앴고 계약이 필수라 받기만 한다(장부 P-153). */
   private assertCodes(input: { warehouseTypeCode: string }): Promise<void> {
     return assertCodeValues(this.prisma, [
       { field: 'warehouseTypeCode', value: input.warehouseTypeCode, groupCode: 'WAREHOUSE_TYPE' },
