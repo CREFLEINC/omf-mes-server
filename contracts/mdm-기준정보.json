@@ -979,7 +979,7 @@
      "mdm"
     ],
     "summary": "Location 사용 중지",
-    "description": "물리 삭제는 제공하지 않는다. 재고가 있는 Location 은 확인 다이얼로그 + 사유 안내가 선행된다. 근거: W-06-07 §6 「참조 중 비활성화」 · 공유계약 B-4",
+    "description": "그 위치와 밑의 위치를 함께 끈다(사용자 결정 2026-10-29 — 화면은 구역·랙 단위로 끈다). 가지 안에 재고가 있으면 400 STATE_LOCKED(화면 오류) — 꺼진 위치의 재고는 위치 이동으로도 꺼내지 못하므로 먼저 옮긴다. 적치 대기 자리는 끌 수 없다(400 STATE_LOCKED). If-Match 는 누른 위치의 것이다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1041,7 +1041,7 @@
      "mdm"
     ],
     "summary": "Location 다시 사용",
-    "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+    "description": "그 위치와 밑의 위치를 함께 켠다(사용자 결정 2026-10-29). 상위에 재고가 있으면 400 STATE_LOCKED — 켜면 상위가 맨 아래 위치가 아니게 된다. If-Match 는 누른 위치의 것이다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"

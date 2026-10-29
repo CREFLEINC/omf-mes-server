@@ -1,65 +1,47 @@
 import { createCanvas, GlobalFonts, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 
 import { LABEL_FONT, LABEL_FONTS } from './label-font';
-import { dots, DPI } from './label-layout';
+import { DPI } from './label-layout';
 import { layoutLocationLabel, locationQrPayload, type LocationLabelValues } from './location-label-layout';
 import { locationLabelPng, locationLabelValues, type LocationLabelRow } from './location-label';
 
 const STANDARD: LocationLabelValues = {
   warehouseCode: 'S230',
+  warehouseName: 'MATERIAL WH',
   locationCode: 'S230-01',
   locationName: 'MATERIAL DEFAULT LOC',
+  levelCode: 'CELL',
   issueSeq: 1,
 };
 
-// 위치명 줄의 y — quiet zone 단언에서 QR 의 아래 여백을 재는 기준이다(`ROWS.name`).
-const NAME_ROW = dots(30);
-
-// 실측(2026-09-17, 100×60 판 · QR 은 위치 코드만): 페이로드 · 모듈 · 셀 · QR dot · y.
-// 영숫자(대문자·숫자·`-`)는 QR 영숫자 모드라 가장 덜 자란다 — 최악은 한글 50자(150바이트)다.
-const CASES: Array<{ name: string; values: LocationLabelValues; modules: number; cell: number; qrDot: number; y: number }> = [
-  { name: 'S230-01', values: STANDARD, modules: 21, cell: 8, qrDot: 168, y: 40 },
-  {
-    name: 'A-01-03-C12-SHELF-7-LEVEL-02',
-    values: { warehouseCode: 'WH-HANOI-01', locationCode: 'A-01-03-C12-SHELF-7-LEVEL-02', locationName: 'X', issueSeq: 1 },
-    modules: 25,
-    cell: 7,
-    qrDot: 175,
-    y: 37,
-  },
-  {
-    name: 'l×50',
-    values: { warehouseCode: 'W'.repeat(50), locationCode: 'l'.repeat(50), locationName: 'X', issueSeq: 1 },
-    modules: 33,
-    cell: 5,
-    qrDot: 165,
-    y: 40,
-  },
-  {
-    name: '가×50',
-    values: { warehouseCode: 'W', locationCode: '가'.repeat(50), locationName: 'X', issueSeq: 1 },
-    modules: 49,
-    cell: 4,
-    qrDot: 196,
-    y: 28,
-  },
+// 실측(2026-10-29 배치 개편): 페이로드 · 모듈 · 셀. 영숫자는 QR 영숫자 모드라 가장 덜 자란다 — 최악은 한글 50자(150바이트)다.
+const CASES: Array<{ name: string; values: LocationLabelValues; modules: number; cell: number }> = [
+  { name: 'S230-01', values: STANDARD, modules: 21, cell: 12 },
+  { name: 'A-01-03-C12-SHELF-7-LEVEL-02', values: { ...STANDARD, locationCode: 'A-01-03-C12-SHELF-7-LEVEL-02' }, modules: 25, cell: 12 },
+  { name: 'l×50', values: { ...STANDARD, locationCode: 'l'.repeat(50) }, modules: 33, cell: 11 },
+  { name: '가×50', values: { ...STANDARD, locationCode: '가'.repeat(50) }, modules: 49, cell: 8 },
 ];
 
 describe('위치 라벨 값 (location-label)', () => {
-  it('창고 코드·위치 코드·위치명·회차를 옮긴다', () => {
+  it('별칭이 있으면 이름 줄에 별칭을 싣고 창고명·단계를 옮긴다', () => {
     const row: LocationLabelRow = {
       issue_seq: 7,
-      location_code: 'A-01-03',
-      location_name: 'RACK A-1-3',
-      warehouse: { warehouse_code: 'S230' },
+      location_code: 'Z01-R003',
+      location_name: 'Z01-R003',
+      alias_name: '사출 자재 랙',
+      location_level_code: 'RACK',
+      warehouse: { warehouse_code: 'S230', warehouse_name: 'MATERIAL WH' },
     };
 
     expect(locationLabelValues(row)).toEqual({
       warehouseCode: 'S230',
-      locationCode: 'A-01-03',
-      locationName: 'RACK A-1-3',
+      warehouseName: 'MATERIAL WH',
+      locationCode: 'Z01-R003',
+      locationName: '사출 자재 랙',
+      levelCode: 'RACK',
       issueSeq: 7,
     });
+    expect(locationLabelValues({ ...row, alias_name: null }).locationName).toBe('Z01-R003');
   });
 });
 
@@ -70,67 +52,60 @@ describe('위치 라벨 배치 (location-label-layout)', () => {
     expect(locationQrPayload({ ...STANDARD, warehouseCode: 'S240' })).toBe('S230-01');
   });
 
-  it('표준 입력의 줄 넷이 실측대로다', () => {
+  it('오른쪽 줄 넷이 단계 · 코드 · 이름 · 창고와 회차다 — 영문 머리말이 없다', () => {
     const { texts } = layoutLocationLabel(STANDARD);
-    expect(texts.map((text) => [text.content, text.point])).toEqual([
-      ['WH: S230', 12],
-      ['S230-01', 28],
-      ['MATERIAL DEFAULT LOC', 13],
-      ['ISSUE NO.: 1', 11],
-    ]);
+    expect(texts.map((text) => text.content)).toEqual(['CELL', 'S230-01', 'MATERIAL DEFAULT LOC', 'S230 | MATERIAL WH | #1']);
+    expect(layoutLocationLabel({ ...STANDARD, levelCode: null }).texts.map((text) => text.content))
+      .toEqual(['S230-01', 'MATERIAL DEFAULT LOC', 'S230 | MATERIAL WH | #1']);
   });
 
   it('위치 코드가 가장 큰 글씨다', () => {
-    const [warehouse, code, name, issue] = layoutLocationLabel(STANDARD).texts;
-    expect(code.point).toBeGreaterThan(warehouse.point);
-    expect(code.point).toBeGreaterThan(name.point);
-    expect(code.point).toBeGreaterThan(issue.point);
+    const [level, code, name, footer] = layoutLocationLabel(STANDARD).texts;
+    for (const other of [level, name, footer]) expect(code.point).toBeGreaterThan(other.point);
   });
 
-  it('QR 셀이 8 dot 이다 — 자재 LOT 라벨(3 dot)보다 커야 거리를 두고 읽힌다', () => {
-    expect(layoutLocationLabel(STANDARD).qr.cell).toBe(8);
-    expect(layoutLocationLabel(STANDARD).qr.cell).toBeGreaterThan(3);
+  it('QR 셀이 12 dot 이다 — 종전 8 dot(21mm)보다 크게(2026-10-29)', () => {
+    expect(layoutLocationLabel(STANDARD).qr.cell).toBe(12);
   });
 
-  it.each(CASES)('$name — 모듈·셀·QR dot·y 가 실측대로다(코드가 길어지면 셀을 줄인다)', ({ values, modules, cell, qrDot, y }) => {
+  it.each(CASES)('$name — 모듈·셀이 실측대로다(코드가 길어지면 셀을 줄인다)', ({ values, modules, cell }) => {
     const { qr } = layoutLocationLabel(values);
     expect(qr.modules.size).toBe(modules);
     expect(qr.cell).toBe(cell);
-    expect(qr.modules.size * qr.cell).toBe(qrDot);
-    expect(qr.y).toBe(y);
   });
 
-  it.each(CASES)('$name — 사방 여백이 4모듈 이상이다(quiet zone)', ({ values }) => {
-    const { width, border, qr } = layoutLocationLabel(values);
+  it.each(CASES)('$name — QR 사방 여백이 4모듈 이상이고 글자는 QR 오른쪽 여백 밖에서 시작한다', ({ values }) => {
+    const { height, border, qr, texts } = layoutLocationLabel(values);
     const qrSize = qr.modules.size * qr.cell;
-    const right = width - (qr.x + qrSize);
-    // 위 여백은 테두리 안쪽부터, 아래 여백은 위치명 줄(`ROWS.name`) 까지 잰다 — QR 이 앉는 칸이
-    // 라벨 전체 높이가 아니라 테두리와 위치명 줄 사이이기 때문이다.
-    const top = qr.y - border;
-    const bottom = NAME_ROW - (qr.y + qrSize);
-    expect(right / qr.cell).toBeGreaterThanOrEqual(4);
-    expect(top / qr.cell).toBeGreaterThanOrEqual(4);
-    expect(bottom / qr.cell).toBeGreaterThanOrEqual(4);
+    expect((qr.x - border) / qr.cell).toBeGreaterThanOrEqual(4);
+    expect((qr.y - border) / qr.cell).toBeGreaterThanOrEqual(4);
+    expect((height - border - (qr.y + qrSize)) / qr.cell).toBeGreaterThanOrEqual(4);
+    for (const text of texts) expect((text.x - (qr.x + qrSize)) / qr.cell).toBeGreaterThanOrEqual(4);
   });
 
-  it('위치명이 길면 글자를 줄이고, 더 줄일 수 없으면 ~ 를 남긴다', () => {
-    const base = { warehouseCode: 'S230', locationCode: 'S230-01', issueSeq: 1 };
+  it.each(CASES)('$name — 줄들이 QR 의 위 끝부터 아래 끝 사이에 차례로 선다', ({ values }) => {
+    const { qr, texts } = layoutLocationLabel(values);
+    const bottom = (text: { y: number; point: number }): number => text.y + Math.round((text.point * DPI) / 72);
+    expect(texts[0].y).toBe(qr.y);
+    expect(Math.abs(bottom(texts[texts.length - 1]) - (qr.y + qr.modules.size * qr.cell))).toBeLessThanOrEqual(1);
+    for (let index = 1; index < texts.length; index += 1) expect(texts[index].y).toBeGreaterThan(bottom(texts[index - 1]));
+  });
 
-    // 60자 — 점을 8pt 로 줄이면 칸(735dot, 위치명 줄의 fullWidth)에 그대로 들어간다.
-    const reduced = layoutLocationLabel({ ...base, locationName: 'A'.repeat(60) });
-    expect(reduced.texts[2].point).toBe(8);
-    expect(reduced.texts[2].content).toBe('A'.repeat(60));
+  it('이름이 길면 글자를 줄이고, 더 줄일 수 없으면 ~ 를 남긴다', () => {
+    // 40자 — 최소 점(7pt)이면 칸(424dot)에 그대로 들어간다.
+    const reduced = layoutLocationLabel({ ...STANDARD, locationName: 'A'.repeat(40) });
+    expect(reduced.texts[2].point).toBe(7);
+    expect(reduced.texts[2].content).toBe('A'.repeat(40));
 
-    // 80자 — 최소 점(7pt)까지 줄여도 넘쳐 73자 + '~' 로 잘린다.
-    const clipped = layoutLocationLabel({ ...base, locationName: 'B'.repeat(80) });
-    expect(clipped.texts[2].point).toBe(7);
-    expect(clipped.texts[2].content).toBe(`${'B'.repeat(73)}~`);
+    // 60자 — 7pt 로도 넘쳐 41자 + '~' 로 잘린다.
+    const clipped = layoutLocationLabel({ ...STANDARD, locationName: 'B'.repeat(60) });
+    expect(clipped.texts[2].content).toBe(`${'B'.repeat(41)}~`);
   });
 
   it.each([
     ['한글', '자재 기본 위치'],
     ['베트남어 성조 문자', 'Kho Hàng Xưởng'],
-  ])('%s 위치명도 그대로 싣는다 — 영문은 권고이지 제약이 아니다', (_label, locationName) => {
+  ])('%s 이름도 그대로 싣는다 — 영문은 권고이지 제약이 아니다', (_label, locationName) => {
     const { texts } = layoutLocationLabel({ ...STANDARD, locationName });
 
     expect(texts[2].content).toBe(locationName);
@@ -141,10 +116,9 @@ describe('위치 라벨 배치 (location-label-layout)', () => {
     ['역슬래시', 'A\\B'],
     ['줄바꿈', 'A\nB'],
     ['캐리지 리턴', 'A\rB'],
-  ])('⛔ 위치명의 %s 는 422 다 — 모양이 아니라 TSPL 명령이 깨진다', (_label, locationName) => {
-    expect(() => layoutLocationLabel({ ...STANDARD, locationName })).toThrow(
-      expect.objectContaining({ status: 422 }),
-    );
+  ])('⛔ 이름·창고명의 %s 는 422 다 — 모양이 아니라 TSPL 명령이 깨진다', (_label, bad) => {
+    expect(() => layoutLocationLabel({ ...STANDARD, locationName: bad })).toThrow(expect.objectContaining({ status: 422 }));
+    expect(() => layoutLocationLabel({ ...STANDARD, warehouseName: bad })).toThrow(expect.objectContaining({ status: 422 }));
   });
 });
 
