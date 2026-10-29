@@ -8,6 +8,7 @@ function harness() {
     inspection_plan: {
       create: jest.fn().mockResolvedValue({ inspection_plan_id: 1n, item_id: 40n, process_id: null, routing_id: null, approved_by: null, approved_at: null }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUnique: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', item_id: 40n, default_skip: true }),
     },
     item: { updateMany: itemUpdateMany },
   };
@@ -69,6 +70,23 @@ describe('검사 기준 저장 — 품목 「수입검사 대상」 연동 (omf-
     const { service, tx, itemUpdateMany } = harness();
     tx.inspection_plan.updateMany.mockResolvedValueOnce({ count: 0 });
     await service.update(1, 1, plan({}));
+
+    expect(itemUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('품목 전용 IQC 기준을 다시 사용하면 품목 IQC 대상을 그 기준에 맞춘다', async () => {
+    const { service, itemUpdateMany } = harness();
+    await service.setActive(1, 1, true);
+
+    expect(itemUpdateMany).toHaveBeenCalledWith({
+      where: { item_id: 40, inspection_required: true },
+      data: { inspection_required: false, version_no: { increment: 1 } },
+    });
+  });
+
+  it('사용 중지는 품목을 건드리지 않는다', async () => {
+    const { service, itemUpdateMany } = harness();
+    await service.setActive(1, 1, false);
 
     expect(itemUpdateMany).not.toHaveBeenCalled();
   });

@@ -18269,7 +18269,7 @@
       "x-source-column": "default_skip",
       "type": "boolean",
       "default": false,
-      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 공통 기준(itemId 없음)·PQC·OQC 는 연동하지 않는다. omf-all-around#215",
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 공통 기준(itemId 없음)·PQC·OQC 는 연동하지 않는다. omf-all-around#215",
       "example": false
      },
      "pqcSkipAllowed": {
@@ -18370,7 +18370,7 @@
       "x-source-column": "default_skip",
       "type": "boolean",
       "default": false,
-      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 공통 기준(itemId 없음)·PQC·OQC 는 연동하지 않는다. omf-all-around#215",
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 공통 기준(itemId 없음)·PQC·OQC 는 연동하지 않는다. omf-all-around#215",
       "example": false
      },
      "pqcSkipAllowed": {
@@ -18463,7 +18463,7 @@
       "x-source-column": "default_skip",
       "type": "boolean",
       "default": false,
-      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 공통 기준(itemId 없음)·PQC·OQC 는 연동하지 않는다. omf-all-around#215",
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 공통 기준(itemId 없음)·PQC·OQC 는 연동하지 않는다. omf-all-around#215",
       "example": false
      },
      "pqcSkipAllowed": {
