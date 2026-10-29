@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { SecretBox } from '../../core/crypto/secret-box';
-import { NOTIFICATION_EVENTS } from '../../core/notification';
+import { HANDOVER_ALERT_TYPES, NOTIFICATION_EVENTS } from '../../core/notification';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type Tx = Prisma.TransactionClient;
@@ -28,6 +28,8 @@ export interface ZaloConnectionView {
   lastErrorMessage: string | null;
   paramMaxLength: number;
   templates: { eventCode: string; templateId: string | null }[];
+  /** 인계 작업 10종(omf-all-around#190 · 장부 P-135). 기존 `templates`(6종)와 섞지 않는다. */
+  handoverTemplates: { alertTypeCode: string; templateId: string | null }[];
   deliveryEnabled: boolean;
 }
 
@@ -39,6 +41,8 @@ export interface ZaloConnectionReplace {
   refreshToken?: string;
   paramMaxLength: number;
   templates: { eventCode: string; templateId: string | null }[];
+  /** 바꿀 종류만 담아도 된다. 생략 = 유지. */
+  handoverTemplates?: { alertTypeCode: string; templateId: string | null }[];
 }
 
 type ConnectionRow = Prisma.zalo_connectionGetPayload<object>;
@@ -80,8 +84,14 @@ export class ZaloConnectionService {
     assertUpdated(current.version_no === expectedVersion ? 1 : 0);
 
     const appId = input.appId?.trim() || null;
-    const templatesChanged = await templatesDiffer(tx, input.templates);
-    const changed = [...changedFields(current, input, appId), ...(templatesChanged ? ['templates'] : [])];
+    const templateRows = toTemplateRows(input);
+    const templatesChanged = await templatesDiffer(tx, templateRows.events);
+    const handoverChanged = await templatesDiffer(tx, templateRows.handover);
+    const changed = [
+      ...changedFields(current, input, appId),
+      ...(templatesChanged ? ['templates'] : []),
+      ...(handoverChanged ? ['handoverTemplates'] : []),
+    ];
     const secretKeyEnc = secretKey === undefined ? current.secret_key_enc : this.seal(secretKey);
     const refreshTokenEnc = refreshToken === undefined ? current.refresh_token_enc : this.seal(refreshToken);
     const credentialsChanged = changed.some((name) => CREDENTIAL_FIELDS.includes(name));
@@ -102,7 +112,7 @@ export class ZaloConnectionService {
         updated_by: actorId ?? null,
       },
     });
-    for (const template of input.templates) {
+    for (const template of [...templateRows.events, ...templateRows.handover]) {
       const templateId = template.templateId?.trim() || null;
       if (templateId === null) {
         await tx.zalo_template.deleteMany({ where: { event_type_code: template.eventCode } });
@@ -157,6 +167,10 @@ export class ZaloConnectionService {
       lastErrorMessage: row?.last_error_message ?? null,
       paramMaxLength: row?.param_max_length ?? DEFAULT_PARAM_MAX_LENGTH,
       templates: NOTIFICATION_EVENTS.map((event) => ({ eventCode: event.eventCode, templateId: byEvent.get(event.eventCode) ?? null })),
+      handoverTemplates: HANDOVER_ALERT_TYPES.map((type) => ({
+        alertTypeCode: type.alertTypeCode,
+        templateId: byEvent.get(type.alertTypeCode) ?? null,
+      })),
       deliveryEnabled: this.deliveryEnabled,
     };
   }
@@ -172,6 +186,14 @@ function nextStatus(current: string, complete: boolean, credentialsChanged: bool
   if (!complete) return 'NOT_CONFIGURED';
   if (current === 'REAUTH_REQUIRED' && !credentialsChanged) return current;
   return 'ACTIVE';
+}
+
+/** `zalo_template` 은 코드 하나가 PK 다 — 인계 종류 코드도 같은 표에 둔다(기존 6종과 겹치지 않는다). */
+function toTemplateRows(input: ZaloConnectionReplace): { events: ZaloConnectionReplace['templates']; handover: ZaloConnectionReplace['templates'] } {
+  return {
+    events: input.templates,
+    handover: (input.handoverTemplates ?? []).map((t) => ({ eventCode: t.alertTypeCode, templateId: t.templateId })),
+  };
 }
 
 /** 보낸 템플릿 중 하나라도 저장값과 다르면 바뀐 것이다(감사 칸 이름용). */
@@ -204,6 +226,11 @@ function assertInput(input: ZaloConnectionReplace): void {
   const codes = input.templates.map((t) => t.eventCode);
   if (codes.some((code) => !known.has(code)) || new Set(codes).size !== codes.length) {
     errors.push(field('templates', ERROR_CODE.INVALID, '알림 이벤트 목록에 없거나 겹친 이벤트가 있습니다.'));
+  }
+  const handoverKnown = new Set(HANDOVER_ALERT_TYPES.map((type) => type.alertTypeCode));
+  const handoverCodes = (input.handoverTemplates ?? []).map((t) => t.alertTypeCode);
+  if (handoverCodes.some((code) => !handoverKnown.has(code)) || new Set(handoverCodes).size !== handoverCodes.length) {
+    errors.push(field('handoverTemplates', ERROR_CODE.INVALID, '인계 작업 종류 목록에 없거나 겹친 종류가 있습니다.'));
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }

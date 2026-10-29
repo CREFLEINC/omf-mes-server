@@ -1,5 +1,4 @@
 import { logisticsWriteActorOf } from '../logistics-write-actor';
-import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -21,6 +20,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { terminalListScope } from '../terminal-list-scope';
 import { StockTransferQuery, StockTransferQueryService } from './stock-transfer-query.service';
 import { StockTransferDetail, StockTransferLineView, StockTransferView } from './stock-transfer-view';
 import { StockTransferCreate, StockTransferService } from './stock-transfer.service';
@@ -47,7 +47,7 @@ export class StockTransferController {
   @Get()
   @Contract('GET /logistics/stock-transfers')
   list(@Req() request: Request, @Query() query: StockTransferQuery): Promise<PagedResponse<StockTransferView>> {
-    return this.queries.list(query, currentTerminal(request)?.plantId);
+    return this.queries.list(query, terminalListScope(request));
   }
 
   @Get(':stockTransferId')

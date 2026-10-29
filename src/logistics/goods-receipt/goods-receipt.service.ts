@@ -10,6 +10,7 @@ import { assertCodeValues } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsHandoverNotifier } from '../logistics-handover';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import {
   GoodsReceiptDetail,
@@ -60,6 +61,7 @@ export class GoodsReceiptService {
     private readonly posting: InventoryPostingService,
     private readonly numbering: NumberingService,
     private readonly outbox: OutboxService,
+    private readonly handover: LogisticsHandoverNotifier,
   ) {}
 
   async list(query: GoodsReceiptQuery): Promise<PagedResponse<GoodsReceiptView>> {
@@ -133,6 +135,7 @@ export class GoodsReceiptService {
         }
         const goodsReceiptId = await this.prisma.$transaction(async (tx) => {
           const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, putawayNos);
+          await this.handover.putaway(tx, id, putawayNos.length, actor);
           // ⭐ 적재는 본 트랜잭션의 꼬리다(계약 §5-4 다섯째) — 단독이면 「입고됐는데 적재가 안 된」 창이 열린다.
           const erpLines = await this.erpLines(tx, input);
           if (erpLines.length > 0) {

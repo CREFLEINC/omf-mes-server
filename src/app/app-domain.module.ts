@@ -37,6 +37,9 @@ import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
 import { NotificationDispatchController } from './notification/notification-dispatch.controller';
 import { NotificationDispatchService } from './notification/notification-dispatch.service';
+import { HandoverAlertSettingController } from './notification/handover-alert-setting.controller';
+import { HandoverAlertSettingService } from './notification/handover-alert-setting.service';
+import { HandoverAlertTypeController } from './notification/handover-alert-type.controller';
 import { NotificationEventController } from './notification/notification-event.controller';
 import { NotificationController } from './notification/notification.controller';
 import { NotificationPreviewController } from './notification/notification-preview.controller';
@@ -55,6 +58,8 @@ import { RoleController } from './access/role.controller';
 import { RoleService } from './access/role.service';
 import { UserAssignmentService } from './access/user-assignment.service';
 import { UserWorkerLinkService } from './access/user-worker-link.service';
+import { TerminalWorkCountController } from './terminal-work/terminal-work-count.controller';
+import { TerminalWorkCountService } from './terminal-work/terminal-work-count.service';
 
 /**
  * 계약 최상위 경로 `/app` — 사용자·역할·권한, 알림, 공지, 첨부, 결재, 문서 발행.
@@ -86,6 +91,9 @@ import { UserWorkerLinkService } from './access/user-worker-link.service';
     NotificationController,
     NotificationPreviewController,
     NotificationSettingController,
+    HandoverAlertTypeController,
+    HandoverAlertSettingController,
+    TerminalWorkCountController,
     NotificationSubscriptionController,
     NotificationWriteController,
     ApprovalRouteController,
@@ -120,6 +128,8 @@ import { UserWorkerLinkService } from './access/user-worker-link.service';
     NotificationQueryService,
     NotificationPreviewService,
     NotificationSettingService,
+    HandoverAlertSettingService,
+    TerminalWorkCountService,
     NotificationSubscriptionService,
     NotificationWriteService,
     ApprovalRouteService,

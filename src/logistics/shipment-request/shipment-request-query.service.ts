@@ -56,13 +56,7 @@ export class ShipmentRequestQueryService {
    */
   async list(query: ShipmentRequestQuery, terminalPlantId?: bigint): Promise<PagedResponse<ShipmentRequestView>> {
     const page = pageRequest(query);
-    const where = whereSql(query);
-    if (terminalPlantId !== undefined) {
-      // 이행 공장이 없는 이전 요청은 터미널에 보이지 않는다. 출하가 생긴 뒤의 창고를
-      // 역추적하면 아직 피킹하지 않은 요청과 다른 공장 혼재를 모두 안전하게 가르지 못한다.
-      where.sql = `(${where.sql}) AND sr.fulfillment_plant_id = $${where.params.length + 1}::bigint`;
-      where.params.push(terminalPlantId);
-    }
+    const where = shipmentRequestWhereSql(query, terminalPlantId);
     const order = orderBySql(query.sort);
     // ⛔ `count(*) OVER ()` 로 세지 마라 — 범위 «밖» 쪽은 행이 0개라 `total` 이 0 으로 접히고,
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다(리뷰 실측 · e2e L-40b).
@@ -229,4 +223,16 @@ export class ShipmentRequestQueryService {
       overallJudgmentCode: row.overall_judgment_code,
     })), ...skippedOqcRows(skipped)];
   }
+}
+
+/** 출하작업지시 목록의 조건 + 단말 공장 — 단말 작업 수(모바일 제품 출하 피킹)가 같은 함수로 센다(omf-all-around#190). */
+export function shipmentRequestWhereSql(query: ShipmentRequestFilters, terminalPlantId?: bigint): { sql: string; params: unknown[] } {
+  const where = whereSql(query);
+  if (terminalPlantId !== undefined) {
+    // 이행 공장이 없는 이전 요청은 터미널에 보이지 않는다. 출하가 생긴 뒤의 창고를
+    // 역추적하면 아직 피킹하지 않은 요청과 다른 공장 혼재를 모두 안전하게 가르지 못한다.
+    where.sql = `(${where.sql}) AND sr.fulfillment_plant_id = $${where.params.length + 1}::bigint`;
+    where.params.push(terminalPlantId);
+  }
+  return where;
 }

@@ -114,9 +114,14 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 부서×이벤트 알림 설정 — W-CO-11(알람 수신자 설정)이 재설계로 이 경로로 옮겨 간다. 기존 구독
   // 경로를 대신하는 같은 화면의 조회·저장·수신자 후보다(omf-all-around#160 · 장부 P-92).
   'GET /app/notification-settings': ['W-CO-11'],
-  'GET /app/notification-settings/recipient-candidates': ['W-CO-11'],
+  // 인계작업 알림 설정(W-CO-14)도 같은 수신자 고르기를 쓴다(omf-all-around#190 · 장부 P-134).
+  'GET /app/notification-settings/recipient-candidates': ['W-CO-11', 'W-CO-14'],
   'GET /app/notification-settings/{departmentId}/{eventCode}': ['W-CO-11'],
   'PUT /app/notification-settings/{departmentId}/{eventCode}': ['W-CO-11'],
+  // 공장×인계 작업 종류 알림 설정 — 설계 밖 화면 W-CO-14(인계작업 알림 설정)의 조회·저장이다(omf-all-around#190 · 장부 P-134).
+  'GET /app/handover-alert-settings': ['W-CO-14'],
+  'GET /app/handover-alert-settings/{plantId}/{alertTypeCode}': ['W-CO-14'],
+  'PUT /app/handover-alert-settings/{plantId}/{alertTypeCode}': ['W-CO-14'],
   // Zalo 연결 설정 — 설계 밖 화면 W-CO-12(알림 연결 설정)의 조회·저장이다(omf-all-around#160 · 장부 P-96).
   'GET /app/zalo-connection': ['W-CO-12'],
   'PUT /app/zalo-connection': ['W-CO-12'],
@@ -206,7 +211,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 등록을 요구한다(미등록이면 500 · 선례 `POST /production/material-returns`).
   'POST /planning/production-orders/{productionOrderId}:resync': ['W-06-10'],
 
-  // `W-02-01` ERP W/O 수신·조회 — 테스트용 ERP W/O 수기 등록(P-30 · 설계에 없는 경로). 그 화면이
+  // `W-02-01` 작업지시 목록 — 테스트용 ERP W/O 수기 등록(P-30 · 설계에 없는 경로). 그 화면이
   // ERP W/O 를 소유한다. 화면에 버튼은 없다 — API 로만 부른다.
   'POST /planning/production-orders': ['W-02-01'],
 
@@ -237,6 +242,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:new-revision': ['W-06-02'],
   // 작성중 버전 취소(장부 P-128) — 신규 버전 발행의 되돌림이라 같은 화면이다.
   'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['W-06-02'],
+  // 검사기준 엑셀 올리기(장부 P-140) — 같은 화면 헤더의 [엑셀 올리기]다.
+  'POST /quality/inspection-plans:import': ['W-06-02'],
 
   // `W-06-14` 적치 규칙 마스터 — §3 이 「규칙 추가」만 적어 수정·활성 전이가 도출표에
   // 안 들어왔다. 셋 다 이 화면이 소유한 자원의 같은 자리다.

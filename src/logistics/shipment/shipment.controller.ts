@@ -1,4 +1,3 @@
-import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -21,6 +20,7 @@ import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempoten
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { terminalListScope } from '../terminal-list-scope';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentQuery } from './shipment-query.sql';
 import {
@@ -54,7 +54,7 @@ export class ShipmentController {
   @Get()
   @Contract('GET /logistics/shipments')
   list(@Req() request: Request, @Query() query: ShipmentQuery): Promise<PagedResponse<ShipmentView>> {
-    return this.queries.list(query, currentTerminal(request)?.plantId);
+    return this.queries.list(query, terminalListScope(request));
   }
 
   @Get(':shipmentId')

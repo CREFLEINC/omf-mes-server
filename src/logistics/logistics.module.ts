@@ -5,10 +5,13 @@ import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
-import { LotRegistryModule } from '../core/lot';
+import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
+import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
+import { PickingHandoverNotifier } from '../core/picking';
 import { PrismaModule } from '../prisma/prisma.module';
+import { LogisticsHandoverNotifier } from './logistics-handover';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { DocumentProgressModule } from './document-progress/document-progress.module';
@@ -19,6 +22,8 @@ import { GoodsIssueService } from './goods-issue/goods-issue.service';
 import { GoodsReceiptLineListController } from './goods-receipt/goods-receipt-line-list.controller';
 import { GoodsReceiptLineListService } from './goods-receipt/goods-receipt-line-list.service';
 import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller';
+import { ReceiptDefaultsController } from './goods-receipt/receipt-defaults.controller';
+import { ReceiptDefaultsService } from './goods-receipt/receipt-defaults.service';
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { InboundReceiptQueryService } from './inbound-receipt/inbound-receipt-query.service';
 import {
@@ -107,12 +112,15 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
+    // 인계 작업 알림(omf-all-around#190) — 입고·이동·출고 요청·출하지시·출하가 같은 tx 에서 알림을 쓴다.
+    NotificationCoreModule,
     // 입하 예정 라인 목록(P-78)이 가드 밖이라 세션을 직접 푼다.
     AuthModule,
   ],
   controllers: [
     GoodsIssueController,
     GoodsReceiptController,
+    ReceiptDefaultsController,
     GoodsReceiptLineListController,
     PickingController,
     PutawayRuleController,
@@ -141,11 +149,15 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     StockTransferController,
   ],
   providers: [
+    LogisticsHandoverNotifier,
+    PickingHandoverNotifier,
+    IqcHandoverNotifier,
     GoodsIssueQueryService,
     GoodsIssueService,
     GoodsIssueUpdateService,
     GoodsReceiptService,
     GoodsReceiptLineListService,
+    ReceiptDefaultsService,
     PickingPickService,
     PickingQueryService,
     PutawayCompleteService,

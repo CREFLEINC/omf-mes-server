@@ -113,7 +113,7 @@ export interface DashboardScopeQuery extends DashboardRangeQuery {
  * 줄마다 가장 좁은 축 하나로 본다 — 공장 > 사업부 > 법인. 줄이 없으면 null(제한 없음 — 사용자 결정 2026-10-19).
  * ⚠ 세션의 `scopes` 가 아니라 DB 를 읽는다 — 세션은 사업부가 빈 줄(공장만 지정)을 버리고, 로그인 뒤 바뀐 범위를 모른다.
  */
-async function scopedPlantWhere(tx: Prisma.TransactionClient, actorUserId: number): Promise<Prisma.plantWhereInput | null> {
+export async function scopedPlantWhere(tx: Prisma.TransactionClient, actorUserId: number): Promise<Prisma.plantWhereInput | null> {
   const rows = await tx.user_data_scope.findMany({
     where: { app_user_id: BigInt(actorUserId) },
     select: { legal_entity_id: true, business_unit_id: true, plant_id: true },

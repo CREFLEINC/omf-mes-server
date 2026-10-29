@@ -3,7 +3,8 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
-import { LotRegistryModule } from '../core/lot';
+import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
+import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { LotFlowChainService } from './flow/lot-flow-chain.service';
@@ -32,9 +33,10 @@ import { SerialNumberController } from './serial-number/serial-number.controller
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
 @Module({
-  imports: [PrismaModule, IdempotencyModule, LotRegistryModule, ApprovalModule, NumberingModule, AuthModule],
+  imports: [PrismaModule, IdempotencyModule, LotRegistryModule, ApprovalModule, NumberingModule, AuthModule, NotificationCoreModule],
   controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController],
   providers: [
+    IqcHandoverNotifier,
     LotService,
     LotImpactService,
     LotGenealogyQueryService,

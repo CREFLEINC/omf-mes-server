@@ -12,13 +12,13 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { currentTerminal } from '../../auth/terminal-context';
 
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { terminalListScope } from '../terminal-list-scope';
 import { PickingLinePick, PickingPickService } from './picking-pick.service';
 import { PickingOrderQuery, PickingQueryService } from './picking-query.service';
 import { PickingLineView, PickingOrderDetail, PickingOrderView } from './picking-view';
@@ -40,7 +40,7 @@ export class PickingController {
   @Get()
   @Contract('GET /logistics/picking-orders')
   list(@Req() request: Request, @Query() query: PickingOrderQuery): Promise<PagedResponse<PickingOrderView>> {
-    return this.queries.list(query, currentTerminal(request)?.plantId);
+    return this.queries.list(query, terminalListScope(request));
   }
 
   @Get(':pickingOrderId')

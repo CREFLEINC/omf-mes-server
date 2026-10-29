@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
-import { PickingPlan, planPicking, writePicking } from '../../core/picking';
+import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   MaterialIssueRequestDetail,
@@ -50,6 +50,7 @@ export class MaterialIssueRequestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
+    private readonly pickingNotices: PickingHandoverNotifier,
   ) {}
 
   async create(
@@ -116,7 +117,7 @@ export class MaterialIssueRequestService {
       where: { material_issue_request_id: header.material_issue_request_id },
       orderBy: { line_no: 'asc' },
     });
-    await writePicking(
+    const pickings = await writePicking(
       tx,
       picking,
       {
@@ -129,6 +130,7 @@ export class MaterialIssueRequestService {
       },
       appUserId,
     );
+    await this.pickingNotices.notify(tx, pickings, { workOrderId: header.work_order_id, requiredAt: header.required_at });
     return {
       materialIssueRequest: materialIssueRequestView(header),
       lines: lines.map(materialIssueRequestLineView),

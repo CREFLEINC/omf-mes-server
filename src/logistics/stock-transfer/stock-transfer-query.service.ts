@@ -5,6 +5,7 @@ import { ERROR_CODE, field, one } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalListScope } from '../terminal-list-scope';
 import {
   StockTransferLineView,
   StockTransferView,
@@ -29,25 +30,10 @@ export interface StockTransferQuery {
 export class StockTransferQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: StockTransferQuery, terminalPlantId?: bigint): Promise<PagedResponse<StockTransferView>> {
+  async list(query: StockTransferQuery, terminal?: TerminalListScope): Promise<PagedResponse<StockTransferView>> {
     // `page`·`size` 는 형제 목록과 같이 «자른다»(`pagination.ts`) — 400 은 식별자 축에만.
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
-    const fromWarehouseId = numeric('fromWarehouseId', query.fromWarehouseId);
-    const toWarehouseId = numeric('toWarehouseId', query.toWarehouseId);
-
-    const where: Prisma.stock_transferWhereInput = {
-      ...filter('from_warehouse_id', fromWarehouseId),
-      ...filter('to_warehouse_id', toWarehouseId),
-      ...(terminalPlantId === undefined ? {} : {
-        warehouse_stock_transfer_from_warehouse_idTowarehouse: { plant_id: terminalPlantId },
-        warehouse_stock_transfer_to_warehouse_idTowarehouse: { plant_id: terminalPlantId },
-      }),
-      ...(query.transferTypeCode === undefined ? {} : { transfer_type_code: query.transferTypeCode }),
-      ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
-      // ⭐ 「반출됐으나 도착하지 않은 건만」 — M-01-10 §5-4 의 「미완 이동」 목록이다.
-      ...(boolean(query.inTransitOnly) ? { shipped_at: { not: null }, received_at: null } : {}),
-      ...requestedAtWhere(query.requestedAtFrom, query.requestedAtTo),
-    };
+    const where = stockTransferWhere(query, terminal);
 
     const [rows, total] = await Promise.all([
       this.prisma.stock_transfer.findMany({
@@ -130,4 +116,29 @@ function number(value: unknown): number | undefined {
 
 function boolean(value: unknown): boolean {
   return value === true || value === 'true';
+}
+
+/**
+ * 재고 이동 목록의 조건 — 단말 작업 수가 같은 함수로 센다(배지 = 목록 · omf-all-around#190).
+ * 단말은 출발·도착 창고가 모두 단말 공장인 이동만 본다(확정 항목 6). 단말에 창고가 있으면 «도착» 창고가 그 창고인 것만.
+ */
+export function stockTransferWhere(query: StockTransferQuery, terminal?: TerminalListScope): Prisma.stock_transferWhereInput {
+  const fromWarehouseId = numeric('fromWarehouseId', query.fromWarehouseId);
+  const toWarehouseId = numeric('toWarehouseId', query.toWarehouseId);
+  return {
+    ...filter('from_warehouse_id', fromWarehouseId),
+    AND: [
+      filter('to_warehouse_id', toWarehouseId),
+      terminal?.warehouseId == null ? {} : { to_warehouse_id: terminal.warehouseId },
+    ],
+    ...(terminal === undefined ? {} : {
+      warehouse_stock_transfer_from_warehouse_idTowarehouse: { plant_id: terminal.plantId },
+      warehouse_stock_transfer_to_warehouse_idTowarehouse: { plant_id: terminal.plantId },
+    }),
+    ...(query.transferTypeCode === undefined ? {} : { transfer_type_code: query.transferTypeCode }),
+    ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
+    // ⭐ 「반출됐으나 도착하지 않은 건만」 — M-01-10 §5-4 의 「미완 이동」 목록이다.
+    ...(boolean(query.inTransitOnly) ? { shipped_at: { not: null }, received_at: null } : {}),
+    ...requestedAtWhere(query.requestedAtFrom, query.requestedAtTo),
+  };
 }

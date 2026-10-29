@@ -73,7 +73,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-02-14', name: '자재 불량 등록', groupCode: '02' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).
   { code: 'P-02-15', name: '제품 검사표 입력', groupCode: '02' },
-  { code: 'W-02-01', name: 'ERP W/O 수신·조회', groupCode: '02' },
+  // ⚠ 생성기 산출물과 이름이 다르다 — 화면 이름에 맞춰 손으로 고쳤다(omf-all-around#204 · 장부 P-74). 권한목록을 다시 옮길 때 되돌리지 않는다.
+  { code: 'W-02-01', name: '작업지시 목록', groupCode: '02' },
   { code: 'W-02-02', name: 'W/O 전개·편성', groupCode: '02' },
   { code: 'W-02-03', name: '4M 자원배정·유효성 점검', groupCode: '02' },
   { code: 'W-02-04', name: 'W/O 확정·배포·생산LOT 선발행', groupCode: '02' },
@@ -184,6 +185,8 @@ export const PERMISSIONS: readonly Permission[] = [
   // 설계 저장소 생성본에 없는 화면 둘 — 피처 001 이벤트 알림(omf-all-around#160 · 장부 P-92). 시드가 관리자에게 준다.
   { code: 'W-CO-12', name: '알림 연결 설정', groupCode: 'CO' },
   { code: 'W-CO-13', name: '알림 발송 이력', groupCode: 'CO' },
+  // 설계 저장소 생성본에 없는 화면 — 피처 002 인계 작업 알림(omf-all-around#190 · 장부 P-134). 시드가 관리자에게 준다.
+  { code: 'W-CO-14', name: '인계작업 알림 설정', groupCode: 'CO' },
 ];
 
 /** 권한 부여 요청이 「없는 코드」를 담았는지 가르는 자리. 계약이 그 검사를 요구한다. */

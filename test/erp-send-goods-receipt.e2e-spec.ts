@@ -8,6 +8,7 @@ import * as mssql from 'mssql';
 
 import { AppModule } from '../src/app.module';
 import { OutboxService } from '../src/core/outbox';
+import { CustomsClearance, CustomsClearances } from '../src/integration/erp/customs-clearance';
 import { OutboundRows, RowDraft } from '../src/integration/erp/outbound-rows';
 import { GR_INFOR } from '../src/integration/erp/rcv-tables';
 import { RelayClient } from '../src/integration/erp/relay-client';
@@ -434,6 +435,39 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
       );
     } finally {
       await prisma.purchase_order.update({ where: { purchase_order_id: ids.erpOrder }, data: { erp_purchase_group_code: 'P01' } });
+    }
+  });
+
+  it('⭐ 외자 발주 라인 — 적어 둔 통관번호가 없으면 ERP 함수로 받아 싣고 라인에 적는다 · ERP 에 없으면 실패한다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 7);
+    const detail = await receive('warehouse', [{ ...lot, qty: 7 }]);
+    await prisma.purchase_order.update({ where: { purchase_order_id: ids.erpOrder }, data: { erp_order_type_code: 'PO' } });
+    const found: CustomsClearance[] = [];
+    const customs = new CustomsClearances(prisma, { find: () => Promise.resolve(found) });
+    const message = {
+      id: 1n,
+      interfaceCode: 'IF-GR-SEND',
+      targetTypeCode: 'GOODS_RECEIPT',
+      targetId: BigInt(detail.goodsReceipt.goodsReceiptId),
+      payload: {},
+    };
+
+    try {
+      await expect(goodsReceiptBuilder(prisma, customs).build(message)).rejects.toThrow(
+        `외자 발주 ${PREFIX}-PO 라인 1 — ERP 에 통관번호가 없다`,
+      );
+      found.push({ no: 'CC2606-0001', seq: 1 });
+      const rows = await goodsReceiptBuilder(prisma, customs).build(message);
+      expect(rows.map((row) => [row.values.PO_SEQ_NO, row.values.CC_NO, row.values.CC_SEQ_NO])).toEqual([[1, 'CC2606-0001', 1]]);
+      expect(
+        await prisma.purchase_order_line.findUniqueOrThrow({ where: { purchase_order_line_id: ids.erpOrderLine } }),
+      ).toMatchObject({ erp_customs_clearance_no: 'CC2606-0001', erp_customs_clearance_seq: 1 });
+    } finally {
+      await prisma.purchase_order.update({ where: { purchase_order_id: ids.erpOrder }, data: { erp_order_type_code: null } });
+      await prisma.purchase_order_line.update({
+        where: { purchase_order_line_id: ids.erpOrderLine },
+        data: { erp_customs_clearance_no: null, erp_customs_clearance_seq: null, erp_customs_clearance_fetched_at: null },
+      });
     }
   });
 

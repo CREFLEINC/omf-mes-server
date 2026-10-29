@@ -5,7 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Editability, ReferenceQuery, Referrer, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
+import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, aliasOf, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
  * 로케이션을 FK 로 가리키는 자리 전부다. `pg_constraint` 에서 뽑았고,
@@ -62,6 +62,10 @@ interface LocationView {
   capacityQty: number | null;
   capacityUomId: number | null;
   isActive: boolean;
+  /** 서버가 만든 위치의 역할 — 계약 밖(장부 P-145). 사람이 만든 위치는 null. */
+  systemRoleCode: string | null;
+  /** MES 별칭 — 계약 밖(장부 P-145). */
+  aliasName: string | null;
 }
 
 interface LocationWrite {
@@ -75,7 +79,15 @@ interface LocationWrite {
   allowMixedLot?: boolean;
   capacityQty?: number | null;
   capacityUomId?: number | null;
+  /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
+  aliasName?: unknown;
 }
+
+/** 서버가 만든 위치에서 바뀌어 오면 막는 칸 — 별칭만 고친다(사용자 결정 2026-10-29). */
+const SYSTEM_KEPT = [
+  'locationCode', 'locationName', 'locationTypeCode', 'parentLocationId', 'qualityZoneCode',
+  'storageConditionCode', 'allowMixedItem', 'allowMixedLot', 'capacityQty', 'capacityUomId',
+] as const;
 
 export interface LocationQuery extends ReferenceQuery {
   warehouseId: number;
@@ -120,11 +132,12 @@ export class LocationService {
     if (!row) throw new NotFoundException('없는 위치입니다.');
 
     const referenceCount = await countReferences(this.prisma, LOCATION_REFERRERS, row.location_id);
+    const systemOwned = row.system_role_code !== null;
     return {
       location: view(row),
       editability: {
-        codeEditable: referenceCount === 0,
-        reason: referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
+        codeEditable: !systemOwned && referenceCount === 0,
+        reason: systemOwned ? 'SYSTEM_OWNED' : referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
         referenceCount,
       },
       versionNo: row.version_no,
@@ -132,6 +145,7 @@ export class LocationService {
   }
 
   async create(input: LocationWrite & { warehouseId: number }): Promise<LocationView> {
+    const aliasName = aliasOf(input.aliasName);
     await this.assertWritable(input);
     if (input.parentLocationId != null) {
       await this.assertParent(input.warehouseId, input.parentLocationId, null);
@@ -150,6 +164,7 @@ export class LocationService {
           ...optional('allow_mixed_lot', input.allowMixedLot),
           ...optional('capacity_qty', input.capacityQty),
           ...optional('capacity_uom_id', input.capacityUomId),
+          ...optional('alias_name', aliasName),
         },
       }),
     );
@@ -160,12 +175,11 @@ export class LocationService {
     version: number,
     input: LocationWrite,
   ): Promise<LocationResult> {
-    await this.assertWritable(input);
-    const current = await this.prisma.location.findUnique({
-      where: { location_id: locationId },
-      select: { warehouse_id: true },
-    });
+    const aliasName = aliasOf(input.aliasName);
+    const current = await this.prisma.location.findUnique({ where: { location_id: locationId } });
     if (!current) throw new NotFoundException('없는 위치입니다.');
+    if (current.system_role_code !== null) return this.updateAlias(current, version, input, aliasName);
+    await this.assertWritable(input);
     if (input.parentLocationId != null) {
       await this.assertParent(Number(current.warehouse_id), input.parentLocationId, locationId);
     }
@@ -184,6 +198,7 @@ export class LocationService {
         ...optional('allow_mixed_lot', input.allowMixedLot),
         ...optional('capacity_qty', input.capacityQty),
         ...optional('capacity_uom_id', input.capacityUomId),
+        ...optional('alias_name', aliasName),
         version_no: { increment: 1 },
       },
     });
@@ -191,7 +206,28 @@ export class LocationService {
     return this.get(locationId);
   }
 
+  /** 서버가 만든 위치 — 코드·이름은 서버가 정한 값이라 별칭만 고친다. 다른 칸이 바뀌어 오면 무시하지 않고 막는다. */
+  private async updateAlias(
+    current: LocationRow, version: number, input: LocationWrite, aliasName: string | null | undefined,
+  ): Promise<LocationResult> {
+    const stored = view(current);
+    const errors = SYSTEM_KEPT.filter((key) => input[key] !== undefined && input[key] !== stored[key]).map(
+      (key): ErrorItem => ({
+        scope: 'field', field: key, code: ERROR_CODE.STATE_LOCKED, message: '서버가 만든 위치는 별칭만 고칠 수 있습니다.',
+      }),
+    );
+    if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+    const locationId = Number(current.location_id);
+    const updated = await this.prisma.location.updateMany({
+      where: { location_id: locationId, version_no: version },
+      data: { ...optional('alias_name', aliasName), version_no: { increment: 1 } },
+    });
+    await this.assertExists(locationId, updated.count);
+    return this.get(locationId);
+  }
+
   async setActive(locationId: number, version: number, isActive: boolean): Promise<LocationResult> {
+    if (!isActive) await this.assertNotStaging(locationId);
     const updated = await this.prisma.location.updateMany({
       where: { location_id: locationId, version_no: version },
       data: { is_active: isActive, version_no: { increment: 1 } },
@@ -261,6 +297,18 @@ export class LocationService {
     }
   }
 
+  /** 적치 대기 자리는 입고 기본 위치다 — 끄면 그 창고의 입고 기본값이 빈다. 「창고 전체」는 관리수준을 바꾸면 사람이 끈다. */
+  private async assertNotStaging(locationId: number): Promise<void> {
+    const row = await this.prisma.location.findUnique({
+      where: { location_id: locationId },
+      select: { system_role_code: true },
+    });
+    if (row?.system_role_code !== PUTAWAY_STAGING) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '적치 대기 자리는 끌 수 없습니다.' },
+    ]);
+  }
+
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
   private async assertExists(locationId: number, count: number): Promise<void> {
     if (count > 0) return;
@@ -294,5 +342,7 @@ function view(row: LocationRow): LocationView {
     capacityQty: row.capacity_qty === null ? null : Number(row.capacity_qty),
     capacityUomId: row.capacity_uom_id === null ? null : Number(row.capacity_uom_id),
     isActive: row.is_active,
+    systemRoleCode: row.system_role_code,
+    aliasName: row.alias_name,
   };
 }

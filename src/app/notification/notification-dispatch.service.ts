@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { handoverAlertType } from '../../core/notification';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 조회 기간 상한 — 화면이 기본 7일·최대 31일로 묻는다(W-CO-13). */
@@ -29,6 +30,14 @@ const TARGET_LABEL_KEY: Readonly<Record<string, string>> = {
   WORK_ORDER: 'wo_no',
   EQUIPMENT: 'equipment',
   APPROVAL_REQUEST: 'request_no',
+  // 인계 작업 알림 대상(omf-all-around#190 · 장부 P-135). LOT 은 T10 단건 등록 — 번호를 `receipt_no` 에 싣는다.
+  GOODS_RECEIPT: 'receipt_no',
+  PICKING_ORDER: 'picking_no',
+  STOCK_TRANSFER: 'transfer_no',
+  SHIPMENT_REQUEST: 'request_no',
+  SHIPMENT: 'shipment_no',
+  INBOUND_RECEIPT: 'receipt_no',
+  LOT: 'receipt_no',
 };
 
 /**
@@ -78,7 +87,7 @@ export class NotificationDispatchService {
           departmentName: row.department?.department_name ?? null,
           targetTypeCode: row.aggregate_type_code,
           targetId: Number(row.aggregate_id),
-          targetLabel: targetLabel(row.aggregate_type_code, payload),
+          targetLabel: targetLabel(row.aggregate_type_code, payload, row.event_type_code),
           dispatchStatus: row.dispatch_status_code,
           skipReasonCode: row.skip_reason_code,
           notificationCount: row._count.notification,
@@ -128,7 +137,11 @@ export class NotificationDispatchService {
         eventCode: row.event_type_code,
         occurredAt: row.notification_event.occurred_at.toISOString(),
         departmentName: row.notification_event.department?.department_name ?? null,
-        targetLabel: targetLabel(row.notification_event.aggregate_type_code, (row.notification_event.payload ?? {}) as Payload),
+        targetLabel: targetLabel(
+          row.notification_event.aggregate_type_code,
+          (row.notification_event.payload ?? {}) as Payload,
+          row.event_type_code,
+        ),
         recipientUserId: Number(row.recipient_user_id),
         recipientName: row.app_user.user_name,
         phoneMasked: maskPhone(row.phone_number),
@@ -158,9 +171,13 @@ function period(query: DispatchQuery): Prisma.DateTimeFilter {
   return { gte: from, lt: to };
 }
 
-function targetLabel(aggregateType: string, payload: Payload): string | null {
+/** 인계 알림은 창고가 있으면 「번호 · 창고」다(대상이 어느 창고 일인지 · W-CO-13). 기존 6종은 그대로. */
+function targetLabel(aggregateType: string, payload: Payload, eventCode: string): string | null {
   const value = payload[TARGET_LABEL_KEY[aggregateType] ?? ''];
-  return typeof value === 'string' && value !== '' ? value : null;
+  const label = typeof value === 'string' && value !== '' ? value : null;
+  if (label === null || handoverAlertType(eventCode) === undefined) return label;
+  const warehouse = payload.warehouse ?? payload.to_warehouse;
+  return typeof warehouse === 'string' && warehouse !== '' ? `${label} · ${warehouse}` : label;
 }
 
 /** 표준형 `84XXXXXXXXX` → 국내형 `0XXXXXXXXX` 의 앞 3자리·끝 2자리만 남긴다. 예: `091*****78`. */

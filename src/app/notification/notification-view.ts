@@ -12,6 +12,8 @@ const NOTIFICATION_TARGET_TYPES = [
   'LOT',
   'WORK_ORDER',
   'NONCONFORMANCE',
+  // 인계 작업 알림 T10(IQC) — 알림센터가 IQC 화면으로 보낸다(omf-all-around#190 · research R-8).
+  'INBOUND_RECEIPT',
 ] as const;
 
 type NotificationTargetType = (typeof NOTIFICATION_TARGET_TYPES)[number];

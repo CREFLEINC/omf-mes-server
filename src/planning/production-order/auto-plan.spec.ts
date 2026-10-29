@@ -97,8 +97,8 @@ describe('autoPlanView — 목록·상세의 자동 계획 상태', () => {
     expect(autoPlanView(qty(100), [plan({ confirmed: true })], [], false)).toEqual({ status: 'DONE', reasons: [] });
   });
 
-  it('계획이 없고 막는 것도 없으면 사유 없는 NEEDS_REVIEW 다', () => {
-    expect(attempted(qty(100), [], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: [] });
+  it('계획이 없고 막는 것도 없으면 AUTO_PLAN_RERUN_NEEDED 다 — 확인 필요는 이유가 비지 않는다', () => {
+    expect(attempted(qty(100), [], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['AUTO_PLAN_RERUN_NEEDED'] });
   });
 });
 

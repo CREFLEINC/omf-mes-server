@@ -1,3 +1,4 @@
+import { ERP_WAREHOUSE_GROUP } from '../../../common/master';
 import { RowTable, Tx } from '../inbound-cycle';
 import { COMMON_CODE, RelayRow, requiredText, text } from '../relay-tables';
 
@@ -11,14 +12,21 @@ import { COMMON_CODE, RelayRow, requiredText, text } from '../relay-tables';
 export const commonCodeTable: RowTable = {
   source: COMMON_CODE,
   async apply(tx: Tx, row: RelayRow): Promise<void> {
-    const groupId = await upsertGroup(
-      tx,
-      requiredText(row, 'TYPE_CODE'),
-      requiredText(row, 'TYPE_NAME'),
-    );
+    const groupCode = requiredText(row, 'TYPE_CODE');
+    const groupId = await upsertGroup(tx, groupCode, requiredText(row, 'TYPE_NAME'));
     await upsertValue(tx, groupId, row);
+    if (groupCode === ERP_WAREHOUSE_GROUP) await renameErpWarehouses(tx, row);
   },
 };
+
+/** ERP 창고 이름은 ERP 를 따른다(사용자 결정 2026-10-29 · 장부 P-148) — 같은 코드의 MES 창고 이름을 덮는다. */
+async function renameErpWarehouses(tx: Tx, row: RelayRow): Promise<void> {
+  const name = requiredText(row, 'CODE_NAME');
+  await tx.warehouse.updateMany({
+    where: { warehouse_code: requiredText(row, 'CODE'), NOT: { warehouse_name: name } },
+    data: { warehouse_name: name, updated_by: null, version_no: { increment: 1 } },
+  });
+}
 
 async function upsertGroup(tx: Tx, groupCode: string, groupName: string): Promise<bigint> {
   const group = await tx.code_group.findUnique({

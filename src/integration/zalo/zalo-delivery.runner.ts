@@ -182,18 +182,26 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
   /**
    * 대기 건을 묶음으로 잡는다 — `SENDING` 으로 바꾸고 `updated_at` 에 잡은 시각을 남긴다.
    * `SKIP LOCKED` 로 다른 회차·인스턴스와 겹치지 않는다(리스가 한 겹 더 막는다).
+   * `priority` 가 먼저다 — 인계 작업 알림(1)이 몰려도 기존 이벤트 알림(0)이 앞선다(omf-all-around#190 · SC-008).
+   * 기존 건만 있으면(모두 0) 순서는 전과 같다.
    */
   private claim(now: Date): Promise<Delivery[]> {
+    // `RETURNING` 은 순서를 지키지 않는다 — 묶음 안에서도 같은 순서로 보내려고 바깥에서 다시 정렬한다.
     return this.prisma.$queryRaw<Delivery[]>`
-      UPDATE app.zalo_delivery d
-         SET status_code = 'SENDING', updated_at = clock_timestamp()
-       WHERE d.zalo_delivery_id IN (
-         SELECT zalo_delivery_id FROM app.zalo_delivery
-          WHERE status_code = 'PENDING' AND next_attempt_at <= ${now} AND expires_at > ${now}
-          ORDER BY next_attempt_at, zalo_delivery_id
-          LIMIT ${BATCH_SIZE}
-          FOR UPDATE SKIP LOCKED)
-      RETURNING d.zalo_delivery_id, d.phone_number, d.event_type_code, d.template_data, d.tracking_id, d.attempt_count`;
+      WITH claimed AS (
+        UPDATE app.zalo_delivery d
+           SET status_code = 'SENDING', updated_at = clock_timestamp()
+         WHERE d.zalo_delivery_id IN (
+           SELECT zalo_delivery_id FROM app.zalo_delivery
+            WHERE status_code = 'PENDING' AND next_attempt_at <= ${now} AND expires_at > ${now}
+            ORDER BY priority, next_attempt_at, zalo_delivery_id
+            LIMIT ${BATCH_SIZE}
+            FOR UPDATE SKIP LOCKED)
+        RETURNING d.zalo_delivery_id, d.phone_number, d.event_type_code, d.template_data, d.tracking_id, d.attempt_count,
+                  d.priority, d.next_attempt_at)
+      SELECT zalo_delivery_id, phone_number, event_type_code, template_data, tracking_id, attempt_count
+        FROM claimed
+       ORDER BY priority, next_attempt_at, zalo_delivery_id`;
   }
 
   /** 러너가 죽어 `SENDING` 으로 남은 건 — 다시 보내지 않는다(FR-026). */

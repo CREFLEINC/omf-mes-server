@@ -16,6 +16,8 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { ContractException } from '../src/common/errors';
+import { resolveDestinationLocation } from '../src/logistics/destination-location';
 import { LOCATION_REFERRERS } from '../src/mdm/logistics/location.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -310,6 +312,136 @@ describe('위치 마스터 (e2e)', () => {
       .expect(404);
   });
 
+  // ── 서버가 만든 위치(장부 P-145) ──────────────────────────────────────────
+
+  it('⭐ 창고를 만들면 서버가 「적치 대기」를 두고, 관리수준이 창고면 「창고 전체」도 둔다', async () => {
+    const whole = await createWarehouse(`${PREFIX}-WH3`, 'WAREHOUSE');
+    const cell = await createWarehouse(`${PREFIX}-WH4`, 'CELL');
+
+    expect(await rolesOf(whole)).toEqual(['PUTAWAY_STAGING', 'WAREHOUSE_WHOLE']);
+    expect(await rolesOf(cell)).toEqual(['PUTAWAY_STAGING']);
+  });
+
+  it('⭐ 목록·상세가 역할을 싣고, 서버가 만든 자리는 SYSTEM_OWNED 로 잠긴다', async () => {
+    const staging = await systemLocation(warehouseId, 'PUTAWAY_STAGING');
+
+    const list = await request(app.getHttpServer())
+      .get(`/api/mdm/locations?warehouseId=${warehouseId}&locationCode=SYS-STAGING`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(list.body.items).toEqual([
+      expect.objectContaining({ locationId: staging, systemRoleCode: 'PUTAWAY_STAGING', aliasName: null }),
+    ]);
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/mdm/locations/${staging}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(detail.body.editability).toMatchObject({ codeEditable: false, reason: 'SYSTEM_OWNED' });
+  });
+
+  it('⛔ 서버가 만든 자리는 별칭만 고친다 — 다른 칸이 바뀌어 오면 400 STATE_LOCKED 다', async () => {
+    const staging = await systemLocation(warehouseId, 'PUTAWAY_STAGING');
+    const kept = {
+      locationCode: 'SYS-STAGING', locationName: '적치 대기', locationTypeCode: 'TEMP', allowMixedItem: true, allowMixedLot: true,
+    };
+
+    const aliased = await request(app.getHttpServer())
+      .put(`/api/mdm/locations/${staging}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', (await detailOf(staging)).etag)
+      .send({ ...kept, aliasName: '  품질검사실 앞  ' })
+      .expect(200);
+    expect(aliased.body).toMatchObject({ locationName: '적치 대기', aliasName: '품질검사실 앞' });
+
+    const locked = await request(app.getHttpServer())
+      .put(`/api/mdm/locations/${staging}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', aliased.headers.etag)
+      .send({ ...kept, locationName: '다른 이름', aliasName: '바꿔 본다' })
+      .expect(400);
+    expect(locked.body.errors).toEqual([expect.objectContaining({ field: 'locationName', code: 'STATE_LOCKED' })]);
+  });
+
+  it('⛔ 적치 대기 자리는 끌 수 없다 · 창고 전체는 끈다 — 관리수준을 바꾸면 사람이 끈다', async () => {
+    const id = await createWarehouse(`${PREFIX}-WH5`, 'WAREHOUSE');
+    const staging = await systemLocation(id, 'PUTAWAY_STAGING');
+    const whole = await systemLocation(id, 'WAREHOUSE_WHOLE');
+
+    const rejected = await request(app.getHttpServer())
+      .post(`/api/mdm/locations/${staging}:deactivate`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', (await detailOf(staging)).etag)
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+
+    const off = await request(app.getHttpServer())
+      .post(`/api/mdm/locations/${whole}:deactivate`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', (await detailOf(whole)).etag)
+      .expect(200);
+    expect(off.body.isActive).toBe(false);
+  });
+
+  it('⭐ 별칭은 사람이 만든 위치에도 붙는다 · 빈 글은 별칭 없음 · 글이 아니면 400', async () => {
+    const { id, etag } = await createLocation(`${PREFIX}-AL`, { aliasName: '자재 랙 1' });
+    const detail = await request(app.getHttpServer()).get(`/api/mdm/locations/${id}`).set('Cookie', cookie).expect(200);
+    expect(detail.body.location.aliasName).toBe('자재 랙 1');
+
+    const cleared = await request(app.getHttpServer())
+      .put(`/api/mdm/locations/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send(writeBody(`${PREFIX}-AL`, { aliasName: ' ' }))
+      .expect(200);
+    expect(cleared.body.aliasName).toBeNull();
+
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/locations')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-AL2`, { aliasName: 3 }))
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'aliasName', code: 'INVALID' });
+  });
+
+  it('⛔ 한 창고에 같은 역할의 자리는 하나뿐이다 — DB 가 막는다', async () => {
+    await expect(
+      prisma.location.create({
+        data: {
+          warehouse_id: warehouseId,
+          location_code: `${PREFIX}-DUP`,
+          location_name: '둘째 적치 대기',
+          location_type_code: locationTypeCode,
+          system_role_code: 'PUTAWAY_STAGING',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('⭐ 관리수준이 창고면 도착 위치는 창고 전체다 — 적치 대기 자리는 세지 않는다', async () => {
+    const id = await createWarehouse(`${PREFIX}-WH6`, 'WAREHOUSE');
+    const input = { warehouseId: id, managementLevelCode: 'WAREHOUSE', warehouseField: 'warehouseId' };
+
+    expect(await resolveDestinationLocation(prisma, input)).toBe(BigInt(await systemLocation(id, 'WAREHOUSE_WHOLE')));
+
+    await createLocation(`${PREFIX}-WH6-L`, {}, id);
+    await expect(resolveDestinationLocation(prisma, input)).rejects.toThrow(ContractException);
+  });
+
+  it('⭐ 창고를 지우면 서버가 만든 자리도 함께 지워진다', async () => {
+    const id = await createWarehouse(`${PREFIX}-WH7`, 'WAREHOUSE');
+
+    await prisma.warehouse.delete({ where: { warehouse_id: id } });
+
+    expect(await prisma.location.count({ where: { warehouse_id: id } })).toBe(0);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   /** 수정 본문 — 계약이 `allowMixedItem`·`allowMixedLot` 를 «필수»로 두었다. */
@@ -351,7 +483,7 @@ describe('위치 마스터 (e2e)', () => {
     return { id: created.body.locationId, ...(await detailOf(created.body.locationId)) };
   }
 
-  async function createWarehouse(warehouseCode: string): Promise<number> {
+  async function createWarehouse(warehouseCode: string, managementLevelCode?: string): Promise<number> {
     const plant = await prisma.plant.findFirstOrThrow();
     const unit = await prisma.business_unit.findFirstOrThrow();
     const created = await prisma.warehouse.create({
@@ -361,10 +493,27 @@ describe('위치 마스터 (e2e)', () => {
         warehouse_code: warehouseCode,
         warehouse_name: warehouseCode,
         warehouse_type_code: await firstCode('WAREHOUSE_TYPE'),
-        management_level_code: await firstCode('MANAGEMENT_LEVEL'),
+        management_level_code: managementLevelCode ?? (await firstCode('MANAGEMENT_LEVEL')),
       },
     });
     return Number(created.warehouse_id);
+  }
+
+  async function rolesOf(id: number): Promise<(string | null)[]> {
+    const rows = await prisma.location.findMany({
+      where: { warehouse_id: id, NOT: { system_role_code: null } },
+      select: { system_role_code: true },
+      orderBy: { system_role_code: 'asc' },
+    });
+    return rows.map((row) => row.system_role_code);
+  }
+
+  async function systemLocation(id: number, role: string): Promise<number> {
+    const row = await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: id, system_role_code: role },
+      select: { location_id: true },
+    });
+    return Number(row.location_id);
   }
 
   async function firstCode(groupCode: string): Promise<string> {
