@@ -103,7 +103,6 @@ interface WarehouseCreateBody {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  managementLevelCode: string;
   isExternal?: boolean;
   isDefect?: boolean;
   partnerId?: number | null;
@@ -114,7 +113,6 @@ interface WarehouseUpdateBody {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  managementLevelCode: string;
   isExternal: boolean;
   isDefect: boolean;
   partnerId?: number | null;

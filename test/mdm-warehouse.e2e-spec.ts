@@ -49,7 +49,6 @@ describe('창고 마스터 (e2e)', () => {
   let plantId: number;
   let businessUnitId: number;
   let warehouseTypeCode: string;
-  let managementLevelCode: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -85,7 +84,6 @@ describe('창고 마스터 (e2e)', () => {
     businessUnitId = Number((await prisma.business_unit.findFirstOrThrow()).business_unit_id);
     // 코드 값을 하드코딩하지 않는다 — 환경마다 다르다(G-32).
     warehouseTypeCode = await firstCode('WAREHOUSE_TYPE');
-    managementLevelCode = await firstCode('MANAGEMENT_LEVEL');
   });
 
   afterAll(async () => {
@@ -258,7 +256,6 @@ describe('창고 마스터 (e2e)', () => {
         warehouseCode: `${PREFIX}-V`,
         warehouseName: '고친 이름',
         warehouseTypeCode,
-        managementLevelCode,
         isExternal: false,
         isDefect: true,
       })
@@ -278,7 +275,6 @@ describe('창고 마스터 (e2e)', () => {
         warehouseCode: `${PREFIX}-V`,
         warehouseName: '뒤늦게',
         warehouseTypeCode,
-        managementLevelCode,
         isExternal: false,
         isDefect: false,
       })
@@ -362,17 +358,6 @@ describe('창고 마스터 (e2e)', () => {
     expect(codes).toContain(`${PREFIX}-ZONED`);
     expect(codes).not.toContain(`${PREFIX}-NONE`);
     expect(codes).not.toContain(`${PREFIX}-LEGACY`);
-  });
-
-  it('⭐ 관리수준은 보지 않는다 — 공통코드에 없는 값도 받아 그대로 둔다(장부 P-153)', async () => {
-    const created = await request(app.getHttpServer())
-      .post('/api/mdm/warehouses')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({ ...body(`${PREFIX}-ANYLV`), managementLevelCode: 'NONE' })
-      .expect(201);
-
-    expect(created.body.managementLevelCode).toBe('NONE');
   });
 
   it('중지·재개가 돌고, 중지된 것은 기본 목록에서 빠진다', async () => {
@@ -517,7 +502,6 @@ describe('창고 마스터 (e2e)', () => {
       warehouseCode,
       warehouseName: warehouseCode,
       warehouseTypeCode,
-      managementLevelCode,
       ...extra,
     };
   }
