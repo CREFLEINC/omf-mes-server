@@ -94,9 +94,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 긴급 IQC 생략 요청 — 도출표는 `W-01-13` 인데 계약·§U9 의 화면은 `M-01-13`(「긴급 IQC 생략
   // 요청」)이다. 두 표는 «합집합»이라 같은 키를 다시 적어도 도출된 화면이 빠지지 않는다 —
   // 이 한 줄이 없으면 M-01-13 사용자의 주 버튼이 403 으로 죽는다.
-  'POST /trace/lots/{lotId}:request-iqc-skip': ['M-01-13'],
+  // 관리웹 IQC 판정(W-01-01)의 생략 구획도 같은 요청을 올린다(omf-all-around#212 · 장부 P-152).
+  'POST /trace/lots/{lotId}:request-iqc-skip': ['M-01-13', 'W-01-01'],
   // 승인된 IQC 생략의 실행 — 생략을 승인하는 결재 화면 W-01-02 의 조작이다(omf-all-around#105 · 장부 P-36).
-  'POST /trace/lots/{lotId}:skip-iqc': ['W-01-02'],
+  'POST /trace/lots/{lotId}:skip-iqc': ['W-01-02', 'W-01-01'],
   // OQC 생략 요청·실행 — 출하검사 판정 화면 W-04-03 의 조작이다. 결재는 W-03-09 가 한다(omf-all-around#119 · 장부 P-83).
   'POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip': ['W-04-03'],
   // 실행은 결재 화면 W-03-09 에서도 한다 — IQC 생략(위 `:skip-iqc` 가 결재 화면 W-01-02)과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
@@ -379,7 +380,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   //    «인증 모델»의 근거로만 적었고 「그 화면이 이 목록을 부른다」로는 적지 않았다(통보 189 §끝).
   // `W-04-03` — OQC 생략 구획이 자기 출하작업지시의 결재 상태(`targetTypeCode`·`targetId`)를 읽는다(omf-all-around#119 · 장부 P-83).
   // `W-03-11` — PQC 생략 구획이 자기 작업지시의 결재 상태를 읽는다(omf-all-around#212 · 장부 P-152).
-  'GET /app/approval-requests': ['M-01-13', 'W-01-02', 'W-04-03', 'W-03-11'],
+  'GET /app/approval-requests': ['M-01-13', 'W-01-02', 'W-04-03', 'W-03-11', 'W-01-01'],
 
   // `W-03-10` 처분 판정 처리 — ⭐ 도출 원천이 화면보다 «낡아» 한 줄도 안 도출된 자리다(그 화면은
   // DR-008 확정 3-A 로 2026-08-13 «신설»됐다). 그 결과 판정 저장이 `P-02-13`(POP · PQC) 하나만
