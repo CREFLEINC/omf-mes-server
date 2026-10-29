@@ -17,7 +17,8 @@ export type InboundStageCode =
   | 'CANCELLED';
 
 /**
- * ⚠ `REQUEST_IQC` 는 아직 주지 않는다 — 의뢰 생성 경로를 미뤘다(사용자 결정 2026-10-23).
+ * 「의뢰 요청」은 없다 — 검사 의뢰는 입하 등록 때 서버가 만들고 취소 경로가 없어, 검사 대상인데 의뢰가 없는 LOT 이
+ * 생기지 않는다(사용자 결정 2026-10-29 · #805 닫음). `INSPECTION_REQUIRED` 는 그래서 다음 할 일이 없다.
  * `ISSUE_LABEL` 은 POP 「자재LOT 등록·라벨 발행」의 일이다 — 관리웹은 글자로만 보인다.
  */
 export type InboundNextActionCode = 'ISSUE_LABEL' | 'POST_RECEIPT' | 'PUTAWAY' | null;

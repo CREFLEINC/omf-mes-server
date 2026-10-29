@@ -17720,12 +17720,11 @@
       ],
       "enum": [
        "ISSUE_LABEL",
-       "REQUEST_IQC",
        "POST_RECEIPT",
        "PUTAWAY",
        null
       ],
-      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. ⚠ REQUEST_IQC 는 지금 주지 않는다 — 의뢰 생성 경로를 미뤘다(사용자 결정 2026-10-23)"
+      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. 검사 의뢰는 입하 등록 때 서버가 만들므로 「의뢰 요청」은 없다(사용자 결정 2026-10-29 · #805)"
      },
      "blockedReasons": {
       "type": "array",
