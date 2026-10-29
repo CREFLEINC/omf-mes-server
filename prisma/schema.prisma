@@ -2614,6 +2614,7 @@ model warehouse {
   updated_by                                                                         BigInt?
   version_no                                                                         Int                          @default(1)
   is_defect                                                                          Boolean                      @default(false)
+  alias_name                                                                         String?                      @db.VarChar(200)
   handling_unit                                                                      handling_unit[]
   inventory_balance                                                                  inventory_balance[]
   inventory_count                                                                    inventory_count[]
