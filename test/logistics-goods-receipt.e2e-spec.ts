@@ -20,6 +20,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { NumberingService } from '../src/core/numbering';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-gr-probe';
@@ -242,6 +243,34 @@ describe('입고 (e2e)', () => {
     // 트랜잭션 «밖»이라 행 잠금이 전표 커밋까지 가지 않는다 — `P2028` 이면 500 이 된다.
     expect([first.status, second.status]).toEqual([201, 201]);
     expect(first.body.goodsReceipt.goodsReceiptNo).not.toBe(second.body.goodsReceipt.goodsReceiptNo);
+  });
+
+  it('⛔ 같은 입하 LOT 을 동시에 두 번 입고하면 하나만 들어간다 — 상한은 LOT 을 잠근 전기 트랜잭션 안에서 판정한다(#755)', async () => {
+    const draft = await body();
+    draft.lines[0].receiptQty = 60; // LOT 수량 100 — 둘을 합치면 넘는다.
+    // 두 요청이 바깥 검사를 함께 지난 뒤에 전기로 가게 한다 — 입고번호 뽑기(검사 뒤 · 트랜잭션 앞)에서 서로를 기다린다.
+    const numbering = app.get(NumberingService);
+    const next = numbering.next.bind(numbering);
+    let arrived = 0;
+    let release = (): void => undefined;
+    const together = new Promise<void>((resolve) => (release = resolve));
+    const spy = jest.spyOn(numbering, 'next').mockImplementation(async (type, plant, day) => {
+      if (type === 'GOODS_RECEIPT' && ++arrived === 2) release();
+      if (type === 'GOODS_RECEIPT') await together;
+      return next(type, plant, day);
+    });
+
+    const responses = await Promise.all([send(draft), send(draft)]).finally(() => spy.mockRestore());
+
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 400]);
+    expect(responses.find((response) => response.status === 400)?.body.errors).toEqual([
+      expect.objectContaining({ field: 'lines[0].receiptQty', code: 'INVALID' }),
+    ]);
+    const received = await prisma.goods_receipt_line.aggregate({
+      where: { lot_id: draft.lines[0].lotId },
+      _sum: { receipt_qty: true },
+    });
+    expect(Number(received._sum.receipt_qty)).toBe(60);
   });
 
   it('입고 — 번호 형식이 GR-YYYYMMDD-NNNN 그대로다(정규식은 \\d{4,} 로 넓힌다 — 카운터가 회차마다 오른다)', async () => {

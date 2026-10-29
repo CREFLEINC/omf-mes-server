@@ -134,6 +134,7 @@ export class GoodsReceiptService {
           putawayNos.push(await this.numbering.next('PUTAWAY_TASK', plantId, input.businessDate));
         }
         const goodsReceiptId = await this.prisma.$transaction(async (tx) => {
+          await assertInboundLotsWithin(tx, input);
           const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, putawayNos);
           await this.handover.putaway(tx, id, putawayNos.length, actor);
           // ⭐ 적재는 본 트랜잭션의 꼬리다(계약 §5-4 다섯째) — 단독이면 「입고됐는데 적재가 안 된」 창이 열린다.
@@ -252,13 +253,9 @@ export class GoodsReceiptService {
     });
     if (!plant) errors.push(field('plantId', ERROR_CODE.INVALID, '없는 공장입니다.'));
 
-    // 같은 LOT 이 여러 줄이면 상한은 줄마다가 아니라 «LOT 합계»로 본다(#108 리뷰 m2).
-    const lotTotals = new Map<number, Prisma.Decimal>();
-    for (const line of input.lines) {
-      lotTotals.set(line.lotId, (lotTotals.get(line.lotId) ?? new Prisma.Decimal(0)).plus(line.receiptQty));
-    }
+    const totals = lotTotals(input.lines);
     for (const [index, line] of input.lines.entries()) {
-      await this.assertLine(input.warehouseId, index, line, errors, lotTotals.get(line.lotId) as Prisma.Decimal);
+      await this.assertLine(input.warehouseId, index, line, errors, totals.get(line.lotId) as Prisma.Decimal);
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   }
@@ -296,60 +293,114 @@ export class GoodsReceiptService {
     if (Number(lot.item_id) !== line.itemId) {
       errors.push(field(`${at}.itemId`, ERROR_CODE.INVALID, '이 LOT 의 품목이 아닙니다.'));
     }
-    // 입하에서 온 LOT — 선별로 떼어 낸 자식(`LOT_SPLIT`)은 조상의 입하 라인을 따른다(장부 P-56).
-    const inboundLineId =
-      lot.source_type_code === INBOUND_LOT_SOURCE
-        ? lot.source_id
-        : lot.source_type_code === LOT_SPLIT_SOURCE
-          ? await inboundLineOfLot(this.prisma, BigInt(line.lotId))
-          : null;
-    if (inboundLineId !== null) await this.assertReceivable(line, at, errors, lotTotal);
-    // ⭐ 불량 LOT 은 «불량창고»로만 입고할 수 있다(omf-all-around#84 · 2026-10-16 결정 · 장부 P-45) — 불량 자재를
-    //    불량창고로 옮겨 처분·반품을 기다린다. 검사 대상 여부와 상관없다 — 무검사 품목에 건 클레임 재Hold(C9)도
-    //    불량이다(사용자 결정 2026-10-23).
-    if (inboundLineId !== null && lot.status_code === DEFECTIVE_LOT_STATUS) {
-      const toDefectWarehouse =
-        (await this.prisma.warehouse.findUnique({ where: { warehouse_id: warehouseId }, select: { is_defect: true } }))
-          ?.is_defect === true;
-      if (!toDefectWarehouse) {
-        errors.push(field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, '불량 LOT 은 불량창고로만 입고할 수 있습니다.'));
-      }
-      return;
-    }
-    // IQC 대상 입하 LOT 은 합격(LOT 정상) 전에 입고하지 않는다(omf-all-around#100 · C17). 검사 대기는 어디로도 안 된다.
-    // 대상 여부는 입하 라인의 표식으로 본다 — 무검사 품목 LOT 은 이 검사를 타지 않는다.
-    if (inboundLineId !== null && lot.status_code !== IQC_PASSED_LOT_STATUS) {
-      const inbound = await this.prisma.inbound_receipt_line.findUnique({
-        where: { inbound_receipt_line_id: inboundLineId },
-        select: { inspection_required: true },
-      });
-      if (inbound?.inspection_required === true) {
-        errors.push(field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, 'IQC 수입검사 합격 전인 LOT 은 입고할 수 없습니다.'));
-      }
-    }
+    await inboundGate(this.prisma, warehouseId, at, line, lot, lotTotal, errors);
   }
+}
 
-  /**
-   * 입고 상한(장부 P-56) — 입하 LOT 은 «입고 가능 수량»까지만 입고한다. 선별로 떼어 낸 불량분(자식 LOT)과 이미 입고한 수량을 뺀 값이다.
-   * 비교 대상은 이 요청 안 같은 LOT 줄의 합계다(`lotTotal`).
-   * ⚠ 전기 트랜잭션 밖의 확인이다(이 파일의 다른 검사와 같다) — 같은 LOT 을 동시에 두 번 입고하면 둘 다 통과할 수 있다.
-   */
-  private async assertReceivable(
-    line: GoodsReceiptCreate['lines'][number],
-    at: string,
-    errors: ErrorItem[],
-    lotTotal: Prisma.Decimal,
-  ): Promise<void> {
-    const receivable = (await receivableQtyOf(this.prisma, [BigInt(line.lotId)])).get(BigInt(line.lotId));
-    if (receivable === undefined || receivable.greaterThanOrEqualTo(lotTotal)) return;
-    errors.push(
-      field(
-        `${at}.receiptQty`,
-        ERROR_CODE.INVALID,
-        `이 LOT 은 ${receivable.toString()} 까지 입고할 수 있습니다(선별로 떼어 낸 불량분·이미 입고한 수량 제외).`,
-      ),
-    );
+interface InboundGateLot {
+  status_code: string;
+  source_type_code: string;
+  source_id: bigint;
+}
+
+/** 같은 LOT 이 여러 줄이면 상한은 줄마다가 아니라 «LOT 합계»로 본다(#108 리뷰 m2). */
+function lotTotals(lines: GoodsReceiptCreate['lines']): Map<number, Prisma.Decimal> {
+  const totals = new Map<number, Prisma.Decimal>();
+  for (const line of lines) {
+    totals.set(line.lotId, (totals.get(line.lotId) ?? new Prisma.Decimal(0)).plus(line.receiptQty));
   }
+  return totals;
+}
+
+/**
+ * 입하 LOT 의 문을 전기 트랜잭션 안에서 다시 본다(#755) — `assertWritable` 은 번호를 뽑기 전의 빠른 거절이고 최종 판정은 여기다.
+ * LOT 을 잠근 뒤 읽으므로 같은 LOT 을 동시에 입고하면 뒤의 것이 앞의 커밋을 기다렸다가 줄어든 상한을 본다.
+ * ⛔ `FOR NO KEY UPDATE` — `FOR UPDATE` 면 같은 LOT 을 전기하는 다른 트랜잭션이 원장·잔액 줄의 FK(KEY SHARE)로 이 잠금을
+ *    기다리고, 이쪽은 그 트랜잭션이 쥔 잔액 행을 기다려 교착한다. 보류·품질 전이(`FOR UPDATE`·LOT 수정)와는 한 줄로 선다.
+ */
+async function assertInboundLotsWithin(tx: Prisma.TransactionClient, input: GoodsReceiptCreate): Promise<void> {
+  const lotIds = [...new Set(input.lines.map((line) => BigInt(line.lotId)))];
+  const lots = await tx.$queryRaw<(InboundGateLot & { lot_id: bigint })[]>`
+    SELECT lot_id, status_code, source_type_code, source_id
+      FROM trace.lot
+     WHERE lot_id IN (${Prisma.join(lotIds.map((id) => Prisma.sql`${id}::bigint`))})
+     ORDER BY lot_id
+       FOR NO KEY UPDATE`;
+  const byId = new Map(lots.map((lot) => [lot.lot_id, lot]));
+  const totals = lotTotals(input.lines);
+  const errors: ErrorItem[] = [];
+  for (const [index, line] of input.lines.entries()) {
+    const lot = byId.get(BigInt(line.lotId));
+    if (lot === undefined) continue;
+    await inboundGate(tx, input.warehouseId, `lines[${index}]`, line, lot, totals.get(line.lotId) as Prisma.Decimal, errors);
+  }
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
+
+/** 입하 LOT 의 문 셋 — 입고 상한 · 불량은 불량창고만 · IQC 합격 전 금지. 입하와 무관한 LOT 은 지나간다. */
+async function inboundGate(
+  db: Prisma.TransactionClient,
+  warehouseId: number,
+  at: string,
+  line: GoodsReceiptCreate['lines'][number],
+  lot: InboundGateLot,
+  lotTotal: Prisma.Decimal,
+  errors: ErrorItem[],
+): Promise<void> {
+  // 입하에서 온 LOT — 선별로 떼어 낸 자식(`LOT_SPLIT`)은 조상의 입하 라인을 따른다(장부 P-56).
+  const inboundLineId =
+    lot.source_type_code === INBOUND_LOT_SOURCE
+      ? lot.source_id
+      : lot.source_type_code === LOT_SPLIT_SOURCE
+        ? await inboundLineOfLot(db, BigInt(line.lotId))
+        : null;
+  if (inboundLineId === null) return;
+  await assertReceivable(db, line, at, errors, lotTotal);
+  // ⭐ 불량 LOT 은 «불량창고»로만 입고할 수 있다(omf-all-around#84 · 2026-10-16 결정 · 장부 P-45) — 불량 자재를
+  //    불량창고로 옮겨 처분·반품을 기다린다. 검사 대상 여부와 상관없다 — 무검사 품목에 건 클레임 재Hold(C9)도
+  //    불량이다(사용자 결정 2026-10-23).
+  if (lot.status_code === DEFECTIVE_LOT_STATUS) {
+    const toDefectWarehouse =
+      (await db.warehouse.findUnique({ where: { warehouse_id: warehouseId }, select: { is_defect: true } }))
+        ?.is_defect === true;
+    if (!toDefectWarehouse) {
+      errors.push(field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, '불량 LOT 은 불량창고로만 입고할 수 있습니다.'));
+    }
+    return;
+  }
+  // IQC 대상 입하 LOT 은 합격(LOT 정상) 전에 입고하지 않는다(omf-all-around#100 · C17). 검사 대기는 어디로도 안 된다.
+  // 대상 여부는 입하 라인의 표식으로 본다 — 무검사 품목 LOT 은 이 검사를 타지 않는다.
+  if (lot.status_code !== IQC_PASSED_LOT_STATUS) {
+    const inbound = await db.inbound_receipt_line.findUnique({
+      where: { inbound_receipt_line_id: inboundLineId },
+      select: { inspection_required: true },
+    });
+    if (inbound?.inspection_required === true) {
+      errors.push(field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, 'IQC 수입검사 합격 전인 LOT 은 입고할 수 없습니다.'));
+    }
+  }
+}
+
+/**
+ * 입고 상한(장부 P-56) — 입하 LOT 은 «입고 가능 수량»까지만 입고한다. 선별로 떼어 낸 불량분(자식 LOT)과 이미 입고한 수량을 뺀 값이다.
+ * 비교 대상은 이 요청 안 같은 LOT 줄의 합계다(`lotTotal`).
+ */
+async function assertReceivable(
+  db: Prisma.TransactionClient,
+  line: GoodsReceiptCreate['lines'][number],
+  at: string,
+  errors: ErrorItem[],
+  lotTotal: Prisma.Decimal,
+): Promise<void> {
+  const receivable = (await receivableQtyOf(db, [BigInt(line.lotId)])).get(BigInt(line.lotId));
+  if (receivable === undefined || receivable.greaterThanOrEqualTo(lotTotal)) return;
+  errors.push(
+    field(
+      `${at}.receiptQty`,
+      ERROR_CODE.INVALID,
+      `이 LOT 은 ${receivable.toString()} 까지 입고할 수 있습니다(선별로 떼어 낸 불량분·이미 입고한 수량 제외).`,
+    ),
+  );
 }
 
 /**
