@@ -22,6 +22,8 @@ import { GoodsIssueService } from './goods-issue/goods-issue.service';
 import { GoodsReceiptLineListController } from './goods-receipt/goods-receipt-line-list.controller';
 import { GoodsReceiptLineListService } from './goods-receipt/goods-receipt-line-list.service';
 import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller';
+import { ReceiptDefaultsController } from './goods-receipt/receipt-defaults.controller';
+import { ReceiptDefaultsService } from './goods-receipt/receipt-defaults.service';
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { InboundReceiptQueryService } from './inbound-receipt/inbound-receipt-query.service';
 import {
@@ -118,6 +120,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   controllers: [
     GoodsIssueController,
     GoodsReceiptController,
+    ReceiptDefaultsController,
     GoodsReceiptLineListController,
     PickingController,
     PutawayRuleController,
@@ -154,6 +157,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     GoodsIssueUpdateService,
     GoodsReceiptService,
     GoodsReceiptLineListService,
+    ReceiptDefaultsService,
     PickingPickService,
     PickingQueryService,
     PutawayCompleteService,
