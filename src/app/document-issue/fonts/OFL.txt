@@ -1,3 +1,6 @@
+Noto Sans KR Regular 2.004 — notofonts/noto-cjk Sans/SubsetOTF/KR (https://github.com/notofonts/noto-cjk)
+© 2014-2021 Adobe (http://www.adobe.com/). Licensed under the SIL Open Font License, Version 1.1 (아래 전문).
+
 Liberation Sans Regular 2.1.5 — Debian bookworm fonts-liberation2 2.1.5-1 (https://github.com/liberationfonts)
 
 Digitized data copyright (c) 2010 Google Corporation with Reserved Font Arimo, Tinos and Cousine.
