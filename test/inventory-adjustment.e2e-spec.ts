@@ -1163,7 +1163,8 @@ describe('재고 조정 7 오퍼레이션 (e2e)', () => {
         item_id: itemId,
         lot_type_code: 'MATERIAL',
         plant_id: plantId,
-        initial_qty: 200,
+        // 입하 LOT 은 이 수량까지만 입고된다(장부 P-56) — `makeBalances` 가 이 LOT 으로 890 을 받는다.
+        initial_qty: 1000,
         uom_id: uomId,
         source_type_code: 'INBOUND_RECEIPT_LINE',
         source_id: 1,
