@@ -42,6 +42,7 @@ model app_user {
   notification_subscription                              notification_subscription[]
   notification_subscription_recipient                    notification_subscription_recipient[]
   notification_department_recipient                      notification_department_recipient[]
+  handover_alert_recipient                               handover_alert_recipient[]
   zalo_delivery                                          zalo_delivery[]
   user_credential                                        user_credential?
   user_data_scope                                        user_data_scope[]
@@ -2344,6 +2345,7 @@ model plant {
   shift                     shift[]
   spare_part                spare_part[]
   terminal                  terminal[]
+  handover_alert_setting    handover_alert_setting[]
   warehouse                 warehouse[]
   work_calendar             work_calendar[]
   worker                    worker[]
@@ -2470,11 +2472,13 @@ model terminal {
   token_issued_at      DateTime?              @db.Timestamptz(6)
   registered_token_version Int?
   registration_confirmed_at DateTime?          @db.Timestamptz(6)
+  warehouse_id         BigInt?
   document_issue_log   document_issue_log[]
   audit_event          audit_event[]
   equipment            equipment?             @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   location             location?              @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   plant                plant                  @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse            warehouse?             @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   terminal_process     terminal_process[]
   material_consumption material_consumption[]
   production_result    production_result[]
@@ -2486,6 +2490,7 @@ model terminal {
 
   @@index([location_id], map: "ix_terminal_location")
   @@index([equipment_id], map: "ix_terminal_equipment")
+  @@index([warehouse_id], map: "ix_terminal_warehouse")
   @@schema("mdm")
 }
 
@@ -2629,6 +2634,7 @@ model warehouse {
   warehouse_layout                                                                   warehouse_layout[]
   material_return                                                                    material_return[]
   recycle_entry                                                                      recycle_entry[]
+  terminal                                                                           terminal[]
 
   @@unique([plant_id, warehouse_code], map: "uq_warehouse")
   @@schema("mdm")
@@ -5772,6 +5778,38 @@ model notification_department_recipient {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model handover_alert_setting {
+  handover_alert_setting_id BigInt                     @id @default(autoincrement())
+  plant_id                  BigInt
+  alert_type_code           String                     @db.VarChar(60)
+  is_enabled                Boolean                    @default(false)
+  zalo_enabled              Boolean                    @default(false)
+  version_no                Int                        @default(1)
+  created_at                DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  updated_at                DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                BigInt?
+  plant                     plant                      @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  recipients                handover_alert_recipient[]
+
+  @@unique([plant_id, alert_type_code], map: "uq_handover_alert_setting")
+  @@schema("app")
+}
+
+model handover_alert_recipient {
+  handover_alert_setting_id BigInt
+  app_user_id               BigInt
+  created_at                DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  setting                   handover_alert_setting @relation(fields: [handover_alert_setting_id], references: [handover_alert_setting_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                  app_user               @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([handover_alert_setting_id, app_user_id], map: "pk_handover_alert_recipient")
+  @@index([app_user_id], map: "ix_handover_alert_recipient_user")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model zalo_connection {
   zalo_connection_id      Int       @id @db.SmallInt
   app_id                  String?   @db.VarChar(40)
@@ -5811,6 +5849,7 @@ model zalo_delivery {
   template_data         Json
   tracking_id           String             @unique(map: "uq_zalo_delivery_tracking") @db.VarChar(48)
   status_code           String             @default("PENDING") @db.VarChar(20)
+  priority              Int                @default(0) @db.SmallInt
   attempt_count         Int                @default(0)
   next_attempt_at       DateTime           @default(now()) @db.Timestamptz(6)
   expires_at            DateTime           @db.Timestamptz(6)
@@ -5825,6 +5864,7 @@ model zalo_delivery {
 
   @@unique([notification_event_id, recipient_user_id], map: "uq_zalo_delivery_recipient")
   @@index([status_code, next_attempt_at], map: "ix_zalo_delivery_due")
+  @@index([status_code, priority, next_attempt_at], map: "ix_zalo_delivery_due_priority")
   @@index([created_at], map: "ix_zalo_delivery_created")
   @@schema("app")
 }
