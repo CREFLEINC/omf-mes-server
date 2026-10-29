@@ -15,11 +15,13 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { LocationItemService } from './location-item.service';
 import { LocationStructureService } from './location-structure.service';
 import { LocationQuery, LocationService } from './location.service';
 
@@ -29,6 +31,7 @@ export class LocationController {
   constructor(
     private readonly locations: LocationService,
     private readonly structure: LocationStructureService,
+    private readonly items: LocationItemService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -70,6 +73,23 @@ export class LocationController {
     return runVersioned(this.idempotency, request, response, 'location', (version) =>
       this.locations.update(locationId, version, body),
     );
+  }
+
+  @Get(':locationId/items')
+  @Contract('GET /mdm/locations/{locationId}/items')
+  listItems(@Param('locationId', ParseIntPipe) locationId: number): Promise<unknown> {
+    return this.items.list(locationId);
+  }
+
+  @Put(':locationId/items')
+  @Contract('PUT /mdm/locations/{locationId}/items')
+  replaceItems(
+    @Req() request: Request,
+    @Param('locationId', ParseIntPipe) locationId: number,
+    @Body() body: { itemIds: number[] },
+  ): Promise<unknown> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.items.replace(locationId, body.itemIds, currentSession(request)?.userId));
   }
 
   @Delete(':locationId')

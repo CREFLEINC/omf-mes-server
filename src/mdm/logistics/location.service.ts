@@ -36,6 +36,7 @@ export const LOCATION_REFERRERS: readonly Referrer[] = [
   ['logistics.stock_transfer_line', 'to_location_id'],
   ['mdm.equipment', 'location_id'],
   ['mdm.location', 'parent_location_id'],
+  ['mdm.location_item', 'location_id'],
   ['mdm.production_line', 'default_fg_location_id'],
   ['mdm.production_line', 'default_scrap_location_id'],
   ['mdm.production_line', 'default_wip_location_id'],
@@ -61,6 +62,7 @@ interface LocationView {
   locationLevelCode: string | null;
   isLeaf: boolean;
   systemRoleCode: string | null;
+  hasItemRestriction: boolean;
 }
 
 /** 계약 `LocationUpdate` — 이름과 별칭만 바꾼다. 상위·단계는 같은 값이면 받아 준다(화면이 저장된 값을 실어 보낸다). */
@@ -85,7 +87,7 @@ type LocationRow = Prisma.locationGetPayload<object>;
 
 /** `isLeaf` 를 위해 켜진 하위 수를 함께 읽는다. */
 const WITH_CHILDREN = {
-  _count: { select: { child_locations: { where: { is_active: true } } } },
+  _count: { select: { child_locations: { where: { is_active: true } }, location_item: true } },
 } satisfies Prisma.locationInclude;
 type LocationWithChildren = Prisma.locationGetPayload<{ include: typeof WITH_CHILDREN }>;
 
@@ -121,7 +123,7 @@ export class LocationService {
       }),
       this.prisma.location.count({ where }),
     ]);
-    return pagedResponse(rows.map((row) => view(row, row._count.child_locations)), total, page);
+    return pagedResponse(rows.map((row) => view(row, row._count.child_locations, row._count.location_item)), total, page);
   }
 
   async get(locationId: number): Promise<LocationResult> {
@@ -133,7 +135,7 @@ export class LocationService {
 
     const referenceCount = await countReferences(this.prisma, LOCATION_REFERRERS, row.location_id);
     return {
-      location: view(row, row._count.child_locations),
+      location: view(row, row._count.child_locations, row._count.location_item),
       // 코드는 서버가 발행해 바꾸지 않는다(사용자 결정 2026-10-29).
       editability: {
         codeEditable: false,
@@ -172,7 +174,7 @@ export class LocationService {
         },
       });
     });
-    return view(row, 0);
+    return view(row, 0, 0);
   }
 
   async update(
@@ -203,7 +205,7 @@ export class LocationService {
   private async updateAlias(
     current: LocationRow, version: number, input: LocationWrite, aliasName: string | null | undefined,
   ): Promise<LocationResult> {
-    const stored = view(current, 0);
+    const stored = view(current, 0, 0);
     const errors = SYSTEM_KEPT.filter((key) => input[key] !== undefined && input[key] !== stored[key]).map(
       (key): ErrorItem => ({
         scope: 'field', field: key, code: ERROR_CODE.STATE_LOCKED, message: '서버가 만든 위치는 별칭만 고칠 수 있습니다.',
@@ -290,7 +292,7 @@ export class LocationService {
   }
 }
 
-function view(row: LocationRow, activeChildren: number): LocationView {
+function view(row: LocationRow, activeChildren: number, restrictedItems: number): LocationView {
   return {
     locationId: Number(row.location_id),
     warehouseId: Number(row.warehouse_id),
@@ -302,5 +304,6 @@ function view(row: LocationRow, activeChildren: number): LocationView {
     locationLevelCode: row.location_level_code,
     isLeaf: activeChildren === 0,
     systemRoleCode: row.system_role_code,
+    hasItemRestriction: restrictedItems > 0,
   };
 }

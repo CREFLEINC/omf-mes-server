@@ -847,6 +847,121 @@
     }
    }
   },
+  "/mdm/locations/{locationId}/items": {
+   "parameters": [
+    {
+     "name": "locationId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "위치의 지정 품목",
+    "responses": {
+     "200": {
+      "description": "지정 품목(품목 코드 순)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LocationItemListResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-07",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 위치",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "위치의 지정 품목 바꾸기",
+    "description": "이 위치에 지정 품목만 들어오게 한다 — 그 밖의 품목이 들어오는 재고 전기는 400. 400: 없거나 쓰지 않는 품목(itemIds INVALID) · 지정 밖 품목의 재고가 이미 있음(itemIds STATE_LOCKED — 먼저 옮긴다) · 서버가 만든 자리(STATE_LOCKED — 적치 대기에는 어떤 품목이든 들어온다)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LocationItemReplace"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "바뀐 지정 품목",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LocationItemListResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-07",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 위치",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/mdm/locations/{locationId}:deactivate": {
    "parameters": [
     {
@@ -15092,7 +15207,8 @@
      "aliasName",
      "locationLevelCode",
      "isLeaf",
-     "systemRoleCode"
+     "systemRoleCode",
+     "hasItemRestriction"
     ],
     "description": "Location. 창고 › 구역 › 랙 › 층 › 셀 계층(parent_location_id 자기참조). 코드는 서버가 발행하고 상위는 바꾸지 않는다. 근거: W-06-07 §4-B · 사용자 결정 2026-10-29",
     "properties": {
@@ -15181,6 +15297,11 @@
       ],
       "example": null,
       "description": "서버가 창고마다 만든 자리의 역할 — 적치 대기(PUTAWAY_STAGING) · 창고 전체(WAREHOUSE_WHOLE). 사람이 만든 위치는 null. 서버가 만든 자리는 별칭만 고친다"
+     },
+     "hasItemRestriction": {
+      "type": "boolean",
+      "example": false,
+      "description": "지정 품목이 있다 — 이 위치에는 그 품목만 들어온다(GET /mdm/locations/{locationId}/items)"
      }
     }
    },
@@ -24902,6 +25023,65 @@
       "maximum": 99,
       "example": 10,
       "description": "층마다 셀 수 — 0 이면 층이 맨 아래 위치다"
+     }
+    }
+   },
+   "LocationItem": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "itemCode",
+     "itemName"
+    ],
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "AD0404-00001"
+     },
+     "itemName": {
+      "type": "string",
+      "example": "레진 A"
+     }
+    }
+   },
+   "LocationItemListResponse": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "description": "위치의 지정 품목 — 빈 목록이면 제한 없음",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/LocationItem"
+      }
+     }
+    }
+   },
+   "LocationItemReplace": {
+    "type": "object",
+    "required": [
+     "itemIds"
+    ],
+    "description": "지정 품목을 통째로 바꾼다 — 빈 배열이면 제한을 푼다. 같은 id 는 한 번으로 센다. 걸어 둔 그 위치에만 적용한다(상위에 걸어도 밑으로 내려가지 않는다). 근거: 사용자 결정 2026-10-29",
+    "properties": {
+     "itemIds": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "example": [
+       1001,
+       1002
+      ]
      }
     }
    }

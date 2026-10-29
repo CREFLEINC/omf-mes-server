@@ -37,6 +37,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 같은 창고 안 위치 이동 — 창고 이동(`POST /logistics/stock-transfers`)과 같은 화면이다. 웹 화면이 생기면 더한다.
   'POST /logistics/location-moves': ['M-01-10'],
   'DELETE /mdm/locations/{locationId}': ['W-06-07'],
+  'GET /mdm/locations/{locationId}/items': ['W-06-07'],
+  'PUT /mdm/locations/{locationId}/items': ['W-06-07'],
 
   // `W-06-05` 품목 마스터(MES 확장 속성) — 도출표에 조회만 들어왔다(§3 이 좌측 목록만
   // 적었다). 편집이 그 화면의 본체다.
