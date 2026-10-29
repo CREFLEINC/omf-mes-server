@@ -171,6 +171,19 @@ describe('재고 posting (실 DB)', () => {
 
   const run = (value: PostingInput) => prisma.$transaction((tx) => posting.post(tx, value));
 
+  /** 그 위치 밑에 켜진 하위 하나 — 검사가 끝나면 지운다(다른 검사는 맨 아래 위치를 쓴다). */
+  async function childOf(endpoint: PostingEndpoint): Promise<bigint> {
+    const row = await prisma.location.create({
+      data: {
+        warehouse_id: endpoint.warehouseId,
+        parent_location_id: endpoint.locationId,
+        location_code: `${PREFIX}-CHILD-${endpoint.locationId}`,
+        location_name: '하위',
+      },
+    });
+    return row.location_id;
+  }
+
   it('원장에 헤더와 라인을 남긴다', async () => {
     const result = await run(input());
 
@@ -221,6 +234,33 @@ describe('재고 posting (실 DB)', () => {
 
     expect(await onHand(hereA, 'NORMAL')).toBe(normalBefore - 2);
     expect(await onHand(hereA, 'INSPECTION_PENDING')).toBe(2);
+  });
+
+  it('⛔ 켜진 하위가 있는 위치로는 재고가 들어오지 않는다 — 400 STATE_LOCKED · 이동도 입고도', async () => {
+    await run(input());
+    const child = await childOf(hereB);
+    try {
+      const moving = input({ lines: [{ itemId, qty: 1, uomId, from: hereA, to: hereB, ownershipTypeCode: 'OWNED' }] });
+      await expect(run(moving)).rejects.toMatchObject({ errors: [expect.objectContaining({ code: 'STATE_LOCKED' })] });
+      await expect(run(input({ lines: [{ itemId, qty: 1, uomId, to: hereB, ownershipTypeCode: 'OWNED' }] })))
+        .rejects.toMatchObject({ errors: [expect.objectContaining({ code: 'STATE_LOCKED' })] });
+
+      await prisma.location.update({ where: { location_id: child }, data: { is_active: false } });
+      await run(input({ lines: [{ itemId, qty: 1, uomId, from: hereA, to: hereB, ownershipTypeCode: 'OWNED' }] }));
+    } finally {
+      await prisma.location.delete({ where: { location_id: child } });
+    }
+  });
+
+  it('⭐ 같은 위치 안에서 상태만 바꾸는 줄은 하위가 있어도 된다 — 하위가 생기기 전 재고를 정리한다', async () => {
+    await run(input());
+    const child = await childOf(hereA);
+    try {
+      const held = { ...hereA, qualityStatusCode: 'INSPECTION_PENDING' };
+      await run(input({ lines: [{ itemId, qty: 1, uomId, from: hereA, to: held, ownershipTypeCode: 'OWNED' }] }));
+    } finally {
+      await prisma.location.delete({ where: { location_id: child } });
+    }
   });
 
   it('⭐ 라인에 from/to_qty_after_transaction 을 남긴다 — 전기 «뒤»의 잔량이다', async () => {
