@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 /**
  * 계약 `PutawayTask` 로 옮기는 자리 — 필수 11 · 프로퍼티 18. `inventoryTransactionLineId`·
  * `reasonCode`·`versionNo` 는 물리에 있어도 응답 스키마에 없다(문의 059+2) — 안 싣는다.
- * `warehouseManagementLevelCode`(required 밖)는 싣지 않는다 — 창고 관리수준을 없앴다(장부 P-152).
+ * `warehouseManagementLevelCode`(required 밖)는 싣지 않는다 — 창고 관리수준을 없앴다(장부 P-153).
  */
 export const TASK_INCLUDE = {
   goods_receipt_line: {

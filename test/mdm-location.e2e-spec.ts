@@ -314,7 +314,7 @@ describe('위치 마스터 (e2e)', () => {
 
   // ── 서버가 만든 위치(장부 P-145) ──────────────────────────────────────────
 
-  it('⭐ 창고를 만들면 서버가 「적치 대기」·「창고 전체」를 둔다 — 관리수준과 상관없다(장부 P-152)', async () => {
+  it('⭐ 창고를 만들면 서버가 「적치 대기」·「창고 전체」를 둔다 — 관리수준과 상관없다(장부 P-153)', async () => {
     const whole = await createWarehouse(`${PREFIX}-WH3`, 'WAREHOUSE');
     const cell = await createWarehouse(`${PREFIX}-WH4`, 'CELL');
 
@@ -424,7 +424,7 @@ describe('위치 마스터 (e2e)', () => {
     ).rejects.toMatchObject({ code: 'P2002' });
   });
 
-  it('⭐ 구역이 없는 창고의 도착 위치는 창고 전체다 — 관리수준 값과 상관없고 적치 대기 자리는 세지 않는다(장부 P-152)', async () => {
+  it('⭐ 구역이 없는 창고의 도착 위치는 창고 전체다 — 관리수준 값과 상관없고 적치 대기 자리는 세지 않는다(장부 P-153)', async () => {
     for (const level of ['WAREHOUSE', 'CELL']) {
       const id = await createWarehouse(`${PREFIX}-WH6-${level}`, level);
       const input = { warehouseId: id, warehouseField: 'warehouseId' };

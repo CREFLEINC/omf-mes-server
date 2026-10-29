@@ -82,7 +82,7 @@ describe('재고 재등록 (e2e)', () => {
       });
       ids[key] = row.warehouse_id;
       // 옛 창고 모양 — 활성 위치가 있는 창고에는 마이그레이션이 「창고 전체」를 두지 않는다(장부 P-145).
-      // 나눈 창고는 「창고 전체」와 위치 하나로 고를 자리가 둘이다(장부 P-152).
+      // 나눈 창고는 「창고 전체」와 위치 하나로 고를 자리가 둘이다(장부 P-153).
       await prisma.location.updateMany({
         where: { warehouse_id: row.warehouse_id, system_role_code: 'WAREHOUSE_WHOLE' },
         data: { is_active: divided },

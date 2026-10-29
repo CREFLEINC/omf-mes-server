@@ -334,7 +334,7 @@ describe('창고 마스터 (e2e)', () => {
       .expect(400);
   });
 
-  it('⭐ dividedOnly 는 «고를 수 있는 활성 위치가 둘 이상»인 창고다 — 적치 대기는 세지 않고 창고 전체는 센다(장부 P-152)', async () => {
+  it('⭐ dividedOnly 는 «고를 수 있는 활성 위치가 둘 이상»인 창고다 — 적치 대기는 세지 않고 창고 전체는 센다(장부 P-153)', async () => {
     const locationTypeCode = await firstCode('LOCATION_TYPE');
     await createWarehouse(`${PREFIX}-NONE`);
     const zoned = await createWarehouse(`${PREFIX}-ZONED`);
@@ -364,7 +364,7 @@ describe('창고 마스터 (e2e)', () => {
     expect(codes).not.toContain(`${PREFIX}-LEGACY`);
   });
 
-  it('⭐ 관리수준은 보지 않는다 — 공통코드에 없는 값도 받아 그대로 둔다(장부 P-152)', async () => {
+  it('⭐ 관리수준은 보지 않는다 — 공통코드에 없는 값도 받아 그대로 둔다(장부 P-153)', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/mdm/warehouses')
       .set('Cookie', cookie)

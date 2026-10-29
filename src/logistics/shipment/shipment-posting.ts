@@ -99,7 +99,7 @@ export interface ShipmentWrite {
   goodsIssueNo: string;
   /** ⭐ 긴급 직행일 «때만» 온다 — 평시엔 입고 전표가 0건이라 번호를 안 뽑는다. */
   goodsReceiptNo?: string;
-  /** 긴급 직행의 장부상 입고 위치 — 본문에 칸이 0개라 서비스가 고를 자리가 하나뿐인 창고에서만 푼다(장부 P-152). */
+  /** 긴급 직행의 장부상 입고 위치 — 본문에 칸이 0개라 서비스가 고를 자리가 하나뿐인 창고에서만 푼다(장부 P-153). */
   receiptLocationId?: bigint;
   /** 라인마다의 품목 — 본문에 `itemId` 가 없어 `shipment_request_line` 에서 서버가 푼다(§6). */
   itemIdByLine: bigint[];
