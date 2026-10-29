@@ -13,6 +13,7 @@ import {
   lotsFreeOfOpenHolds,
   pqcAcceptanceExceeded,
   PREISSUED_LIFECYCLE,
+  VOIDED_LIFECYCLE,
   Tx,
   WORK_ORDER_LOT_SOURCE,
 } from '../../core/lot';
@@ -277,6 +278,7 @@ export class InspectionConfirmService {
    * PQC 의뢰는 W/O 대상이라(`lot_id` null) `moveTargetLot` 이 LOT 을 옮기지 못한다 — 그대로 두면
    * 생산LOT 이 정상이 되는 길이 없어 다음 공정 투입·출하가 막힌다.
    * ⛔ 아직 실적이 없는 슬롯(`WAITING`)은 옮기지 않는다 — 실물이 없는 LOT 을 정상으로 만들지 않는다.
+   * ⛔ W/O 취소로 폐번된 LOT(`VOIDED`)도 옮기지 않는다 — 취소 뒤 남은 PQC 의뢰를 확정해도 폐번 LOT 은 그대로다(#213).
    */
   private async releasePqcLots(
     tx: Tx,
@@ -291,7 +293,7 @@ export class InspectionConfirmService {
         source_id: request.work_order_id,
         work_order_lot_seq: { not: null },
         status_code: 'INSPECTION_PENDING',
-        lifecycle_status_code: { not: PREISSUED_LIFECYCLE },
+        lifecycle_status_code: { notIn: [PREISSUED_LIFECYCLE, VOIDED_LIFECYCLE] },
       },
       select: { lot_id: true },
     });

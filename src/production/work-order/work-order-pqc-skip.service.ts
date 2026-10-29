@@ -8,6 +8,7 @@ import {
   LotQualityStatusService,
   lotsFreeOfOpenHolds,
   PREISSUED_LIFECYCLE,
+  VOIDED_LIFECYCLE,
   Tx,
   WORK_ORDER_LOT_SOURCE,
 } from '../../core/lot';
@@ -92,14 +93,14 @@ export class WorkOrderPqcSkipService {
         where: skippableWhere(id),
         data: { status_code: SKIPPED, skip_basis_code: 'APPROVAL', updated_by: by, version_no: { increment: 1 } },
       });
-      // ⛔ 아직 실적이 없는 슬롯(WAITING)은 옮기지 않는다 — PQC 합격 확정(`releasePqcLots`)과 같은 모집단이다.
+      // ⛔ 실적이 없는 슬롯(WAITING)과 W/O 취소로 폐번된 LOT(VOIDED)은 옮기지 않는다 — PQC 합격 확정(`releasePqcLots`)과 같은 모집단이다(#213).
       const lots = await tx.lot.findMany({
         where: {
           source_type_code: WORK_ORDER_LOT_SOURCE,
           source_id: id,
           work_order_lot_seq: { not: null },
           status_code: 'INSPECTION_PENDING',
-          lifecycle_status_code: { not: PREISSUED_LIFECYCLE },
+          lifecycle_status_code: { notIn: [PREISSUED_LIFECYCLE, VOIDED_LIFECYCLE] },
         },
         select: { lot_id: true },
       });

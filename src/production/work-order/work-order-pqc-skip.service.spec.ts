@@ -105,13 +105,13 @@ describe('승인된 PQC 생략 실행', () => {
     );
   });
 
-  it('⛔ 아직 실적이 없는 슬롯(WAITING)은 모집단에서 뺀다', async () => {
+  it('⛔ 실적이 없는 슬롯(WAITING)과 취소로 폐번된 LOT(VOIDED)은 모집단에서 뺀다(#213)', async () => {
     const { service, lotFindMany } = harness();
     await service.execute(11, 5);
 
     expect(lotFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status_code: 'INSPECTION_PENDING', lifecycle_status_code: { not: 'WAITING' } }),
+        where: expect.objectContaining({ status_code: 'INSPECTION_PENDING', lifecycle_status_code: { notIn: ['WAITING', 'VOIDED'] } }),
       }),
     );
   });

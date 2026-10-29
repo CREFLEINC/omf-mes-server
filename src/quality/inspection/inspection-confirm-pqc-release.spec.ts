@@ -42,7 +42,7 @@ function harness(
 }
 
 describe('PQC 확정 — 생산LOT 정상 전환 (omf-all-around#105)', () => {
-  it('합격이면 실적이 난(대기 아님) 검사대기 생산LOT 을 C4 로 옮긴다', async () => {
+  it('합격이면 실적이 난(대기·폐번 아님) 검사대기 생산LOT 을 C4 로 옮긴다', async () => {
     const { run, findMany, lots } = harness('ACCEPTED');
     await run();
 
@@ -51,7 +51,8 @@ describe('PQC 확정 — 생산LOT 정상 전환 (omf-all-around#105)', () => {
         where: expect.objectContaining({
           source_id: 7n,
           status_code: 'INSPECTION_PENDING',
-          lifecycle_status_code: { not: 'WAITING' },
+          // 폐번(VOIDED) — 취소된 W/O 의 LOT 은 남은 PQC 를 확정해도 옮기지 않는다(#213).
+          lifecycle_status_code: { notIn: ['WAITING', 'VOIDED'] },
         }),
       }),
     );
