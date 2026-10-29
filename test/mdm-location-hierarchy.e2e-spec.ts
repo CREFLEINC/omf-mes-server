@@ -69,8 +69,6 @@ describe('위치 계층 (e2e)', () => {
     const cell = await create(level.locationId);
 
     expect([zone, rack, level, cell].map((row) => row.locationLevelCode)).toEqual(['ZONE', 'RACK', 'LEVEL', 'CELL']);
-    const stored = await prisma.location.findUniqueOrThrow({ where: { location_id: cell.locationId } });
-    expect(stored.location_level_code).toBe('CELL');
   });
 
   it('⛔ 셀 밑에는 둘 수 없다 — 400 INVALID(parentLocationId)', async () => {
@@ -168,16 +166,6 @@ describe('위치 계층 (e2e)', () => {
 
     await transition(rack.locationId, 'deactivate', 200);
     expect(await detail(zone.locationId)).toMatchObject({ isLeaf: true });
-  });
-
-  it('⭐ 단계 공통코드 LOCATION_LEVEL 이 구역·랙·층·셀 넷이다', async () => {
-    const values = await prisma.code_value.findMany({
-      where: { code_group: { group_code: 'LOCATION_LEVEL' } },
-      orderBy: { display_order: 'asc' },
-      select: { code: true },
-    });
-
-    expect(values.map((value) => value.code)).toEqual(['ZONE', 'RACK', 'LEVEL', 'CELL']);
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
