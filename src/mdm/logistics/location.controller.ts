@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -19,6 +20,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { LocationStructureService } from './location-structure.service';
 import { LocationQuery, LocationService } from './location.service';
 
 /** 위치(로케이션) 마스터. 화면은 `W-06-07` 우측 Location 탭이다. */
@@ -26,6 +28,7 @@ import { LocationQuery, LocationService } from './location.service';
 export class LocationController {
   constructor(
     private readonly locations: LocationService,
+    private readonly structure: LocationStructureService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -67,6 +70,16 @@ export class LocationController {
     return runVersioned(this.idempotency, request, response, 'location', (version) =>
       this.locations.update(locationId, version, body),
     );
+  }
+
+  @Delete(':locationId')
+  @Contract('DELETE /mdm/locations/{locationId}')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Req() request: Request, @Param('locationId', ParseIntPipe) locationId: number): Promise<void> {
+    await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
+      await this.structure.remove(locationId);
+      return undefined;
+    });
   }
 
   @Post(':locationId\\:activate')
