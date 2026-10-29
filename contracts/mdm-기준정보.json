@@ -19021,6 +19021,17 @@
       "description": "CHECK > 0 · inspection_measurement.sample_no 의 상한",
       "example": 3
      },
+     "acceptanceNumber": {
+      "x-source-column": "acceptance_number",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 0,
+      "example": 0,
+      "description": "항목별 허용 불량 수(c). 측정한 시료 중 규격을 벗어난 수가 이 값 이하이면 항목 합격이다. 비우면 버전의 합격판정개수(acceptanceNumber)를 따른다.",
+      "x-internal-note": "⭐ 선행 구현(P-155 · omf-all-around#211) — 고객사 검사기준서는 항목마다 「n=5c=0」·「n=5c=1」로 적는다. 물리 칸 acceptance_number 신설(CHECK >= 0)."
+     },
      "inspectionMethodCode": {
       "x-source-column": "inspection_method_code",
       "type": [
@@ -19178,6 +19189,17 @@
       "default": 1,
       "description": "CHECK > 0 · inspection_measurement.sample_no 의 상한",
       "example": 3
+     },
+     "acceptanceNumber": {
+      "x-source-column": "acceptance_number",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 0,
+      "example": 0,
+      "description": "항목별 허용 불량 수(c). 측정한 시료 중 규격을 벗어난 수가 이 값 이하이면 항목 합격이다. 비우면 버전의 합격판정개수(acceptanceNumber)를 따른다.",
+      "x-internal-note": "⭐ 선행 구현(P-155 · omf-all-around#211) — 고객사 검사기준서는 항목마다 「n=5c=0」·「n=5c=1」로 적는다. 물리 칸 acceptance_number 신설(CHECK >= 0)."
      },
      "inspectionMethodCode": {
       "x-source-column": "inspection_method_code",

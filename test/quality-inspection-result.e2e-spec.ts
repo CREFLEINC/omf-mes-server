@@ -227,6 +227,23 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(validator('GET /quality/inspection-requests')(response.body)).toBe(true);
     });
 
+    /* 부품 공장 IQC 화면(omf-all-around#211 · 장부 P-155)이 자기 공장 LOT 만 본다 — 의뢰가 아니라 LOT 의 공장이다. */
+    it('`plantId` 는 LOT 의 공장으로 좁힌다', async () => {
+      const same = await request(app.getHttpServer())
+        .get(`${REQUESTS}?itemId=${ids.item1}&plantId=${ids.plant}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const inPlant = await prisma.inspection_request.count({ where: { item_id: ids.item1, lot: { plant_id: ids.plant } } });
+      expect(inPlant).toBeGreaterThan(0);
+      expect(same.body.page.total).toBe(inPlant);
+
+      const other = await request(app.getHttpServer())
+        .get(`${REQUESTS}?itemId=${ids.item1}&plantId=${String(ids.plant + 987654321n)}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(other.body.page.total).toBe(0);
+    });
+
     it('`pendingOnly=true` 는 `REQUESTED`·`IN_PROGRESS` 둘 다 담는다 — 상태 하나로는 못 고른다', async () => {
       const response = await request(app.getHttpServer())
         .get(`${REQUESTS}?itemId=${ids.item1}&pendingOnly=true`)

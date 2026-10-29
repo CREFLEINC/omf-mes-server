@@ -10,6 +10,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
@@ -41,8 +42,10 @@ export class InspectionPlanImportController {
         { scope: 'screen', code: ERROR_CODE.REQUIRED, message: '엑셀 파일이 없습니다.' },
       ]);
     }
+    const session = currentSession(request);
+    if (!session) throw new Error('엑셀 올리기는 로그인 세션에서만 온다 — 인증 가드가 먼저 막아야 한다.');
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.imports.importWorkbook(file.buffer),
+      this.imports.importWorkbook(file.buffer, session.userId),
     );
   }
 }

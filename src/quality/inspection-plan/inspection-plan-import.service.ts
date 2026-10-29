@@ -3,6 +3,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { REVISION_STATUS } from '../../planning/revision-status';
 import { PrismaService } from '../../prisma/prisma.service';
+import { replaceDrawings } from './inspection-plan-drawing';
 import { ImportRow, parseInspectionPlanWorkbook } from './inspection-plan-import';
 import { ImportGroup, checkGroup, fail, groupRows } from './inspection-plan-import-check';
 import { InspectionPlanVersionService, ItemSpecUpsert, VersionWrite } from './inspection-plan-version.service';
@@ -31,7 +32,7 @@ export class InspectionPlanImportService {
     private readonly versions: InspectionPlanVersionService,
   ) {}
 
-  async importWorkbook(buffer: Buffer): Promise<BatchResult> {
+  async importWorkbook(buffer: Buffer, actorId: number): Promise<BatchResult> {
     const parsed = await parseInspectionPlanWorkbook(buffer);
     if (parsed.error) throw new ContractException(HttpStatus.BAD_REQUEST, [parsed.error]);
 
@@ -44,7 +45,8 @@ export class InspectionPlanImportService {
         continue;
       }
       try {
-        await this.apply(group);
+        const versionId = await this.apply(group);
+        await replaceDrawings(this.prisma, versionId, parsed.drawings ?? [], actorId);
         result.succeeded += 1;
       } catch (error) {
         if (!(error instanceof ContractException)) throw error;
@@ -54,7 +56,8 @@ export class InspectionPlanImportService {
     return result;
   }
 
-  private async apply(group: ImportGroup): Promise<void> {
+  /** 엑셀 내용을 담은 작성중 버전의 id 를 낸다. */
+  private async apply(group: ImportGroup): Promise<number> {
     const [first] = group.rows;
     const items = await this.items(group.rows);
     const existing = await this.prisma.inspection_plan.findUnique({
@@ -65,13 +68,12 @@ export class InspectionPlanImportService {
     if (existing === null) {
       const plan = await this.createPlan(first);
       try {
-        await this.createVersion(plan, first, items);
+        return await this.createVersion(plan, first, items);
       } catch (error) {
         // 방금 만든 기준이라 가리키는 것이 없다 — 버전은 createVersion 이 이미 지웠다.
         await this.prisma.inspection_plan.delete({ where: { inspection_plan_id: plan } });
         throw error;
       }
-      return;
     }
 
     await this.assertSamePlan(first, existing);
@@ -81,14 +83,12 @@ export class InspectionPlanImportService {
       orderBy: { plan_version: 'desc' },
       select: { inspection_plan_version_id: true, status_code: true },
     });
-    if (versions.length === 0) {
-      await this.createVersion(planId, first, items);
-      return;
-    }
+    if (versions.length === 0) return this.createVersion(planId, first, items);
     // 원본은 최신 확정 버전이다. 없으면 최신 버전을 넘겨 발행이 자기 문구로 거절하게 한다.
     const source = versions.find((v) => v.status_code === REVISION_STATUS.CONFIRMED) ?? versions[0];
     const versionId = await this.versions.newRevision(Number(source.inspection_plan_version_id));
     await this.fill(versionId, first, items, true);
+    return versionId;
   }
 
   private async createPlan(row: ImportRow): Promise<number> {
@@ -108,9 +108,10 @@ export class InspectionPlanImportService {
     return created.inspectionPlanId;
   }
 
-  private async createVersion(planId: number, row: ImportRow, items: Omit<ItemSpecUpsert, 'inspectionPlanVersionId'>[]): Promise<void> {
+  private async createVersion(planId: number, row: ImportRow, items: Omit<ItemSpecUpsert, 'inspectionPlanVersionId'>[]): Promise<number> {
     const created = await this.versions.create({ inspectionPlanId: planId, ...versionWrite(row) }, DRAFT);
     await this.fill(created.inspectionPlanVersionId, row, items, false);
+    return created.inspectionPlanVersionId;
   }
 
   /** 버전 설정과 항목을 채운다. 실패하면 그 작성중 버전을 [작성 취소]로 지운다. */
@@ -174,6 +175,7 @@ export class InspectionPlanImportService {
         lowerLimit: item.lowerLimit,
         upperLimit: item.upperLimit,
         measurementCount: item.measurementCount ?? 1,
+        acceptanceNumber: item.acceptanceNumber,
         inspectionMethodCode: item.inspectionMethodCode,
         // 비우면 화면의 항목 추가와 같은 기본값(DB 기본값)이다.
         requiredFlag: item.requiredFlag ?? true,

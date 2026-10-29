@@ -834,6 +834,17 @@
       }
      },
      {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1
+      },
+      "description": "LOT 의 공장. 부품 공장 IQC 화면이 자기 공장 LOT 만 본다.",
+      "x-internal-note": "⭐ 선행 구현(P-155 · omf-all-around#211) — inspection_request 에 공장 칸이 없어 lot.plant_id 로 거른다."
+     },
+     {
       "name": "workOrderId",
       "in": "query",
       "schema": {

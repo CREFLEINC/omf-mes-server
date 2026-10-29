@@ -17,6 +17,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
+import { copyDrawings, dropDrawings } from './inspection-plan-drawing';
 import { changedFields, itemChanges, recordPlanVersionAudit } from './inspection-plan-version-audit';
 
 /** `quality.inspection_plan_version` 을 FK 로 가리키는 자리 전부. e2e 가 대조한다. */
@@ -85,6 +86,7 @@ interface ItemSpecView {
   lowerLimit: number | null;
   upperLimit: number | null;
   measurementCount: number;
+  acceptanceNumber: number | null;
   inspectionMethodCode: string | null;
   defaultInspectionEquipmentId: number | null;
   requiredFlag: boolean;
@@ -105,6 +107,7 @@ export interface ItemSpecUpsert {
   lowerLimit?: number | null;
   upperLimit?: number | null;
   measurementCount: number;
+  acceptanceNumber?: number | null;
   inspectionMethodCode?: string | null;
   defaultInspectionEquipmentId?: number | null;
   requiredFlag: boolean;
@@ -401,6 +404,7 @@ export class InspectionPlanVersionService {
       }
 
       await tx.inspection_item_spec.deleteMany({ where: specs });
+      await dropDrawings(tx, versionId);
       await tx.inspection_plan_version.delete({ where: specs });
       await recordPlanVersionAudit(tx, {
         versionId,
@@ -463,6 +467,7 @@ export class InspectionPlanVersionService {
           data: { ...specData(item), inspection_plan_version_id: created.inspection_plan_version_id },
         });
       }
+      await copyDrawings(tx, versionId, created.inspection_plan_version_id);
 
       await recordPlanVersionAudit(tx, {
         versionId: Number(created.inspection_plan_version_id),
@@ -688,6 +693,7 @@ function itemData(
     ...optional('target_value', item.targetValue),
     ...optional('lower_limit', item.lowerLimit),
     ...optional('upper_limit', item.upperLimit),
+    ...optional('acceptance_number', item.acceptanceNumber),
     ...optional('inspection_method_code', item.inspectionMethodCode),
     ...optional('default_inspection_equipment_id', item.defaultInspectionEquipmentId),
   };
@@ -710,6 +716,7 @@ function specData(item: SpecRow): Omit<
     lower_limit: item.lower_limit,
     upper_limit: item.upper_limit,
     measurement_count: item.measurement_count,
+    acceptance_number: item.acceptance_number,
     inspection_method_code: item.inspection_method_code,
     default_inspection_equipment_id: item.default_inspection_equipment_id,
     required_flag: item.required_flag,
@@ -752,6 +759,10 @@ function assertItemShape(
       errors.push(
         invalid(`items[${index}].sequenceNo`, `${SEQ_PARKING_OFFSET} 보다 작아야 합니다.`),
       );
+    }
+    // 허용 불량 수(c)가 시료 수(n) 이상이면 모든 시료가 벗어나도 합격이다 — 기준이 아니다(#211).
+    if (item.acceptanceNumber != null && item.acceptanceNumber >= item.measurementCount) {
+      errors.push(invalid(`items[${index}].acceptanceNumber`, '허용 불량 수는 측정 횟수보다 작아야 합니다.'));
     }
     // ck_inspection_limits — 둘 다 있을 때만 본다.
     if (item.lowerLimit != null && item.upperLimit != null && item.upperLimit < item.lowerLimit) {
@@ -803,6 +814,7 @@ function itemView(row: SpecRow): ItemSpecView {
     lowerLimit: row.lower_limit === null ? null : Number(row.lower_limit),
     upperLimit: row.upper_limit === null ? null : Number(row.upper_limit),
     measurementCount: row.measurement_count,
+    acceptanceNumber: row.acceptance_number,
     inspectionMethodCode: row.inspection_method_code,
     defaultInspectionEquipmentId:
       row.default_inspection_equipment_id === null

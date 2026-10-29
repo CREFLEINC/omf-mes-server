@@ -100,6 +100,9 @@ function checkItem(row: ImportRow): ErrorItem[] {
   if (item.measurementCount !== null && !(Number.isInteger(item.measurementCount) && item.measurementCount >= 1)) {
     errors.push(fail(row, 'measurementCount', ERROR_CODE.INVALID, '측정 횟수는 1 이상의 정수여야 합니다.'));
   }
+  if (item.acceptanceNumber !== null && !(Number.isInteger(item.acceptanceNumber) && item.acceptanceNumber >= 0)) {
+    errors.push(fail(row, 'acceptanceNumber', ERROR_CODE.INVALID, '허용 불량 수는 0 이상의 정수여야 합니다.'));
+  }
   errors.push(...tooLong(row, [
     ['inspectionItemCode', item.inspectionItemCode, 50],
     ['inspectionItemName', item.inspectionItemName, 200],

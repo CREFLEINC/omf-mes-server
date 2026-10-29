@@ -3302,10 +3302,12 @@
         "NOTICE",
         "BREAKDOWN",
         "LOT",
-        "INSPECTION_RESULT"
+        "INSPECTION_RESULT",
+        "INSPECTION_PLAN_VERSION"
        ],
        "example": "WAREHOUSE"
       },
+      "x-server-ahead": "INSPECTION_PLAN_VERSION 은 서버 선행(장부 P-155 · omf-all-around#211) — 검사기준 버전의 도면. 기준서(TCKT) 엑셀 올리기가 만든다(올리기 경로로는 못 붙인다).",
       "x-code-key": "CD-ATTACHMENT-TARGET-TYPE",
       "description": "무엇에 붙은 첨부인가 — WAREHOUSE 창고 도면, NOTICE 공지, BREAKDOWN 설비 고장 사진. BREAKDOWN 등록은 전용 POST /maintenance/breakdowns/{breakdownId}/attachments 에서 작업자와 최대 세 장을 검증한다."
      },
@@ -8019,7 +8021,8 @@
        "NOTICE",
        "BREAKDOWN",
        "LOT",
-       "INSPECTION_RESULT"
+       "INSPECTION_RESULT",
+       "INSPECTION_PLAN_VERSION"
       ],
       "example": "WAREHOUSE"
      },

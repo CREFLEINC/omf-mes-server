@@ -15,6 +15,8 @@ export interface InspectionRequestListQuery {
   itemId?: number;
   supplierId?: number;
   lotId?: number;
+  /** LOT 의 공장(omf-all-around#211 · 장부 P-155) — 부품 공장 IQC 화면이 OA 공장 LOT 을 빼고 본다. */
+  plantId?: number;
   workOrderId?: number;
   q?: string;
   page?: number;
@@ -88,11 +90,11 @@ async function iqcInspectionLevels(
 function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_requestWhereInput {
   return {
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
-    ...statusWhere(query),
     ...filter('item_id', query.itemId),
     ...filter('lot_id', query.lotId),
     ...filter('work_order_id', query.workOrderId),
-    ...supplierWhere(query.supplierId),
+    // 상태(`AND`)·공급사·공장(둘 다 `lot`) 조건은 펼치면 서로 덮는다 — AND 하나로 묶는다.
+    AND: [statusWhere(query), supplierWhere(query.supplierId), plantWhere(query.plantId)],
     // ⛔ 범위는 `inspection_request_no` «하나»다 — 공급사·품목은 훑지 않는다(계약).
     ...(query.q === undefined ? {} : { inspection_request_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } }),
   };
@@ -119,6 +121,10 @@ function statusWhere(query: InspectionRequestListQuery): Prisma.inspection_reque
 function supplierWhere(supplierId: number | undefined): Prisma.inspection_requestWhereInput {
   if (supplierId === undefined) return {};
   return { lot: { inbound_receipt_line: { some: { inbound_receipt: { supplier_id: supplierId } } } } };
+}
+
+function plantWhere(plantId: number | undefined): Prisma.inspection_requestWhereInput {
+  return plantId === undefined ? {} : { lot: { plant_id: plantId } };
 }
 
 /** 검사 의뢰 목록의 조건 + 단말 범위 — 단말 작업 수(POP OQC)가 같은 함수로 센다(omf-all-around#190). */

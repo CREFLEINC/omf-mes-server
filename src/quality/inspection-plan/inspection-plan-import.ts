@@ -1,6 +1,7 @@
 import { Workbook, Worksheet } from 'exceljs';
 
 import { ERROR_CODE, ErrorItem } from '../../common/errors';
+import type { Drawing } from './inspection-plan-drawing';
 import { cellText as text } from './inspection-plan-import-cell';
 import { isTcktSheet, parseTcktSheet } from './inspection-plan-tckt';
 
@@ -40,6 +41,8 @@ const HEADERS: Record<string, readonly string[]> = {
   lowerLimit: ['하한', '하한값', 'lsl', 'lowerlimit'],
   upperLimit: ['상한', '상한값', 'usl', 'upperlimit'],
   measurementCount: ['측정횟수', '측정수', 'measurementcount'],
+  // 버전의 합격판정개수(acceptanceNumber)와 다른 칸이다 — 항목마다 c(#211).
+  itemAcceptanceNumber: ['허용불량수', '항목허용불량수', 'itemacceptancenumber'],
   inspectionMethodCode: ['검사방법', 'inspectionmethodcode'],
   requiredFlag: ['필수', '필수여부', 'requiredflag'],
   automaticJudgment: ['자동판정', 'automaticjudgment'],
@@ -88,6 +91,7 @@ export interface ImportRow {
     lowerLimit: number | null;
     upperLimit: number | null;
     measurementCount: number | null;
+    acceptanceNumber: number | null;
     inspectionMethodCode: string | null;
     requiredFlag: boolean | null;
     automaticJudgment: boolean | null;
@@ -98,6 +102,8 @@ export interface ImportParse {
   rows: ImportRow[];
   /** 파일을 열지 못했거나 필수 머리글이 없다 — 「파일을 읽을 수 없다」(400). */
   error?: ErrorItem;
+  /** 기준서(TCKT)의 도면 — 이 파일로 세운 버전마다 붙인다(#211). 머리글 표에는 없다. */
+  drawings?: Drawing[];
 }
 
 export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<ImportParse> {
@@ -152,6 +158,7 @@ export async function parseInspectionPlanWorkbook(buffer: Buffer): Promise<Impor
       lowerLimit: number(cell(cells, 'lowerLimit')),
       upperLimit: number(cell(cells, 'upperLimit')),
       measurementCount: number(cell(cells, 'measurementCount')),
+      acceptanceNumber: number(cell(cells, 'itemAcceptanceNumber')),
       inspectionMethodCode: upper(cell(cells, 'inspectionMethodCode')),
       requiredFlag: flag(cell(cells, 'requiredFlag')),
       automaticJudgment: flag(cell(cells, 'automaticJudgment')),
