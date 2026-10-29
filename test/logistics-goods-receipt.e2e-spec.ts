@@ -1,9 +1,8 @@
 /**
  * 입고 — 원장에 «쓰는» 첫 도메인. 화면 `W-01-10`.
  *
- * ⭐ 이 스위트가 못 박는 것 넷 — 등록 한 번이 **전표·원장·잔액을 함께** 만든다 ·
- * 라인마다 **적치 지시**가 생기고 응답이 그 식별자를 싣는다 · 권장 위치는 **적치 규칙만이**
- * 낸다 · 같은 멱등키 재전송이 **원장을 두 번 만들지 않는다**.
+ * ⭐ 이 스위트가 못 박는 것 셋 — 등록 한 번이 **전표·원장·잔액을 함께** 만든다 ·
+ * 라인마다 **적치 지시**가 생기고 응답이 그 식별자를 싣는다 · 같은 멱등키 재전송이 **원장을 두 번 만들지 않는다**.
  *
  * ⛔ 보류 해제는 여기 없다 — 「LOT 재고 상태」와 「의심자재 보류 기록」은 다른 축이고
  * 뒤의 것은 `W-03-02` 소관이다(되돌림 §Z-8).
@@ -93,13 +92,11 @@ describe('입고 (e2e)', () => {
   let plantId: number;
   let otherPlantId: number;
   let itemId: number;
-  let ruledItemId: number;
+  let otherItemId: number;
   let uomId: number;
   let warehouseId: number;
   let dockId: number;
-  let rackId: number;
   let otherLocationId: number;
-  let ruleId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -161,7 +158,7 @@ describe('입고 (e2e)', () => {
 
   it('⛔ LOT 의 품목이 아니면 400 이다 — 계보가 그 두 축으로 이어진다', async () => {
     const draft = await body();
-    draft.lines[0].itemId = ruledItemId;
+    draft.lines[0].itemId = otherItemId;
 
     const rejected = await post(draft).expect(400);
     expect(rejected.body.errors[0]).toMatchObject({ field: 'lines[0].itemId', code: 'INVALID' });
@@ -297,63 +294,6 @@ describe('입고 (e2e)', () => {
       },
     });
     expect(new Set(tasks.map((task) => task.putaway_task_no)).size).toBe(2);
-  });
-
-  it('⭐ 권장 위치는 적치 규칙만이 낸다', async () => {
-    const detail = await create({ itemId: ruledItemId, lotId: await makeLot(ruledItemId) });
-
-    const task = await prisma.putaway_task.findUniqueOrThrow({
-      where: { putaway_task_id: detail.lines[0].putawayTaskId as number },
-    });
-    expect(Number(task.recommended_location_id)).toBe(rackId);
-    expect(Number(task.applied_putaway_rule_id)).toBe(ruleId);
-  });
-
-  it('⛔ 위치를 나눈 창고에서 규칙이 없으면 권장 위치가 비어 있다 — 「관리 위치가 없다」는 뜻이다', async () => {
-    const detail = await create();
-
-    const task = await prisma.putaway_task.findUniqueOrThrow({
-      where: { putaway_task_id: detail.lines[0].putawayTaskId as number },
-    });
-    expect(task.recommended_location_id).toBeNull();
-    expect(task.applied_putaway_rule_id).toBeNull();
-  });
-
-  it('⭐ 사람이 만든 위치가 없는 창고는 규칙이 없으면 「창고 전체」를 권장한다(장부 P-149)', async () => {
-    const unit = await prisma.business_unit.findFirstOrThrow({ where: { business_unit_code: `${PREFIX}-BU` } });
-    const whole = await prisma.warehouse.create({
-      data: {
-        plant_id: plantId, business_unit_id: unit.business_unit_id, warehouse_code: `${PREFIX}-WH3`,
-        warehouse_name: '입고검사창고단위', warehouse_type_code: 'RAW', management_level_code: 'WAREHOUSE',
-      },
-    });
-    const slot = async (role: string): Promise<number> => Number((await prisma.location.findFirstOrThrow({
-      where: { warehouse_id: whole.warehouse_id, system_role_code: role },
-    })).location_id);
-    const draft = await body();
-    draft.warehouseId = Number(whole.warehouse_id);
-    draft.lines[0].destinationLocationId = await slot('PUTAWAY_STAGING');
-
-    const created = await send(draft).expect(201);
-
-    const task = await prisma.putaway_task.findUniqueOrThrow({
-      where: { putaway_task_id: (created.body as Detail).lines[0].putawayTaskId as number },
-    });
-    expect(Number(task.recommended_location_id)).toBe(await slot('WAREHOUSE_WHOLE'));
-    expect(task.applied_putaway_rule_id).toBeNull();
-
-    // 사람이 위치를 하나라도 나누면 「창고 전체」를 권장하지 않는다 — 갈 곳이 하나가 아니다.
-    await prisma.location.create({
-      data: { warehouse_id: whole.warehouse_id, location_code: `${PREFIX}-WH3-A`, location_name: '나눈 위치', location_type_code: 'BIN' },
-    });
-    const again = await body();
-    again.warehouseId = Number(whole.warehouse_id);
-    again.lines[0].destinationLocationId = await slot('PUTAWAY_STAGING');
-    const divided = await send(again).expect(201);
-    const dividedTask = await prisma.putaway_task.findUniqueOrThrow({
-      where: { putaway_task_id: (divided.body as Detail).lines[0].putawayTaskId as number },
-    });
-    expect(dividedTask.recommended_location_id).toBeNull();
   });
 
   it('⛔ 입하·ERP 발주에 이어지지 않은 입고는 ERP 송신을 적재하지 않는다(장부 P-104)', async () => {
@@ -528,7 +468,7 @@ describe('입고 (e2e)', () => {
 
     const uom = await prisma.uom.findFirstOrThrow();
     uomId = Number(uom.uom_id);
-    for (const [suffix, target] of [['IT', 'plain'], ['IT2', 'ruled']] as const) {
+    for (const [suffix, target] of [['IT', 'plain'], ['IT2', 'other']] as const) {
       const item = await prisma.item.create({
         data: {
           item_code: `${PREFIX}-${suffix}`,
@@ -539,7 +479,7 @@ describe('입고 (e2e)', () => {
         },
       });
       if (target === 'plain') itemId = Number(item.item_id);
-      else ruledItemId = Number(item.item_id);
+      else otherItemId = Number(item.item_id);
     }
 
     const warehouse = await prisma.warehouse.create({
@@ -573,15 +513,6 @@ describe('입고 (e2e)', () => {
       },
     });
     dockId = Number(dock.location_id);
-    const rack = await prisma.location.create({
-      data: {
-        warehouse_id: warehouse.warehouse_id,
-        location_code: `${PREFIX}-RACK`,
-        location_name: '보관랙',
-        location_type_code: 'BIN',
-      },
-    });
-    rackId = Number(rack.location_id);
     const foreign = await prisma.location.create({
       data: {
         warehouse_id: otherWarehouse.warehouse_id,
@@ -591,18 +522,6 @@ describe('입고 (e2e)', () => {
       },
     });
     otherLocationId = Number(foreign.location_id);
-
-    // 규칙은 한 품목에만 둔다 — 「규칙이 없으면 권장이 비어 있다」를 함께 보이려면 둘이 필요하다.
-    const rule = await prisma.putaway_rule.create({
-      data: {
-        item_id: ruledItemId,
-        warehouse_id: warehouse.warehouse_id,
-        location_id: rack.location_id,
-        capacity_qty: 1000,
-        uom_id: uom.uom_id,
-      },
-    });
-    ruleId = Number(rule.putaway_rule_id);
   }
 
   async function makeUsers(): Promise<void> {
@@ -656,9 +575,6 @@ describe('입고 (e2e)', () => {
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.goods_receipt
        WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`);
-    await prisma.$executeRawUnsafe(`
-      DELETE FROM logistics.putaway_rule
-       WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);

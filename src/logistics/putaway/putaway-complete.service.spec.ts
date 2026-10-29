@@ -37,7 +37,6 @@ function fake(over: Row = {}) {
     task_qty: new Prisma.Decimal(10),
     uom_id: 5n,
     from_location_id: DOCK,
-    recommended_location_id: RACK,
     status_code: 'PENDING',
     version_no: 1,
     plant_id: 3n,
@@ -60,7 +59,12 @@ function fake(over: Row = {}) {
             },
           ]
         : [task],
-    location: { findUnique: async () => ({ warehouse_id: WH, is_active: true }) },
+    // 사람이 나눈 위치도 「창고 전체」도 없는 창고 — 둬도 되는 위치가 비어 어디든 된다.
+    location: {
+      findUnique: async () => ({ warehouse_id: WH, is_active: true }),
+      groupBy: async () => [],
+      findMany: async () => [],
+    },
     warehouse: {
       findUniqueOrThrow: async () => ({
         business_unit_id: 2n, plant_id: 3n, plant: { legal_entity_id: 1n },
@@ -76,7 +80,7 @@ function fake(over: Row = {}) {
           ...task,
           ...(args.data as Row),
           actual_location_id: (args.data as Row).actual_location_id,
-          priority_no: 100, assigned_worker_id: null, applied_putaway_rule_id: null,
+          priority_no: 100, assigned_worker_id: null,
           completed_at: new Date(AT), remarks: null,
           goods_receipt_line: {
             goods_receipt: { warehouse_id: WH, warehouse: { management_level_code: 'LOCATION' } },
@@ -125,42 +129,6 @@ const firstError = (error: ContractException): { code: string; field?: string } 
   (error.getResponse() as { errors: { code: string; field?: string }[] }).errors[0];
 
 describe('적치 완료 :complete · :complete-temporary', () => {
-  it('ⓐ 권장이 있고 실제가 그것과 같으면 통과한다', async () => {
-    const { service, updates } = fake();
-
-    const view = await service.complete(TASK, body(), context, 'NORMAL');
-
-    expect(view.statusCode).toBe('COMPLETED');
-    expect((updates[0].data as Row).actual_location_id).toBe(RACK);
-  });
-
-  it('ⓑ 권장이 있는데 다른 위치면 400 INVALID(actualLocationId) — confirmedNoRule 을 읽지 않는다', async () => {
-    const { service, posts } = fake();
-
-    const error = await thrown(() =>
-      service.complete(TASK, body({ actualLocationId: 99, confirmedNoRule: true }), context, 'NORMAL'),
-    );
-
-    expect(firstError(error)).toMatchObject({ code: 'INVALID', field: 'actualLocationId' });
-    expect(posts).toEqual([]);
-  });
-
-  it('ⓒ 권장이 없고 confirmedNoRule=true 면 통과하고 실제 위치가 남는다', async () => {
-    const { service, updates } = fake({ recommended_location_id: null });
-
-    await service.complete(TASK, body({ actualLocationId: 99, confirmedNoRule: true }), context, 'NORMAL');
-
-    expect((updates[0].data as Row).actual_location_id).toBe(99n);
-  });
-
-  it('ⓓ 권장이 없는데 confirmedNoRule 이 없으면 400 REQUIRED(confirmedNoRule)', async () => {
-    const { service } = fake({ recommended_location_id: null });
-
-    const error = await thrown(() => service.complete(TASK, body({ actualLocationId: 99 }), context, 'NORMAL'));
-
-    expect(firstError(error)).toMatchObject({ code: 'REQUIRED', field: 'confirmedNoRule' });
-  });
-
   it('임시 적재는 사유 코드도 비고도 없으면 400 REQUIRED(reasonCode)', async () => {
     const { service, posts } = fake();
 
@@ -197,7 +165,7 @@ describe('적치 완료 :complete · :complete-temporary', () => {
   });
 
   it('⭐ 실제 위치가 출발 위치와 같아도 막지 않는다(R-7)', async () => {
-    const { service, posts } = fake({ recommended_location_id: DOCK });
+    const { service, posts } = fake();
 
     const view = await service.complete(TASK, body({ actualLocationId: Number(DOCK) }), context, 'NORMAL');
 

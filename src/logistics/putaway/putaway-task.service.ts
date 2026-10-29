@@ -6,7 +6,8 @@ import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalListScope } from '../terminal-list-scope';
-import { PutawayTaskView, TASK_INCLUDE, taskView } from './putaway-task-view';
+import { allowedKey, allowedLocationsOf } from './allowed-locations';
+import { PutawayTaskView, TASK_INCLUDE, TaskRow, taskView } from './putaway-task-view';
 
 /** 계약 검증 가드가 이미 int64/boolean 을 캐스트한다 — page·size·temporaryOnly 는 그 값을 믿는다. */
 export interface PutawayTaskQuery {
@@ -34,7 +35,7 @@ export class PutawayTaskService {
       }),
       this.prisma.putaway_task.count({ where }),
     ]);
-    return pagedResponse(rows.map(taskView), total, page);
+    return pagedResponse(await this.views(rows), total, page);
   }
 
   async get(putawayTaskId: number): Promise<{ view: PutawayTaskView; versionNo: number }> {
@@ -43,7 +44,14 @@ export class PutawayTaskService {
       include: TASK_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 적치 지시입니다.');
-    return { view: taskView(row), versionNo: row.version_no };
+    const [view] = await this.views([row]);
+    return { view, versionNo: row.version_no };
+  }
+
+  private async views(rows: TaskRow[]): Promise<PutawayTaskView[]> {
+    const pairs = rows.map((row) => ({ itemId: row.item_id, warehouseId: row.goods_receipt_line.goods_receipt.warehouse_id }));
+    const allowed = await allowedLocationsOf(this.prisma, pairs);
+    return rows.map((row, index) => taskView(row, allowed.get(allowedKey(pairs[index])) ?? []));
   }
 }
 

@@ -35,9 +35,6 @@ function fake() {
     inventory_transaction_line: {
       findMany: async () => [{ inventory_transaction_line_id: 30n }],
     },
-    putaway_rule: {
-      findFirst: async () => ({ putaway_rule_id: 40n, location_id: 7n }),
-    },
     putaway_task: {
       create: async ({ data }: { data: Record<string, unknown> }) => void tasks.push(data),
     },

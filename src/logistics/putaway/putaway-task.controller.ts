@@ -57,7 +57,7 @@ export class PutawayTaskController {
     );
   }
 
-  /** 정상 적치와 «상태»만 갈린다 — 권장 강제의 탈출구라 같은 자물쇠를 걸지 않는다. */
+  /** 정상 적치와 «상태»만 갈린다 — 둬도 되는 위치 검사의 탈출구라 같은 자물쇠를 걸지 않는다. */
   @Post(':putawayTaskId\\:complete-temporary')
   @Contract('POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary')
   @HttpCode(HttpStatus.OK)

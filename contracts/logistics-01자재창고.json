@@ -5465,7 +5465,7 @@
      "logistics"
     ],
     "summary": "적치 완료",
-    "description": "권장 위치가 있는데 다른 위치로 적치하면 400 으로 막는다. 권장 위치가 없는 품목은 confirmedNoRule 을 참으로 보내면 통과하며, 이때도 실제 위치는 반드시 남는다. 근거: M-01-05 §5-2-1",
+    "description": "`allowedLocations` 가 있으면 그 중 하나여야 한다 — 아니면 400 으로 막는다. 비어 있으면 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있으며, 이때도 실제 위치는 반드시 남는다. 근거: M-01-05 §5-2-1 · 사용자 결정 2026-10-29(적치 규칙 제거)",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -11330,7 +11330,7 @@
       "x-source-column": "destination_location_id",
       "type": "integer",
       "format": "int64",
-      "description": "이 값은 입고 전기 시점의 장부 위치다 — 적치 판정에는 쓰이지 않는다. 적치 지시의 권장 위치는 적치 규칙(putaway_rule)만이 낸다(M-01-05 §5-2-1 · 2026-08-06 확정). 실물이 권장 위치로 가서 이 값과 달라지면 M-01-07·M-01-10 으로 조정한다(W-01-10 §5-2).",
+      "description": "이 값은 입고 전기 시점의 장부 위치다 — 적치 판정에는 쓰이지 않는다. 실물이 적치 위치로 가서 이 값과 달라지면 M-01-07·M-01-10 으로 조정한다(W-01-10 §5-2).",
       "example": 1001
      },
      "originalShipmentLotAllocationId": {
@@ -16266,6 +16266,7 @@
      "taskQty",
      "uomId",
      "fromLocationId",
+     "allowedLocations",
      "warehouseId",
      "priorityNo",
      "statusCode"
@@ -16321,25 +16322,12 @@
       "description": "지시가 시작되는 위치",
       "example": 1001
      },
-     "recommendedLocationId": {
-      "x-source-column": "recommended_location_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "권장 적치 위치. 비어 있으면 이 품목에 관리 위치가 없다는 뜻이다. 근거: M-01-05 §5-2",
-      "example": 1001
-     },
-     "appliedPutawayRuleId": {
-      "x-source-column": "applied_putaway_rule_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "권장 위치를 산출한 규칙",
-      "example": 1001
+     "allowedLocations": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/PutawayAllowedLocation"
+      },
+      "description": "둬도 되는 위치. 그 창고에서 이 품목을 보관 품목으로 걸어 둔, 켜진 맨 아래 위치 전부(코드 순). 사람이 만든 켜진 위치가 없는 창고는 「창고 전체」 하나(장부 P-149). 비어 있으면 작업자가 고른다. 조회 때 계산하며 저장값이 아니다 — 보관 품목을 바꾸면 대기 중 지시에 바로 반영된다. 사용자 결정 2026-10-29(적치 규칙 제거)."
      },
      "actualLocationId": {
       "x-source-column": "actual_location_id",
@@ -16356,14 +16344,6 @@
       "format": "int64",
       "description": "적치 «목적» 창고. GET /mdm/locations?warehouseId= 가 이 값을 required 로 받으므로 지시가 실어 내린다 — fromLocationId(입하장·하역장)는 다른 창고일 수 있어 대신 쓸 수 없다. 근거: M-01-05 §5-3 · M-01-07 §5-5",
       "example": 1001
-     },
-     "warehouseManagementLevelCode": {
-      "type": "string",
-      "maxLength": 50,
-      "description": "이 지시가 속한 창고의 위치 관리 수준 — 창고(WAREHOUSE) · 구역(ZONE) · 랙(RACK) · 셀(CELL). ⭐ «위치 스캔을 요구할지»가 이 값으로 갈린다. 값 목록은 GET /mdm/code-values?codeGroupCode=MANAGEMENT_LEVEL 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-no-example": true,
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다.",
-      "x-code-key": "CD-MANAGEMENT-LEVEL"
      },
      "priorityNo": {
       "x-source-column": "priority_no",
@@ -16407,7 +16387,53 @@
       "example": "비고 문자열"
      }
     },
-    "x-internal-note": "warehouseManagementLevelCode 는 mdm.warehouse.management_level_code 를 지시에 실어 내리는 것이다 — M-01-05 §5-3 이 이 값으로 위치 스캔 유무를 가른다. 값 목록은 #64. warehouseId 도 같은 이유로 실어 내린다 — 화면이 창고를 따로 조회하면 부를 키가 없다. 원천은 goods_receipt.warehouse_id 다(W-01-10 §5-2 가 건별로 정한다)."
+    "x-internal-note": "warehouseId 를 실어 내린다 — 화면이 창고를 따로 조회하면 부를 키가 없다. 원천은 goods_receipt.warehouse_id 다(W-01-10 §5-2 가 건별로 정한다)."
+   },
+   "PutawayAllowedLocation": {
+    "type": "object",
+    "required": [
+     "locationId",
+     "locationCode",
+     "locationName",
+     "locationLevelCode"
+    ],
+    "description": "적치 지시의 둬도 되는 위치 한 칸",
+    "properties": {
+     "locationId": {
+      "x-source-column": "location_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "locationCode": {
+      "x-source-column": "location_code",
+      "type": "string",
+      "maxLength": 50,
+      "example": "A-01-02-03"
+     },
+     "locationName": {
+      "x-source-column": "location_name",
+      "type": "string",
+      "maxLength": 200,
+      "example": "A구역 1랙 2층 3셀"
+     },
+     "locationLevelCode": {
+      "x-source-column": "location_level_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "ZONE",
+       "RACK",
+       "LEVEL",
+       "CELL",
+       null
+      ],
+      "example": "CELL",
+      "description": "위치 단계 — 구역(ZONE) · 랙(RACK) · 층(LEVEL) · 셀(CELL). 「창고 전체」는 ZONE. null 은 넷보다 깊던 옛 위치뿐이다. 이름은 GET /mdm/code-values?codeGroupCode=LOCATION_LEVEL"
+     }
+    }
    },
    "PutawayTaskComplete": {
     "type": "object",
@@ -16416,7 +16442,7 @@
      "businessDate",
      "occurredAt"
     ],
-    "description": "적치 완료. 권장 위치가 있는데 다른 위치로 적치하면 400 으로 막는다. 권장 위치가 없는 품목은 확인 후 통과하며, 이때도 실제 적치 위치는 반드시 남는다. 근거: M-01-05 §5-2-1",
+    "description": "적치 완료. `allowedLocations` 가 있으면 그 중 하나여야 한다 — 아니면 400 INVALID(`actualLocationId`). 비어 있으면 이 창고의 켜진 맨 아래 위치 어디든. 보관 품목을 걸어 둔 위치에 다른 품목을 두면 재고 코어가 400 STATE_LOCKED(screen). 정 못 두면 `:complete-temporary`(사유 필수).",
     "properties": {
      "actualLocationId": {
       "x-source-column": "actual_location_id",
@@ -16424,12 +16450,6 @@
       "format": "int64",
       "description": "실제 적치한 위치",
       "example": 1001
-     },
-     "confirmedNoRule": {
-      "type": "boolean",
-      "default": false,
-      "description": "권장 위치가 없는 품목을 확인하고 진행했는지. 권장 위치가 없을 때만 참으로 보낸다",
-      "example": false
      },
      "businessDate": {
       "type": "string",
