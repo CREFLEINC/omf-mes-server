@@ -107,8 +107,8 @@ describe('입하 예정 라인 목록 — 질의', () => {
 
 const receiptStatusOf = (r: Row) => lineReceiptStatus(r, r.purchase_order.status_code);
 
-describe('P/O 목록 — 계약 밖 조건(P-85)', () => {
-  it('문자열로 온 납기 범위·지연만·공급사 검색을 형에 맞춰 옮기고, 없으면 키를 undefined 로 싣는다', () => {
+describe('P/O 목록 — 조건 읽기(P-85)', () => {
+  it('납기 범위·지연만·공급사 검색을 형에 맞춰 옮기고, 없으면 키를 undefined 로 싣는다 — 가드가 바꾼 boolean 도 받는다', () => {
     expect(
       parseOrderListExtras({
         expectedReceiptDateFrom: '2026-10-20',
@@ -128,6 +128,9 @@ describe('P/O 목록 — 계약 밖 조건(P-85)', () => {
       overdueOnly: undefined,
       supplierQ: undefined,
     });
+    // 계약이 boolean 이라 가드가 'false' 를 false 로 바꿔 넘긴다 — 문자열만 받으면 그 값을 거절한다.
+    expect(parseOrderListExtras({ overdueOnly: false }).overdueOnly).toBe(false);
+    expect(parseOrderListExtras({ overdueOnly: true }).overdueOnly).toBe(true);
   });
 
   it('⛔ 틀린 값은 칸마다 400 INVALID 다', () => {

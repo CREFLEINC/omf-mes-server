@@ -50,7 +50,7 @@ export class PurchaseOrderController {
   @Get()
   @Contract('GET /logistics/purchase-orders')
   list(@Req() request: Request, @Query() query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderListItem>> {
-    // 납기 범위·지연만·공급사 검색은 계약 밖 조건이라 가드가 보지 않는다(장부 P-85) — 여기서 검사해 덮는다.
+    // 가드가 계약대로 검사한 뒤 sort 의 열·방향 나누기와 날짜의 실제 날 검사를 거쳐 서버 형으로 덮는다.
     const extras = parseOrderListExtras(query as unknown as Record<string, unknown>);
     return this.queries.list(plantQuery({ ...query, ...extras }, request));
   }

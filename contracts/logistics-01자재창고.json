@@ -4707,6 +4707,107 @@
       "description": "발주번호 검색"
      },
      {
+      "name": "expectedReceiptDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "납기(헤더 expectedReceiptDate) 시작 — 포함"
+     },
+     {
+      "name": "expectedReceiptDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "납기 끝 — 포함"
+     },
+     {
+      "name": "overdueOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "납기가 그 공장 현지 오늘보다 앞인데 아직 입하가 끝나지 않은 건만. openOnly 조건을 함께 건다. 납기 없는 발주는 지연이 아니다"
+     },
+     {
+      "name": "supplierQ",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사 코드·이름 부분 일치(대소문자 무시) — 공급사 id 를 모를 때. supplierId 와 함께 오면 둘 다 건다"
+     },
+     {
+      "name": "progress",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "OPEN",
+        "COMPLETED"
+       ]
+      },
+      "description": "OPEN 은 openOnly=true 와 같은 줄(종료·취소 헤더가 아니고 취소 안 된 남은 라인이 있는 P/O) · COMPLETED 는 그 나머지(다 받은 것 · 헤더 취소 · CLOSED). openOnly 와 함께 오면 AND 라 openOnly=true&progress=COMPLETED 는 0건"
+     },
+     {
+      "name": "erpOrderTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "ERP 발주유형(공통코드 ORDER_TYPE) 하나 — 행의 erpOrderTypeCode 가 같은 것만. ORDER_TYPE 에 없는 코드는 400 INVALID(무시하면 전체가 걸러진 것처럼 보인다). 사용 중지된 코드는 받는다 — 지난 발주를 찾는다"
+     },
+     {
+      "name": "inboundStage",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "LABEL",
+        "INSPECTION",
+        "HELD",
+        "RECEIPT",
+        "PUTAWAY"
+       ]
+      },
+      "description": "그 묶음의 LOT 줄이 하나라도 있는 발주만(입고 관리 허브의 단계 칩). 묶음은 :inbound-stage-counts 와 같다. 조건에 맞는 발주의 줄을 모두 판정한 뒤 거르므로 쪽·총계가 맞다 — 조건이 넓으면 느릴 수 있다"
+     },
+     {
+      "name": "sort",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "orderDate",
+        "orderDate,asc",
+        "orderDate,desc",
+        "purchaseOrderNo",
+        "purchaseOrderNo,asc",
+        "purchaseOrderNo,desc",
+        "supplierName",
+        "supplierName,asc",
+        "supplierName,desc",
+        "expectedReceiptDate",
+        "expectedReceiptDate,asc",
+        "expectedReceiptDate,desc",
+        "overdue",
+        "overdue,asc",
+        "overdue,desc",
+        "openLineCount",
+        "openLineCount,asc",
+        "openLineCount,desc",
+        "inboundStage",
+        "inboundStage,asc",
+        "inboundStage,desc"
+       ]
+      },
+      "description": "열 또는 열,방향(asc·desc · 생략하면 asc). 없으면 발주일 최신순. 값이 같으면 purchaseOrderId 내림차순. DB 열: orderDate · purchaseOrderNo · supplierName(대소문자·성조를 가리지 않는다) · expectedReceiptDate(납기 없는 발주는 방향과 상관없이 맨 뒤). 계산 열: overdue(asc 가 지연 → 정상 → 끝남 · 지연은 overdueOnly 와 같은 기준) · openLineCount(행의 값) · inboundStage(가장 뒤처진 묶음의 흐름 순서 LABEL → … → PUTAWAY, 그다음 그 묶음 수 · 묶음 없는 발주는 맨 뒤). 계산 열은 조건에 맞는 발주를 모두 읽어 정렬한 뒤 쪽을 자른다. 모든 조건과 함께 걸린다"
+     },
+     {
       "name": "page",
       "in": "query",
       "schema": {
@@ -4738,7 +4839,7 @@
           "items": {
            "type": "array",
            "items": {
-            "$ref": "#/components/schemas/PurchaseOrder"
+            "$ref": "#/components/schemas/PurchaseOrderListItem"
            }
           },
           "page": {
@@ -4822,7 +4923,7 @@
      "logistics"
     ],
     "summary": "입고 단계 칩의 수",
-    "description": "입고 관리 허브(W-01-09) 탭 줄의 「라벨 대기 N · 검사 대기 N · 보류 N · 입고 대기 N · 적치 대기 N」 — 발주 목록(GET /logistics/purchase-orders)과 같은 조건에 맞는 발주 «전체»의 LOT 줄(라벨 대기 입하 라인 포함)을 묶음별로 센다. 쪽(page·size)과 inboundStage 는 보지 않는다 — 칩으로 좁힌 뒤에도 다른 칩의 수가 남는다. 목록의 계약 밖 조건(expectedReceiptDateFrom·expectedReceiptDateTo·overdueOnly·supplierQ · 장부 P-85)도 목록과 같이 받는다. 묶음(흐름 순서): LABEL = LABEL_PENDING · INSPECTION = INSPECTION_REQUIRED·INSPECTION_REQUESTED·INSPECTION_IN_PROGRESS · HELD = INSPECTION_HELD · RECEIPT = RECEIPT_READY · PUTAWAY = PUTAWAY_PENDING·PUTAWAY_TEMPORARY. 완료·취소는 세지 않는다. 판정은 GET …/{purchaseOrderId}/inbound-progress 의 stageCode 와 같다. 장부 P-110",
+    "description": "입고 관리 허브(W-01-09) 탭 줄의 「라벨 대기 N · 검사 대기 N · 보류 N · 입고 대기 N · 적치 대기 N」 — 발주 목록(GET /logistics/purchase-orders)과 같은 조건에 맞는 발주 «전체»의 LOT 줄(라벨 대기 입하 라인 포함)을 묶음별로 센다. 목록의 조건을 그대로 받되 쪽(page·size)·inboundStage·sort 는 보지 않는다 — 칩으로 좁힌 뒤에도 다른 칩의 수가 남는다. 묶음(흐름 순서): LABEL = LABEL_PENDING · INSPECTION = INSPECTION_REQUIRED·INSPECTION_REQUESTED·INSPECTION_IN_PROGRESS · HELD = INSPECTION_HELD · RECEIPT = RECEIPT_READY · PUTAWAY = PUTAWAY_PENDING·PUTAWAY_TEMPORARY. 완료·취소는 세지 않는다. 판정은 GET …/{purchaseOrderId}/inbound-progress 의 stageCode 와 같다. 장부 P-110",
     "parameters": [
      {
       "name": "supplierId",
@@ -4894,6 +4995,61 @@
        "type": "string"
       },
       "description": "발주번호 검색"
+     },
+     {
+      "name": "expectedReceiptDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "납기(헤더 expectedReceiptDate) 시작 — 포함"
+     },
+     {
+      "name": "expectedReceiptDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "납기 끝 — 포함"
+     },
+     {
+      "name": "overdueOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "납기가 그 공장 현지 오늘보다 앞인데 아직 입하가 끝나지 않은 건만. openOnly 조건을 함께 건다. 납기 없는 발주는 지연이 아니다"
+     },
+     {
+      "name": "supplierQ",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사 코드·이름 부분 일치(대소문자 무시) — 공급사 id 를 모를 때. supplierId 와 함께 오면 둘 다 건다"
+     },
+     {
+      "name": "progress",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "OPEN",
+        "COMPLETED"
+       ]
+      },
+      "description": "OPEN 은 openOnly=true 와 같은 줄(종료·취소 헤더가 아니고 취소 안 된 남은 라인이 있는 P/O) · COMPLETED 는 그 나머지(다 받은 것 · 헤더 취소 · CLOSED). openOnly 와 함께 오면 AND 라 openOnly=true&progress=COMPLETED 는 0건"
+     },
+     {
+      "name": "erpOrderTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "ERP 발주유형(공통코드 ORDER_TYPE) 하나 — 행의 erpOrderTypeCode 가 같은 것만. ORDER_TYPE 에 없는 코드는 400 INVALID(무시하면 전체가 걸러진 것처럼 보인다). 사용 중지된 코드는 받는다 — 지난 발주를 찾는다"
      }
     ],
     "responses": {
@@ -15914,7 +16070,10 @@
      "businessUnitId",
      "plantId",
      "orderDate",
-     "statusCode"
+     "statusCode",
+     "erpOrderTypeCode",
+     "erpPurchaseGroupCode",
+     "erpIoTypeCode"
     ],
     "description": "P/O 헤더. 근거: W-01-11 · W-01-09 · W-01-03",
     "properties": {
@@ -15994,8 +16153,177 @@
       "description": "승인 요청 식별자. 승인 진행 상태를 읽는 경로는 별도 계약에서 온다",
       "example": 1001,
       "x-internal-note": "app.approval_request 계약은 app-공통 파일에서 만든다(01-리소스도출 §1)."
+     },
+     "erpOrderTypeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "ERP 발주유형(PO_TYPE_CD) — 공통코드 ORDER_TYPE 의 코드. MES 에서 만든 P/O 는 null. 이름은 싣지 않는다 — 화면이 공통코드에서 찾는다",
+      "example": "PO"
+     },
+     "erpPurchaseGroupCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "ERP 구매그룹(PUR_GRP_CD) — 공통코드 PUR_GROUP 의 코드. MES 에서 만든 P/O 는 null",
+      "example": "P10"
+     },
+     "erpIoTypeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "ERP 입출고유형(IO_TYPE_CD). MES 에서 만든 P/O 는 null",
+      "example": "I01"
      }
     }
+   },
+   "PurchaseOrderListItem": {
+    "description": "P/O 목록 한 행 — 헤더(PurchaseOrder)에 공급사와 라인 묶음 값, LOT 단계별 수를 더한다. 입고 관리 허브(W-01-09) 왼쪽 표가 쓴다. 장부 P-85 · P-110",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/PurchaseOrder"
+     },
+     {
+      "type": "object",
+      "required": [
+       "supplierCode",
+       "supplierName",
+       "lineCount",
+       "openLineCount",
+       "matchedLineCount",
+       "uomId",
+       "uomCode",
+       "orderedQtyTotal",
+       "receivedQtyTotal",
+       "remainingQtyTotal",
+       "receiptStatusCode",
+       "inboundStageCounts"
+      ],
+      "properties": {
+       "supplierCode": {
+        "type": "string",
+        "example": "SUP-001"
+       },
+       "supplierName": {
+        "type": "string",
+        "example": "하노이 부품"
+       },
+       "lineCount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "라인 수 — 취소된 라인도 센다",
+        "example": 3
+       },
+       "openLineCount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "남은 라인 수 — 취소되지 않았고 받은 수량이 발주 수량에 못 미치는 라인. 종료·취소 헤더는 0",
+        "example": 2
+       },
+       "matchedLineCount": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 0,
+        "description": "itemId 로 찾았을 때 그 품목의 라인 수. itemId 없이 부르면 null",
+        "example": 1
+       },
+       "uomId": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "format": "int64",
+        "description": "취소되지 않은 라인들의 단위. 단위가 둘 이상이거나 라인이 없으면 null 이고 uomCode·합계 셋도 함께 null — kg 과 EA 를 더한 숫자는 뜻이 없다",
+        "example": 1001
+       },
+       "uomCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "example": "EA"
+       },
+       "orderedQtyTotal": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "취소되지 않은 라인의 발주 수량 합",
+        "example": 160
+       },
+       "receivedQtyTotal": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "취소되지 않은 라인의 누적 입하 수량 합",
+        "example": 30
+       },
+       "remainingQtyTotal": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "취소되지 않은 라인의 (발주 − 누적 입하 · 0 아래는 0) 합",
+        "example": 130
+       },
+       "receiptStatusCode": {
+        "type": "string",
+        "enum": [
+         "NOT_STARTED",
+         "PARTIAL",
+         "COMPLETED",
+         "CANCELLED"
+        ],
+        "description": "발주 묶음의 입하 진행 — 위에서부터 처음 맞는 것: CANCELLED(헤더 취소 또는 모든 라인 취소) → COMPLETED(취소 안 된 라인이 모두 다 들어옴) → PARTIAL(하나라도 들어옴) → NOT_STARTED(라인이 없을 때 포함)",
+        "example": "PARTIAL"
+       },
+       "inboundStageCounts": {
+        "type": "object",
+        "description": "이 발주의 LOT 줄(라벨 대기 입하 라인 포함)을 묶음별로 센 수 — 0 인 묶음은 싣지 않고 열린 줄이 없으면 {}. 묶음·판정은 GET /logistics/purchase-orders:inbound-stage-counts 와 같다. 완료·취소는 세지 않는다. 발주 둘에 걸친 줄은 발주마다 세므로 행의 합이 칩보다 클 수 있다",
+        "properties": {
+         "LABEL": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "라벨 발행 대기"
+         },
+         "INSPECTION": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "검사 대기"
+         },
+         "HELD": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "보류"
+         },
+         "RECEIPT": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "입고 대기"
+         },
+         "PUTAWAY": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "적치 대기"
+         }
+        },
+        "example": {
+         "INSPECTION": 1,
+         "RECEIPT": 2
+        }
+       }
+      }
+     }
+    ]
    },
    "PurchaseOrderCreate": {
     "x-source-table": "logistics.purchase_order",
@@ -16090,7 +16418,9 @@
      "uomId",
      "receivedQty",
      "toleranceOverQty",
-     "toleranceUnderQty"
+     "toleranceUnderQty",
+     "erpStorageLocationCode",
+     "cancelledAt"
     ],
     "description": "P/O 라인.",
     "properties": {
@@ -16155,6 +16485,23 @@
       "minimum": 0,
       "description": "부족 허용치",
       "example": 5
+     },
+     "erpStorageLocationCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "ERP 입고창고(SL_CD). MES 에서 만든 라인은 null",
+      "example": "SL01"
+     },
+     "cancelledAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "ERP 가 이 라인을 취소한 시각(CREATE_TYPE=C 를 받은 시각). 취소된 라인은 입하할 수 없고 남은 수량도 0 으로 본다. 아니면 null"
      }
     }
    },
@@ -17617,6 +17964,7 @@
      "lotId",
      "lotNo",
      "receivedQty",
+     "allocatedQty",
      "receivableQty",
      "uomCode",
      "lotStatusCode",
@@ -17676,6 +18024,11 @@
       "type": "number",
       "description": "이 LOT 의 입하 수량 — 선별 자식은 떼어 낸 수량 · 라벨 대기면 입하 라인의 수량",
       "example": 50
+     },
+     "allocatedQty": {
+      "type": "number",
+      "description": "이 입하 줄에서 «이» 발주(의 라인들)에 배정된 합(#843). receivedQty 는 줄·LOT 전체라 줄이 발주 둘에 걸치면 그 발주의 몫이 아니다 — 라벨·검사·입고는 줄 단위이고 몫은 이 칸이다. 선별 자식 LOT 줄은 조상 입하 줄의 몫",
+      "example": 30
      },
      "receivableQty": {
       "type": [

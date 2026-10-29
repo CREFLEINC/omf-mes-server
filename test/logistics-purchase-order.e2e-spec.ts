@@ -257,12 +257,11 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
         scope: 'field',
         field: 'progress',
         code: 'INVALID',
-        message: 'progress 는 OPEN 또는 COMPLETED 여야 합니다.',
       }),
     ]);
   });
 
-  it('⭐ erpOrderTypeCode 는 그 ERP 발주유형만 낸다 · 사용 중지된 유형도 받는다 — 계약 밖(장부 P-144)', async () => {
+  it('⭐ erpOrderTypeCode 는 그 ERP 발주유형만 낸다 · 사용 중지된 유형도 받는다(장부 P-144)', async () => {
     const active = await newOrder();
     const stopped = await newOrder();
     const plain = await newOrder();
