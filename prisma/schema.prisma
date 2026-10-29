@@ -3630,6 +3630,7 @@ model inspection_item_spec {
   created_by                      BigInt?
   name_ko                         String?                  @db.VarChar(200)
   name_vi                         String?                  @db.VarChar(200)
+  acceptance_number               Int?
   equipment                       equipment?               @relation(fields: [default_inspection_equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_plan_version         inspection_plan_version  @relation(fields: [inspection_plan_version_id], references: [inspection_plan_version_id], onDelete: NoAction, onUpdate: NoAction)
   uom                             uom?                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
