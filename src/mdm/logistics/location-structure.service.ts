@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { issueCode, lockWarehouse } from './location-code';
-import { assertNoStock, parentError } from './location-hierarchy';
+import { assertNoStock, branchIds, parentError } from './location-hierarchy';
 import { LocationResult, LocationService } from './location.service';
 
 export interface RackCreate {
@@ -59,17 +59,11 @@ export class LocationStructureService {
     if (row === null) throw new NotFoundException('없는 위치입니다.');
     if (row.system_role_code !== null) throw locked('서버가 만든 자리는 지울 수 없습니다.');
 
-    const branch = await this.prisma.$queryRaw<{ location_id: bigint }[]>`
-      WITH RECURSIVE branch AS (
-        SELECT location_id FROM mdm.location WHERE location_id = ${BigInt(locationId)}
-        UNION ALL
-        SELECT child.location_id FROM mdm.location child JOIN branch ON child.parent_location_id = branch.location_id
-      )
-      SELECT location_id FROM branch`;
+    const branch = await branchIds(this.prisma, locationId);
     try {
       // 가지를 한 문장으로 지운다 — 자기참조 FK 는 문장 끝에 보고, 위치를 가리키는 FK 33곳(`LOCATION_REFERRERS`)이
       // 모두 NO ACTION 이라 재고·원장·전표·규칙 어디서든 쓰였으면 DB 가 통째로 막는다.
-      await this.prisma.location.deleteMany({ where: { location_id: { in: branch.map((item) => item.location_id) } } });
+      await this.prisma.location.deleteMany({ where: { location_id: { in: branch } } });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
         throw locked('쓰인 위치는 지울 수 없습니다 — 사용 중지합니다.');

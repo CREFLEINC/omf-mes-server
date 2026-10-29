@@ -6,7 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { lockWarehouse, issueCode } from './location-code';
-import { assertKeptPlace, assertNoStock, assertParentEmpty, assertSentLevel, levelUnder, parentError } from './location-hierarchy';
+import { assertBranchEmpty, assertKeptPlace, assertNoStock, assertParentEmpty, assertSentLevel, branchIds, levelUnder, parentError } from './location-hierarchy';
 import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, aliasOf, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
@@ -219,14 +219,26 @@ export class LocationService {
     return this.get(locationId);
   }
 
+  /**
+   * 그 위치와 밑의 위치를 함께 끄고 켠다(사용자 결정 2026-10-29 — 화면은 구역·랙 단위로 끈다). 끌 때 가지 안에 재고가
+   * 있으면 막는다 — 꺼진 위치의 재고는 위치 이동으로도 꺼내지 못한다. 잠금 토큰(version)은 누른 위치의 것이다.
+   */
   async setActive(locationId: number, version: number, isActive: boolean): Promise<LocationResult> {
     if (!isActive) await this.assertNotStaging(locationId);
     if (isActive) await assertParentEmpty(this.prisma, locationId);
-    const updated = await this.prisma.location.updateMany({
-      where: { location_id: locationId, version_no: version },
-      data: { is_active: isActive, version_no: { increment: 1 } },
+    const branch = await branchIds(this.prisma, locationId);
+    if (!isActive) await assertBranchEmpty(this.prisma, branch);
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.location.updateMany({
+        where: { location_id: locationId, version_no: version },
+        data: { is_active: isActive, version_no: { increment: 1 } },
+      });
+      await this.assertExists(locationId, updated.count);
+      await tx.location.updateMany({
+        where: { location_id: { in: branch.filter((id) => id !== BigInt(locationId)) }, is_active: !isActive },
+        data: { is_active: isActive, version_no: { increment: 1 } },
+      });
     });
-    await this.assertExists(locationId, updated.count);
     return this.get(locationId);
   }
 
