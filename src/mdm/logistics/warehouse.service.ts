@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -53,7 +54,6 @@ interface WarehouseView {
   managementLevelCode: string;
   isExternal: boolean;
   isDefect: boolean;
-  partnerId: number | null;
   isActive: boolean;
 }
 
@@ -154,6 +154,7 @@ export class WarehouseService {
   async create(input: WarehouseCreate): Promise<WarehouseView> {
     // 계약이 `WarehouseCreate.warehouseCode` 에 「공백만 불가」로 적었다.
     assertNotBlank([['warehouseCode', input.warehouseCode]]);
+    assertNoPartner(input);
     await this.assertCodes(input);
     return view(
       await this.prisma.warehouse.create({
@@ -166,7 +167,6 @@ export class WarehouseService {
           management_level_code: input.managementLevelCode,
           ...optional('is_external', input.isExternal),
           ...optional('is_defect', input.isDefect),
-          ...optional('partner_id', input.partnerId),
         },
       }),
     );
@@ -177,6 +177,7 @@ export class WarehouseService {
     version: number,
     input: WarehouseUpdate,
   ): Promise<WarehouseResult> {
+    assertNoPartner(input);
     await this.assertCodes(input);
     const updated = await this.prisma.warehouse.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
@@ -189,7 +190,6 @@ export class WarehouseService {
         management_level_code: input.managementLevelCode,
         is_external: input.isExternal,
         is_defect: input.isDefect,
-        ...optional('partner_id', input.partnerId),
         version_no: { increment: 1 },
       },
     });
@@ -247,6 +247,17 @@ export class WarehouseService {
   }
 }
 
+/**
+ * 창고에 거래처를 두지 않는다 — 받지도 저장하지도 않는다(사용자 결정 2026-10-29 · 장부 P-146). 외부창고 표시는 둔다.
+ * 계약 칸이라 null 은 받는다. 다른 값을 무시하면 저장된 것처럼 보인다.
+ */
+function assertNoPartner(input: { partnerId?: number | null }): void {
+  if (input.partnerId == null) return;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    field('partnerId', ERROR_CODE.INVALID, '창고에 거래처를 두지 않습니다.'),
+  ]);
+}
+
 function view(row: WarehouseRow): WarehouseView {
   return {
     warehouseId: Number(row.warehouse_id),
@@ -258,7 +269,6 @@ function view(row: WarehouseRow): WarehouseView {
     managementLevelCode: row.management_level_code,
     isExternal: row.is_external,
     isDefect: row.is_defect,
-    partnerId: row.partner_id === null ? null : Number(row.partner_id),
     isActive: row.is_active,
   };
 }

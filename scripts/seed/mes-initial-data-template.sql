@@ -13,15 +13,13 @@
 --     so they are provisionally loaded as 1 EA.
 --   * 30 BOMs start with sequence_no=0. All 194 components in those BOMs are
 --     shifted by +1 to preserve their source ordering while satisfying sequence_no > 0.
---   * Five external warehouses cannot be linked reliably to an ERP partner.
---     Deterministic EXTWH_* placeholder partners are created for them.
 --   * ERP item group Mold remains an item classification. No mdm.mold rows are made.
 --   * Item AD0404-00022 (HA100038-2510 WW) is inserted explicitly; it is present in
 --     the ERP source but does not come through the bulk item load.
 --   * Six items are marked inspection_required; the ERP source carries no such flag.
 --   * ERP warehouse codes carry no plant. WH* go to PL11 and S<digit>* to PL13. External
---     warehouses go to PL11, except 100667 and 100668, which the customer warehouse list
---     (2026-10-29) assigns to PL13.
+--     warehouses (other codes) go to PL11, except 100667 and 100668, which the customer
+--     warehouse list (2026-10-29) assigns to PL13. Warehouses carry no partner.
 
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -403,42 +401,6 @@ END) role(code)
 ON CONFLICT (partner_id, role_type_code) DO NOTHING;
 
 \echo 'OMF MES initial-data seed: item and warehouse data'
-WITH external_warehouse AS (
-  SELECT code, code_name
-  FROM erp_seed.erp_code
-  WHERE type_code = 'SL_TYPE'
-    AND NOT (code LIKE 'WH%' OR code ~ '^S[0-9]')
-), unresolved AS (
-  SELECT warehouse.code, warehouse.code_name
-  FROM external_warehouse warehouse
-  LEFT JOIN erp_seed.erp_partner exact_partner
-    ON exact_partner.bp_cd = warehouse.code
-  LEFT JOIN erp_seed.erp_partner named_partner
-    ON warehouse.code LIKE 'OH%'
-   AND named_partner.bp_cd = substring(warehouse.code FROM 3)
-   AND lower(trim(named_partner.bp_nm)) = lower(trim(warehouse.code_name))
-  WHERE exact_partner.bp_cd IS NULL AND named_partner.bp_cd IS NULL
-)
-INSERT INTO mdm.partner (partner_code, partner_name, country_code)
-SELECT 'EXTWH_' || code, left(code_name || ' external warehouse', 200), 'VN'
-FROM unresolved
-ON CONFLICT (partner_code) DO NOTHING;
-
-INSERT INTO erp_seed.seed_adjustment
-  (entity_type, entity_key, field_name, source_value, seed_value, reason)
-SELECT 'WAREHOUSE', source.code, 'partner_id', NULL, 'EXTWH_' || source.code,
-       'External warehouse requires partner_id; no reliable ERP partner match'
-FROM erp_seed.erp_code source
-LEFT JOIN erp_seed.erp_partner exact_partner ON exact_partner.bp_cd = source.code
-LEFT JOIN erp_seed.erp_partner named_partner
-  ON source.code LIKE 'OH%'
- AND named_partner.bp_cd = substring(source.code FROM 3)
- AND lower(trim(named_partner.bp_nm)) = lower(trim(source.code_name))
-WHERE source.type_code = 'SL_TYPE'
-  AND NOT (source.code LIKE 'WH%' OR source.code ~ '^S[0-9]')
-  AND exact_partner.bp_cd IS NULL
-  AND named_partner.bp_cd IS NULL;
-
 WITH deduplicated AS (
   SELECT item_cd, min(item_nm) AS item_nm, min(item_acct_cd) AS item_acct_cd,
          min(basic_unit) AS basic_unit
@@ -489,7 +451,7 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO mdm.warehouse
   (plant_id, business_unit_id, warehouse_code, warehouse_name,
-   warehouse_type_code, management_level_code, is_external, partner_id)
+   warehouse_type_code, management_level_code, is_external)
 SELECT
   CASE WHEN source.code LIKE 'WH%' THEN parts.plant_id
        WHEN source.code ~ '^S[0-9]' THEN oa.plant_id
@@ -504,10 +466,7 @@ SELECT
          THEN 'PRODUCT'
        ELSE 'GENERAL' END,
   'WAREHOUSE',
-  NOT (source.code LIKE 'WH%' OR source.code ~ '^S[0-9]'),
-  CASE WHEN source.code LIKE 'WH%' OR source.code ~ '^S[0-9]' THEN NULL
-       ELSE coalesce(exact_partner.partner_id, named_partner.partner_id,
-                     placeholder_partner.partner_id) END
+  NOT (source.code LIKE 'WH%' OR source.code ~ '^S[0-9]')
 FROM erp_seed.erp_code source
 CROSS JOIN mdm.legal_entity entity
 JOIN mdm.business_unit unit
@@ -517,13 +476,6 @@ JOIN mdm.plant parts
   ON parts.legal_entity_id = entity.legal_entity_id AND parts.plant_code = 'PL11'
 JOIN mdm.plant oa
   ON oa.legal_entity_id = entity.legal_entity_id AND oa.plant_code = 'PL13'
-LEFT JOIN mdm.partner exact_partner ON exact_partner.partner_code = source.code
-LEFT JOIN mdm.partner named_partner
-  ON source.code LIKE 'OH%'
- AND named_partner.partner_code = substring(source.code FROM 3)
- AND lower(trim(named_partner.partner_name)) = lower(trim(source.code_name))
-LEFT JOIN mdm.partner placeholder_partner
-  ON placeholder_partner.partner_code = 'EXTWH_' || source.code
 WHERE source.type_code = 'SL_TYPE'
   AND entity.legal_entity_code = 'SAMJIN_LND_VINA'
 ON CONFLICT (plant_id, warehouse_code) DO NOTHING;
@@ -592,13 +544,6 @@ BEGIN
     RAISE EXCEPTION 'ERP partner target count: expected 931, got %', actual_count;
   END IF;
 
-  SELECT count(*) INTO actual_count FROM mdm.partner
-  WHERE partner_code LIKE 'EXTWH\_%' ESCAPE '\';
-  IF actual_count < 5 THEN
-    RAISE EXCEPTION 'external warehouse placeholder partners: expected at least 5, got %',
-      actual_count;
-  END IF;
-
   SELECT count(*) INTO actual_count FROM mdm.item
   WHERE inspection_required
     AND item_code IN ('AD0303-00037', 'AD0303-00038', 'AD0404-00022',
@@ -629,7 +574,7 @@ BEGIN
   JOIN mdm.plant plant ON plant.plant_id = warehouse.plant_id
   WHERE warehouse.warehouse_code IN ('100667', '100668') AND plant.plant_code = 'PL13';
   IF actual_count <> 2 THEN
-    RAISE EXCEPTION 'PL13 external warehouse count: expected 2, got %', actual_count;
+    RAISE EXCEPTION 'PL13 warehouse 100667·100668 count: expected 2, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count FROM planning.bom
