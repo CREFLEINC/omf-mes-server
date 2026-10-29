@@ -1,12 +1,14 @@
-import { Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Req } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { loginRequired } from '../../auth/authentication.guard';
 import { attachSession, SessionResolver } from '../../auth/session-resolver.service';
 import type { Session } from '../../auth/session.types';
+import { PagedResponse } from '../../common/pagination';
 import { assertOperationPermission } from '../../common/permissions';
 import { CustomsClearanceService, CustomsFetchResult } from './customs-clearance.service';
 import { ErpSyncStatus, ErpSyncStatusService } from './erp-sync-status.service';
+import { ErpWarehouseQuery, ErpWarehouseRow, ErpWarehouseService } from './erp-warehouse.service';
 
 /** 상태는 연계 메시지 목록을 보는 화면이 함께 본다(W-02-06·W-06-06·W-06-09·W-06-10). */
 const STATUS_OPERATION = 'GET /integration/messages';
@@ -25,6 +27,7 @@ export class ErpSyncController {
     private readonly resolver: SessionResolver,
     private readonly status: ErpSyncStatusService,
     private readonly customs: CustomsClearanceService,
+    private readonly erpWarehouses: ErpWarehouseService,
   ) {}
 
   @Get('tables')
@@ -42,6 +45,13 @@ export class ErpSyncController {
   ): Promise<{ interfaceCode: string; requestedAt: string }> {
     const session = await this.authorize(request, RUN_OPERATION);
     return this.status.request(interfaceCode, session.userId);
+  }
+
+  /** ERP 창고(공통코드 SL_TYPE)와 같은 코드의 MES 창고(장부 P-147) — 화면은 「ERP 연동 현황·이력 > 창고」. */
+  @Get('warehouses')
+  async warehouses(@Req() request: Request, @Query() query: ErpWarehouseQuery): Promise<PagedResponse<ErpWarehouseRow>> {
+    await this.authorize(request, STATUS_OPERATION);
+    return this.erpWarehouses.list(query);
   }
 
   /**
