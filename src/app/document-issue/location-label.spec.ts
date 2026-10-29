@@ -1,6 +1,6 @@
 import { createCanvas, GlobalFonts, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 
-import { LABEL_FONT } from './label-font';
+import { LABEL_FONT, LABEL_FONTS } from './label-font';
 import { dots, DPI } from './label-layout';
 import { layoutLocationLabel, locationQrPayload, type LocationLabelValues } from './location-label-layout';
 import { locationLabelPng, locationLabelValues, type LocationLabelRow } from './location-label';
@@ -172,7 +172,7 @@ describe('위치 라벨 PNG (location-label)', () => {
     expected.fillRect(0, 0, image.width, image.height);
     expected.fillStyle = '#000';
     expected.textBaseline = 'top';
-    expected.font = `${String(px)}px ${LABEL_FONT}`;
+    expected.font = `${String(px)}px ${LABEL_FONTS}`;
     expected.fillText(code.content, code.x, code.y, code.width);
 
     // 기대 그림에 검은 점이 있는지부터 본다 — 둘 다 새하얗기만 해도 통과하는 단언을 막는다.

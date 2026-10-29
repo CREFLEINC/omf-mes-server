@@ -1,7 +1,7 @@
 import { createCanvas, GlobalFonts, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 import { Prisma } from '@prisma/client';
 
-import { LABEL_FONT } from './label-font';
+import { LABEL_FONT, LABEL_FONTS } from './label-font';
 import { DPI } from './label-layout';
 import { labelDateTime, labelQty, materialLotLabelPng, materialLotLabelValues } from './material-lot-label';
 import { layoutMaterialLotLabel } from './material-lot-label-layout';
@@ -85,7 +85,7 @@ describe('material LOT label values', () => {
     expected.fillRect(0, 0, image.width, image.height);
     expected.fillStyle = '#000';
     expected.textBaseline = 'top';
-    expected.font = `${String(px)}px ${LABEL_FONT}`;
+    expected.font = `${String(px)}px ${LABEL_FONTS}`;
     expected.fillText(partNo.content, partNo.x, partNo.y, partNo.width);
 
     expect(region(expected).some((value, index) => index % 4 === 0 && value < 128)).toBe(true);

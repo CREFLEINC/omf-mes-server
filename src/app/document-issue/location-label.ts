@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas';
 
-import { LABEL_FONT } from './label-font';
+import { LABEL_FONTS } from './label-font';
 import { DPI } from './label-layout';
 import { layoutLocationLabel, type LocationLabelValues } from './location-label-layout';
 
@@ -37,7 +37,7 @@ export function locationLabelPng(values: LocationLabelValues): Buffer {
   ctx.fillRect(width - border, 0, border, height);
   ctx.textBaseline = 'top';
   for (const text of layout.texts) {
-    ctx.font = `${String(Math.round((text.point * DPI) / 72))}px ${LABEL_FONT}`;
+    ctx.font = `${String(Math.round((text.point * DPI) / 72))}px ${LABEL_FONTS}`;
     // 실제 글꼴 폭은 어림보다 넓을 수 있다 — 칸을 넘으면 가로로 줄여 QR 을 덮지 않는다.
     ctx.fillText(text.content, text.x, text.y, text.width);
   }
