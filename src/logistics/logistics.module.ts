@@ -5,7 +5,7 @@ import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
-import { LotRegistryModule } from '../core/lot';
+import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
@@ -148,6 +148,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   providers: [
     LogisticsHandoverNotifier,
     PickingHandoverNotifier,
+    IqcHandoverNotifier,
     GoodsIssueQueryService,
     GoodsIssueService,
     GoodsIssueUpdateService,

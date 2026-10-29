@@ -7,6 +7,7 @@ import { NumberingService } from '../../core/numbering';
 import { Tx } from '../../core/lot';
 import { WORK_ORDER_INITIAL_STATUS } from '../../core/work-order/defaults';
 import { usableWhere } from '../../planning/routing/routing.service';
+import { WorkOrderHandoverNotifier } from '../../production/work-order/work-order-handover';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 계약 `ReworkWorkOrderIssue` — required 둘. */
@@ -74,6 +75,7 @@ export class ReworkWorkOrderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
+    private readonly workOrderNotices: WorkOrderHandoverNotifier,
   ) {}
 
   /**
@@ -183,6 +185,7 @@ export class ReworkWorkOrderService {
         data: { version_no: { increment: 1 }, updated_by: BigInt(appUserId), updated_at: new Date() },
       });
       assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT, currentVersion: String(locked.version_no) });
+      await this.workOrderNotices.reworkCreated(tx, created.work_order_id, id, appUserId);
 
       return {
         view: {
@@ -202,6 +205,7 @@ export class ReworkWorkOrderService {
       };
     });
   }
+
 }
 
 /** 판정 저장과 같은 잠금 — 잔량을 읽기 «전»에 건다. */

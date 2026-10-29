@@ -98,6 +98,27 @@ export class LogisticsHandoverNotifier {
     }, undefined);
   }
 
+  /** T8 — 출하지시 등록이 OQC 의뢰를 세웠다(출하지시 1건에 1건, 의뢰 수를 내용에 · 확정 항목 3). 이행 공장이 없으면 없다. */
+  async oqcRequested(tx: Tx, shipmentRequestId: bigint, requestCount: number): Promise<void> {
+    const request = await tx.shipment_request.findUniqueOrThrow({
+      where: { shipment_request_id: shipmentRequestId },
+      select: { shipment_request_no: true, fulfillment_plant_id: true, requested_ship_date: true },
+    });
+    if (request.fulfillment_plant_id === null) return;
+    await this.emitter.emitHandover(tx, {
+      alertTypeCode: 'OQC_INSPECTION_REQUESTED',
+      plantId: request.fulfillment_plant_id,
+      aggregateTypeCode: 'SHIPMENT_REQUEST',
+      aggregateId: shipmentRequestId,
+      occurredAt: new Date(),
+      values: {
+        request_no: request.shipment_request_no,
+        request_count: requestCount,
+        ship_date: formatCalendarDate(request.requested_ship_date),
+      },
+    });
+  }
+
   /** T5 — 출하가 생겼다(긴급 직행 포함). 공장 = 출하 창고의 공장. */
   async shipmentPacking(tx: Tx, shipmentId: bigint, appUserId: number): Promise<void> {
     await this.emitter.guarded(tx, `SHIPMENT_PACKING_REQUESTED ${shipmentId}`, async () => {

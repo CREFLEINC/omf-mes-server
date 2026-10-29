@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ISSUE_REGISTERED, MaterialIssueLine, materialRequirements } from './material-issue';
 import { PqcRequestPlan, preparePqcRequest, writePqcRequest } from './work-order-pqc-request';
 import { ReleasePlan, operationSettings, releasePlan } from './release-plan';
+import { WorkOrderHandoverNotifier } from './work-order-handover';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
 /** 계약 `WorkOrderRelease` — required 는 `lotSize` 하나이고 서버 기본값이 없다(R-17). */
@@ -40,6 +41,7 @@ export class WorkOrderReleaseService {
     private readonly numbering: NumberingService,
     private readonly lots: LotRegistryService,
     private readonly pickingNotices: PickingHandoverNotifier,
+    private readonly workOrderNotices: WorkOrderHandoverNotifier,
   ) {}
 
   async release(
@@ -140,6 +142,7 @@ export class WorkOrderReleaseService {
     if (issue !== null && destination !== null) {
       await this.issueRequest(tx, workOrderId, issue, destination, appUserId);
     }
+    await this.workOrderNotices.released(tx, BigInt(workOrderId));
   }
 
   private async issueRequest(

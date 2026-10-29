@@ -94,6 +94,7 @@ export class ShipmentRequestService {
       const id = await this.write(tx, input, no, actor.appUserId);
       await writeOqcRequests(tx, id, oqc, actor.appUserId, requestedAt);
       await this.handover.shipmentPicking(tx, id);
+      if (oqc.length > 0) await this.handover.oqcRequested(tx, id, oqc.length);
       return id;
     });
     // ⭐ 201 본문은 ③b 의 상세 뷰 **그대로**다 — 파생 축 둘(진행·검사)을 여기서 다시 판정하면

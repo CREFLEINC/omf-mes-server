@@ -9,6 +9,7 @@ import { materialRequirements } from './material-issue';
 import { operationSettings } from './release-plan';
 import { WorkOrderReleaseService } from './work-order-release.service';
 import { PickingHandoverNotifier } from '../../core/picking';
+import { WorkOrderHandoverNotifier } from './work-order-handover';
 
 const WORK_ORDER = 900;
 const ROUTING_OPERATION = 33n;
@@ -152,6 +153,7 @@ function stub(options: {
     numbering,
     new LotRegistryService(new LotHoldService()),
     { notify: async () => undefined } as unknown as PickingHandoverNotifier,
+    { released: async () => undefined } as unknown as WorkOrderHandoverNotifier,
   );
   return { service, calls, updated, lots, requests, lines, componentWheres, inspectionRequests };
 }
