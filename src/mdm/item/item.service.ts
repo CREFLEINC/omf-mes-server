@@ -56,7 +56,7 @@ export interface ItemUpdate {
 }
 
 export interface ItemQuery extends ReferenceQuery {
-  itemTypeCode?: string;
+  itemTypeCode?: string[];
   hasRouting?: boolean;
   /** 계약에 없는 조건이라 검증 가드가 불리언으로 바꾸지 않는다 — 문자열로 온다(장부 P-130). */
   hasBom?: string;
@@ -86,7 +86,7 @@ export class ItemService {
   async list(query: ItemQuery): Promise<PagedResponse<ItemView>> {
     const page = referencePage(query);
     const where = referenceWhere(query, { code: 'item_code', name: 'item_name' }, {
-      ...(query.itemTypeCode === undefined ? {} : { item_type_code: query.itemTypeCode }),
+      ...(query.itemTypeCode === undefined ? {} : { item_type_code: { in: query.itemTypeCode } }),
       // 「Routing 미보유 품목 필터를 제공해 보강 등록을 돕는다」(W-06-01 §6). 이것이
       // 없으면 화면이 전 품목과 전 Routing 을 받아 스스로 대조해야 한다.
       ...(query.hasRouting === undefined
