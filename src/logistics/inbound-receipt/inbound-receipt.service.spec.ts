@@ -163,7 +163,8 @@ function fake(options: Options = {}) {
     },
     lot_external_identifier: { create: async () => ({}) },
     inspection_plan_version: {
-      findMany: async () => [{ inspection_plan_version_id: 6000n }],
+      // 무검사 품목의 전용 IQC 기준 조회(#215)도 이 자리를 지난다 — 기본 생략이 아니라고 답한다.
+      findMany: async () => [{ inspection_plan_version_id: 6000n, inspection_plan: { default_skip: false } }],
       findUnique: async () => ({ inspection_plan: { default_skip: false } }),
     },
     inspection_request: {
@@ -175,6 +176,8 @@ function fake(options: Options = {}) {
   };
 
   const prisma = {
+    // 채번 «전» IQC 대상 판정(#215) — 기본 생략 전용 기준이 없다.
+    inspection_plan_version: { findMany: async () => [] },
     code_value: {
       findMany: async ({ where }: { where: { OR: { code: string; code_group: { group_code: string } }[] } }) =>
         where.OR.filter((check) => codes.has(`${check.code_group.group_code} ${check.code}`)).map((check) => ({

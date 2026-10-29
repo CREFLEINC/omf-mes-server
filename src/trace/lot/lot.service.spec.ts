@@ -79,6 +79,8 @@ function fake(receivedQty = 100, existingLotNoSuffix = '0009', inspectionRequire
   };
   const prisma = {
     inbound_receipt_line: { findUnique: async () => receiptLine },
+    // 무검사 라인의 전용 IQC 기준 조회(#215) — 기본 생략 기준이 없다.
+    inspection_plan_version: { findMany: async () => [] },
     code_value: {
       findMany: async ({ where }: { where: { OR: Args[] } }) =>
         where.OR.map((check) => ({
