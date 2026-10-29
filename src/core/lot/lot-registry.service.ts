@@ -25,6 +25,11 @@ const NO_INSPECTION_LOT_STATUS = 'NORMAL';
 const INBOUND_RECEIPT_LINE = 'INBOUND_RECEIPT_LINE';
 /** 선발행 슬롯의 생명주기 첫 상태 — 「예약」에 해당한다(시드 `LOT_LIFECYCLE_STATUS`). */
 export const PREISSUED_LIFECYCLE = 'WAITING';
+/**
+ * W/O 마감·취소가 슬롯을 폐번한 생명주기(L2·L3). 품질 상태를 옮기는 자리는 이 LOT 을 뺀다 — 취소된 W/O 의
+ * 열린 PQC 의뢰를 생략·합격 처리해도 폐번 LOT 이 정상이 되지 않게 한다(omf-all-around#213).
+ */
+export const VOIDED_LIFECYCLE = 'VOIDED';
 /** 선발행 슬롯의 유형(시드 `LOT_TYPE`). */
 export const PRODUCTION_LOT_TYPE = 'PRODUCTION';
 
