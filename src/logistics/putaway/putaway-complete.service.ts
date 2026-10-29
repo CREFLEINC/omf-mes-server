@@ -10,6 +10,7 @@ import { lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { LogisticsWriteActor } from '../logistics-write-actor';
+import { AllowedLocation, allowedKey, allowedLocationsOf } from './allowed-locations';
 import { PutawayOrigin, postPutaway } from './putaway-posting';
 import { PutawayTaskView, TASK_INCLUDE, taskView } from './putaway-task-view';
 
@@ -22,7 +23,7 @@ const BLOCKED_RECEIPT = ['CANCEL_REQUESTED', 'CANCELLED'];
 
 /** 계약 `PutawayTaskComplete` + `…CompleteTemporary` — required 3 은 같고 뒤 셋이 갈린다. */
 export interface PutawayTaskComplete {
-  actualLocationId: number; confirmedNoRule?: boolean;
+  actualLocationId: number;
   reasonCode?: string | null; remarks?: string | null;
   businessDate: string; occurredAt: string;
 }
@@ -39,7 +40,7 @@ export type PutawayMode = 'NORMAL' | 'TEMPORARY';
 interface LockedTask {
   putaway_task_id: bigint; putaway_task_no: string; item_id: bigint; lot_id: bigint;
   task_qty: Prisma.Decimal; uom_id: bigint; from_location_id: bigint;
-  recommended_location_id: bigint | null; status_code: string; version_no: number;
+  status_code: string; version_no: number;
   plant_id: bigint; warehouse_id: bigint; receipt_status_code: string;
   to_warehouse_id: bigint | null; to_location_id: bigint | null;
   to_quality_status_code: string | null; to_inventory_status_code: string | null;
@@ -49,7 +50,7 @@ interface LockedTask {
 /**
  * 적치 완료(`:complete`)와 임시 위치 적재(`:complete-temporary`) — **한 함수의 모드 분기**다.
  * 열한 단계 중 아홉이 글자 그대로 같아, 쪼개면 원장 쌓기·끝점 복제·전이·UPDATE 가 두 벌이
- * 되고 한쪽만 고치는 사고가 그 자리에서 난다. 갈리는 곳은 셋 — 사유 · 전이 액션 · 권장 판정.
+ * 되고 한쪽만 고치는 사고가 그 자리에서 난다. 갈리는 곳은 셋 — 사유 · 전이 액션 · 둬도 되는 위치 판정.
  */
 @Injectable()
 export class PutawayCompleteService {
@@ -89,7 +90,9 @@ export class PutawayCompleteService {
       throw one(field('putawayTaskId', ERROR_CODE.STATE_LOCKED, '취소된 입고의 적치 지시입니다.'));
     }
     await assertLocation(tx, body.actualLocationId, task.warehouse_id);
-    if (mode === 'NORMAL') assertRecommended(task, body);
+    const pair = { itemId: task.item_id, warehouseId: task.warehouse_id };
+    const allowed = (await allowedLocationsOf(tx, [pair])).get(allowedKey(pair)) ?? [];
+    if (mode === 'NORMAL') assertAllowed(allowed, body.actualLocationId);
     const origin = originOf(task);
     await assertBalance(tx, task, origin, body.actualLocationId);
     const lineId = await postPutaway(tx, this.posting, {
@@ -120,7 +123,7 @@ export class PutawayCompleteService {
       targetId: task.putaway_task_id, eventTypeCode: mode === 'TEMPORARY' ? 'COMPLETE_TEMPORARY' : 'COMPLETE',
     });
     // ⛔ `setEtag` 를 부르지 않는다 — 계약이 두 200 에 응답 헤더를 선언하지 않았다.
-    return taskView(row);
+    return taskView(row, allowed);
   }
 }
 
@@ -128,7 +131,7 @@ export class PutawayCompleteService {
 async function lockTask(tx: Tx, putawayTaskId: number): Promise<LockedTask> {
   const rows = await tx.$queryRaw<LockedTask[]>`
     SELECT t.putaway_task_id, t.putaway_task_no, t.item_id, t.lot_id, t.task_qty, t.uom_id,
-           t.from_location_id, t.recommended_location_id, t.status_code, t.version_no,
+           t.from_location_id, t.status_code, t.version_no,
            r.plant_id, r.warehouse_id, r.status_code AS receipt_status_code,
            il.to_warehouse_id, il.to_location_id, il.to_quality_status_code,
            il.to_inventory_status_code, il.ownership_type_code, il.owner_partner_id,
@@ -160,19 +163,12 @@ async function assertLocation(tx: Tx, actualLocationId: number, warehouseId: big
 }
 
 /**
- * 권장 2×2 — ⓐ 권장=실제 통과 · ⓑ 권장≠실제 400 · ⓒ 권장 없음+플래그 참 통과 · ⓓ 그 밖 400.
- * ⛔ **권장이 있으면 `confirmedNoRule` 을 읽지 않는다** — 위치가 맞는 적치를 여분 플래그
- * 하나로 막으면 현장이 선다. ⛔ 권장을 다시 계산하지 않는다(입고가 낸 값을 읽기만 한다).
+ * 둬도 되는 위치가 있으면 그 중 하나여야 한다. 비어 있으면 어디든 — 맨 아래 위치·보관 품목은 재고 코어가 막는다.
+ * 임시 적재는 부르지 않는다 — 목록에 못 둘 때의 탈출구다.
  */
-function assertRecommended(task: LockedTask, body: PutawayTaskComplete): void {
-  const recommended = task.recommended_location_id;
-  if (recommended !== null) {
-    if (recommended === BigInt(body.actualLocationId)) return;
-    throw one(field('actualLocationId', ERROR_CODE.INVALID, `권장 위치 ${recommended} 이 아닙니다.`));
-  }
-  if (body.confirmedNoRule !== true) {
-    throw one(field('confirmedNoRule', ERROR_CODE.REQUIRED, '권장 위치가 없는 품목은 확인이 필요합니다.'));
-  }
+function assertAllowed(allowed: AllowedLocation[], actualLocationId: number): void {
+  if (allowed.length === 0 || allowed.some((location) => location.locationId === actualLocationId)) return;
+  throw one(field('actualLocationId', ERROR_CODE.INVALID, '둬도 되는 위치가 아닙니다 — 목록 중 하나를 고르거나 임시 적재합니다.'));
 }
 
 /**

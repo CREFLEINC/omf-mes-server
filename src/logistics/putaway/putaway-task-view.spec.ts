@@ -31,14 +31,14 @@ function row(overrides: Partial<TaskRow> = {}): TaskRow {
 describe('taskView', () => {
   it('⭐ warehouseId 는 goods_receipt.warehouse_id 다 — from_location_id 가 아니다', () => {
     const view = taskView(
-      row({ from_location_id: 999n, goods_receipt_line: { goods_receipt: { warehouse_id: 61n } } }),
+      row({ from_location_id: 999n, goods_receipt_line: { goods_receipt: { warehouse_id: 61n } } }), [],
     );
 
     expect(view.warehouseId).toBe(61);
   });
 
   it('응답에 reasonCode·inventoryTransactionLineId·versionNo 가 없다', () => {
-    const view = taskView(row()) as unknown as Record<string, unknown>;
+    const view = taskView(row(), []) as unknown as Record<string, unknown>;
 
     expect(view).not.toHaveProperty('reasonCode');
     expect(view).not.toHaveProperty('inventoryTransactionLineId');

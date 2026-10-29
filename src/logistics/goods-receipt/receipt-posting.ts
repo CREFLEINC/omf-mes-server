@@ -1,6 +1,5 @@
 import { Prisma } from '@prisma/client';
 
-import { WAREHOUSE_WHOLE } from '../../common/master';
 import { InventoryPostingService } from '../../core/inventory-posting';
 
 /**
@@ -165,7 +164,6 @@ export async function postReceipt(
     if (putawayNos === null) continue;
     await createPutawayTask(
       tx,
-      receipt,
       input.lines[index],
       goodsReceiptLineId,
       putawayNos[index],
@@ -177,48 +175,20 @@ export async function postReceipt(
 }
 
 /**
- * 규칙이 위치를 못 내고 창고에 사람이 만든 위치가 없으면 「창고 전체」를 권장한다(사용자 결정 2026-10-29 · 장부 P-149) —
- * 창고 단위로 두는 창고에서 작업자가 갈 곳이 그 하나뿐이다. 사람이 위치를 나눈 창고는 지금처럼 비운다(「관리 위치가 없다」).
- */
-async function wholeLocationOf(tx: Prisma.TransactionClient, warehouseId: bigint): Promise<bigint | null> {
-  const divided = await tx.location.count({ where: { warehouse_id: warehouseId, is_active: true, system_role_code: null } });
-  if (divided > 0) return null;
-  const whole = await tx.location.findFirst({
-    where: { warehouse_id: warehouseId, is_active: true, system_role_code: WAREHOUSE_WHOLE },
-    select: { location_id: true },
-  });
-  return whole?.location_id ?? null;
-}
-
-/**
  * 라인마다 적치 지시 하나. 「적치 지시는 라인마다 서버가 함께 만들고, 응답의
  * `GoodsReceiptLine.putawayTaskId` 가 그 식별자를 싣는다」(계약).
  *
- * ⛔ 권장 위치는 **적치 규칙이 낸다**(`M-01-05` §5-2-1 · 2026-08-06 확정). 라인이 보낸
- * `destinationLocationId` 는 「입고 전기 시점의 장부 위치」이지 적치 판정이 아니다 —
- * 그래서 그 값은 «출발지»(`from_location_id`)가 된다. 규칙이 없을 때만 `wholeLocationOf` 가 채운다.
+ * 둘 곳은 지시에 저장하지 않는다 — 지시를 읽을 때 보관 품목으로 계산한다(`allowed-locations.ts` · 사용자 결정
+ * 2026-10-29 적치 규칙 제거). 라인이 보낸 `destinationLocationId` 는 「입고 전기 시점의 장부 위치」이지 적치 판정이
+ * 아니다 — 그래서 그 값은 «출발지»(`from_location_id`)가 된다.
  */
 async function createPutawayTask(
   tx: Prisma.TransactionClient,
-  receipt: { goods_receipt_id: bigint; warehouse_id: bigint },
   line: GoodsReceiptLineCreate,
   goodsReceiptLineId: bigint,
   putawayTaskNo: string,
   appUserId: number | undefined,
 ): Promise<void> {
-  const rule = await tx.putaway_rule.findFirst({
-    where: {
-      item_id: line.itemId,
-      warehouse_id: receipt.warehouse_id,
-      is_active: true,
-      // 위치를 못 내는 규칙은 권장도 못 낸다 — 「비어 있으면 이 품목에 관리 위치가 없다」(계약).
-      location_id: { not: null },
-    },
-    // 「작을수록 먼저 권장한다」(계약 `PutawayRule.priorityNo`).
-    orderBy: [{ priority_no: 'asc' }, { putaway_rule_id: 'asc' }],
-    select: { putaway_rule_id: true, location_id: true },
-  });
-
   await tx.putaway_task.create({
     data: {
       putaway_task_no: putawayTaskNo,
@@ -228,8 +198,9 @@ async function createPutawayTask(
       task_qty: line.receiptQty,
       uom_id: line.uomId,
       from_location_id: line.destinationLocationId,
-      recommended_location_id: rule?.location_id ?? (await wholeLocationOf(tx, receipt.warehouse_id)),
-      applied_putaway_rule_id: rule?.putaway_rule_id ?? null,
+      // 두 칸은 다음 릴리스에 지운다(#898).
+      recommended_location_id: null,
+      applied_putaway_rule_id: null,
       // 적치에 담당자를 두지 않는다(omf-all-around#26 · 2026-09-19 사용자 결정) — 입고 화면
       // W-01-10 에 담당자 칸이 없어 처리 계정의 연결 작업자로 채웠는데, 관리웹 계정엔 연결이
       // 없어 늘 비었고 모바일 「내 담당」 목록에서 지시가 사라졌다. 단말 공장의 대기 지시를 누구나 소화한다.

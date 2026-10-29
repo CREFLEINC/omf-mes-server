@@ -51,6 +51,7 @@ interface TaskBody {
   warehouseId: number;
   statusCode: string;
   priorityNo: number;
+  allowedLocations: { locationId: number; locationCode: string }[];
 }
 interface ReceiptLineDraft {
   itemId: number;
@@ -85,6 +86,8 @@ describe('적치 지시 조회 (e2e)', () => {
   let otherWarehouseId: number;
   let dockId: number;
   let rackId: number;
+  let rack2Id: number;
+  let freeId: number;
   let otherDockId: number;
   let uomId: number;
   let ruledItemId: number;
@@ -202,8 +205,71 @@ describe('적치 지시 조회 (e2e)', () => {
     expect(response.headers.etag).toBeDefined();
   });
 
+  it('⭐ allowedLocations 가 그 창고에서 품목을 걸어 둔 켜진 맨 아래 위치 전부다 — 걸고 나면 대기 중 지시에 바로 보인다', async () => {
+    expect(await allowedIds(taskR1)).toEqual([rackId, rack2Id]);
+
+    const rack3 = await prisma.location.create({
+      data: { warehouse_id: warehouseId, location_code: `${PREFIX}-RACK3`, location_name: '지정위치3', location_type_code: 'BIN' },
+    });
+    await prisma.location_item.create({ data: { location_id: rack3.location_id, item_id: ruledItemId } });
+
+    expect(await allowedIds(taskR1)).toEqual([rackId, rack2Id, Number(rack3.location_id)]);
+    await prisma.location.delete({ where: { location_id: rack3.location_id } });
+  });
+
+  it('⭐ 켜진 하위가 생긴 위치는 목록에서 빠진다 — 재고는 맨 아래에만 둔다', async () => {
+    const zone = await prisma.location.create({
+      data: { warehouse_id: warehouseId, location_code: `${PREFIX}-ZONE`, location_name: '지정구역', location_type_code: 'BIN' },
+    });
+    await prisma.location_item.create({ data: { location_id: zone.location_id, item_id: ruledItemId } });
+    expect(await allowedIds(taskR1)).toEqual([rackId, rack2Id, Number(zone.location_id)]);
+
+    const child = await prisma.location.create({
+      data: {
+        warehouse_id: warehouseId, parent_location_id: zone.location_id,
+        location_code: `${PREFIX}-ZONE-R1`, location_name: '구역 밑 랙', location_type_code: 'BIN',
+      },
+    });
+    expect(await allowedIds(taskR1)).toEqual([rackId, rack2Id]);
+
+    // 꺼진 하위는 하위로 치지 않는다 — 재고 코어의 맨 아래 판정과 같다.
+    await prisma.location.update({ where: { location_id: child.location_id }, data: { is_active: false } });
+    expect(await allowedIds(taskR1)).toEqual([rackId, rack2Id, Number(zone.location_id)]);
+    await prisma.location.deleteMany({ where: { location_id: { in: [child.location_id, zone.location_id] } } });
+  });
+
+  it('⭐ 위치를 나눈 창고에서 걸린 데가 없으면 빈 목록이다', async () => {
+    expect(await allowedIds(taskR2)).toEqual([]);
+  });
+
+  it('⭐ 사람이 만든 위치가 없는 창고의 지시는 allowedLocations 가 「창고 전체」 하나다(장부 P-149)', async () => {
+    const unit = await prisma.business_unit.findFirstOrThrow({ where: { business_unit_code: `${PREFIX}-BU` } });
+    const whole = await prisma.warehouse.create({
+      data: {
+        plant_id: plantId, business_unit_id: unit.business_unit_id, warehouse_code: `${PREFIX}-WH3`,
+        warehouse_name: '적치검사창고단위', warehouse_type_code: 'RAW', management_level_code: 'WAREHOUSE',
+      },
+    });
+    const slot = async (role: string): Promise<number> => Number((await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: whole.warehouse_id, system_role_code: role },
+    })).location_id);
+    const lotId = await makeLot(plainItemId);
+    const receipt = await createReceipt(
+      receiptDraft(plainItemId, lotId, Number(whole.warehouse_id), await slot('PUTAWAY_STAGING'), 5),
+    );
+    const taskId = receipt.lines[0].putawayTaskId as number;
+
+    expect(await allowedIds(taskId)).toEqual([await slot('WAREHOUSE_WHOLE')]);
+
+    // 사람이 위치를 하나라도 나누면 「창고 전체」가 빠진다 — 갈 곳이 하나가 아니다.
+    await prisma.location.create({
+      data: { warehouse_id: whole.warehouse_id, location_code: `${PREFIX}-WH3-A`, location_name: '나눈 위치', location_type_code: 'BIN' },
+    });
+    expect(await allowedIds(taskId)).toEqual([]);
+  });
+
   /**
-   * PR ② — 완료·임시 적재. ⛔ 위 8건(PR ①)의 픽스처와 순서를 건드리지 않는다: 여기서 쓰는
+   * PR ② — 완료·임시 적재. ⛔ 위 조회 시험(PR ①)의 픽스처와 순서를 건드리지 않는다: 여기서 쓰는
    * 지시는 전부 `freshTask()` 가 «새 입고»로 새로 만든다(완료는 되돌릴 수 없는 전이라 재사용
    * 할 수 없다).
    */
@@ -289,40 +355,44 @@ describe('적치 지시 조회 (e2e)', () => {
       expect(header.status_code).toBe('POSTED');
     });
 
-    it('권장 위치가 있는데 다른 위치면 400 INVALID(actualLocationId)', async () => {
+    it('⛔ 목록이 있는데 밖의 위치면 400 INVALID(actualLocationId)', async () => {
       const task = await freshTask(ruledItemId, 10);
 
-      const response = await callComplete(task.taskId, {
-        actualLocationId: dockId, confirmedNoRule: true,
-      }).expect(400);
+      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(400);
 
-      // ⛔ 권장이 있으면 `confirmedNoRule` 을 읽지 않는다 — 플래그로 안 풀린다(R-4).
       expect(response.body.errors[0]).toMatchObject({ code: 'INVALID', field: 'actualLocationId' });
-      expect(response.body.errors[0].message).toContain('권장 위치');
+      expect(await onHand(task.lotId, freeId)).toBe(0);
     });
 
-    it('권장이 없고 confirmedNoRule 이 없으면 400 REQUIRED(confirmedNoRule)', async () => {
+    it('⭐ 목록 중 어느 것으로 완료해도 200 이다', async () => {
+      const task = await freshTask(ruledItemId, 10);
+
+      const response = await callComplete(task.taskId, { actualLocationId: rack2Id }).expect(200);
+
+      expect(response.body.actualLocationId).toBe(rack2Id);
+      expect(await onHand(task.lotId, rack2Id)).toBe(10);
+    });
+
+    it('⭐ 목록이 비면 제한 없는 위치로 완료해도 200 — 확인 플래그가 없다', async () => {
+      const task = await freshTask(plainItemId, 10);
+
+      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(200);
+
+      expect(response.body).toMatchObject({ statusCode: 'COMPLETED', actualLocationId: freeId, allowedLocations: [] });
+    });
+
+    it('⛔ 다른 품목 전용 위치로 완료하면 400 STATE_LOCKED — 코어가 막는다', async () => {
       const task = await freshTask(plainItemId, 10);
 
       const response = await callComplete(task.taskId, { actualLocationId: rackId }).expect(400);
 
-      expect(response.body.errors[0]).toMatchObject({ code: 'REQUIRED', field: 'confirmedNoRule' });
-    });
-
-    it('권장이 없고 confirmedNoRule=true 면 통과하고 실제 위치가 남는다', async () => {
-      const task = await freshTask(plainItemId, 10);
-
-      const response = await callComplete(task.taskId, {
-        actualLocationId: rackId, confirmedNoRule: true,
-      }).expect(200);
-
-      expect(response.body.actualLocationId).toBe(rackId);
+      expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
     });
 
     it('⭐ 출발 위치와 같아도 200 이고 잔액이 제자리다', async () => {
       const task = await freshTask(plainItemId, 10);
 
-      await callComplete(task.taskId, { actualLocationId: dockId, confirmedNoRule: true }).expect(200);
+      await callComplete(task.taskId, { actualLocationId: dockId }).expect(200);
 
       // 코어가 `-qty` 를 먼저 `+qty` 를 나중에 쓴다 — 같은 행이라 잔액이 제자리다(R-7).
       expect(await onHand(task.lotId, dockId)).toBe(10);
@@ -372,9 +442,7 @@ describe('적치 지시 조회 (e2e)', () => {
       await approveLastCancel();
       await callCancel(task.receiptId, 2).expect(200);
 
-      const response = await callComplete(task.taskId, {
-        actualLocationId: rackId, confirmedNoRule: true,
-      }).expect(400);
+      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(400);
 
       // ⭐ 상태 판정이 잔액 하한 «앞»이다 — 역처리로 잔액이 0 이어도 사유는 이쪽이다.
       expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
@@ -397,9 +465,7 @@ describe('적치 지시 조회 (e2e)', () => {
         },
       });
 
-      const response = await callComplete(Number(stray.putaway_task_id), {
-        actualLocationId: rackId, confirmedNoRule: true,
-      }).expect(400);
+      const response = await callComplete(Number(stray.putaway_task_id), { actualLocationId: freeId }).expect(400);
 
       expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'NEGATIVE_BALANCE' });
     });
@@ -409,9 +475,7 @@ describe('적치 지시 조회 (e2e)', () => {
       // 완료 «전»에 같은 하역장에서 기타출고를 먼저 낸다 — 가용이 4 로 준다.
       await issueFromDock(task.receiptId, task.lotId, 6);
 
-      const response = await callComplete(task.taskId, {
-        actualLocationId: rackId, confirmedNoRule: true,
-      }).expect(400);
+      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(400);
 
       expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'NEGATIVE_BALANCE' });
     });
@@ -446,7 +510,7 @@ describe('적치 지시 조회 (e2e)', () => {
       const task = await freshTask(plainItemId, 10);
 
       const response = await callComplete(task.taskId, {
-        actualLocationId: rackId, reasonCode: 'NO_SPACE', remarks: '선반이 찼다',
+        actualLocationId: freeId, reasonCode: 'NO_SPACE', remarks: '선반이 찼다',
       }, { path: 'complete-temporary' }).expect(200);
 
       const validate = validator('POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary');
@@ -464,12 +528,12 @@ describe('적치 지시 조회 (e2e)', () => {
       const task = await freshTask(plainItemId, 10);
 
       await callComplete(task.taskId, {
-        actualLocationId: rackId, reasonCode: 'NO_SPACE',
+        actualLocationId: freeId, reasonCode: 'NO_SPACE',
       }, { path: 'complete-temporary' }).expect(200);
 
       const line = await ledgerLineOf(task.taskId);
-      expect(line.to_location_id).toBe(BigInt(rackId));
-      expect(await onHand(task.lotId, rackId)).toBe(10);
+      expect(line.to_location_id).toBe(BigInt(freeId));
+      expect(await onHand(task.lotId, freeId)).toBe(10);
     });
 
     it('사유도 비고도 없으면 400 REQUIRED', async () => {
@@ -492,16 +556,16 @@ describe('적치 지시 조회 (e2e)', () => {
       expect(response.body.errors[0]).toMatchObject({ code: 'INVALID', field: 'reasonCode' });
     });
 
-    it('임시 적재에는 권장 강제가 걸리지 않는다', async () => {
+    it('⭐ 임시 적재는 목록 밖도 된다(사유 필수)', async () => {
       const task = await freshTask(ruledItemId, 10);
 
-      // 권장은 rack 인데 dock 에 둔다 — `M-01-05` 의 차단을 푸는 탈출구이므로 통과한다.
+      // 목록은 rack·rack2 인데 free 에 둔다 — `M-01-05` 의 차단을 푸는 탈출구이므로 통과한다.
       const response = await callComplete(task.taskId, {
-        actualLocationId: dockId, reasonCode: 'LOCATION_UNASSIGNED',
+        actualLocationId: freeId, reasonCode: 'LOCATION_UNASSIGNED',
       }, { path: 'complete-temporary' }).expect(200);
 
       expect(response.body).toMatchObject({
-        statusCode: 'COMPLETED_TEMPORARY', actualLocationId: dockId,
+        statusCode: 'COMPLETED_TEMPORARY', actualLocationId: freeId,
       });
     });
 
@@ -634,6 +698,13 @@ describe('적치 지시 조회 (e2e)', () => {
       .set('Cookie', cookie);
   }
 
+  async function allowedIds(putawayTaskId: number): Promise<number[]> {
+    const response = await getDetail(putawayTaskId).expect(200);
+    const validate = validator('GET /logistics/putaway-tasks/{putawayTaskId}');
+    expect(validate(response.body)).toBe(true);
+    return (response.body as TaskBody).allowedLocations.map((location) => location.locationId);
+  }
+
   async function mobileToken(): Promise<string> {
     const terminal = await prisma.terminal.create({
       data: {
@@ -671,7 +742,7 @@ describe('적치 지시 조회 (e2e)', () => {
   }
 
   /**
-   * 입고 4건 — main 창고 3건(권장 있음 1 · 권장 없음 2) · 다른 창고 1건.
+   * 입고 4건 — main 창고 3건(보관 품목 지정 1 · 없음 2) · 다른 창고 1건.
    * 그 뒤 완료·임시 적재 POST 없이 `prisma.putaway_task.update` 로 담당자·상태·
    * 우선순위만 직접 심는다(§8-1 — 이 값들을 내는 POST 는 PR ② 몫이다).
    */
@@ -826,11 +897,29 @@ describe('적치 지시 조회 (e2e)', () => {
       data: {
         warehouse_id: warehouse.warehouse_id,
         location_code: `${PREFIX}-RACK`,
-        location_name: '권장위치',
+        location_name: '지정위치',
         location_type_code: 'BIN',
       },
     });
     rackId = Number(rack.location_id);
+    const rack2 = await prisma.location.create({
+      data: {
+        warehouse_id: warehouse.warehouse_id,
+        location_code: `${PREFIX}-RACK2`,
+        location_name: '지정위치2',
+        location_type_code: 'BIN',
+      },
+    });
+    rack2Id = Number(rack2.location_id);
+    const free = await prisma.location.create({
+      data: {
+        warehouse_id: warehouse.warehouse_id,
+        location_code: `${PREFIX}-FREE`,
+        location_name: '제한없는위치',
+        location_type_code: 'BIN',
+      },
+    });
+    freeId = Number(free.location_id);
     const otherDock = await prisma.location.create({
       data: {
         warehouse_id: otherWarehouse.warehouse_id,
@@ -844,7 +933,7 @@ describe('적치 지시 조회 (e2e)', () => {
     const ruled = await prisma.item.create({
       data: {
         item_code: `${PREFIX}-IT1`,
-        item_name: '적치검사품목권장',
+        item_name: '적치검사품목지정',
         item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
         lot_controlled: true,
@@ -854,7 +943,7 @@ describe('적치 지시 조회 (e2e)', () => {
     const plain = await prisma.item.create({
       data: {
         item_code: `${PREFIX}-IT2`,
-        item_name: '적치검사품목무권장',
+        item_name: '적치검사품목무지정',
         item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
         lot_controlled: true,
@@ -862,15 +951,9 @@ describe('적치 지시 조회 (e2e)', () => {
     });
     plainItemId = Number(plain.item_id);
 
-    // 규칙은 권장 품목에만 둔다 — 무권장 품목의 지시는 recommendedLocationId 가 null 이다.
-    await prisma.putaway_rule.create({
-      data: {
-        item_id: ruled.item_id,
-        warehouse_id: warehouse.warehouse_id,
-        location_id: rack.location_id,
-        capacity_qty: 1000,
-        uom_id: uom.uom_id,
-      },
+    // 보관 품목은 ruled 품목에만 건다 — plain 품목의 지시는 allowedLocations 가 비어 있다.
+    await prisma.location_item.createMany({
+      data: [rack, rack2].map((location) => ({ location_id: location.location_id, item_id: ruled.item_id })),
     });
 
     const worker = await prisma.worker.create({
@@ -947,7 +1030,7 @@ describe('적치 지시 조회 (e2e)', () => {
       DELETE FROM logistics.goods_receipt
        WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`
-      DELETE FROM logistics.putaway_rule
+      DELETE FROM mdm.location_item
        WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.inventory_balance
