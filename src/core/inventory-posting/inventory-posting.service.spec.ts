@@ -114,6 +114,9 @@ function fake(seed: Seed = {}) {
     location: {
       findFirst: record('location.findFirst', () => null),
     },
+    location_item: {
+      findMany: record('location_item.findMany', () => []),
+    },
     warehouse: {
       findUniqueOrThrow: record('warehouse.findUniqueOrThrow', () => ({
         business_unit_id: BU,
