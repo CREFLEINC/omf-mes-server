@@ -63,6 +63,7 @@ describe('툴 마스터 (e2e)', () => {
   let cookie: string[];
   let noPermCookie: string[];
   let plantId: number;
+  let plantCode: string;
   let timezone: string;
   let userId: bigint;
 
@@ -74,8 +75,10 @@ describe('툴 마스터 (e2e)', () => {
     prisma = app.get(PrismaService);
 
     await cleanup();
-    const plant = await prisma.plant.findFirstOrThrow();
+    // 시드 공장 — 병렬로 도는 다른 스위트가 공장을 잠깐 더 만든다. 그래서 엑셀도 공장 열을 싣는다(공장이 둘 이상이면 필수).
+    const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     plantId = Number(plant.plant_id);
+    plantCode = plant.plant_code;
     timezone = plant.timezone_code;
 
     const user = await prisma.app_user.create({
@@ -509,10 +512,10 @@ describe('툴 마스터 (e2e)', () => {
 
   it('⭐ 엑셀 한 장이 성공·실패를 나눠 돌려준다 — 실패 행 순번이 자료 행 기준이다', async () => {
     const file = await workbook([
-      ['툴코드', '툴명', '도구유형', '캐비티', '적정타수'],
-      [`${PREFIX}-XL1`, '엑셀로 들어온 금형', 'MOLD', 2, 300000],
-      [`${PREFIX}-XL2`, '유형이 틀린 행', '없는유형', 1, null],
-      [`${PREFIX}-XL3`, '지그', 'JIG', 1, null],
+      ['공장코드', '툴코드', '툴명', '도구유형', '캐비티', '적정타수'],
+      [plantCode, `${PREFIX}-XL1`, '엑셀로 들어온 금형', 'MOLD', 2, 300000],
+      [plantCode, `${PREFIX}-XL2`, '유형이 틀린 행', '없는유형', 1, null],
+      [plantCode, `${PREFIX}-XL3`, '지그', 'JIG', 1, null],
     ]);
 
     const result = await upload(file);
@@ -530,10 +533,12 @@ describe('툴 마스터 (e2e)', () => {
     const before = await prisma.document_issue_log.count({
       where: { document_type_code: 'TOOL_LABEL' },
     });
-    await upload(await workbook([
-      ['툴코드', '툴명'],
-      [`${PREFIX}-NOLABEL`, '라벨 없이 들어온다'],
+    const result = await upload(await workbook([
+      ['공장코드', '툴코드', '툴명'],
+      [plantCode, `${PREFIX}-NOLABEL`, '라벨 없이 들어온다'],
     ]));
+
+    expect(result.succeeded).toBe(1);
 
     expect(
       await prisma.document_issue_log.count({ where: { document_type_code: 'TOOL_LABEL' } }),
