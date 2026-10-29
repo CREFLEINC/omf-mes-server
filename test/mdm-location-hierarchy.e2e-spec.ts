@@ -22,6 +22,7 @@ const key = (): string => randomUUID();
 
 interface LocationBody {
   locationId: number;
+  locationCode: string;
   locationLevelCode: string | null;
   isLeaf: boolean;
 }
@@ -31,7 +32,6 @@ describe('위치 계층 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let warehouseId: number;
-  let locationTypeCode: string;
   let serial = 0;
 
   beforeAll(async () => {
@@ -53,7 +53,6 @@ describe('위치 계층 (e2e)', () => {
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     cookie = await login();
 
-    locationTypeCode = await firstCode('LOCATION_TYPE');
     warehouseId = await createWarehouse(`${PREFIX}-WH1`);
   });
 
@@ -125,30 +124,43 @@ describe('위치 계층 (e2e)', () => {
     expect(rejected.errors).toEqual([expect.objectContaining({ scope: 'screen', code: 'STATE_LOCKED' })]);
   });
 
-  it('⭐ 상위는 같은 단계끼리만 옮긴다 — 랙을 다른 구역으로는 되고 구역으로 올리거나 층으로 내리면 400', async () => {
+  it('⛔ 상위는 바꿀 수 없다 — 다른 값이면 400 INVALID(parentLocationId) · 저장된 값을 실어 보내면 받는다', async () => {
     const zone = await create();
     const otherZone = await create();
     const rack = await create(zone.locationId);
-    const otherRack = await create(otherZone.locationId);
 
-    const moved = await update(rack.locationId, { parentLocationId: otherZone.locationId }, 200);
-    expect(moved).toMatchObject({ parentLocationId: otherZone.locationId, locationLevelCode: 'RACK' });
-
-    const toTop = await update(rack.locationId, { parentLocationId: null }, 400);
-    expect(toTop.errors).toEqual([expect.objectContaining({ field: 'parentLocationId', code: 'INVALID' })]);
-    const toRack = await update(rack.locationId, { parentLocationId: otherRack.locationId }, 400);
-    expect(toRack.errors).toEqual([expect.objectContaining({ field: 'parentLocationId', code: 'INVALID' })]);
+    const rejected = await update(rack.locationId, { parentLocationId: otherZone.locationId }, 400);
+    expect(rejected.errors).toEqual([expect.objectContaining({ field: 'parentLocationId', code: 'INVALID' })]);
+    const kept = await update(rack.locationId, { parentLocationId: zone.locationId, locationName: '고친 랙' }, 200);
+    expect(kept).toMatchObject({ parentLocationId: zone.locationId, locationName: '고친 랙' });
   });
 
-  it('⛔ 재고가 있는 구역으로는 랙을 옮길 수 없다 — 400 STATE_LOCKED(parentLocationId)', async () => {
-    const zone = await create();
-    const stocked = await create();
-    const rack = await create(zone.locationId);
-    await stock(stocked.locationId, 2);
+  it('⭐ 코드는 서버가 발행한다 — Z01 · Z01-R001 · -L01 · -C01 · 같은 상위 안 다음 번호 · 꺼진 번호도 다시 쓰지 않는다', async () => {
+    const fresh = await createWarehouse(`${PREFIX}-WH2`);
+    // 화면이 코드를 실어 보내도 쓰지 않는다.
+    const zone = await send({ warehouseId: fresh, locationCode: 'MINE' }, 201);
+    const rack = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
+    const level = await send({ warehouseId: fresh, parentLocationId: rack.locationId }, 201);
+    const cell = await send({ warehouseId: fresh, parentLocationId: level.locationId }, 201);
+    expect([zone, rack, level, cell].map((row) => row.locationCode))
+      .toEqual(['Z01', 'Z01-R001', 'Z01-R001-L01', 'Z01-R001-L01-C01']);
 
-    const rejected = await update(rack.locationId, { parentLocationId: stocked.locationId }, 400);
+    const second = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
+    await transition(second.locationId, 'deactivate', 200);
+    const third = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
+    expect([second.locationCode, third.locationCode]).toEqual(['Z01-R002', 'Z01-R003']);
+  });
 
-    expect(rejected.errors).toEqual([expect.objectContaining({ field: 'parentLocationId', code: 'STATE_LOCKED' })]);
+  it('⭐ 목록을 상위·단계로 나눠 받는다', async () => {
+    const fresh = await createWarehouse(`${PREFIX}-WH3`);
+    const zone = await send({ warehouseId: fresh }, 201);
+    const rack = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
+    await send({ warehouseId: fresh, parentLocationId: rack.locationId }, 201);
+
+    const children = await list(fresh, { parentLocationId: String(zone.locationId) });
+    expect(children.map((row) => row.locationId)).toEqual([rack.locationId]);
+    const zones = await list(fresh, { locationLevelCode: 'ZONE' });
+    expect(zones.map((row) => row.locationCode).sort()).toEqual(['SYS-STAGING', 'SYS-WHOLE', 'Z01']);
   });
 
   it('⭐ 목록·상세가 단계와 isLeaf 를 싣는다 — 하위를 끄면 다시 맨 아래다', async () => {
@@ -188,7 +200,7 @@ describe('위치 계층 (e2e)', () => {
       .post('/api/mdm/locations')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send({ warehouseId, locationCode: code, locationName: code, locationTypeCode, ...extra })
+      .send({ warehouseId, locationName: code, ...extra })
       .expect(expected);
     return response.body as Record<string, unknown> & LocationBody;
   }
@@ -208,14 +220,7 @@ describe('위치 계층 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', current.headers.etag)
-      .send({
-        locationCode: location.locationCode,
-        locationName: location.locationName,
-        locationTypeCode,
-        allowMixedItem: true,
-        allowMixedLot: true,
-        ...extra,
-      })
+      .send({ locationName: location.locationName, ...extra })
       .expect(expected);
     return response.body as Record<string, unknown>;
   }
@@ -236,6 +241,15 @@ describe('위치 계층 (e2e)', () => {
       .set('If-Match', current.headers.etag)
       .expect(expected);
     return response.body as Record<string, unknown>;
+  }
+
+  async function list(inWarehouse: number, query: Record<string, string>): Promise<LocationBody[]> {
+    const response = await request(app.getHttpServer())
+      .get('/api/mdm/locations')
+      .query({ warehouseId: String(inWarehouse), size: '200', ...query })
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body.items as LocationBody[];
   }
 
   async function detail(locationId: number): Promise<Record<string, unknown>> {

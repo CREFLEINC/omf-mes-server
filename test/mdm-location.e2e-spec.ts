@@ -149,14 +149,10 @@ describe('위치 마스터 (e2e)', () => {
     expect(validate(detail.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(etag).toMatch(/^\d+$/);
-    expect(detail.body.editability).toEqual({
-      codeEditable: true,
-      reason: 'EDITABLE',
-      referenceCount: 0,
-    });
+    expect(detail.body.editability).toEqual({ codeEditable: false, reason: 'AUTO_ISSUED', referenceCount: 0 });
   });
 
-  it('⭐ 하위 위치가 붙으면 REFERENCED 로 잠긴다', async () => {
+  it('⭐ 하위 위치가 붙으면 참조로 센다', async () => {
     const parent = await createLocation(`${PREFIX}-P`);
     await createLocation(`${PREFIX}-C`, { parentLocationId: parent.id });
 
@@ -165,39 +161,7 @@ describe('위치 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    expect(detail.body.editability).toMatchObject({ reason: 'REFERENCED', referenceCount: 1 });
-  });
-
-  it('⛔ 자기 자신을 상위로 둘 수 없다 — DB 에 그 제약조차 없다', async () => {
-    const { id, etag } = await createLocation(`${PREFIX}-SELF`);
-
-    const rejected = await request(app.getHttpServer())
-      .put(`/api/mdm/locations/${id}`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .set('If-Match', etag)
-      .send({ ...writeBody(`${PREFIX}-SELF`), parentLocationId: id })
-      .expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({
-      scope: 'field',
-      field: 'parentLocationId',
-      code: 'INVALID',
-    });
-  });
-
-  it('⛔ 위치 계층에 순환을 만들 수 없다', async () => {
-    const a = await createLocation(`${PREFIX}-CY-A`);
-    const b = await createLocation(`${PREFIX}-CY-B`, { parentLocationId: a.id });
-    const current = await detailOf(a.id);
-
-    await request(app.getHttpServer())
-      .put(`/api/mdm/locations/${a.id}`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .set('If-Match', current.etag)
-      .send({ ...writeBody(`${PREFIX}-CY-A`), parentLocationId: b.id })
-      .expect(400);
+    expect(detail.body.editability).toMatchObject({ reason: 'AUTO_ISSUED', referenceCount: 1 });
   });
 
   it('⛔ 다른 창고의 위치를 상위로 둘 수 없다 — 목록이 창고 단위로만 열린다', async () => {
@@ -213,39 +177,15 @@ describe('위치 마스터 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'parentLocationId', code: 'INVALID' });
   });
 
-  it('⛔ 용량과 단위는 짝이다 — ck_location_capacity 는 어느 칸인지 못 짚는다', async () => {
-    const rejected = await request(app.getHttpServer())
-      .post('/api/mdm/locations')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({ ...body(`${PREFIX}-CAP`), capacityQty: 100 })
-      .expect(400);
-
-    expect(rejected.body.errors).toEqual([
-      { scope: 'field', field: 'capacityUomId', code: 'PAIR', message: expect.any(String) },
-    ]);
-  });
-
-  it('⛔ 마스터에 없는 공통코드는 400 이다', async () => {
-    const rejected = await request(app.getHttpServer())
-      .post('/api/mdm/locations')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({ ...body(`${PREFIX}-BADZONE`), qualityZoneCode: '없는구역' })
-      .expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'qualityZoneCode', code: 'INVALID' });
-  });
-
   it('⭐ locationCode 는 정확 일치다 — 스캔한 코드로 한 건을 집는다', async () => {
-    await createLocation(`${PREFIX}-SCAN`);
-    await createLocation(`${PREFIX}-SCAN-2`);
+    const zone = await createLocation(`${PREFIX}-SCAN`);
+    await createLocation(`${PREFIX}-SCAN-2`, { parentLocationId: zone.id });
 
     const exact = await request(app.getHttpServer())
-      .get(`/api/mdm/locations?warehouseId=${warehouseId}&locationCode=${PREFIX}-SCAN`)
+      .get(`/api/mdm/locations?warehouseId=${warehouseId}&locationCode=${zone.code}`)
       .set('Cookie', cookie)
       .expect(200);
-    expect(exact.body.items).toHaveLength(1);
+    expect(exact.body.items.map((l: { locationId: number }) => l.locationId)).toEqual([zone.id]);
 
     // 같은 글자를 `q` 로 보내면 부분 일치라 둘 다 온다 — 그래서 갈라 두었다.
     const partial = await request(app.getHttpServer())
@@ -263,11 +203,10 @@ describe('위치 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', etag)
-      .send({ ...writeBody(`${PREFIX}-V`), locationName: '고친 이름', allowMixedLot: false })
+      .send(writeBody('고친 이름'))
       .expect(200);
 
     expect(updated.body.locationName).toBe('고친 이름');
-    expect(updated.body.allowMixedLot).toBe(false);
     expect(Number(updated.headers.etag)).toBe(Number(etag) + 1);
 
     const stale = await request(app.getHttpServer())
@@ -342,9 +281,7 @@ describe('위치 마스터 (e2e)', () => {
 
   it('⛔ 서버가 만든 자리는 별칭만 고친다 — 다른 칸이 바뀌어 오면 400 STATE_LOCKED 다', async () => {
     const staging = await systemLocation(warehouseId, 'PUTAWAY_STAGING');
-    const kept = {
-      locationCode: 'SYS-STAGING', locationName: '적치 대기', locationTypeCode: 'TEMP', allowMixedItem: true, allowMixedLot: true,
-    };
+    const kept = { locationName: '적치 대기' };
 
     const aliased = await request(app.getHttpServer())
       .put(`/api/mdm/locations/${staging}`)
@@ -464,21 +401,14 @@ describe('위치 마스터 (e2e)', () => {
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
-  /** 수정 본문 — 계약이 `allowMixedItem`·`allowMixedLot` 를 «필수»로 두었다. */
-  function writeBody(locationCode: string, extra: Record<string, unknown> = {}): object {
-    return {
-      locationCode,
-      locationName: locationCode,
-      locationTypeCode,
-      allowMixedItem: true,
-      allowMixedLot: true,
-      ...extra,
-    };
+  /** 수정 본문 — 이름과 별칭만 바꾼다. */
+  function writeBody(locationName: string, extra: Record<string, unknown> = {}): object {
+    return { locationName, ...extra };
   }
 
-  /** 등록 본문 — 두 칸은 선택이라 뺀다(계약이 갈랐다). */
-  function body(locationCode: string, extra: Record<string, unknown> = {}): object {
-    return { warehouseId, locationCode, locationName: locationCode, locationTypeCode, ...extra };
+  /** 등록 본문 — 코드는 서버가 발행하므로 이름으로 가른다. */
+  function body(locationName: string, extra: Record<string, unknown> = {}): object {
+    return { warehouseId, locationName, ...extra };
   }
 
   async function detailOf(id: number): Promise<{ etag: string }> {
@@ -493,14 +423,14 @@ describe('위치 마스터 (e2e)', () => {
     locationCode: string,
     extra: Record<string, unknown> = {},
     inWarehouse: number = warehouseId,
-  ): Promise<{ id: number; etag: string }> {
+  ): Promise<{ id: number; code: string; etag: string }> {
     const created = await request(app.getHttpServer())
       .post('/api/mdm/locations')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .send({ ...body(locationCode, extra), warehouseId: inWarehouse })
       .expect(201);
-    return { id: created.body.locationId, ...(await detailOf(created.body.locationId)) };
+    return { id: created.body.locationId, code: created.body.locationCode, ...(await detailOf(created.body.locationId)) };
   }
 
   async function createWarehouse(warehouseCode: string, managementLevelCode?: string): Promise<number> {
@@ -555,11 +485,10 @@ describe('위치 마스터 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
-    // 자식 → 부모 순으로 지운다. parent_location_id 가 FK 다.
-    await prisma.location.deleteMany({
-      where: { location_code: { startsWith: PREFIX }, NOT: { parent_location_id: null } },
-    });
-    await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
+    // 자식 → 부모 순으로 지운다. parent_location_id 가 FK 다. 코드는 서버가 발행해 창고로 고른다.
+    const ours = { warehouse: { warehouse_code: { startsWith: PREFIX } } };
+    await prisma.location.deleteMany({ where: { ...ours, NOT: { parent_location_id: null } } });
+    await prisma.location.deleteMany({ where: { ...ours, system_role_code: null } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });

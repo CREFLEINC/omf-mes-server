@@ -96,25 +96,17 @@ export class LocationController {
   }
 }
 
+/** 계약 `LocationCreate` — 코드는 서버가 발행하고 단계는 상위로 정한다. */
 interface LocationCreateBody {
   warehouseId: number;
   parentLocationId?: number | null;
-  locationCode: string;
   locationName: string;
-  locationTypeCode: string;
-  qualityZoneCode?: string | null;
-  storageConditionCode?: string | null;
-  allowMixedItem?: boolean;
-  allowMixedLot?: boolean;
-  capacityQty?: number | null;
-  capacityUomId?: number | null;
+  aliasName?: string | null;
+  locationLevelCode?: string | null;
 }
 
-/**
- * ⛔ 수정은 `allowMixedItem`·`allowMixedLot` 를 «필수»로 받는다 — 등록과 다르다.
- * 계약이 그렇게 갈랐고, 등록의 기본값(둘 다 true)을 수정이 조용히 되돌리지 않게 한다.
- */
-interface LocationUpdateBody extends Omit<LocationCreateBody, 'warehouseId'> {
-  allowMixedItem: boolean;
-  allowMixedLot: boolean;
+/** 계약 `LocationUpdate` — 이름과 별칭만 바꾼다. */
+interface LocationUpdateBody {
+  locationName: string;
+  aliasName?: string | null;
 }

@@ -5,8 +5,9 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertMove, assertNoStock, assertParentEmpty, assertSentLevel, levelUnder, parentError } from './location-hierarchy';
-import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, aliasOf, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
+import { lockWarehouse, issueCode } from './location-code';
+import { assertKeptPlace, assertNoStock, assertParentEmpty, assertSentLevel, levelUnder, parentError } from './location-hierarchy';
+import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, aliasOf, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
  * 로케이션을 FK 로 가리키는 자리 전부다. `pg_constraint` 에서 뽑았고,
@@ -55,50 +56,29 @@ interface LocationView {
   parentLocationId: number | null;
   locationCode: string;
   locationName: string;
-  locationTypeCode: string;
-  qualityZoneCode: string | null;
-  storageConditionCode: string | null;
-  allowMixedItem: boolean;
-  allowMixedLot: boolean;
-  capacityQty: number | null;
-  capacityUomId: number | null;
   isActive: boolean;
-  /** 서버가 만든 위치의 역할 — 계약 밖(장부 P-145). 사람이 만든 위치는 null. */
-  systemRoleCode: string | null;
-  /** MES 별칭 — 계약 밖(장부 P-145). */
   aliasName: string | null;
-  /** 구역·랙·층·셀 — 계약 밖(장부 P-154). 넷보다 깊던 옛 위치만 null. */
   locationLevelCode: string | null;
-  /** 켜진 하위가 없다 — 재고를 둘 수 있는 맨 아래 위치. 계약 밖(장부 P-154). */
   isLeaf: boolean;
+  systemRoleCode: string | null;
 }
 
+/** 계약 `LocationUpdate` — 이름과 별칭만 바꾼다. 상위·단계는 같은 값이면 받아 준다(화면이 저장된 값을 실어 보낸다). */
 interface LocationWrite {
-  parentLocationId?: number | null;
-  locationCode: string;
   locationName: string;
-  locationTypeCode: string;
-  qualityZoneCode?: string | null;
-  storageConditionCode?: string | null;
-  allowMixedItem?: boolean;
-  allowMixedLot?: boolean;
-  capacityQty?: number | null;
-  capacityUomId?: number | null;
-  /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
   aliasName?: unknown;
-  /** 계약 밖 · 선택 — 보냈으면 상위로 정해지는 단계와 같아야 한다(장부 P-154). */
+  parentLocationId?: number | null;
   locationLevelCode?: unknown;
 }
 
 /** 서버가 만든 위치에서 바뀌어 오면 막는 칸 — 별칭만 고친다(사용자 결정 2026-10-29). */
-const SYSTEM_KEPT = [
-  'locationCode', 'locationName', 'locationTypeCode', 'parentLocationId', 'qualityZoneCode',
-  'storageConditionCode', 'allowMixedItem', 'allowMixedLot', 'capacityQty', 'capacityUomId', 'locationLevelCode',
-] as const;
+const SYSTEM_KEPT = ['locationName', 'parentLocationId', 'locationLevelCode'] as const;
 
 export interface LocationQuery extends ReferenceQuery {
   warehouseId: number;
   locationCode?: string;
+  parentLocationId?: number;
+  locationLevelCode?: string;
 }
 
 type LocationRow = Prisma.locationGetPayload<object>;
@@ -127,6 +107,9 @@ export class LocationService {
       // 스캔한 코드로 한 건을 집는 자리라 정확 일치다. 부분 일치는 `q` 가 맡는다 —
       // 계약이 「q 로 받은 페이지를 화면이 걸러 쓰는 것으로는 성립하지 않는다」로 적었다.
       ...(query.locationCode === undefined ? {} : { location_code: query.locationCode }),
+      // 수천 건인 창고를 구역 → 랙 → 층·셀 순으로 펼쳐 받는다.
+      ...(query.parentLocationId === undefined ? {} : { parent_location_id: query.parentLocationId }),
+      ...(query.locationLevelCode === undefined ? {} : { location_level_code: query.locationLevelCode }),
     });
     const [rows, total] = await Promise.all([
       this.prisma.location.findMany({
@@ -149,46 +132,47 @@ export class LocationService {
     if (!row) throw new NotFoundException('없는 위치입니다.');
 
     const referenceCount = await countReferences(this.prisma, LOCATION_REFERRERS, row.location_id);
-    const systemOwned = row.system_role_code !== null;
     return {
       location: view(row, row._count.child_locations),
+      // 코드는 서버가 발행해 바꾸지 않는다(사용자 결정 2026-10-29).
       editability: {
-        codeEditable: !systemOwned && referenceCount === 0,
-        reason: systemOwned ? 'SYSTEM_OWNED' : referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
+        codeEditable: false,
+        reason: row.system_role_code === null ? 'AUTO_ISSUED' : 'SYSTEM_OWNED',
         referenceCount,
       },
       versionNo: row.version_no,
     };
   }
 
+  /** 코드는 서버가 발행한다 — 본문에 실려 와도 쓰지 않는다. */
   async create(input: LocationWrite & { warehouseId: number }): Promise<LocationView> {
     const aliasName = aliasOf(input.aliasName);
-    await this.assertWritable(input);
     const parentId = input.parentLocationId ?? null;
     if (parentId !== null) await this.assertParent(input.warehouseId, parentId, null);
     const level = await levelUnder(this.prisma, parentId);
     assertSentLevel(input.locationLevelCode, level);
     if (parentId !== null) await assertNoStock(this.prisma, parentId, 'parentLocationId');
-    return view(
-      await this.prisma.location.create({
+    const parent = parentId === null ? null : await this.prisma.location.findUniqueOrThrow({
+      where: { location_id: parentId },
+      select: { location_code: true },
+    });
+    const row = await this.prisma.$transaction(async (tx) => {
+      await lockWarehouse(tx, input.warehouseId);
+      const code = await issueCode(
+        tx, input.warehouseId, parent === null ? null : { locationId: parentId as number, locationCode: parent.location_code }, level,
+      );
+      return tx.location.create({
         data: {
           warehouse_id: input.warehouseId,
+          parent_location_id: parentId,
           location_level_code: level,
-          location_code: input.locationCode,
+          location_code: code,
           location_name: input.locationName,
-          location_type_code: input.locationTypeCode,
-          ...optional('parent_location_id', input.parentLocationId),
-          ...optional('quality_zone_code', input.qualityZoneCode),
-          ...optional('storage_condition_code', input.storageConditionCode),
-          ...optional('allow_mixed_item', input.allowMixedItem),
-          ...optional('allow_mixed_lot', input.allowMixedLot),
-          ...optional('capacity_qty', input.capacityQty),
-          ...optional('capacity_uom_id', input.capacityUomId),
           ...optional('alias_name', aliasName),
         },
-      }),
-      0,
-    );
+      });
+    });
+    return view(row, 0);
   }
 
   async update(
@@ -200,26 +184,13 @@ export class LocationService {
     const current = await this.prisma.location.findUnique({ where: { location_id: locationId } });
     if (!current) throw new NotFoundException('없는 위치입니다.');
     if (current.system_role_code !== null) return this.updateAlias(current, version, input, aliasName);
-    await this.assertWritable(input);
-    if (input.parentLocationId != null) {
-      await this.assertParent(Number(current.warehouse_id), input.parentLocationId, locationId);
-    }
-    await assertMove(this.prisma, current, input);
+    assertKeptPlace(current, input);
 
     const updated = await this.prisma.location.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
       where: { location_id: locationId, version_no: version },
       data: {
-        location_code: input.locationCode,
         location_name: input.locationName,
-        location_type_code: input.locationTypeCode,
-        ...optional('parent_location_id', input.parentLocationId),
-        ...optional('quality_zone_code', input.qualityZoneCode),
-        ...optional('storage_condition_code', input.storageConditionCode),
-        ...optional('allow_mixed_item', input.allowMixedItem),
-        ...optional('allow_mixed_lot', input.allowMixedLot),
-        ...optional('capacity_qty', input.capacityQty),
-        ...optional('capacity_uom_id', input.capacityUomId),
         ...optional('alias_name', aliasName),
         version_no: { increment: 1 },
       },
@@ -257,31 +228,6 @@ export class LocationService {
     });
     await this.assertExists(locationId, updated.count);
     return this.get(locationId);
-  }
-
-  /** 공통코드 세 칸과 용량 짝을 함께 본다 — 둘 다 400 이므로 한 번에 모아 낸다. */
-  private async assertWritable(input: LocationWrite): Promise<void> {
-    // ⛔ ck_location_capacity 는 `(qty IS NULL) = (uom IS NULL)` 이다. 한쪽만 보내면
-    // DB 가 막지만 어느 칸이 문제인지 못 짚는다 — 화면은 둘 중 하나를 지워야 한다.
-    if ((input.capacityQty == null) !== (input.capacityUomId == null)) {
-      const error: ErrorItem = {
-        scope: 'field',
-        field: input.capacityQty == null ? 'capacityQty' : 'capacityUomId',
-        code: ERROR_CODE.PAIR,
-        message: '용량과 단위는 함께 넣거나 함께 비웁니다.',
-      };
-      throw new ContractException(HttpStatus.BAD_REQUEST, [error]);
-    }
-
-    await assertCodeValues(this.prisma, [
-      { field: 'locationTypeCode', value: input.locationTypeCode, groupCode: 'LOCATION_TYPE' },
-      { field: 'qualityZoneCode', value: input.qualityZoneCode, groupCode: 'QUALITY_ZONE' },
-      {
-        field: 'storageConditionCode',
-        value: input.storageConditionCode,
-        groupCode: 'STORAGE_CONDITION',
-      },
-    ]);
   }
 
   /**
@@ -351,17 +297,10 @@ function view(row: LocationRow, activeChildren: number): LocationView {
     parentLocationId: row.parent_location_id === null ? null : Number(row.parent_location_id),
     locationCode: row.location_code,
     locationName: row.location_name,
-    locationTypeCode: row.location_type_code,
-    qualityZoneCode: row.quality_zone_code,
-    storageConditionCode: row.storage_condition_code,
-    allowMixedItem: row.allow_mixed_item,
-    allowMixedLot: row.allow_mixed_lot,
-    capacityQty: row.capacity_qty === null ? null : Number(row.capacity_qty),
-    capacityUomId: row.capacity_uom_id === null ? null : Number(row.capacity_uom_id),
     isActive: row.is_active,
-    systemRoleCode: row.system_role_code,
     aliasName: row.alias_name,
     locationLevelCode: row.location_level_code,
     isLeaf: activeChildren === 0,
+    systemRoleCode: row.system_role_code,
   };
 }
