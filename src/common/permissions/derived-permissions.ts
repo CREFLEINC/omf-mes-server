@@ -13,6 +13,8 @@
  * ⚠ 2026-10-20 — 요구서 §3-15~§3-22(ERP 데이터 조회 W-06-16~23 · 설계 omf-mes#666)에서 나온
  * 몫만 더했다(조회 20키 · 장부 P-71). 같은 설계 사본으로 통째로 다시 돌리면 그 사이 쌓인 다른
  * 화면의 변동(50키 · 화면이 빠지는 자리 포함)이 함께 들어온다 — 그 검토는 따로 한다.
+ *
+ * ⚠ 2026-10-29 — 적치 규칙 마스터(W-06-14)를 없앴다(사용자 결정) — 그 화면 몫을 손으로 뺐다. 다시 돌리면 되살아난다.
  */
 export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /app/sessions/current': ['W-CO-01'],
@@ -36,10 +38,10 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /app/printers': ['P-01-01', 'P-04-02', 'P-04-04'],
   'GET /app/sessions/current': ['W-CO-01'],
   'GET /app/users': ['W-06-15', 'W-CO-09'],
-  'GET /audit/events': ['W-01-02', 'W-05-07', 'W-05-11', 'W-05-12', 'W-05-13', 'W-06-01', 'W-06-02', 'W-06-03', 'W-06-04', 'W-06-05', 'W-06-06', 'W-06-07', 'W-06-08', 'W-06-09', 'W-06-11', 'W-06-12', 'W-06-14', 'W-06-15', 'W-CO-02', 'W-CO-06'],
+  'GET /audit/events': ['W-01-02', 'W-05-07', 'W-05-11', 'W-05-12', 'W-05-13', 'W-06-01', 'W-06-02', 'W-06-03', 'W-06-04', 'W-06-05', 'W-06-06', 'W-06-07', 'W-06-08', 'W-06-09', 'W-06-11', 'W-06-12', 'W-06-15', 'W-CO-02', 'W-CO-06'],
   'GET /integration/interface-definitions': ['W-06-06', 'W-06-10'],
   'GET /integration/messages': ['W-02-06', 'W-06-06', 'W-06-09', 'W-06-10'],
-  'GET /inventory/balances': ['M-01-04', 'M-01-05', 'M-04-01', 'W-01-05', 'W-01-07', 'W-04-08', 'W-06-14', 'W-CO-08'],
+  'GET /inventory/balances': ['M-01-04', 'M-01-05', 'M-04-01', 'W-01-05', 'W-01-07', 'W-04-08', 'W-CO-08'],
   'GET /inventory/counts': ['M-01-11', 'W-01-04'],
   'GET /inventory/handling-units': ['M-01-10', 'M-04-03', 'M-04-04', 'P-02-08', 'P-04-01'],
   'GET /inventory/handling-units/{handlingUnitId}': ['M-04-03', 'P-04-04'],
@@ -61,8 +63,6 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /logistics/picking-orders': ['M-01-08'],
   'GET /logistics/purchase-orders': ['M-01-01', 'M-01-02', 'W-06-21'],
   'GET /logistics/purchase-orders/{purchaseOrderId}': ['M-01-01', 'W-06-21'],
-  'GET /logistics/putaway-rules': ['W-06-14'],
-  'GET /logistics/putaway-rules/uncovered-items': ['W-06-14'],
   'GET /logistics/putaway-tasks': ['M-01-05', 'M-01-07'],
   'GET /logistics/sales-orders': ['W-04-01', 'W-06-22'],
   'GET /logistics/sales-orders/{salesOrderId}': ['W-04-01', 'W-06-22'],
@@ -91,7 +91,7 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /mdm/equipments/{equipmentId}/inspection-items': ['M-05-01'],
   'GET /mdm/items': ['M-01-01', 'W-01-13', 'W-02-07', 'W-06-01', 'W-06-17', 'W-06-18', 'W-06-23'],
   'GET /mdm/items/{itemId}': ['W-06-17', 'W-06-18', 'W-06-21', 'W-06-22', 'W-06-23'],
-  'GET /mdm/locations': ['M-01-05', 'M-01-07', 'M-04-04', 'W-01-10', 'W-02-10', 'W-06-14', 'W-CO-08'],
+  'GET /mdm/locations': ['M-01-05', 'M-01-07', 'M-04-04', 'W-01-10', 'W-02-10', 'W-CO-08'],
   'GET /mdm/locations/{locationId}': ['P-04-04'],
   'GET /mdm/molds': ['P-02-03', 'P-05-01', 'W-05-02'],
   'GET /mdm/molds/{moldId}': ['P-02-03', 'P-02-11', 'P-04-04', 'P-05-01', 'W-05-01'],
@@ -184,7 +184,6 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'POST /logistics/inbound-receipts:split': ['W-01-03'],
   'POST /logistics/material-issue-requests': ['W-02-10'],
   'POST /logistics/purchase-orders': ['W-01-11'],
-  'POST /logistics/putaway-rules': ['W-06-14'],
   'POST /logistics/putaway-tasks/{putawayTaskId}:complete': ['M-04-04'],
   'POST /logistics/recycle-entries': ['M-01-01', 'M-01-02'],
   'POST /logistics/shipment-requests': ['W-04-01'],

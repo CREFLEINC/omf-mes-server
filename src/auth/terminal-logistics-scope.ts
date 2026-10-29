@@ -33,8 +33,6 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/picking-orders/{pickingOrderId}': ['MOBILE'],
   'GET /logistics/purchase-orders': ['MOBILE'],
   'GET /logistics/purchase-orders/{purchaseOrderId}': ['MOBILE'],
-  'GET /logistics/putaway-rules': ['MOBILE'],
-  'GET /logistics/putaway-rules/{putawayRuleId}': ['MOBILE'],
   'GET /logistics/putaway-tasks': ['MOBILE'],
   'GET /logistics/putaway-tasks/{putawayTaskId}': ['MOBILE'],
   'GET /logistics/shipment-lot-allocations': ['POP', 'MOBILE'],
@@ -130,7 +128,6 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/inbound-receipts':
     case 'GET /logistics/picking-orders':
     case 'GET /logistics/purchase-orders':
-    case 'GET /logistics/putaway-rules':
     case 'GET /logistics/putaway-tasks':
     case 'GET /logistics/shipment-lot-allocations':
     case 'GET /logistics/shipment-requests':
@@ -149,8 +146,6 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/picking-orders/{pickingOrderId}': await pickOrder(p.pickingOrderId); break;
     case 'GET /logistics/purchase-orders/{purchaseOrderId}':
       await check(await prisma.purchase_order.findFirst({ where: { purchase_order_id: id(p.purchaseOrderId), plant_id: plant }, select: { purchase_order_id: true } })); break;
-    case 'GET /logistics/putaway-rules/{putawayRuleId}':
-      await check(await prisma.putaway_rule.findFirst({ where: { putaway_rule_id: id(p.putawayRuleId), warehouse: { plant_id: plant } }, select: { putaway_rule_id: true } })); break;
     case 'GET /logistics/putaway-tasks/{putawayTaskId}': await putaway(p.putawayTaskId); break;
     case 'GET /logistics/shipments/{shipmentId}': await shipment(p.shipmentId); break;
     // 출하 단위의 소유는 그 출하 전표의 창고 공장이다(배분 PUT 과 같은 축).

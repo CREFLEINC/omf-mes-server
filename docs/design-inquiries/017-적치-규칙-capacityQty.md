@@ -2,6 +2,7 @@
 
 | 칸 | 내용 |
 |---|---|
+| 상태 | 종결 — 2026-10-29 적치 규칙 제거 |
 | 걸리는 오퍼레이션 | `POST /logistics/goods-receipts`(적치 지시 생성) · `POST /logistics/putaway-tasks/{id}:complete` · `:complete-temporary` |
 | 구현 상태 | 구현함 — 활성 규칙 중 `priority_no asc` 첫 건만 권장, 한도 미적용 (PR #180) |
 | 판정 | §2 1단계 가장자리(한도에 걸리는 위치만) → 2-1 원장·상태 안 씀(권장값은 참고값) → 2-5 새 개념(한도 비교 축·초과 처리 상태) 안 만듦 |

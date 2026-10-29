@@ -4,7 +4,7 @@
   "title": "omf-mes 01 자재창고 도메인 API (초안)",
   "version": "0.1.0",
   "description": "01 자재창고 도메인 API 계약. 입하·입고·적치·출고·이동·실사·조정과 그 결과인 수불 원장·재고 잔액, 그리고 자재 LOT 을 덮는다. 경로는 물리 모델의 스키마를 그대로 네임스페이스로 쓰므로 /logistics · /inventory · /trace 셋으로 나뉜다. 업무 문서에는 끄기(:deactivate)가 없다 — 문서는 끄는 것이 아니라 상태를 옮긴다. 수불 원장과 재고 잔액에는 쓰기 경로를 두지 않는다 — 전표의 전기가 만들고 서버가 파생한다. 개별 변경 이력 경로는 두지 않으며 횡단 조회 GET /audit/events 하나로 받는다.",
-  "x-internal-note": "근거·맥락은 deliverables/06-API-요구서-01자재창고.md 를 본다. 도출 과정은 uiux/2026-08-06-API스펙-01자재창고/ 의 00~02 문서다. 승인 워크플로우(app.approval_request) · 출력물 발행(app.document_issue_log) · 첨부(app.attachment) 는 이 파일이 갖지 않는다 — app-공통 파일 소관이며 01-리소스도출.md §1 이 근거다. putaway_rule 은 성격이 마스터라 mdm-기준정보.json 에 둔다(02-URL동작규약.md §1)."
+  "x-internal-note": "근거·맥락은 deliverables/06-API-요구서-01자재창고.md 를 본다. 도출 과정은 uiux/2026-08-06-API스펙-01자재창고/ 의 00~02 문서다. 승인 워크플로우(app.approval_request) · 출력물 발행(app.document_issue_log) · 첨부(app.attachment) 는 이 파일이 갖지 않는다 — app-공통 파일 소관이며 01-리소스도출.md §1 이 근거다."
  },
  "servers": [
   {

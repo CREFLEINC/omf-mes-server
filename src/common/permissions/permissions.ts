@@ -157,7 +157,6 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-06-10', name: '연계 동기화 현황·실패 재처리', groupCode: '06' },
   { code: 'W-06-11', name: '마스터 변경관리 (신규 Rev 발행)', groupCode: '06' },
   { code: 'W-06-12', name: 'MES→ERP 송신 I/F 정의 (항목 on/off)', groupCode: '06' },
-  { code: 'W-06-14', name: '적치 규칙 마스터', groupCode: '06' },
   { code: 'W-06-15', name: '결재선 정의', groupCode: '06' },
   { code: 'W-06-16', name: '사원정보 조회(ERP)', groupCode: '06' },
   { code: 'W-06-17', name: '품목정보 조회(ERP)', groupCode: '06' },

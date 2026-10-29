@@ -77,7 +77,8 @@ describe('계약 커버리지', () => {
     // 위치 랙 만들기·지우기 2 오퍼레이션(위치 ③b): 564 → 566.
     // 위치 이동 1 오퍼레이션(위치 ⑤): 566 → 567.
     // 위치 품목 제한 조회·바꾸기 2 오퍼레이션: 567 → 569.
-    expect(registry.size).toBe(569);
+    // 적치 규칙 7 오퍼레이션 제거(사용자 결정 2026-10-29): 569 → 562.
+    expect(registry.size).toBe(562);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

@@ -131,7 +131,8 @@ describe('역할·기능 권한 (e2e)', () => {
     // W-06-24(검사표 기준)·P-02-15(제품 검사표 입력)·W-03-13(제품 검사표 조회·출력)·W-03-14(제품 검사표 서명·승인)(장부 P-102).
     // W-02-09(LOT 생산 이력 조회)(장부 P-119).
     // W-CO-14(인계작업 알림 설정)(장부 P-134).
-    expect(response.body.items).toHaveLength(139);
+    // W-06-14(적치 규칙 마스터)는 없앴다(사용자 결정 2026-10-29).
+    expect(response.body.items).toHaveLength(138);
     // 이 화면 자신의 권한이 목록에 있어야 격자에서 관리자를 만들 수 있다.
     expect(response.body.items.map((p: { code: string }) => p.code)).toContain('W-CO-02');
     expect(response.body.page).toBeUndefined();
