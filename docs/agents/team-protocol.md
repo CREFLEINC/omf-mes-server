@@ -58,6 +58,9 @@
 
 ## 규칙 5 — 설계 자료 고정
 
+> ⛔ 2026-10-29 부터 OpenAPI 계약의 정본은 이 저장소의 `contracts/` 다(설계 저장소 정본 안 씀). 아래 계약 고정·당기기
+> 절차는 쓰지 않는다 — 기록으로 둔다.
+
 이 저장소는 이미 설계 산출물 중 하나(OpenAPI 계약)를 고정하는 메커니즘을 갖고 있다 —
 `contracts/COMMIT.txt` + `pnpm contracts:check` / `contracts:update`(`contracts/README.md`).
 백엔드가 기대는 두 자료(물리 모델은 우리 소관, API 계약서는 설계 소관)중 후자가 여기 해당한다 —
