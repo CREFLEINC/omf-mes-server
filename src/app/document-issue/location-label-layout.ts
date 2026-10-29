@@ -1,4 +1,4 @@
-import { assertTsplSafe, clip, dots, fit, type LabelText, type QrModules } from './label-layout';
+import { DPI, assertTsplSafe, clip, dots, fit, type LabelText, type QrModules } from './label-layout';
 
 // qrcode has no bundled declarations in this workspace; only the module matrix is used here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -34,9 +34,13 @@ const QRCode = require('qrcode') as {
 
 export interface LocationLabelValues {
   warehouseCode: string;
+  /** ERP 창고명 — 한글이면 프린터(TSPL)에서는 그 줄만 깨진다. PNG 는 한글 글꼴로 그린다. */
+  warehouseName: string;
   locationCode: string;
-  /** 영문 «권고». 한글이어도 발행은 되고, 그 줄만 프린터에서 깨져 나온다. */
+  /** 사람이 읽는 이름 — 별칭이 있으면 별칭, 없으면 위치명. */
   locationName: string;
+  /** 위치 단계(ZONE·RACK·LEVEL·CELL). 넷보다 깊던 옛 위치는 null — 띠를 그리지 않는다. */
+  levelCode: string | null;
   issueSeq: number;
 }
 
@@ -51,59 +55,58 @@ export interface LocationLabelLayout {
 /** 2D 코드에 싣는 값 — 스캔 화면이 위치 코드 조회에 그대로 넣는 값이어야 한다(위 머리말). */
 export const locationQrPayload = (values: LocationLabelValues): string => values.locationCode;
 
-/** 거리를 두고 읽히려면 이만해야 한다(2026-09-16 결정 · 목업과 같은 21mm). 코드가 길어 모듈이
- *  늘면 여기서 줄인다. */
-const QR_CELL_MAX = 8;
-const ROWS = { warehouse: dots(4), code: dots(13), name: dots(30), issue: dots(40) };
-const POINTS = { warehouse: 12, code: 28, name: 13, issue: 11 };
+/**
+ * 2026-10-29 배치 개편(사용자 지시 「QR 을 키우고 전문적으로」) — QR 을 왼쪽에 라벨 높이로 크게, 오른쪽에 단계 ·
+ * 위치 코드(가장 크게) · 이름 · 창고와 회차 네 줄을 QR 의 위 끝부터 아래 끝 사이에 고르게 둔다. 영문 머리말(`WH:`·`ISSUE NO.:`)은 뺀다.
+ * 셀 12dot 이면 모듈 21개에서 31.5mm(종전 21mm) — 오른쪽에 15자 셀 코드가 20pt 로 한 줄에 들어가는 만큼이다.
+ */
+const QR_CELL_MAX = 12;
+const POINTS = { level: 11, code: 40, name: 18, footer: 11 };
 
 export function layoutLocationLabel(values: LocationLabelValues): LocationLabelLayout {
-  [values.warehouseCode, values.locationCode, values.locationName].forEach(assertTsplSafe);
+  [values.warehouseCode, values.warehouseName, values.locationCode, values.locationName].forEach(assertTsplSafe);
   const width = dots(100);
   const height = dots(60);
   const pad = dots(3);
-  const left = pad + dots(2);
   const border = 3;
 
   const code = QRCode.create(locationQrPayload(values), { errorCorrectionLevel: 'M' });
-  /**
-   * 담기는 한 크게 하되 **사방 4모듈 여백(quiet zone)을 먼저 확보한다** — 그래서 나누는 값이
-   * 모듈 수가 아니라 `모듈 + 8`(위 4 + 아래 4)이다. 나누는 대상은 라벨 전체 높이가 아니라
-   * `ROWS.name - border` 다 — QR 과 그 위·아래 여백이 테두리와 위치명 줄 사이에 다 들어가야
-   * 위치명 줄이 QR 을 깔고 앉지 않는다. 여백을 라벨 여백(3mm)으로 갈음하면 셀 8dot 에서 3모듈
-   * 뿐이라 규격 미달인데, 이 라벨은 «거리를 두고» 찍는 것이 목적이라 여백이 인식률을 가른다.
-   * 위치 코드가 `VarChar(50)` 이고 한글도 받으므로 페이로드 최악은 한글 50자(UTF-8 150바이트·
-   * 49모듈)다 — 그때도 셀 4·24.5mm 로 여백까지 담긴다. 그래서 「너무 길어 못 담는다」는 거절
-   * 가지가 없다.
-   */
-  const cell = Math.min(QR_CELL_MAX, Math.floor((ROWS.name - border) / (code.modules.size + 8)));
+  // 위·아래 4모듈 여백(quiet zone)이 테두리 안에 들어가는 만큼 키운다 — 거리를 두고 찍는 라벨이라 여백이 인식률을 가른다.
+  // 위치 코드 최악(한글 50자 · 49모듈)에도 셀 8 · 49mm 로 담긴다.
+  const cell = Math.min(QR_CELL_MAX, Math.floor((height - 2 * border) / (code.modules.size + 8)));
   const qrSize = code.modules.size * cell;
   const quiet = cell * 4;
-  const qrX = width - Math.max(pad, quiet) - qrSize;
-  // 기본은 목업과 같은 y=5mm(모듈 21개 표준값). 모듈이 늘어 QR 이 커지면 위치명 줄과의 아래
-  // 여백(quiet)을 지키도록 끌어올린다.
-  const qrY = Math.min(dots(5), ROWS.name - quiet - qrSize);
+  const qrX = border + quiet;
+  const qrY = Math.floor((height - qrSize) / 2);
 
-  // 창고·코드 줄은 QR 옆이라 그만큼 좁고, 위치명·회차 줄은 QR 아래라 전폭을 쓴다.
-  const available = qrX - left - quiet;
-  const fullWidth = width - left - pad;
-  const placed = (row: number, point: number, content: string, lineWidth: number): LabelText => {
+  const left = qrX + qrSize + quiet;
+  const lineWidth = width - pad - left;
+  const lines = [
+    ...(values.levelCode === null ? [] : [{ point: POINTS.level, content: values.levelCode }]),
+    // 현장이 멀리서 읽는 줄이라 가장 크게 찍는다.
+    { point: POINTS.code, content: values.locationCode },
+    { point: POINTS.name, content: values.locationName },
+    // 회차를 인쇄면에 넣는다(계약) — 데이터에만 있으면 몇 번째 출력물인지 현장이 못 가린다. 구분은 ASCII(`|`) —
+    // 프린터 내장 글꼴이 못 찍는 기호를 쓰지 않는다.
+    { point: POINTS.footer, content: `${values.warehouseCode} | ${values.warehouseName} | #${String(values.issueSeq)}` },
+  ].map(({ point, content }) => {
     const chosen = fit(content, point, lineWidth);
-    return { x: left, y: row, point: chosen, width: lineWidth, content: clip(content, chosen, lineWidth) };
-  };
-
-  return {
-    width,
-    height,
-    border,
-    texts: [
-      placed(ROWS.warehouse, POINTS.warehouse, `WH: ${values.warehouseCode}`, available),
-      // 현장이 멀리서 읽는 줄이라 가장 크게 찍는다.
-      placed(ROWS.code, POINTS.code, values.locationCode, available),
-      placed(ROWS.name, POINTS.name, values.locationName, fullWidth),
-      // 회차를 인쇄면에 넣는다(계약) — 데이터에만 있으면 몇 번째 출력물인지 현장이 못 가린다.
-      placed(ROWS.issue, POINTS.issue, `ISSUE NO.: ${String(values.issueSeq)}`, fullWidth),
-    ],
-    qr: { x: qrX, y: qrY, cell, modules: code.modules },
-  };
+    return { point: chosen, content: clip(content, chosen, lineWidth), tall: Math.round((chosen * DPI) / 72) };
+  });
+  // 코드가 짧으면 아주 크게 찍혀 줄 사이가 붙는다 — 줄 간격 3mm 가 남을 때까지 코드 줄만 줄인다.
+  const codeLine = lines[lines.length - 3];
+  const room = (): number => qrSize - lines.reduce((sum, line) => sum + line.tall, 0) - dots(3) * (lines.length - 1);
+  while (room() < 0 && codeLine.point > POINTS.name) {
+    codeLine.point -= 1;
+    codeLine.tall = Math.round((codeLine.point * DPI) / 72);
+  }
+  // 줄들을 QR 의 위 끝과 아래 끝 사이에 고르게 놓는다 — 첫 줄은 QR 위 끝, 마지막 줄은 QR 아래 끝에 맞닿는다.
+  const gap = (qrSize - lines.reduce((sum, line) => sum + line.tall, 0)) / (lines.length - 1);
+  let y = qrY;
+  const texts = lines.map((line): LabelText => {
+    const text = { x: left, y: Math.round(y), point: line.point, width: lineWidth, content: line.content };
+    y += line.tall + gap;
+    return text;
+  });
+  return { width, height, border, texts, qr: { x: qrX, y: qrY, cell, modules: code.modules } };
 }

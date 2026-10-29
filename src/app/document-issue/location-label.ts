@@ -4,19 +4,24 @@ import { LABEL_FONTS } from './label-font';
 import { DPI } from './label-layout';
 import { layoutLocationLabel, type LocationLabelValues } from './location-label-layout';
 
-/** 이 라벨이 읽는 칸만. 창고는 «코드»만 쓴다 — 이름은 한글이라 라벨에 못 싣는다. */
+/** 이 라벨이 읽는 칸만. */
 export interface LocationLabelRow {
   issue_seq: number;
   location_code: string;
   location_name: string;
-  warehouse: { warehouse_code: string };
+  alias_name: string | null;
+  location_level_code: string | null;
+  warehouse: { warehouse_code: string; warehouse_name: string };
 }
 
 export function locationLabelValues(row: LocationLabelRow): LocationLabelValues {
   return {
     warehouseCode: row.warehouse.warehouse_code,
+    warehouseName: row.warehouse.warehouse_name,
     locationCode: row.location_code,
-    locationName: row.location_name,
+    // 화면이 별칭을 이름처럼 쓴다(사용자 결정 2026-10-29).
+    locationName: row.alias_name ?? row.location_name,
+    levelCode: row.location_level_code,
     issueSeq: row.issue_seq,
   };
 }
