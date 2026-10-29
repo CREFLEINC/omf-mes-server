@@ -31,6 +31,8 @@ export const itemTable: RowTable = {
           ...values,
           name_vi: values.item_name,
           base_uom_id: uomId,
+          // 사용자 결정(2026-10-28): 새 품목은 IQC 를 기본으로 한다. 끄는 것은 품목 마스터 화면이다.
+          inspection_required: true,
           is_active: !isCancel(row),
         },
       });

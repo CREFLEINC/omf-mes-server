@@ -70,7 +70,8 @@ describe('계약 커버리지', () => {
     // W/O 일자별 실적 1 오퍼레이션(장부 P-122): 552 → 553.
     // 검사기준 작성중 버전 취소 1 오퍼레이션(#198 · 장부 P-128): 553 → 554.
     // 인계 작업 종류·인계작업 알림 설정 4 오퍼레이션(#190 · 장부 P-134): 554 → 558.
-    expect(registry.size).toBe(558);
+    // 검사기준 엑셀 올리기 1 오퍼레이션(#199 · 장부 P-140): 558 → 559.
+    expect(registry.size).toBe(559);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

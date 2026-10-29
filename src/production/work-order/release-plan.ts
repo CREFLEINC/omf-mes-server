@@ -81,6 +81,7 @@ export async function releasePlan(
     );
   }
 
+  // ⛔ 이 검사와 `lineErrors` 를 바꾸면 `production-order-worklist.ts` 의 조각도 함께 고친다 — 갈리면 ERP W/O 목록에는 「배포 대기」로 보이는데 배포가 막힌다.
   const missingLocations = [
     ['defaultWipLocationId', row.default_wip_location_id],
     ['defaultFgLocationId', row.default_fg_location_id],

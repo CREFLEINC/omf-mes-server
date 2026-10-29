@@ -28,6 +28,8 @@ interface ItemView {
   mesCategoryCode?: string;
   developmentItem: boolean;
   defaultLotStorageUomId: number | null;
+  /** 품목유형별 LOT 기본크기 — 계약 밖 이름(장부 P-139). 전환 동안 옛 이름에도 같은 값을 싣는다. */
+  defaultLotSize: number | null;
   defaultProductionLotSize: number | null;
   /** ERP 규격(SPEC)·품목그룹(ITEM_GROUP_CD) — 계약 밖 칸(장부 P-75). MES 에서 만든 품목은 null. */
   erpSpec: string | null;
@@ -46,6 +48,8 @@ export interface ItemUpdate {
   isActive: boolean;
   developmentItem?: boolean;
   defaultLotStorageUomId?: number | null;
+  /** 위와 같다 — 옛 이름도 받는다. 둘 다 오면 같아야 한다. */
+  defaultLotSize?: unknown;
   defaultProductionLotSize?: number | null;
   nameKo?: string | null;
   nameVi?: string | null;
@@ -56,6 +60,8 @@ export interface ItemQuery extends ReferenceQuery {
   hasRouting?: boolean;
   /** 계약에 없는 조건이라 검증 가드가 불리언으로 바꾸지 않는다 — 문자열로 온다(장부 P-130). */
   hasBom?: string;
+  /** 위와 같다 — 문자열로 온다(장부 P-138). */
+  inspectionRequired?: string;
 }
 
 type ItemRow = Prisma.itemGetPayload<object>;
@@ -88,6 +94,7 @@ export class ItemService {
         : { routing: query.hasRouting ? { some: {} } : { none: {} } }),
       // ERP 연동 현황 › BOM 탭의 모품목 목록 — 이 품목을 모품목으로 하는 BOM 이 있는가.
       ...withBom(query.hasBom),
+      ...flagWhere('inspectionRequired', query.inspectionRequired, (on) => ({ inspection_required: on })),
     });
     const [rows, total] = await Promise.all([
       this.prisma.item.findMany({
@@ -138,7 +145,7 @@ export class ItemService {
         ...optional('opened_shelf_life_hours', input.openedShelfLifeHours),
         ...optional('is_development_item', input.developmentItem),
         ...optional('default_lot_storage_uom_id', input.defaultLotStorageUomId),
-        ...optional('default_production_lot_size', input.defaultProductionLotSize),
+        ...optional('default_production_lot_size', lotSizeOf(input)),
         ...optional('name_ko', input.nameKo),
         ...optional('name_vi', input.nameVi),
         version_no: { increment: 1 },
@@ -197,6 +204,7 @@ export class ItemService {
 }
 
 function view(row: ItemRow): ItemView {
+  const lotSize = row.default_production_lot_size === null ? null : Number(row.default_production_lot_size);
   return {
     itemId: Number(row.item_id),
     itemCode: row.item_code,
@@ -219,20 +227,46 @@ function view(row: ItemRow): ItemView {
     developmentItem: row.is_development_item,
     defaultLotStorageUomId:
       row.default_lot_storage_uom_id === null ? null : Number(row.default_lot_storage_uom_id),
-    defaultProductionLotSize:
-      row.default_production_lot_size === null ? null : Number(row.default_production_lot_size),
+    defaultLotSize: lotSize,
+    defaultProductionLotSize: lotSize,
     erpSpec: row.erp_spec,
     erpItemGroupCode: row.erp_item_group_code,
   };
 }
 
 function withBom(value: string | undefined): Prisma.itemWhereInput {
+  return flagWhere('hasBom', value, (on) => ({ bom: on ? { some: {} } : { none: {} } }));
+}
+
+function flagWhere(
+  field: string,
+  value: string | undefined,
+  where: (on: boolean) => Prisma.itemWhereInput,
+): Prisma.itemWhereInput {
   if (value === undefined) return {};
-  // ⛔ 틀린 값을 무시하지 않는다 — 걸러지지 않은 전 품목이 「BOM 있는 품목」처럼 보인다.
+  // ⛔ 틀린 값을 무시하지 않는다 — 걸러지지 않은 전 품목이 걸러진 것처럼 보인다.
   if (value !== 'true' && value !== 'false') {
     throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field: 'hasBom', code: ERROR_CODE.INVALID, message: 'hasBom 은 true 또는 false 여야 합니다.' },
+      { scope: 'field', field, code: ERROR_CODE.INVALID, message: `${field} 은 true 또는 false 여야 합니다.` },
     ]);
   }
-  return { bom: value === 'true' ? { some: {} } : { none: {} } };
+  return where(value === 'true');
+}
+
+/** 새 이름은 계약 밖이라 검증 가드가 보지 않는다 — 계약이 옛 이름에 건 `> 0` 을 여기서 건다. */
+function lotSizeOf(input: ItemUpdate): number | null | undefined {
+  const value = input.defaultLotSize;
+  if (value === undefined) return input.defaultProductionLotSize;
+  const invalid = (message: string): ContractException =>
+    new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field: 'defaultLotSize', code: ERROR_CODE.INVALID, message },
+    ]);
+  if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
+    throw invalid('defaultLotSize 는 0 보다 큰 수이거나 null 이어야 합니다.');
+  }
+  // 전환 중 두 이름을 함께 싣는 화면이 있다 — 어긋나면 어느 쪽도 고르지 않는다.
+  if (input.defaultProductionLotSize !== undefined && input.defaultProductionLotSize !== value) {
+    throw invalid('defaultLotSize 와 defaultProductionLotSize 가 다릅니다.');
+  }
+  return value;
 }
