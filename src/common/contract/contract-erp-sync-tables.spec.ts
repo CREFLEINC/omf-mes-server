@@ -1,5 +1,5 @@
 /**
- * ⭐⭐ **ERP 받기 표별 상태·「지금 읽기」가 계약 사본에 없음을 지킨다**(장부 P-81).
+ * ⭐⭐ **ERP 받기 표별 상태·「지금 읽기」가 계약 사본에 없음을 지킨다**(장부 P-81). 통관번호 받아오기(P-143)도 같은 접두어라 함께 지킨다.
  *
  * `GET /integration/erp-sync/tables`·`POST /integration/erp-sync/tables/{interfaceCode}:run` 은 사본에 없어
  * `@Contract` 를 달 수 없다 — 그래서 인증·권한을 컨트롤러가 가드와 같은 함수로 직접 한다(`erp-sync.controller.ts`).

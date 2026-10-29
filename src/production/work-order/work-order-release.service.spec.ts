@@ -8,6 +8,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { materialRequirements } from './material-issue';
 import { operationSettings } from './release-plan';
 import { WorkOrderReleaseService } from './work-order-release.service';
+import { PickingHandoverNotifier } from '../../core/picking';
+import { WorkOrderHandoverNotifier } from './work-order-handover';
 
 const WORK_ORDER = 900;
 const ROUTING_OPERATION = 33n;
@@ -150,6 +152,8 @@ function stub(options: {
     new DocumentStateService(),
     numbering,
     new LotRegistryService(new LotHoldService()),
+    { notify: async () => undefined } as unknown as PickingHandoverNotifier,
+    { released: async () => undefined } as unknown as WorkOrderHandoverNotifier,
   );
   return { service, calls, updated, lots, requests, lines, componentWheres, inspectionRequests };
 }
@@ -179,6 +183,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
           inspection_plan_version_id: 501n,
           sampling_method_code: 'FULL_INSPECTION',
           sampling_ratio: null,
+          sampling_qty: null,
           inspection_plan: { process_id: 66n, routing_id: null },
         },
       ],
@@ -235,6 +240,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
           sampling_method_code: 'SAMPLE_BY_UNIT',
           /* ⚠ **백분율**이다 — 3.5 는 3.5% 다(계약·마이그 20260903800000). */
           sampling_ratio: new Prisma.Decimal(3.5),
+          sampling_qty: null,
           inspection_plan: { process_id: 66n, routing_id: null },
         },
       ],
@@ -260,6 +266,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
           inspection_plan_version_id: 503n,
           sampling_method_code: 'SAMPLE_BY_UNIT',
           sampling_ratio: new Prisma.Decimal(10),
+          sampling_qty: null,
           inspection_plan: { process_id: 66n, routing_id: null },
         },
       ],
@@ -280,12 +287,14 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
           inspection_plan_version_id: 601n,
           sampling_method_code: 'FULL_INSPECTION',
           sampling_ratio: null,
+          sampling_qty: null,
           inspection_plan: { process_id: null, routing_id: null },
         },
         {
           inspection_plan_version_id: 602n,
           sampling_method_code: 'FULL_INSPECTION',
           sampling_ratio: null,
+          sampling_qty: null,
           inspection_plan: { process_id: null, routing_id: 77n },
         },
       ],
@@ -305,6 +314,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
           inspection_plan_version_id: 701n,
           sampling_method_code: 'FULL_INSPECTION',
           sampling_ratio: null,
+          sampling_qty: null,
           inspection_plan: { process_id: 66n, routing_id: null, pqc_skip_allowed: true },
         },
       ],

@@ -7,8 +7,10 @@ import { DocumentStateModule } from '../core/document-state';
 import { InspectionSheetModule } from '../core/inspection-sheet';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { LotRegistryModule } from '../core/lot';
+import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
+import { WorkOrderHandoverNotifier } from '../production/work-order/work-order-handover';
 import { CauseCodeService } from './code/cause-code.service';
 import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
@@ -27,6 +29,8 @@ import { InspectionLevelController } from './inspection-level/inspection-level.c
 import { InspectionLevelService } from './inspection-level/inspection-level.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
+import { InspectionPlanImportController } from './inspection-plan/inspection-plan-import.controller';
+import { InspectionPlanImportService } from './inspection-plan/inspection-plan-import.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
 import { InspectionSheetTemplateController } from './inspection-sheet-template/inspection-sheet-template.controller';
@@ -76,10 +80,13 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InventoryPostingModule,
     LotRegistryModule,
     InspectionSheetModule,
+    // 재작업 W/O 발행이 인계 작업 알림(T9)을 같은 tx 에서 쓴다(omf-all-around#190).
+    NotificationCoreModule,
   ],
   controllers: [
     DefectCodeController,
     CauseCodeController,
+    InspectionPlanImportController, // `inspection-plans:import` — 리터럴 경로라 `:inspectionPlanId` 앞에 둔다.
     InspectionPlanController,
     InspectionSheetTemplateController,
     InspectionSheetController,
@@ -103,10 +110,12 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     ConcessionController, // `concessions`·`concessions/:concessionId`(I-21 PR ⑤) — `PrismaService` 원시 SQL, 다른 세그먼트라 순서 함정이 없다. ⛔ 이 표는 writer 0 — 운영에서 목록이 늘 빈다(통보 089 §2).
   ],
   providers: [
+    WorkOrderHandoverNotifier,
     DefectCodeService,
     CauseCodeService,
     DefectCodeProcessService,
     InspectionPlanService,
+    InspectionPlanImportService,
     InspectionSheetTemplateService,
     InspectionSheetEntryService,
     InspectionSheetAccess,

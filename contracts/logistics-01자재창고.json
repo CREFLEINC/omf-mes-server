@@ -2902,7 +2902,7 @@
      "logistics"
     ],
     "summary": "입고 줄 목록(자재입고·생산입고 현황)",
-    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·inboundReceiptNo·workOrderNo 로 집으면 기간은 선택(장부 P-140) — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소 완료(CANCELLED) 입고만 뺀다 — 취소요청 중인 입고는 재고가 그대로라 보인다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119",
+    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·inboundReceiptNo·workOrderNo 로 집으면 기간은 선택(장부 P-151) — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소 완료(CANCELLED) 입고만 뺀다 — 취소요청 중인 입고는 재고가 그대로라 보인다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119",
     "parameters": [
      {
       "name": "receiptTypeCode",
@@ -2969,7 +2969,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "LOT 번호 정확 일치(장부 P-140)"
+      "description": "LOT 번호 정확 일치(장부 P-151)"
      },
      {
       "name": "inboundReceiptNo",
@@ -2977,7 +2977,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "입하 번호 정확 일치 — 그 입하 줄에서 온 자재입고(장부 P-140)"
+      "description": "입하 번호 정확 일치 — 그 입하 줄에서 온 자재입고(장부 P-151)"
      },
      {
       "name": "workOrderNo",
@@ -2985,7 +2985,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "W/O 번호 정확 일치 — LOT 원천이 그 W/O 인 생산입고(장부 P-140)"
+      "description": "W/O 번호 정확 일치 — LOT 원천이 그 W/O 인 생산입고(장부 P-151)"
      },
      {
       "name": "statusCode",
@@ -7349,7 +7349,7 @@
      "trace"
     ],
     "summary": "투입 줄 목록(기간별 이력)",
-    "description": "자재 투입 기록을 기간으로 거른 목록. 기간은 투입 시각의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·inboundReceiptNo 로 집으면 기간은 선택이다. 투입에는 취소 상태가 없어 정정된 원 투입은 빼고 정정 투입을 싣는다(정방향 목록의 투입량과 같은 셈). 정렬: 투입 시각 내림차순. 근거: 서버 선행 · 장부 P-140",
+    "description": "자재 투입 기록을 기간으로 거른 목록. 기간은 투입 시각의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·inboundReceiptNo 로 집으면 기간은 선택이다. 투입에는 취소 상태가 없어 정정된 원 투입은 빼고 정정 투입을 싣는다(정방향 목록의 투입량과 같은 셈). 정렬: 투입 시각 내림차순. 근거: 서버 선행 · 장부 P-151",
     "parameters": [
      {
       "name": "inputDateFrom",
@@ -7633,7 +7633,7 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-140."
+    "x-internal-note": "서버 선행 · 장부 P-151."
    }
   },
   "/trace/packing-lines": {
@@ -7642,7 +7642,7 @@
      "trace"
     ],
     "summary": "포장 줄 목록(기간별 이력)",
-    "description": "확정(PACKED)된 취급 단위의 구성 줄을 기간으로 거른 목록. 한 행은 상자 하나에 담긴 LOT 하나다. 기간은 packedAt 의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·shipmentNo 로 집으면 기간은 선택이다. 열린 상자(포장 중)는 싣지 않는다. 정렬: packedAt 내림차순 → 취급 단위 번호. 근거: 서버 선행 · 장부 P-140",
+    "description": "확정(PACKED)된 취급 단위의 구성 줄을 기간으로 거른 목록. 한 행은 상자 하나에 담긴 LOT 하나다. 기간은 packedAt 의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·shipmentNo 로 집으면 기간은 선택이다. 열린 상자(포장 중)는 싣지 않는다. 정렬: packedAt 내림차순 → 취급 단위 번호. 근거: 서버 선행 · 장부 P-151",
     "parameters": [
      {
       "name": "packedDateFrom",
@@ -7948,7 +7948,7 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-140."
+    "x-internal-note": "서버 선행 · 장부 P-151."
    }
   },
   "/trace/lots": {

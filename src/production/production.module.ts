@@ -7,6 +7,7 @@ import { DocumentStateModule } from '../core/document-state';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
 import { NotificationCoreModule } from '../core/notification';
+import { PickingHandoverNotifier } from '../core/picking';
 import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MaterialConsumptionQueryService } from './material-consumption/material-consumption-query.service';
@@ -30,6 +31,7 @@ import { ProductionResultCorrectService } from './production-result/production-r
 import { ProductionResultQueryService } from './production-result/production-result-query.service';
 import { ProductionResultService } from './production-result/production-result.service';
 import { ProductionResultController } from './production-result/production-result.controller';
+import { WorkOrderHandoverNotifier } from './work-order/work-order-handover';
 import { WorkOrderCancelService } from './work-order/work-order-cancel.service';
 import { WorkOrderCloseService } from './work-order/work-order-close.service';
 import { WorkOrderDailyResultsService } from './work-order/work-order-daily-results.service';
@@ -87,6 +89,8 @@ import { WorkSessionService } from './work-session/work-session.service';
     RepairExecutionController,
   ],
   providers: [
+    PickingHandoverNotifier,
+    WorkOrderHandoverNotifier,
     WorkOrderQueryService,
     WorkOrderWriteService,
     WorkOrderTransitionService,

@@ -10,6 +10,7 @@ export const AUTO_PLAN_REASONS = [
   'LINE_UNKNOWN',
   'PLAN_NOT_CONFIRMED',
   'QTY_REMAINING',
+  'AUTO_PLAN_RERUN_NEEDED',
 ] as const;
 export type AutoPlanReason = (typeof AUTO_PLAN_REASONS)[number];
 
@@ -89,6 +90,8 @@ export interface PlanFact {
  * 확정 계획 수량이 오더 수량을 채우면 끝이다. 아니면 사람이 볼 이유를 낸다 — 계획이 없으면
  * 자동 계획을 막은 이유(`unplannedReasons`), 작성중 계획이 있으면 미확정과 그 원인, 확정분이 모자라면 잔량.
  * 자동 계획을 시도한 적이 없고 계획도 없으면 상태가 없다(null) — 그 기능 전에 받은 오더를 「확인 필요」로 쌓지 않는다.
+ * 확인 필요는 이유가 늘 하나 이상이다 — 막던 기준정보가 그 뒤 갖춰졌으면 「다시 실행」(`AUTO_PLAN_RERUN_NEEDED`)이다.
+ * ⛔ 상태(DONE·null) 판정을 바꾸면 SQL 판정 `AUTO_PLAN_DONE_SQL`·`AUTO_PLAN_UNTOUCHED_SQL`(production-order-worklist.ts)도 같이 고친다.
  */
 export function autoPlanView(
   orderQty: Prisma.Decimal,
@@ -108,5 +111,6 @@ export function autoPlanView(
   if (drafts.length > 0) reasons.add('PLAN_NOT_CONFIRMED');
   if (drafts.some((plan) => !plan.lineKnown)) reasons.add('LINE_UNKNOWN');
   if (confirmedQty.gt(0)) reasons.add('QTY_REMAINING');
+  if (reasons.size === 0) reasons.add('AUTO_PLAN_RERUN_NEEDED');
   return { status: 'NEEDS_REVIEW', reasons: AUTO_PLAN_REASONS.filter((reason) => reasons.has(reason)) };
 }

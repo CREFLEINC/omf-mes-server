@@ -44,6 +44,7 @@ function fake(row: { shipped_at: Date | null; version_no: number } | undefined) 
     undefined as never,
     undefined as never,
     undefined as never,
+    undefined as never,
   );
   return { service, recorded };
 }

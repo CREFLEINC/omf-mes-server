@@ -152,7 +152,7 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
       expect(requested.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-REQ`]);
     });
 
-    it('LOT 번호·입하 번호·W/O 번호로 집으면 기간 없이도 된다 — 기간을 주면 함께 건다(장부 P-140)', async () => {
+    it('LOT 번호·입하 번호·W/O 번호로 집으면 기간 없이도 된다 — 기간을 주면 함께 건다(장부 P-151)', async () => {
       const numbers = async (query: Record<string, string>) =>
         ((await get('goods-receipt-lines', query).expect(200)).body as Paged<ReceiptLine>).items.map((line) => line.goodsReceiptNo);
 
@@ -216,7 +216,7 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
       expect(body.items[0].lots.map((lot) => lot.lotNo)).toEqual([1, 2, 3, 4, 5].map((n) => `${PREFIX}-LOT-FG${n}`));
     });
 
-    it('LOT 번호·출하 번호·W/O 번호로 집으면 기간 없이도 된다 — 취소 출하는 그대로 빠진다(장부 P-140)', async () => {
+    it('LOT 번호·출하 번호·W/O 번호로 집으면 기간 없이도 된다 — 취소 출하는 그대로 빠진다(장부 P-151)', async () => {
       const numbers = async (query: Record<string, string>) =>
         ((await get('shipment-lines', query).expect(200)).body as Paged<ShipmentLine>).items.map((line) => line.shipmentNo).sort();
 

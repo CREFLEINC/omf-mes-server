@@ -13,7 +13,10 @@ import { partnerTable } from './apply/partner.apply';
 import { productionOrderTable } from './apply/production-order.apply';
 import { purchaseOrderTable } from './apply/purchase-order.apply';
 import { salesOrderTable } from './apply/sales-order.apply';
+import { CUSTOMS_LOOKUP, CustomsClearances, CustomsLookup } from './customs-clearance';
+import { CustomsClearanceService } from './customs-clearance.service';
 import { ERP_SYNC_LANES, ErpSyncStatusService } from './erp-sync-status.service';
+import { ErpWarehouseService } from './erp-warehouse.service';
 import { ERP_SEND_LEASE, ErpSendRunner } from './erp-send.runner';
 import { erpSyncConfig } from './erp-sync.config';
 import { ErpSyncController } from './erp-sync.controller';
@@ -79,9 +82,22 @@ import { SyncState } from './sync-state';
       },
     },
     {
+      provide: CUSTOMS_LOOKUP,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): (CustomsLookup & { onModuleDestroy(): Promise<void> }) | null => {
+        const settings = erpSyncConfig(config);
+        const fn = settings.customsFunction;
+        if (fn === null) return null;
+        // 화면 버튼과 구매입고 보내기가 함께 쓴다 — 보내기 실행기의 연결 풀과 나눈다.
+        const relay = new RelayClient(settings.relay);
+        return { find: (poNo, poSeq) => relay.customsClearances(fn, poNo, poSeq), onModuleDestroy: () => relay.close() };
+      },
+    },
+    CustomsClearanceService,
+    {
       provide: ErpSendRunner,
-      inject: [ConfigService, PrismaService],
-      useFactory: (config: ConfigService, prisma: PrismaService): ErpSendRunner => {
+      inject: [ConfigService, PrismaService, CUSTOMS_LOOKUP],
+      useFactory: (config: ConfigService, prisma: PrismaService, customs: CustomsLookup | null): ErpSendRunner => {
         const settings = erpSyncConfig(config);
         // 연결 풀을 받기와 나눈다 — 한쪽의 긴 회차가 다른 쪽 연결을 붙들지 않게.
         return new ErpSendRunner(
@@ -89,12 +105,17 @@ import { SyncState } from './sync-state';
           prisma,
           new SyncLease(prisma, ERP_SEND_LEASE),
           new RelayClient(settings.relay),
-          [productionReceiptBuilder(prisma), goodsIssueBuilder(prisma), goodsReceiptBuilder(prisma)],
+          [
+            productionReceiptBuilder(prisma),
+            goodsIssueBuilder(prisma),
+            goodsReceiptBuilder(prisma, new CustomsClearances(prisma, customs)),
+          ],
           RCV_TABLES,
         );
       },
     },
     ErpSyncStatusService,
+    ErpWarehouseService,
   ],
 })
 export class ErpSyncModule {}

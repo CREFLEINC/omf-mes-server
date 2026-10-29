@@ -17,6 +17,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { WAREHOUSE_REFERRERS } from '../src/mdm/logistics/warehouse.service';
+import { commonCodeTable } from '../src/integration/erp/apply/common-code.apply';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-mdmwh-probe';
@@ -185,6 +186,29 @@ describe('창고 마스터 (e2e)', () => {
       .expect(400);
 
     expect(rejected.body.errors[0]).toMatchObject({ field: 'warehouseCode', code: 'REQUIRED' });
+  });
+
+  it('⛔ 거래처는 받지 않는다 — partnerId 는 400 · 외부창고는 거래처 없이 저장되고 응답에 거래처가 없다(장부 P-146)', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/warehouses')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-EXT`, { isExternal: true, partnerId: 1 }))
+      .expect(400);
+    expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'partnerId', code: 'INVALID' })]);
+
+    const { id, etag } = await createWarehouse(`${PREFIX}-EXT`, { isExternal: true, partnerId: null });
+    const stored = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id }, select: { is_external: true } });
+    expect(stored.is_external).toBe(true);
+    const updated = await request(app.getHttpServer())
+      .put(`/api/mdm/warehouses/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send({ ...body(`${PREFIX}-EXT`), plantId: undefined, isExternal: false, isDefect: false })
+      .expect(200);
+    expect(updated.body.isExternal).toBe(false);
+    expect(updated.body).not.toHaveProperty('partnerId');
   });
 
   it('⛔ 마스터에 없는 공통코드는 400 이다 — 계약이 enum 을 안 적었다', async () => {
@@ -398,7 +422,84 @@ describe('창고 마스터 (e2e)', () => {
       .expect(404);
   });
 
+  // ── ERP 창고(장부 P-148) — 코드·이름은 ERP 가 정하고 현장 이름은 별칭에 둔다 ──────────────
+
+  it('⭐ ERP 창고는 ERP 이름으로만 만들고 RECEIVED_FROM_ERP 로 잠긴다 · 별칭은 고친다', async () => {
+    const code = await erpCode('E1', 'ERP 자재창고');
+
+    const misnamed = await request(app.getHttpServer())
+      .post('/api/mdm/warehouses')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(code, { warehouseName: '다른 이름' }))
+      .expect(400);
+    expect(misnamed.body.errors).toEqual([expect.objectContaining({ field: 'warehouseName', code: 'STATE_LOCKED' })]);
+
+    const { id, etag } = await createWarehouse(code, { warehouseName: 'ERP 자재창고', aliasName: ' 자재창고 ' });
+    const detail = await request(app.getHttpServer()).get(`/api/mdm/warehouses/${id}`).set('Cookie', cookie).expect(200);
+    expect(detail.body.editability).toMatchObject({ codeEditable: false, reason: 'RECEIVED_FROM_ERP' });
+    expect(detail.body.warehouse.aliasName).toBe('자재창고');
+
+    const put = (changes: Record<string, unknown>, ifMatch: string) => request(app.getHttpServer())
+      .put(`/api/mdm/warehouses/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', ifMatch)
+      .send({ ...body(code, { warehouseName: 'ERP 자재창고' }), plantId: undefined, isExternal: false, isDefect: false, ...changes });
+    const locked = await put({ warehouseCode: `${PREFIX}-RENAMED`, warehouseName: '고친 이름' }, etag).expect(400);
+    expect(locked.body.errors.map((e: { field: string }) => e.field).sort()).toEqual(['warehouseCode', 'warehouseName']);
+
+    const aliased = await put({ aliasName: '1층 자재창고' }, etag).expect(200);
+    expect(aliased.body).toMatchObject({ warehouseName: 'ERP 자재창고', aliasName: '1층 자재창고' });
+    await put({ aliasName: 3 }, aliased.headers.etag).expect(400);
+  });
+
+  it('⛔ ERP 코드 하나에 MES 창고는 하나다 — 다른 공장에도 같은 코드를 만들 수 없다', async () => {
+    const code = await erpCode('E2', 'ERP 제품창고');
+    await createWarehouse(code, { warehouseName: 'ERP 제품창고' });
+    const first = await prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId } });
+    const other = await prisma.plant.create({
+      data: { legal_entity_id: first.legal_entity_id, plant_code: `${PREFIX}-P3`, plant_name: 'ERP 창고 둘째 공장', timezone_code: first.timezone_code },
+    });
+
+    const duplicated = await request(app.getHttpServer())
+      .post('/api/mdm/warehouses')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(code, { warehouseName: 'ERP 제품창고', plantId: Number(other.plant_id) }))
+      .expect(400);
+    expect(duplicated.body.errors).toEqual([
+      expect.objectContaining({ field: 'warehouseCode', code: 'UNIQUE_VIOLATION', uniqueScope: ['warehouseCode'] }),
+    ]);
+  });
+
+  it('⭐ ERP 가 이름을 바꿔 보내면 같은 코드의 MES 창고 이름도 바뀐다 — 공통코드 받기', async () => {
+    const code = await erpCode('E3', 'ERP 옛 이름');
+    const { id } = await createWarehouse(code, { warehouseName: 'ERP 옛 이름' });
+    const before = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id } });
+
+    await commonCodeTable.apply(prisma, {
+      MES_INF_ID: 1, TYPE_CODE: 'SL_TYPE', TYPE_NAME: '창고구분', CODE: code, CODE_NAME: 'ERP 새 이름', T_FLAG: 'U',
+    });
+
+    const after = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id } });
+    expect(after.warehouse_name).toBe('ERP 새 이름');
+    expect(after.version_no).toBe(before.version_no + 1);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  /** ERP 창고 코드 — 공통코드 `SL_TYPE` 값으로 둔다(그룹은 다른 시험·ERP 받기와 같이 쓴다). */
+  async function erpCode(suffix: string, name: string): Promise<string> {
+    const group = await prisma.code_group.upsert({
+      where: { group_code: 'SL_TYPE' },
+      update: {},
+      create: { group_code: 'SL_TYPE', group_name: '창고구분', is_system_owned: true },
+    });
+    const code = `${PREFIX}-${suffix}`;
+    await prisma.code_value.create({ data: { code_group_id: group.code_group_id, code, code_name: name } });
+    return code;
+  }
 
   function body(warehouseCode: string, extra: Record<string, unknown> = {}): object {
     return {

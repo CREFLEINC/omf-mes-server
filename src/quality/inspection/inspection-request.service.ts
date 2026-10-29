@@ -37,9 +37,7 @@ export class InspectionRequestService {
 
   async list(query: InspectionRequestListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<InspectionRequestView>> {
     const page = pageRequest(query);
-    const where: Prisma.inspection_requestWhereInput = scope === undefined
-      ? buildWhere(query)
-      : { AND: [buildWhere(query), await terminalInspectionRequestWhere(this.prisma, scope)] };
+    const where = await inspectionRequestListWhere(this.prisma, query, scope);
     const [rows, total] = await Promise.all([
       this.prisma.inspection_request.findMany({
         where, orderBy: ORDER_BY, skip: page.skip, take: page.take, include: FOUR_M_CHANGE_INCLUDE,
@@ -121,4 +119,15 @@ function statusWhere(query: InspectionRequestListQuery): Prisma.inspection_reque
 function supplierWhere(supplierId: number | undefined): Prisma.inspection_requestWhereInput {
   if (supplierId === undefined) return {};
   return { lot: { inbound_receipt_line: { some: { inbound_receipt: { supplier_id: supplierId } } } } };
+}
+
+/** 검사 의뢰 목록의 조건 + 단말 범위 — 단말 작업 수(POP OQC)가 같은 함수로 센다(omf-all-around#190). */
+export async function inspectionRequestListWhere(
+  prisma: PrismaService,
+  query: InspectionRequestListQuery,
+  scope?: TerminalQualityReadScope,
+): Promise<Prisma.inspection_requestWhereInput> {
+  return scope === undefined
+    ? buildWhere(query)
+    : { AND: [buildWhere(query), await terminalInspectionRequestWhere(prisma, scope)] };
 }

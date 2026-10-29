@@ -78,17 +78,17 @@ export interface ApprovalTargetView {
 }
 
 /**
- * 다형 참조 대상의 표시명. `entity_type_registry` 에 표시명 칸이 없어 (설계 미정 —
- * 문의 021) `"{targetTypeCode} #{targetId}"` 로 낸다 — 등록부를 조회하지 않는다.
+ * 다형 참조 대상의 표시명. 호출자가 찾은 이름(`approval-target-name.ts`)이 있으면 그것이고, 없으면
+ * `entity_type_registry` 에 표시명 칸이 없어 (설계 미정 — 문의 021) `"{targetTypeCode} #{targetId}"` 로 낸다.
  * `screenId` 원천도 없어 키를 생략하고(`omitEmpty`) `openable` 은 항상 거짓이다
  * (설계 미정 — 문의 019, I-1.md §6-2).
  */
-export function toApprovalTarget(targetTypeCode: string, targetId: bigint): ApprovalTargetView {
+export function toApprovalTarget(targetTypeCode: string, targetId: bigint, name?: string): ApprovalTargetView {
   const id = Number(targetId);
   return {
     targetTypeCode,
     targetId: id,
-    displayName: `${targetTypeCode} #${id}`,
+    displayName: name ?? `${targetTypeCode} #${id}`,
     openable: false,
   };
 }
@@ -123,6 +123,7 @@ type RequestRow = Prisma.approval_requestGetPayload<{
 export function toApprovalRequest(
   row: RequestRow,
   derived: { currentStepNo: number | null; isMyTurn: boolean },
+  targetName?: string,
 ): ApprovalRequestView {
   return {
     approvalRequestId: Number(row.approval_request_id),
@@ -134,7 +135,7 @@ export function toApprovalRequest(
     requestedAt: row.requested_at.toISOString(),
     statusCode: row.status_code,
     reason: row.reason,
-    target: toApprovalTarget(row.target_type_code, row.target_id),
+    target: toApprovalTarget(row.target_type_code, row.target_id, targetName),
     currentStepNo: derived.currentStepNo,
     totalStepNo: row.approval_step.length,
     isMyTurn: derived.isMyTurn,

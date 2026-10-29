@@ -16,7 +16,7 @@ import ts from "typescript";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
-const GENERATED_ON = "2026-10-27";
+const GENERATED_ON = "2026-10-28";
 const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${GENERATED_ON}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
@@ -26,10 +26,10 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 작업 브랜치의 커밋을 적으면 squash 병합이나
 // 브랜치 자동 삭제로 해시가 사라질 수 있고, 그러면 아래 assertSourceMatchesServerCommit 의
 // `git rev-parse <sha>:src` 가 새 클론에서 죽는다. 그래서 전달본은 «병합된 뒤» main 의 커밋을 적어 뽑는다.
-// 지금 적힌 것은 main 의 병합 커밋이다 — W/O 일자별 실적(#831 · 장부 P-122)과 그 뒤 계약 추가가 들어간 지점(#843 병합 9fe208e).
+// 지금 적힌 것은 main 의 병합 커밋이다 — 작업지시 목록 칩 판정(#870 · 장부 P-142)이 들어간 지점(병합 4ce45c2).
 const SERVER_VERSION = "v0.1.21-next";
-const SERVER_COMMIT = "9fe208e1b067516487e700dd0428f6c838197e1e";
-const GENERATED_VERSION = "0.1.21-next-server.20261027";
+const SERVER_COMMIT = "4ce45c2cfedad40338c5ed3541523cbb17b263b9";
+const GENERATED_VERSION = "0.1.21-next-server.20261028";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -786,9 +786,10 @@ function build() {
   //    `contract-registry.spec.ts`·`contract-coverage.spec.ts` 의 같은 수치와 맞춘다.
   //    2026-10-21 전달본: 그 사이 장부 P-항목들이 더한 오퍼레이션을 합쳐 **523** 이다(피처 001 P-92·P-96·P-98 포함).
   //    2026-10-27 전달본: P-101~P-122 가 더한 오퍼레이션을 합쳐 **553** 이다 — `contract-registry.spec.ts` 의 수치와 같다.
+  //    2026-10-28 전달본: 그 뒤 장부 P-항목들이 더한 오퍼레이션을 합쳐 **555** 다.
   assert(
-    documentsByOperation.size === 553,
-    `계약 오퍼레이션 수가 553이 아닙니다: ${documentsByOperation.size}`,
+    documentsByOperation.size === 555,
+    `계약 오퍼레이션 수가 555이 아닙니다: ${documentsByOperation.size}`,
   );
 
   const missingOperations = [...documentsByOperation.keys()].filter(

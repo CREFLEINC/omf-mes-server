@@ -98,9 +98,14 @@ describe('POP 창고 적재 위치 라벨 (장부 P-28 e2e)', () => {
     const validate = validator('GET /mdm/locations');
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
-    expect(response.body.items.map((row: { locationId: number }) => row.locationId).sort())
-      .toEqual(ids.locations.map(Number).sort());
-    expect(response.body.page).toMatchObject({ page: 1, size: 50, total: ids.locations.length });
+    // 서버가 만든 적치 대기 자리도 그 창고의 위치다(장부 P-145).
+    const staging = await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: ids.warehouse, system_role_code: 'PUTAWAY_STAGING' },
+      select: { location_id: true },
+    });
+    const expected = [...ids.locations, staging.location_id].map(Number).sort();
+    expect(response.body.items.map((row: { locationId: number }) => row.locationId).sort()).toEqual(expected);
+    expect(response.body.page).toMatchObject({ page: 1, size: 50, total: expected.length });
   });
 
   it('⛔ POP 단말이 남의 공장 창고의 위치를 물으면 401 이다', async () => {

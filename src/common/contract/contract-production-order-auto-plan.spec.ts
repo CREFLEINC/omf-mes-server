@@ -34,7 +34,7 @@ describe('계약 사본 — 선반영한 ERP W/O 자동 계획 (P-67)', () => {
       ['outcome', 'productionOrderId', 'productionPlanId', 'reasons'],
     );
     expect(contract.components.schemas.AutoPlanReason?.enum).toEqual(
-      ['BOM_MISSING', 'ROUTING_MISSING', 'ROUTING_AMBIGUOUS', 'LINE_UNKNOWN', 'PLAN_NOT_CONFIRMED', 'QTY_REMAINING'],
+      ['BOM_MISSING', 'ROUTING_MISSING', 'ROUTING_AMBIGUOUS', 'LINE_UNKNOWN', 'PLAN_NOT_CONFIRMED', 'QTY_REMAINING', 'AUTO_PLAN_RERUN_NEEDED'],
     );
   });
 });

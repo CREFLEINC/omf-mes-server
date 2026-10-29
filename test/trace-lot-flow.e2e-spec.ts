@@ -498,7 +498,7 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     await consume(wo.G, ids.s1, ids.semi, 5, at);
     await consume(wo.T, ids.s1, ids.semi, 5, at);
     await consume(wo.C, ids.c1, ids.semi, 1, at);
-    // 정정 — 원 투입은 기간별 이력에서 빠지고 정정 투입만 남는다(장부 P-140).
+    // 정정 — 원 투입은 기간별 이력에서 빠지고 정정 투입만 남는다(장부 P-151).
     const original = await prisma.material_consumption.findFirstOrThrow({ where: { work_order_id: wo.C, lot_id: ids.c1 } });
     seq += 1;
     await prisma.material_consumption.create({ data: {
@@ -517,7 +517,7 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
 
     await receive('G1', 'PRODUCT', ids.g1, ids.product, 40, await local(DAY, '12:00'));
     await receive('G1-CXL', 'PRODUCT', ids.g1, ids.product, 9, await local(DAY, '12:30'), undefined, 'CANCELLED');
-    // 구성 줄 생성 시각이 포장 시각이다(기간별 이력의 포장 줄 · 장부 P-140).
+    // 구성 줄 생성 시각이 포장 시각이다(기간별 이력의 포장 줄 · 장부 P-151).
     const packedAt = await local(DAY, '13:00');
     const box = await prisma.handling_unit.create({ data: { handling_unit_no: `${PREFIX}-HU1`, handling_unit_type_code: 'BOX', status_code: 'PACKED',
       handling_unit_content: { create: [{ item_id: ids.product, lot_id: ids.g1, qty: 30, uom_id: ids.uom, created_at: packedAt }] } } });

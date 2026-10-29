@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { HU_PACKED } from '../flow/flow-sql';
 import { historyLinePage } from './history-line-page';
 
-/** LOT 생산 이력 조회의 기간별 이력 — 포장 결과(장부 P-140). 확정(PACKED)된 취급 단위의 구성 줄 하나가 한 행이다. */
+/** LOT 생산 이력 조회의 기간별 이력 — 포장 결과(장부 P-151). 확정(PACKED)된 취급 단위의 구성 줄 하나가 한 행이다. */
 export interface PackingLineListQuery {
   packedDateFrom?: string;
   packedDateTo?: string;

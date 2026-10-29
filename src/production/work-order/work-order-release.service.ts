@@ -3,11 +3,12 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { DocumentStateService } from '../../core/document-state';
 import { LotRegistryService, nextMesLotNos, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
-import { PickingPlan, planPicking, writePicking } from '../../core/picking';
+import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ISSUE_REGISTERED, MaterialIssueLine, materialRequirements } from './material-issue';
 import { PqcRequestPlan, preparePqcRequest, writePqcRequest } from './work-order-pqc-request';
 import { ReleasePlan, operationSettings, releasePlan } from './release-plan';
+import { WorkOrderHandoverNotifier } from './work-order-handover';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
 /** 계약 `WorkOrderRelease` — required 는 `lotSize` 하나이고 서버 기본값이 없다(R-17). */
@@ -39,6 +40,8 @@ export class WorkOrderReleaseService {
     private readonly documentState: DocumentStateService,
     private readonly numbering: NumberingService,
     private readonly lots: LotRegistryService,
+    private readonly pickingNotices: PickingHandoverNotifier,
+    private readonly workOrderNotices: WorkOrderHandoverNotifier,
   ) {}
 
   async release(
@@ -139,6 +142,7 @@ export class WorkOrderReleaseService {
     if (issue !== null && destination !== null) {
       await this.issueRequest(tx, workOrderId, issue, destination, appUserId);
     }
+    await this.workOrderNotices.released(tx, BigInt(workOrderId));
   }
 
   private async issueRequest(
@@ -172,7 +176,7 @@ export class WorkOrderReleaseService {
       where: { material_issue_request_id: header.material_issue_request_id },
       select: { material_issue_request_line_id: true, line_no: true },
     });
-    await writePicking(
+    const pickings = await writePicking(
       tx,
       issue.picking,
       {
@@ -184,5 +188,6 @@ export class WorkOrderReleaseService {
       },
       appUserId,
     );
+    await this.pickingNotices.notify(tx, pickings, { workOrderId: BigInt(workOrderId), requiredAt: null });
   }
 }

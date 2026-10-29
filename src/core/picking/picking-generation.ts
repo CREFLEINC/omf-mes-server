@@ -30,6 +30,13 @@ export interface PickingPlan extends PickingAllocation {
   assignedWorkerId: bigint | null;
 }
 
+/** `writePicking` 이 만든 피킹 지시 — 인계 알림(T2)이 지시마다 공장·창고를 푼다(omf-all-around#190 · D-8). */
+export interface WrittenPicking {
+  pickingOrderId: bigint;
+  warehouseId: bigint;
+  lineCount: number;
+}
+
 export interface PickingPlanInput {
   /** W/O 의 공장 — 출고요청과 같이 계획의 ERP W/O 로 푼다(R-7 단일 축). */
   plantId: bigint;
@@ -115,7 +122,8 @@ export async function writePicking(
     requestLineIds: ReadonlyMap<number, bigint>;
   },
   appUserId: number,
-): Promise<void> {
+): Promise<WrittenPicking[]> {
+  const written: WrittenPicking[] = [];
   for (const shortage of plan.shortages) {
     logger.warn(
       `피킹 결품 — ${source.issueRequestNo} 라인 ${shortage.requestLineNo} ` +
@@ -136,6 +144,7 @@ export async function writePicking(
       },
       select: { picking_order_id: true },
     });
+    written.push({ pickingOrderId: header.picking_order_id, warehouseId: order.warehouseId, lineCount: order.lines.length });
     await tx.picking_line.createMany({
       data: order.lines.map((line) => ({
         picking_order_id: header.picking_order_id,
@@ -153,4 +162,5 @@ export async function writePicking(
       })),
     });
   }
+  return written;
 }

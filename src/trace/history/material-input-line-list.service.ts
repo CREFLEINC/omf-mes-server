@@ -7,7 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LIVE_CONSUMPTION } from '../flow/flow-sql';
 import { historyLinePage } from './history-line-page';
 
-/** LOT 생산 이력 조회의 기간별 이력 — 자재 투입 기록(장부 P-140). 기간 축은 투입 시각(공장 현지 날짜). */
+/** LOT 생산 이력 조회의 기간별 이력 — 자재 투입 기록(장부 P-151). 기간 축은 투입 시각(공장 현지 날짜). */
 export interface MaterialInputLineListQuery {
   inputDateFrom?: string;
   inputDateTo?: string;
