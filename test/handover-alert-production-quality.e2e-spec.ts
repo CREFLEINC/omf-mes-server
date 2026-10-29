@@ -156,6 +156,15 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     expect(events[0].payload).toMatchObject({ lot_count: 2, supplier: `${PREFIX} 공급사` });
     const notes = await prisma.notification.findMany({ where: { notification_event_id: events[0].notification_event_id } });
     expect(notes.map((n) => n.title)).toEqual(['IQC 수입검사', 'IQC 수입검사']);
+
+    // 알림센터는 T10 을 IQC 화면으로 보낼 대상(입하)을 싣는다(research R-8).
+    const inbox = await request(app.getHttpServer())
+      .get('/api/app/notifications')
+      .query({ occurredFrom: new Date(Date.now() - 3_600_000).toISOString(), occurredTo: new Date(Date.now() + 3_600_000).toISOString() })
+      .set('Cookie', `${SESSION_COOKIE}=${app.get(JwtService).sign({ sub: Number(users.U1), typ: 'session' })}`)
+      .expect(200);
+    const iqc = inbox.body.items.find((n: { eventCode: string }) => n.eventCode === 'IQC_INSPECTION_REQUESTED');
+    expect(iqc).toMatchObject({ targetTypeCode: 'INBOUND_RECEIPT', targetId: Number(receiptId) });
   });
 
   it('US1-5 FR-002 T10 :split·:per-line 도 입하 1건에 알림 1건이다', async () => {

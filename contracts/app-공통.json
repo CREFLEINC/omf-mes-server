@@ -6045,7 +6045,8 @@
        "APPROVAL_REQUEST",
        "LOT",
        "WORK_ORDER",
-       "NONCONFORMANCE"
+       "NONCONFORMANCE",
+       "INBOUND_RECEIPT"
       ],
       "example": "EQUIPMENT"
      },
@@ -6585,6 +6586,7 @@
      "lastErrorMessage",
      "paramMaxLength",
      "templates",
+     "handoverTemplates",
      "deliveryEnabled"
     ],
     "description": "Zalo ZBS 연결 정보(시스템 1행). 근거: 서버 선행 · 장부 P-96 · omf-all-around#160(피처 001 W-CO-12)",
@@ -6685,6 +6687,33 @@
       },
       "description": "이벤트 6종 전부. 미설정이면 templateId null"
      },
+     "handoverTemplates": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "alertTypeCode",
+        "templateId"
+       ],
+       "properties": {
+        "alertTypeCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 인계 작업 종류는 «전용 목록»(GET /app/handover-alert-types)이 갖는다."
+        },
+        "templateId": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "maxLength": 40,
+         "example": "231299",
+         "description": "고객사가 Zalo 에 등록한 인계 작업 템플릿 ID. 파라미터 이름은 서버가 고정한다(specs/002 zalo-templates.md)."
+        }
+       }
+      },
+      "description": "인계 작업 10종의 템플릿(행 없으면 null). 기존 templates(이벤트 6종)와 따로다. 근거: 서버 선행 · 장부 P-135 · omf-all-around#190(피처 002 인계 작업 알림)"
+     },
      "deliveryEnabled": {
       "type": "boolean",
       "example": false,
@@ -6755,6 +6784,33 @@
        }
       },
       "description": "바꿀 이벤트만 담아도 된다. templateId null = 지움. 모르는·겹친 eventCode 는 400 templates"
+     },
+     "handoverTemplates": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "alertTypeCode",
+        "templateId"
+       ],
+       "properties": {
+        "alertTypeCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 인계 작업 종류는 «전용 목록»(GET /app/handover-alert-types)이 갖는다."
+        },
+        "templateId": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "maxLength": 40,
+         "example": "231299",
+         "description": "고객사가 Zalo 에 등록한 인계 작업 템플릿 ID. 파라미터 이름은 서버가 고정한다(specs/002 zalo-templates.md)."
+        }
+       }
+      },
+      "description": "바꿀 인계 종류만 담아도 된다. 생략 = 유지. templateId null = 지움. 모르는·겹친 alertTypeCode 는 400 handoverTemplates. 근거: 서버 선행 · 장부 P-135 · omf-all-around#190(피처 002 인계 작업 알림)"
      }
     }
    },
@@ -6821,9 +6877,17 @@
          "enum": [
           "WORK_ORDER",
           "EQUIPMENT",
-          "APPROVAL_REQUEST"
+          "APPROVAL_REQUEST",
+          "GOODS_RECEIPT",
+          "PICKING_ORDER",
+          "STOCK_TRANSFER",
+          "SHIPMENT_REQUEST",
+          "SHIPMENT",
+          "INBOUND_RECEIPT",
+          "LOT"
          ],
-         "example": "WORK_ORDER"
+         "example": "WORK_ORDER",
+         "description": "인계 작업 알림 대상 7종을 더했다(장부 P-135)."
         },
         "targetId": {
          "type": "integer",
