@@ -16,7 +16,8 @@
   },
   "testEnvironment": "node",
   "testTimeout": 30000,
-  "maxWorkers": 1,
+  "maxWorkers": 4,
   "globalSetup": "<rootDir>/test/global-setup.ts",
+  "setupFiles": ["<rootDir>/test/setup-worker-db.ts", "<rootDir>/test/setup-loopback.ts"],
   "testSequencer": "<rootDir>/test/alphabetical-sequencer.js"
 }
