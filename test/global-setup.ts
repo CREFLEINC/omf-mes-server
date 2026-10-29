@@ -2,6 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { WORKER_DB_BASE, workerDatabaseUrl } from './worker-db';
+
 /**
  * e2e 가 도는 DB 의 전제를 **먼저** 확인한다.
  *
@@ -12,13 +14,62 @@ import { join } from 'node:path';
  *
  * 두 전제 모두 «검사 밖»에 있다. 스위트가 만들지 않고 있다고 «전제»한다.
  */
-export default async function globalSetup(): Promise<void> {
+export default async function globalSetup(globalConfig: { maxWorkers: number }): Promise<void> {
   disableErpSync();
   const prisma = new PrismaClient();
   try {
     await assertMigrationsApplied(prisma);
     await assertSeeded(prisma);
     await ensureOrganization(prisma);
+  } finally {
+    await prisma.$disconnect();
+  }
+  if (globalConfig.maxWorkers > 1) await cloneWorkerDatabases(globalConfig.maxWorkers);
+}
+
+/**
+ * 일꾼마다 자기 DB 를 쓴다 — 스위트가 서로의 흔적을 지우므로(`alphabetical-sequencer.js`) 한 DB 를 나눠 쓰면
+ * 동시에 돌릴 수 없다. 위에서 확인한 DB 를 원본으로 일꾼 수만큼 복사하고, 원본은 건드리지 않는다 —
+ * 그래서 다음 실행도 깨끗한 복사본에서 시작한다. 한 줄로(`--runInBand`) 돌리면 지금처럼 원본에서 돈다.
+ */
+async function cloneWorkerDatabases(workers: number): Promise<void> {
+  const base = process.env.DATABASE_URL as string;
+  const source = new URL(base).pathname.slice(1);
+  // CREATE DATABASE … TEMPLATE 은 원본에 붙은 연결이 하나도 없어야 한다 — 다른 DB 에 붙어 명령한다.
+  const admin = new URL(base);
+  admin.pathname = '/postgres';
+  const prisma = new PrismaClient({ datasourceUrl: admin.toString() });
+  try {
+    for (let worker = 1; worker <= workers; worker += 1) {
+      const target = new URL(workerDatabaseUrl(base, String(worker))).pathname.slice(1);
+      await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${target}" WITH (FORCE)`);
+      await prisma.$executeRawUnsafe(`CREATE DATABASE "${target}" TEMPLATE "${source}"`);
+    }
+  } finally {
+    await prisma.$disconnect();
+  }
+  for (let worker = 1; worker <= workers; worker += 1) await spreadSequences(workerDatabaseUrl(base, String(worker)));
+  process.env[WORKER_DB_BASE] = base;
+}
+
+/**
+ * 순번마다 천씩 띄운다(10만부터) — 갓 복사한 DB 는 모든 표의 id 가 1 부터 시작해 「서로 다른 표의 id 는 다르다」를
+ * 기대는 단언(출처가 뒤바뀌면 잡으려고 값을 다르게 둔 자리)이 우연히 같은 값으로 깨진다. 한 DB 를 같이 쓸 때는 앞
+ * 스위트가 id 를 먼저 써서 가려져 있었다. ⛔ 백만을 넘기지 않는다 — LOT 번호가 공장 id 를 여섯 자리로 싣는다.
+ * 10만부터인 것은 검사가 「없는 id」로 쓰는 9999·99999 를 피하려는 것이다(999999 는 위로 피한다).
+ */
+async function spreadSequences(url: string): Promise<void> {
+  const prisma = new PrismaClient({ datasourceUrl: url });
+  try {
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      DECLARE seq regclass; n int := 0;
+      BEGIN
+        FOR seq IN SELECT c.oid::regclass FROM pg_class c WHERE c.relkind = 'S' ORDER BY c.relnamespace, c.relname LOOP
+          n := n + 1;
+          PERFORM setval(seq, 100000 + n * 1000 + coalesce(pg_sequence_last_value(seq), 0));
+        END LOOP;
+      END $$`);
   } finally {
     await prisma.$disconnect();
   }
