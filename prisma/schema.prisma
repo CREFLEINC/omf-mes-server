@@ -569,6 +569,7 @@ model handling_unit_content {
 
   @@unique([handling_unit_id, item_id, lot_id], map: "uq_handling_unit_content")
   @@index([lot_id], map: "ix_handling_unit_content_lot")
+  @@index([created_at], map: "ix_handling_unit_content_created_at")
   @@schema("inventory")
 }
 
@@ -3010,6 +3011,7 @@ model material_consumption {
 
   @@index([lot_id, occurred_at(sort: Desc)], map: "ix_material_consumption_lot")
   @@index([work_order_id, occurred_at(sort: Desc)], map: "ix_material_consumption_work_order")
+  @@index([occurred_at], map: "ix_material_consumption_occurred_at")
   @@schema("production")
 }
 

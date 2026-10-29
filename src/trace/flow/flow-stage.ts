@@ -1,6 +1,3 @@
-import { ERROR_CODE, field, one } from '../../common/errors';
-import { LocalPeriod, MAX_PERIOD_DAYS, PeriodFields, localPeriod } from '../../common/period/plant-local-period';
-
 /**
  * LOT 추적의 단계 — 앞에서 뒤로. 한 LOT 의 「현재 단계」는 하위 사슬에서 가장 멀리 간 단계다
  * (생산 LOT 하나라도 출하됐으면 그 자재 LOT 은 출하 단계).
@@ -32,25 +29,4 @@ export function stageCounts(stages: readonly StageCode[], rows: { stage: string;
 export function stageFilter(value: string[] | string | undefined): string[] | undefined {
   if (value === undefined) return undefined;
   return Array.isArray(value) ? value : [value];
-}
-
-/**
- * 목록의 범위는 기간이나 LOT 을 집는 번호다. 기간만 넣으면 그 기간 전체를 본다(길이 상한은 `MAX_PERIOD_DAYS`).
- * 번호로 하나를 집으면 기간 없이도 좁으니 그때만 기간이 선택이다. `pins` 는 그 번호 칸들을 알리는 문구다.
- */
-export function periodUnlessPinned(
-  from: string | undefined,
-  to: string | undefined,
-  fields: PeriodFields,
-  pinned: boolean,
-  pins: string,
-  today: string,
-): LocalPeriod | undefined {
-  if (from === undefined) {
-    if (pinned) return undefined;
-    throw one(field(fields.from, ERROR_CODE.REQUIRED,
-      `조회 기간이 없습니다. ${fields.label} 시작(${fields.from})을 넣거나 ${pins} 중 하나를 넣어 다시 조회하세요. ` +
-        `기간은 최대 ${MAX_PERIOD_DAYS}일입니다.`));
-  }
-  return localPeriod(from, to, fields, today);
 }

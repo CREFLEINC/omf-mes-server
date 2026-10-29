@@ -31,4 +31,14 @@ describe('입고 줄 목록의 조건', () => {
   it('기간 시작이 없으면 SQL 을 만들기 전에 400 이다', () => {
     expect(() => goodsReceiptLineWhere({}, TODAY)).toThrow();
   });
+
+  it('LOT 번호·입하 번호·W/O 번호로 집으면 기간 없이도 된다', () => {
+    const { sql, params } = goodsReceiptLineWhere({ lotNo: 'L-1', inboundReceiptNo: 'IR-1', workOrderNo: 'WO-1' }, TODAY);
+
+    expect(sql).not.toContain('AT TIME ZONE');
+    expect(sql).toContain('lt.lot_no = $2');
+    expect(sql).toContain('nr.inbound_receipt_no = $3');
+    expect(sql).toContain('qw.work_order_no = $4');
+    expect(params).toEqual(['CANCELLED', 'L-1', 'IR-1', 'WO-1']);
+  });
 });

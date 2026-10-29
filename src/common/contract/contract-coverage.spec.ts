@@ -72,7 +72,8 @@ describe('계약 커버리지', () => {
     // 인계 작업 종류·인계작업 알림 설정 4 오퍼레이션(#190 · 장부 P-134): 554 → 558.
     // 단말 작업 수 1 오퍼레이션(#190 · 장부 P-137): 558 → 559.
     // 검사기준 엑셀 올리기 1 오퍼레이션(#199 · 장부 P-140): 559 → 560.
-    expect(registry.size).toBe(560);
+    // 기간별 이력의 투입 줄·포장 줄 2 오퍼레이션(장부 P-151): 560 → 562.
+    expect(registry.size).toBe(562);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

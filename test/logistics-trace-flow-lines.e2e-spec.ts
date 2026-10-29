@@ -152,11 +152,21 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
       expect(requested.items.map((line) => line.goodsReceiptNo)).toEqual([`${PREFIX}-GR-REQ`]);
     });
 
-    it('기간 시작이 없거나 366일을 넘으면 400 이고 칸과 조치를 알린다', async () => {
+    it('LOT 번호·입하 번호·W/O 번호로 집으면 기간 없이도 된다 — 기간을 주면 함께 건다(장부 P-151)', async () => {
+      const numbers = async (query: Record<string, string>) =>
+        ((await get('goods-receipt-lines', query).expect(200)).body as Paged<ReceiptLine>).items.map((line) => line.goodsReceiptNo);
+
+      expect(await numbers({ lotNo: `${PREFIX}-LOT-MAT` })).toEqual([`${PREFIX}-GR-REQ`, `${PREFIX}-GR-MAT`, `${PREFIX}-GR-EVE`]);
+      expect(await numbers({ lotNo: `${PREFIX}-LOT-MAT`, receiptDateFrom: DAY, receiptDateTo: DAY })).toEqual([`${PREFIX}-GR-REQ`, `${PREFIX}-GR-MAT`]);
+      expect(await numbers({ inboundReceiptNo: `${PREFIX}-IR` })).toEqual([`${PREFIX}-GR-MAT`]);
+      expect(await numbers({ workOrderNo: `${PREFIX}-WO` })).toEqual([`${PREFIX}-GR-PRD`]);
+    });
+
+    it('기간도 집는 번호도 없거나 366일을 넘으면 400 이고 칸과 조치를 알린다', async () => {
       const missing = await get('goods-receipt-lines', { q: PREFIX }).expect(400);
       expect(missing.body.errors).toEqual([{
         scope: 'field', field: 'receiptDateFrom', code: 'REQUIRED',
-        message: '입고일 시작(receiptDateFrom)이 비었습니다. 시작일을 넣어 다시 조회하세요 — 기간은 최대 366일입니다.',
+        message: '조회 기간이 없습니다. 입고일 시작(receiptDateFrom)을 넣거나 LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo) 중 하나를 넣어 다시 조회하세요. 기간은 최대 366일입니다.',
       }]);
       const tooLong = await get('goods-receipt-lines', { receiptDateFrom: '2025-01-01', receiptDateTo: '2026-01-02' }).expect(400);
       expect(tooLong.body.errors[0]).toMatchObject({ field: 'receiptDateTo', code: 'RANGE' });
@@ -206,7 +216,17 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
       expect(body.items[0].lots.map((lot) => lot.lotNo)).toEqual([1, 2, 3, 4, 5].map((n) => `${PREFIX}-LOT-FG${n}`));
     });
 
-    it('기간 시작이 없으면 400, 권한이 없으면 403 이다', async () => {
+    it('LOT 번호·출하 번호·W/O 번호로 집으면 기간 없이도 된다 — 취소 출하는 그대로 빠진다(장부 P-151)', async () => {
+      const numbers = async (query: Record<string, string>) =>
+        ((await get('shipment-lines', query).expect(200)).body as Paged<ShipmentLine>).items.map((line) => line.shipmentNo).sort();
+
+      expect(await numbers({ shipmentNo: `${PREFIX}-SH-OK` })).toEqual([`${PREFIX}-SH-OK`]);
+      expect(await numbers({ lotNo: `${PREFIX}-LOT-FG2` })).toEqual([`${PREFIX}-SH-MANY`, `${PREFIX}-SH-OK`]);
+      expect(await numbers({ lotNo: `${PREFIX}-LOT-FG2`, shipDateFrom: DAY, shipDateTo: DAY })).toEqual([`${PREFIX}-SH-OK`]);
+      expect(await numbers({ workOrderNo: `${PREFIX}-WO`, shipDateFrom: DAY, shipDateTo: DAY })).toEqual([`${PREFIX}-SH-OK`]);
+    });
+
+    it('기간도 집는 번호도 없으면 400, 권한이 없으면 403 이다', async () => {
       const missing = await get('shipment-lines', { q: PREFIX }).expect(400);
       expect(missing.body.errors[0]).toMatchObject({ field: 'shipDateFrom', code: 'REQUIRED' });
       await get('shipment-lines', window, 'denied').expect(403);

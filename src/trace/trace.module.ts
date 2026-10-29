@@ -11,6 +11,9 @@ import { LotFlowChainService } from './flow/lot-flow-chain.service';
 import { LotFlowController } from './flow/lot-flow.controller';
 import { MaterialLotFlowListService } from './flow/material-lot-flow-list.service';
 import { ProductLotFlowListService } from './flow/product-lot-flow-list.service';
+import { MaterialInputLineListService } from './history/material-input-line-list.service';
+import { PackingLineListService } from './history/packing-line-list.service';
+import { TraceHistoryController } from './history/trace-history.controller';
 import { LotLifecycleEventController } from './lot/lot-lifecycle-event.controller';
 import { LotCompleteService } from './lot/lot-complete.service';
 import { LotExternalIdentifierService } from './lot/lot-external-identifier.service';
@@ -34,7 +37,7 @@ import { SerialNumberController } from './serial-number/serial-number.controller
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, LotRegistryModule, ApprovalModule, NumberingModule, AuthModule, NotificationCoreModule],
-  controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController],
+  controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController, TraceHistoryController],
   providers: [
     IqcHandoverNotifier,
     LotService,
@@ -52,6 +55,8 @@ import { SerialNumberController } from './serial-number/serial-number.controller
     MaterialLotFlowListService,
     ProductLotFlowListService,
     LotFlowChainService,
+    MaterialInputLineListService,
+    PackingLineListService,
   ],
 })
 export class TraceModule {}
