@@ -1,6 +1,8 @@
+export { aliasOf } from './alias';
 export { assertCodeValues } from './code-reference';
 export type { CodeCheck } from './code-reference';
 export { day, optional, optionalDate, toDateString } from './column';
+export { ERP_WAREHOUSE_GROUP, erpWarehouseName } from './erp-warehouse';
 export type { Editability } from './editability';
 export { runIdempotent, runVersioned } from './master-write';
 export { assertNotBlank } from './not-blank';
