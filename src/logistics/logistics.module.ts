@@ -78,6 +78,8 @@ import { ShipmentLineListService } from './shipment/shipment-line-list.service';
 import { ShipmentQueryService } from './shipment/shipment-query.service';
 import { ShipmentController } from './shipment/shipment.controller';
 import { ShipmentCancelService } from './shipment/shipment-cancel.service';
+import { LocationMoveController } from './location-move/location-move.controller';
+import { LocationMoveService } from './location-move/location-move.service';
 import { StockReinstatementController } from './stock-reinstatement/stock-reinstatement.controller';
 import { StockReinstatementService } from './stock-reinstatement/stock-reinstatement.service';
 import { ShipmentConfirmService } from './shipment/shipment-confirm.service';
@@ -135,6 +137,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentController,
     ShipmentLineListController,
     StockReinstatementController,
+    LocationMoveController,
     AsnController,
     InboundReceiptController,
     InboundReceiptLineListController,
@@ -183,6 +186,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentConfirmService,
     ShipmentCancelService,
     StockReinstatementService,
+    LocationMoveService,
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,

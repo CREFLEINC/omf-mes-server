@@ -86,7 +86,7 @@ const badRequest = (path: string, code: string, message: string): ContractExcept
   new ContractException(HttpStatus.BAD_REQUEST, [field(path, code, message)]);
 
 /** `uq` 위반이 «번호» 때문인가 — 이동 번호와, 원장이 그 번호를 그대로 쓰는 `transaction_no`. */
-function isDuplicateNo(error: unknown): boolean {
+export function isDuplicateNo(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
   const target = error.meta?.target;
   const columns = Array.isArray(target) ? target.map(String) : [String(target ?? '')];
