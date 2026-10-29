@@ -17,6 +17,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
+import { changedFields, itemChanges, recordPlanVersionAudit } from './inspection-plan-version-audit';
 
 /** `quality.inspection_plan_version` 을 FK 로 가리키는 자리 전부. e2e 가 대조한다. */
 export const PLAN_VERSION_REFERRERS: readonly Referrer[] = [
@@ -40,6 +41,7 @@ interface VersionView {
   frequencyIntervalUomCode: string | null;
   statusCode: string;
   samplingRatio: number | null;
+  samplingQty: number | null;
 }
 
 export interface VersionWrite {
@@ -53,6 +55,15 @@ export interface VersionWrite {
   frequencyIntervalValue?: number | null;
   frequencyIntervalUomCode?: string | null;
   samplingRatio?: number | null;
+  samplingQty?: number | null;
+}
+
+/**
+ * 엑셀 올리기 전용(omf-all-around#199 · 장부 P-140). 기준서에 샘플 비율·개수가 없을 수 있다(「1kg」) —
+ * 작성중 버전은 비워 두고 확정이 막는다.
+ */
+export interface DraftOptions {
+  allowMissingRatio?: boolean;
 }
 
 export interface VersionCreate extends VersionWrite {
@@ -142,8 +153,8 @@ export class InspectionPlanVersionService {
   }
 
   /** 「기준에 아직 버전이 하나도 없을 때만 쓴다」(계약). 두 번째부터는 `:new-revision`. */
-  async create(input: VersionCreate): Promise<VersionView> {
-    await this.assertWritable(input);
+  async create(input: VersionCreate, options: DraftOptions = {}, actorId?: number | null): Promise<VersionView> {
+    await this.assertWritable(input, options);
     const plan = await this.prisma.inspection_plan.findUnique({
       where: { inspection_plan_id: input.inspectionPlanId },
       select: { inspection_plan_id: true },
@@ -175,27 +186,55 @@ export class InspectionPlanVersionService {
       ]);
     }
 
-    return view(
-      await this.prisma.inspection_plan_version.create({
-        data: {
-          inspection_plan_id: input.inspectionPlanId,
-          plan_version: 1,
-          status_code: REVISION_STATUS.DRAFT,
-          ...writeData(input),
-        },
-      }),
-    );
+    return this.prisma.$transaction(async (tx) => {
+      const created = view(
+        await tx.inspection_plan_version.create({
+          data: {
+            inspection_plan_id: input.inspectionPlanId,
+            plan_version: 1,
+            status_code: REVISION_STATUS.DRAFT,
+            ...writeData(input),
+          },
+        }),
+      );
+      await recordPlanVersionAudit(tx, {
+        versionId: created.inspectionPlanVersionId,
+        eventTypeCode: 'CREATE',
+        actorId,
+        after: changedFields({}, { ...created }, VERSION_AUDIT_IGNORED).after,
+      });
+      return created;
+    });
   }
 
   /** 「상태=작성중일 때만 허용한다」(계약 §5-4). */
-  async update(versionId: number, version: number, input: VersionWrite): Promise<VersionResult> {
-    await this.assertWritable(input);
+  async update(
+    versionId: number,
+    version: number,
+    input: VersionWrite,
+    options: DraftOptions = {},
+    actorId?: number | null,
+  ): Promise<VersionResult> {
+    await this.assertWritable(input, options);
     await this.assertDraft(versionId, '수정');
+    const before = view(await this.load(versionId));
 
-    const updated = await this.prisma.inspection_plan_version.updateMany({
-      // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
-      where: { inspection_plan_version_id: versionId, version_no: version },
-      data: { ...writeData(input), version_no: { increment: 1 } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.inspection_plan_version.updateMany({
+        // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
+        where: { inspection_plan_version_id: versionId, version_no: version },
+        data: { ...writeData(input), version_no: { increment: 1 } },
+      });
+      const row = result.count === 0
+        ? null
+        : await tx.inspection_plan_version.findUnique({ where: { inspection_plan_version_id: versionId } });
+      if (row) {
+        const diff = changedFields({ ...before }, { ...view(row) }, VERSION_AUDIT_IGNORED);
+        if (Object.keys(diff.after).length > 0 || Object.keys(diff.before).length > 0) {
+          await recordPlanVersionAudit(tx, { versionId, eventTypeCode: 'UPDATE', actorId, ...diff });
+        }
+      }
+      return result;
     });
     await this.assertExists(versionId, updated.count);
     return this.get(versionId);
@@ -213,8 +252,9 @@ export class InspectionPlanVersionService {
    * NOT NULL FK 로 참조하므로 서버는 기존 행을 유지하며 순서만 갱신해야 한다」.
    * 공정 라인(`routing_operation`)과 같은 형태이고 같은 수법을 쓴다.
    */
-  async replaceItems(versionId: number, items: ItemSpecUpsert[]): Promise<ItemSpecView[]> {
+  async replaceItems(versionId: number, items: ItemSpecUpsert[], actorId?: number | null): Promise<ItemSpecView[]> {
     await this.assertDraft(versionId, '검사 항목을 저장');
+    const beforeItems = await this.readItems(versionId);
     const existing = await this.prisma.inspection_item_spec.findMany({
       where: { inspection_plan_version_id: versionId },
       select: { inspection_item_spec_id: true },
@@ -253,6 +293,15 @@ export class InspectionPlanVersionService {
             data: itemData(versionId, item),
           });
         }
+        const afterRows = await tx.inspection_item_spec.findMany({
+          where: { inspection_plan_version_id: versionId },
+          orderBy: { sequence_no: 'asc' },
+        });
+        const diff = itemChanges(
+          beforeItems.map((item) => ({ ...item })),
+          afterRows.map((row) => ({ ...itemView(row) })),
+        );
+        if (diff) await recordPlanVersionAudit(tx, { versionId, eventTypeCode: 'UPDATE', actorId, ...diff });
       });
     } catch (error) {
       if (isCollectionChannelItemReferenceError(error)) throw itemReferenceLocked();
@@ -265,9 +314,15 @@ export class InspectionPlanVersionService {
   // ── 상태 전이 ───────────────────────────────────────────────────────────
 
   /** 작성중 → 확정. 「검사 항목이 1건 이상이어야 한다」(계약 — 400 `LINE_REQUIRED`). */
-  async confirm(versionId: number): Promise<number> {
+  async confirm(versionId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(versionId);
     if (row.status_code !== REVISION_STATUS.DRAFT) throw locked('확정');
+    // 엑셀로 들어온 작성중 버전은 비율·개수가 비어 있을 수 있다 — 확정 전에 화면에서 채우게 여기서 막는다.
+    assertSamplingRatio({
+      samplingMethodCode: row.sampling_method_code,
+      samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
+      samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
+    });
 
     const items = await this.prisma.inspection_item_spec.count({
       where: { inspection_plan_version_id: versionId },
@@ -282,23 +337,34 @@ export class InspectionPlanVersionService {
       ]);
     }
 
-    await this.prisma.inspection_plan_version.update({
-      where: { inspection_plan_version_id: versionId },
-      data: { status_code: REVISION_STATUS.CONFIRMED, version_no: { increment: 1 } },
-    });
+    await this.transition(versionId, REVISION_STATUS.DRAFT, REVISION_STATUS.CONFIRMED, actorId);
     return versionId;
   }
 
   /** 확정 → 폐기. ⛔ 되돌릴 수 없다(계약). */
-  async obsolete(versionId: number): Promise<number> {
+  async obsolete(versionId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(versionId);
     if (row.status_code !== REVISION_STATUS.CONFIRMED) throw locked('폐기');
 
-    await this.prisma.inspection_plan_version.update({
-      where: { inspection_plan_version_id: versionId },
-      data: { status_code: REVISION_STATUS.OBSOLETE, version_no: { increment: 1 } },
-    });
+    await this.transition(versionId, REVISION_STATUS.CONFIRMED, REVISION_STATUS.OBSOLETE, actorId);
     return versionId;
+  }
+
+  /** 상태만 바꾸고 그 사실을 같은 트랜잭션에서 이력으로 남긴다(#196). */
+  private async transition(versionId: number, from: string, to: string, actorId?: number | null): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.inspection_plan_version.update({
+        where: { inspection_plan_version_id: versionId },
+        data: { status_code: to, version_no: { increment: 1 } },
+      });
+      await recordPlanVersionAudit(tx, {
+        versionId,
+        eventTypeCode: 'UPDATE',
+        actorId,
+        before: { statusCode: from },
+        after: { statusCode: to },
+      });
+    });
   }
 
   /**
@@ -306,11 +372,11 @@ export class InspectionPlanVersionService {
    * 검사는 확정 버전만 쓰므로 작성중 버전을 가리키는 의뢰·측정은 정상 경로로는 생기지 않는다.
    * ⛔ 그래도 세어 막는다 — 지운 뒤 FK 위반이 500 으로 새지 않게.
    */
-  async discard(versionId: number): Promise<void> {
+  async discard(versionId: number, actorId?: number | null): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       // ⛔ `FOR UPDATE` — 판정과 삭제 사이에 확정이 끼면 확정 버전이 지워진다.
-      const rows = await tx.$queryRaw<{ status_code: string }[]>`
-        SELECT status_code
+      const rows = await tx.$queryRaw<{ status_code: string; plan_version: number }[]>`
+        SELECT status_code, plan_version
           FROM quality.inspection_plan_version
          WHERE inspection_plan_version_id = ${BigInt(versionId)}
            FOR UPDATE`;
@@ -336,6 +402,12 @@ export class InspectionPlanVersionService {
 
       await tx.inspection_item_spec.deleteMany({ where: specs });
       await tx.inspection_plan_version.delete({ where: specs });
+      await recordPlanVersionAudit(tx, {
+        versionId,
+        eventTypeCode: 'DELETE',
+        actorId,
+        before: { planVersion: Number(rows[0].plan_version), statusCode: rows[0].status_code },
+      });
     });
   }
 
@@ -346,7 +418,7 @@ export class InspectionPlanVersionService {
    * 부르면 원본 +1 이 이미 있어 `uq_inspection_plan_version` 이 깨진다(Routing 과 같은 판단 ·
    * 되돌림 §S-4).
    */
-  async newRevision(versionId: number): Promise<number> {
+  async newRevision(versionId: number, actorId?: number | null): Promise<number> {
     const source = await this.load(versionId);
     if (source.status_code !== REVISION_STATUS.CONFIRMED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
@@ -392,6 +464,12 @@ export class InspectionPlanVersionService {
         });
       }
 
+      await recordPlanVersionAudit(tx, {
+        versionId: Number(created.inspection_plan_version_id),
+        eventTypeCode: 'CREATE',
+        actorId,
+        after: { planVersion: created.plan_version, statusCode: created.status_code },
+      });
       return Number(created.inspection_plan_version_id);
     });
   }
@@ -423,7 +501,7 @@ export class InspectionPlanVersionService {
     throw locked(action);
   }
 
-  private async assertWritable(input: VersionWrite): Promise<void> {
+  private async assertWritable(input: VersionWrite, options: DraftOptions): Promise<void> {
     await assertCodeValues(this.prisma, [
       {
         field: 'samplingMethodCode',
@@ -436,7 +514,7 @@ export class InspectionPlanVersionService {
         groupCode: 'INSPECTION_FREQUENCY',
       },
     ]);
-    assertSamplingRatio(input);
+    assertSamplingRatio(input, options);
     if (input.effectiveTo != null && input.effectiveTo < input.effectiveFrom) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
@@ -541,6 +619,9 @@ export function isCollectionChannelItemReferenceError(error: unknown): boolean {
   return meta.constraint === COLLECTION_CHANNEL_ITEM_FK;
 }
 
+/** 버전 이력에서 견주지 않는 칸 — 식별자다. */
+const VERSION_AUDIT_IGNORED = ['inspectionPlanVersionId', 'inspectionPlanId'];
+
 function itemReferenceLocked(): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [
     {
@@ -584,6 +665,7 @@ function writeData(input: VersionWrite): VersionColumns {
     ...optional('frequency_interval_uom_code', input.frequencyIntervalUomCode),
     // ⛔ 백분율이다(0 초과 100 이하) — 비율이 아니다. 선행 마이그레이션이 CHECK 를 고쳤다.
     ...optional('sampling_ratio', input.samplingRatio),
+    ...optional('sampling_qty', input.samplingQty),
   } as VersionColumns;
 }
 
@@ -702,6 +784,7 @@ function view(row: VersionRow): VersionView {
     frequencyIntervalUomCode: row.frequency_interval_uom_code,
     statusCode: row.status_code,
     samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
+    samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
   };
 }
 
@@ -734,19 +817,26 @@ function itemView(row: SpecRow): ItemSpecView {
 const FULL_INSPECTION = 'FULL_INSPECTION';
 
 /**
- * 샘플링 방식과 비율(%)의 짝(omf-all-around#103 · 장부 P-37). 샘플 방식은 비율로 검사 수량을 환산하므로
- * 비율이 있어야 하고, 전수검사에 비율이 실리면 화면과 다른 기준이 저장된다. 기존 버전은 다시 저장할 때만 걸린다.
+ * 샘플링 방식과 샘플 기준의 짝(omf-all-around#103 · 장부 P-37 · #201 · P-141). 샘플 방식은 **비율(%) 또는 개수 중
+ * 하나**로 검사 수량을 정한다 — 둘 다 있으면 어느 쪽으로 검사할지 갈리고, 전수검사에 실리면 화면과 다른 기준이 저장된다.
+ * 기존 버전은 다시 저장하거나 확정할 때 걸린다.
  */
-export function assertSamplingRatio(input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio'>): void {
+export function assertSamplingRatio(
+  input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio' | 'samplingQty'>,
+  options: DraftOptions = {},
+): void {
   const hasRatio = input.samplingRatio != null;
-  if (input.samplingMethodCode === FULL_INSPECTION && hasRatio) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.INVALID, message: '전수검사에는 샘플 비율(%)을 넣지 않습니다.' },
-    ]);
+  const hasQty = input.samplingQty != null;
+  const fail = (field: string, code: ErrorItem['code'], message: string): never => {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'field', field, code, message }]);
+  };
+  if (input.samplingMethodCode === FULL_INSPECTION) {
+    if (hasRatio) fail('samplingRatio', ERROR_CODE.INVALID, '전수검사에는 샘플 비율(%)을 넣지 않습니다.');
+    if (hasQty) fail('samplingQty', ERROR_CODE.INVALID, '전수검사에는 샘플 개수를 넣지 않습니다.');
+    return;
   }
-  if (input.samplingMethodCode !== FULL_INSPECTION && !hasRatio) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.REQUIRED, message: '샘플링 방식이면 샘플 비율(%)을 입력하세요.' },
-    ]);
+  if (hasRatio && hasQty) fail('samplingQty', ERROR_CODE.INVALID, '샘플 비율(%)과 샘플 개수 중 하나만 입력하세요.');
+  if (!hasRatio && !hasQty && options.allowMissingRatio !== true) {
+    fail('samplingRatio', ERROR_CODE.REQUIRED, '샘플링 방식이면 샘플 비율(%) 또는 샘플 개수를 입력하세요.');
   }
 }

@@ -11,6 +11,7 @@ import {
   receiptShares,
 } from '../../../logistics/goods-receipt/erp-receipt';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { CustomsClearance, CustomsClearances } from '../customs-clearance';
 import { OutboundBuilder, OutboundMessage } from '../outbound-builder';
 import { OUTBOUND_ROW_STATUS, OutboundRows, RowDraft } from '../outbound-rows';
 import { GR_INFOR } from '../rcv-tables';
@@ -25,9 +26,12 @@ const ORDER_LINE = {
   line_no: true,
   uom_id: true,
   erp_storage_location_code: true,
+  erp_customs_clearance_no: true,
+  erp_customs_clearance_seq: true,
   purchase_order: {
     select: {
       erp_purchase_order_no: true,
+      erp_order_type_code: true,
       erp_purchase_group_code: true,
       erp_io_type_code: true,
       partner: { select: { erp_partner_code: true } },
@@ -64,18 +68,21 @@ interface Share {
  * - 입고 뒤에 더한 몫은 자기 묶음(`INBOUND_RECEIPT_PO_ALLOCATION` · `ALLOC:{id}`)으로 간다 — 입고 묶음은 그 키가 없는
  *   몫만 싣는다. 시각 비교 없이 갈린다.
  * - 수불유형·창고·공급처·구매그룹은 발주에서 이어받는다(컬럼 정의서). 입고 일시는 공장 현지 시각이다.
- * - 통관번호는 고객 답(질문 5) 전까지 빈 값, 순번 칸은 0 이다(NOT NULL).
+ * - 통관번호는 외자 발주만 싣는다(`CustomsClearances`) — 그 밖은 빈 값, 순번 칸은 0 이다(NOT NULL).
  * 옛 초과분 묶음(`INBOUND_RECEIPT_EXCESS`)은 그 초과분의 몫 한 행이다 — 배정으로 옮기기 전에 적재된 것만 남았다.
  * 입고 취소 묶음(`GOODS_RECEIPT_CANCEL`)은 그 입고번호로 넣은 행(입고 행·초과분 행)마다 취소 행(C)이다.
  */
-export function goodsReceiptBuilder(prisma: PrismaService): OutboundBuilder {
-  return { interfaceCode: IF_GOODS_RECEIPT, build: (message) => build(prisma, message) };
+export function goodsReceiptBuilder(
+  prisma: PrismaService,
+  customs: CustomsClearances = new CustomsClearances(prisma, null),
+): OutboundBuilder {
+  return { interfaceCode: IF_GOODS_RECEIPT, build: (message) => build(prisma, customs, message) };
 }
 
-async function build(prisma: PrismaService, message: OutboundMessage): Promise<RowDraft[]> {
-  if (message.targetTypeCode === ALLOCATION_TARGET) return allocationRows(prisma, message.targetId);
+async function build(prisma: PrismaService, customs: CustomsClearances, message: OutboundMessage): Promise<RowDraft[]> {
+  if (message.targetTypeCode === ALLOCATION_TARGET) return allocationRows(prisma, customs, message.targetId);
   // 옛 초과분 묶음 — 배정으로 옮기기 전에 적재된 것만 남아 있다(새로 적재하지 않는다).
-  if (message.targetTypeCode === EXCESS_TARGET) return excessRows(prisma, message.targetId);
+  if (message.targetTypeCode === EXCESS_TARGET) return excessRows(prisma, customs, message.targetId);
   if (message.targetTypeCode === RECEIPT_CANCEL_TARGET) return cancelRows(prisma, message.targetId);
   const receipt = await prisma.goods_receipt.findUniqueOrThrow({
     where: { goods_receipt_id: message.targetId },
@@ -163,11 +170,13 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
     }
   }
 
-  return [...shares.values()].map((share) => rowOf(receipt, share));
+  const rows: RowDraft[] = [];
+  for (const share of shares.values()) rows.push(rowOf(receipt, share, await customs.forReceipt(share.orderLine)));
+  return rows;
 }
 
 /** 배정 몫 하나 — 입고 뒤에 더한 몫이다. 그 입하 줄이 들어간 입고의 번호·일시로, 입고 수량을 배정 순서로 나눈 이 몫. */
-async function allocationRows(prisma: PrismaService, allocationId: bigint): Promise<RowDraft[]> {
+async function allocationRows(prisma: PrismaService, customs: CustomsClearances, allocationId: bigint): Promise<RowDraft[]> {
   const allocation = await prisma.inbound_receipt_po_allocation.findUniqueOrThrow({
     where: { inbound_receipt_po_allocation_id: allocationId },
     select: {
@@ -202,15 +211,14 @@ async function allocationRows(prisma: PrismaService, allocationId: bigint): Prom
     where: { goods_receipt_id: taken[0].goodsReceiptId },
     select: { goods_receipt_no: true, receipt_datetime: true, plant: { select: { plant_code: true, timezone_code: true } } },
   });
-  return [
-    rowOf(receipt, {
-      orderLine,
-      itemCode: inbound.item.item_code,
-      uomCode: inbound.uom.uom_code,
-      qty: mine,
-      inspected: inbound.inspection_required,
-    }),
-  ];
+  const share: Share = {
+    orderLine,
+    itemCode: inbound.item.item_code,
+    uomCode: inbound.uom.uom_code,
+    qty: mine,
+    inspected: inbound.inspection_required,
+  };
+  return [rowOf(receipt, share, await customs.forReceipt(orderLine))];
 }
 
 /** 자기 묶음(`ALLOC`)이 적재된 배정 — 입고 뒤에 더한 몫이다. */
@@ -228,7 +236,7 @@ async function ownBundles(
 }
 
 /** 초과분 하나의 몫 — 입고 수량으로 P/O 라인 몫부터 채우고 남은 수량을 초과분 순서대로 나눈다(P-100). */
-async function excessRows(prisma: PrismaService, excessId: bigint): Promise<RowDraft[]> {
+async function excessRows(prisma: PrismaService, customs: CustomsClearances, excessId: bigint): Promise<RowDraft[]> {
   const excess = await prisma.inbound_receipt_excess.findUniqueOrThrow({
     where: { inbound_receipt_excess_id: excessId },
     select: {
@@ -275,15 +283,14 @@ async function excessRows(prisma: PrismaService, excessId: bigint): Promise<RowD
     where: { goods_receipt_id: taken[0].goodsReceiptId },
     select: { goods_receipt_no: true, receipt_datetime: true, plant: { select: { plant_code: true, timezone_code: true } } },
   });
-  return [
-    rowOf(receipt, {
-      orderLine,
-      itemCode: inbound.item.item_code,
-      uomCode: inbound.uom.uom_code,
-      qty: mine,
-      inspected: inbound.inspection_required,
-    }),
-  ];
+  const share: Share = {
+    orderLine,
+    itemCode: inbound.item.item_code,
+    uomCode: inbound.uom.uom_code,
+    qty: mine,
+    inspected: inbound.inspection_required,
+  };
+  return [rowOf(receipt, share, await customs.forReceipt(orderLine))];
 }
 
 /**
@@ -302,7 +309,7 @@ async function cancelRows(prisma: PrismaService, goodsReceiptId: bigint): Promis
   return sent.map((row) => ({ table: GR_INFOR, values: row.values, cancels: row }));
 }
 
-function rowOf(receipt: Receipt, share: Share): RowDraft {
+function rowOf(receipt: Receipt, share: Share, customs: CustomsClearance): RowDraft {
   const { orderLine } = share;
   const order = orderLine.purchase_order;
   const at = `입고 ${receipt.goods_receipt_no} — ERP 발주 ${order.erp_purchase_order_no} 라인 ${orderLine.line_no}`;
@@ -331,8 +338,8 @@ function rowOf(receipt: Receipt, share: Share): RowDraft {
       IO_TYPE_CD: order.erp_io_type_code,
       INSPECT_FLAG: share.inspected ? 'Y' : 'N',
       INSPECT_METHOD_CD: null,
-      CC_NO: '',
-      CC_SEQ_NO: 0,
+      CC_NO: customs.no,
+      CC_SEQ_NO: customs.seq,
       LLC_SEQ_NO: 0,
       IV_SEQ_NO: 0,
       GM_SUB_SEQ_NO: 0,

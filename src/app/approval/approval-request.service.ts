@@ -12,6 +12,7 @@ import {
   toApprovalRequest,
   toApprovalStep,
 } from './approval.mapper';
+import { approvalTargetNames, targetKey } from './approval-target-name';
 
 export interface ApprovalRequestQuery {
   assignedToMe?: boolean;
@@ -73,7 +74,8 @@ export class ApprovalRequestService {
         }),
         this.prisma.approval_request.count({ where }),
       ]);
-      return pagedResponse(rows.map((row) => this.toView(row, actorId)), total, page);
+      const names = await approvalTargetNames(this.prisma, rows);
+      return pagedResponse(rows.map((row) => this.toView(row, actorId, names)), total, page);
     }
 
     // `myTurnOnly` 는 「현재 단계(오름차순 첫 미결) 승인자 = 나」다 — DB where 로 걸러지지
@@ -86,7 +88,8 @@ export class ApprovalRequestService {
     });
     const mine = all.filter((row) => this.currentStepInfo(row).approverId === actorId);
     const sliced = mine.slice(page.skip, page.skip + page.take);
-    return pagedResponse(sliced.map((row) => this.toView(row, actorId)), mine.length, page);
+    const names = await approvalTargetNames(this.prisma, sliced);
+    return pagedResponse(sliced.map((row) => this.toView(row, actorId, names)), mine.length, page);
   }
 
   /** 모바일 IQC 상신 조회는 계정 세션 대신 검증된 LOT 또는 현장 작업자로 한정한다. */
@@ -134,10 +137,11 @@ export class ApprovalRequestService {
       }),
       this.prisma.approval_request.count({ where }),
     ]);
+    const names = await approvalTargetNames(this.prisma, rows);
     return pagedResponse(rows.map((row) => toApprovalRequest(row, {
       currentStepNo: this.currentStepInfo(row).stepNo,
       isMyTurn: false,
-    })), total, page);
+    }, names.get(targetKey(row.target_type_code, row.target_id)))), total, page);
   }
 
   async get(
@@ -147,10 +151,11 @@ export class ApprovalRequestService {
     const row = await this.loadRequest(requestId);
     this.assertVisible(row, actorId);
     const info = this.currentStepInfo(row);
+    const names = await approvalTargetNames(this.prisma, [row]);
     const request = toApprovalRequest(row, {
       currentStepNo: info.stepNo,
       isMyTurn: info.approverId === actorId,
-    });
+    }, names.get(targetKey(row.target_type_code, row.target_id)));
     const steps = row.approval_step.map((step) => toApprovalStep(step, actorId, info.stepNo));
     return { detail: { request, steps }, versionNo: row.version_no };
   }
@@ -238,9 +243,13 @@ export class ApprovalRequestService {
     return { stepNo: current?.stepNo ?? null, approverId: current ? Number(current.approverId) : null };
   }
 
-  private toView(row: RequestRow, actorId: number): ApprovalRequestView {
+  private toView(row: RequestRow, actorId: number, names: Map<string, string>): ApprovalRequestView {
     const info = this.currentStepInfo(row);
-    return toApprovalRequest(row, { currentStepNo: info.stepNo, isMyTurn: info.approverId === actorId });
+    return toApprovalRequest(
+      row,
+      { currentStepNo: info.stepNo, isMyTurn: info.approverId === actorId },
+      names.get(targetKey(row.target_type_code, row.target_id)),
+    );
   }
 
   /**

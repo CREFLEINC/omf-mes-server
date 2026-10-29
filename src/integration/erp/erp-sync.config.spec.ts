@@ -47,6 +47,19 @@ describe('erpSyncConfig', () => {
     expect(settings.orderIntervalMs).toBe(900_000);
   });
 
+  it('통관번호 함수는 비면 널이고, 「DB.dbo.함수」 모양이면 그대로 받는다', () => {
+    expect(erpSyncConfig(config(FULL)).customsFunction).toBeNull();
+    expect(erpSyncConfig(config({ ...FULL, ERP_CC_FUNCTION: ' ERP_DB.dbo.ufn_M_CC_DTL_GetCC ' })).customsFunction).toBe(
+      'ERP_DB.dbo.ufn_M_CC_DTL_GetCC',
+    );
+  });
+
+  it('⛔ 통관번호 함수 이름에 영문·숫자·밑줄·점 밖의 글자가 있으면 부팅에서 막는다 — 이름이 SQL 에 그대로 들어간다', () => {
+    for (const bad of ['dbo.f(1)', 'ERP_DB.dbo.f; DROP TABLE x', 'f', 'a.b.c.d', 'ERP DB.dbo.f']) {
+      expect(() => erpSyncConfig(config({ ...FULL, ERP_CC_FUNCTION: bad }))).toThrow('ERP_CC_FUNCTION');
+    }
+  });
+
   it('ERP_DB_ENCRYPT=false 일 때만 암호화를 끈다', () => {
     expect(erpSyncConfig(config({ ...FULL, ERP_DB_ENCRYPT: 'false' })).relay.encrypt).toBe(false);
     expect(erpSyncConfig(config({ ...FULL, ERP_DB_ENCRYPT: 'no' })).relay.encrypt).toBe(true);

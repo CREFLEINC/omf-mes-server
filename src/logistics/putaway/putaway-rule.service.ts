@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { Editability, Referrer, countReferences, filter, optional } from '../../common/master';
+import { Editability, PUTAWAY_STAGING, Referrer, countReferences, filter, optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -311,9 +311,13 @@ export class PutawayRuleService {
       // ⛔ 위치는 «그 창고의» 것이어야 한다 — 남의 창고 위치를 권장하면 현장이 갈 곳이 없다.
       const location = await this.prisma.location.findFirst({
         where: { location_id: locationId, warehouse_id: warehouseId },
-        select: { location_id: true },
+        select: { system_role_code: true },
       });
       if (!location) errors.push(invalid('locationId', '이 창고의 위치가 아닙니다.'));
+      // 적치 대기 자리는 적치의 «출발»이다 — 권장 위치가 되면 적치가 제자리에서 끝난다(장부 P-145).
+      else if (location.system_role_code === PUTAWAY_STAGING) {
+        errors.push(invalid('locationId', '적치 대기 자리는 적치 위치로 고를 수 없습니다.'));
+      }
     }
 
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);

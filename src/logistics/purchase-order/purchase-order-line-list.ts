@@ -84,6 +84,8 @@ export interface OrderListExtras {
   sort?: OrderSort;
   /** `OPEN` 은 `openOnly=true` 와 같은 줄, `COMPLETED` 는 그 나머지(장부 P-131). */
   progress?: OrderProgress;
+  /** ERP 발주유형(공통코드 `ORDER_TYPE`) 하나 — 같은 것만(장부 P-144). */
+  erpOrderTypeCode?: string;
 }
 
 export const ORDER_PROGRESSES = ['OPEN', 'COMPLETED'] as const;
@@ -100,6 +102,7 @@ export function parseOrderListExtras(raw: Record<string, unknown>): OrderListExt
     inboundStage: readStage(raw, errors),
     sort: readSort(raw, errors),
     progress: readProgress(raw, errors),
+    erpOrderTypeCode: readText(raw, 'erpOrderTypeCode', errors),
   };
 
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);

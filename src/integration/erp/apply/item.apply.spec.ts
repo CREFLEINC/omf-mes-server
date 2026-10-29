@@ -52,7 +52,7 @@ const ITEM = {
 };
 
 describe('itemTable', () => {
-  it('처음 받으면 ERP 원본 칸으로 만들고 이름을 베트남어 칸에도 둔다', async () => {
+  it('처음 받으면 ERP 원본 칸으로 만들고 이름을 베트남어 칸에도 두고 IQC 를 켠다', async () => {
     const f = fake();
 
     await itemTable.apply(f.tx, erp());
@@ -68,6 +68,7 @@ describe('itemTable', () => {
           erp_item_group_code: 'ZZ400',
           name_vi: 'RESIN PC',
           base_uom_id: 2n,
+          inspection_required: true,
           is_active: true,
         },
       },

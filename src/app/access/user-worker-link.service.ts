@@ -41,7 +41,9 @@ export class UserWorkerLinkService {
     const by = actorId === undefined ? null : BigInt(actorId);
     await this.prisma.$transaction(async (tx) => {
       // 같은 계정에 대한 동시 요청을 한 줄로 세운다 — 둘 다 「앞 연결 풀기」를 지나 작업자 둘이 붙지 않게.
-      await tx.$queryRaw`SELECT app_user_id FROM app.app_user WHERE app_user_id = ${BigInt(appUserId)} FOR UPDATE`;
+      // ⛔ `FOR UPDATE` 금지 — 멱등 기록(다른 트랜잭션)이 요청자 계정 행에 FK 로 KEY SHARE 를 잡고 이 트랜잭션을
+      //    기다린다. 자기 계정에 연결하면 둘이 서로 기다려 5초 뒤 500 이 된다. NO KEY UPDATE 는 KEY SHARE 와 공존한다.
+      await tx.$queryRaw`SELECT app_user_id FROM app.app_user WHERE app_user_id = ${BigInt(appUserId)} FOR NO KEY UPDATE`;
       if (workerId !== null) {
         const worker = await tx.worker.findUnique({
           where: { worker_id: BigInt(workerId) },

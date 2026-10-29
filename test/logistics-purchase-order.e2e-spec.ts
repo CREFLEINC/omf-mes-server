@@ -27,6 +27,10 @@ const PREFIX = 'POWE2E';
 const ROLE = 'E2E_PO_WRITE';
 const PERMISSIONS = ['W-01-11'];
 const ORDER_DATE = '2026-08-06';
+// ERP 가 채우는 공통코드 그룹이라 빈 DB 에는 없다 — 그룹은 없으면 세우고 값만 이 파일 것으로 넣고 지운다.
+// 발주의 유형 칸이 5자라 PREFIX 를 붙이지 못한다.
+const ORDER_TYPE_ACTIVE = 'E2EPA';
+const ORDER_TYPE_STOPPED = 'E2EPS';
 
 function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
@@ -255,6 +259,34 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
         code: 'INVALID',
         message: 'progress 는 OPEN 또는 COMPLETED 여야 합니다.',
       }),
+    ]);
+  });
+
+  it('⭐ erpOrderTypeCode 는 그 ERP 발주유형만 낸다 · 사용 중지된 유형도 받는다 — 계약 밖(장부 P-144)', async () => {
+    const active = await newOrder();
+    const stopped = await newOrder();
+    const plain = await newOrder();
+    await prisma.purchase_order.update({
+      where: { purchase_order_id: BigInt(active) },
+      data: { erp_order_type_code: ORDER_TYPE_ACTIVE },
+    });
+    await prisma.purchase_order.update({
+      where: { purchase_order_id: BigInt(stopped) },
+      data: { erp_order_type_code: ORDER_TYPE_STOPPED },
+    });
+
+    expect(await orderIds(`plantId=${plantId}&erpOrderTypeCode=${ORDER_TYPE_ACTIVE}`)).toEqual([active]);
+    expect(await orderIds(`plantId=${plantId}&erpOrderTypeCode=${ORDER_TYPE_STOPPED}`)).toEqual([stopped]);
+    expect(await orderIds(`plantId=${plantId}`)).toEqual(expect.arrayContaining([active, stopped, plain]));
+  });
+
+  it('⛔ erpOrderTypeCode 가 ORDER_TYPE 에 없으면 400 이다(무시하면 걸러진 것처럼 보인다)', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/logistics/purchase-orders?erpOrderTypeCode=${PREFIX}X`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'erpOrderTypeCode', code: 'INVALID' }),
     ]);
   });
 
@@ -819,6 +851,17 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
   }
 
   async function makeMasters(): Promise<void> {
+    const group = await prisma.code_group.upsert({
+      where: { group_code: 'ORDER_TYPE' },
+      create: { group_code: 'ORDER_TYPE', group_name: '발주유형' },
+      update: {},
+    });
+    await prisma.code_value.createMany({
+      data: [
+        { code_group_id: group.code_group_id, code: ORDER_TYPE_ACTIVE, code_name: 'PO검사유형' },
+        { code_group_id: group.code_group_id, code: ORDER_TYPE_STOPPED, code_name: 'PO검사중지', is_active: false },
+      ],
+    });
     const entity = await prisma.legal_entity.create({
       data: {
         legal_entity_code: `${PREFIX}-LE`,
@@ -928,6 +971,9 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
    * P/O 를 만들지 않으므로 후속 라인을 «먼저» 지울 수 있다(그 칸을 채우면 이 순서가 막힌다).
    */
   async function cleanup(): Promise<void> {
+    await prisma.code_value.deleteMany({
+      where: { code: { in: [ORDER_TYPE_ACTIVE, ORDER_TYPE_STOPPED] }, code_group: { group_code: 'ORDER_TYPE' } },
+    });
     const ownPlants = `(SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.inbound_receipt_line
