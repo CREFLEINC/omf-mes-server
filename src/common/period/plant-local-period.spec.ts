@@ -1,5 +1,5 @@
 import { ContractException } from '../errors';
-import { localPeriod, localPeriodSql } from './plant-local-period';
+import { localPeriod, localPeriodSql, utcMarginSql } from './plant-local-period';
 
 const FIELDS = { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' };
 const TODAY = '2026-10-26';
@@ -58,5 +58,17 @@ describe('공장 현지 날짜 기간', () => {
       "gr.receipt_datetime < (($2::date + 2)::timestamp AT TIME ZONE 'UTC')",
       'gr.receipt_datetime < (($2::date + 1)::timestamp AT TIME ZONE p.timezone_code)',
     ].join(' AND '));
+  });
+
+  it('UTC 여유 경계만 거는 SQL 은 공장 시간대 없이 하루씩 넓게 잡는다 — 종료가 없으면 시작 쪽만', () => {
+    const params: unknown[] = [];
+    const bind = (value: unknown) => `$${params.push(value)}`;
+
+    expect(utcMarginSql('pg.receipt_datetime', { from: '2026-10-01', to: '2026-10-26' }, bind)).toBe([
+      "pg.receipt_datetime >= (($1::date - 1)::timestamp AT TIME ZONE 'UTC')",
+      "pg.receipt_datetime < (($2::date + 2)::timestamp AT TIME ZONE 'UTC')",
+    ].join(' AND '));
+    expect(utcMarginSql('qr.occurred_at', { from: '2026-10-01' }, bind)).toBe("qr.occurred_at >= (($3::date - 1)::timestamp AT TIME ZONE 'UTC')");
+    expect(params).toEqual(['2026-10-01', '2026-10-26', '2026-10-01']);
   });
 });

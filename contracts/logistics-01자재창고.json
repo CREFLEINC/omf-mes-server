@@ -3243,7 +3243,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — LOT 추적 화면 권한",
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
       "content": {
        "application/json": {
         "schema": {
@@ -6303,7 +6303,7 @@
      "trace"
     ],
     "summary": "LOT 추적 정방향 목록(자재 LOT)",
-    "description": "자재입고가 있는 LOT 과 단계 진행. 진입점(itemId·lotNo·inboundReceiptNo·q) 중 하나가 필요하다. 기간 축은 첫 자재입고 일시(취소 완료 제외 · 공장 현지 날짜, 양 끝 포함, 최대 366일) — lotNo·inboundReceiptNo 로 집으면 기간은 선택. 정렬: 첫 자재입고 일시 내림차순. 근거: 서버 선행 · 장부 P-119",
+    "description": "자재입고가 있는 LOT 과 단계 진행. 기간(receiptDateFrom)이나 LOT 을 집는 번호(lotNo·inboundReceiptNo) 중 하나가 필요하다. 기간만 넣으면 그 기간의 자재 LOT 전체를 본다. 둘 다 없으면 400(receiptDateFrom REQUIRED). itemId·q 와 그 밖의 칸은 거르는 조건이다. 기간 축은 첫 자재입고 일시(취소 완료 제외 · 공장 현지 날짜, 양 끝 포함, 최대 366일) — lotNo·inboundReceiptNo 로 집으면 기간은 선택. 정렬: 첫 자재입고 일시 내림차순. 근거: 서버 선행 · 장부 P-119",
     "parameters": [
      {
       "name": "itemId",
@@ -6626,7 +6626,7 @@
       }
      },
      "400": {
-      "description": "검증 실패 — 진입점 없음 · 기간 시작 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
+      "description": "검증 실패 — 기간 시작과 집는 번호가 모두 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
       "content": {
        "application/json": {
         "schema": {
@@ -6636,7 +6636,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — LOT 추적 화면 권한",
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
       "content": {
        "application/json": {
         "schema": {
@@ -6655,7 +6655,7 @@
      "trace"
     ],
     "summary": "LOT 추적 역방향 목록(생산 LOT)",
-    "description": "실적 배분이 있는 생산 LOT 과 단계 진행(빈 선발행 슬롯 제외). 진입점(itemId·lotNo·shipmentNo·workOrderNo·q) 중 하나가 필요하다. 기간 축은 dateAxis — PRODUCED(기본, 첫 실적 시각) 또는 SHIPPED(그 LOT 이 실린 출하의 출하 일시). 공장 현지 날짜, 양 끝 포함, 최대 366일 — lotNo·shipmentNo·workOrderNo 로 집으면 기간은 선택. 정렬: 첫 실적 시각 내림차순. 근거: 서버 선행 · 장부 P-119",
+    "description": "실적 배분이 있는 생산 LOT 과 단계 진행(빈 선발행 슬롯 제외). 기간(dateFrom)이나 LOT 을 집는 번호(lotNo·shipmentNo·workOrderNo) 중 하나가 필요하다. 기간만 넣으면 그 기간의 생산 LOT 전체를 본다. 둘 다 없으면 400(dateFrom REQUIRED). itemId·q 와 그 밖의 칸은 거르는 조건이다. 기간 축은 dateAxis — PRODUCED(기본, 첫 실적 시각) 또는 SHIPPED(그 LOT 이 실린 출하의 출하 일시). 공장 현지 날짜, 양 끝 포함, 최대 366일 — lotNo·shipmentNo·workOrderNo 로 집으면 기간은 선택. 정렬: 첫 실적 시각 내림차순. 근거: 서버 선행 · 장부 P-119",
     "parameters": [
      {
       "name": "itemId",
@@ -6983,7 +6983,7 @@
       }
      },
      "400": {
-      "description": "검증 실패 — 진입점 없음 · 기간 시작 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
+      "description": "검증 실패 — 기간 시작과 집는 번호가 모두 없음 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류). 고쳐야 풀린다",
       "content": {
        "application/json": {
         "schema": {
@@ -6993,7 +6993,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — LOT 추적 화면 권한",
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
       "content": {
        "application/json": {
         "schema": {
@@ -7134,7 +7134,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — LOT 추적 화면 권한",
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
       "content": {
        "application/json": {
         "schema": {
@@ -7296,7 +7296,7 @@
       }
      },
      "403": {
-      "description": "권한 없음 — LOT 추적 화면 권한",
+      "description": "권한 없음 — LOT 생산 이력 조회 화면 권한",
       "content": {
        "application/json": {
         "schema": {
