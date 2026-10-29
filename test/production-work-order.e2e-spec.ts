@@ -1151,7 +1151,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     });
 
     /* #119 · 장부 P-82 — 고른 PQC 기준이 「생략 허용」이면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다. */
-    it('PQC — 기준이 생략 허용이면 의뢰를 SKIPPED 로 세우고 목록의 대기·진행에는 안 뜬다', async () => {
+    it('PQC — 기준이 기본 생략이면 의뢰를 SKIPPED 로 세우고 목록의 대기·진행에는 안 뜬다', async () => {
       await prisma.routing_operation.update({
         where: { routing_operation_id: ids.routingOperation },
         data: { inspection_managed: true },
@@ -1180,7 +1180,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           },
         });
       }
-      await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { pqc_skip_allowed: true } });
+      // 의뢰를 생략으로 세우는 칸은 「기본 생략」이다(#886) — 「PQC 생략 허용」은 건별 생략 결재를 연다.
+      await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { default_skip: true } });
 
       try {
         const workOrderId = await releaseWorkOrder(40);
