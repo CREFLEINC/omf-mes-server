@@ -290,6 +290,36 @@ describe('위치 계층 (e2e)', () => {
     expect(await prisma.location_item.count({ where: { location_id: zone.locationId } })).toBe(0);
   });
 
+  it('⭐ 끄면 밑의 위치도 함께 꺼지고, 켜면 함께 켜진다', async () => {
+    const zone = await create();
+    const rack = await buildRack(zone.locationId, 2, 2, 201);
+    const branch = { warehouse_id: warehouseId, location_code: { startsWith: zone.locationCode } };
+
+    const off = await transition(zone.locationId, 'deactivate', 200);
+    expect(off.isActive).toBe(false);
+    expect(await prisma.location.count({ where: { ...branch, is_active: true } })).toBe(0);
+
+    await transition(zone.locationId, 'activate', 200);
+    expect(await prisma.location.count({ where: { ...branch, is_active: false } })).toBe(0);
+    expect(await prisma.location.count({ where: branch })).toBe(1 + 1 + 2 + 4);
+    expect(rack.locationCode).toBe(`${zone.locationCode}-R001`);
+  });
+
+  it('⛔ 가지 안에 재고가 있으면 끌 수 없다 — 400 STATE_LOCKED · 하나도 안 꺼진다', async () => {
+    const zone = await create();
+    const rack = await buildRack(zone.locationId, 1, 2, 201);
+    const [level] = await childrenOf(rack.locationId as number);
+    const [cell] = await childrenOf(Number(level.location_id));
+    await stock(Number(cell.location_id), 3);
+
+    const rejected = await transition(zone.locationId, 'deactivate', 400);
+
+    expect(rejected.errors).toEqual([expect.objectContaining({ scope: 'screen', code: 'STATE_LOCKED' })]);
+    expect(await prisma.location.count({
+      where: { warehouse_id: warehouseId, location_code: { startsWith: zone.locationCode }, is_active: false },
+    })).toBe(0);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   async function create(parentLocationId?: number): Promise<LocationBody> {
