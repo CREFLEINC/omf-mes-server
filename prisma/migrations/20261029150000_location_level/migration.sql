@@ -1,4 +1,4 @@
--- 위치 계층: 창고 › 구역(ZONE) › 랙(RACK) › 층(LEVEL) › 셀(CELL) — 사용자 결정 2026-10-29(장부 P-153).
+-- 위치 계층: 창고 › 구역(ZONE) › 랙(RACK) › 층(LEVEL) › 셀(CELL) — 사용자 결정 2026-10-29(장부 P-154).
 -- 단계는 서버가 상위를 보고 정한다. 서버가 만든 자리(적치 대기 · 창고 전체)는 구역이다.
 ALTER TABLE mdm.location
   ADD COLUMN location_level_code varchar(30),

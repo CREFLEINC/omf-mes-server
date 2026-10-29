@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 
-/** 위치 계층 — 위에서 아래로. 건너뛰기가 없어 단계는 상위가 정한다(사용자 결정 2026-10-29 · 장부 P-153). */
+/** 위치 계층 — 위에서 아래로. 건너뛰기가 없어 단계는 상위가 정한다(사용자 결정 2026-10-29 · 장부 P-154). */
 export const LOCATION_LEVELS = ['ZONE', 'RACK', 'LEVEL', 'CELL'] as const;
 
 type Db = Pick<Prisma.TransactionClient, 'location' | 'inventory_balance'>;

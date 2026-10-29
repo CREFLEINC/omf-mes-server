@@ -67,9 +67,9 @@ interface LocationView {
   systemRoleCode: string | null;
   /** MES 별칭 — 계약 밖(장부 P-145). */
   aliasName: string | null;
-  /** 구역·랙·층·셀 — 계약 밖(장부 P-153). 넷보다 깊던 옛 위치만 null. */
+  /** 구역·랙·층·셀 — 계약 밖(장부 P-154). 넷보다 깊던 옛 위치만 null. */
   locationLevelCode: string | null;
-  /** 켜진 하위가 없다 — 재고를 둘 수 있는 맨 아래 위치. 계약 밖(장부 P-153). */
+  /** 켜진 하위가 없다 — 재고를 둘 수 있는 맨 아래 위치. 계약 밖(장부 P-154). */
   isLeaf: boolean;
 }
 
@@ -86,7 +86,7 @@ interface LocationWrite {
   capacityUomId?: number | null;
   /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
   aliasName?: unknown;
-  /** 계약 밖 · 선택 — 보냈으면 상위로 정해지는 단계와 같아야 한다(장부 P-153). */
+  /** 계약 밖 · 선택 — 보냈으면 상위로 정해지는 단계와 같아야 한다(장부 P-154). */
   locationLevelCode?: unknown;
 }
 
