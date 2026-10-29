@@ -111,6 +111,9 @@ function fake(seed: Seed = {}) {
     inventory_transaction_line: {
       create: record('line.create', () => ({ inventory_transaction_line_id: BigInt(++created) })),
     },
+    location: {
+      findFirst: record('location.findFirst', () => null),
+    },
     warehouse: {
       findUniqueOrThrow: record('warehouse.findUniqueOrThrow', () => ({
         business_unit_id: BU,

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BalanceLockKey, lockBalancesInOrder } from './balance-lock';
+import { assertLeafDestinations } from './leaf-location';
 import {
   PostingEndpoint,
   PostingInput,
@@ -72,6 +73,8 @@ export class InventoryPostingService {
         alreadyPosted: true,
       };
     }
+
+    await assertLeafDestinations(tx, input.lines);
 
     // 첫 `move()` «앞»에 라인 전건의 from·to 잔액 행을 id 오름차순으로 한 번에 잠근다 —
     // `:cancel`(id 오름차순)과 `POST /goods-receipts`(라인 순서)가 같은 두 행을 반대 순서로
