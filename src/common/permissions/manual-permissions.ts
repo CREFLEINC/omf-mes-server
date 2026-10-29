@@ -101,6 +101,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip': ['W-04-03'],
   // 실행은 결재 화면 W-03-09 에서도 한다 — IQC 생략(위 `:skip-iqc` 가 결재 화면 W-01-02)과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
   'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03', 'W-03-09'],
+  // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
+  'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
+  'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],
   // 불량 기록 등록 — IQC 불합격 사유를 남기는 수입검사 판정 화면의 조작이다(omf-all-around#106 · 장부 P-42).
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
@@ -375,7 +378,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⛔ `M-CO-01` 은 넣지 않는다 — 계약이 그 이름을 「모바일 셸에는 계정 로그인이 없다(M-CO-01 §2)」로
   //    «인증 모델»의 근거로만 적었고 「그 화면이 이 목록을 부른다」로는 적지 않았다(통보 189 §끝).
   // `W-04-03` — OQC 생략 구획이 자기 출하작업지시의 결재 상태(`targetTypeCode`·`targetId`)를 읽는다(omf-all-around#119 · 장부 P-83).
-  'GET /app/approval-requests': ['M-01-13', 'W-01-02', 'W-04-03'],
+  // `W-03-11` — PQC 생략 구획이 자기 작업지시의 결재 상태를 읽는다(omf-all-around#212 · 장부 P-152).
+  'GET /app/approval-requests': ['M-01-13', 'W-01-02', 'W-04-03', 'W-03-11'],
 
   // `W-03-10` 처분 판정 처리 — ⭐ 도출 원천이 화면보다 «낡아» 한 줄도 안 도출된 자리다(그 화면은
   // DR-008 확정 3-A 로 2026-08-13 «신설»됐다). 그 결과 판정 저장이 `P-02-13`(POP · PQC) 하나만
