@@ -252,6 +252,23 @@ describe('재고 posting (실 DB)', () => {
     }
   });
 
+  it('⛔ 지정 품목이 있는 위치로 다른 품목은 들어오지 않는다 — 400 STATE_LOCKED · 그 품목을 지정하면 된다', async () => {
+    await run(input());
+    const other = await prisma.item.create({
+      data: { item_code: `${PREFIX}-IT2`, item_name: '다른품목', item_type_code: 'RAW_MATERIAL', base_uom_id: uomId },
+    });
+    await prisma.location_item.create({ data: { location_id: hereB.locationId, item_id: other.item_id } });
+    const moving = () => input({ lines: [{ itemId, qty: 1, uomId, from: hereA, to: hereB, ownershipTypeCode: 'OWNED' }] });
+    try {
+      await expect(run(moving())).rejects.toMatchObject({ errors: [expect.objectContaining({ code: 'STATE_LOCKED' })] });
+
+      await prisma.location_item.create({ data: { location_id: hereB.locationId, item_id: itemId } });
+      await run(moving());
+    } finally {
+      await prisma.location_item.deleteMany({ where: { location_id: hereB.locationId } });
+    }
+  });
+
   it('⭐ 같은 위치 안에서 상태만 바꾸는 줄은 하위가 있어도 된다 — 하위가 생기기 전 재고를 정리한다', async () => {
     await run(input());
     const child = await childOf(hereA);

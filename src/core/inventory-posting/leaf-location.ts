@@ -9,13 +9,17 @@ import { PostingLine } from './posting.types';
  * ⭐ 같은 위치 안에서 상태만 바꾸는 줄(`from` 위치 = `to` 위치)은 둔다 — 하위가 생기기 전부터 있던 재고를 정리하는 길이다.
  * ⭐ 역처리(`reverse`)는 부르지 않는다 — 원래 있던 자리로 되돌릴 뿐이고, 막으면 전표를 취소할 수 없게 된다.
  */
+/** 다른 위치에서 들어오는 줄 — 같은 위치 안에서 상태만 바꾸는 줄은 뺀다(위 머리말). */
+export function incomingLines(lines: readonly PostingLine[]): (PostingLine & { to: NonNullable<PostingLine['to']> })[] {
+  return lines.filter((line): line is PostingLine & { to: NonNullable<PostingLine['to']> } =>
+    line.to !== undefined && line.to.locationId !== line.from?.locationId);
+}
+
 export async function assertLeafDestinations(
   tx: Pick<Prisma.TransactionClient, 'location'>,
   lines: readonly PostingLine[],
 ): Promise<void> {
-  const incoming = lines
-    .filter((line) => line.to !== undefined && line.to.locationId !== line.from?.locationId)
-    .map((line) => BigInt((line.to as NonNullable<PostingLine['to']>).locationId));
+  const incoming = incomingLines(lines).map((line) => BigInt(line.to.locationId));
   if (incoming.length === 0) return;
   const child = await tx.location.findFirst({
     where: { parent_location_id: { in: [...new Set(incoming)] }, is_active: true },
