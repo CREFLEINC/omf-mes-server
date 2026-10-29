@@ -84,6 +84,9 @@ export const ERROR_CODE = {
   // 결재 알림(`APPROVAL_ACTION_REQUIRED`)은 그 차례 결재자에게 가서 수신자 목록이 없다 — 보내면 400.
   // `INVALID`(중복·없는·중지 사용자)와 갈라야 화면이 「목록을 비워라」를 따로 말한다(장부 P-92).
   RECIPIENTS_NOT_ALLOWED: 'RECIPIENTS_NOT_ALLOWED',
+  // 인계 작업 알림 담당자는 최대 5명이다(omf-all-around#190 · 장부 P-134). `INVALID` 와 갈라야 화면이
+  // 「한도를 넘었다」를 따로 말한다.
+  RECIPIENT_LIMIT: 'RECIPIENT_LIMIT',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */

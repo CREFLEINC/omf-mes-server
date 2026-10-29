@@ -3895,6 +3895,294 @@
     }
    }
   },
+  "/app/handover-alert-types": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "인계 작업 알림 종류 목록",
+    "description": "인계 작업 10종(업무 흐름 순서). 기존 GET /app/notification-events(이벤트 6종)와 별개 목록이다 — 그 응답은 바뀌지 않는다. 로그인한 사용자 누구나 읽는다(W-CO-03·12·13 이 이름을 합친다). 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/HandoverAlertType"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/app/handover-alert-settings": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "공장별 인계작업 알림 설정 요약",
+    "description": "한 공장의 인계 작업 10종 요약(W-CO-14). 행이 없는 종류는 꺼짐·꺼짐·0명으로 읽고 행을 만들지 않는다. ETag 없음. 공장이 세션 데이터 범위 밖이면 403. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "요약",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HandoverAlertSettingSummary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/app/handover-alert-settings/{plantId}/{alertTypeCode}": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "공장×인계 작업 종류 알림 설정 상세",
+    "description": "행이 없으면 꺼짐·꺼짐·담당자 없음·ETag \"1\" 로 읽고 행을 만들지 않는다. 공장이 세션 데이터 범위 밖이면 403. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1
+     },
+     {
+      "name": "alertTypeCode",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "maxLength": 60,
+       "x-no-example": true
+      },
+      "description": "GET /app/handover-alert-types 의 alertTypeCode. 목록에 없으면 400 alertTypeCode INVALID.",
+      "x-no-code-key": "코드 그룹이 아니다 — 인계 작업 종류는 «전용 목록»(GET /app/handover-alert-types)이 갖는다."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HandoverAlertSetting"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰(공장×종류 한 행의 version). 행이 없으면 \"1\".",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "app"
+    ],
+    "summary": "공장×인계 작업 종류 알림 설정 저장",
+    "description": "켬/끔·Zalo·담당자를 통째로 바꾼다(빠진 담당자는 지워진다). 행이 없으면 만든다. 헤더 UPSERT → FOR UPDATE → version 대조 → 담당자 치환 → version+1 이 한 트랜잭션이다. If-Match 는 행이 없을 때(첫 저장)만 생략할 수 있다 — 행이 있는데 없으면 409. 담당자 5명 초과 400 recipientUserIds RECIPIENT_LIMIT, 중복·없는·사용 중지 사용자 400 recipientUserIds INVALID, zaloEnabled=true 인데 enabled=false 면 400 zaloEnabled INVALID, 공장이 데이터 범위 밖이면 403. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1
+     },
+     {
+      "name": "alertTypeCode",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "maxLength": 60,
+       "x-no-example": true
+      },
+      "description": "GET /app/handover-alert-types 의 alertTypeCode. 목록에 없으면 400 alertTypeCode INVALID.",
+      "x-no-code-key": "코드 그룹이 아니다 — 인계 작업 종류는 «전용 목록»(GET /app/handover-alert-types)이 갖는다."
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersionOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HandoverAlertSettingReplace"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "저장됨. 새 ETag",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HandoverAlertSetting"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰(공장×종류 한 행의 version). 행이 없으면 \"1\".",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/app/zalo-connection": {
    "get": {
     "tags": [
@@ -4274,6 +4562,15 @@
      "type": "string"
     },
     "description": "낙관적 잠금용 version_no. 값은 그 쓰기가 «잠그는 대상»의 조회가 내려주는 ETag 응답 헤더에서 받는다 — 보통은 같은 리소스의 상세 GET 200 이고, 하위 자원이 자기 판 번호를 갖지 않으면 부모 마스터의 상세 GET 200 이다. 어느 쪽인지는 그 오퍼레이션의 설명이 밝힌다. 근거: 공유계약 B-1 · B-1-1"
+   },
+   "IfMatchVersionOptional": {
+    "name": "If-Match",
+    "in": "header",
+    "required": false,
+    "schema": {
+     "type": "string"
+    },
+    "description": "선택 If-Match — 생략할 수 있는 자리의 규칙은 그 오퍼레이션 설명이 밝힌다. 값은 상세 GET 의 ETag. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)"
    },
    "WorkerNo": {
     "name": "X-Worker-No",
@@ -5990,6 +6287,236 @@
        12
       ],
       "description": "수신자 사용자 ID. 중복·없는·사용 중지 사용자는 400 recipientUserIds INVALID. 결재 이벤트(recipientMode=APPROVER)는 비어 있어야 한다 — 아니면 400 recipientUserIds RECIPIENTS_NOT_ALLOWED."
+     }
+    }
+   },
+   "HandoverAlertType": {
+    "type": "object",
+    "required": [
+     "alertTypeCode",
+     "name",
+     "nameVi",
+     "description",
+     "targetTypeCode"
+    ],
+    "description": "인계 작업 알림 종류. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "properties": {
+     "alertTypeCode": {
+      "type": "string",
+      "example": "MATERIAL_PICKING_REQUESTED",
+      "x-no-code-key": "코드 그룹이 아니다 — 인계 작업 종류는 «전용 목록»(GET /app/handover-alert-types)이 갖는다."
+     },
+     "name": {
+      "type": "string",
+      "example": "자재 출고 피킹"
+     },
+     "nameVi": {
+      "type": "string",
+      "example": "Lấy nguyên vật liệu xuất kho"
+     },
+     "description": {
+      "type": "string",
+      "description": "언제 알림이 생기는가.",
+      "example": "출고 요청으로 피킹 지시가 생길 때(피킹 지시마다)"
+     },
+     "targetTypeCode": {
+      "type": "string",
+      "enum": [
+       "GOODS_RECEIPT",
+       "PICKING_ORDER",
+       "STOCK_TRANSFER",
+       "SHIPMENT_REQUEST",
+       "SHIPMENT",
+       "WORK_ORDER",
+       "INBOUND_RECEIPT"
+      ],
+      "description": "알림 대상 유형. IQC(IQC_INSPECTION_REQUESTED)는 LOT 단건 등록이면 알림 대상이 LOT 이다.",
+      "example": "PICKING_ORDER"
+     }
+    }
+   },
+   "HandoverAlertSettingSummary": {
+    "type": "object",
+    "required": [
+     "plantId",
+     "plantName",
+     "zaloStatus",
+     "items"
+    ],
+    "description": "한 공장의 인계 작업 10종 요약(W-CO-14). 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1
+     },
+     "plantName": {
+      "type": "string",
+      "example": "하노이 공장"
+     },
+     "zaloStatus": {
+      "type": "string",
+      "enum": [
+       "NOT_CONFIGURED",
+       "ACTIVE",
+       "REAUTH_REQUIRED"
+      ],
+      "description": "Zalo 연결 상태만 — W-CO-12 권한 없이 안내 배너를 띄우기 위함. 연결 행이 없으면 NOT_CONFIGURED.",
+      "example": "NOT_CONFIGURED"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "alertTypeCode",
+        "enabled",
+        "zaloEnabled",
+        "recipientCount",
+        "noPhoneCount",
+        "inactiveCount"
+       ],
+       "properties": {
+        "alertTypeCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 인계 작업 종류는 «전용 목록»(GET /app/handover-alert-types)이 갖는다."
+        },
+        "enabled": {
+         "type": "boolean",
+         "example": false
+        },
+        "zaloEnabled": {
+         "type": "boolean",
+         "example": false
+        },
+        "recipientCount": {
+         "type": "integer",
+         "description": "활성 담당자 수(비활성 사용자는 발생 때 빠지므로 세지 않는다).",
+         "example": 2
+        },
+        "noPhoneCount": {
+         "type": "integer",
+         "description": "활성 담당자 중 전화번호가 없는 수(알림센터로만 받는다).",
+         "example": 1
+        },
+        "inactiveCount": {
+         "type": "integer",
+         "description": "사용 중지된 담당자 수(저장 때 빼야 한다).",
+         "example": 0
+        }
+       }
+      }
+     }
+    }
+   },
+   "HandoverAlertSetting": {
+    "type": "object",
+    "required": [
+     "plantId",
+     "alertTypeCode",
+     "enabled",
+     "zaloEnabled",
+     "recipients"
+    ],
+    "description": "공장×인계 작업 종류 알림 설정. version 은 ETag 헤더로만 준다(공유계약 A-4). 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1
+     },
+     "alertTypeCode": {
+      "type": "string",
+      "x-no-example": true,
+      "x-no-code-key": "코드 그룹이 아니다 — 인계 작업 종류는 «전용 목록»(GET /app/handover-alert-types)이 갖는다."
+     },
+     "enabled": {
+      "type": "boolean",
+      "example": true
+     },
+     "zaloEnabled": {
+      "type": "boolean",
+      "example": true
+     },
+     "recipients": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+       "type": "object",
+       "required": [
+        "userId",
+        "loginId",
+        "name",
+        "departmentName",
+        "active",
+        "hasPhone"
+       ],
+       "properties": {
+        "userId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 9
+        },
+        "loginId": {
+         "type": "string",
+         "example": "hong"
+        },
+        "name": {
+         "type": "string",
+         "example": "홍길동"
+        },
+        "departmentName": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "자재팀"
+        },
+        "active": {
+         "type": "boolean",
+         "description": "false 면 사용 중지된 담당자 — 알림을 받지 않고 저장 때 빼야 한다.",
+         "example": true
+        },
+        "hasPhone": {
+         "type": "boolean",
+         "description": "전화번호 원문은 내리지 않는다. false 면 알림센터로만 받는다.",
+         "example": true
+        }
+       }
+      }
+     }
+    }
+   },
+   "HandoverAlertSettingReplace": {
+    "type": "object",
+    "required": [
+     "enabled",
+     "zaloEnabled",
+     "recipientUserIds"
+    ],
+    "description": "공장×인계 작업 종류 설정 통째 교체. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "properties": {
+     "enabled": {
+      "type": "boolean",
+      "example": true
+     },
+     "zaloEnabled": {
+      "type": "boolean",
+      "description": "enabled=true 일 때만 true 가 될 수 있다 — 아니면 400 zaloEnabled INVALID.",
+      "example": false
+     },
+     "recipientUserIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "example": [
+       9,
+       12
+      ],
+      "description": "담당자 사용자 ID, 최대 5명 — 넘으면 400 recipientUserIds RECIPIENT_LIMIT. 중복·없는·사용 중지 사용자는 400 recipientUserIds INVALID."
      }
     }
    },
