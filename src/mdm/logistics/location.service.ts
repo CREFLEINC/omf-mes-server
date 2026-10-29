@@ -5,7 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
+import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, aliasOf, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
  * 로케이션을 FK 로 가리키는 자리 전부다. `pg_constraint` 에서 뽑았고,
@@ -88,7 +88,6 @@ const SYSTEM_KEPT = [
   'locationCode', 'locationName', 'locationTypeCode', 'parentLocationId', 'qualityZoneCode',
   'storageConditionCode', 'allowMixedItem', 'allowMixedLot', 'capacityQty', 'capacityUomId',
 ] as const;
-const ALIAS_MAX = 200;
 
 export interface LocationQuery extends ReferenceQuery {
   warehouseId: number;
@@ -320,18 +319,6 @@ export class LocationService {
     if (!exists) throw new NotFoundException('없는 위치입니다.');
     assertUpdated(0);
   }
-}
-
-/** 빈 글은 별칭 없음이다. */
-function aliasOf(value: unknown): string | null | undefined {
-  if (value === undefined || value === null) return value;
-  const text = typeof value === 'string' ? value.trim() : undefined;
-  if (text === undefined || text.length > ALIAS_MAX) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field: 'aliasName', code: ERROR_CODE.INVALID, message: `aliasName 은 ${ALIAS_MAX}자 이하 글이거나 null 이어야 합니다.` },
-    ]);
-  }
-  return text === '' ? null : text;
 }
 
 function parentError(message: string): ContractException {

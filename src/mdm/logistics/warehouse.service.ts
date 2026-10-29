@@ -9,14 +9,17 @@ import {
   Editability,
   ReferenceQuery,
   Referrer,
+  aliasOf,
   assertCodeValues,
   assertNotBlank,
   countReferences,
+  erpWarehouseName,
   filter,
   optional,
   referencePage,
   referenceWhere,
 } from '../../common/master';
+import { assertErpWarehouse } from './erp-warehouse-rules';
 
 /**
  * 창고를 FK 로 가리키는 자리 전부. `pg_constraint` 에서 뽑았고, e2e 가 같은 질의로
@@ -55,6 +58,8 @@ interface WarehouseView {
   isExternal: boolean;
   isDefect: boolean;
   isActive: boolean;
+  /** MES 별칭 — 계약 밖(장부 P-148). */
+  aliasName: string | null;
 }
 
 interface WarehouseCreate {
@@ -67,6 +72,8 @@ interface WarehouseCreate {
   isExternal?: boolean;
   isDefect?: boolean;
   partnerId?: number | null;
+  /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
+  aliasName?: unknown;
 }
 
 interface WarehouseUpdate {
@@ -78,6 +85,7 @@ interface WarehouseUpdate {
   isExternal: boolean;
   isDefect: boolean;
   partnerId?: number | null;
+  aliasName?: unknown;
 }
 
 export interface WarehouseQuery extends ReferenceQuery {
@@ -139,12 +147,13 @@ export class WarehouseService {
       this.prisma.location.count({ where: { warehouse_id: row.warehouse_id, NOT: { system_role_code: null } } }),
     ]);
     const referenceCount = references - systemLocations;
+    const fromErp = (await erpWarehouseName(this.prisma, row.warehouse_code)) !== null;
     return {
       warehouse: view(row),
-      // 창고 코드를 «글자»로 부르는 자리는 계약에 0곳이라 FK 건수가 곧 답이다(#114 와 같다).
+      // 창고 코드를 «글자»로 부르는 자리는 계약에 0곳이라 FK 건수가 곧 답이다(#114 와 같다). ERP 창고는 늘 잠근다(장부 P-148).
       editability: {
-        codeEditable: referenceCount === 0,
-        reason: referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
+        codeEditable: !fromErp && referenceCount === 0,
+        reason: fromErp ? 'RECEIVED_FROM_ERP' : referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
         referenceCount,
       },
       versionNo: row.version_no,
@@ -155,7 +164,9 @@ export class WarehouseService {
     // 계약이 `WarehouseCreate.warehouseCode` 에 「공백만 불가」로 적었다.
     assertNotBlank([['warehouseCode', input.warehouseCode]]);
     assertNoPartner(input);
+    const aliasName = aliasOf(input.aliasName);
     await this.assertCodes(input);
+    await assertErpWarehouse(this.prisma, input, null);
     return view(
       await this.prisma.warehouse.create({
         data: {
@@ -167,6 +178,7 @@ export class WarehouseService {
           management_level_code: input.managementLevelCode,
           ...optional('is_external', input.isExternal),
           ...optional('is_defect', input.isDefect),
+          ...optional('alias_name', aliasName),
         },
       }),
     );
@@ -178,7 +190,14 @@ export class WarehouseService {
     input: WarehouseUpdate,
   ): Promise<WarehouseResult> {
     assertNoPartner(input);
+    const aliasName = aliasOf(input.aliasName);
     await this.assertCodes(input);
+    const current = await this.prisma.warehouse.findUnique({
+      where: { warehouse_id: warehouseId },
+      select: { warehouse_code: true },
+    });
+    if (!current) throw new NotFoundException('없는 창고입니다.');
+    await assertErpWarehouse(this.prisma, input, { warehouseId: BigInt(warehouseId), warehouseCode: current.warehouse_code });
     const updated = await this.prisma.warehouse.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
       where: { warehouse_id: warehouseId, version_no: version },
@@ -190,6 +209,7 @@ export class WarehouseService {
         management_level_code: input.managementLevelCode,
         is_external: input.isExternal,
         is_defect: input.isDefect,
+        ...optional('alias_name', aliasName),
         version_no: { increment: 1 },
       },
     });
@@ -270,5 +290,6 @@ function view(row: WarehouseRow): WarehouseView {
     isExternal: row.is_external,
     isDefect: row.is_defect,
     isActive: row.is_active,
+    aliasName: row.alias_name,
   };
 }
