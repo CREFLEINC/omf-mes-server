@@ -16,6 +16,7 @@ import { salesOrderTable } from './apply/sales-order.apply';
 import { CUSTOMS_LOOKUP, CustomsClearances, CustomsLookup } from './customs-clearance';
 import { CustomsClearanceService } from './customs-clearance.service';
 import { ERP_SYNC_LANES, ErpSyncStatusService } from './erp-sync-status.service';
+import { ErpWarehouseService } from './erp-warehouse.service';
 import { ERP_SEND_LEASE, ErpSendRunner } from './erp-send.runner';
 import { erpSyncConfig } from './erp-sync.config';
 import { ErpSyncController } from './erp-sync.controller';
@@ -114,6 +115,7 @@ import { SyncState } from './sync-state';
       },
     },
     ErpSyncStatusService,
+    ErpWarehouseService,
   ],
 })
 export class ErpSyncModule {}

@@ -215,11 +215,9 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     await configure(ids.plant1, 'SHIPMENT_PACKING_REQUESTED', [users.U1], false);
     await configure(ids.plant1, 'PUTAWAY_REQUESTED', [users.U1], false);
     const unit = ids.businessUnit;
+    // 관리수준 WAREHOUSE 창고는 서버가 「창고 전체」 자리를 둔다(장부 P-145) — 직행 입고가 그 자리로 간다.
     const warehouse = await prisma.warehouse.create({
       data: { plant_id: ids.plant1, business_unit_id: unit, warehouse_code: `${PREFIX}-FG`, warehouse_name: `${PREFIX} 제품창고`, warehouse_type_code: 'FINISHED', management_level_code: 'WAREHOUSE' },
-    });
-    await prisma.location.create({
-      data: { warehouse_id: warehouse.warehouse_id, location_code: `${PREFIX}-LFG`, location_name: 'FG', location_type_code: 'DEFAULT' },
     });
     const lot = await prisma.lot.create({
       data: { lot_no: `${PREFIX}-EXPLOT`, item_id: ids.itemA, lot_type_code: 'PRODUCTION', plant_id: ids.plant1, initial_qty: 10, uom_id: ids.uom, source_type_code: 'WORK_ORDER', source_id: 1, status_code: 'NORMAL' },
