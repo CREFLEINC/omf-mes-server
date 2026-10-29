@@ -45,22 +45,18 @@ export async function assertNoStock(prisma: Db, locationId: number, path?: strin
 }
 
 /**
- * 상위는 같은 단계의 다른 상위로만 옮긴다 — 단계가 바뀌면 그 밑 가지의 단계가 모두 틀어진다.
- * 새 상위에 재고가 있으면 막는 것은 등록과 같다.
+ * 상위는 바꾸지 않는다 — 코드가 상위 경로를 담는데 코드는 바꿀 수 없다(사용자 결정 2026-10-29). 잘못 단 위치는
+ * 지우고 다시 만든다. 화면이 저장된 값을 그대로 실어 보내는 것은 받는다.
  */
-export async function assertMove(
-  prisma: Db,
+export function assertKeptPlace(
   current: { parent_location_id: bigint | null; location_level_code: string | null },
   input: { parentLocationId?: number | null; locationLevelCode?: unknown },
-): Promise<void> {
+): void {
   assertSentLevel(input.locationLevelCode, current.location_level_code);
   if (input.parentLocationId === undefined) return;
-  const parentId = input.parentLocationId;
-  if (parentId === (current.parent_location_id === null ? null : Number(current.parent_location_id))) return;
-  if ((await levelUnder(prisma, parentId)) !== current.location_level_code) {
-    throw parentError('같은 단계의 다른 상위로만 옮길 수 있습니다.');
+  if (input.parentLocationId !== (current.parent_location_id === null ? null : Number(current.parent_location_id))) {
+    throw parentError('상위는 바꿀 수 없습니다 — 지우고 다시 만듭니다.');
   }
-  if (parentId !== null) await assertNoStock(prisma, parentId, 'parentLocationId');
 }
 
 /** 꺼진 하위를 다시 켜면 상위가 맨 아래가 아니게 된다 — 상위에 재고가 있으면 막는다. */

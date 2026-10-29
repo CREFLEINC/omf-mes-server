@@ -489,6 +489,31 @@
       "x-no-code-key": "코드 그룹이 아니다 — 개체 «식별자»다(공유계약 A-16 「가르는 물음 넷」 · 2026-09-02 판정). 위치 «자기 행»의 코드다 — Location.locationCode 가 같은 판정으로 이미 닫혔다. ⛔ 코드 사전 키를 붙이지 않는다 — 붙이면 «값의 목록»을 공통코드가 갖는다는 뜻이 되어, 실제로는 마스터 표가 갖는 행 목록과 두 벌이 된다(L-2-1)."
      },
      {
+      "name": "parentLocationId",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "그 위치 «바로 밑»만 낸다 — 화면이 구역 → 랙 → 층·셀 순으로 펼칠 때마다 받는다"
+     },
+     {
+      "name": "locationLevelCode",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "ZONE",
+        "RACK",
+        "LEVEL",
+        "CELL"
+       ]
+      },
+      "description": "그 단계만 낸다(예: ZONE 이면 창고의 구역 목록)"
+     },
+     {
       "name": "includeInactive",
       "in": "query",
       "schema": {
@@ -14648,9 +14673,10 @@
        "NOT_COUNTABLE",
        "RECEIVED_FROM_ERP",
        "LABEL_ISSUED",
-       "SYSTEM_OWNED"
+       "SYSTEM_OWNED",
+       "AUTO_ISSUED"
       ],
-      "description": "NOT_COUNTABLE = 참조가 FK 가 아니라 세지 못함(의도적 비-FK 또는 코드 문자열 참조) → 화면은 무조건 잠근다. RECEIVED_FROM_ERP = 수신본이라 항상 읽기 전용. LABEL_ISSUED = 코드가 라벨로 발행돼 현장에 물리적으로 나가 있다 → 참조 건수가 0이어도 잠근다. SYSTEM_OWNED = 그룹 자체가 시스템 소유라 고객이 값을 편집할 수 없다(mdm.code_group 의 그룹 단위 플래그, 근거: omf-mes-server#45 정정 회신) → 화면은 그룹 단위로 잠근다(개별 값이 아니라 그룹 전체)",
+      "description": "NOT_COUNTABLE = 참조가 FK 가 아니라 세지 못함(의도적 비-FK 또는 코드 문자열 참조) → 화면은 무조건 잠근다. RECEIVED_FROM_ERP = 수신본이라 항상 읽기 전용. LABEL_ISSUED = 코드가 라벨로 발행돼 현장에 물리적으로 나가 있다 → 참조 건수가 0이어도 잠근다. SYSTEM_OWNED = 그룹 자체가 시스템 소유라 고객이 값을 편집할 수 없다(mdm.code_group 의 그룹 단위 플래그, 근거: omf-mes-server#45 정정 회신) → 화면은 그룹 단위로 잠근다(개별 값이 아니라 그룹 전체). AUTO_ISSUED = 서버가 발행한 코드라 바꿀 수 없다(위치)",
       "example": "REFERENCED"
      },
      "referenceCount": {
@@ -14959,12 +14985,13 @@
      "warehouseId",
      "locationCode",
      "locationName",
-     "locationTypeCode",
-     "allowMixedItem",
-     "allowMixedLot",
-     "isActive"
+     "isActive",
+     "aliasName",
+     "locationLevelCode",
+     "isLeaf",
+     "systemRoleCode"
     ],
-    "description": "Location. 계층 구조(parent_location_id 자기참조). ck_location_capacity — capacityQty 와 capacityUomId 는 함께 있거나 함께 비어야 한다. 근거: W-06-07 §4-B · 공유계약 A-2",
+    "description": "Location. 창고 › 구역 › 랙 › 층 › 셀 계층(parent_location_id 자기참조). 코드는 서버가 발행하고 상위는 바꾸지 않는다. 근거: W-06-07 §4-B · 사용자 결정 2026-10-29",
     "properties": {
      "locationId": {
       "x-source-column": "location_id",
@@ -14991,8 +15018,9 @@
       "x-source-column": "location_code",
       "type": "string",
       "maxLength": 50,
-      "example": "A-01-03",
-      "x-no-code-key": "코드 그룹이 아니다 — Location 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
+      "example": "Z01-R001-L01-C01",
+      "x-no-code-key": "코드 그룹이 아니다 — Location 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다.",
+      "description": "서버가 발행한다 — 구역 Z01 · 랙 {구역}-R001 · 층 {랙}-L01 · 셀 {층}-C01, 같은 상위 안 가장 큰 번호 + 1(자리 수를 넘으면 늘어난다). 바꿀 수 없다. 서버가 만든 자리는 SYS-STAGING · SYS-WHOLE"
      },
      "locationName": {
       "x-source-column": "location_name",
@@ -15000,72 +15028,56 @@
       "maxLength": 200,
       "example": "A구역 01열 03단"
      },
-     "locationTypeCode": {
-      "x-source-column": "location_type_code",
-      "type": "string",
-      "maxLength": 50,
-      "example": "RACK",
-      "x-code-key": "CD-LOCATION-TYPE",
-      "description": "위치의 «물리적 형태» — 랙(RACK) · 바닥(FLOOR) · 임시(TEMP) · 호퍼(HOPPER) · 대표(DEFAULT). ⭐ 축은 «하나»다 — 계층 깊이는 warehouse.managementLevelCode 가 따로 가지므로 이 칸과 겹치지 않는다(2026-08-22 분류표 37). ⭐ 세 화면이 이미 각각 «값 하나»를 지목해 두었다 — M-01-07 §5-3 ①안이 「임시 Location」을 TEMP 로 표현하기로 확정했고, M-01-09 가 생산창고 호퍼를 가려내며, M-01-04 는 「위치 관리를 안 하는 창고의 흡수용 Location」을 알아볼 컬럼이 없다고 적었다 — 그것이 DEFAULT 다. ⭐ 고객이 늘릴 수 있다 — 위 다섯은 초기값이지 닫힌 목록이 아니다. ⚠ 다만 TEMP·HOPPER·DEFAULT 셋은 «화면이 판정에 쓴다» — 지우면 그 화면이 선다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOCATION_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
-     },
-     "qualityZoneCode": {
-      "x-source-column": "quality_zone_code",
-      "type": [
-       "string",
-       "null"
-      ],
-      "maxLength": 50,
-      "example": "STANDARD",
-      "x-code-key": "CD-QUALITY-ZONE",
-      "description": "위치의 품질 구역 구분. ⭐ 고객이 늘린다 — 창고 배치·품질관리 절차가 현장마다 달라 값을 계약이 닫지 않는다. ⛔ 이 값과 LOT 보류(Hold/Release) 물류 통제의 «관계»는 아직 정의되지 않았다(W-06-07 §8-2) — 그래서 서버·화면이 이 값으로 «출고 가부를 판정하지 않는다». 판정의 정본은 LOT 보류다. 관계가 서면 그때 판정에 넣는다(A-21). 값 목록은 GET /mdm/code-values?codeGroupCode=QUALITY_ZONE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
-     },
-     "storageConditionCode": {
-      "x-source-column": "storage_condition_code",
-      "type": [
-       "string",
-       "null"
-      ],
-      "maxLength": 50,
-      "example": "REFRIGERATED",
-      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-code-key": "CD-STORAGE-CONDITION"
-     },
-     "allowMixedItem": {
-      "x-source-column": "allow_mixed_item",
-      "type": "boolean",
-      "default": true,
-      "example": false
-     },
-     "allowMixedLot": {
-      "x-source-column": "allow_mixed_lot",
-      "type": "boolean",
-      "default": true,
-      "example": false
-     },
-     "capacityQty": {
-      "x-source-column": "capacity_qty",
-      "type": [
-       "number",
-       "null"
-      ],
-      "minimum": 0,
-      "description": "qty_t numeric(20,6)",
-      "example": 500
-     },
-     "capacityUomId": {
-      "x-source-column": "capacity_uom_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "example": 1001
-     },
      "isActive": {
       "x-source-column": "is_active",
       "type": "boolean",
       "default": true,
       "example": true
+     },
+     "aliasName": {
+      "x-source-column": "alias_name",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "example": "자재 랙 1",
+      "description": "MES 별칭 — 화면이 이름처럼 보인다. 빈 글은 별칭 없음"
+     },
+     "locationLevelCode": {
+      "x-source-column": "location_level_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "ZONE",
+       "RACK",
+       "LEVEL",
+       "CELL",
+       null
+      ],
+      "example": "RACK",
+      "description": "위치 단계 — 서버가 상위로 정한다. 상위 없음 → ZONE · ZONE 밑 → RACK · RACK 밑 → LEVEL · LEVEL 밑 → CELL(건너뛰기 없음). 서버가 만든 자리(창고 전체·적치 대기)는 ZONE. null 은 넷보다 깊던 옛 위치뿐이다. 이름은 GET /mdm/code-values?codeGroupCode=LOCATION_LEVEL"
+     },
+     "isLeaf": {
+      "type": "boolean",
+      "example": true,
+      "description": "켜진 하위가 없다 — 재고를 둘 수 있는 맨 아래 위치"
+     },
+     "systemRoleCode": {
+      "x-source-column": "system_role_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "PUTAWAY_STAGING",
+       "WAREHOUSE_WHOLE",
+       null
+      ],
+      "example": null,
+      "description": "서버가 창고마다 만든 자리의 역할 — 적치 대기(PUTAWAY_STAGING) · 창고 전체(WAREHOUSE_WHOLE). 사람이 만든 위치는 null. 서버가 만든 자리는 별칭만 고친다"
      }
     }
    },
@@ -15074,11 +15086,9 @@
     "type": "object",
     "required": [
      "warehouseId",
-     "locationCode",
-     "locationName",
-     "locationTypeCode"
+     "locationName"
     ],
-    "description": "Location 등록 요청. isActive 는 받지 않는다(신규는 항상 사용 중). 근거: W-06-07 §4-B · §5-1 「Location 추가 / 하위 추가」. 계층 구조(parent_location_id 자기참조). ck_location_capacity — capacityQty 와 capacityUomId 는 함께 있거나 함께 비어야 한다. 근거: W-06-07 §4-B · 공유계약 A-2",
+    "description": "Location 등록 요청. 코드는 서버가 발행하고 단계는 상위로 정한다. isActive 는 받지 않는다(신규는 항상 사용 중). 근거: W-06-07 §4-B · §5-1 「Location 추가 / 하위 추가」",
     "properties": {
      "warehouseId": {
       "x-source-column": "warehouse_id",
@@ -15097,80 +15107,37 @@
       "description": "하위 추가 시 자동 설정. 자기 자신·순환 금지 — §8-5",
       "example": 1001
      },
-     "locationCode": {
-      "x-source-column": "location_code",
-      "type": "string",
-      "maxLength": 50,
-      "description": "uq_location — warehouseId 내 유일",
-      "example": "A-01-03",
-      "x-no-code-key": "코드 그룹이 아니다 — Location 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
-     },
      "locationName": {
       "x-source-column": "location_name",
       "type": "string",
       "maxLength": 200,
       "example": "A구역 01열 03단"
      },
-     "locationTypeCode": {
-      "x-source-column": "location_type_code",
-      "type": "string",
-      "maxLength": 50,
+     "aliasName": {
+      "x-source-column": "alias_name",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "example": "자재 랙 1",
+      "description": "MES 별칭 — 화면이 이름처럼 보인다. 빈 글은 별칭 없음"
+     },
+     "locationLevelCode": {
+      "x-source-column": "location_level_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "ZONE",
+       "RACK",
+       "LEVEL",
+       "CELL",
+       null
+      ],
       "example": "RACK",
-      "x-code-key": "CD-LOCATION-TYPE",
-      "description": "위치의 «물리적 형태» — 랙(RACK) · 바닥(FLOOR) · 임시(TEMP) · 호퍼(HOPPER) · 대표(DEFAULT). ⭐ 축은 «하나»다 — 계층 깊이는 warehouse.managementLevelCode 가 따로 가지므로 이 칸과 겹치지 않는다(2026-08-22 분류표 37). ⭐ 세 화면이 이미 각각 «값 하나»를 지목해 두었다 — M-01-07 §5-3 ①안이 「임시 Location」을 TEMP 로 표현하기로 확정했고, M-01-09 가 생산창고 호퍼를 가려내며, M-01-04 는 「위치 관리를 안 하는 창고의 흡수용 Location」을 알아볼 컬럼이 없다고 적었다 — 그것이 DEFAULT 다. ⭐ 고객이 늘릴 수 있다 — 위 다섯은 초기값이지 닫힌 목록이 아니다. ⚠ 다만 TEMP·HOPPER·DEFAULT 셋은 «화면이 판정에 쓴다» — 지우면 그 화면이 선다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOCATION_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
-     },
-     "qualityZoneCode": {
-      "x-source-column": "quality_zone_code",
-      "type": [
-       "string",
-       "null"
-      ],
-      "maxLength": 50,
-      "example": "STANDARD",
-      "x-code-key": "CD-QUALITY-ZONE",
-      "description": "위치의 품질 구역 구분. ⭐ 고객이 늘린다 — 창고 배치·품질관리 절차가 현장마다 달라 값을 계약이 닫지 않는다. ⛔ 이 값과 LOT 보류(Hold/Release) 물류 통제의 «관계»는 아직 정의되지 않았다(W-06-07 §8-2) — 그래서 서버·화면이 이 값으로 «출고 가부를 판정하지 않는다». 판정의 정본은 LOT 보류다. 관계가 서면 그때 판정에 넣는다(A-21). 값 목록은 GET /mdm/code-values?codeGroupCode=QUALITY_ZONE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
-     },
-     "storageConditionCode": {
-      "x-source-column": "storage_condition_code",
-      "type": [
-       "string",
-       "null"
-      ],
-      "maxLength": 50,
-      "example": "REFRIGERATED",
-      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-code-key": "CD-STORAGE-CONDITION"
-     },
-     "allowMixedItem": {
-      "x-source-column": "allow_mixed_item",
-      "type": "boolean",
-      "default": true,
-      "example": false
-     },
-     "allowMixedLot": {
-      "x-source-column": "allow_mixed_lot",
-      "type": "boolean",
-      "default": true,
-      "example": false
-     },
-     "capacityQty": {
-      "x-source-column": "capacity_qty",
-      "type": [
-       "number",
-       "null"
-      ],
-      "minimum": 0,
-      "description": "qty_t numeric(20,6)",
-      "example": 500
-     },
-     "capacityUomId": {
-      "x-source-column": "capacity_uom_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "example": 1001
+      "description": "선택 — 보내면 서버가 상위로 정한 단계와 같아야 한다(다르면 400 INVALID)"
      }
     }
    },
@@ -15178,97 +15145,25 @@
     "x-source-table": "mdm.location",
     "type": "object",
     "required": [
-     "locationCode",
-     "locationName",
-     "locationTypeCode",
-     "allowMixedItem",
-     "allowMixedLot"
+     "locationName"
     ],
-    "description": "Location 수정 요청. warehouseId 는 신규만(편집 불가) — 근거: W-06-07 §4-B 편집 열. isActive 는 별도 사용 중지 액션(:deactivate)으로만 바꾼다. 계층 구조(parent_location_id 자기참조). ck_location_capacity — capacityQty 와 capacityUomId 는 함께 있거나 함께 비어야 한다. 근거: W-06-07 §4-B · 공유계약 A-2",
+    "description": "Location 수정 요청 — 이름과 별칭만 바꾼다. 코드·창고·상위는 바꾸지 않는다(상위를 다른 값으로 보내면 400 INVALID). isActive 는 별도 사용 중지 액션(:deactivate)으로만 바꾼다. 근거: W-06-07 §4-B 편집 열",
     "properties": {
-     "parentLocationId": {
-      "x-source-column": "parent_location_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "계층 재배치. 자기 자신·순환 금지 — §8-5",
-      "example": 1001
-     },
-     "locationCode": {
-      "x-source-column": "location_code",
-      "type": "string",
-      "maxLength": 50,
-      "description": "uq_location — warehouseId 내 유일. 실제 편집 가능 여부는 GET 응답의 editability를 따른다",
-      "example": "A-01-03",
-      "x-internal-note": "(§8-7 미결 반영)",
-      "x-no-code-key": "코드 그룹이 아니다 — Location 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
-     },
      "locationName": {
       "x-source-column": "location_name",
       "type": "string",
       "maxLength": 200,
       "example": "A구역 01열 03단"
      },
-     "locationTypeCode": {
-      "x-source-column": "location_type_code",
-      "type": "string",
-      "maxLength": 50,
-      "example": "RACK",
-      "x-code-key": "CD-LOCATION-TYPE",
-      "description": "위치의 «물리적 형태» — 랙(RACK) · 바닥(FLOOR) · 임시(TEMP) · 호퍼(HOPPER) · 대표(DEFAULT). ⭐ 축은 «하나»다 — 계층 깊이는 warehouse.managementLevelCode 가 따로 가지므로 이 칸과 겹치지 않는다(2026-08-22 분류표 37). ⭐ 세 화면이 이미 각각 «값 하나»를 지목해 두었다 — M-01-07 §5-3 ①안이 「임시 Location」을 TEMP 로 표현하기로 확정했고, M-01-09 가 생산창고 호퍼를 가려내며, M-01-04 는 「위치 관리를 안 하는 창고의 흡수용 Location」을 알아볼 컬럼이 없다고 적었다 — 그것이 DEFAULT 다. ⭐ 고객이 늘릴 수 있다 — 위 다섯은 초기값이지 닫힌 목록이 아니다. ⚠ 다만 TEMP·HOPPER·DEFAULT 셋은 «화면이 판정에 쓴다» — 지우면 그 화면이 선다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOCATION_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
-     },
-     "qualityZoneCode": {
-      "x-source-column": "quality_zone_code",
+     "aliasName": {
+      "x-source-column": "alias_name",
       "type": [
        "string",
        "null"
       ],
-      "maxLength": 50,
-      "example": "STANDARD",
-      "x-code-key": "CD-QUALITY-ZONE",
-      "description": "위치의 품질 구역 구분. ⭐ 고객이 늘린다 — 창고 배치·품질관리 절차가 현장마다 달라 값을 계약이 닫지 않는다. ⛔ 이 값과 LOT 보류(Hold/Release) 물류 통제의 «관계»는 아직 정의되지 않았다(W-06-07 §8-2) — 그래서 서버·화면이 이 값으로 «출고 가부를 판정하지 않는다». 판정의 정본은 LOT 보류다. 관계가 서면 그때 판정에 넣는다(A-21). 값 목록은 GET /mdm/code-values?codeGroupCode=QUALITY_ZONE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
-     },
-     "storageConditionCode": {
-      "x-source-column": "storage_condition_code",
-      "type": [
-       "string",
-       "null"
-      ],
-      "maxLength": 50,
-      "example": "REFRIGERATED",
-      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-code-key": "CD-STORAGE-CONDITION"
-     },
-     "allowMixedItem": {
-      "x-source-column": "allow_mixed_item",
-      "type": "boolean",
-      "example": false
-     },
-     "allowMixedLot": {
-      "x-source-column": "allow_mixed_lot",
-      "type": "boolean",
-      "example": false
-     },
-     "capacityQty": {
-      "x-source-column": "capacity_qty",
-      "type": [
-       "number",
-       "null"
-      ],
-      "minimum": 0,
-      "description": "qty_t numeric(20,6)",
-      "example": 500
-     },
-     "capacityUomId": {
-      "x-source-column": "capacity_uom_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "example": 1001
+      "maxLength": 200,
+      "example": "자재 랙 1",
+      "description": "MES 별칭 — 화면이 이름처럼 보인다. 빈 글은 별칭 없음"
      }
     }
    },

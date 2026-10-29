@@ -11,6 +11,8 @@ export interface Editability {
     | 'RECEIVED_FROM_ERP'
     // 코드가 라벨로 발행돼 현장에 물리적으로 나가 있다 — 참조가 0이어도 잠근다(계약).
     | 'LABEL_ISSUED'
-    | 'SYSTEM_OWNED';
+    | 'SYSTEM_OWNED'
+    // 서버가 발행한 코드라 바꿀 수 없다 — 위치(사용자 결정 2026-10-29).
+    | 'AUTO_ISSUED';
   referenceCount: number | null;
 }

@@ -2172,7 +2172,7 @@ model location {
   parent_location_id                                                                BigInt?
   location_code                                                                     String                       @db.VarChar(50)
   location_name                                                                     String                       @db.VarChar(200)
-  location_type_code                                                                String                       @db.VarChar(50)
+  location_type_code                                                                String?                      @db.VarChar(50)
   quality_zone_code                                                                 String?                      @db.VarChar(50)
   storage_condition_code                                                            String?                      @db.VarChar(50)
   allow_mixed_item                                                                  Boolean                      @default(true)
