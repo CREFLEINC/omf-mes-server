@@ -49,7 +49,6 @@ function validator(operation: string, status = 200): ValidateFunction {
 interface TaskBody {
   putawayTaskId: number;
   warehouseId: number;
-  warehouseManagementLevelCode: string;
   statusCode: string;
   priorityNo: number;
 }
@@ -185,18 +184,16 @@ describe('적치 지시 조회 (e2e)', () => {
     expect(ids.indexOf(taskR1)).toBeLessThan(ids.indexOf(taskR4));
   });
 
-  it('⭐ 항목이 warehouseId·warehouseManagementLevelCode 를 채운다', async () => {
+  it('⭐ 항목이 warehouseId 를 채우고 warehouseManagementLevelCode 는 싣지 않는다(장부 P-152)', async () => {
     const main = await getDetail(taskR1).expect(200);
     const validate = validator('GET /logistics/putaway-tasks/{putawayTaskId}');
     expect(validate(main.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(main.body.warehouseId).toBe(warehouseId);
-    expect(main.body.warehouseManagementLevelCode).toBe('LOCATION');
+    expect(main.body).not.toHaveProperty('warehouseManagementLevelCode');
 
-    // 다른 창고 지시는 그 창고의 관리 수준을 낸다 — 하드코딩이 아니라 조인이다.
     const other = await getDetail(taskR3).expect(200);
     expect(other.body.warehouseId).toBe(otherWarehouseId);
-    expect(other.body.warehouseManagementLevelCode).toBe('RACK');
   });
 
   it('없는 지시는 404 이고 상세는 ETag 를 내린다', async () => {

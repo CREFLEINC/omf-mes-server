@@ -941,16 +941,13 @@ describe('출하 목록 (e2e)', () => {
     expect(await prisma.putaway_task.count({ where: { goods_receipt_line_id: { in: lineIds } } })).toBe(0);
   });
 
-  it('E-6 ⛔ 입고 위치를 하나로 못 정하면 400 — 셀 관리 · 위치 0 · 위치 둘', async () => {
-    // 계약: 「창고면 위치를 받지 않고, 셀이면 셀까지 받는다」 — 긴급 직행엔 위치 칸이 없다.
-    const cell = await post(expeditedBody({ warehouseId: Number(ids.warehouseCell) }), 400);
-    expect(firstError(cell)).toMatchObject({ field: 'warehouseId', code: 'REQUIRED' });
-
+  it('E-6 ⛔ 입고 위치를 하나로 못 정하면 400 — 위치 0 은 RANGE · 고를 자리 둘은 REQUIRED(장부 P-152)', async () => {
+    // 긴급 직행엔 위치 칸이 없다 — 위치를 나눈 창고면 창고 칸을 짚는다.
     const none = await post(expeditedBody({ warehouseId: Number(ids.warehouse2) }), 400);
     expect(firstError(none)).toMatchObject({ field: 'warehouseId', code: 'RANGE' });
 
     const two = await post(expeditedBody({ warehouseId: Number(ids.warehouseTwo) }), 400);
-    expect(firstError(two)).toMatchObject({ field: 'warehouseId', code: 'RANGE' });
+    expect(firstError(two)).toMatchObject({ field: 'warehouseId', code: 'REQUIRED' });
   });
 
   it('E-7 ⛔ 긴급도 품질 게이트를 건너뛰지 않는다 — 입고 전표조차 안 선다(결정 10)', async () => {
@@ -1717,24 +1714,22 @@ describe('출하 목록 (e2e)', () => {
   }
 
   /**
-   * 긴급 직행 픽스처 — 위치 해소의 세 갈래를 가르는 창고 둘 + 수주 라인이 «없는» 지시.
-   * ⭐ `ids.warehouse` 는 관리수준 WAREHOUSE · 활성 위치 «하나»(본길) · `ids.warehouse2` 는 위치 0.
+   * 긴급 직행 픽스처 — 위치 해소의 갈래를 가르는 창고(고를 자리 둘) + 수주 라인이 «없는» 지시.
+   * ⭐ `ids.warehouse` 는 고를 자리 «하나»(본길) · `ids.warehouse2` 는 위치 0.
    * ⭐ 지시 라인에 수주 라인을 안 건다 — 롤업의 nullable 갈래가 본길로 지나간다.
    */
   async function makeExpeditedFixture(): Promise<void> {
     const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     const unit = await prisma.business_unit.findFirstOrThrow({ orderBy: { business_unit_id: 'asc' } });
-    const warehouse = (code: string, level: string) => ({
+    const warehouse = (code: string) => ({
       plant_id: plant.plant_id,
       business_unit_id: unit.business_unit_id,
       warehouse_code: code,
       warehouse_name: `출하검사창고${code.slice(-3)}`,
       warehouse_type_code: 'FINISHED',
-      management_level_code: level,
+      management_level_code: 'WAREHOUSE',
     });
-    const cell = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WHC` }, warehouse(`${PREFIX}-WHC`, 'CELL'));
-    ids.warehouseCell = cell.warehouse_id;
-    const two = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WHT` }, warehouse(`${PREFIX}-WHT`, 'WAREHOUSE'));
+    const two = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WHT` }, warehouse(`${PREFIX}-WHT`));
     ids.warehouseTwo = two.warehouse_id;
     await withoutWholeLocation(two.warehouse_id);
     for (const suffix of ['T1', 'T2']) {

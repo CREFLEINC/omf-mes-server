@@ -334,24 +334,21 @@ describe('창고 마스터 (e2e)', () => {
       .expect(400);
   });
 
-  it('⭐ dividedOnly 는 «활성 위치가 둘 이상»인 창고다 — 하나짜리는 안 걸린다', async () => {
+  it('⭐ dividedOnly 는 «고를 수 있는 활성 위치가 둘 이상»인 창고다 — 적치 대기는 세지 않고 창고 전체는 센다(장부 P-152)', async () => {
     const locationTypeCode = await firstCode('LOCATION_TYPE');
-    const one = await createWarehouse(`${PREFIX}-ONE`);
-    const two = await createWarehouse(`${PREFIX}-TWO`);
-    // 재고를 한 번이라도 받은 창고는 기본 위치 한 행이 반드시 있다 — 그것으로는 안 걸린다.
-    await prisma.location.create({
-      data: {
-        warehouse_id: one.id,
-        location_code: `${PREFIX}-O1`,
-        location_name: '기본',
-        location_type_code: locationTypeCode,
-      },
+    await createWarehouse(`${PREFIX}-NONE`);
+    const zoned = await createWarehouse(`${PREFIX}-ZONED`);
+    const legacy = await createWarehouse(`${PREFIX}-LEGACY`);
+    // 관리수준이 있던 때의 창고 — 위치 하나가 창고 전체 노릇을 해서 「창고 전체」가 없다.
+    await prisma.location.updateMany({
+      where: { warehouse_id: legacy.id, system_role_code: 'WAREHOUSE_WHOLE' },
+      data: { is_active: false },
     });
     await prisma.location.createMany({
-      data: [1, 2].map((n) => ({
-        warehouse_id: two.id,
-        location_code: `${PREFIX}-T${n}`,
-        location_name: `구역${n}`,
+      data: [zoned.id, legacy.id].map((id, n) => ({
+        warehouse_id: id,
+        location_code: `${PREFIX}-L${n}`,
+        location_name: '구역',
         location_type_code: locationTypeCode,
       })),
     });
@@ -362,8 +359,20 @@ describe('창고 마스터 (e2e)', () => {
       .expect(200);
 
     const codes = divided.body.items.map((w: { warehouseCode: string }) => w.warehouseCode);
-    expect(codes).toContain(`${PREFIX}-TWO`);
-    expect(codes).not.toContain(`${PREFIX}-ONE`);
+    expect(codes).toContain(`${PREFIX}-ZONED`);
+    expect(codes).not.toContain(`${PREFIX}-NONE`);
+    expect(codes).not.toContain(`${PREFIX}-LEGACY`);
+  });
+
+  it('⭐ 관리수준은 보지 않는다 — 공통코드에 없는 값도 받아 그대로 둔다(장부 P-152)', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/mdm/warehouses')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ ...body(`${PREFIX}-ANYLV`), managementLevelCode: 'NONE' })
+      .expect(201);
+
+    expect(created.body.managementLevelCode).toBe('NONE');
   });
 
   it('중지·재개가 돌고, 중지된 것은 기본 목록에서 빠진다', async () => {

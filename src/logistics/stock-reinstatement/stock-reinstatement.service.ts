@@ -66,7 +66,7 @@ export class StockReinstatementService {
   private async resolveTarget(body: StockReinstatementCreate): Promise<ReinstatementTarget> {
     const warehouse = await this.prisma.warehouse.findFirst({
       where: { warehouse_id: BigInt(body.toWarehouseId), is_active: true },
-      select: { plant_id: true, business_unit_id: true, management_level_code: true, is_defect: true },
+      select: { plant_id: true, business_unit_id: true, is_defect: true },
     });
     if (warehouse === null) throw badRequest('toWarehouseId', ERROR_CODE.INVALID, '쓸 수 있는 창고가 아닙니다.');
     if (warehouse.is_defect) {
@@ -74,7 +74,6 @@ export class StockReinstatementService {
     }
     const locationId = await resolveDestinationLocation(this.prisma, {
       warehouseId: body.toWarehouseId,
-      managementLevelCode: warehouse.management_level_code,
       requestedLocationId: body.toLocationId,
       warehouseField: 'toWarehouseId',
       locationField: 'toLocationId',

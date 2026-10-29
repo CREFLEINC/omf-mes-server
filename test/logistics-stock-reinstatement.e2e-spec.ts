@@ -70,21 +70,22 @@ describe('재고 재등록 (e2e)', () => {
     ids.plant = plant.plant_id;
     ids.unit = unit.business_unit_id;
     ids.legal = plant.legal_entity_id;
-    const warehouse = async (key: string, code: string, level: string, isDefect: boolean) => {
+    const warehouse = async (key: string, code: string, isDefect: boolean, divided: boolean) => {
       const row = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-${code}` }, {
         plant_id: plant.plant_id,
         business_unit_id: unit.business_unit_id,
         warehouse_code: `${PREFIX}-${code}`,
         warehouse_name: `재등록검사창고${code}`,
         warehouse_type_code: 'FINISHED',
-        management_level_code: level,
+        management_level_code: 'WAREHOUSE',
         is_defect: isDefect,
       });
       ids[key] = row.warehouse_id;
       // 옛 창고 모양 — 활성 위치가 있는 창고에는 마이그레이션이 「창고 전체」를 두지 않는다(장부 P-145).
+      // 나눈 창고는 「창고 전체」와 위치 하나로 고를 자리가 둘이다(장부 P-152).
       await prisma.location.updateMany({
         where: { warehouse_id: row.warehouse_id, system_role_code: 'WAREHOUSE_WHOLE' },
-        data: { is_active: false },
+        data: { is_active: divided },
       });
       const location = await ensure(prisma.location, { location_code: `${PREFIX}-LOC-${code}` }, {
         warehouse_id: row.warehouse_id,
@@ -94,10 +95,10 @@ describe('재고 재등록 (e2e)', () => {
       });
       ids[`${key}Loc`] = location.location_id;
     };
-    // ⭐ 불량창고 · 완제품창고(창고 단위 · 위치 하나) · 셀 단위 창고 — 위치 해소의 두 갈래를 가른다.
-    await warehouse('defect', 'DEF', 'WAREHOUSE', true);
-    await warehouse('target', 'FIN', 'WAREHOUSE', false);
-    await warehouse('cell', 'CEL', 'CELL', false);
+    // ⭐ 불량창고 · 완제품창고(고를 자리 하나) · 나눈 창고(고를 자리 둘) — 위치 해소의 두 갈래를 가른다.
+    await warehouse('defect', 'DEF', true, false);
+    await warehouse('target', 'FIN', false, false);
+    await warehouse('divided', 'CEL', false, true);
     const [uom] = await prisma.uom.findMany({ take: 1, orderBy: { uom_id: 'asc' } });
     ids.uom = uom.uom_id;
     const item = await ensure(prisma.item, { item_code: `${PREFIX}-IT` }, {
@@ -384,10 +385,10 @@ describe('재고 재등록 (e2e)', () => {
     expect((await prisma.lot_hold.findUniqueOrThrow({ where: { lot_hold_id: c.holdId } })).released_at).toBeNull();
   });
 
-  it('R-12 ⛔ 도착 위치 — 셀 관리 창고에 위치가 없으면 REQUIRED(toLocationId) · 불량창고로는 INVALID', async () => {
+  it('R-12 ⛔ 도착 위치 — 나눈 창고에 위치가 없으면 REQUIRED(toLocationId) · 불량창고로는 INVALID', async () => {
     const c = await seedCase();
 
-    expect(firstError(await reinstate(bodyOf(c, { toWarehouseId: Number(ids.cell) }), 400))).toMatchObject({
+    expect(firstError(await reinstate(bodyOf(c, { toWarehouseId: Number(ids.divided) }), 400))).toMatchObject({
       field: 'toLocationId',
       code: 'REQUIRED',
     });
@@ -403,13 +404,13 @@ describe('재고 재등록 (e2e)', () => {
     expect(firstError(await reinstate(bodyOf(c, { qty: 4.0000005 }), 400))).toMatchObject({ field: 'qty', code: 'RANGE' });
   });
 
-  it('R-14 셀 관리 창고에 그 창고의 위치를 주면 201 — 위치가 그대로 쓰인다', async () => {
+  it('R-14 나눈 창고에 그 창고의 위치를 주면 201 — 위치가 그대로 쓰인다', async () => {
     const c = await seedCase();
 
-    const body = await reinstate(bodyOf(c, { toWarehouseId: Number(ids.cell), toLocationId: Number(ids.cellLoc) }), 201);
+    const body = await reinstate(bodyOf(c, { toWarehouseId: Number(ids.divided), toLocationId: Number(ids.dividedLoc) }), 201);
 
     const line = await prisma.stock_transfer_line.findFirstOrThrow({ where: { stock_transfer_id: BigInt(body.stockTransferId as number) } });
-    expect(line.to_location_id).toBe(ids.cellLoc);
+    expect(line.to_location_id).toBe(ids.dividedLoc);
     expect(new Prisma.Decimal(line.received_qty).toNumber()).toBe(10);
   });
 

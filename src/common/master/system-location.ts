@@ -4,5 +4,5 @@
  */
 /** 적치 대기 — 입고는 됐고 아직 놓지 않은 자리. 모든 창고에 하나. */
 export const PUTAWAY_STAGING = 'PUTAWAY_STAGING';
-/** 창고 전체 — 관리수준 `WAREHOUSE` 창고의 적치 자리. */
+/** 창고 전체 — 모든 창고에 하나(장부 P-152). 구역을 만들지 않은 창고는 이 자리 하나가 재고 자리다. */
 export const WAREHOUSE_WHOLE = 'WAREHOUSE_WHOLE';

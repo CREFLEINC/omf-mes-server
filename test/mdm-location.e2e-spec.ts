@@ -314,12 +314,12 @@ describe('위치 마스터 (e2e)', () => {
 
   // ── 서버가 만든 위치(장부 P-145) ──────────────────────────────────────────
 
-  it('⭐ 창고를 만들면 서버가 「적치 대기」를 두고, 관리수준이 창고면 「창고 전체」도 둔다', async () => {
+  it('⭐ 창고를 만들면 서버가 「적치 대기」·「창고 전체」를 둔다 — 관리수준과 상관없다(장부 P-152)', async () => {
     const whole = await createWarehouse(`${PREFIX}-WH3`, 'WAREHOUSE');
     const cell = await createWarehouse(`${PREFIX}-WH4`, 'CELL');
 
     expect(await rolesOf(whole)).toEqual(['PUTAWAY_STAGING', 'WAREHOUSE_WHOLE']);
-    expect(await rolesOf(cell)).toEqual(['PUTAWAY_STAGING']);
+    expect(await rolesOf(cell)).toEqual(['PUTAWAY_STAGING', 'WAREHOUSE_WHOLE']);
   });
 
   it('⭐ 목록·상세가 역할을 싣고, 서버가 만든 자리는 SYSTEM_OWNED 로 잠긴다', async () => {
@@ -365,8 +365,8 @@ describe('위치 마스터 (e2e)', () => {
     expect(locked.body.errors).toEqual([expect.objectContaining({ field: 'locationName', code: 'STATE_LOCKED' })]);
   });
 
-  it('⛔ 적치 대기 자리는 끌 수 없다 · 창고 전체는 끈다 — 관리수준을 바꾸면 사람이 끈다', async () => {
-    const id = await createWarehouse(`${PREFIX}-WH5`, 'WAREHOUSE');
+  it('⛔ 적치 대기 자리는 끌 수 없다 · 창고 전체는 끈다', async () => {
+    const id = await createWarehouse(`${PREFIX}-WH5`);
     const staging = await systemLocation(id, 'PUTAWAY_STAGING');
     const whole = await systemLocation(id, 'WAREHOUSE_WHOLE');
 
@@ -424,14 +424,34 @@ describe('위치 마스터 (e2e)', () => {
     ).rejects.toMatchObject({ code: 'P2002' });
   });
 
-  it('⭐ 관리수준이 창고면 도착 위치는 창고 전체다 — 적치 대기 자리는 세지 않는다', async () => {
-    const id = await createWarehouse(`${PREFIX}-WH6`, 'WAREHOUSE');
-    const input = { warehouseId: id, managementLevelCode: 'WAREHOUSE', warehouseField: 'warehouseId' };
+  it('⭐ 구역이 없는 창고의 도착 위치는 창고 전체다 — 관리수준 값과 상관없고 적치 대기 자리는 세지 않는다(장부 P-152)', async () => {
+    for (const level of ['WAREHOUSE', 'CELL']) {
+      const id = await createWarehouse(`${PREFIX}-WH6-${level}`, level);
+      const input = { warehouseId: id, warehouseField: 'warehouseId' };
 
-    expect(await resolveDestinationLocation(prisma, input)).toBe(BigInt(await systemLocation(id, 'WAREHOUSE_WHOLE')));
+      expect(await resolveDestinationLocation(prisma, input)).toBe(BigInt(await systemLocation(id, 'WAREHOUSE_WHOLE')));
+    }
+  });
 
-    await createLocation(`${PREFIX}-WH6-L`, {}, id);
-    await expect(resolveDestinationLocation(prisma, input)).rejects.toThrow(ContractException);
+  it('⛔ 위치를 나눈 창고는 도착 위치를 받아야 한다 — 안 주면 위치 칸에 400 REQUIRED · 주면 그 위치다', async () => {
+    const id = await createWarehouse(`${PREFIX}-WH8`);
+    const zone = await createLocation(`${PREFIX}-WH8-Z`, {}, id);
+    const input = { warehouseId: id, warehouseField: 'warehouseId', locationField: 'toLocationId' };
+
+    const error = await resolveDestinationLocation(prisma, input).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ContractException);
+    expect((error as ContractException).errors).toMatchObject([{ field: 'toLocationId', code: 'REQUIRED' }]);
+    expect(await resolveDestinationLocation(prisma, { ...input, requestedLocationId: zone.id })).toBe(BigInt(zone.id));
+  });
+
+  it('⭐ 켜진 하위가 있는 위치는 고를 자리로 세지 않는다 — 창고 전체를 끄고 구역 밑에 하나만 두면 그것이다', async () => {
+    const id = await createWarehouse(`${PREFIX}-WH9`);
+    const whole = await systemLocation(id, 'WAREHOUSE_WHOLE');
+    await prisma.location.update({ where: { location_id: whole }, data: { is_active: false } });
+    const zone = await createLocation(`${PREFIX}-WH9-Z`, {}, id);
+    const rack = await createLocation(`${PREFIX}-WH9-R`, { parentLocationId: zone.id }, id);
+
+    expect(await resolveDestinationLocation(prisma, { warehouseId: id, warehouseField: 'warehouseId' })).toBe(BigInt(rack.id));
   });
 
   it('⭐ 창고를 지우면 서버가 만든 자리도 함께 지워진다', async () => {
