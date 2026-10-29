@@ -280,7 +280,7 @@ describe('입고 (e2e)', () => {
     expect(Number(task.applied_putaway_rule_id)).toBe(ruleId);
   });
 
-  it('⛔ 규칙이 없으면 권장 위치가 비어 있다 — 「관리 위치가 없다」는 뜻이다', async () => {
+  it('⛔ 위치를 나눈 창고에서 규칙이 없으면 권장 위치가 비어 있다 — 「관리 위치가 없다」는 뜻이다', async () => {
     const detail = await create();
 
     const task = await prisma.putaway_task.findUniqueOrThrow({
@@ -288,6 +288,43 @@ describe('입고 (e2e)', () => {
     });
     expect(task.recommended_location_id).toBeNull();
     expect(task.applied_putaway_rule_id).toBeNull();
+  });
+
+  it('⭐ 사람이 만든 위치가 없는 창고는 규칙이 없으면 「창고 전체」를 권장한다(장부 P-149)', async () => {
+    const unit = await prisma.business_unit.findFirstOrThrow({ where: { business_unit_code: `${PREFIX}-BU` } });
+    const whole = await prisma.warehouse.create({
+      data: {
+        plant_id: plantId, business_unit_id: unit.business_unit_id, warehouse_code: `${PREFIX}-WH3`,
+        warehouse_name: '입고검사창고단위', warehouse_type_code: 'RAW', management_level_code: 'WAREHOUSE',
+      },
+    });
+    const slot = async (role: string): Promise<number> => Number((await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: whole.warehouse_id, system_role_code: role },
+    })).location_id);
+    const draft = await body();
+    draft.warehouseId = Number(whole.warehouse_id);
+    draft.lines[0].destinationLocationId = await slot('PUTAWAY_STAGING');
+
+    const created = await send(draft).expect(201);
+
+    const task = await prisma.putaway_task.findUniqueOrThrow({
+      where: { putaway_task_id: (created.body as Detail).lines[0].putawayTaskId as number },
+    });
+    expect(Number(task.recommended_location_id)).toBe(await slot('WAREHOUSE_WHOLE'));
+    expect(task.applied_putaway_rule_id).toBeNull();
+
+    // 사람이 위치를 하나라도 나누면 「창고 전체」를 권장하지 않는다 — 갈 곳이 하나가 아니다.
+    await prisma.location.create({
+      data: { warehouse_id: whole.warehouse_id, location_code: `${PREFIX}-WH3-A`, location_name: '나눈 위치', location_type_code: 'BIN' },
+    });
+    const again = await body();
+    again.warehouseId = Number(whole.warehouse_id);
+    again.lines[0].destinationLocationId = await slot('PUTAWAY_STAGING');
+    const divided = await send(again).expect(201);
+    const dividedTask = await prisma.putaway_task.findUniqueOrThrow({
+      where: { putaway_task_id: (divided.body as Detail).lines[0].putawayTaskId as number },
+    });
+    expect(dividedTask.recommended_location_id).toBeNull();
   });
 
   it('⛔ 입하·ERP 발주에 이어지지 않은 입고는 ERP 송신을 적재하지 않는다(장부 P-104)', async () => {
