@@ -5,6 +5,7 @@ import { ERROR_CODE, field, one } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalListScope } from '../terminal-list-scope';
 import {
   PICKING_LINE_INCLUDE,
   PickingOrderDetail,
@@ -31,17 +32,9 @@ export interface PickingOrderQuery {
 export class PickingQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PickingOrderQuery, terminalPlantId?: bigint): Promise<PagedResponse<PickingOrderView>> {
+  async list(query: PickingOrderQuery, terminal?: TerminalListScope): Promise<PagedResponse<PickingOrderView>> {
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
-    const where: Prisma.picking_orderWhereInput = {
-      ...filter('assigned_worker_id', numeric('assignedWorkerId', query.assignedWorkerId)),
-      ...filter('warehouse_id', numeric('warehouseId', query.warehouseId)),
-      ...(terminalPlantId === undefined ? {} : { warehouse: { plant_id: terminalPlantId } }),
-      // 문자 그대로 건다 — 4값 대조를 걸면 값이 늘 때 목록이 400 을 낸다(출고 목록 선례).
-      ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
-      // ⚠ `sourceDocumentTypeCode` 질의가 계약에 없어 자재 피킹과 제품 피킹이 섞인다 — 계약대로 둔다.
-      ...filter('source_document_id', numeric('sourceDocumentId', query.sourceDocumentId)),
-    };
+    const where = pickingOrderWhere(query, terminal);
 
     const [rows, total] = await Promise.all([
       // 계약 침묵 — PK 역순이라 페이지 경계가 안정하다(I-8.md §8-1).
@@ -105,4 +98,21 @@ function number(value: unknown): number | undefined {
   if (value === undefined || value === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** 피킹 지시 목록의 조건 — 단말 작업 수가 같은 함수로 센다(배지 = 목록 · omf-all-around#190). */
+export function pickingOrderWhere(query: PickingOrderQuery, terminal?: TerminalListScope): Prisma.picking_orderWhereInput {
+  return {
+    ...filter('assigned_worker_id', numeric('assignedWorkerId', query.assignedWorkerId)),
+    AND: [
+      filter('warehouse_id', numeric('warehouseId', query.warehouseId)),
+      terminal === undefined ? {} : { warehouse: { plant_id: terminal.plantId } },
+      // 단말에 창고가 있으면 그 창고의 피킹만(research R-5).
+      terminal?.warehouseId == null ? {} : { warehouse_id: terminal.warehouseId },
+    ],
+    // 문자 그대로 건다 — 4값 대조를 걸면 값이 늘 때 목록이 400 을 낸다(출고 목록 선례).
+    ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
+    // ⚠ `sourceDocumentTypeCode` 질의가 계약에 없어 자재 피킹과 제품 피킹이 섞인다 — 계약대로 둔다.
+    ...filter('source_document_id', numeric('sourceDocumentId', query.sourceDocumentId)),
+  };
 }

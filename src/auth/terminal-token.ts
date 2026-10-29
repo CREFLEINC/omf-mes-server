@@ -44,7 +44,7 @@ export async function resolveTerminalContext(jwt: JwtService, prisma: PrismaServ
   const terminal = await prisma.terminal.findUnique({
     where: { terminal_id: BigInt(claims.sub) },
     select: { terminal_id: true, terminal_code: true, plant_id: true, terminal_type_code: true,
-      equipment_id: true, is_active: true, token_version: true },
+      equipment_id: true, warehouse_id: true, is_active: true, token_version: true },
   });
   // 재발급이 `token_version` 을 올린다 — 옛 기기의 토큰은 여기서 끊긴다(공유계약 F-4).
   if (terminal === null || !terminal.is_active || terminal.token_version !== claims.tv) throw invalidToken();
@@ -56,6 +56,7 @@ export async function resolveTerminalContext(jwt: JwtService, prisma: PrismaServ
     plantId: terminal.plant_id,
     terminalTypeCode: terminal.terminal_type_code,
     equipmentId: terminal.equipment_id,
+    warehouseId: terminal.warehouse_id,
     tokenVersion: terminal.token_version,
   };
 }

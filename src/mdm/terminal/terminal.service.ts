@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { TOKEN_TYPE } from '../../auth/session-resolver.service';
 import type { TerminalContext } from '../../auth/terminal-context';
-import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -28,6 +28,9 @@ interface TerminalView {
   /** ⛔ 비면 «칸을 뺀다». 계약이 「비어 있을 수 있다」로 적고도 타입을 nullable 로 두지
    * 않았다(`type: integer`) — null 을 실으면 응답이 계약을 어긴다. 되돌림 문서에 적었다. */
   locationId?: number;
+  /** 단말의 창고(omf-all-around#190 · 장부 P-136). 비면 공장 전체 작업을 본다. */
+  warehouseId: number | null;
+  warehouseName: string | null;
   equipmentId: number | null;
   equipmentCode: string | null;
   equipmentName: string | null;
@@ -73,6 +76,7 @@ export interface TerminalCreate {
   terminalCode: string;
   plantId: number;
   locationId?: number | null;
+  warehouseId?: number | null;
   equipmentId?: number | null;
   terminalTypeCode: string;
   statusCode: string;
@@ -81,6 +85,7 @@ export interface TerminalCreate {
 export interface TerminalUpdate {
   plantId: number;
   locationId?: number | null;
+  warehouseId?: number | null;
   equipmentId?: number | null;
   terminalTypeCode: string;
   statusCode: string;
@@ -106,11 +111,15 @@ export interface RegistrationConfirmation {
 }
 
 type TerminalRow = Prisma.terminalGetPayload<{
-  include: { equipment: { select: { equipment_code: true; equipment_name: true } } };
+  include: {
+    equipment: { select: { equipment_code: true; equipment_name: true } };
+    warehouse: { select: { warehouse_name: true } };
+  };
 }>;
 
 const WITH_EQUIPMENT = {
   equipment: { select: { equipment_code: true, equipment_name: true } },
+  warehouse: { select: { warehouse_name: true } },
 } as const;
 
 /** 「만료 1년」(계약 `TerminalRegistrationToken.expiresAt`). */
@@ -153,6 +162,7 @@ export class TerminalService {
 
   async create(input: TerminalCreate): Promise<TerminalView> {
     await this.assertCodes(input);
+    await this.assertWarehouse(input);
     const created = await this.prisma.terminal.create({
       data: {
         terminal_code: input.terminalCode,
@@ -160,6 +170,7 @@ export class TerminalService {
         terminal_type_code: input.terminalTypeCode,
         status_code: input.statusCode,
         ...optional('location_id', input.locationId),
+        ...optional('warehouse_id', input.warehouseId),
         ...optional('equipment_id', input.equipmentId),
       },
       include: WITH_EQUIPMENT,
@@ -174,6 +185,7 @@ export class TerminalService {
     input: TerminalUpdate,
   ): Promise<{ terminal: TerminalView; versionNo: number }> {
     await this.assertCodes(input);
+    await this.assertWarehouse(input);
     const updated = await this.prisma.terminal.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
       where: { terminal_id: terminalId, version_no: version },
@@ -182,6 +194,7 @@ export class TerminalService {
         terminal_type_code: input.terminalTypeCode,
         status_code: input.statusCode,
         ...optional('location_id', input.locationId),
+        ...optional('warehouse_id', input.warehouseId),
         ...optional('equipment_id', input.equipmentId),
         version_no: { increment: 1 },
       },
@@ -398,6 +411,21 @@ export class TerminalService {
     ]);
   }
 
+  /** 단말 창고는 같은 공장의 사용 중인 창고만 — 다른 공장이면 그 단말 목록이 남의 공장 일을 거른다. */
+  private async assertWarehouse(input: { plantId: number; warehouseId?: number | null }): Promise<void> {
+    if (input.warehouseId === undefined || input.warehouseId === null) return;
+    const warehouse = await this.prisma.warehouse.findUnique({
+      where: { warehouse_id: input.warehouseId },
+      select: { plant_id: true, is_active: true },
+    });
+    if (!warehouse || !warehouse.is_active) {
+      throw one(field('warehouseId', ERROR_CODE.INVALID, '없거나 사용 중지된 창고입니다.'));
+    }
+    if (Number(warehouse.plant_id) !== input.plantId) {
+      throw one(field('warehouseId', ERROR_CODE.PLANT_MISMATCH, '단말 공장의 창고가 아닙니다.'));
+    }
+  }
+
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
   private async assertExists(terminalId: number, count: number): Promise<void> {
     if (count > 0) return;
@@ -461,6 +489,8 @@ function view(row: TerminalRow): TerminalView {
     terminalCode: row.terminal_code,
     plantId: Number(row.plant_id),
     ...(row.location_id === null ? {} : { locationId: Number(row.location_id) }),
+    warehouseId: row.warehouse_id === null ? null : Number(row.warehouse_id),
+    warehouseName: row.warehouse?.warehouse_name ?? null,
     equipmentId: row.equipment_id === null ? null : Number(row.equipment_id),
     equipmentCode: row.equipment?.equipment_code ?? null,
     equipmentName: row.equipment?.equipment_name ?? null,

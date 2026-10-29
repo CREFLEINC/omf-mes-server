@@ -59,19 +59,7 @@ export class WorkOrderQueryService {
     const achievementDirection = achievementSortDirection(query);
     assertJudgmentScope(query);
     const orderBy = achievementDirection === null ? buildOrderBy(query.sort) : undefined;
-    // POP 은 그 화면의 기능 플래그가 켜진 공정만 — 재작업 실적(P-04-03)은 실적 입력, 작업 시작 목록은 작업 시작(장부 P-113).
-    const terminalProcessIds = terminal?.terminalTypeCode === 'POP'
-      ? (await this.prisma.terminal_process.findMany({
-          where: { terminal_id: terminal.terminalId, ...(query.workOrderTypeCode === 'REWORK' ? { can_input_result: true } : { can_start_work: true }) },
-          select: { process_id: true },
-        })).map((row) => row.process_id)
-      : undefined;
-    const scopedWhere: Prisma.work_orderWhereInput = terminal === undefined
-      ? buildWorkOrderWhere(query)
-      : { AND: [buildWorkOrderWhere(query), terminalPlantWhere(terminal.plantId),
-          ...(terminalProcessIds === undefined ? []
-            : [{ routing_operation: { process_id: { in: terminalProcessIds } } }]),
-        ] };
+    const scopedWhere = await workOrderListWhere(this.prisma, query, terminal);
     const where = await this.judgmentWhere(await this.releasableWhere(scopedWhere, query.releasable), query.completionJudgmentCode);
     const now = new Date();
 
@@ -355,4 +343,27 @@ function terminalPlantWhere(plantId: bigint): Prisma.work_orderWhereInput {
       { production_line_id: null, production_plan: { production_order: { plant_id: plantId } } },
     ],
   };
+}
+
+/**
+ * W/O 목록의 조건 + 단말 범위 — 단말 작업 수(POP 작업 시작·긴급·재작업)가 같은 함수로 센다(omf-all-around#190).
+ * POP 은 그 화면의 기능 플래그가 켜진 공정만 — 재작업 실적(P-04-03)은 실적 입력, 작업 시작 목록은 작업 시작(장부 P-113).
+ */
+export async function workOrderListWhere(
+  prisma: PrismaService,
+  query: WorkOrderListQuery,
+  terminal?: TerminalContext,
+): Promise<Prisma.work_orderWhereInput> {
+  const terminalProcessIds = terminal?.terminalTypeCode === 'POP'
+    ? (await prisma.terminal_process.findMany({
+        where: { terminal_id: terminal.terminalId, ...(query.workOrderTypeCode === 'REWORK' ? { can_input_result: true } : { can_start_work: true }) },
+        select: { process_id: true },
+      })).map((row) => row.process_id)
+    : undefined;
+  return terminal === undefined
+    ? buildWorkOrderWhere(query)
+    : { AND: [buildWorkOrderWhere(query), terminalPlantWhere(terminal.plantId),
+        ...(terminalProcessIds === undefined ? []
+          : [{ routing_operation: { process_id: { in: terminalProcessIds } } }]),
+      ] };
 }

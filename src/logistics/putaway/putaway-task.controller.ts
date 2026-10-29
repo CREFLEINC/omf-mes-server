@@ -4,12 +4,12 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { terminalListScope } from '../terminal-list-scope';
 import { PutawayCompleteContext, PutawayCompleteService, PutawayTaskComplete } from './putaway-complete.service';
 import { PutawayTaskView } from './putaway-task-view';
 import { PutawayTaskQuery, PutawayTaskService } from './putaway-task.service';
@@ -26,7 +26,7 @@ export class PutawayTaskController {
   @Get()
   @Contract('GET /logistics/putaway-tasks')
   list(@Req() request: Request, @Query() query: PutawayTaskQuery): Promise<PagedResponse<unknown>> {
-    return this.tasks.list(query, currentTerminal(request)?.plantId);
+    return this.tasks.list(query, terminalListScope(request));
   }
 
   @Get(':putawayTaskId')
