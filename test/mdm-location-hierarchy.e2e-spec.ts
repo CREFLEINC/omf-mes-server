@@ -244,6 +244,52 @@ describe('위치 계층 (e2e)', () => {
     await removeLocation(Number(staging.location_id), 400);
   });
 
+  it('⭐ 지정 품목을 통째로 바꾸고 다시 읽는다 — 빈 배열이면 풀린다 · 위치의 hasItemRestriction', async () => {
+    const zone = await create();
+    const [one, two] = await itemIds();
+
+    const set = await restrict(zone.locationId, [two, one, one], 200);
+    expect((set.items as { itemId: number }[]).map((row) => row.itemId).sort()).toEqual([one, two].sort());
+    expect(await detail(zone.locationId)).toMatchObject({ hasItemRestriction: true });
+
+    const cleared = await restrict(zone.locationId, [], 200);
+    expect(cleared.items).toEqual([]);
+    expect(await detail(zone.locationId)).toMatchObject({ hasItemRestriction: false });
+  });
+
+  it('⛔ 지정 밖 품목의 재고가 있으면 걸 수 없다 — 400 STATE_LOCKED(itemIds) · 지정 품목의 재고만 있으면 된다', async () => {
+    const zone = await create();
+    const [one, two] = await itemIds();
+    await stock(zone.locationId, 5);
+
+    const rejected = await restrict(zone.locationId, [two], 400);
+    expect(rejected.errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'STATE_LOCKED' })]);
+    await restrict(zone.locationId, [one], 200);
+  });
+
+  it('⛔ 서버가 만든 자리 · 없는 품목은 400', async () => {
+    const zone = await create();
+    const staging = await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: warehouseId, system_role_code: 'PUTAWAY_STAGING' },
+      select: { location_id: true },
+    });
+    const [one] = await itemIds();
+
+    const system = await restrict(Number(staging.location_id), [one], 400);
+    expect(system.errors).toEqual([expect.objectContaining({ code: 'STATE_LOCKED' })]);
+    const unknown = await restrict(zone.locationId, [999999999], 400);
+    expect(unknown.errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'INVALID' })]);
+  });
+
+  it('⭐ 품목 제한이 걸린 안 쓰인 위치도 지워진다 — 제한도 함께 지운다', async () => {
+    const zone = await create();
+    await restrict(zone.locationId, await itemIds(), 200);
+
+    await removeLocation(zone.locationId, 204);
+
+    expect(await prisma.location_item.count({ where: { location_id: zone.locationId } })).toBe(0);
+  });
+
   it('⭐ 끄면 밑의 위치도 함께 꺼지고, 켜면 함께 켜진다', async () => {
     const zone = await create();
     const rack = await buildRack(zone.locationId, 2, 2, 201);
@@ -369,6 +415,25 @@ describe('위치 계층 (e2e)', () => {
     });
   }
 
+  async function restrict(locationId: number, ids: number[], expected: number): Promise<Record<string, unknown>> {
+    const response = await request(app.getHttpServer())
+      .put(`/api/mdm/locations/${locationId}/items`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ itemIds: ids })
+      .expect(expected);
+    return response.body as Record<string, unknown>;
+  }
+
+  async function itemIds(): Promise<number[]> {
+    const rows = await prisma.item.findMany({
+      where: { item_code: { in: [`${PREFIX}-IT`, `${PREFIX}-IT2`] } },
+      orderBy: { item_code: 'asc' },
+      select: { item_id: true },
+    });
+    return rows.map((row) => Number(row.item_id));
+  }
+
   async function list(inWarehouse: number, query: Record<string, string>): Promise<LocationBody[]> {
     const response = await request(app.getHttpServer())
       .get('/api/mdm/locations')
@@ -387,12 +452,12 @@ describe('위치 계층 (e2e)', () => {
   }
 
   /** 그 위치에 재고 한 행 — 잔량만 보면 되므로 LOT 없이 둔다. */
-  async function stock(locationId: number, qty: number): Promise<bigint> {
+  async function stock(locationId: number, qty: number, itemCode = `${PREFIX}-IT`): Promise<bigint> {
     const warehouse = await prisma.warehouse.findUniqueOrThrow({
       where: { warehouse_id: warehouseId },
       include: { plant: { select: { legal_entity_id: true } } },
     });
-    const item = await prisma.item.findUniqueOrThrow({ where: { item_code: `${PREFIX}-IT` } });
+    const item = await prisma.item.findUniqueOrThrow({ where: { item_code: itemCode } });
     const row = await prisma.inventory_balance.create({
       data: {
         legal_entity_id: warehouse.plant.legal_entity_id,
@@ -426,9 +491,9 @@ describe('위치 계층 (e2e)', () => {
     });
     if (warehouseCode.endsWith('WH1')) {
       const uom = await prisma.uom.findFirstOrThrow({ orderBy: { uom_id: 'asc' } });
-      await prisma.item.create({
-        data: { item_code: `${PREFIX}-IT`, item_name: '계층검사품목', item_type_code: 'RAW_MATERIAL', base_uom_id: uom.uom_id },
-      });
+      for (const [code, name] of [[`${PREFIX}-IT`, '계층검사품목'], [`${PREFIX}-IT2`, '계층검사품목2']]) {
+        await prisma.item.create({ data: { item_code: code, item_name: name, item_type_code: 'RAW_MATERIAL', base_uom_id: uom.uom_id } });
+      }
     }
     return Number(created.warehouse_id);
   }
@@ -452,8 +517,10 @@ describe('위치 계층 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
-    await prisma.inventory_balance.deleteMany({ where: { item: { item_code: `${PREFIX}-IT` } } });
-    await prisma.item.deleteMany({ where: { item_code: `${PREFIX}-IT` } });
+    const ourItems = { item_code: { startsWith: `${PREFIX}-IT` } };
+    await prisma.inventory_balance.deleteMany({ where: { item: ourItems } });
+    await prisma.location_item.deleteMany({ where: { item: ourItems } });
+    await prisma.item.deleteMany({ where: ourItems });
     // 자식 → 부모 순. 한 문장 안의 자기참조 FK 는 문장 끝에 본다.
     await prisma.location.deleteMany({
       where: { warehouse: { warehouse_code: { startsWith: PREFIX } }, NOT: { parent_location_id: null } },

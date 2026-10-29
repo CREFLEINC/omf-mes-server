@@ -2085,6 +2085,8 @@ model item {
   inspection_sheet_template_lot_source_item_idToitem inspection_sheet_template_lot_source[] @relation("inspection_sheet_template_lot_source_item_idToitem")
   inspection_sheet_item_idToitem inspection_sheet[] @relation("inspection_sheet_item_idToitem")
 
+  location_item                                        location_item[]
+
   @@index([item_type_code, is_active], map: "ix_item_type")
   @@schema("mdm")
 }
@@ -2188,6 +2190,7 @@ model location {
   system_role_code                                                                  String?                      @db.VarChar(30)
   alias_name                                                                        String?                      @db.VarChar(200)
   location_level_code                                                               String?                      @db.VarChar(30)
+  location_item                                                                     location_item[]
   handling_unit                                                                     handling_unit[]
   inventory_adjustment_line                                                         inventory_adjustment_line[]
   inventory_balance                                                                 inventory_balance[]
@@ -2227,6 +2230,19 @@ model location {
 
   @@unique([warehouse_id, location_code], map: "uq_location")
   @@index([parent_location_id], map: "ix_location_parent")
+  @@schema("mdm")
+}
+
+model location_item {
+  location_id BigInt
+  item_id     BigInt
+  created_at  DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by  BigInt?
+  location    location @relation(fields: [location_id], references: [location_id], onDelete: Cascade, onUpdate: NoAction)
+  item        item     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([location_id, item_id], map: "pk_location_item")
+  @@index([item_id], map: "ix_location_item_item")
   @@schema("mdm")
 }
 

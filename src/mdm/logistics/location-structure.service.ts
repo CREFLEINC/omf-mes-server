@@ -61,8 +61,8 @@ export class LocationStructureService {
 
     const branch = await branchIds(this.prisma, locationId);
     try {
-      // 가지를 한 문장으로 지운다 — 자기참조 FK 는 문장 끝에 보고, 위치를 가리키는 FK 33곳(`LOCATION_REFERRERS`)이
-      // 모두 NO ACTION 이라 재고·원장·전표·규칙 어디서든 쓰였으면 DB 가 통째로 막는다.
+      // 가지를 한 문장으로 지운다 — 자기참조 FK 는 문장 끝에 보고, 위치를 가리키는 FK(`LOCATION_REFERRERS`)가 품목 제한
+      // (CASCADE · 함께 지운다) 말고는 모두 NO ACTION 이라 재고·원장·전표·규칙 어디서든 쓰였으면 DB 가 통째로 막는다.
       await this.prisma.location.deleteMany({ where: { location_id: { in: branch } } });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
