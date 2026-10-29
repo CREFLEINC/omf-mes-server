@@ -176,6 +176,20 @@ describe('적치 규칙 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'locationId', code: 'INVALID' });
   });
 
+  it('⛔ 적치 대기 자리는 적치 위치가 아니다 — 적치의 출발이다(장부 P-145)', async () => {
+    const staging = await prisma.location.findFirstOrThrow({
+      where: { warehouse_id: warehouseId, system_role_code: 'PUTAWAY_STAGING' },
+      select: { location_id: true },
+    });
+    const rejected = await request(app.getHttpServer())
+      .post('/api/logistics/putaway-rules')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ itemId: itemIds[1], warehouseId, locationId: Number(staging.location_id), capacityQty: 10, uomId })
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'locationId', code: 'INVALID' });
+  });
+
   it('⛔ 수용량 0 은 계약이 막는다 — 넣을 수 없는 규칙이다', async () => {
     const rejected = await request(app.getHttpServer())
       .post('/api/logistics/putaway-rules')

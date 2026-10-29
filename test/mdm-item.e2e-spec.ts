@@ -164,6 +164,34 @@ describe('품목 마스터 (e2e)', () => {
     expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['hasBom']);
   });
 
+  it('⭐ inspectionRequired 는 품목의 IQC 대상 여부로 거른다 — 계약 밖(장부 P-138)', async () => {
+    const inspectedId = await createItem(`${PREFIX}-I`);
+    await prisma.item.update({ where: { item_id: BigInt(inspectedId) }, data: { inspection_required: true } });
+    const listed = async (value: string): Promise<number[]> =>
+      (
+        await request(app.getHttpServer())
+          .get(`/api/mdm/items?q=${PREFIX}&includeInactive=true&size=50&inspectionRequired=${value}`)
+          .set('Cookie', cookie)
+          .expect(200)
+      ).body.items.map((i: { itemId: number }) => i.itemId);
+
+    const inspected = await listed('true');
+    expect(inspected).toContain(inspectedId);
+    expect(inspected).not.toContain(plainItemId);
+
+    const notInspected = await listed('false');
+    expect(notInspected).toContain(plainItemId);
+    expect(notInspected).not.toContain(inspectedId);
+  });
+
+  it('⛔ inspectionRequired 가 true·false 가 아니면 400 이다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .get(`/api/mdm/items?q=${PREFIX}&inspectionRequired=Y`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['inspectionRequired']);
+  });
+
   it('ERP 규격·품목그룹이 목록·상세에 실린다 · 없으면 null 이다 — 계약 밖(장부 P-75)', async () => {
     await prisma.item.update({
       where: { item_id: BigInt(plainItemId) },
@@ -245,6 +273,47 @@ describe('품목 마스터 (e2e)', () => {
     expect(updated.body.itemCode).toBe(`${PREFIX}-A`);
     expect(updated.body.itemName).toBe(before.body.item.itemName);
     expect(Number(updated.headers.etag)).toBe(Number(before.etag) + 1);
+  });
+
+  it('⭐ LOT 기본크기는 새 이름 defaultLotSize 로도 받고, 응답에 두 이름을 함께 싣는다 — 계약 밖(장부 P-139)', async () => {
+    const put = async (extra: Record<string, unknown>, status: number) => {
+      const { etag } = await detailOf(plainItemId);
+      return request(app.getHttpServer())
+        .put(`/api/mdm/items/${plainItemId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key())
+        .set('If-Match', etag)
+        .send(updateBody(extra))
+        .expect(status);
+    };
+
+    const byNew = await put({ defaultLotSize: 250 }, 200);
+    expect(byNew.body).toMatchObject({ defaultLotSize: 250, defaultProductionLotSize: 250 });
+
+    const byOld = await put({ defaultProductionLotSize: 400 }, 200);
+    expect(byOld.body).toMatchObject({ defaultLotSize: 400, defaultProductionLotSize: 400 });
+
+    const both = await put({ defaultLotSize: 500, defaultProductionLotSize: 500 }, 200);
+    expect(both.body.defaultLotSize).toBe(500);
+
+    const cleared = await put({ defaultLotSize: null }, 200);
+    expect(cleared.body).toMatchObject({ defaultLotSize: null, defaultProductionLotSize: null });
+  });
+
+  it.each([
+    ['0 이하', { defaultLotSize: 0 }],
+    ['수가 아니다', { defaultLotSize: '250' }],
+    ['두 이름의 값이 다르다', { defaultLotSize: 250, defaultProductionLotSize: 300 }],
+  ])('⛔ defaultLotSize 가 %s 면 400 이다', async (_, extra) => {
+    const { etag } = await detailOf(plainItemId);
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/mdm/items/${plainItemId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send(updateBody(extra))
+      .expect(400);
+    expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['defaultLotSize']);
   });
 
   it('⭐ 유효기한을 관리하면 FEFO 여야 한다 — 확정 QA #28', async () => {

@@ -16,6 +16,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { Contract } from '../../common/contract';
+import { currentSession } from '../../auth/session-resolver.service';
 import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
@@ -57,7 +58,7 @@ export class InspectionPlanVersionController {
   @Contract('POST /quality/inspection-plan-versions')
   create(@Req() request: Request, @Body() body: VersionCreate): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.versions.create(body),
+      this.versions.create(body, {}, actorOf(request)),
     );
   }
 
@@ -74,7 +75,7 @@ export class InspectionPlanVersionController {
       request,
       response,
       'inspectionPlanVersion',
-      (version) => this.versions.update(versionId, version, body),
+      (version) => this.versions.update(versionId, version, body, {}, actorOf(request)),
     );
   }
 
@@ -86,7 +87,7 @@ export class InspectionPlanVersionController {
     @Param('inspectionPlanVersionId', ParseIntPipe) versionId: number,
   ): Promise<void> {
     await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
-      await this.versions.discard(versionId);
+      await this.versions.discard(versionId, actorOf(request));
       return undefined;
     });
   }
@@ -109,7 +110,7 @@ export class InspectionPlanVersionController {
   ): Promise<unknown> {
     // ⚠ 「컬렉션 전체 치환이라 IfMatchVersion 을 쓰지 않는다 — 409 는 없다」(계약).
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => ({
-      items: await this.versions.replaceItems(versionId, body.items),
+      items: await this.versions.replaceItems(versionId, body.items, actorOf(request)),
     }));
   }
 
@@ -121,7 +122,7 @@ export class InspectionPlanVersionController {
     @Param('inspectionPlanVersionId', ParseIntPipe) versionId: number,
   ): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
-      this.header(await this.versions.confirm(versionId)),
+      this.header(await this.versions.confirm(versionId, actorOf(request))),
     );
   }
 
@@ -133,7 +134,7 @@ export class InspectionPlanVersionController {
     @Param('inspectionPlanVersionId', ParseIntPipe) versionId: number,
   ): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
-      this.header(await this.versions.obsolete(versionId)),
+      this.header(await this.versions.obsolete(versionId, actorOf(request))),
     );
   }
 
@@ -146,7 +147,7 @@ export class InspectionPlanVersionController {
   ): Promise<unknown> {
     // ⛔ 201 이다 — 새 버전이 «생긴다». 멱등 재전송이 같은 버전을 돌려줘야 한다.
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () =>
-      this.header(await this.versions.newRevision(versionId)),
+      this.header(await this.versions.newRevision(versionId, actorOf(request))),
     );
   }
 
@@ -155,4 +156,9 @@ export class InspectionPlanVersionController {
     const { inspectionPlanVersion } = await this.versions.get(versionId);
     return inspectionPlanVersion;
   }
+}
+
+/** 변경 이력의 처리자 — 세션 사용자(#196). 세션이 없으면 null 로 남긴다. */
+function actorOf(request: Request): number | null {
+  return currentSession(request)?.userId ?? null;
 }

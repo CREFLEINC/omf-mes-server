@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../common/errors';
+import { PUTAWAY_STAGING } from '../common/master';
 
 /** 시드 `MANAGEMENT_LEVEL` 4값(WAREHOUSE·ZONE·RACK·CELL) 중 «위치를 받지 않는» 하나. */
 const WAREHOUSE_LEVEL = 'WAREHOUSE';
@@ -28,7 +29,7 @@ export interface DestinationLocationInput {
  *
  * | 관리수준 | 본문 위치 | 결과 |
  * |---|---|---|
- * | `WAREHOUSE` | 없음 | 그 창고의 활성 위치가 «정확히 하나»면 그것 · 0·2+ → 400 `RANGE` |
+ * | `WAREHOUSE` | 없음 | 그 창고의 활성 위치(적치 대기 자리 뺌)가 «정확히 하나»면 그것 · 0·2+ → 400 `RANGE` |
  * | `WAREHOUSE` | 있음 | 위의 그 하나와 같아야 한다 — 다르면 400 `INVALID`(「창고면 위치를 받지 않는다」) |
  * | 그 밖 | 없음 | 400 `REQUIRED` — 위치 칸이 있으면 그 칸, 없으면 창고 칸을 짚는다 |
  * | 그 밖 | 있음 | 그 창고의 «활성» 위치여야 한다 — 아니면 400 `INVALID` |
@@ -41,7 +42,13 @@ export async function resolveDestinationLocation(
   if (input.managementLevelCode === WAREHOUSE_LEVEL) {
     // `take: 2` — 0 · 1 · «둘 이상»만 가르면 된다.
     const locations = await prisma.location.findMany({
-      where: { warehouse_id: BigInt(input.warehouseId), is_active: true },
+      // 적치 대기 자리는 «놓기 전» 자리라 도착이 아니다 — 이것을 세면 창고 전체와 함께 늘 둘이다(장부 P-145).
+      // `not` 만 걸면 SQL `<>` 라 역할이 없는(NULL) 사람의 위치까지 빠진다.
+      where: {
+        warehouse_id: BigInt(input.warehouseId),
+        is_active: true,
+        OR: [{ system_role_code: null }, { system_role_code: { not: PUTAWAY_STAGING } }],
+      },
       select: { location_id: true },
       orderBy: { location_id: 'asc' },
       take: 2,

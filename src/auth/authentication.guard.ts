@@ -22,6 +22,7 @@ import { TERMINAL_LOT_WRITE_OPERATIONS, assertTerminalLotWriteScope } from './te
 import { TERMINAL_INSPECTION_SHEET_OPERATIONS, assertTerminalInspectionSheetScope } from './terminal-inspection-sheet-scope';
 import { resolveTerminalContext } from './terminal-token';
 import { TERMINAL_ACCESSIBLE_SCREENS_OPERATION, TERMINAL_REGISTRATION_OPERATION } from './terminal-registration-operation';
+import { wrongTerminalType } from './terminal-type-denied';
 
 /**
  * 인증 없이 도는 오퍼레이션. **로그인 하나뿐이다.**
@@ -117,8 +118,10 @@ export class AuthenticationGuard implements CanActivate {
       if (!(error instanceof ContractException)) throw error;
       throw loginRequired();
     }
-    if (!terminal || !terminalTypes.includes(terminal.terminalTypeCode as 'POP' | 'MOBILE'))
-      throw loginRequired();
+    if (!terminal) throw loginRequired();
+    if (!terminalTypes.includes(terminal.terminalTypeCode as 'POP' | 'MOBILE')) {
+      throw wrongTerminalType(key, terminalTypes, terminal.terminalTypeCode);
+    }
     if (TERMINAL_LOGISTICS_OPERATIONS[key]) await assertTerminalLogisticsScope(this.prisma, request, key, terminal);
     else if (TERMINAL_QUALITY_READ_OPERATIONS[key]) await assertTerminalQualityReadScope(this.prisma, request, key, terminal);
     else if (TERMINAL_READ_OPERATIONS[key]) await assertTerminalReadScope(this.prisma, request, key, terminal);

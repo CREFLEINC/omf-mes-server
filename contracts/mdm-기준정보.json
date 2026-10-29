@@ -6177,7 +6177,7 @@
      "quality"
     ],
     "summary": "버전 확정",
-    "description": "작성중 → 확정. 이후 in-place 수정은 불가하며 변경은 신규 버전으로만 한다. 검사 항목이 1건 이상이어야 한다(위반 시 400, code=LINE_REQUIRED). 상태≠작성중이면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1 「확정」 · 공유계약 B-2",
+    "description": "작성중 → 확정. 이후 in-place 수정은 불가하며 변경은 신규 버전으로만 한다. 검사 항목이 1건 이상이어야 한다(위반 시 400, code=LINE_REQUIRED). 샘플링 방식인데 샘플 비율(%)·샘플 개수가 둘 다 없으면 400(code=REQUIRED, field=samplingRatio) — 엑셀 올리기가 비워 둔 작성중 버전이다(P-140·P-141). 상태≠작성중이면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1 「확정」 · 공유계약 B-2",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6195,7 +6195,7 @@
       }
      },
      "400": {
-      "description": "검증 실패 — 항목 0건인 채 확정 시도(code=LINE_REQUIRED) 또는 상태≠작성중(code=STATE_LOCKED)",
+      "description": "검증 실패 — 항목 0건인 채 확정 시도(code=LINE_REQUIRED) · 샘플링 방식인데 비율 없음(code=REQUIRED) 또는 상태≠작성중(code=STATE_LOCKED)",
       "content": {
        "application/json": {
         "schema": {
@@ -14414,6 +14414,72 @@
      }
     }
    }
+  },
+  "/quality/inspection-plans:import": {
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사기준 엑셀 올리기",
+    "description": "⭐ 선행 구현(P-140) — 설계 사본에 서버가 먼저 적은 자리다. 한 행 = 검사 항목 하나, 같은 기준코드 행들이 기준 하나·작성중 버전 하나가 된다. 첫 시트만 읽고 머리글 이름으로 열을 찾는다. 첫 줄이 머리글 표가 아니면 고객사 검사기준서(TCKT) 서식으로 읽는다 — 기준서 한 장이 기준 하나(Code No. 가 여럿이면 품목마다 하나)이고 샘플 비율(%)은 채우지 않는다 — 비율 없는 작성중 버전으로 두고 확정할 때 막는다(omf-all-around#201). 새 기준코드는 기준 등록 → 버전 등록 → 항목 저장, 이미 있는 기준코드는 신규 버전 발행 → 버전 설정 저장 → 항목 저장을 차례로 부른다(각 단계의 검증·오류 문구가 그대로다). 통째로 되돌리지 않는다 — 기준코드 묶음 단위로 성공·실패를 돌려주고, 실패한 묶음이 만든 기준·버전은 지운다. 확정은 하지 않는다. 파일은 보관하지 않는다. 근거: W-06-02 §5-1 「엑셀 업로드」 · omf-all-around#199",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "file"
+        ],
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary",
+          "description": "검사기준 엑셀 파일(.xlsx)"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "처리 결과. succeeded 는 반영된 기준코드 수, BatchResult.failed[].index 는 그 묶음 첫 행의 자료 순번(머리글 제외 0부터), key 는 기준코드다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BatchResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "파일을 읽을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -18534,8 +18600,19 @@
       "exclusiveMinimum": 0,
       "maximum": 100,
       "example": 30,
-      "description": "샘플 비율(%). 검사할 몫을 백분율로 지정한다 — 0 초과 100 이하. 실제 검사 «수량»은 검사 시점에 로트 크기로 환산되는 파생값이라 여기서 받지 않는다.",
+      "description": "샘플 비율(%). 검사할 몫을 백분율로 지정한다 — 0 초과 100 이하. 샘플링 방식이면 샘플 개수(samplingQty)와 둘 중 하나만 지정한다(P-141).",
       "x-internal-note": "✓확정 2026-07-15 가 「샘플 비율(%)」로 정한 것이다. 앞서 물리 모델의 sampling_qty(수량)를 따라 «수량»으로 받았으나 2026-08-18 되돌렸다 — 물리 모델은 설계 결정을 앞설 수 없다(사용자 확정). ⛔ 수량으로 두면 한 번 설정한 값이 로트 크기마다 다른 검사 강도가 된다(30 이 로트 100 에서는 30%, 10,000 에서는 0.3%). 📨 모델에 비율 컬럼이 없다 — 작업 통지이며 우리를 막지 않는다. ⛔ 이미 구현된 화면이라 변경 통지 대상이다."
+     },
+     "samplingQty": {
+      "x-source-column": "sampling_qty",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "example": 5,
+      "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
+      "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
      }
     },
     "x-internal-note": "미착지 셋: PQC 생략 허용·생략 근거·검사기준 미비 시 단순 선택 허용 — #64"
@@ -18642,8 +18719,19 @@
       "exclusiveMinimum": 0,
       "maximum": 100,
       "example": 30,
-      "description": "샘플 비율(%). 검사할 몫을 백분율로 지정한다 — 0 초과 100 이하. 실제 검사 «수량»은 검사 시점에 로트 크기로 환산되는 파생값이라 여기서 받지 않는다.",
+      "description": "샘플 비율(%). 검사할 몫을 백분율로 지정한다 — 0 초과 100 이하. 샘플링 방식이면 샘플 개수(samplingQty)와 둘 중 하나만 지정한다(P-141).",
       "x-internal-note": "✓확정 2026-07-15 가 「샘플 비율(%)」로 정한 것이다. 앞서 물리 모델의 sampling_qty(수량)를 따라 «수량»으로 받았으나 2026-08-18 되돌렸다 — 물리 모델은 설계 결정을 앞설 수 없다(사용자 확정). ⛔ 수량으로 두면 한 번 설정한 값이 로트 크기마다 다른 검사 강도가 된다(30 이 로트 100 에서는 30%, 10,000 에서는 0.3%). 📨 모델에 비율 컬럼이 없다 — 작업 통지이며 우리를 막지 않는다. ⛔ 이미 구현된 화면이라 변경 통지 대상이다."
+     },
+     "samplingQty": {
+      "x-source-column": "sampling_qty",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "example": 5,
+      "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
+      "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
      }
     }
    },
@@ -18742,8 +18830,19 @@
       "exclusiveMinimum": 0,
       "maximum": 100,
       "example": 30,
-      "description": "샘플 비율(%). 검사할 몫을 백분율로 지정한다 — 0 초과 100 이하. 실제 검사 «수량»은 검사 시점에 로트 크기로 환산되는 파생값이라 여기서 받지 않는다.",
+      "description": "샘플 비율(%). 검사할 몫을 백분율로 지정한다 — 0 초과 100 이하. 샘플링 방식이면 샘플 개수(samplingQty)와 둘 중 하나만 지정한다(P-141).",
       "x-internal-note": "✓확정 2026-07-15 가 「샘플 비율(%)」로 정한 것이다. 앞서 물리 모델의 sampling_qty(수량)를 따라 «수량»으로 받았으나 2026-08-18 되돌렸다 — 물리 모델은 설계 결정을 앞설 수 없다(사용자 확정). ⛔ 수량으로 두면 한 번 설정한 값이 로트 크기마다 다른 검사 강도가 된다(30 이 로트 100 에서는 30%, 10,000 에서는 0.3%). 📨 모델에 비율 컬럼이 없다 — 작업 통지이며 우리를 막지 않는다. ⛔ 이미 구현된 화면이라 변경 통지 대상이다."
+     },
+     "samplingQty": {
+      "x-source-column": "sampling_qty",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "example": 5,
+      "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
+      "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
      }
     }
    },
