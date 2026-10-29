@@ -47,6 +47,7 @@ function stub() {
         recorded.order.push('oqc-plan');
         return [{ inspection_plan_version_id: 77n }];
       },
+      findUnique: async () => ({ inspection_plan: { default_skip: false } }),
     },
     $transaction: async (work: (tx: unknown) => Promise<unknown>) => {
       recorded.order.push('transaction');

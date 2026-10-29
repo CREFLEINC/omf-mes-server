@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
-import { findInspectionPlanVersion } from '../quality/inspection-plan-version';
+import { findInspectionPlanVersion, planDefaultSkip } from '../quality/inspection-plan-version';
 import { LotHoldService } from './lot-hold.service';
 import { MaterialLotFormatError, materialLotPrefix, materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
@@ -85,10 +85,14 @@ export class LotRegistryService {
     const appUserId = typeof actor === 'number' ? actor : undefined;
     // 무검사(IQC 비대상) 입하 LOT 은 검사 대기 보류를 걸지 않고 정상으로 세운다(omf-all-around#105 ·
     // 2026-10-16 결정). 입하가 아닌 원천(재생재 I-17 등)은 종전 그대로 검사 대기다.
-    const awaitsInspection = input.incomingIqc !== undefined || input.sourceTypeCode !== INBOUND_RECEIPT_LINE;
     const iqcPlanVersionId = input.incomingIqc
       ? await resolveIncomingIqcPlanVersion(tx, input.itemId, input.incomingIqc.effectiveDate)
       : undefined;
+    // 고른 IQC 기준이 「기본 생략」이면 무검사 LOT 처럼 정상으로 세우고, 의뢰는 생략 기록으로만 남긴다(omf-all-around#212).
+    const iqcDefaultSkipped =
+      iqcPlanVersionId !== undefined && iqcPlanVersionId !== null && (await planDefaultSkip(tx, iqcPlanVersionId));
+    const awaitsInspection =
+      (input.incomingIqc !== undefined && !iqcDefaultSkipped) || input.sourceTypeCode !== INBOUND_RECEIPT_LINE;
     const lot = await tx.lot.create({
       data: {
         lot_no: input.lotNo,
@@ -140,7 +144,8 @@ export class LotRegistryService {
           lot_id: lot.lot_id,
           target_qty: input.initialQty,
           uom_id: BigInt(input.uomId),
-          status_code: 'REQUESTED',
+          status_code: iqcDefaultSkipped ? 'SKIPPED' : 'REQUESTED',
+          skip_basis_code: iqcDefaultSkipped ? 'DEFAULT' : null,
           requested_at: new Date(input.incomingIqc.requestedAt),
           created_by: appUserId === undefined ? null : BigInt(appUserId),
         },

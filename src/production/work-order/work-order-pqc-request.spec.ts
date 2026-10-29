@@ -9,7 +9,7 @@ describe('inspectionQty', () => {
     samplingMethodCode,
     samplingRatio: samplingRatio === null ? null : new Prisma.Decimal(samplingRatio),
     samplingQty: samplingQty === null ? null : new Prisma.Decimal(samplingQty),
-    pqcSkipAllowed: false,
+    defaultSkip: false,
   });
   const qty = (order: number, v: ReturnType<typeof version> | null): number => inspectionQty(new Prisma.Decimal(order), v).toNumber();
 

@@ -37,6 +37,8 @@ export function inspectionRequestView(row: InspectionRequestRow, inspectionLevel
     coverageFromAt: row.coverage_from_at?.toISOString(),
     coverageToAt: row.coverage_to_at?.toISOString(),
     statusCode: row.status_code,
+    // 생략 근거 — 기준의 기본 생략(DEFAULT)인지 결재 승인(APPROVAL)인지(omf-all-around#212 · 장부 P-152). 생략이 아니면 싣지 않는다.
+    skipBasisCode: row.skip_basis_code ?? undefined,
     requestedAt: row.requested_at.toISOString(),
     versionNo: row.version_no,
     fourMChange: fourMChangeView(row.lot?.lot_four_m_change),
