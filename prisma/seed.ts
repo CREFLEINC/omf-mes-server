@@ -1355,6 +1355,7 @@ const SEED: CodeGroupSeed[] = [
     values: [
       { code: 'NORMAL', codeName: '일반', order: 10 },
       { code: 'DEFECT_RETURN', codeName: '불량 반출', order: 20 },
+      { code: 'LOCATION_MOVE', codeName: '위치 이동', order: 30 },
     ],
   },
   {
