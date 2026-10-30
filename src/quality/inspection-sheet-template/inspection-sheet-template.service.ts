@@ -13,6 +13,7 @@ import {
   templateDetailView,
   templateSummaryView,
 } from './inspection-sheet-template-view';
+import { contentChanges, contentOf, recordSheetTemplateAudit, statusAudit } from './inspection-sheet-template-audit';
 
 export interface InspectionSheetTemplateStepWrite {
   stepCode: string;
@@ -119,6 +120,12 @@ export class InspectionSheetTemplateService {
         select: { inspection_sheet_template_id: true },
       });
       await writeChildren(tx, created.inspection_sheet_template_id, input);
+      await recordSheetTemplateAudit(tx, {
+        templateId: created.inspection_sheet_template_id,
+        eventTypeCode: 'CREATE',
+        actorId: actor.userId,
+        after: { templateVersion: (latest._max.template_version ?? 0) + 1, formLayoutCode: input.formLayoutCode, statusCode: 'DRAFT' },
+      });
       return created.inspection_sheet_template_id;
     });
     return (await this.get(Number(id))).inspectionSheetTemplate;
@@ -133,6 +140,7 @@ export class InspectionSheetTemplateService {
   ): Promise<{ inspectionSheetTemplate: InspectionSheetTemplateView; versionNo: number }> {
     const row = await this.loadDraft(id);
     await this.assertContent(row.form_layout_code, input);
+    const before = contentOf(writeShapeOf((await this.get(id)).inspectionSheetTemplate));
     await this.prisma.$transaction(async (tx) => {
       const updated = await tx.inspection_sheet_template.updateMany({
         where: { inspection_sheet_template_id: id, version_no: version, status_code: 'DRAFT' },
@@ -149,6 +157,8 @@ export class InspectionSheetTemplateService {
       await tx.inspection_sheet_template_step.deleteMany({ where: { inspection_sheet_template_id: id } });
       await tx.inspection_sheet_template_lot_source.deleteMany({ where: { inspection_sheet_template_id: id } });
       await writeChildren(tx, BigInt(id), input);
+      const diff = contentChanges(before, contentOf(input));
+      if (diff) await recordSheetTemplateAudit(tx, { templateId: id, eventTypeCode: 'UPDATE', actorId: actor.userId, ...diff });
     });
     return this.get(id);
   }
@@ -165,6 +175,10 @@ export class InspectionSheetTemplateService {
     });
     if (stepCount === 0) throw badRequest('steps', ERROR_CODE.REQUIRED, '검사 단계를 하나 이상 등록해야 확정할 수 있습니다.');
     await this.prisma.$transaction(async (tx) => {
+      const previous = await tx.inspection_sheet_template.findMany({
+        where: { item_id: row.item_id, status_code: 'CONFIRMED' },
+        select: { inspection_sheet_template_id: true },
+      });
       await tx.inspection_sheet_template.updateMany({
         where: { item_id: row.item_id, status_code: 'CONFIRMED' },
         data: { status_code: 'OBSOLETE', updated_by: actor.userId, updated_at: new Date(), version_no: { increment: 1 } },
@@ -182,8 +196,68 @@ export class InspectionSheetTemplateService {
         },
       });
       assertUpdated(updated.count);
+      for (const old of previous) {
+        await recordSheetTemplateAudit(tx, statusAudit(old.inspection_sheet_template_id, 'CONFIRMED', 'OBSOLETE', actor.userId));
+      }
+      await recordSheetTemplateAudit(tx, statusAudit(id, 'DRAFT', 'CONFIRMED', actor.userId));
     });
     return this.get(id);
+  }
+
+  /** 확정 → 폐기(omf-all-around#214). ⛔ 되돌릴 수 없다 — 그 모델은 새 버전을 확정할 때까지 확정본이 없다. */
+  async obsolete(
+    id: number,
+    version: number,
+    actor: TemplateActor,
+  ): Promise<{ inspectionSheetTemplate: InspectionSheetTemplateView; versionNo: number }> {
+    const row = await this.prisma.inspection_sheet_template.findUnique({
+      where: { inspection_sheet_template_id: id },
+      select: { status_code: true },
+    });
+    if (row === null) throw new NotFoundException('없는 검사표 기준입니다.');
+    if (row.status_code !== 'CONFIRMED') throw locked('확정된 기준만 폐기할 수 있습니다.');
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.inspection_sheet_template.updateMany({
+        where: { inspection_sheet_template_id: id, version_no: version, status_code: 'CONFIRMED' },
+        data: { status_code: 'OBSOLETE', updated_by: actor.userId, updated_at: new Date(), version_no: { increment: 1 } },
+      });
+      assertUpdated(updated.count);
+      await recordSheetTemplateAudit(tx, statusAudit(id, 'CONFIRMED', 'OBSOLETE', actor.userId));
+    });
+    return this.get(id);
+  }
+
+  /**
+   * 작성중 버전을 지운다(작성 취소 · omf-all-around#214) — 단계 · 항목 · LOT 칸과 함께.
+   * 검사표는 확정본만 쓰므로 작성중 버전을 가리키는 검사표는 정상 경로로 생기지 않는다.
+   * ⛔ 그래도 세어 막는다 — 지운 뒤 FK 위반이 500 으로 새지 않게.
+   */
+  async discard(id: number, actor: TemplateActor): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // ⛔ `FOR UPDATE` — 판정과 삭제 사이에 확정이 끼면 확정본이 지워진다.
+      const rows = await tx.$queryRaw<{ status_code: string; template_version: number }[]>`
+        SELECT status_code, template_version
+          FROM quality.inspection_sheet_template
+         WHERE inspection_sheet_template_id = ${BigInt(id)}
+           FOR UPDATE`;
+      if (rows.length === 0) throw new NotFoundException('없는 검사표 기준입니다.');
+      if (rows[0].status_code !== 'DRAFT') throw locked('작성중인 기준만 작성을 취소할 수 있습니다.');
+      if ((await tx.inspection_sheet.count({ where: { inspection_sheet_template_id: id } })) > 0) {
+        throw locked('이 기준으로 만든 검사표가 있어 작성을 취소할 수 없습니다.');
+      }
+
+      const own = { inspection_sheet_template_id: id };
+      await tx.inspection_sheet_template_item.deleteMany({ where: { step: own } });
+      await tx.inspection_sheet_template_step.deleteMany({ where: own });
+      await tx.inspection_sheet_template_lot_source.deleteMany({ where: own });
+      await tx.inspection_sheet_template.delete({ where: own });
+      await recordSheetTemplateAudit(tx, {
+        templateId: id,
+        eventTypeCode: 'DELETE',
+        actorId: actor.userId,
+        before: { templateVersion: Number(rows[0].template_version), statusCode: rows[0].status_code },
+      });
+    });
   }
 
   private async loadDraft(id: number) {
@@ -192,11 +266,7 @@ export class InspectionSheetTemplateService {
       select: { item_id: true, form_layout_code: true, status_code: true },
     });
     if (row === null) throw new NotFoundException('없는 검사표 기준입니다.');
-    if (row.status_code !== 'DRAFT') {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '작성중인 기준만 고칠 수 있습니다. 새 판을 만드세요.' },
-      ]);
-    }
+    if (row.status_code !== 'DRAFT') throw locked('작성중인 기준만 고칠 수 있습니다. 새 판을 만드세요.');
     return row;
   }
 
@@ -222,6 +292,15 @@ export class InspectionSheetTemplateService {
       })),
     );
   }
+}
+
+/** 읽은 기준을 쓰기 모양으로 — 고치기 전 내용을 이력에 견줄 때 쓴다. */
+function writeShapeOf(view: InspectionSheetTemplateView): InspectionSheetTemplateUpdate {
+  return {
+    ...view,
+    lotSources: view.lotSources ?? [],
+    steps: view.steps ?? [],
+  };
 }
 
 function headerData(input: InspectionSheetTemplateUpdate) {
@@ -280,4 +359,8 @@ function fieldError(field: string, code: string, message: string): ErrorItem {
 
 function badRequest(field: string, code: string, message: string): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [fieldError(field, code, message)]);
+}
+
+function locked(message: string): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message }]);
 }
