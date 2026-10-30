@@ -197,7 +197,7 @@ describe('ERP W/O 조회 (e2e)', () => {
       }
     });
 
-    it('계획 시작일 기간으로 걸러지고 ERP 원본 칸 넷이 실린다 — 계약 밖(장부 P-66·P-75)', async () => {
+    it('계획 시작일 기간으로 걸러지고 ERP 원본 칸 넷이 실린다 — 계획 시작일은 계약 밖(장부 P-66·P-75)', async () => {
       const make = (suffix: string, start: string) =>
         prisma.production_order.create({
           data: {

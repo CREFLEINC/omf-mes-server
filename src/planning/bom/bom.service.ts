@@ -45,7 +45,6 @@ interface BomComponentView {
   lotTraceRequired: boolean;
   backflushAllowed: boolean;
   sequenceNo: number;
-  /** ERP 자품목 순번(CHILD_ITEM_SEQ) — 계약 밖 칸(장부 P-75). 0 도 온다. MES 에서 만든 구성품은 null. */
   erpChildItemSeq: number | null;
 }
 

@@ -31,7 +31,6 @@ interface ItemView {
   /** 품목유형별 LOT 기본크기 — 계약 밖 이름(장부 P-139). 전환 동안 옛 이름에도 같은 값을 싣는다. */
   defaultLotSize: number | null;
   defaultProductionLotSize: number | null;
-  /** ERP 규격(SPEC)·품목그룹(ITEM_GROUP_CD) — 계약 밖 칸(장부 P-75). MES 에서 만든 품목은 null. */
   erpSpec: string | null;
   erpItemGroupCode: string | null;
 }

@@ -172,7 +172,7 @@ describe('BOM (e2e)', () => {
     expect(detail.body.editability.reason).toBe('RECEIVED_FROM_ERP');
   });
 
-  it('ERP 자품목 순번이 구성품 목록·상세에 실린다 — 0 도 그대로 · 계약 밖(장부 P-75)', async () => {
+  it('ERP 자품목 순번이 구성품 목록·상세에 실린다 — 0 도 그대로(장부 P-75)', async () => {
     await prisma.bom_component.update({
       where: { bom_component_id: BigInt(componentId) },
       data: { erp_child_item_seq: 0 },
@@ -190,6 +190,8 @@ describe('BOM (e2e)', () => {
       const listed = list.body.items.find((c: { bomComponentId: number }) => c.bomComponentId === componentId);
       expect(listed.erpChildItemSeq).toBe(0);
       expect(detail.body.bomComponent.erpChildItemSeq).toBe(0);
+      expect(validator('GET /planning/boms/{bomId}/components')(list.body)).toBe(true);
+      expect(validator('GET /planning/boms/{bomId}/components/{bomComponentId}')(detail.body)).toBe(true);
     } finally {
       await prisma.bom_component.update({
         where: { bom_component_id: BigInt(componentId) },

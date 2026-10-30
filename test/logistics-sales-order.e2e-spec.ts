@@ -291,7 +291,7 @@ describe('고객사 출하지시서 조회 (e2e)', () => {
     expect((await detail(so.SO1)).versionNo).toBe(1);
   });
 
-  it('S-21 ERP 원본 칸과 라인 취소 시각을 싣고, 없는 행은 키를 «생략»한다 — 계약 밖(장부 P-75)', async () => {
+  it('S-21 ERP 원본 칸과 라인 취소 시각을 싣고, 없는 행은 키를 «생략»한다(장부 P-75)', async () => {
     const cancelledAt = new Date('2026-10-20T01:02:03.000Z');
     await prisma.sales_order.update({
       where: { sales_order_id: BigInt(so.SO2) },

@@ -209,7 +209,7 @@ describe('품목 마스터 (e2e)', () => {
     expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['inspectionRequired']);
   });
 
-  it('ERP 규격·품목그룹이 목록·상세에 실린다 · 없으면 null 이다 — 계약 밖(장부 P-75)', async () => {
+  it('ERP 규격·품목그룹이 목록·상세에 실린다 · 없으면 null 이다(장부 P-75)', async () => {
     await prisma.item.update({
       where: { item_id: BigInt(plainItemId) },
       data: { erp_spec: '12x34 SUS', erp_item_group_code: 'G100' },
@@ -222,6 +222,7 @@ describe('품목 마스터 (e2e)', () => {
       const byId = new Map(listed.body.items.map((i: { itemId: number }) => [i.itemId, i]));
       expect(byId.get(plainItemId)).toMatchObject({ erpSpec: '12x34 SUS', erpItemGroupCode: 'G100' });
       expect(byId.get(routedItemId)).toMatchObject({ erpSpec: null, erpItemGroupCode: null });
+      expect(validator('GET /mdm/items')(listed.body)).toBe(true);
 
       const detail = await request(app.getHttpServer())
         .get(`/api/mdm/items/${plainItemId}`)
