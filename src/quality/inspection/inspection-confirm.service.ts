@@ -462,7 +462,7 @@ export async function assertRejectionRecorded(
   if (request?.inspection_type_code !== IQC) return;
   const recorded = await tx.defect_record.count({ where: { inspection_result_id: inspectionResultId } });
   if (recorded > 0) return;
-  throw one(field('defectRecords', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 먼저 기록해야 합니다.'));
+  throw one(field('defects', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 먼저 기록해야 합니다.'));
 }
 
 /** ⛔ `SELECT … FOR UPDATE` — 읽고 판정하고 쓰는 사이에 같은 결과가 확정되면 두 번 전이한다. */

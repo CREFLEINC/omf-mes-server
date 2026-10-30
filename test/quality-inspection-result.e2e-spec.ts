@@ -1360,6 +1360,15 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
     });
 
+    it('⛔ 불합격 수량 0 인 IQC 불합격도 불량 기록이 없으면 같은 칸(defects)으로 400 이다', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+
+      const rejected = await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
+    });
+
     it('보류 판정은 `INSPECTION_PENDING`+`C5` 이고 역시 보류를 닫지 않는다', async () => {
       const { inspectionResultId, lotId } = await newConfirmable('NORMAL', [INCOMING_HOLD], { heldQty: 100 });
 
