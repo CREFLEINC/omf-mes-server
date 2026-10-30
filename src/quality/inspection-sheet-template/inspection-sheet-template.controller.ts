@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -107,6 +108,37 @@ export class InspectionSheetTemplateController {
       'inspectionSheetTemplate',
       (version) => this.templates.confirm(id, version, actor),
     );
+  }
+
+  @Post(':inspectionSheetTemplateId\\:obsolete')
+  @Contract('POST /quality/inspection-sheet-templates/{inspectionSheetTemplateId}:obsolete')
+  @HttpCode(HttpStatus.OK)
+  async obsolete(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('inspectionSheetTemplateId', ParseIntPipe) id: number,
+  ): Promise<InspectionSheetTemplateView> {
+    const actor = actorOf(request);
+    await this.access.plantsOf(request);
+    return runVersioned<InspectionSheetTemplateView, 'inspectionSheetTemplate'>(
+      this.idempotency,
+      request,
+      response,
+      'inspectionSheetTemplate',
+      (version) => this.templates.obsolete(id, version, actor),
+    );
+  }
+
+  @Delete(':inspectionSheetTemplateId')
+  @Contract('DELETE /quality/inspection-sheet-templates/{inspectionSheetTemplateId}')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async discard(@Req() request: Request, @Param('inspectionSheetTemplateId', ParseIntPipe) id: number): Promise<void> {
+    const actor = actorOf(request);
+    await this.access.plantsOf(request);
+    await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
+      await this.templates.discard(id, actor);
+      return undefined;
+    });
   }
 }
 
