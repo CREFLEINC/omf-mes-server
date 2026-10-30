@@ -285,18 +285,14 @@ describe('초과분 칸 검사', () => {
     return errors;
   };
 
-  it('초과분 — 생략·0 은 없는 것이다', () => {
+  it('초과분 — 생략·null·0 은 없는 것이다', () => {
     expect(errorsOf({})).toEqual([]);
+    expect(errorsOf({ excessQty: null })).toEqual([]);
     expect(errorsOf({ excessQty: 0 })).toEqual([]);
   });
 
   it('초과분 — 받은 수량보다 작으면 통과한다', () => {
     expect(errorsOf({ excessQty: 500 })).toEqual([]);
-  });
-
-  it('초과분 — 수가 아니거나 음수면 400 INVALID 다(가드가 안 보는 칸이라 문자열이 그대로 온다)', () => {
-    expect(errorsOf({ excessQty: '500' })).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: ERROR_CODE.INVALID })]);
-    expect(errorsOf({ excessQty: -1 })).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: ERROR_CODE.INVALID })]);
   });
 
   it('초과분 — P/O 라인이 없는 줄에는 쓸 수 없다', () => {

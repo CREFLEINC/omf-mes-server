@@ -282,7 +282,7 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     expect(Object.values(judges).filter((code) => code === 'INVALID')).toHaveLength(1);
   });
 
-  it('⭐ 계약이 이 헤더를 «필수»로 건 오퍼레이션은 41 이다 — 늘면 갈래를 정해야 한다', () => {
+  it('⭐ 계약이 이 헤더를 «필수»로 건 오퍼레이션은 40 이다 — 늘면 갈래를 정해야 한다', () => {
     let required = 0;
     for (const file of readdirSync(CONTRACTS).filter((name) => name.endsWith('.json'))) {
       const document = JSON.parse(readFileSync(join(CONTRACTS, file), 'utf8')) as {
@@ -299,7 +299,8 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     // SHIP-UNIT-01 출하 단위 쓰기 셋(생성·상자 넣기·마감 · 장부 P-24): 37 → 40.
     // 판정은 `logisticsWriteActorOf` 가 한다 — 위 표들이 그 자리를 이미 덮는다.
     // 줄마다 입하 한 건(장부 P-117) — 입하 등록과 같은 판정(`logisticsWriteActorOf`): 40 → 41.
-    expect(required).toBe(41);
+    // 줄마다 입하(장부 P-117)를 WorkerNoOptional 로 — 관리웹도 부른다(입고·출고와 같은 갈래): 41 → 40.
+    expect(required).toBe(40);
   });
 });
 
