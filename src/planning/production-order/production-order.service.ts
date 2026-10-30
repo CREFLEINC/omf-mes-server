@@ -133,7 +133,7 @@ export class ProductionOrderService {
     return { view, versionNo: row.version_no };
   }
 
-  /** §5-3 — 루트로 total·페이지를 세고 재귀 CTE 로 하위를 붙인다. 하위엔 필터를 다시 안 건다. */
+  /** §5-3 — 루트로 total·페이지를 세고 재귀 CTE 로 하위를 붙인다. 하위엔 조건 필터는 다시 안 걸고 데이터 범위만 다시 건다. */
   private async listWithChildren(
     where: Prisma.production_orderWhereInput,
     scope: bigint[] | null,

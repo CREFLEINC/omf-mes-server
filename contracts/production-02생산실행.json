@@ -329,7 +329,7 @@
      "planning"
     ],
     "summary": "P/O 변경 확인 처리",
-    "description": "관리자가 ERP 변경을 반영할지 강행할지 판정한다. 근거: W-02-06 §5-5 · :동사 규약\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-orders/{productionOrderId} 의 ETag 를 그대로 싣는다. 409 가 나면 화면 문구는 「남이 고쳤다」가 아니라 「ERP 가 다시 보냈다」다.\n\n⭐ 토큰이 둘이다 — P/O 는 If-Match 헤더(원천 = GET /planning/production-orders/{productionOrderId} 의 ETag), 함께 고치는 W/O 는 본문 workOrderAdjustments[].versionNo(원천 = GET /production/work-orders?productionOrderId= 응답의 versionNo)다. 하나라도 어긋나면 전체를 거부한다.\n\n⛔ 400 규칙 — ⓐ decisionCode=PROCEED 인데 workOrderAdjustments 가 비어 있지 않으면 400 ⓑ workOrderAdjustments[].workOrderId 가 이 P/O 의 영향 W/O 가 아니면 400 ⓒ 같은 workOrderId 가 두 번 오면 400 ⓓ orderQty·plannedStartAt·plannedEndAt 을 하나도 안 담은 조정 항목이 있으면 400(아무것도 안 고치는 항목이다).\n\n⛔ 중단·취소 반영의 W/O 취소는 이 본문에 싣지 않는다 — POST /production/work-orders/{workOrderId}:cancel 을 건별로 부른다. 그쪽은 선발행 생산LOT 슬롯을 «전건 즉시 폐번»하는 되돌릴 수 없는 부수 효과를 갖고(DR-007), 취소 사유(reasonCode)가 W/O 마다 다를 수 있어 건별 확인이 업무 요구다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등·If-Match 처리 전에 막는다(규칙은 목록 설명).",
+    "description": "관리자가 ERP 변경을 반영할지 강행할지 판정한다. 근거: W-02-06 §5-5 · :동사 규약\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-orders/{productionOrderId} 의 ETag 를 그대로 싣는다. 409 가 나면 화면 문구는 「남이 고쳤다」가 아니라 「ERP 가 다시 보냈다」다.\n\n⭐ 토큰이 둘이다 — P/O 는 If-Match 헤더(원천 = GET /planning/production-orders/{productionOrderId} 의 ETag), 함께 고치는 W/O 는 본문 workOrderAdjustments[].versionNo(원천 = GET /production/work-orders?productionOrderId= 응답의 versionNo)다. 하나라도 어긋나면 전체를 거부한다.\n\n⛔ 400 규칙 — ⓐ decisionCode=PROCEED 인데 workOrderAdjustments 가 비어 있지 않으면 400 ⓑ workOrderAdjustments[].workOrderId 가 이 P/O 의 영향 W/O 가 아니면 400 ⓒ 같은 workOrderId 가 두 번 오면 400 ⓓ orderQty·plannedStartAt·plannedEndAt 을 하나도 안 담은 조정 항목이 있으면 400(아무것도 안 고치는 항목이다).\n\n⛔ 중단·취소 반영의 W/O 취소는 이 본문에 싣지 않는다 — POST /production/work-orders/{workOrderId}:cancel 을 건별로 부른다. 그쪽은 선발행 생산LOT 슬롯을 «전건 즉시 폐번»하는 되돌릴 수 없는 부수 효과를 갖고(DR-007), 취소 사유(reasonCode)가 W/O 마다 다를 수 있어 건별 확인이 업무 요구다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -418,7 +418,7 @@
      "planning"
     ],
     "summary": "ERP W/O 자동 계획 (재)시도",
-    "description": "⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67). ERP W/O 를 받으면(상태가 RECEIVED 이고 납기 — 없으면 계획 시작일 — 가 공장 현지 오늘 이후이거나 둘 다 없을 때) 서버가 계획 하나를 세우고 정할 수 있으면 확정·전개한다. 이 오퍼레이션은 그 조건 없이 그것을 다시 시도한다 — 계획이 없으면 세우고(BOM 은 품목의 기본 Rev, Routing 은 쓸 수 있는 Rev 가 하나면 그것·여럿이면 기본 Rev, 수량은 오더 수량, 계획일은 ERP 계획 시작일이 오늘 이후면 그날·아니면 공장 현지 오늘, 라인은 비움), 작성중 계획이 있고 이제 W/O 라인이 정해지면(계획 라인을 골랐거나 기본 매핑 설비가 라인에 속함) 확정한다. 확정 계획이 오더 수량을 채웠으면 바꾸지 않고 CONFIRMED 를 낸다. 확정에서 막히면 확정(POST /planning/production-plans/{productionPlanId}:confirm)의 400·409 를 그대로 낸다. 취소된 ERP W/O 는 400 STATE_LOCKED, 같은 ERP W/O 의 자동 계획이 이미 돌고 있으면 409 INVALID_STATE 다(다시 누르면 된다).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등·If-Match 처리 전에 막는다(규칙은 목록 설명).",
+    "description": "⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67). ERP W/O 를 받으면(상태가 RECEIVED 이고 납기 — 없으면 계획 시작일 — 가 공장 현지 오늘 이후이거나 둘 다 없을 때) 서버가 계획 하나를 세우고 정할 수 있으면 확정·전개한다. 이 오퍼레이션은 그 조건 없이 그것을 다시 시도한다 — 계획이 없으면 세우고(BOM 은 품목의 기본 Rev, Routing 은 쓸 수 있는 Rev 가 하나면 그것·여럿이면 기본 Rev, 수량은 오더 수량, 계획일은 ERP 계획 시작일이 오늘 이후면 그날·아니면 공장 현지 오늘, 라인은 비움), 작성중 계획이 있고 이제 W/O 라인이 정해지면(계획 라인을 골랐거나 기본 매핑 설비가 라인에 속함) 확정한다. 확정 계획이 오더 수량을 채웠으면 바꾸지 않고 CONFIRMED 를 낸다. 확정에서 막히면 확정(POST /planning/production-plans/{productionPlanId}:confirm)의 400·409 를 그대로 낸다. 취소된 ERP W/O 는 400 STATE_LOCKED, 같은 ERP W/O 의 자동 계획이 이미 돌고 있으면 409 INVALID_STATE 다(다시 누르면 된다).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -494,7 +494,7 @@
      "planning"
     ],
     "summary": "ERP 재동기 요청",
-    "description": "수신본이 어긋났을 때 다시 받는다. ⚠ 이 오퍼레이션을 호출하는 화면은 현재 없다 — 재동기 실행 소관은 연계 동기화 현황 화면이 단독으로 갖는다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등·If-Match 처리 전에 막는다(규칙은 목록 설명).",
+    "description": "수신본이 어긋났을 때 다시 받는다. ⚠ 이 오퍼레이션을 호출하는 화면은 현재 없다 — 재동기 실행 소관은 연계 동기화 현황 화면이 단독으로 갖는다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderId",

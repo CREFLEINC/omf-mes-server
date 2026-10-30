@@ -134,7 +134,9 @@ describe('ERP W/O 사용자 데이터 범위 (e2e)', () => {
     await resync('P3').expect(404);
     await resync('P1').expect(202);
     expect(await prisma.integration_message.count({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: ids.P3 } })).toBe(0);
-    expect((await acknowledge('P1')).status).not.toBe(404);
+    // 범위 안이면 범위를 지나 확인 처리에 닿는다 — 받은 변경이 없는 오더라 400 STATE_LOCKED 로 멈춘다.
+    const unchanged = await acknowledge('P1').expect(400);
+    expect(JSON.stringify(unchanged.body)).toContain('STATE_LOCKED');
   });
 
   it('사업부 범위 — 그 사업부의 공장 전부', async () => {
