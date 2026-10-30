@@ -89,6 +89,14 @@ describe('prepareRejectionDefects', () => {
     expect(firstError(error)).toMatchObject({ field: 'defects', code: 'INVALID' });
   });
 
+  it('불합격 수량이 있으면 합격 확정도 사유가 필수다(사용자 결정 2026-10-30)', async () => {
+    const { prisma, defects } = harness('IQC');
+    const input = body({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 2 });
+    const error = await prepareRejectionDefects(prisma, defects, input, true).catch((e: unknown) => e);
+
+    expect(firstError(error)).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+  });
+
   it('작성중은 합계가 달라도 받는다', async () => {
     const { prisma, defects } = harness('IQC');
     const input = body({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 4, defects: reason });

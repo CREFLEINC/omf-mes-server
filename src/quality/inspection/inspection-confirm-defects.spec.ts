@@ -85,6 +85,13 @@ describe('prepareConfirmDefects', () => {
     ).resolves.toBe(PREPARED);
   });
 
+  it('불합격 수량이 있는 합격 확정에 빈 배열이면 400 defects REQUIRED(사용자 결정 2026-10-30)', async () => {
+    const error = await errorOf(
+      prepareConfirmDefects(prisma('IQC', null, 3), defectsService(), 8n, { overallJudgmentCode: 'ACCEPTED', defects: [] }),
+    );
+    expect(error.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+  });
+
   it('불량 수량 합계가 불합격 수량과 다르면 검증·채번 앞에서 400 defects INVALID', async () => {
     const service = defectsService();
     const error = await errorOf(
@@ -150,6 +157,15 @@ describe('syncConfirmDefectsWithin', () => {
     t.defect_record.findMany.mockResolvedValue([{ defect_qty: 3 }]);
     await syncConfirmDefectsWithin(t as unknown as Prisma.TransactionClient, defectsService(), { ...base, judgment: 'ACCEPTED', rejectedQty: 3, prepared: null });
     expect(t.defect_record.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('불합격 수량이 있는데 임시 저장한 기록도 사유도 없으면 400 REQUIRED(사용자 결정 2026-10-30)', async () => {
+    const t = tx('IQC', []);
+    t.defect_record.findMany.mockResolvedValue([]);
+    const error = await errorOf(
+      syncConfirmDefectsWithin(t as unknown as Prisma.TransactionClient, defectsService(), { ...base, judgment: 'ACCEPTED', rejectedQty: 3, prepared: null }),
+    );
+    expect(error.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
   });
 
   it('임시 저장한 기록의 합계가 잠근 뒤 불합격 수량과 다르면 400 INVALID', async () => {

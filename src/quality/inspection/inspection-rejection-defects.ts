@@ -12,6 +12,7 @@ import type { InspectionResultCreate } from './inspection-result-write-input';
 
 const IQC = 'IQC';
 const NO_REJECTION = '불량 내역은 불합격 수량이 있거나 불합격 판정일 때만 보낼 수 있습니다.';
+const DEFECTS_REQUIRED = '불량이 있으면 불량 유형과 수량을 함께 보내야 합니다.';
 const REJECTED = 'REJECTED';
 
 /**
@@ -42,8 +43,9 @@ export async function prepareRejectionDefects(
   bornConfirmed: boolean,
 ) {
   const rows = body.defects ?? [];
-  const judgedRejected = bornConfirmed && body.overallJudgmentCode === REJECTED;
-  if (rows.length === 0 && !judgedRejected) return null;
+  // 확정으로 태어나는 IQC 는 불합격 판정이거나 불량(불합격 수량)이 있으면 사유가 필수다(#205 · 사용자 결정 2026-10-30).
+  const needsDefects = bornConfirmed && keepsDefects(body.overallJudgmentCode, body.rejectedQty);
+  if (rows.length === 0 && !needsDefects) return null;
   const request = await prisma.inspection_request.findUnique({
     where: { inspection_request_id: BigInt(body.inspectionRequestId) },
     select: { inspection_type_code: true, lot_id: true, work_order_id: true },
@@ -57,7 +59,7 @@ export async function prepareRejectionDefects(
     throw one(field('defects', ERROR_CODE.INVALID, NO_REJECTION));
   }
   if (rows.length === 0) {
-    if (isIqc) throw one(field('defects', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 함께 보내야 합니다.'));
+    if (isIqc) throw one(field('defects', ERROR_CODE.REQUIRED, DEFECTS_REQUIRED));
     return null;
   }
   // 합계는 확정으로 태어날 때만 맞춘다 — 작성중은 아직 입력하는 중이다.
@@ -94,7 +96,8 @@ export async function prepareConfirmDefects(
   const judgment = body.overallJudgmentCode ?? result.overall_judgment_code;
   const rejectedQty = Number(result.rejected_qty);
   if (body.defects.length === 0) {
-    if (isIqc && judgment === REJECTED) throw one(field('defects', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 함께 보내야 합니다.'));
+    // 불량이 있으면(불합격 판정 · 불합격 수량) 빈 배열은 받지 않는다(#205 · 사용자 결정 2026-10-30).
+    if (isIqc && keepsDefects(judgment, rejectedQty)) throw one(field('defects', ERROR_CODE.REQUIRED, DEFECTS_REQUIRED));
     return null;
   }
   if (!isIqc) throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
@@ -139,6 +142,8 @@ export async function syncConfirmDefectsWithin(
       where: { inspection_result_id: input.inspectionResultId, source_type_code: IQC },
       select: { defect_qty: true },
     });
+    // 불합격 수량이 있으면 임시 저장한 기록도 없으면 안 된다(#205 · 사용자 결정 2026-10-30). 불합격 판정의 0건은 `assertRejectionRecorded` 가 잡는다.
+    if (input.rejectedQty > 0 && stored.length === 0) throw one(field('defects', ERROR_CODE.REQUIRED, DEFECTS_REQUIRED));
     assertDefectSum(stored.map((row) => ({ defectQty: Number(row.defect_qty) })), input.rejectedQty);
     return;
   }
