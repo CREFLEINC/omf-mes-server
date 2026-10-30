@@ -28,8 +28,8 @@ export class ProductionOrderController {
 
   @Get()
   @Contract('GET /planning/production-orders')
-  list(@Query() query: ProductionOrderListQuery): Promise<PagedResponse<ProductionOrderView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: ProductionOrderListQuery): Promise<PagedResponse<ProductionOrderView>> {
+    return this.queries.list(query, userOf(request));
   }
 
   /**
@@ -44,17 +44,18 @@ export class ProductionOrderController {
     const appUserId = currentSession(request)?.userId;
     const created = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.creates.create(body, appUserId), FAMILY_CONFLICT_CODE);
     if (created.autoPlan) await this.autoPlans.planReceived(created.productionOrderId, appUserId);
-    return (await this.queries.detail(created.productionOrderId, {})).view;
+    return (await this.queries.detailOf(created.productionOrderId, {})).view;
   }
 
   @Get(':productionOrderId')
   @Contract('GET /planning/production-orders/{productionOrderId}')
   async detail(
+    @Req() request: Request,
     @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
     @Query() query: ProductionOrderDetailQuery,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ProductionOrderView> {
-    const { view, versionNo } = await this.queries.detail(productionOrderId, query);
+    const { view, versionNo } = await this.queries.detail(productionOrderId, query, userOf(request));
     setEtag(response, versionNo);
     return view;
   }
@@ -75,7 +76,7 @@ export class ProductionOrderController {
     const appUserId = userOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.acknowledges.acknowledge(productionOrderId, version, body, appUserId);
-      return (await this.queries.detail(productionOrderId, {})).view;
+      return (await this.queries.detailOf(productionOrderId, {})).view;
     }, FAMILY_CONFLICT_CODE);
   }
 
@@ -89,7 +90,9 @@ export class ProductionOrderController {
   ): Promise<AutoPlanResult> {
     // 일은 멱등 트랜잭션 «밖»에서 한다(등록과 같은 까닭). 다시 해도 지금 상태로 다시 판정할 뿐이라 멱등 기록은 키만 잡고,
     // 응답은 같은 키 재전송이라도 이번 판정이다 — 옛 응답을 돌려주면 방금 한 일(예: 확정)과 어긋난다.
-    const result = await this.autoPlans.run(productionOrderId, currentSession(request)?.userId);
+    const appUserId = userOf(request);
+    await this.queries.assertInScope(productionOrderId, appUserId);
+    const result = await this.autoPlans.run(productionOrderId, appUserId);
     await runIdempotent(this.idempotency, request, HttpStatus.OK, () => Promise.resolve(undefined), FAMILY_CONFLICT_CODE);
     return result;
   }

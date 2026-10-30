@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AutoPlanStatus } from './auto-plan';
 import { AutoPlanService } from './auto-plan.service';
 import { progressSql, progressStatusCode, progressWhere } from './production-order-progress';
+import { plantScopeFor, scopeSql, scopeWhere, scopedPlantIds } from './production-order-scope';
 import {
   AUTO_PLAN_DONE_SQL,
   AUTO_PLAN_UNTOUCHED_SQL,
@@ -83,14 +84,16 @@ export class ProductionOrderService {
     private readonly autoPlans: AutoPlanService,
   ) {}
 
-  async list(query: ProductionOrderListQuery): Promise<PagedResponse<ProductionOrderView>> {
+  /** 사용자 데이터 범위 밖 공장의 오더는 보이지 않는다 — `plantId` 를 범위 밖으로 고르면 403 이다. */
+  async list(query: ProductionOrderListQuery, actorUserId: number): Promise<PagedResponse<ProductionOrderView>> {
+    const scope = await plantScopeFor(this.prisma, actorUserId, query.plantId);
     const page = pageRequest(query);
     const withLastChange = query.withLastChange === true;
     const worklistState = assertWorklistState(query.worklistState);
     if (query.autoPlanStatus !== undefined || worklistState !== undefined) {
-      return this.listBySql(query, sqlFilters(query.autoPlanStatus, worklistState), page, withLastChange);
+      return this.listBySql(query, [...scopeSql(scope), ...sqlFilters(query.autoPlanStatus, worklistState)], page, withLastChange);
     }
-    const base = buildWhere(query);
+    const base: Prisma.production_orderWhereInput = { AND: [buildWhere(query), scopeWhere(scope)] };
     const where = query.unacknowledgedOnly === true ? await this.excludeAcknowledged(base) : base;
     if (query.includeChildren === true) return this.listWithChildren(where, page, withLastChange);
 
@@ -101,8 +104,23 @@ export class ProductionOrderService {
     return { items: await this.viewsOf(rows, withLastChange), page: { page: page.page, size: page.size, total } };
   }
 
-  /** 없으면 404 다(계약 선언). */
-  async detail(id: number, query: ProductionOrderDetailQuery): Promise<{ view: ProductionOrderView; versionNo: number }> {
+  /** 없거나 범위 밖이면 404 다(계약 선언) — 범위 밖 오더의 존재를 드러내지 않는다. */
+  async detail(id: number, query: ProductionOrderDetailQuery, actorUserId: number): Promise<{ view: ProductionOrderView; versionNo: number }> {
+    await this.assertInScope(id, actorUserId);
+    return this.detailOf(id, query);
+  }
+
+  /** 범위 밖이면 404 — 단건을 다루는 쓰기 진입점(`:auto-plan`)이 먼저 부른다. */
+  async assertInScope(id: number, actorUserId: number): Promise<void> {
+    const ids = await scopedPlantIds(this.prisma, actorUserId);
+    const found = await this.prisma.production_order.count({
+      where: { production_order_id: id, ...scopeWhere(ids) },
+    });
+    if (found === 0) throw new NotFoundException('없는 ERP W/O 입니다.');
+  }
+
+  /** 범위를 보지 않는다 — 방금 이 요청이 쓴 오더를 응답으로 다시 읽을 때만 쓴다. */
+  async detailOf(id: number, query: ProductionOrderDetailQuery): Promise<{ view: ProductionOrderView; versionNo: number }> {
     const row = await this.prisma.production_order.findUnique({ where: { production_order_id: id } });
     if (!row) throw new NotFoundException('없는 ERP W/O 입니다.');
     const [view] = await this.viewsOf([row], query.withLastChange === true);
