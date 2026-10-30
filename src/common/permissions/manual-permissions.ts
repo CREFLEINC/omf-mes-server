@@ -437,6 +437,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 힘은 없다(사용자 결정 2026-10-27).
   'POST /logistics/inbound-receipts': ['W-01-03'],
   'POST /logistics/inbound-receipts:per-line': ['M-01-01', 'W-01-03'],
+  // ERP 받기 표별 상태·ERP 창고는 연계 메시지 목록과, 「지금 읽기」는 일괄 재처리와 같은 화면의 일이다(장부 P-81 · P-147) —
+  // 두 오퍼레이션의 권한(도출표 ∪ 수동표)을 그대로 옮긴다.
+  'GET /integration/erp-sync/tables': ['W-02-06', 'W-06-06', 'W-06-09', 'W-06-10', 'W-06-12'],
+  'POST /integration/erp-sync/tables/{interfaceCode}:run': ['W-06-10'],
+  'GET /integration/erp-sync/warehouses': ['W-02-06', 'W-06-06', 'W-06-09', 'W-06-10', 'W-06-12'],
   // 외자 발주의 통관번호 받아오기(장부 P-143) — 「ERP 연동 현황·이력 > 구매 발주」의 단추다. 같은 화면(W-06-10)의 일괄 재처리와 같다.
   'POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch': ['W-06-10'],
   // 입하 줄 ↔ P/O 라인 배정(장부 P-115) — 배정은 초과 입하 분리 화면(W-01-03)의 일이다(`:split` 과 같은 화면).

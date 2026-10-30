@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { AuthModule } from '../../auth/auth.module';
 import { AutoPlanService } from '../../planning/production-order/auto-plan.service';
 import { PlanningModule } from '../../planning/planning.module';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -33,10 +32,9 @@ import { SyncState } from './sync-state';
 /**
  * ERP 연동 — api 프로세스 안에서 돈다. 다른 모듈에는 받은 ERP W/O 의 자동 계획에만 기댄다 — ERP 가 느려 화면에
  * 영향이 보이면 이 모듈만 띄우는 worker 로 떼어 낸다(2026-10-16 결정).
- * 인증 모듈은 연동 현황·「지금 읽기」 API(P-81)가 가드 밖에서 세션을 풀려고 쓴다 — 떼어 낼 때 그 API 는 api 쪽에 남긴다.
  */
 @Module({
-  imports: [PlanningModule, AuthModule],
+  imports: [PlanningModule],
   controllers: [ErpSyncController],
   providers: [
     {

@@ -5,6 +5,10 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -17,6 +21,19 @@ const PATH = '/api/integration/erp-sync/warehouses';
 const PAIRED = `${PREFIX}-A`;
 const UNPAIRED = `${PREFIX}-B`;
 const STOPPED = `${PREFIX}-OFF`;
+
+function validator(operation: string): ValidateFunction {
+  const contract = JSON.parse(
+    readFileSync(join(__dirname, '../contracts/mdm-기준정보.json'), 'utf8'),
+  ) as object;
+  const [method, path] = operation.split(' ');
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/200/content/application~1json/schema`;
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  addFormats(ajv);
+  for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
+  ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
+  return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
+}
 
 describe('ERP 창고 목록 (e2e)', () => {
   let app: INestApplication;
@@ -92,6 +109,9 @@ describe('ERP 창고 목록 (e2e)', () => {
   it('⭐ ERP 창고마다 한 줄이고 같은 코드의 MES 창고를 싣는다 — 없으면 null(「MES 창고 없음」)', async () => {
     const response = await list({}).expect(200);
 
+    const validate = validator('GET /integration/erp-sync/warehouses');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
     expect(response.body.items).toEqual([
       {
         erpWarehouseCode: PAIRED,

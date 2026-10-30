@@ -7826,6 +7826,228 @@
     }
    }
   },
+  "/integration/erp-sync/tables": {
+   "get": {
+    "tags": [
+     "integration"
+    ],
+    "summary": "ERP 받기 표별 상태",
+    "description": "「ERP 연동 현황·이력」 탭(W-06-10). 받는 표 여덟을 묶음 순서(기준정보 → 전표)로 낸다 — 마지막 읽은 시각·다음 예정·도는 중인지. 근거: 사용자 결정 2026-10-20 · 장부 P-81",
+    "responses": {
+     "200": {
+      "description": "표별 상태",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErpSyncStatus"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 연계 메시지 목록과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/integration/erp-sync/tables/{interfaceCode}:run": {
+   "parameters": [
+    {
+     "name": "interfaceCode",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "maxLength": 50
+     },
+     "description": "ErpSyncTableStatus.interfaceCode"
+    }
+   ],
+   "post": {
+    "tags": [
+     "integration"
+    ],
+    "summary": "ERP 받기 지금 읽기",
+    "description": "다음 주기를 기다리지 않고 그 표 하나를 한 회차 읽는다 — ERP 가 중계 DB 에 넣고 아직 안 읽은 줄만. 요청을 적어 두기만 하고, 블루-그린 두 쪽 중 리스를 쥔 실행기가 몇 초 안에 돈다. 이미 걸려 있으면 처음 시각을 지킨다(여러 번 눌러도 한 번 돈다). 돌았는지는 GET /integration/erp-sync/tables 의 requestedAt·running·lastFinishedAt 으로 본다. 근거: 사용자 결정 2026-10-20 · 장부 P-81",
+    "responses": {
+     "202": {
+      "description": "요청을 적어 두었다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "interfaceCode",
+          "requestedAt"
+         ],
+         "properties": {
+          "interfaceCode": {
+           "type": "string",
+           "maxLength": 50,
+           "example": "IF-ERP-SO-RECV"
+          },
+          "requestedAt": {
+           "type": "string",
+           "format": "date-time",
+           "description": "걸려 있는 요청의 시각 — 이미 걸려 있었으면 그 처음 시각",
+           "example": "2026-10-20T08:00:00Z"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "STATE_LOCKED — 이 서버는 ERP 연동이 꺼져 있다(ErpSyncStatus.enabled=false)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 연계 메시지 일괄 재처리와 같은 권한(W-06-10)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 ERP 받기 표",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/integration/erp-sync/warehouses": {
+   "get": {
+    "tags": [
+     "integration"
+    ],
+    "summary": "ERP 창고 목록",
+    "description": "「ERP 연동 현황·이력 > 창고」. ERP 창고(공통코드 SL_TYPE) 코드마다 한 줄, 같은 코드의 MES 창고를 짝지어 싣는다. ERP 에는 공장이 없어 MES 창고를 자동으로 만들지 않는다 — 짝이 없으면 사람이 공장을 골라 만든다(POST /mdm/warehouses). 코드 순. 수신 상태는 GET /integration/erp-sync/tables 의 공통코드(IF-ERP-CODE-RECV) 행이다. 근거: 사용자 결정 2026-10-29 · 장부 P-147",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "ERP 창고 코드·이름 부분 일치(대소문자 무시)"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "짝 MES 창고의 공장"
+     },
+     {
+      "name": "paired",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "false = MES 창고 없는 것만 · true = 있는 것만"
+     },
+     {
+      "name": "includeInactive",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "ERP 에서 끈 코드도 낸다"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ErpWarehouse"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "틀린 질의 — 그 칸마다. 무시하면 걸러지지 않은 목록이 걸러진 것처럼 보인다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 연계 메시지 목록과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch": {
    "parameters": [
     {
@@ -19741,6 +19963,262 @@
      }
     ],
     "x-internal-note": "노출 범위 미결 §8-4"
+   },
+   "ErpSyncStatus": {
+    "type": "object",
+    "required": [
+     "enabled",
+     "items"
+    ],
+    "description": "ERP 받기 표별 상태 — 묶음 순서(기준정보 → 전표). 장부 P-81",
+    "properties": {
+     "enabled": {
+      "type": "boolean",
+      "description": "이 서버에서 ERP 연동이 켜져 있는가. 꺼져 있으면 「지금 읽기」가 400 STATE_LOCKED",
+      "example": true
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErpSyncTableStatus"
+      }
+     }
+    }
+   },
+   "ErpSyncTableStatus": {
+    "x-source-table": "integration.erp_sync_state",
+    "type": "object",
+    "required": [
+     "interfaceCode",
+     "name",
+     "laneCode",
+     "laneName",
+     "running",
+     "requestedAt",
+     "lastStartedAt",
+     "lastFinishedAt",
+     "lastStatusCode",
+     "lastReadCount",
+     "lastAppliedCount",
+     "lastFailedCount",
+     "lastHeldCount",
+     "lastErrorMessage",
+     "nextRunAt"
+    ],
+    "description": "ERP 받기 표 하나. 값이 없으면 null. 장부 P-81",
+    "properties": {
+     "interfaceCode": {
+      "x-source-column": "interface_code",
+      "type": "string",
+      "maxLength": 50,
+      "description": "연계 메시지의 interfaceCode 와 같은 값",
+      "example": "IF-ERP-SO-RECV"
+     },
+     "name": {
+      "type": "string",
+      "example": "수주"
+     },
+     "laneCode": {
+      "type": "string",
+      "enum": [
+       "MASTER",
+       "ORDER"
+      ],
+      "description": "묶음 — 기준정보(MASTER) · 전표(ORDER). 전표는 기준정보 회차가 끝난 뒤 돈다",
+      "example": "ORDER"
+     },
+     "laneName": {
+      "type": "string",
+      "example": "전표"
+     },
+     "running": {
+      "type": "boolean",
+      "description": "지금 이 표를 도는 중 — 시작이 마지막 끝보다 늦고 실행기 리스가 살아 있다",
+      "example": false
+     },
+     "requestedAt": {
+      "x-source-column": "requested_at",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "「지금 읽기」가 걸려 있으면 그 시각. 실행기가 돌기 시작하면 null",
+      "example": "2026-10-20T08:00:00Z"
+     },
+     "lastStartedAt": {
+      "x-source-column": "last_started_at",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-10-20T08:00:00Z"
+     },
+     "lastFinishedAt": {
+      "x-source-column": "last_finished_at",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "아래 결과 칸은 마지막으로 끝난 회차의 것이다 — 도는 중이면 그 앞 회차",
+      "example": "2026-10-20T08:00:00Z"
+     },
+     "lastStatusCode": {
+      "x-source-column": "last_status_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "SUCCEEDED",
+       "FAILED",
+       null
+      ],
+      "example": "SUCCEEDED"
+     },
+     "lastReadCount": {
+      "x-source-column": "last_read_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "example": 120
+     },
+     "lastAppliedCount": {
+      "x-source-column": "last_applied_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "example": 120
+     },
+     "lastFailedCount": {
+      "x-source-column": "last_failed_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "example": 120
+     },
+     "lastHeldCount": {
+      "x-source-column": "last_held_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "example": 120
+     },
+     "lastErrorMessage": {
+      "x-source-column": "last_error_message",
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": null
+     },
+     "nextRunAt": {
+      "x-source-column": "next_run_at",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "다음 주기 회차 예정(실패면 재시도 시각). 실행기가 아직 한 번도 돌지 않았으면 null",
+      "example": "2026-10-20T08:00:00Z"
+     }
+    }
+   },
+   "ErpWarehouse": {
+    "x-source-table": "mdm.code_value",
+    "type": "object",
+    "required": [
+     "erpWarehouseCode",
+     "erpWarehouseName",
+     "erpActive",
+     "erpUpdatedAt",
+     "mesWarehouse"
+    ],
+    "description": "ERP 창고(공통코드 SL_TYPE 값) 하나와 같은 코드의 MES 창고. 장부 P-147",
+    "properties": {
+     "erpWarehouseCode": {
+      "x-source-column": "code",
+      "type": "string",
+      "maxLength": 50,
+      "example": "WH-01"
+     },
+     "erpWarehouseName": {
+      "x-source-column": "code_name",
+      "type": "string",
+      "maxLength": 200,
+      "example": "1공장 자재창고"
+     },
+     "erpActive": {
+      "x-source-column": "is_active",
+      "type": "boolean",
+      "description": "false 면 ERP 에서 끈 창고 — 표시만 한다. MES 창고는 건드리지 않는다",
+      "example": true
+     },
+     "erpUpdatedAt": {
+      "x-source-column": "updated_at",
+      "type": "string",
+      "format": "date-time",
+      "description": "공통코드 행이 마지막으로 바뀐 시각",
+      "example": "2026-10-20T08:00:00Z"
+     },
+     "mesWarehouse": {
+      "x-source-table": "mdm.warehouse",
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "같은 코드의 MES 창고. 없으면 null(「MES 창고 없음」). 같은 코드가 공장 둘에 있으면 먼저 만든 것",
+      "required": [
+       "warehouseId",
+       "plantId",
+       "plantCode",
+       "plantName",
+       "warehouseName",
+       "isActive"
+      ],
+      "properties": {
+       "warehouseId": {
+        "x-source-column": "warehouse_id",
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "plantId": {
+        "x-source-column": "plant_id",
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "plantCode": {
+        "type": "string",
+        "maxLength": 50,
+        "example": "PLT-01"
+       },
+       "plantName": {
+        "type": "string",
+        "maxLength": 200,
+        "example": "1공장"
+       },
+       "warehouseName": {
+        "x-source-column": "warehouse_name",
+        "type": "string",
+        "maxLength": 200,
+        "example": "1공장 자재창고"
+       },
+       "isActive": {
+        "x-source-column": "is_active",
+        "type": "boolean",
+        "example": true
+       }
+      }
+     }
+    }
    },
    "CustomsClearanceFetchResult": {
     "type": "object",

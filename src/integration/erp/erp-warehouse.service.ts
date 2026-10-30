@@ -1,21 +1,20 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** ERP 창고는 공통코드 그룹 `SL_TYPE`(창고구분)으로 온다 — 공장 칸은 늘 비어 온다(`relay-tables.ts` COMMON_CODE). */
 const SL_TYPE = 'SL_TYPE';
 
-/** 계약 밖 경로라 검증 가드가 질의를 보지 않는다 — 글 그대로 받아 `parse` 가 본다. */
+/** 가드가 계약대로 검사하고 형을 바꿔 넘긴 질의. */
 export interface ErpWarehouseQuery {
-  q?: unknown;
-  plantId?: unknown;
-  paired?: unknown;
-  includeInactive?: unknown;
-  page?: unknown;
-  size?: unknown;
+  q?: string;
+  plantId?: number;
+  paired?: boolean;
+  includeInactive?: boolean;
+  page?: number;
+  size?: number;
 }
 
 interface MesWarehouse {
@@ -54,7 +53,7 @@ export class ErpWarehouseService {
 
   async list(raw: ErpWarehouseQuery): Promise<PagedResponse<ErpWarehouseRow>> {
     const query = parse(raw);
-    const page = pageRequest({ page: numberOrUndefined(raw.page), size: numberOrUndefined(raw.size) });
+    const page = pageRequest({ page: raw.page, size: raw.size });
     const where: Prisma.code_valueWhereInput = {
       code_group: { group_code: SL_TYPE },
       ...(query.includeInactive ? {} : { is_active: true }),
@@ -141,26 +140,13 @@ export class ErpWarehouseService {
   }
 }
 
-/** ⛔ 틀린 값을 무시하지 않는다 — 걸러지지 않은 목록이 걸러진 것처럼 보인다. */
+/** id 는 bigint 로 옮기고 빈 `q` 는 없는 것으로 본다. 가드는 계약 `default` 를 채우지 않는다 — 기본값은 여기서 건다. */
 function parse(raw: ErpWarehouseQuery): ParsedQuery {
-  const errors: ErrorItem[] = [];
-  const q = typeof raw.q === 'string' && raw.q.trim() !== '' ? raw.q.trim() : undefined;
-  let plantId: bigint | undefined;
-  if (raw.plantId !== undefined) {
-    if (typeof raw.plantId === 'string' && /^[1-9]\d{0,17}$/u.test(raw.plantId)) plantId = BigInt(raw.plantId);
-    else errors.push(field('plantId', ERROR_CODE.INVALID, 'plantId 는 양의 정수여야 합니다.'));
-  }
-  const paired = flag('paired', raw.paired, errors);
-  const includeInactive = flag('includeInactive', raw.includeInactive, errors) ?? false;
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  return { q, plantId, paired, includeInactive };
+  const q = raw.q?.trim();
+  return {
+    q: q === '' ? undefined : q,
+    plantId: raw.plantId === undefined ? undefined : BigInt(raw.plantId),
+    paired: raw.paired,
+    includeInactive: raw.includeInactive ?? false,
+  };
 }
-
-function flag(name: string, value: unknown, errors: ErrorItem[]): boolean | undefined {
-  if (value === undefined) return undefined;
-  if (value === 'true' || value === 'false') return value === 'true';
-  errors.push(field(name, ERROR_CODE.INVALID, `${name} 은 true 또는 false 여야 합니다.`));
-  return undefined;
-}
-
-const numberOrUndefined = (value: unknown): number | undefined => (value === undefined ? undefined : Number(value));
