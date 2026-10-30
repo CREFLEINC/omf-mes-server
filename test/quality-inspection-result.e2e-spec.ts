@@ -1229,7 +1229,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
     return { processId: process.process_id, defectCodeId: code.defect_code_id };
   }
 
-  async function recordDefect(inspectionResultId: number): Promise<void> {
+  async function recordDefect(inspectionResultId: number, defectQty: number): Promise<void> {
     const setup = await ensureIqcDefectSetup();
     const process = { process_id: setup.processId };
     const code = { defect_code_id: setup.defectCodeId };
@@ -1237,7 +1237,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       data: {
         source_type_code: 'IQC',
         defect_code_id: code.defect_code_id,
-        defect_qty: 1,
+        defect_qty: defectQty,
         uom_id: ids.uom,
         occurrence_process_id: process.process_id,
         detection_process_id: process.process_id,
@@ -1339,7 +1339,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
     it('⭐ ⓓ 불합격은 `DEFECTIVE`+`C6` 이고 보류를 «닫지 않는다» — `W-01-01` §5-1 「불합격 = Hold 유지 → 반품」', async () => {
       const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
-      await recordDefect(inspectionResultId);
+      await recordDefect(inspectionResultId, 100);
 
       await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
 
@@ -1351,12 +1351,12 @@ describe('검사 의뢰·결과 (e2e)', () => {
     });
 
     /* omf-all-around#106 — IQC 불합격은 사유(불량 기록)가 있어야 확정된다(장부 P-42). */
-    it('⛔ IQC 불합격인데 불량 기록이 없으면 400 defectRecords 이고 LOT 이 움직이지 않는다', async () => {
+    it('⛔ IQC 불합격인데 불량 기록이 없으면 400 defects 이고 LOT 이 움직이지 않는다', async () => {
       const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
 
       const rejected = await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(400);
 
-      expect(rejected.body.errors[0]).toMatchObject({ field: 'defectRecords', code: 'REQUIRED' });
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
       expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
     });
 
@@ -1524,7 +1524,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
       const inspectionRequestId = await newConfirmRequest({ workOrderId, planVersionId: ids.c14PlanVersion });
       const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 80, rejectedQty: 20 });
-      await recordDefect(inspectionResultId);
+      await recordDefect(inspectionResultId, 20);
 
       await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
 

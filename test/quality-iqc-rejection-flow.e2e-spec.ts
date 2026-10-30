@@ -73,7 +73,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
     const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10 });
     await confirm(resultId, 'REJECTED').expect(400);
-    await recordReason(resultId);
+    await recordReason(resultId, 10);
     await confirm(resultId, 'REJECTED').expect(200);
 
     expect(await lotStatus(lotId)).toBe('DEFECTIVE');
@@ -266,7 +266,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     const reason = (description: string) => ({ overallJudgmentCode: 'REJECTED', defects: [{ defectCodeId, defectQty: 10, defectDescription: description }] });
 
     // 옛 화면이 먼저 남긴 기록 + 확정 실패(버전 어긋남) — 실패한 확정은 기록을 바꾸지 않는다.
-    await recordReason(resultId);
+    await recordReason(resultId, 10);
     await confirmWith(resultId, reason('처음 사유'), 9).expect(409);
     expect(await reasonsOf(resultId)).toEqual(['외관 긁힘']);
 
@@ -281,7 +281,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   it('⭐ 불합격 사유를 남긴 뒤 합격으로 확정하면 그 회차의 불량 기록이 지워진다 · 합격에 사유를 실으면 400', async () => {
     const { lotId, requestId } = await registerIqcLot(10);
     const resultId = await draft(requestId, { acceptedQty: 10, rejectedQty: 0 });
-    await recordReason(resultId);
+    await recordReason(resultId, 1);
 
     const invalid = await confirmWith(resultId, { overallJudgmentCode: 'ACCEPTED', defects: [{ defectCodeId, defectQty: 1 }] }, 1).expect(400);
     expect(JSON.stringify(invalid.body)).toContain('defects');
@@ -498,7 +498,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   async function rejectedLot(qty: number) {
     const lot = await registerIqcLot(qty);
     const resultId = await draft(lot.requestId, { acceptedQty: 0, rejectedQty: qty });
-    await recordReason(resultId);
+    await recordReason(resultId, qty);
     await confirm(resultId, 'REJECTED').expect(200);
     return { ...lot, resultId };
   }
@@ -621,7 +621,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     return rows.map((row) => row.defect_description);
   }
 
-  async function recordReason(resultId: number): Promise<void> {
+  async function recordReason(resultId: number, defectQty: number): Promise<void> {
     await request(app.getHttpServer())
       .post('/api/quality/defect-records')
       .set('Cookie', cookie)
@@ -629,7 +629,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       .send({
         sourceCode: 'IQC',
         defectCodeId,
-        defectQty: 1,
+        defectQty,
         uomId,
         detectedAt: `${DAY}T03:10:00.000Z`,
         inspectionResultId: resultId,
