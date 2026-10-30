@@ -17,7 +17,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
 const GENERATED_ON = "2026-10-30";
-const DELIVERY_DIR = "2026-10-30-3";
+const DELIVERY_DIR = "2026-10-30-4";
 const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${DELIVERY_DIR}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
@@ -27,11 +27,11 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 작업 브랜치의 커밋을 적으면 squash 병합이나
 // 브랜치 자동 삭제로 해시가 사라질 수 있고, 그러면 아래 assertSourceMatchesServerCommit 의
 // `git rev-parse <sha>:src` 가 새 클론에서 죽는다. 그래서 전달본은 «병합된 뒤» main 의 커밋을 적어 뽑는다.
-// 지금 적힌 것은 main 의 병합 커밋이다 — 입고 기본값(#924) · P-75 ERP 원본 칸(#925) · 후속 수정 넷(#927) ·
-// 창고 isExternal·partnerId 제거(#928)가 들어간 지점(병합 4d5ad7f4).
+// 지금 적힌 것은 main 의 병합 커밋이다 — 배치도 표식 크기·회전(#930 · WarehouseLayoutMarker width·height·rotation ·
+// 요청용 WarehouseLayoutMarkerUpsert)이 들어간 지점(병합 933bf8e3).
 const SERVER_VERSION = "v0.1.21-next";
-const SERVER_COMMIT = "4d5ad7f410a08b0762df9f6c096189eb97bcc804";
-const GENERATED_VERSION = "0.1.21-next-server.20261030.3";
+const SERVER_COMMIT = "933bf8e3c6ba11825f0564ef121f69ba1452fcc7";
+const GENERATED_VERSION = "0.1.21-next-server.20261030.4";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
