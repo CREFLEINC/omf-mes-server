@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { NumberingService } from '../../core/numbering';
+import { latestPerPlan } from '../../core/quality/inspection-plan-version';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Tx } from '../../core/lot';
 
@@ -63,7 +64,7 @@ async function resolvePqcPlanVersion(
   routingId: bigint,
   effectiveDate: Date,
 ): Promise<PqcPlanVersion | null> {
-  const versions = await prisma.inspection_plan_version.findMany({
+  const versions = latestPerPlan(await prisma.inspection_plan_version.findMany({
     where: {
       status_code: 'CONFIRMED',
       effective_from: { lte: effectiveDate },
@@ -77,12 +78,14 @@ async function resolvePqcPlanVersion(
     },
     select: {
       inspection_plan_version_id: true,
+      inspection_plan_id: true,
+      plan_version: true,
       sampling_method_code: true,
       sampling_ratio: true,
       sampling_qty: true,
       inspection_plan: { select: { process_id: true, routing_id: true, default_skip: true } },
     },
-  });
+  }));
   if (versions.length === 0) return null;
 
   /* 공정·라우팅을 지정한 기준이 품목 전체 기준을 이긴다 — 둘 다 「이 공정의 답」을 적은 것이다. */

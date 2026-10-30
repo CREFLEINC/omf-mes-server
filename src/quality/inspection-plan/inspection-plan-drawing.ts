@@ -20,8 +20,32 @@ export interface Drawing {
 type Tx = Prisma.TransactionClient;
 
 /**
+ * 가로·세로가 모두 이보다 작은 그림은 도면이 아니다 — 기준서의 도면 칸 안에 놓인 동그라미 번호·측정 기호(30px 안팎)다
+ * (omf-all-around#208). 한쪽만 작은 가늘고 긴 도면은 남긴다.
+ */
+const MIN_DRAWING_PX = 100;
+
+/** 그림 원본의 가로·세로(px) — PNG 는 IHDR, JPEG 는 SOF 표식에서 읽는다. 못 읽으면 undefined(거르지 않는다). */
+export function imageSizeOf(bytes: Buffer, mime: Drawing['mime']): { width: number; height: number } | undefined {
+  if (mime === 'image/png') {
+    return bytes.length >= 24 ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) } : undefined;
+  }
+  let offset = 2;
+  while (offset + 9 <= bytes.length && bytes[offset] === 0xff) {
+    const marker = bytes[offset + 1];
+    // SOF0~SOF15 중 DHT(C4)·JPG(C8)·DAC(CC)는 프레임 머리가 아니다.
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { width: bytes.readUInt16BE(offset + 7), height: bytes.readUInt16BE(offset + 5) };
+    }
+    offset += 2 + bytes.readUInt16BE(offset + 2);
+  }
+  return undefined;
+}
+
+/**
  * 「Bản vẽ」 라벨 아래 · 검사 항목 표(「Hạng mục kiểm tra」) 왼쪽에 놓인 그림만 도면으로 본다 — 머리의 결재 도장 그림은
  * 같은 장의 오른쪽 위에 있다. 위치는 1부터 센 행·열이다. PNG·JPEG 만 받는다(브라우저가 바로 그리는 것).
+ * 가로·세로가 모두 `MIN_DRAWING_PX` 보다 작은 그림(번호·기호)은 뺀다.
  */
 export function drawingsOf(sheet: Worksheet, label: { row: number; col: number }, tableCol: number): Drawing[] {
   const drawings: Drawing[] = [];
@@ -32,7 +56,10 @@ export function drawingsOf(sheet: Worksheet, label: { row: number; col: number }
     const media = sheet.workbook.getImage(Number(image.imageId));
     const bytes = media?.buffer === undefined ? undefined : Buffer.from(media.buffer as unknown as Uint8Array);
     const mime = bytes === undefined ? undefined : imageMimeOf(bytes);
-    if (bytes !== undefined && (mime === 'image/png' || mime === 'image/jpeg')) drawings.push({ bytes, mime });
+    if (bytes === undefined || (mime !== 'image/png' && mime !== 'image/jpeg')) continue;
+    const size = imageSizeOf(bytes, mime);
+    if (size !== undefined && size.width < MIN_DRAWING_PX && size.height < MIN_DRAWING_PX) continue;
+    drawings.push({ bytes, mime });
   }
   return drawings;
 }

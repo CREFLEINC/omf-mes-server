@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -27,8 +28,10 @@ const ROLE = 'E2E_IPIMP_ROLE';
 const HEADER = ['기준코드', '기준명', '검사유형', '유효시작일', '샘플링방식', '샘플비율', '검사주기', '순서', '항목코드', '항목명', '데이터유형', '단위', '하한', '상한'];
 
 const key = (): string => randomUUID();
-/** 1×1 PNG — 기준서 도면 자리(#211). */
-const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082', 'hex');
+/** 1×1 PNG — 도면 칸 안의 동그라미 번호·측정 기호 자리. 도면으로 붙지 않는다(#208). */
+const SYMBOL = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082', 'hex');
+/** 기준서 도면 자리(#211) — 가로·세로 100px 이상이어야 도면이다. */
+const PNG = png(200, 120);
 
 describe('검사기준 엑셀 올리기 (e2e)', () => {
   let app: INestApplication;
@@ -73,7 +76,7 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
       row('NEW', 1, 'A', 'NUMERIC', 1, 2),
       row('NEW', 2, 'B', 'TEXT', null, null),
     ]);
-    expect(result).toEqual({ succeeded: 1, failed: [] });
+    expect(result).toMatchObject({ succeeded: 1, failed: [] });
 
     const plan = await prisma.inspection_plan.findUniqueOrThrow({
       where: { inspection_plan_code: `${PREFIX}-NEW` },
@@ -82,6 +85,8 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
     expect(plan.inspection_plan_version).toHaveLength(1);
     const [version] = plan.inspection_plan_version;
     expect(version.status_code).toBe(REVISION_STATUS.DRAFT);
+    // 화면이 이어서 확정할 버전 — omf-all-around#208.
+    expect(result.created).toEqual([{ index: 0, key: `${PREFIX}-NEW`, inspectionPlanVersionId: Number(version.inspection_plan_version_id) }]);
     expect(Number(version.sampling_ratio)).toBe(10);
     expect(version.inspection_item_spec.map((i) => [i.sequence_no, i.inspection_item_code])).toEqual([
       [1, `${PREFIX}-A`],
@@ -100,7 +105,7 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
       .expect(200);
 
     const result = await upload([row('REV', 1, 'NEW1', 'NUMERIC', 3, 4), row('REV', 2, 'NEW2', 'TEXT', null, null)]);
-    expect(result).toEqual({ succeeded: 1, failed: [] });
+    expect(result).toMatchObject({ succeeded: 1, failed: [] });
 
     const versions = await prisma.inspection_plan_version.findMany({
       where: { inspection_plan_id: plan.inspection_plan_id },
@@ -114,6 +119,7 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
     expect(versions[0].inspection_item_spec.map((i) => i.inspection_item_code)).toEqual([`${PREFIX}-OLD`]);
     // 복사된 항목은 빠지고 엑셀 항목만 남는다.
     expect(versions[1].inspection_item_spec.map((i) => i.inspection_item_code)).toEqual([`${PREFIX}-NEW1`, `${PREFIX}-NEW2`]);
+    expect(result.created).toEqual([{ index: 0, key: `${PREFIX}-REV`, inspectionPlanVersionId: Number(versions[1].inspection_plan_version_id) }]);
   });
 
   it('⛔ 실패한 묶음은 아무것도 남기지 않고, 다른 묶음은 반영된다', async () => {
@@ -123,6 +129,7 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
       row('LIMIT', 1, 'A', 'NUMERIC', 5, 1),
     ]);
     expect(result.succeeded).toBe(1);
+    expect(result.created.map((c) => c.key)).toEqual([`${PREFIX}-GOOD`]);
     expect(result.failed.map((f: { key: string; index: number }) => [f.key, f.index])).toEqual([
       [`${PREFIX}-BAD`, 0],
       [`${PREFIX}-LIMIT`, 2],
@@ -148,7 +155,7 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
       r[5] = null;
       return r;
     };
-    expect(await upload([noRatio(1, 'A')])).toEqual({ succeeded: 1, failed: [] });
+    expect(await upload([noRatio(1, 'A')])).toMatchObject({ succeeded: 1, failed: [] });
     const plan = await prisma.inspection_plan.findUniqueOrThrow({ where: { inspection_plan_code: `${PREFIX}-NORATIO` } });
     const v1 = await prisma.inspection_plan_version.findFirstOrThrow({ where: { inspection_plan_id: plan.inspection_plan_id } });
     expect(v1.sampling_ratio).toBeNull();
@@ -168,7 +175,7 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
       .set('Idempotency-Key', key())
       .expect(200);
 
-    expect(await upload([noRatio(1, 'B')])).toEqual({ succeeded: 1, failed: [] });
+    expect(await upload([noRatio(1, 'B')])).toMatchObject({ succeeded: 1, failed: [] });
     const v2 = await prisma.inspection_plan_version.findFirstOrThrow({ where: { inspection_plan_id: plan.inspection_plan_id, plan_version: 2 } });
     expect(Number(v2.sampling_ratio)).toBe(15);
   });
@@ -185,13 +192,14 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
       L10: '② 2.32±0.1', R10: '3D', S10: 'n=5c=1', T10: 'Mỗi LOT',
     }).forEach(([address, value]) => { sheet.getCell(address).value = value; });
     sheet.addImage(book.addImage({ buffer: PNG as never, extension: 'png' }), { tl: { col: 0, row: 8 }, ext: { width: 10, height: 10 } });
+    sheet.addImage(book.addImage({ buffer: SYMBOL as never, extension: 'png' }), { tl: { col: 0, row: 9 }, ext: { width: 10, height: 10 } });
     const response = await request(app.getHttpServer())
       .post('/api/quality/inspection-plans:import')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .attach('file', Buffer.from(await book.xlsx.writeBuffer()), 'tckt.xlsx')
       .expect(200);
-    expect(response.body).toEqual({ succeeded: 1, failed: [] });
+    expect(response.body).toMatchObject({ succeeded: 1, failed: [] });
 
     const version = await prisma.inspection_plan_version.findFirstOrThrow({
       where: { inspection_plan: { inspection_plan_code: `${PREFIX}-DRW-IQC` } },
@@ -268,7 +276,11 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
     return Buffer.from(await book.xlsx.writeBuffer());
   }
 
-  async function upload(rows: unknown[][]): Promise<{ succeeded: number; failed: { key: string; index: number; errors: { message: string }[] }[] }> {
+  async function upload(rows: unknown[][]): Promise<{
+    succeeded: number;
+    failed: { key: string; index: number; errors: { message: string }[] }[];
+    created: { key: string; index: number; inspectionPlanVersionId: number }[];
+  }> {
     const response = await request(app.getHttpServer())
       .post('/api/quality/inspection-plans:import')
       .set('Cookie', cookie)
@@ -319,3 +331,25 @@ describe('검사기준 엑셀 올리기 (e2e)', () => {
     }
   }
 });
+
+/** 가로·세로를 고른 회색 PNG. */
+function png(width: number, height: number): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length);
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(crc32(body));
+    return Buffer.concat([head, body, tail]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  return Buffer.concat([
+    Buffer.from('89504e470d0a1a0a', 'hex'),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(Buffer.alloc((width + 1) * height))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
