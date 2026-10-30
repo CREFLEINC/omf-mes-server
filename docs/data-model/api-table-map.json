@@ -2,9 +2,9 @@
   "mapping_version": "4.1",
   "design_reference_commit": "a8f46f2",
   "contract_reference_commit": "a6a87e144116ebaa32c01df5a12a0fd2924427e7",
-  "operation_count": 487,
-  "mapped_operation_count": 486,
-  "tableless_operation_count": 1,
+  "operation_count": 574,
+  "mapped_operation_count": 572,
+  "tableless_operation_count": 2,
   "coverage": "100.0%",
   "operations": [
     {
@@ -774,6 +774,118 @@
       "missing_tables": []
     },
     {
+      "id": "GET /app/handover-alert-settings",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/handover-alert-settings",
+      "summary": "공장별 인계작업 알림 설정 요약",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.handover_alert_setting",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.handover_alert_recipient",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /app/handover-alert-settings/{plantId}/{alertTypeCode}",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/handover-alert-settings/{plantId}/{alertTypeCode}",
+      "summary": "공장×인계 작업 종류 알림 설정 상세",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.handover_alert_setting",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.handover_alert_recipient",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /app/handover-alert-settings/{plantId}/{alertTypeCode}",
+      "domain": "app-공통",
+      "method": "PUT",
+      "path": "/app/handover-alert-settings/{plantId}/{alertTypeCode}",
+      "summary": "공장×인계 작업 종류 알림 설정 저장",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "app.handover_alert_setting",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.handover_alert_recipient",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /app/handover-alert-types",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/handover-alert-types",
+      "summary": "인계 작업 알림 종류 목록",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [],
+      "missing_tables": [],
+      "tableless_reason": "앱 상수 — 배포로만 는다"
+    },
+    {
       "id": "GET /app/notices",
       "domain": "app-공통",
       "method": "GET",
@@ -1098,6 +1210,34 @@
       "missing_tables": []
     },
     {
+      "id": "GET /app/notification-dispatches",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/notification-dispatches",
+      "summary": "알림 발송 이력 — 이벤트 단위",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.notification_event",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.zalo_delivery",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /app/notification-events",
       "domain": "app-공통",
       "method": "GET",
@@ -1121,6 +1261,130 @@
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /app/notification-settings",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/notification-settings",
+      "summary": "부서별 알림 설정 요약",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.notification_department_setting",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.notification_department_recipient",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /app/notification-settings/recipient-candidates",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/notification-settings/recipient-candidates",
+      "summary": "알림 수신자 후보",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.notification_department_setting",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.notification_department_recipient",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /app/notification-settings/{departmentId}/{eventCode}",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/notification-settings/{departmentId}/{eventCode}",
+      "summary": "부서×이벤트 알림 설정 상세",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.notification_department_setting",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.notification_department_recipient",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /app/notification-settings/{departmentId}/{eventCode}",
+      "domain": "app-공통",
+      "method": "PUT",
+      "path": "/app/notification-settings/{departmentId}/{eventCode}",
+      "summary": "부서×이벤트 알림 설정 저장",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "app.notification_department_setting",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.notification_department_recipient",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
         }
       ],
       "missing_tables": []
@@ -1616,6 +1880,64 @@
       "missing_tables": []
     },
     {
+      "id": "GET /app/terminal-work-counts",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/terminal-work-counts",
+      "summary": "단말 작업 수",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.putaway_task",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.picking_order",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.stock_transfer",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment_request",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.work_order",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_request",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "POST /app/users/me:change-password",
       "domain": "app-공통",
       "method": "POST",
@@ -1651,6 +1973,102 @@
           "role": "CROSS_CUTTING",
           "access": "APPEND",
           "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /app/zalo-connection",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/zalo-connection",
+      "summary": "Zalo 연결 정보 조회",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.zalo_connection",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.zalo_template",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /app/zalo-connection",
+      "domain": "app-공통",
+      "method": "PUT",
+      "path": "/app/zalo-connection",
+      "summary": "Zalo 연결 정보 저장",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "app.zalo_connection",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.zalo_template",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /app/zalo-deliveries",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/zalo-deliveries",
+      "summary": "Zalo 발송 이력 — 수신자 단위",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.zalo_delivery",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.notification_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
         }
       ],
       "missing_tables": []
@@ -4214,6 +4632,40 @@
       "missing_tables": []
     },
     {
+      "id": "GET /logistics/goods-receipt-lines",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/goods-receipt-lines",
+      "summary": "입고 줄 목록(자재입고·생산입고 현황)",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.goods_receipt_line",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.goods_receipt",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /logistics/goods-receipts",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -4333,6 +4785,114 @@
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates",
+      "summary": "배정 후보 P/O 라인",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations",
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations",
+      "summary": "배정 더하기",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.inbound_receipt_po_allocation",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "DELETE /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations/{inboundReceiptPoAllocationId}",
+      "domain": "logistics-01자재창고",
+      "method": "DELETE",
+      "path": "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations/{inboundReceiptPoAllocationId}",
+      "summary": "배정 빼기",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.inbound_receipt_po_allocation",
+          "role": "PRIMARY",
+          "access": "DELETE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
         }
       ],
       "missing_tables": []
@@ -4622,6 +5182,58 @@
       "missing_tables": []
     },
     {
+      "id": "POST /logistics/inbound-receipts:per-line",
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/logistics/inbound-receipts:per-line",
+      "summary": "줄마다 입하 한 건 등록",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "logistics.inbound_receipt",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt_po_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "POST /logistics/inbound-receipts:split",
       "domain": "logistics-01자재창고",
       "method": "POST",
@@ -4642,6 +5254,98 @@
         },
         {
           "table": "logistics.inbound_receipt_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /logistics/inbound-unallocated",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/inbound-unallocated",
+      "summary": "미배정이 남은 입하 줄 목록",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.inbound_receipt_line",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt_po_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/location-moves",
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/logistics/location-moves",
+      "summary": "위치 이동 — 같은 창고 안에서 한 번에 확정",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.stock_transfer",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.stock_transfer_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "inventory.inventory_transaction",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "inventory.inventory_transaction_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "inventory.inventory_balance",
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
@@ -4900,6 +5604,34 @@
       "missing_tables": []
     },
     {
+      "id": "GET /logistics/purchase-order-lines",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/purchase-order-lines",
+      "summary": "입하 예정 — P/O 라인 목록",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.purchase_order",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /logistics/purchase-orders",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -5036,6 +5768,34 @@
       "missing_tables": []
     },
     {
+      "id": "GET /logistics/purchase-orders/{purchaseOrderId}/inbound-progress",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/purchase-orders/{purchaseOrderId}/inbound-progress",
+      "summary": "발주 하나의 입고 진행(LOT 단계)",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.purchase_order",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /logistics/purchase-orders/{purchaseOrderId}/lines",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -5144,6 +5904,34 @@
       "missing_tables": []
     },
     {
+      "id": "GET /logistics/purchase-orders:inbound-stage-counts",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/purchase-orders:inbound-stage-counts",
+      "summary": "입고 단계 칩의 수",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.purchase_order",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /logistics/putaway-tasks",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -5159,12 +5947,6 @@
         {
           "table": "logistics.putaway_task",
           "role": "PRIMARY",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.putaway_rule",
-          "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
         }
@@ -5189,12 +5971,6 @@
           "role": "PRIMARY",
           "access": "READ",
           "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.putaway_rule",
-          "role": "SUPPORTING",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
         }
       ],
       "missing_tables": []
@@ -5216,12 +5992,6 @@
           "table": "logistics.putaway_task",
           "role": "PRIMARY",
           "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.putaway_rule",
-          "role": "SUPPORTING",
-          "access": "READ",
           "basis": "RESOURCE_RULE"
         },
         {
@@ -5256,12 +6026,6 @@
           "table": "logistics.putaway_task",
           "role": "PRIMARY",
           "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.putaway_rule",
-          "role": "SUPPORTING",
-          "access": "READ",
           "basis": "RESOURCE_RULE"
         },
         {
@@ -5658,7 +6422,7 @@
       "domain": "logistics-01자재창고",
       "method": "GET",
       "path": "/trace/lot-status-events",
-      "summary": "LOT 상태 변경이력 조회 — 전이 9종 전건",
+      "summary": "LOT 상태 변경이력 조회 — 서버 구현 기준 전이 13종 전건",
       "tags": [
         "trace"
       ],
@@ -5842,6 +6606,62 @@
       "missing_tables": []
     },
     {
+      "id": "GET /trace/lots/{lotId}/affected-production-lots",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lots/{lotId}/affected-production-lots",
+      "summary": "자재 LOT 영향 생산 LOT(계보 기준 추정)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /trace/lots/{lotId}/backward-flow",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lots/{lotId}/backward-flow",
+      "summary": "LOT 하나의 상위 사슬(역방향)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /trace/lots/{lotId}/external-identifiers",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -5910,6 +6730,34 @@
       "missing_tables": []
     },
     {
+      "id": "GET /trace/lots/{lotId}/forward-flow",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lots/{lotId}/forward-flow",
+      "summary": "LOT 하나의 하위 사슬(정방향)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /trace/lots/{lotId}/holds",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -5930,6 +6778,62 @@
         },
         {
           "table": "trace.lot",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /trace/lots/{lotId}/input-materials",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lots/{lotId}/input-materials",
+      "summary": "생산 LOT 투입 자재(계보 기준 추정)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /trace/lots/{lotId}/used-serials",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lots/{lotId}/used-serials",
+      "summary": "자재 LOT 이 들어간 시리얼(계보 기준 추정)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
@@ -6013,6 +6917,212 @@
           "role": "CROSS_CUTTING",
           "access": "APPEND",
           "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /trace/lots/{lotId}:skip-iqc",
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/trace/lots/{lotId}:skip-iqc",
+      "summary": "승인된 IQC 생략 실행",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_external_identifier",
+          "role": "DECLARED",
+          "access": "READ",
+          "basis": "X_SOURCE_TABLE"
+        },
+        {
+          "table": "trace.lot_hold",
+          "role": "DECLARED",
+          "access": "READ",
+          "basis": "X_SOURCE_TABLE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /trace/material-input-lines",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/material-input-lines",
+      "summary": "투입 줄 목록(기간별 이력)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "production.material_consumption",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.work_order",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /trace/material-lot-flows",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/material-lot-flows",
+      "summary": "LOT 추적 정방향 목록(자재 LOT)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.goods_receipt_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.material_consumption",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment_lot_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /trace/packing-lines",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/packing-lines",
+      "summary": "포장 줄 목록(기간별 이력)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "inventory.handling_unit_content",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "inventory.handling_unit",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /trace/product-lot-flows",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/product-lot-flows",
+      "summary": "LOT 추적 역방향 목록(생산 LOT)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.lot",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.production_result_lot_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment_lot_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
         }
       ],
       "missing_tables": []
@@ -6614,6 +7724,74 @@
       "missing_tables": []
     },
     {
+      "id": "GET /app/users/{appUserId}/worker",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/app/users/{appUserId}/worker",
+      "summary": "계정에 연결된 작업자",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.app_user",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.user_credential",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /app/users/{appUserId}/worker",
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/app/users/{appUserId}/worker",
+      "summary": "계정-작업자 연결 치환",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "app.app_user",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.user_credential",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "POST /app/users/{appUserId}:activate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -6749,6 +7927,130 @@
         {
           "table": "audit.audit_event",
           "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch",
+      "summary": "외자 발주의 통관번호 받아오기",
+      "tags": [
+        "integration"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.purchase_order_line",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.purchase_order",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /integration/erp-sync/tables",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/integration/erp-sync/tables",
+      "summary": "ERP 받기 표별 상태",
+      "tags": [
+        "integration"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "integration.erp_sync_state",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "integration.sync_lease",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /integration/erp-sync/tables/{interfaceCode}:run",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/integration/erp-sync/tables/{interfaceCode}:run",
+      "summary": "ERP 받기 지금 읽기",
+      "tags": [
+        "integration"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "integration.erp_sync_state",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "integration.sync_lease",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /integration/erp-sync/warehouses",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/integration/erp-sync/warehouses",
+      "summary": "ERP 창고 목록",
+      "tags": [
+        "integration"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "mdm.code_value",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "mdm.warehouse",
+          "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
         }
@@ -7144,208 +8446,6 @@
           "table": "mdm.item",
           "role": "SUPPORTING",
           "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "GET /logistics/putaway-rules",
-      "domain": "mdm-기준정보",
-      "method": "GET",
-      "path": "/logistics/putaway-rules",
-      "summary": "적치 규칙 목록",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": false,
-      "if_match": false,
-      "tables": [
-        {
-          "table": "logistics.putaway_rule",
-          "role": "PRIMARY",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/putaway-rules",
-      "domain": "mdm-기준정보",
-      "method": "POST",
-      "path": "/logistics/putaway-rules",
-      "summary": "적치 규칙 등록",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": false,
-      "tables": [
-        {
-          "table": "logistics.putaway_rule",
-          "role": "PRIMARY",
-          "access": "INSERT",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "GET /logistics/putaway-rules/uncovered-items",
-      "domain": "mdm-기준정보",
-      "method": "GET",
-      "path": "/logistics/putaway-rules/uncovered-items",
-      "summary": "적치 규칙이 없는 품목",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": false,
-      "if_match": false,
-      "tables": [
-        {
-          "table": "logistics.putaway_rule",
-          "role": "PRIMARY",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "GET /logistics/putaway-rules/{putawayRuleId}",
-      "domain": "mdm-기준정보",
-      "method": "GET",
-      "path": "/logistics/putaway-rules/{putawayRuleId}",
-      "summary": "적치 규칙 상세",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": false,
-      "if_match": false,
-      "tables": [
-        {
-          "table": "logistics.putaway_rule",
-          "role": "PRIMARY",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "PUT /logistics/putaway-rules/{putawayRuleId}",
-      "domain": "mdm-기준정보",
-      "method": "PUT",
-      "path": "/logistics/putaway-rules/{putawayRuleId}",
-      "summary": "적치 규칙 수정",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.putaway_rule",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/putaway-rules/{putawayRuleId}:activate",
-      "domain": "mdm-기준정보",
-      "method": "POST",
-      "path": "/logistics/putaway-rules/{putawayRuleId}:activate",
-      "summary": "적치 규칙 다시 사용",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.putaway_rule",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/putaway-rules/{putawayRuleId}:deactivate",
-      "domain": "mdm-기준정보",
-      "method": "POST",
-      "path": "/logistics/putaway-rules/{putawayRuleId}:deactivate",
-      "summary": "적치 규칙 사용 중지",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.putaway_rule",
-          "role": "PRIMARY",
-          "access": "UPDATE",
           "basis": "RESOURCE_RULE"
         },
         {
@@ -8642,6 +9742,114 @@
       "missing_tables": []
     },
     {
+      "id": "GET /mdm/item-resource-maps",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/mdm/item-resource-maps",
+      "summary": "품목 설비·금형 매핑 목록",
+      "tags": [
+        "mdm"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "mdm.item_resource_map",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "mdm.item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /mdm/item-resource-maps",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/item-resource-maps",
+      "summary": "품목 설비·금형 매핑 등록",
+      "tags": [
+        "mdm"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "mdm.item_resource_map",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "mdm.item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /mdm/item-resource-maps/{itemResourceMapId}",
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/item-resource-maps/{itemResourceMapId}",
+      "summary": "품목 설비·금형 매핑 수정",
+      "tags": [
+        "mdm"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "mdm.item_resource_map",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "mdm.item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /mdm/items",
       "domain": "mdm-기준정보",
       "method": "GET",
@@ -9099,6 +10307,40 @@
       "missing_tables": []
     },
     {
+      "id": "DELETE /mdm/locations/{locationId}",
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/mdm/locations/{locationId}",
+      "summary": "위치 지우기 — 아무 데서도 쓰이지 않은 위치",
+      "tags": [
+        "mdm"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "mdm.location",
+          "role": "PRIMARY",
+          "access": "DELETE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /mdm/locations/{locationId}",
       "domain": "mdm-기준정보",
       "method": "GET",
@@ -9132,6 +10374,62 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
+      "tables": [
+        {
+          "table": "mdm.location",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /mdm/locations/{locationId}/items",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/mdm/locations/{locationId}/items",
+      "summary": "위치의 지정 품목",
+      "tags": [
+        "mdm"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "mdm.location",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /mdm/locations/{locationId}/items",
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/locations/{locationId}/items",
+      "summary": "위치의 지정 품목 바꾸기",
+      "tags": [
+        "mdm"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
       "tables": [
         {
           "table": "mdm.location",
@@ -9200,6 +10498,40 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
+      "tables": [
+        {
+          "table": "mdm.location",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /mdm/locations:rack",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/locations:rack",
+      "summary": "랙 하나 만들기 — 랙과 그 밑 층·셀",
+      "tags": [
+        "mdm"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
       "tables": [
         {
           "table": "mdm.location",
@@ -12360,6 +13692,46 @@
       "missing_tables": []
     },
     {
+      "id": "DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}",
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/quality/inspection-plan-versions/{inspectionPlanVersionId}",
+      "summary": "작성중 버전 취소",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_plan_version",
+          "role": "PRIMARY",
+          "access": "DELETE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_item_spec",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /quality/inspection-plan-versions/{inspectionPlanVersionId}",
       "domain": "mdm-기준정보",
       "method": "GET",
@@ -12872,6 +14244,386 @@
       "missing_tables": []
     },
     {
+      "id": "POST /quality/inspection-plans:import",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-plans:import",
+      "summary": "검사기준 엑셀 올리기",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_plan",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_plan_version",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/inspection-sheet-templates",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/quality/inspection-sheet-templates",
+      "summary": "검사표 기준 목록",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_step",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_lot_source",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheet-templates",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-sheet-templates",
+      "summary": "검사표 기준 등록",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_step",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_lot_source",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "DELETE /quality/inspection-sheet-templates/{inspectionSheetTemplateId}",
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/quality/inspection-sheet-templates/{inspectionSheetTemplateId}",
+      "summary": "검사표 기준 작성 취소",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "PRIMARY",
+          "access": "DELETE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_step",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_lot_source",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/inspection-sheet-templates/{inspectionSheetTemplateId}",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/quality/inspection-sheet-templates/{inspectionSheetTemplateId}",
+      "summary": "검사표 기준 상세 — 단계·항목·LOT 칸 품목 포함",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_step",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_lot_source",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /quality/inspection-sheet-templates/{inspectionSheetTemplateId}",
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/quality/inspection-sheet-templates/{inspectionSheetTemplateId}",
+      "summary": "검사표 기준 수정(작성중만)",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_step",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_lot_source",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheet-templates/{inspectionSheetTemplateId}:confirm",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-sheet-templates/{inspectionSheetTemplateId}:confirm",
+      "summary": "검사표 기준 확정",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_step",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_lot_source",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheet-templates/{inspectionSheetTemplateId}:obsolete",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-sheet-templates/{inspectionSheetTemplateId}:obsolete",
+      "summary": "검사표 기준 폐기",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_step",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_item",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template_lot_source",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /planning/production-orders",
       "domain": "production-02생산실행",
       "method": "GET",
@@ -12895,6 +14647,46 @@
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /planning/production-orders",
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/planning/production-orders",
+      "summary": "생산오더 수기 등록(테스트용)",
+      "tags": [
+        "planning"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "planning.production_order",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.production_order_acknowledgement",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
         }
       ],
       "missing_tables": []
@@ -12939,6 +14731,46 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
+      "tables": [
+        {
+          "table": "planning.production_order",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.production_order_acknowledgement",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /planning/production-orders/{productionOrderId}:auto-plan",
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/planning/production-orders/{productionOrderId}:auto-plan",
+      "summary": "ERP W/O 자동 계획 (재)시도",
+      "tags": [
+        "planning"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
       "tables": [
         {
           "table": "planning.production_order",
@@ -13976,6 +15808,34 @@
       "missing_tables": []
     },
     {
+      "id": "GET /production/work-orders/{workOrderId}/daily-results",
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/work-orders/{workOrderId}/daily-results",
+      "summary": "W/O 일자별 실적",
+      "tags": [
+        "production"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "production.work_order",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.work_order_resource_assignment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /production/work-orders/{workOrderId}/resource-plans",
       "domain": "production-02생산실행",
       "method": "GET",
@@ -14079,6 +15939,34 @@
           "role": "CROSS_CUTTING",
           "access": "APPEND",
           "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /production/work-orders/{workOrderId}/resource-recommendations",
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/work-orders/{workOrderId}/resource-recommendations",
+      "summary": "4M 설비·금형 추천",
+      "tags": [
+        "production"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "production.work_order",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.work_order_resource_assignment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
         }
       ],
       "missing_tables": []
@@ -14272,6 +16160,46 @@
       "missing_tables": []
     },
     {
+      "id": "POST /production/work-orders/{workOrderId}:request-pqc-skip",
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-orders/{workOrderId}:request-pqc-skip",
+      "summary": "PQC 생략 요청",
+      "tags": [
+        "production"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "production.work_order",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.work_order_resource_assignment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "POST /production/work-orders/{workOrderId}:resume",
       "domain": "production-02생산실행",
       "method": "POST",
@@ -14283,6 +16211,46 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
+      "tables": [
+        {
+          "table": "production.work_order",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.work_order_resource_assignment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /production/work-orders/{workOrderId}:skip-pqc",
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-orders/{workOrderId}:skip-pqc",
+      "summary": "승인된 PQC 생략 실행",
+      "tags": [
+        "production"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
       "tables": [
         {
           "table": "production.work_order",
@@ -14600,6 +16568,40 @@
       "missing_tables": []
     },
     {
+      "id": "POST /production/work-sessions/{workSessionId}:force-end",
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-sessions/{workSessionId}:force-end",
+      "summary": "작업 세션 강제 종료(관리웹)",
+      "tags": [
+        "production"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "production.work_session",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /trace/serial-numbers",
       "domain": "production-02생산실행",
       "method": "GET",
@@ -14668,6 +16670,34 @@
       "missing_tables": []
     },
     {
+      "id": "GET /trace/serial-numbers/{serialNo}/input-materials",
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/trace/serial-numbers/{serialNo}/input-materials",
+      "summary": "시리얼 투입 자재(계보 기준 추정)",
+      "tags": [
+        "trace"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "trace.serial_number",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.serial_component_relation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /quality/concessions",
       "domain": "quality-03품질",
       "method": "GET",
@@ -14685,6 +16715,40 @@
           "role": "PRIMARY",
           "access": "READ",
           "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/concessions",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/concessions",
+      "summary": "특채 요청",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.concession",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
         }
       ],
       "missing_tables": []
@@ -14712,6 +16776,40 @@
       "missing_tables": []
     },
     {
+      "id": "POST /quality/concessions/{concessionId}:apply",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/concessions/{concessionId}:apply",
+      "summary": "특채 적용",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.concession",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /quality/defect-records",
       "domain": "quality-03품질",
       "method": "GET",
@@ -14729,6 +16827,40 @@
           "role": "PRIMARY",
           "access": "READ",
           "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/defect-records",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/defect-records",
+      "summary": "불량 기록 등록",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.defect_record",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
         }
       ],
       "missing_tables": []
@@ -14827,6 +16959,50 @@
       "method": "GET",
       "path": "/quality/inspection-requests/{inspectionRequestId}",
       "summary": "검사 의뢰 한 건",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_request",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/inspection-requests/{inspectionRequestId}/history",
+      "domain": "quality-03품질",
+      "method": "GET",
+      "path": "/quality/inspection-requests/{inspectionRequestId}/history",
+      "summary": "검사 대상 이력",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_request",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials",
+      "domain": "quality-03품질",
+      "method": "GET",
+      "path": "/quality/inspection-requests/{inspectionRequestId}/oqc-serials",
+      "summary": "검사 의뢰의 시리얼 판정",
       "tags": [
         "quality"
       ],
@@ -15186,6 +17362,704 @@
       "missing_tables": []
     },
     {
+      "id": "GET /quality/inspection-sheets",
+      "domain": "quality-03품질",
+      "method": "GET",
+      "path": "/quality/inspection-sheets",
+      "summary": "제품 검사표 목록 — LOT·시리얼·W/O 로 찾기",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/inspection-sheets/{inspectionSheetId}",
+      "domain": "quality-03품질",
+      "method": "GET",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}",
+      "summary": "제품 검사표 상세",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /quality/inspection-sheets/{inspectionSheetId}/header",
+      "domain": "quality-03품질",
+      "method": "PUT",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}/header",
+      "summary": "제품 검사표 머리 값 수정",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /quality/inspection-sheets/{inspectionSheetId}/ngs",
+      "domain": "quality-03품질",
+      "method": "PUT",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}/ngs",
+      "summary": "제품 검사표 NG 블록 갈아 끼우기",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /quality/inspection-sheets/{inspectionSheetId}/steps/{stepCode}",
+      "domain": "quality-03품질",
+      "method": "PUT",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}/steps/{stepCode}",
+      "summary": "제품 검사표 한 단계 판정·항목 판정 기록",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheets/{inspectionSheetId}/steps/{stepCode}:sign",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}/steps/{stepCode}:sign",
+      "summary": "제품 검사표 단계 서명",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheets/{inspectionSheetId}:approve",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}:approve",
+      "summary": "제품 검사표 승인",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheets/{inspectionSheetId}:check",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}:check",
+      "summary": "제품 검사표 확인",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheets/{inspectionSheetId}:reopen",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/inspection-sheets/{inspectionSheetId}:reopen",
+      "summary": "제품 검사표 승인 취소",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_ng",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_event",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/inspection-sheets:open-by-serial",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/inspection-sheets:open-by-serial",
+      "summary": "시리얼로 제품 검사표 열기 — 없으면 만든다",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.inspection_sheet",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_step_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_item_result",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_sheet_template",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.serial_number",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.material_consumption",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/item-inspection-level-histories",
+      "domain": "quality-03품질",
+      "method": "GET",
+      "path": "/quality/item-inspection-level-histories",
+      "summary": "검사 수준 전환 이력",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.item_inspection_level_history",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.item_inspection_level",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/item-inspection-levels",
+      "domain": "quality-03품질",
+      "method": "GET",
+      "path": "/quality/item-inspection-levels",
+      "summary": "품목 검사 수준 목록",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.item_inspection_level",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.item_inspection_level_history",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /quality/item-inspection-levels",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/item-inspection-levels",
+      "summary": "품목 검사 수준 지정",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.item_inspection_level",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.item_inspection_level_history",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "PUT /quality/item-inspection-levels/{itemInspectionLevelId}",
+      "domain": "quality-03품질",
+      "method": "PUT",
+      "path": "/quality/item-inspection-levels/{itemInspectionLevelId}",
+      "summary": "품목 검사 수준 수동 변경",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.item_inspection_level",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.item_inspection_level_history",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /quality/lot-hold-events",
       "domain": "quality-03품질",
       "method": "GET",
@@ -15514,6 +18388,86 @@
       "missing_tables": []
     },
     {
+      "id": "POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order",
+      "domain": "quality-03품질",
+      "method": "POST",
+      "path": "/quality/nonconformances/{nonconformanceId}:issue-rework-work-order",
+      "summary": "재작업 W/O 발행",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "quality.nonconformance",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.nonconformance_lot",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.disposition_decision",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /quality/oqc-serials/{serialNo}",
+      "domain": "quality-03품질",
+      "method": "GET",
+      "path": "/quality/oqc-serials/{serialNo}",
+      "summary": "시리얼 OQC 스캔 조회",
+      "tags": [
+        "quality"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "quality.oqc_serial_result",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.serial_number",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.inspection_request",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /logistics/sales-orders",
       "domain": "shipment-04제품출하",
       "method": "GET",
@@ -15562,6 +18516,40 @@
         },
         {
           "table": "logistics.sales_order_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /logistics/shipment-lines",
+      "domain": "shipment-04제품출하",
+      "method": "GET",
+      "path": "/logistics/shipment-lines",
+      "summary": "출하 줄 목록(제품출고 현황)",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipment_line",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment_lot_allocation",
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
@@ -15762,11 +18750,131 @@
       "missing_tables": []
     },
     {
+      "id": "PUT /logistics/shipment-requests/{shipmentRequestId}",
+      "domain": "shipment-04제품출하",
+      "method": "PUT",
+      "path": "/logistics/shipment-requests/{shipmentRequestId}",
+      "summary": "출하작업지시 이행 공장 지정",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "logistics.shipment_request",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment_request_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick",
       "domain": "shipment-04제품출하",
       "method": "POST",
       "path": "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick",
       "summary": "제품 LOT 피킹 확정",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipment_request",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment_request_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip",
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip",
+      "summary": "OQC 생략 요청",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipment_request",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment_request_line",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc",
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/shipment-requests/{shipmentRequestId}:skip-oqc",
+      "summary": "승인된 OQC 생략 실행",
       "tags": [
         "shipment"
       ],
@@ -16034,6 +19142,252 @@
         },
         {
           "table": "logistics.shipment_lot_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /logistics/shipping-units",
+      "domain": "shipment-04제품출하",
+      "method": "GET",
+      "path": "/logistics/shipping-units",
+      "summary": "출하 단위 목록",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipping_unit",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipping_unit_handling_unit",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/shipping-units",
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/shipping-units",
+      "summary": "출하 단위 열기",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipping_unit",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipping_unit_handling_unit",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "GET /logistics/shipping-units/{shippingUnitId}",
+      "domain": "shipment-04제품출하",
+      "method": "GET",
+      "path": "/logistics/shipping-units/{shippingUnitId}",
+      "summary": "출하 단위 상세 — 납품 라벨 값 전부",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipping_unit",
+          "role": "PRIMARY",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipping_unit_handling_unit",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}",
+      "domain": "shipment-04제품출하",
+      "method": "DELETE",
+      "path": "/logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}",
+      "summary": "상자 빼기",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipping_unit",
+          "role": "PRIMARY",
+          "access": "DELETE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipping_unit_handling_unit",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/shipping-units/{shippingUnitId}:add-box",
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/shipping-units/{shippingUnitId}:add-box",
+      "summary": "상자 넣기(포장 라벨 스캔)",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.shipping_unit",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipping_unit_handling_unit",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/shipping-units/{shippingUnitId}:close",
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/shipping-units/{shippingUnitId}:close",
+      "summary": "출하 단위 마감",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "logistics.shipping_unit",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipping_unit_handling_unit",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.shipment",
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"

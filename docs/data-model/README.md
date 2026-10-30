@@ -54,7 +54,7 @@ node scripts/data_model/verify_html_report.mjs
 
 ⚠ 전체 DDL(`02-omf-mes-postgresql-v4.sql`)은 **이 절차가 다시 만들지 않는다** — 카탈로그와
 별개로 `pg_dump` 로 뜨고, 명령은 그 파일 머리말에 적혀 있다. **지금은 v4 시점에 멈춰 있다**
-(표 174 · `FOREIGN KEY` 528 · 카탈로그는 표 190 · FK 601). ⛔ **그 파일로 DB 를 세우지 마라** —
+(표 174 · `FOREIGN KEY` 528 · 카탈로그는 표 220 · FK 698). ⛔ **그 파일로 DB 를 세우지 마라** —
 빈 DB 구축도 `prisma migrate deploy` 를 쓴다(`deploy/RELEASE.md` §0). XLSX 의 「전체 DDL 재설치」
 게이트가 그래서 **`STALE`** 로 뜬다. 정상이다.
 
