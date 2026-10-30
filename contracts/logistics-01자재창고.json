@@ -5076,6 +5076,156 @@
     }
    }
   },
+  "/logistics/purchase-order-lines": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 예정 — P/O 라인 목록",
+    "description": "입고 관리 허브(W-01-09) 오른쪽 표. 한 행 = P/O 라인 하나에 헤더·공급사·품목·단위 값을 함께 싣는다 — 발주 목록(GET /logistics/purchase-orders)은 헤더 단위라 라인·남은 수량을 줄 수 없다. 정렬: 납기 → 발주번호 → 라인번호(납기 없는 발주는 뒤). 근거: 서버 선행 · 장부 P-78 · P-85",
+    "parameters": [
+     {
+      "name": "purchaseOrderId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "이 P/O 의 라인만. openOnly 기본이 true 라 고른 P/O 의 라인을 다 보려면 openOnly=false"
+     },
+     {
+      "name": "expectedReceiptDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "납기(헤더 expectedReceiptDate) 시작 — 포함"
+     },
+     {
+      "name": "expectedReceiptDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "납기 끝 — 포함"
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "공장"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "품목"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "MES 발주번호·ERP 발주번호 부분 일치(대소문자 무시)"
+     },
+     {
+      "name": "openOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": true
+      },
+      "description": "남은 라인만 — 헤더가 CLOSED·CANCELLED 가 아니고, 라인이 취소되지 않았고, 받은 수량이 발주 수량에 못 미친다. 부족 허용치는 빼지 않는다. 발주 목록 openOnly 와 같은 기준"
+     },
+     {
+      "name": "overdueOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "납기가 그 발주 공장 현지 오늘보다 앞인데 아직 남은 라인만. openOnly=false 여도 openOnly 조건을 함께 건다. 납기 없는 발주는 지연이 아니다"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/PurchaseOrderLineListItem"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/purchase-orders/{purchaseOrderId}": {
    "parameters": [
     {
@@ -16504,6 +16654,118 @@
       "description": "ERP 가 이 라인을 취소한 시각(CREATE_TYPE=C 를 받은 시각). 취소된 라인은 입하할 수 없고 남은 수량도 0 으로 본다. 아니면 null"
      }
     }
+   },
+   "PurchaseOrderLineListItem": {
+    "description": "P/O 라인 목록 한 행 — 라인(PurchaseOrderLine)에 헤더·공급사·품목·단위 값과 남은 수량·입하 진행을 더한다. 장부 P-78 · P-85",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/PurchaseOrderLine"
+     },
+     {
+      "type": "object",
+      "required": [
+       "purchaseOrderNo",
+       "erpPurchaseOrderNo",
+       "supplierId",
+       "supplierCode",
+       "supplierName",
+       "plantId",
+       "orderDate",
+       "expectedReceiptDate",
+       "purchaseOrderStatusCode",
+       "itemCode",
+       "itemName",
+       "uomCode",
+       "uomName",
+       "remainingQty",
+       "receiptStatusCode"
+      ],
+      "properties": {
+       "purchaseOrderNo": {
+        "type": "string",
+        "example": "PO-2026-000123"
+       },
+       "erpPurchaseOrderNo": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "MES 에서 먼저 만든 P/O 는 null",
+        "example": "EPO-2026-000123"
+       },
+       "supplierId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "supplierCode": {
+        "type": "string",
+        "example": "SUP-001"
+       },
+       "supplierName": {
+        "type": "string",
+        "example": "하노이 부품"
+       },
+       "plantId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "orderDate": {
+        "type": "string",
+        "format": "date",
+        "example": "2026-10-01"
+       },
+       "expectedReceiptDate": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date",
+        "description": "납기 — 헤더 값이다. ERP 가 헤더에만 준다(DLVY_DT)",
+        "example": "2026-10-25"
+       },
+       "purchaseOrderStatusCode": {
+        "type": "string",
+        "description": "헤더 statusCode",
+        "example": "REGISTERED"
+       },
+       "itemCode": {
+        "type": "string",
+        "example": "RM-001"
+       },
+       "itemName": {
+        "type": "string",
+        "example": "판재"
+       },
+       "uomCode": {
+        "type": "string",
+        "example": "KG"
+       },
+       "uomName": {
+        "type": "string",
+        "example": "킬로그램"
+       },
+       "remainingQty": {
+        "type": "number",
+        "minimum": 0,
+        "description": "발주 − 누적 입하(0 아래는 0). receiptStatusCode 가 CANCELLED 면 0",
+        "example": 60
+       },
+       "receiptStatusCode": {
+        "type": "string",
+        "enum": [
+         "NOT_STARTED",
+         "PARTIAL",
+         "COMPLETED",
+         "CANCELLED"
+        ],
+        "description": "라인의 입하 진행 — 위에서부터 처음 맞는 것: CANCELLED(라인 cancelledAt 이 있거나 헤더 CANCELLED) → COMPLETED(받은 수량 ≥ 발주 수량 · 부족 허용치는 보지 않는다) → PARTIAL(받은 것이 있음) → NOT_STARTED",
+        "example": "PARTIAL"
+       }
+      }
+     }
+    ]
    },
    "PurchaseOrderLineListResponse": {
     "type": "object",

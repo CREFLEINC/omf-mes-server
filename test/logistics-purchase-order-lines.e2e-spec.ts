@@ -1,7 +1,6 @@
 /**
  * 입하 예정(W-01-09) — 오른쪽 표 P/O 라인 목록 `GET /logistics/purchase-order-lines`(장부 P-78 · P-85 · #741)와
  * 왼쪽 표 P/O 목록 `GET /logistics/purchase-orders` 에 더한 묶음 값·조건(P-85). 두 표가 같은 기준(남은 라인·지연)을 쓰는지 함께 본다.
- * 라인 목록은 계약 사본에 없는 경로라 인증·질의 검증을 컨트롤러가 직접 한다 — 401·400 도 여기서 본다.
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -70,7 +69,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     ).body as Page;
   const keys = (page: Page): string[] => page.items.map((i) => `${i.purchaseOrderNo.slice(PREFIX.length + 1)}#${i.lineNo}`);
 
-  it('⛔ 로그인이 없으면 401 이다 — 가드 밖 경로라 컨트롤러가 직접 막는다', async () => {
+  it('⛔ 로그인이 없으면 401 이다', async () => {
     const response = await request(app.getHttpServer()).get(PATH).expect(401);
     expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'PERMISSION_DENIED' });
   });
