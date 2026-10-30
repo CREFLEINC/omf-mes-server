@@ -14949,7 +14949,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "싣지 않는다 — 창고에 거래처를 두지 않는다(사용자 결정 2026-10-29 · 장부 P-146)",
+      "description": "외부창고이면 반드시 있다 — 외부창고가 아니면 비어 있다. 수정 화면이 지금 지정된 거래처를 그대로 보이는 데 쓴다.",
       "example": 1001
      },
      "isActive": {
@@ -15028,7 +15028,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "받지 않는다 — null 이나 생략만. 값이 오면 400 INVALID(사용자 결정 2026-10-29 · 장부 P-146)",
+      "description": "ck_external_warehouse_partner — isExternal 이 참이면 필수",
       "example": 1001
      }
     }
@@ -15093,7 +15093,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "받지 않는다 — null 이나 생략만. 값이 오면 400 INVALID(사용자 결정 2026-10-29 · 장부 P-146)",
+      "description": "ck_external_warehouse_partner — isExternal 이 참이면 필수",
       "example": 1001
      }
     }
