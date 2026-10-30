@@ -26,7 +26,7 @@ export interface InboundReceiptExcessView {
   linkedAt: string | null;
 }
 
-/** 계약 밖 — 줄의 받은 수량 중 한 P/O 라인에 배정한 몫. */
+/** 줄의 받은 수량 중 한 P/O 라인에 배정한 몫(장부 P-115). */
 export interface InboundReceiptAllocationView {
   inboundReceiptPoAllocationId: number;
   purchaseOrderLineId: number;
@@ -78,9 +78,9 @@ export interface InboundReceiptLineView {
   /** 계약 밖(장부 P-100) — `receivedQty` 중 P/O 라인에 넣지 않은 몫의 합. 없으면 0. */
   excessQty: number;
   excesses: InboundReceiptExcessView[];
-  /** 계약 밖 — P/O 라인별 배정 몫(만든 순서). 무발주 줄은 빈 배열. */
+  /** P/O 라인별 배정 몫(만든 순서). 무발주 줄은 빈 배열. */
   allocations: InboundReceiptAllocationView[];
-  /** 계약 밖 — `receivedQty` − 배정 합. 아직 어느 P/O 에도 넣지 않은 몫. */
+  /** `receivedQty` − 배정 합. 아직 어느 P/O 에도 넣지 않은 몫. */
   unallocatedQty: number;
   /** 서버 선행 P-56 — 이 라인 LOT 에서 선별로 떼어 낸 자식 LOT(불량분). 없으면 빈 배열. */
   splitLots?: SplitLotView[];

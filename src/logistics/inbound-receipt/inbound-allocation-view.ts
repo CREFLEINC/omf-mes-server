@@ -6,8 +6,8 @@ import { toDateString } from '../../common/master';
 import { roomOf, unallocatedQtyOf } from './inbound-allocation';
 
 /**
- * 입하 배정 경로의 질의·본문 검사와 응답 모양. 계약 사본에 없는 경로라 가드가 보지 않는다 — 여기서 손으로 검사하고
- * 오류 모양은 가드와 같게 한다(초과분 경로 P-100 과 같은 길).
+ * 입하 배정 경로의 질의·본문을 서버 형으로 옮기는 자리와 응답 모양. 목록 질의는 가드가 계약대로 검사해 넘긴다.
+ * 더하기·빼기의 경로·본문은 계약에 아직 없어 여기서 손으로 검사하고 오류 모양은 가드와 같게 한다.
  */
 
 export interface UnallocatedQuery {
@@ -21,34 +21,30 @@ export interface UnallocatedQuery {
 }
 
 const INT64_MAX = 2n ** 63n - 1n;
-const ID_FIELDS = ['plantId', 'supplierId', 'itemId'] as const;
-const PAGE_FIELDS = ['page', 'size'] as const;
-const CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,49}$/;
 
-export function parseUnallocatedQuery(raw: Record<string, unknown>): UnallocatedQuery {
-  const errors: ErrorItem[] = [];
-  const parsed: UnallocatedQuery = {};
-  for (const name of ID_FIELDS) {
-    if (raw[name] === undefined) continue;
-    const value = readId(raw[name]);
-    if (value === undefined) errors.push(invalid(name, '양의 정수여야 합니다.'));
-    else parsed[name] = value;
-  }
-  const excluded = raw.excludeExceptionTypeCode;
-  if (excluded !== undefined) {
-    // 쉼표로도, 질의를 여러 번 보내도(Express 가 배열로 준다) 받는다.
-    const codes = (Array.isArray(excluded) ? excluded : [excluded]).flatMap((value) => (typeof value === 'string' ? value.split(',') : ['']));
-    if (codes.every((code) => CODE_PATTERN.test(code))) parsed.excludeExceptionTypeCodes = codes;
-    else errors.push(invalid('excludeExceptionTypeCode', '대문자 코드를 쉼표로 이어 보냅니다.'));
-  }
-  for (const name of PAGE_FIELDS) {
-    const value = raw[name];
-    if (value === undefined) continue;
-    if (typeof value === 'string' && /^[1-9]\d{0,8}$/.test(value)) parsed[name] = Number(value);
-    else errors.push(invalid(name, '1 이상의 정수여야 합니다.'));
-  }
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  return parsed;
+/** 가드가 계약대로 검사하고 형을 바꿔 넘긴 질의 — `excludeExceptionTypeCode` 는 쉼표·반복 모두 배열로 온다. */
+export interface UnallocatedContractQuery {
+  plantId?: number;
+  supplierId?: number;
+  itemId?: number;
+  excludeExceptionTypeCode?: string[];
+  page?: number;
+  size?: number;
+}
+
+export function parseUnallocatedQuery(raw: UnallocatedContractQuery): UnallocatedQuery {
+  return {
+    plantId: toId(raw.plantId),
+    supplierId: toId(raw.supplierId),
+    itemId: toId(raw.itemId),
+    excludeExceptionTypeCodes: raw.excludeExceptionTypeCode,
+    page: raw.page,
+    size: raw.size,
+  };
+}
+
+function toId(value: number | undefined): bigint | undefined {
+  return value === undefined ? undefined : BigInt(value);
 }
 
 /** 경로의 id — 틀리면 400 field `INVALID`. */

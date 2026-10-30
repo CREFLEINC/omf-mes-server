@@ -4,11 +4,13 @@ import type { Request } from 'express';
 import { loginRequired } from '../../auth/authentication.guard';
 import { attachSession, SessionResolver } from '../../auth/session-resolver.service';
 import type { Session } from '../../auth/session.types';
+import { Contract } from '../../common/contract';
 import { PagedResponse } from '../../common/pagination';
 import { assertOperationPermission } from '../../common/permissions';
 import {
   AllocationCandidateView,
   InboundAllocationView,
+  UnallocatedContractQuery,
   UnallocatedLineView,
   parseAllocationBody,
   parsePathId,
@@ -21,9 +23,9 @@ const OPERATION = 'POST /logistics/inbound-receipts:split';
 const LINE_ID = 'inboundReceiptLineId';
 
 /**
- * 입하 줄 ↔ P/O 라인 배정. ⛔ 이 경로들은 계약 사본에 없어 `@Contract` 를 달 수 없고, 그래서 인증·권한 가드가 이 핸들러를
- * 보지 않는다. 가드가 쓰는 같은 함수(세션 해석 · 로그인 필요 401 · 오퍼레이션 권한 403)를 여기서 부른다(P-58 과 같은 길).
- * 정본에 경로가 실려 오면 `@Contract` 를 달고 이 수동 인증·검사를 지운다.
+ * 입하 줄 ↔ P/O 라인 배정(장부 P-115). 단말 범위 표에 없어 단말 토큰은 401 이다.
+ * ⛔ 더하기·빼기는 계약에 아직 없어 `@Contract` 를 달 수 없고, 그래서 인증·권한 가드가 그 핸들러를 보지 않는다.
+ * 가드가 쓰는 같은 함수(세션 해석 · 로그인 필요 401 · 오퍼레이션 권한 403)를 여기서 부른다(P-58 과 같은 길).
  */
 @Controller('logistics')
 export class InboundAllocationController {
@@ -33,21 +35,15 @@ export class InboundAllocationController {
   ) {}
 
   @Get('inbound-unallocated')
-  async listUnallocated(
-    @Req() request: Request,
-    @Query() query: Record<string, unknown>,
-  ): Promise<PagedResponse<UnallocatedLineView>> {
-    await this.authorize(request);
+  @Contract('GET /logistics/inbound-unallocated')
+  listUnallocated(@Query() query: UnallocatedContractQuery): Promise<PagedResponse<UnallocatedLineView>> {
     return this.allocations.listUnallocated(parseUnallocatedQuery(query));
   }
 
   @Get('inbound-receipt-lines/:inboundReceiptLineId/allocation-candidates')
-  async candidates(
-    @Req() request: Request,
-    @Param(LINE_ID) lineId: string,
-  ): Promise<{ items: AllocationCandidateView[] }> {
-    await this.authorize(request);
-    return { items: await this.allocations.candidates(parsePathId(LINE_ID, lineId)) };
+  @Contract('GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates')
+  async candidates(@Param(LINE_ID) lineId: number): Promise<{ items: AllocationCandidateView[] }> {
+    return { items: await this.allocations.candidates(BigInt(lineId)) };
   }
 
   @Post('inbound-receipt-lines/:inboundReceiptLineId/allocations')
