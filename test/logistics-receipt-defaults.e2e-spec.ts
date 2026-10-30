@@ -5,7 +5,11 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -17,6 +21,19 @@ import { PrismaService } from '../src/prisma/prisma.service';
 const PREFIX = 'RDF';
 const PATH = '/api/logistics/goods-receipts:defaults';
 const DAY = '2026-10-29';
+
+function validator(operation: string, status = 200): ValidateFunction {
+  const contract = JSON.parse(
+    readFileSync(join(__dirname, '../contracts/logistics-01자재창고.json'), 'utf8'),
+  ) as object;
+  const [method, path] = operation.split(' ');
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  addFormats(ajv);
+  for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
+  ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
+  return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
+}
 
 interface Defaults {
   lotId: number;
@@ -67,9 +84,13 @@ describe('입고 기본값 (e2e · 장부 P-150)', () => {
     }
   });
 
-  const defaultsOf = async (...lotIds: bigint[]): Promise<Defaults[]> =>
-    (await request(app.getHttpServer()).get(PATH).query({ lotIds: lotIds.join(',') }).set('Cookie', cookies.receiver).expect(200))
-      .body.items as Defaults[];
+  const validate = validator('GET /logistics/goods-receipts:defaults');
+  /** 200 마다 계약 응답 스키마로 본다 — 칸이 비는 갈래마다 null 이 계약에 맞는지. */
+  const defaultsOf = async (...lotIds: bigint[]): Promise<Defaults[]> => {
+    const response = await request(app.getHttpServer()).get(PATH).query({ lotIds: lotIds.join(',') }).set('Cookie', cookies.receiver).expect(200);
+    expect(validate(response.body) ? [] : validate.errors).toEqual([]);
+    return response.body.items as Defaults[];
+  };
   const slot = async (warehouse: bigint): Promise<number> => Number((await prisma.location.findFirstOrThrow({
     where: { warehouse_id: warehouse, system_role_code: 'PUTAWAY_STAGING' },
   })).location_id);
@@ -149,26 +170,31 @@ describe('입고 기본값 (e2e · 장부 P-150)', () => {
     }
   });
 
-  it('⛔ 입고 대기가 아닌 LOT 은 NOT_RECEIPT_READY · 없는 LOT 은 NOT_FOUND — 다른 칸은 비운다', async () => {
+  it('⛔ 입고 대기가 아닌 LOT 은 NOT_RECEIPT_READY · 없는 LOT 은 NOT_FOUND — 다른 칸은 비운다 · 같은 id 는 한 번', async () => {
     const pending = await lotOn([ids.lineWh], 'INSPECTION_PENDING', 3);
 
-    const [waiting, missing] = await defaultsOf(pending, 999999999n);
+    const [waiting, missing, ...rest] = await defaultsOf(pending, 999999999n, pending);
 
+    expect(rest).toEqual([]);
     expect(waiting).toMatchObject({ lotId: Number(pending), warehouseId: null, receiptQty: null, qualityStatusCode: null });
     expect(codes(waiting)).toEqual(['NOT_RECEIPT_READY']);
     expect(missing).toMatchObject({ lotId: 999999999, itemId: null });
     expect(codes(missing)).toEqual(['NOT_FOUND']);
   });
 
-  it('⛔ lotIds 가 없거나 틀리거나 100개를 넘으면 400 · 권한이 없으면 403 · 로그인이 없으면 401', async () => {
+  it('⛔ lotIds 가 없거나 틀리거나 100개를 넘으면 400 — 틀린 원소를 무시하지 않는다 · 권한이 없으면 403 · 로그인이 없으면 401', async () => {
     const get = (query: Record<string, string>, cookie = cookies.receiver) =>
       request(app.getHttpServer()).get(PATH).query(query).set('Cookie', cookie);
-    const invalid: Record<string, string>[] = [
-      {}, { lotIds: '1,x' }, { lotIds: '0' }, { lotIds: Array.from({ length: 101 }, (_, i) => i + 1).join(',') },
+    const invalid: [Record<string, string>, string, string][] = [
+      [{}, 'lotIds', 'REQUIRED'],
+      [{ lotIds: '1,x' }, 'lotIds[1]', 'INVALID'],
+      [{ lotIds: '1,' }, 'lotIds[1]', 'INVALID'],
+      [{ lotIds: '0' }, 'lotIds[0]', 'RANGE'],
+      [{ lotIds: Array.from({ length: 101 }, (_, i) => i + 1).join(',') }, 'lotIds', 'RANGE'],
     ];
-    for (const query of invalid) {
+    for (const [query, field, code] of invalid) {
       const response = await get(query).expect(400);
-      expect(response.body.errors[0]).toMatchObject({ field: 'lotIds', code: 'INVALID' });
+      expect(response.body.errors).toEqual([expect.objectContaining({ field, code })]);
     }
     await get({ lotIds: '1' }, cookies.none).expect(403);
     await request(app.getHttpServer()).get(PATH).query({ lotIds: '1' }).expect(401);
