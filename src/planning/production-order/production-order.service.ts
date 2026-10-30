@@ -91,11 +91,11 @@ export class ProductionOrderService {
     const withLastChange = query.withLastChange === true;
     const worklistState = assertWorklistState(query.worklistState);
     if (query.autoPlanStatus !== undefined || worklistState !== undefined) {
-      return this.listBySql(query, [...scopeSql(scope), ...sqlFilters(query.autoPlanStatus, worklistState)], page, withLastChange);
+      return this.listBySql(query, scope, sqlFilters(query.autoPlanStatus, worklistState), page, withLastChange);
     }
     const base: Prisma.production_orderWhereInput = { AND: [buildWhere(query), scopeWhere(scope)] };
     const where = query.unacknowledgedOnly === true ? await this.excludeAcknowledged(base) : base;
-    if (query.includeChildren === true) return this.listWithChildren(where, page, withLastChange);
+    if (query.includeChildren === true) return this.listWithChildren(where, scope, page, withLastChange);
 
     const [rows, total] = await Promise.all([
       this.prisma.production_order.findMany({ where, orderBy: ORDER_BY, skip: page.skip, take: page.take }),
@@ -106,11 +106,13 @@ export class ProductionOrderService {
 
   /** 없거나 범위 밖이면 404 다(계약 선언) — 범위 밖 오더의 존재를 드러내지 않는다. */
   async detail(id: number, query: ProductionOrderDetailQuery, actorUserId: number): Promise<{ view: ProductionOrderView; versionNo: number }> {
-    await this.assertInScope(id, actorUserId);
-    return this.detailOf(id, query);
+    const ids = await scopedPlantIds(this.prisma, actorUserId);
+    const row = await this.prisma.production_order.findFirst({ where: { production_order_id: id, ...scopeWhere(ids) } });
+    if (!row) throw new NotFoundException('없는 ERP W/O 입니다.');
+    return this.rowDetail(row, query);
   }
 
-  /** 범위 밖이면 404 — 단건을 다루는 쓰기 진입점(`:auto-plan`)이 먼저 부른다. */
+  /** 범위 밖이면 404 — 단건을 다루는 쓰기 진입점(`:auto-plan`·`:acknowledge`·`:resync`)이 멱등 처리보다 먼저 부른다. */
   async assertInScope(id: number, actorUserId: number): Promise<void> {
     const ids = await scopedPlantIds(this.prisma, actorUserId);
     const found = await this.prisma.production_order.count({
@@ -123,6 +125,10 @@ export class ProductionOrderService {
   async detailOf(id: number, query: ProductionOrderDetailQuery): Promise<{ view: ProductionOrderView; versionNo: number }> {
     const row = await this.prisma.production_order.findUnique({ where: { production_order_id: id } });
     if (!row) throw new NotFoundException('없는 ERP W/O 입니다.');
+    return this.rowDetail(row, query);
+  }
+
+  private async rowDetail(row: ProductionOrderRow, query: ProductionOrderDetailQuery): Promise<{ view: ProductionOrderView; versionNo: number }> {
     const [view] = await this.viewsOf([row], query.withLastChange === true);
     return { view, versionNo: row.version_no };
   }
@@ -130,6 +136,7 @@ export class ProductionOrderService {
   /** §5-3 — 루트로 total·페이지를 세고 재귀 CTE 로 하위를 붙인다. 하위엔 필터를 다시 안 건다. */
   private async listWithChildren(
     where: Prisma.production_orderWhereInput,
+    scope: bigint[] | null,
     page: PageRequest,
     withLastChange: boolean,
   ): Promise<PagedResponse<ProductionOrderView>> {
@@ -145,11 +152,12 @@ export class ProductionOrderService {
       }),
     ]);
     const meta = { page: page.page, size: page.size, total };
-    return this.withDescendants(rootRows.map((r) => r.production_order_id), meta, withLastChange);
+    return this.withDescendants(rootRows.map((r) => r.production_order_id), scope, meta, withLastChange);
   }
 
   private async withDescendants(
     rootIds: bigint[],
+    scope: bigint[] | null,
     meta: PagedResponse<ProductionOrderView>['page'],
     withLastChange: boolean,
   ): Promise<PagedResponse<ProductionOrderView>> {
@@ -164,7 +172,7 @@ export class ProductionOrderService {
           JOIN t ON c.parent_production_order_id = t.production_order_id)
       SELECT production_order_id FROM t`);
     const rows = await this.prisma.production_order.findMany({
-      where: { production_order_id: { in: descendants.map((d) => d.production_order_id) } },
+      where: { production_order_id: { in: descendants.map((d) => d.production_order_id) }, ...scopeWhere(scope) },
       orderBy: [{ bom_level: 'asc' }, { production_order_id: 'asc' }],
     });
     return { items: await this.viewsOf(rows, withLastChange), page: meta };
@@ -188,11 +196,12 @@ export class ProductionOrderService {
    */
   private async listBySql(
     query: ProductionOrderListQuery,
+    scope: bigint[] | null,
     extra: Prisma.Sql[],
     page: PageRequest,
     withLastChange: boolean,
   ): Promise<PagedResponse<ProductionOrderView>> {
-    const conditions = [...filterSql(query), ...extra];
+    const conditions = [...filterSql(query), ...scopeSql(scope), ...extra];
     if (query.includeChildren === true) conditions.push(Prisma.sql`o.parent_production_order_id IS NULL`);
     const where = Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
     const [counted, idRows] = await Promise.all([
@@ -204,7 +213,7 @@ export class ProductionOrderService {
     ]);
     const ids = idRows.map((r) => r.production_order_id);
     const meta = { page: page.page, size: page.size, total: counted[0].total };
-    if (query.includeChildren === true) return this.withDescendants(ids, meta, withLastChange);
+    if (query.includeChildren === true) return this.withDescendants(ids, scope, meta, withLastChange);
 
     const rows = ids.length === 0 ? [] : await this.prisma.production_order.findMany({ where: { production_order_id: { in: ids } } });
     const byId = new Map(rows.map((row) => [row.production_order_id, row]));

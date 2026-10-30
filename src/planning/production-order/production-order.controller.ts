@@ -67,13 +67,14 @@ export class ProductionOrderController {
   @Post(':productionOrderId\\:acknowledge')
   @Contract('POST /planning/production-orders/{productionOrderId}:acknowledge')
   @HttpCode(HttpStatus.OK)
-  acknowledge(
+  async acknowledge(
     @Req() request: Request,
     @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
     @Body() body: ProductionOrderAcknowledge,
   ): Promise<ProductionOrderView> {
     const version = versionOf(request);
     const appUserId = userOf(request);
+    await this.queries.assertInScope(productionOrderId, appUserId);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.acknowledges.acknowledge(productionOrderId, version, body, appUserId);
       return (await this.queries.detailOf(productionOrderId, {})).view;
@@ -105,6 +106,7 @@ export class ProductionOrderController {
     @Req() request: Request,
     @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
   ): Promise<void> {
+    await this.queries.assertInScope(productionOrderId, userOf(request));
     await runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, async () => {
       // 멱등키가 `message_key` 의 뒷자리다 — 가드가 형식을 이미 강제했다(§5-6 · R-11).
       await this.resyncs.resync(productionOrderId, String(request.headers['idempotency-key']));
