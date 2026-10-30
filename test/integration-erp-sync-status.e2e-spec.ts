@@ -1,6 +1,5 @@
 /**
  * ERP 받기 표별 상태 `GET /integration/erp-sync/tables`·「지금 읽기」 `POST …/{interfaceCode}:run`(장부 P-81).
- * 계약 사본에 없는 경로라 인증·권한을 컨트롤러가 직접 한다 — 401·403 도 여기서 본다.
  *
  * ⚠ 이 시험 서버는 ERP 연동이 꺼져 있다(실행기가 돌지 않는다). 「켜진 서버」 갈래는 요청 시점의
  * `ConfigService` 만 켠 것으로 바꿔 본다 — 실행기는 부팅 때 꺼진 채로 만들어져 요청을 집어 가지 않는다.
@@ -9,6 +8,10 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -30,6 +33,19 @@ const CODES = [
   'IF-ERP-SO-RECV',
   'IF-ERP-PRODORD-RECV',
 ];
+
+function validator(operation: string, status = 200): ValidateFunction {
+  const contract = JSON.parse(
+    readFileSync(join(__dirname, '../contracts/mdm-기준정보.json'), 'utf8'),
+  ) as object;
+  const [method, path] = operation.split(' ');
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  addFormats(ajv);
+  for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
+  ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
+  return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
+}
 
 describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
   let app: INestApplication;
@@ -81,7 +97,7 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
       .mockImplementation(((name: string) => (name === 'ERP_SYNC_ENABLED' ? 'true' : original(name))) as never);
   };
 
-  it('⛔ 로그인이 없으면 둘 다 401 이다 — 가드 밖 경로라 컨트롤러가 직접 막는다', async () => {
+  it('⛔ 로그인이 없으면 둘 다 401 이다', async () => {
     await request(app.getHttpServer()).get(PATH).expect(401);
     await request(app.getHttpServer()).post(`${PATH}/${CODE}:run`).expect(401);
   });
@@ -95,6 +111,9 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
 
   it('⭐ 여덟 표를 묶음 순서(기준정보 → 전표)로 낸다 — 꺼진 서버는 enabled=false', async () => {
     const response = await request(app.getHttpServer()).get(PATH).set('Cookie', cookies.operator).expect(200);
+    const validate = validator('GET /integration/erp-sync/tables');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
     expect(response.body.enabled).toBe(false);
     expect(response.body.items.map((i: { interfaceCode: string }) => i.interfaceCode)).toEqual(CODES);
     expect(response.body.items[0]).toMatchObject({ name: '공통코드', laneCode: 'MASTER', laneName: '기준정보' });
@@ -116,6 +135,9 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
     enable();
     const first = await request(app.getHttpServer()).post(`${PATH}/${CODE}:run`).set('Cookie', cookies.operator).expect(202);
     expect(first.body).toEqual({ interfaceCode: CODE, requestedAt: expect.any(String) });
+    const validateRun = validator('POST /integration/erp-sync/tables/{interfaceCode}:run', 202);
+    expect(validateRun(first.body)).toBe(true);
+    expect(validateRun.errors ?? []).toEqual([]);
     const second = await request(app.getHttpServer()).post(`${PATH}/${CODE}:run`).set('Cookie', cookies.operator).expect(202);
     expect(second.body.requestedAt).toBe(first.body.requestedAt);
 
@@ -123,6 +145,9 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
     expect(row.requested_by).toBe(users.operator);
 
     const status = await request(app.getHttpServer()).get(PATH).set('Cookie', cookies.operator).expect(200);
+    const validate = validator('GET /integration/erp-sync/tables');
+    expect(validate(status.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
     const item = status.body.items.find((i: { interfaceCode: string }) => i.interfaceCode === CODE);
     expect(item).toMatchObject({ requestedAt: first.body.requestedAt, running: false, lastFinishedAt: null });
   });

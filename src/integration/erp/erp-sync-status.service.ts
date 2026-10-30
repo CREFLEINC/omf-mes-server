@@ -66,7 +66,7 @@ export class ErpSyncStatusService {
   }
 
   /** 이미 걸린 요청은 시각을 바꾸지 않는다 — 여러 번 눌러도 한 번 돈다. */
-  async request(interfaceCode: string, appUserId: number): Promise<{ interfaceCode: string; requestedAt: string }> {
+  async request(interfaceCode: string, appUserId?: number): Promise<{ interfaceCode: string; requestedAt: string }> {
     if (!this.lanes.some((lane) => lane.tables.some((table) => table.source.interfaceCode === interfaceCode))) {
       throw new NotFoundException('없는 ERP 받기 표입니다.');
     }
@@ -77,7 +77,7 @@ export class ErpSyncStatusService {
     }
     const [row] = await this.prisma.$queryRaw<{ requested_at: Date }[]>`
       INSERT INTO integration.erp_sync_state (interface_code, requested_at, requested_by)
-      VALUES (${interfaceCode}, clock_timestamp(), ${BigInt(appUserId)})
+      VALUES (${interfaceCode}, clock_timestamp(), ${appUserId === undefined ? null : BigInt(appUserId)})
       ON CONFLICT (interface_code) DO UPDATE
          SET requested_at = COALESCE(integration.erp_sync_state.requested_at, EXCLUDED.requested_at),
              requested_by = COALESCE(integration.erp_sync_state.requested_by, EXCLUDED.requested_by),
