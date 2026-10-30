@@ -38,6 +38,7 @@ function validator(operation: string): ValidateFunction {
 }
 
 const key = (): string => randomUUID();
+const DEFAULT_SIZE = { width: 0.05, height: 0.05, rotation: 0 };
 
 describe('창고 배치도 (e2e)', () => {
   let app: INestApplication;
@@ -205,7 +206,58 @@ describe('창고 배치도 (e2e)', () => {
       .send({ markers: [{ locationId: locationIds[0], x: 0.5, y: 0.5 }] })
       .expect(200);
 
-    expect(shrunk.body.markers).toEqual([{ locationId: locationIds[0], x: 0.5, y: 0.5 }]);
+    expect(shrunk.body.markers).toEqual([{ locationId: locationIds[0], x: 0.5, y: 0.5, ...DEFAULT_SIZE }]);
+  });
+
+  it('⭐ 크기·회전을 빼고 저장하면 기본값을 «저장 JSON 에» 채운다 — 기본값이 바뀌어도 찍은 점은 그대로다', async () => {
+    await save({ markers: [{ locationId: locationIds[0], x: 0.3, y: 0.4 }] }, 200);
+
+    const reread = await getLayout();
+    const validate = validator('GET /mdm/warehouses/{warehouseId}/layout');
+    expect(validate(reread.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(reread.body.markers).toEqual([{ locationId: locationIds[0], x: 0.3, y: 0.4, ...DEFAULT_SIZE }]);
+
+    const stored = await prisma.warehouse_layout.findFirstOrThrow({ where: { warehouse_id: warehouseId } });
+    expect(stored.layout_data).toEqual({
+      markers: [{ locationId: locationIds[0], x: 0.3, y: 0.4, ...DEFAULT_SIZE }],
+    });
+  });
+
+  it('⭐ 실어 보낸 크기·회전은 그대로 돌아온다', async () => {
+    const marker = { locationId: locationIds[1], x: 0.6, y: 0.2, width: 0.12, height: 0.08, rotation: 90 };
+    await save({ markers: [marker] }, 200);
+
+    expect((await getLayout()).body.markers).toEqual([marker]);
+  });
+
+  it('⭐ 크기·회전 칸이 없던 때 저장한 점도 기본값을 채워 계약대로 낸다', async () => {
+    await prisma.warehouse_layout.update({
+      where: { warehouse_id_layout_version: { warehouse_id: warehouseId, layout_version: 1 } },
+      data: { layout_data: { markers: [{ locationId: locationIds[0], x: 0.7, y: 0.1 }] } },
+    });
+
+    const reread = await getLayout();
+    const validate = validator('GET /mdm/warehouses/{warehouseId}/layout');
+    expect(validate(reread.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(reread.body.markers).toEqual([{ locationId: locationIds[0], x: 0.7, y: 0.1, ...DEFAULT_SIZE }]);
+  });
+
+  it('⛔ 너비 0 · 높이 1 초과 · 회전 360 은 계약 검증이 칸마다 한 번에 짚는다', async () => {
+    const rejected = await save({
+      markers: [
+        { locationId: locationIds[0], x: 0.5, y: 0.5, width: 0, height: 1.5 },
+        { locationId: locationIds[1], x: 0.5, y: 0.5, rotation: 360 },
+      ],
+    }, 400);
+
+    expect(rejected.body.errors.map((error: { field: string; code: string }) => [error.field, error.code]).sort())
+      .toEqual([
+        ['markers[0].height', 'RANGE'],
+        ['markers[0].width', 'RANGE'],
+        ['markers[1].rotation', 'RANGE'],
+      ]);
   });
 
   it('⛔ 다른 창고의 위치는 찍을 수 없다 — jsonb 라 FK 가 없다', async () => {
