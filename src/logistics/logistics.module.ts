@@ -114,7 +114,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     DocumentProgressModule,
     // 인계 작업 알림(omf-all-around#190) — 입고·이동·출고 요청·출하지시·출하가 같은 tx 에서 알림을 쓴다.
     NotificationCoreModule,
-    // 계약 밖 경로(입하 초과분 · 입고 기본값)가 가드 밖이라 세션을 직접 푼다.
+    // 계약 밖 경로(입하 초과분)가 가드 밖이라 세션을 직접 푼다.
     AuthModule,
   ],
   controllers: [

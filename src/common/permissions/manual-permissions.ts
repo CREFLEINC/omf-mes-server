@@ -449,5 +449,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates': ['W-01-03'],
   'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations': ['W-01-03'],
   'DELETE /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations/{inboundReceiptPoAllocationId}': ['W-01-03'],
+  // 입고 기본값(장부 P-150) — 입고 칸을 채우는 사람과 같은 권한이다(`POST /logistics/goods-receipts` 의 권한 그대로).
+  'GET /logistics/goods-receipts:defaults': ['M-04-04', 'W-01-10', 'W-04-06'],
 };
 

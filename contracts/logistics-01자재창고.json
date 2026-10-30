@@ -3535,6 +3535,82 @@
     }
    }
   },
+  "/logistics/goods-receipts:defaults": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입고 기본값",
+    "description": "입고 처리 화면(W-01-10·W-04-06)이 LOT 마다 입고 칸을 미리 채운다 — 입고는 사람이 한다. 창고는 LOT 이 걸린 발주 라인의 ERP 창고와 같은 코드의 활성 MES 창고(입하와 같은 공장 · ERP 구매입고 송신도 같은 값), 불량 LOT 은 입하 공장의 활성 불량창고다. 위치는 그 창고의 적치 대기 자리. 상태는 정상 → NORMAL·AVAILABLE, 불량 → DEFECTIVE·ON_HOLD. 못 채운 칸은 null 이고 issues 가 까닭이다. 영업일·입고 시각은 화면이 채운다(공유계약 C-8). 근거: 사용자 결정 2026-10-29 · 장부 P-150",
+    "parameters": [
+     {
+      "name": "lotIds",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "maxItems": 100,
+       "items": {
+        "type": "integer",
+        "format": "int64",
+        "minimum": 1
+       }
+      },
+      "style": "form",
+      "explode": false,
+      "example": [
+       1001,
+       1002
+      ],
+      "description": "쉼표로 이은 LOT id · 같은 id 는 한 번만 낸다 · 입력 순서대로"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "LOT 마다 한 줄",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ReceiptDefaults"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "lotIds 가 없거나 틀리거나 100개를 넘는다 — 틀린 값을 무시하면 빠진 LOT 이 없는 것처럼 보인다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 입고 처리(POST /logistics/goods-receipts)와 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances": {
    "parameters": [
     {
@@ -12062,6 +12138,185 @@
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/GoodsReceiptLine"
+      }
+     }
+    }
+   },
+   "ReceiptDefaults": {
+    "type": "object",
+    "required": [
+     "lotId",
+     "lotNo",
+     "itemId",
+     "uomId",
+     "plantId",
+     "inboundReceiptId",
+     "inboundReceiptLineId",
+     "receiptTypeCode",
+     "receiptQty",
+     "warehouseId",
+     "warehouseCode",
+     "warehouseName",
+     "destinationLocationId",
+     "destinationLocationCode",
+     "qualityStatusCode",
+     "inventoryStatusCode",
+     "issues"
+    ],
+    "description": "LOT 하나의 입고 칸 기본값 — 칸 이름은 POST /logistics/goods-receipts 와 같다. 장부 P-150",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "없는 LOT 이면 null",
+      "example": "LOT-20261029-0001"
+     },
+     "itemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "uomId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "plantId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "입하 공장",
+      "example": 1001
+     },
+     "inboundReceiptId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "inboundReceiptLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "receiptTypeCode": {
+      "type": "string",
+      "description": "늘 MATERIAL",
+      "example": "MATERIAL"
+     },
+     "receiptQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "입고 가능 수량",
+      "example": 30
+     },
+     "warehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "WH-01"
+     },
+     "warehouseName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "1공장 자재창고"
+     },
+     "destinationLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "그 창고의 적치 대기 자리",
+      "example": 1001
+     },
+     "destinationLocationCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "SYS-STAGING"
+     },
+     "qualityStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "NORMAL · DEFECTIVE",
+      "example": "NORMAL"
+     },
+     "inventoryStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "AVAILABLE · ON_HOLD",
+      "example": "AVAILABLE"
+     },
+     "issues": {
+      "type": "array",
+      "description": "못 채운 까닭 — 비었으면 다 채웠다",
+      "items": {
+       "type": "object",
+       "required": [
+        "code",
+        "message"
+       ],
+       "properties": {
+        "code": {
+         "type": "string",
+         "enum": [
+          "NOT_FOUND",
+          "NOT_RECEIPT_READY",
+          "NO_ERP_WAREHOUSE",
+          "MULTIPLE_ERP_WAREHOUSES",
+          "NO_MES_WAREHOUSE",
+          "OTHER_PLANT_WAREHOUSE",
+          "NO_DEFECT_WAREHOUSE",
+          "MULTIPLE_DEFECT_WAREHOUSES",
+          "NO_STAGING_LOCATION"
+         ],
+         "description": "NOT_FOUND 는 lotId·receiptTypeCode 밖의 칸을 비우고, NOT_RECEIPT_READY 는 lotNo·itemId·uomId 까지 싣는다. 입고 대기 = 입하가 취소·취소 요청이 아니고 LOT 이 정상·불량이고 입고 가능 수량이 남음. 그 밖의 까닭은 창고·위치 칸만 비운다(NO_STAGING_LOCATION 은 위치만)",
+         "example": "NO_MES_WAREHOUSE"
+        },
+        "message": {
+         "type": "string",
+         "example": "ERP 창고의 MES 창고가 없거나 꺼져 있습니다 — ERP 연동 현황의 창고에서 만듭니다."
+        }
+       }
       }
      }
     }
