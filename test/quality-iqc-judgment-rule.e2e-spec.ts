@@ -111,6 +111,25 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
 
       expect(await storedRemarks(resultId)).toBeNull();
       expect(await lotStatus(lotId)).toBe('NORMAL');
+      // 합격 확정도 불합격 수량만큼의 불량 기록을 남긴다(omf-all-around#205).
+      expect(await defectQtys(resultId)).toEqual([3]);
+    });
+
+    it('⛔ 불합격 3(≤5) + 합격 · 불량 기록 없음 → 400 defects REQUIRED · 합계가 불합격 수량과 다르면 INVALID · LOT·결과 그대로', async () => {
+      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const resultId = await draft(requestId, { acceptedQty: 97, rejectedQty: 3, defects: [] });
+
+      const missing = await confirm(resultId, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
+      expect(missing.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+      const mismatched = await confirm(resultId, {
+        overallJudgmentCode: 'ACCEPTED',
+        defects: [{ defectCodeId, defectQty: 2, defectDescription: '찍힘' }],
+      }).expect(400);
+      expect(mismatched.body.errors[0]).toMatchObject({ field: 'defects', code: 'INVALID' });
+
+      expect(await lotStatus(lotId)).toBe('INSPECTION_PENDING');
+      expect(await resultStatus(resultId)).toBe('DRAFT');
+      expect(await defectQtys(resultId)).toEqual([]);
     });
 
     it('⭐ 불합격 10 + 불합격 + 불량 사유 → 200 · LOT 불량', async () => {
@@ -256,6 +275,12 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     };
   }
 
+  /** 불합격 수량이 있으면 판정과 관계없이 확정에 불량 기록이 필요하다(omf-all-around#205) — 그 수량 한 줄. */
+  function defectsFor(rejectedQty: number) {
+    return rejectedQty > 0 ? { defects: [{ defectCodeId, defectQty: rejectedQty, defectDescription: '찍힘' }] } : {};
+  }
+
+  /** 불량 기록은 임시 저장에 함께 둔다 — `:confirm` 이 `defects` 를 생략하면 그 기록으로 확정한다. */
   async function draft(
     requestId: number,
     qty: { acceptedQty: number; rejectedQty: number; heldQty?: number } & Record<string, unknown>,
@@ -265,7 +290,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send({ ...resultBody(requestId, { acceptedQty, rejectedQty, heldQty }), statusCode: 'DRAFT', ...extra })
+      .send({ ...resultBody(requestId, { acceptedQty, rejectedQty, heldQty }), statusCode: 'DRAFT', ...defectsFor(rejectedQty), ...extra })
       .expect(201);
     return response.body.inspectionResultId as number;
   }
@@ -279,7 +304,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send({ ...resultBody(requestId, qty), statusCode: 'CONFIRMED', ...body });
+      .send({ ...resultBody(requestId, qty), statusCode: 'CONFIRMED', ...defectsFor(qty.rejectedQty), ...body });
   }
 
   function confirm(resultId: number, body: Record<string, unknown>): request.Test {
@@ -299,6 +324,13 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     return (await prisma.inspection_result.findUniqueOrThrow({
       where: { inspection_result_id: BigInt(resultId) }, select: { status_code: true },
     })).status_code;
+  }
+
+  async function defectQtys(resultId: number): Promise<number[]> {
+    const rows = await prisma.defect_record.findMany({
+      where: { inspection_result_id: BigInt(resultId) }, select: { defect_qty: true },
+    });
+    return rows.map((row) => Number(row.defect_qty));
   }
 
   async function storedRemarks(resultId: number): Promise<string | null> {
