@@ -18134,8 +18134,8 @@
      "requiredQty": {
       "x-source-column": "required_qty",
       "type": "number",
-      "exclusiveMinimum": 0,
-      "description": "ERP 원본 · qty_t · CHECK > 0",
+      "minimum": 0,
+      "description": "ERP 원본 · qty_t · ERP 가 0 을 보낸다(2026-10-20 제약 제거)",
       "example": 500
      },
      "uomId": {

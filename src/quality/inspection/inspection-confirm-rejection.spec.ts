@@ -12,11 +12,11 @@ function tx(type: string, recorded: number) {
 }
 
 describe('assertRejectionRecorded', () => {
-  it('IQC 불합격인데 불량 기록이 없으면 400 defectRecords REQUIRED 다', async () => {
+  it('IQC 불합격인데 불량 기록이 없으면 400 defects REQUIRED 다', async () => {
     const error = await assertRejectionRecorded(tx('IQC', 0), 8n, 9n, 'REJECTED').catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ContractException);
-    expect((error as ContractException).errors[0]).toMatchObject({ field: 'defectRecords', code: 'REQUIRED' });
+    expect((error as ContractException).errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
   });
 
   it('IQC 불합격이어도 불량 기록이 있으면 통과한다', async () => {

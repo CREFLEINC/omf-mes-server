@@ -17314,7 +17314,7 @@
        "string",
        "null"
       ],
-      "maxLength": 50,
+      "maxLength": 5,
       "description": "ERP 발주유형(PO_TYPE_CD) — 공통코드 ORDER_TYPE 의 코드. MES 에서 만든 P/O 는 null. 이름은 싣지 않는다 — 화면이 공통코드에서 찾는다",
       "example": "PO"
      },
@@ -17323,7 +17323,7 @@
        "string",
        "null"
       ],
-      "maxLength": 50,
+      "maxLength": 4,
       "description": "ERP 구매그룹(PUR_GRP_CD) — 공통코드 PUR_GROUP 의 코드. MES 에서 만든 P/O 는 null",
       "example": "P10"
      },
@@ -17332,7 +17332,7 @@
        "string",
        "null"
       ],
-      "maxLength": 50,
+      "maxLength": 5,
       "description": "ERP 입출고유형(IO_TYPE_CD). MES 에서 만든 P/O 는 null",
       "example": "I01"
      }
@@ -17649,7 +17649,7 @@
        "string",
        "null"
       ],
-      "maxLength": 50,
+      "maxLength": 7,
       "description": "ERP 입고창고(SL_CD). MES 에서 만든 라인은 null",
       "example": "SL01"
      },

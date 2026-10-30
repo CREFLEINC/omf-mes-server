@@ -200,6 +200,36 @@ describe('BOM (e2e)', () => {
     }
   });
 
+  it('ERP 소요량 0 인 구성품이 목록·상세에 그대로 실리고 계약을 만족한다', async () => {
+    await prisma.bom_component.update({
+      where: { bom_component_id: BigInt(componentId) },
+      data: { required_qty: 0 },
+    });
+    try {
+      const list = await request(app.getHttpServer())
+        .get(`/api/planning/boms/${bomId}/components`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const detail = await request(app.getHttpServer())
+        .get(`/api/planning/boms/${bomId}/components/${componentId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(detail.body.bomComponent.requiredQty).toBe(0);
+      const listValidate = validator('GET /planning/boms/{bomId}/components');
+      expect(listValidate(list.body)).toBe(true);
+      expect(listValidate.errors ?? []).toEqual([]);
+      const detailValidate = validator('GET /planning/boms/{bomId}/components/{bomComponentId}');
+      expect(detailValidate(detail.body)).toBe(true);
+      expect(detailValidate.errors ?? []).toEqual([]);
+    } finally {
+      await prisma.bom_component.update({
+        where: { bom_component_id: BigInt(componentId) },
+        data: { required_qty: 2 },
+      });
+    }
+  });
+
   it('⭐ MES 확장 네 칸만 바뀌고 ERP 원본 열은 그대로다', async () => {
     const saved = await request(app.getHttpServer())
       .put(`/api/planning/boms/${bomId}/components/${componentId}`)
