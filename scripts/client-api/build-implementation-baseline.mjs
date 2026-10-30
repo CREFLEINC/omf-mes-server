@@ -16,9 +16,8 @@ import ts from "typescript";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
-const GENERATED_ON = "2026-10-29";
-// 같은 날 둘째 전달본 — 폴더만 `-2` 를 붙인다(manifest 의 generatedOn 은 날짜 그대로).
-const DELIVERY_DIR = "2026-10-29-2";
+const GENERATED_ON = "2026-10-30";
+const DELIVERY_DIR = "2026-10-30";
 const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${DELIVERY_DIR}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
@@ -28,11 +27,11 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 작업 브랜치의 커밋을 적으면 squash 병합이나
 // 브랜치 자동 삭제로 해시가 사라질 수 있고, 그러면 아래 assertSourceMatchesServerCommit 의
 // `git rev-parse <sha>:src` 가 새 클론에서 죽는다. 그래서 전달본은 «병합된 뒤» main 의 커밋을 적어 뽑는다.
-// 지금 적힌 것은 main 의 병합 커밋이다 — 적치 규칙 제거(#907)·REQUEST_IQC 정리(#909)가 들어간 지점(병합 49a5441f). 그 앞에 위치 계층(#884~#905)·
-// 적치 지시 allowedLocations(#906)·입고 상한 잠금(#903)이 있다.
+// 지금 적힌 것은 main 의 병합 커밋이다 — 계약 이관 묶음(창고 managementLevelCode 제거 #910 · 발주 조회 #911 · P/O 라인 목록 #912 ·
+// 줄마다 입하·통관번호 #913 · 입하 배정 #914·#915)과 검사표 기준 변경 이력(#916)이 들어간 지점(병합 20678dcc).
 const SERVER_VERSION = "v0.1.21-next";
-const SERVER_COMMIT = "49a5441f4df3c255e1fe3d06928973533a4ba8f9";
-const GENERATED_VERSION = "0.1.21-next-server.20261029.2";
+const SERVER_COMMIT = "20678dccbdb6d1c000a992ad9a9f84b54f9acdce";
+const GENERATED_VERSION = "0.1.21-next-server.20261030.1";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -792,9 +791,10 @@ function build() {
   //    2026-10-28 전달본: 그 뒤 장부 P-항목들이 더한 오퍼레이션을 합쳐 **555** 다.
   //    2026-10-29 전달본: 그 뒤 P-134(4건)·P-137(1건)·P-151(2건)이 더한 오퍼레이션을 합쳐 **562** 다 — `contract-registry.spec.ts` 의 수치와 같다.
   //    2026-10-29 둘째 전달본: 위치 계층이 7건을 더해 569 가 됐다가 적치 규칙 7건을 지워(#907) 다시 **562** 다.
+  //    2026-10-30 전달본: 검사표 기준 2건(#916) · 계약 이관 7건(#912 1 · #913 2 · #914 2 · #915 2)을 더해 **571** 이다 — `contract-registry.spec.ts` 의 수치와 같다.
   assert(
-    documentsByOperation.size === 562,
-    `계약 오퍼레이션 수가 562이 아닙니다: ${documentsByOperation.size}`,
+    documentsByOperation.size === 571,
+    `계약 오퍼레이션 수가 571이 아닙니다: ${documentsByOperation.size}`,
   );
 
   const missingOperations = [...documentsByOperation.keys()].filter(
