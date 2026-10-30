@@ -285,6 +285,8 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
       pqcVersions: [
         {
           inspection_plan_version_id: 601n,
+          inspection_plan_id: 61n,
+          plan_version: 1,
           sampling_method_code: 'FULL_INSPECTION',
           sampling_ratio: null,
           sampling_qty: null,
@@ -292,6 +294,8 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
         },
         {
           inspection_plan_version_id: 602n,
+          inspection_plan_id: 62n,
+          plan_version: 1,
           sampling_method_code: 'FULL_INSPECTION',
           sampling_ratio: null,
           sampling_qty: null,
