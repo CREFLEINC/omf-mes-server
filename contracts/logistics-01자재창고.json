@@ -4154,6 +4154,78 @@
     "x-internal-note": "세 갈래(BOTH·NORMAL_ONLY·EXCESS_ONLY)가 모두 화면의 버튼이다. 부분 실패를 허용하지 않는다 — 화면이 「한 트랜잭션」이라고 못박았다(W-01-03 §5-4)."
    }
   },
+  "/logistics/inbound-receipts:per-line": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "줄마다 입하 한 건 등록",
+    "description": "입하 등록과 같은 본문(헤더 + 줄 여럿)으로 줄마다 입하 한 건을 세운다 — 입하번호가 줄마다 따로 붙는다. 헤더 값(공급사·공장·일시·납품서·차량·예외 유형)은 모든 건이 같다. 모든 건이 한 트랜잭션이다 — 하나라도 막히면 아무것도 서지 않는다. 검사는 입하 등록과 같고 400 의 칸은 요청 기준이다(lines.{i}.… — 건 안의 P/O 한도도 그 줄로 짚는다). 근거: 서버 선행 · 장부 P-117",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersionOptional"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundReceiptCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록됨. ETag 는 내리지 않는다 — 건이 여럿이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundReceiptPerLineResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/material-issue-requests": {
    "get": {
     "tags": [
@@ -12311,6 +12383,21 @@
      }
     }
    },
+   "InboundReceiptPerLineResponse": {
+    "type": "object",
+    "required": [
+     "created"
+    ],
+    "description": "만들어진 입하 건 — 요청 줄 순서다. 건마다 lines 는 하나(lineNo 1)다.",
+    "properties": {
+     "created": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InboundReceiptDetailResponse"
+      }
+     }
+    }
+   },
    "InboundReceiptLine": {
     "x-source-table": "logistics.inbound_receipt_line",
     "type": "object",
@@ -16570,7 +16657,10 @@
      "toleranceOverQty",
      "toleranceUnderQty",
      "erpStorageLocationCode",
-     "cancelledAt"
+     "cancelledAt",
+     "erpCustomsClearanceNo",
+     "erpCustomsClearanceSeq",
+     "erpCustomsClearanceFetchedAt"
     ],
     "description": "P/O 라인.",
     "properties": {
@@ -16652,6 +16742,31 @@
       ],
       "format": "date-time",
       "description": "ERP 가 이 라인을 취소한 시각(CREATE_TYPE=C 를 받은 시각). 취소된 라인은 입하할 수 없고 남은 수량도 0 으로 본다. 아니면 null"
+     },
+     "erpCustomsClearanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 18,
+      "description": "외자(ERP 발주유형 PO) 발주 라인의 ERP 통관번호. 받기 전·외자가 아니면 null",
+      "example": "CC2026000123"
+     },
+     "erpCustomsClearanceSeq": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "ERP 통관 순번. 받기 전·외자가 아니면 null",
+      "example": 1
+     },
+     "erpCustomsClearanceFetchedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "통관번호를 ERP 에서 받아 적은 시각. 받기 전·외자가 아니면 null"
      }
     }
    },

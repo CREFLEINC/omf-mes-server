@@ -1271,6 +1271,9 @@ describe('입하 등록 (e2e)', () => {
 
       const response = await sendPerLine(await body({ lines })).expect(201);
 
+      const validate = validator('POST /logistics/inbound-receipts:per-line', 201);
+      expect(validate(response.body)).toBe(true);
+      expect(validate.errors ?? []).toEqual([]);
       const created = (response.body as { created: Detail[] }).created;
       expect(created).toHaveLength(3);
       const numbers = created.map((detail) => detail.inboundReceipt.inboundReceiptNo);

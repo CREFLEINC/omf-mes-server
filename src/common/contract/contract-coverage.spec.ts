@@ -80,7 +80,8 @@ describe('계약 커버리지', () => {
     // 적치 규칙 7 오퍼레이션 제거(사용자 결정 2026-10-29): 569 → 562.
     // 검사표 기준 폐기 · 작성 취소 2 오퍼레이션(#214): 562 → 564.
     // 입하 예정 P/O 라인 목록 1 오퍼레이션(#741 · 장부 P-78): 564 → 565.
-    expect(registry.size).toBe(565);
+    // 줄마다 입하 한 건(장부 P-117) · 외자 발주 통관번호 받아오기(장부 P-143) 2 오퍼레이션: 565 → 567.
+    expect(registry.size).toBe(567);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

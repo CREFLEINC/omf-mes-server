@@ -29,12 +29,13 @@ const prisma = (overrides: Record<string, unknown> = {}) => ({
 describe('terminal logistics scope', () => {
   it('enumerates the client logistics surface and denies an unlisted operation or channel', async () => {
     // 적치 규칙 조회 2건을 뺐다(사용자 결정 2026-10-29): 43 → 41.
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(41);
+    // 줄마다 입하 한 건(장부 P-117)을 별칭 대신 제 이름으로 더했다: 41 → 42.
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(42);
     // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
     //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
     expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(
       (key) => key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE '),
-    )).toHaveLength(18);
+    )).toHaveLength(19);
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/shipments', mobile)).rejects.toBeDefined();
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/goods-issues', pop)).rejects.toBeDefined();
   });
@@ -113,6 +114,16 @@ describe('terminal logistics scope', () => {
     expect(db.worker.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { worker_no: 'W-3', plant_id: 3n, is_active: true },
     }));
+  });
+
+  // 모바일 「라벨 미부착 일괄 입하」가 부른다(장부 P-117) — 입하 등록과 같은 범위다.
+  it('줄마다 입하 한 건은 모바일만 · 본문 공장이 단말 공장이어야 하고 작업자를 심는다', async () => {
+    const key = 'POST /logistics/inbound-receipts:per-line';
+    const req = request({}, { plantId: 3, lines: [{ receivedQty: 1 }] });
+    await assertTerminalLogisticsScope(prisma(), req, key, mobile);
+    expect(currentTerminalLogisticsWorkerId(req)).toBe(5n);
+    await expect(assertTerminalLogisticsScope(prisma(), request({}, { plantId: 4, lines: [] }), key, mobile)).rejects.toBeDefined();
+    await expect(assertTerminalLogisticsScope(prisma(), request({}, { plantId: 3, lines: [] }), key, pop)).rejects.toBeDefined();
   });
 
   it('checks nested line locations and lots before a write', async () => {

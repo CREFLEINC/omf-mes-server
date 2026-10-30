@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { loginRequired } from '../../auth/authentication.guard';
 import { attachSession, SessionResolver } from '../../auth/session-resolver.service';
 import type { Session } from '../../auth/session.types';
+import { Contract } from '../../common/contract';
 import { PagedResponse } from '../../common/pagination';
 import { assertOperationPermission } from '../../common/permissions';
 import { CustomsClearanceService, CustomsFetchResult } from './customs-clearance.service';
@@ -16,10 +17,10 @@ const STATUS_OPERATION = 'GET /integration/messages';
 const RUN_OPERATION = 'POST /integration/messages:retry-batch';
 
 /**
- * ERP 받기 표별 상태와 「지금 읽기」(장부 P-81) · 외자 발주 통관번호 받아오기(P-143). 화면은 관리웹 「ERP 연동 현황·이력」 탭(W-06-10).
- * ⛔ 이 경로들은 계약 사본에 없어 `@Contract` 를 달 수 없고, 그래서 인증·권한 가드가 이 핸들러를 보지 않는다.
+ * ERP 받기 표별 상태와 「지금 읽기」(장부 P-81) · ERP 창고(P-147) · 외자 발주 통관번호 받아오기(P-143). 화면은 관리웹 「ERP 연동 현황·이력」 탭(W-06-10).
+ * ⛔ 통관번호 받아오기를 뺀 세 경로는 계약에 없어 `@Contract` 를 달 수 없고, 그래서 인증·권한 가드가 그 핸들러를 보지 않는다.
  * 가드가 쓰는 같은 함수(세션 해석 · 로그인 필요 401 · 오퍼레이션 권한 403)를 여기서 부른다(P-58 과 같은 길).
- * 정본에 경로가 실려 오면 `@Contract` 를 달고 이 수동 인증을 지운다.
+ * 계약에 경로를 적으면 `@Contract` 를 달고 이 수동 인증을 지운다.
  */
 @Controller('integration/erp-sync')
 export class ErpSyncController {
@@ -60,11 +61,8 @@ export class ErpSyncController {
    */
   @Post('purchase-orders/:purchaseOrderId/customs-clearances\\:fetch')
   @HttpCode(HttpStatus.OK)
-  async fetchCustoms(
-    @Req() request: Request,
-    @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
-  ): Promise<CustomsFetchResult> {
-    await this.authorize(request, RUN_OPERATION);
+  @Contract('POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch')
+  fetchCustoms(@Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number): Promise<CustomsFetchResult> {
     return this.customs.fetchOrder(purchaseOrderId);
   }
 

@@ -1,11 +1,14 @@
 /**
- * 외자 발주 통관번호 받아오기 `POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch`.
- * 계약 사본에 없는 경로라 인증·권한을 컨트롤러가 직접 한다 — 401·403 도 여기서 본다.
+ * 외자 발주 통관번호 받아오기 `POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch`(장부 P-143).
  * ERP 함수는 가짜로 바꾼다(`CUSTOMS_LOOKUP`) — 실제 함수는 erp-mock `docker/erp-stub.sql` 이 흉내 낸다.
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
@@ -28,6 +31,23 @@ const ERP: Record<string, CustomsClearance[]> = {
   ],
 };
 const lookup: CustomsLookup = { find: (poNo, poSeq) => Promise.resolve(ERP[`${poNo}|${poSeq}`] ?? []) };
+
+/** 계약의 200 응답 스키마 — 문서째 등록해야 그 안의 `$ref` 가 풀린다. */
+function responseValidator(file: string, operation: string): ValidateFunction {
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  addFormats(ajv);
+  for (const format of ['int64', 'int32']) ajv.addFormat(format, true);
+  ajv.addSchema(JSON.parse(readFileSync(join(__dirname, '../contracts', file), 'utf8')) as object, 'contract');
+  const [method, path] = operation.split(' ');
+  return ajv.compile({
+    $ref: `contract#/paths/${path.replace(/\//g, '~1')}/${method.toLowerCase()}/responses/200/content/application~1json/schema`,
+  });
+}
+const expectContract = (file: string, operation: string, body: unknown): void => {
+  const validate = responseValidator(file, operation);
+  expect(validate(body)).toBe(true);
+  expect(validate.errors ?? []).toEqual([]);
+};
 
 describe('외자 발주 통관번호 받아오기 (e2e)', () => {
   let app: INestApplication;
@@ -114,7 +134,7 @@ describe('외자 발주 통관번호 받아오기 (e2e)', () => {
     }
   }
 
-  it('⛔ 로그인이 없으면 401 · W-06-10 이 없으면 403 이다 — 가드 밖 경로라 컨트롤러가 직접 막는다', async () => {
+  it('⛔ 로그인이 없으면 401 · W-06-10 이 없으면 403 이다', async () => {
     await request(app.getHttpServer()).post(path(ids.import)).expect(401);
     await request(app.getHttpServer()).post(path(ids.import)).set('Cookie', cookies.none).expect(403);
   });
@@ -154,6 +174,7 @@ describe('외자 발주 통관번호 받아오기 (e2e)', () => {
         },
       ],
     });
+    expectContract('mdm-기준정보.json', 'POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch', response.body);
     const saved = await prisma.purchase_order_line.findMany({
       where: { purchase_order_id: ids.import },
       orderBy: { line_no: 'asc' },
@@ -165,6 +186,16 @@ describe('외자 발주 통관번호 받아오기 (e2e)', () => {
       ['CC2605-0009', 2],
     ]);
     expect(saved[0].erp_customs_clearance_fetched_at).not.toBeNull();
+    // 라인 목록 행도 적힌 값을 그대로 싣는다.
+    const listed = await request(app.getHttpServer())
+      .get(`/api/logistics/purchase-order-lines?purchaseOrderId=${ids.import}&openOnly=false`)
+      .set('Cookie', cookies.operator)
+      .expect(200);
+    expectContract('logistics-01자재창고.json', 'GET /logistics/purchase-order-lines', listed.body);
+    const customsOf = (row: Record<string, unknown>) => [row.erpCustomsClearanceNo, row.erpCustomsClearanceSeq, row.erpCustomsClearanceFetchedAt];
+    expect((listed.body as { items: Record<string, unknown>[] }).items.map(customsOf)).toEqual(
+      saved.map((row) => [row.erp_customs_clearance_no, row.erp_customs_clearance_seq, row.erp_customs_clearance_fetched_at?.toISOString() ?? null]),
+    );
   });
 
   it('⛔ 외자가 아닌 발주는 400 STATE_LOCKED 이고 없는 발주는 404 다', async () => {

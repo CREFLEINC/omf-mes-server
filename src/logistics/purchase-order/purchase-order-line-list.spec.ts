@@ -21,6 +21,9 @@ const row = (line: Partial<Row> = {}, order: Partial<Row['purchase_order']> = {}
     tolerance_under_qty: new Prisma.Decimal('3'),
     erp_storage_location_code: null,
     cancelled_at: null,
+    erp_customs_clearance_no: null,
+    erp_customs_clearance_seq: null,
+    erp_customs_clearance_fetched_at: null,
     version_no: 1,
     item: { item_code: 'RM-1', item_name: '판재' },
     uom: { uom_code: 'KG', uom_name: '킬로그램' },
@@ -155,7 +158,12 @@ describe('입하 예정 라인 목록 — 입하 진행 판정', () => {
 
 describe('입하 예정 라인 목록 — 행', () => {
   it('발주 헤더 값과 라인 값을 한 행에 싣고 남은 수량을 서버가 센다', () => {
-    expect(lineListItem(row({ received_qty: new Prisma.Decimal('40'), erp_storage_location_code: 'S100' }))).toEqual({
+    const customs = {
+      erp_customs_clearance_no: 'CC-1',
+      erp_customs_clearance_seq: 2,
+      erp_customs_clearance_fetched_at: new Date('2026-10-20T01:00:00.000Z'),
+    };
+    expect(lineListItem(row({ received_qty: new Prisma.Decimal('40'), erp_storage_location_code: 'S100', ...customs }))).toEqual({
       purchaseOrderLineId: 7,
       purchaseOrderId: 1,
       purchaseOrderNo: 'PO-1',
@@ -181,6 +189,9 @@ describe('입하 예정 라인 목록 — 행', () => {
       toleranceUnderQty: 3,
       erpStorageLocationCode: 'S100',
       cancelledAt: null,
+      erpCustomsClearanceNo: 'CC-1',
+      erpCustomsClearanceSeq: 2,
+      erpCustomsClearanceFetchedAt: '2026-10-20T01:00:00.000Z',
       receiptStatusCode: 'PARTIAL',
     });
   });

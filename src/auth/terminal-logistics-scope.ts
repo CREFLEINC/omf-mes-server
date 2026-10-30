@@ -58,6 +58,7 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['MOBILE'],
   'POST /logistics/inbound-receipts': ['MOBILE'],
   'POST /logistics/inbound-receipts:split': ['MOBILE'],
+  'POST /logistics/inbound-receipts:per-line': ['MOBILE'],
   'POST /logistics/picking-orders/{pickingOrderId}/lines/{pickingLineId}:pick': ['MOBILE'],
   'POST /logistics/putaway-tasks/{putawayTaskId}:complete': ['MOBILE'],
   'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary': ['MOBILE'],
@@ -174,6 +175,7 @@ export async function assertTerminalLogisticsScope(
     case 'POST /logistics/goods-receipts':
       await Promise.all([plantBody(b, plant), warehouse(b.warehouseId)]); break;
     case 'POST /logistics/inbound-receipts':
+    case 'POST /logistics/inbound-receipts:per-line':
       await Promise.all([plantBody(b, plant)]); break;
     case 'POST /logistics/inbound-receipts:split':
       for (const part of [b.normal, b.excess]) if (part !== undefined) await plantBody(object(part), plant);
