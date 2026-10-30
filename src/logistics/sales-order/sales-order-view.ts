@@ -6,7 +6,7 @@ import { toDateString } from '../../common/master';
 /**
  * 계약 `SalesOrder`·`SalesOrderLine` 으로 옮기는 자리.
  *
- * ⛔ 선택 칸 넷(`erpSalesOrderNo`·`lines`·`versionNo`·`SalesOrderLine.requestedDeliveryDate`)은
+ * ⛔ 선택 칸(`erpSalesOrderNo`·`lines`·`versionNo`·ERP 원본 칸 셋 · 라인의 `requestedDeliveryDate`·`erpStorageLocationCode`·`cancelledAt`)은
  * `type: ['x','null']` 이 «아니다» — 널을 내리면 ajv 가 깨진다. 값이 없으면 **키를 생략**한다
  * (`omitEmpty`). ⛔ `purchase-order-view.ts`·`goods-issue-view.ts` 는 반대쪽 선례다
  * (거기는 널이 계약을 통과한다) — 보고 따라 하면 안 된다. I-22 §1-4-0.
@@ -25,7 +25,6 @@ export interface SalesOrderLineView {
   uomId: number;
   requestedDeliveryDate?: string;
   shippedQty: number;
-  /** ERP 출고창고(SL_CD)·ERP 가 이 라인을 취소한 시각 — 계약 밖 칸(장부 P-75). */
   erpStorageLocationCode?: string;
   cancelledAt?: string;
 }
@@ -40,7 +39,6 @@ export interface SalesOrderView {
   statusCode: string;
   lines?: SalesOrderLineView[];
   versionNo?: number;
-  /** ERP 수주유형(SO_TYPE_CD)·수불유형(MOV_TYPE)·영업그룹(SALES_GRP_CD) — 계약 밖 칸(장부 P-75). */
   erpOrderTypeCode?: string;
   erpMovementTypeCode?: string;
   erpSalesGroupCode?: string;

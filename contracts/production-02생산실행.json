@@ -6085,6 +6085,24 @@
      },
      "lastChange": {
       "$ref": "#/components/schemas/ProductionOrderChange"
+     },
+     "erpOperationNo": {
+      "type": "string",
+      "maxLength": 3,
+      "description": "ERP 공정번호(OPR_NO) — 받은 그대로다(010 과 1 이 섞여 와 숫자로 바꾸지 않는다). 연계로 들어온 건에만 있다",
+      "example": "010"
+     },
+     "erpStorageLocationCode": {
+      "type": "string",
+      "maxLength": 7,
+      "description": "ERP 창고(SL_CD) — 공통코드 SL_TYPE 의 코드. ERP 가 비워 보냈거나 연계로 들어오지 않은 건은 키가 없다",
+      "example": "S510"
+     },
+     "erpReworkFlag": {
+      "type": "string",
+      "maxLength": 2,
+      "description": "ERP 재작업 여부(RE_WORK_FLG) — 받은 그대로다. ERP 가 비워 보냈거나 연계로 들어오지 않은 건은 키가 없다",
+      "example": "N"
      }
     },
     "required": [

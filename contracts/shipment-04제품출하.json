@@ -3709,6 +3709,24 @@
      "versionNo": {
       "type": "integer",
       "example": 1
+     },
+     "erpOrderTypeCode": {
+      "type": "string",
+      "maxLength": 5,
+      "description": "ERP 수주유형(SO_TYPE_CD) — 공통코드 SO_TYPE 의 코드. 연계로 들어온 건에만 있다. 이름은 싣지 않는다 — 화면이 공통코드에서 찾는다",
+      "example": "ESOA"
+     },
+     "erpMovementTypeCode": {
+      "type": "string",
+      "maxLength": 3,
+      "description": "ERP 수불유형(MOV_TYPE). 연계로 들어온 건에만 있다",
+      "example": "I44"
+     },
+     "erpSalesGroupCode": {
+      "type": "string",
+      "maxLength": 4,
+      "description": "ERP 영업그룹(SALES_GRP_CD) — 공통코드 SALE_GROUP 의 코드. 연계로 들어온 건이라도 ERP 가 비워 보냈으면 없다",
+      "example": "S22"
      }
     },
     "required": [
@@ -3758,6 +3776,17 @@
       "format": "double",
       "description": "누적 출하 수량. 서버가 유지한다 — 화면이 더하지 않는다(공유계약 L-2)",
       "example": 120.0
+     },
+     "erpStorageLocationCode": {
+      "type": "string",
+      "maxLength": 7,
+      "description": "ERP 출고창고(SL_CD) — 공통코드 SL_TYPE 의 코드. 연계로 들어온 라인에만 있다",
+      "example": "S510"
+     },
+     "cancelledAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ERP 가 이 라인을 취소한 시각(CREATE_TYPE=C 를 받은 시각). 취소된 라인은 출하할 수 없다. 취소되지 않은 라인은 키가 없다"
      }
     },
     "required": [

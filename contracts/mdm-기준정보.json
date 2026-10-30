@@ -17353,9 +17353,11 @@
      "inspectionRequired",
      "fifoPolicyCode",
      "negativeStockAllowed",
-     "isActive"
+     "isActive",
+     "erpSpec",
+     "erpItemGroupCode"
     ],
-    "description": "ERP 수신본. 원본 필드(itemCode·itemName·itemTypeCode·baseUomId)는 읽기 전용이고 MES 확장 속성만 편집한다 — QA #34. 원본 필드는 편집 본문(ItemUpdate)에 자리 자체를 두지 않아, 행 단위 출처 표시가 없어도 잠금이 성립한다.",
+    "description": "ERP 수신본. 원본 필드(itemCode·itemName·itemTypeCode·baseUomId·erpSpec·erpItemGroupCode)는 읽기 전용이고 MES 확장 속성만 편집한다 — QA #34. 원본 필드는 편집 본문(ItemUpdate)에 자리 자체를 두지 않아, 행 단위 출처 표시가 없어도 잠금이 성립한다.",
     "properties": {
      "itemId": {
       "x-source-column": "item_id",
@@ -17521,6 +17523,23 @@
       "exclusiveMinimum": 0,
       "description": "MES 확장 — 생산LOT 기본크기. 확정 REQ-PR-0008 · E26 「기본값 + 수정 가능」. 2026-08-30 되살림. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-05 §4-B",
       "example": 500.0
+     },
+     "erpSpec": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "ERP 규격(SPEC) — 받은 그대로다. ERP 가 비워 보냈거나 ERP 에서 받지 않은 품목은 null",
+      "example": "PC, LD7700, V-2, NATURAL"
+     },
+     "erpItemGroupCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 10,
+      "description": "ERP 품목그룹(ITEM_GROUP_CD). ERP 가 비워 보냈거나 ERP 에서 받지 않은 품목은 null",
+      "example": "ZZ400"
      }
     },
     "x-internal-note": "미착지 둘 — 자재LOT 보관단위·생산LOT 기본크기 되살림(2026-08-30, defaultLotStorageUomId·defaultProductionLotSize 신설 · #64). 개발품 플래그(developmentItem)·재생재 하위코드(mesCategoryCode)는 이미 계약에 있었다(재확인)."
@@ -18024,9 +18043,10 @@
      "isMandatory",
      "lotTraceRequired",
      "backflushAllowed",
-     "sequenceNo"
+     "sequenceNo",
+     "erpChildItemSeq"
     ],
-    "description": "ERP 원본 열(sequenceNo·componentItemId·requiredQty·uomId·scrapRate·isMandatory)과 MES 확장 열(routingOperationId·actualUseProcessId·lotTraceRequired·backflushAllowed) 이 한 행에 섞인다 — W-06-05 §4-F. MES 확장 4열만 PUT 으로 편집한다. scrapRate 는 0~1 비율이며 퍼센트가 아니다(A-8)",
+    "description": "ERP 원본 열(sequenceNo·componentItemId·requiredQty·uomId·scrapRate·isMandatory·erpChildItemSeq)과 MES 확장 열(routingOperationId·actualUseProcessId·lotTraceRequired·backflushAllowed) 이 한 행에 섞인다 — W-06-05 §4-F. MES 확장 4열만 PUT 으로 편집한다. scrapRate 는 0~1 비율이며 퍼센트가 아니다(A-8)",
     "properties": {
      "bomComponentId": {
       "x-source-column": "bom_component_id",
@@ -18120,6 +18140,14 @@
       "default": 1,
       "description": "ERP 원본 · uq_bom_component(bom_id, sequence_no) · CHECK > 0",
       "example": 1
+     },
+     "erpChildItemSeq": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "ERP 자품목 순번(CHILD_ITEM_SEQ) — 받은 그대로다. 0 도 온다 — 1 이상인 sequenceNo 와 따로 둔다. ERP 순번을 받지 않은 구성품은 null",
+      "example": 10
      }
     }
    },

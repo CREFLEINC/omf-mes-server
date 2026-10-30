@@ -68,7 +68,7 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     orderQty: Number(row.order_qty),
     uomId: Number(row.uom_id),
     dueDate: toDateString(row.due_date) ?? undefined,
-    // ↓ 계약 밖 칸 넷(장부 P-66·P-75) — ERP 가 보낸 계획 시작일과 생산입고 송신에 돌려줄 원본 값.
+    // ↓ ERP 가 보낸 계획 시작일(계약 밖 · 장부 P-66)과 생산입고 송신에 돌려줄 원본 값.
     plannedStartDate: toDateString(row.planned_start_date) ?? undefined,
     erpOperationNo: row.erp_operation_no ?? undefined,
     erpStorageLocationCode: row.erp_storage_location_code ?? undefined,
