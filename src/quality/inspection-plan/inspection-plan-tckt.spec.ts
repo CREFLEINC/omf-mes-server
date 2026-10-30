@@ -1,11 +1,35 @@
 import { Workbook } from 'exceljs';
+import { crc32, deflateSync } from 'node:zlib';
 
+import { imageSizeOf } from './inspection-plan-drawing';
 import { checkGroup, groupRows } from './inspection-plan-import-check';
 import { parseInspectionPlanWorkbook } from './inspection-plan-import';
 import { parseSpec } from './inspection-plan-tckt';
 
-/** 1×1 PNG */
+/** 1×1 PNG — 도면 칸 안의 동그라미 번호·측정 기호 자리 */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+
+/** 가로·세로를 고른 회색 PNG — 도면 크기 */
+function png(width: number, height: number): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length);
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(crc32(body));
+    return Buffer.concat([head, body, tail]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  return Buffer.concat([
+    PNG.subarray(0, 8),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(Buffer.alloc((width + 1) * height))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 /** 고객사 기준서와 같은 짜임의 합성 서식 — 칸 위치는 파일마다 달라 라벨로 찾는지를 본다. */
 async function tckt(cells: Record<string, unknown>, merges: string[] = []): Promise<Buffer> {
@@ -29,14 +53,43 @@ describe('고객사 검사기준서(TCKT) 읽기', () => {
       A1: 'Số quản lý', B1: 'SJS-QIQ-315', H1: 'BẢNG TIÊU CHUẨN KIỂM TRA NHẬP HÀNG', A7: 'Bản vẽ', ...HEAD,
       J8: '2. Kích thước', L8: '① 1.0±0.20', R8: '3D', S8: 'n=5c=0', T8: 'Mỗi LOT',
     }).forEach(([address, value]) => { sheet.getCell(address).value = value; });
-    const image = book.addImage({ buffer: PNG as never, extension: 'png' });
+    const drawing = png(300, 120);
+    const image = book.addImage({ buffer: drawing as never, extension: 'png' });
     sheet.addImage(image, { tl: { col: 0, row: 8 }, ext: { width: 10, height: 10 } });
     sheet.addImage(image, { tl: { col: 18, row: 0 }, ext: { width: 10, height: 10 } });
 
     const parsed = await parseInspectionPlanWorkbook(Buffer.from(await book.xlsx.writeBuffer()));
 
     expect(parsed.drawings?.map((d) => d.mime)).toEqual(['image/png']);
-    expect(parsed.drawings?.[0].bytes.equals(PNG)).toBe(true);
+    expect(parsed.drawings?.[0].bytes.equals(drawing)).toBe(true);
+  });
+
+  /* #208 — 도면 칸 안의 동그라미 번호·측정 기호(30px 안팎)는 도면이 아니다. 한쪽만 작은 가늘고 긴 도면은 남긴다. */
+  it('⭐ 가로·세로가 모두 100px 보다 작은 그림은 도면에서 뺀다', async () => {
+    const book = new Workbook();
+    const sheet = book.addWorksheet('TCKT');
+    Object.entries({
+      A1: 'Số quản lý', B1: 'SJS-QIQ-315', H1: 'BẢNG TIÊU CHUẨN KIỂM TRA NHẬP HÀNG', A7: 'Bản vẽ', ...HEAD,
+      J8: '2. Kích thước', L8: '① 1.0±0.20', R8: '3D', S8: 'n=5c=0', T8: 'Mỗi LOT',
+    })
+      .forEach(([address, value]) => { sheet.getCell(address).value = value; });
+    const wide = png(1436, 596);
+    const thin = png(400, 40);
+    [wide, png(29, 25), PNG, thin].forEach((buffer, row) => {
+      sheet.addImage(book.addImage({ buffer: buffer as never, extension: 'png' }), { tl: { col: 0, row: 8 + row }, ext: { width: 10, height: 10 } });
+    });
+
+    const parsed = await parseInspectionPlanWorkbook(Buffer.from(await book.xlsx.writeBuffer()));
+
+    expect(parsed.drawings?.map((d) => d.bytes)).toEqual([wide, thin]);
+  });
+
+  it('그림 크기는 PNG 머리(IHDR)와 JPEG 프레임 머리(SOF)에서 읽는다', () => {
+    expect(imageSizeOf(png(29, 25), 'image/png')).toEqual({ width: 29, height: 25 });
+    // SOI · APP0(길이 16) · SOF0(높이 0x0258=600 · 너비 0x0320=800)
+    const jpeg = Buffer.from(`ffd8ffe00010${'00'.repeat(14)}ffc0001108025803200301220002110103110100`, 'hex');
+    expect(imageSizeOf(jpeg, 'image/jpeg')).toEqual({ width: 800, height: 600 });
+    expect(imageSizeOf(Buffer.from('ffd8ff', 'hex'), 'image/jpeg')).toBeUndefined();
   });
 
   it('⭐ 라벨 오른쪽·아래 칸에서 머리를 읽고, 치수는 수치 항목·나머지는 합격/불합격 항목이 된다', async () => {

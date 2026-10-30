@@ -15,6 +15,11 @@ export interface BatchResult {
   failed: { index: number; key?: string; errors: ErrorItem[] }[];
 }
 
+/** 화면이 올린 직후 확정할 수 있게 만든 작성중 버전을 묶음마다 싣는다(omf-all-around#208). */
+export interface InspectionPlanImportResult extends BatchResult {
+  created: { index: number; key: string; inspectionPlanVersionId: number }[];
+}
+
 /**
  * 검사기준 엑셀 올리기(omf-all-around#199 · 장부 P-140).
  *
@@ -32,11 +37,11 @@ export class InspectionPlanImportService {
     private readonly versions: InspectionPlanVersionService,
   ) {}
 
-  async importWorkbook(buffer: Buffer, actorId: number): Promise<BatchResult> {
+  async importWorkbook(buffer: Buffer, actorId: number): Promise<InspectionPlanImportResult> {
     const parsed = await parseInspectionPlanWorkbook(buffer);
     if (parsed.error) throw new ContractException(HttpStatus.BAD_REQUEST, [parsed.error]);
 
-    const result: BatchResult = { succeeded: 0, failed: [] };
+    const result: InspectionPlanImportResult = { succeeded: 0, failed: [], created: [] };
     // ⛔ 묶음씩 차례로 넣는다 — 같은 기준코드·품목을 두 묶음이 동시에 만들면 유일 검사를 둘 다 통과한다.
     for (const group of groupRows(parsed.rows)) {
       const checked = checkGroup(group);
@@ -48,6 +53,7 @@ export class InspectionPlanImportService {
         const versionId = await this.apply(group);
         await replaceDrawings(this.prisma, versionId, parsed.drawings ?? [], actorId);
         result.succeeded += 1;
+        result.created.push({ index: group.index, key: group.key, inspectionPlanVersionId: versionId });
       } catch (error) {
         if (!(error instanceof ContractException)) throw error;
         result.failed.push({ index: group.index, key: group.key, errors: error.errors });
