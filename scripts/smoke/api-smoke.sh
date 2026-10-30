@@ -47,7 +47,7 @@ curl -s -X POST "$API/mdm/locations" -b "$JAR" -H 'Content-Type: application/jso
 curl -s "$API/mdm/warehouses/$WID" -b "$JAR" | python3 -c "import json,sys;print(json.load(sys.stdin)['editability'])"
 
 say "7) 낙관적 잠금 — 낡은 If-Match 는 409 ConflictResponse"
-BODY="{\"businessUnitId\":$BU,\"warehouseCode\":\"SMOKE-W1\",\"warehouseName\":\"한 번\",\"warehouseTypeCode\":\"MATERIAL\",\"managementLevelCode\":\"RACK\",\"isExternal\":false,\"isDefect\":false}"
+BODY="{\"businessUnitId\":$BU,\"warehouseCode\":\"SMOKE-W1\",\"warehouseName\":\"한 번\",\"warehouseTypeCode\":\"MATERIAL\",\"managementLevelCode\":\"RACK\",\"isDefect\":false}"
 curl -s -o /dev/null -X PUT "$API/mdm/warehouses/$WID" -b "$JAR" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -H 'If-Match: 1' -d "$BODY"
 curl -s -w ' [HTTP %{http_code}]\n' -X PUT "$API/mdm/warehouses/$WID" -b "$JAR" -H 'Content-Type: application/json' \

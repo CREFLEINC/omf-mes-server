@@ -1,7 +1,6 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -55,7 +54,6 @@ interface WarehouseView {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  isExternal: boolean;
   isDefect: boolean;
   isActive: boolean;
   /** MES 별칭 — 계약 밖(장부 P-148). */
@@ -68,9 +66,7 @@ interface WarehouseCreate {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  isExternal?: boolean;
   isDefect?: boolean;
-  partnerId?: number | null;
   /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
   aliasName?: unknown;
 }
@@ -80,9 +76,7 @@ interface WarehouseUpdate {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
-  isExternal: boolean;
   isDefect: boolean;
-  partnerId?: number | null;
   aliasName?: unknown;
 }
 
@@ -164,7 +158,6 @@ export class WarehouseService {
   async create(input: WarehouseCreate): Promise<WarehouseView> {
     // 계약이 `WarehouseCreate.warehouseCode` 에 「공백만 불가」로 적었다.
     assertNotBlank([['warehouseCode', input.warehouseCode]]);
-    assertNoPartner(input);
     const aliasName = aliasOf(input.aliasName);
     await this.assertCodes(input);
     await assertErpWarehouse(this.prisma, input, null);
@@ -177,7 +170,6 @@ export class WarehouseService {
           warehouse_name: input.warehouseName,
           warehouse_type_code: input.warehouseTypeCode,
           management_level_code: UNUSED_MANAGEMENT_LEVEL,
-          ...optional('is_external', input.isExternal),
           ...optional('is_defect', input.isDefect),
           ...optional('alias_name', aliasName),
         },
@@ -190,7 +182,6 @@ export class WarehouseService {
     version: number,
     input: WarehouseUpdate,
   ): Promise<WarehouseResult> {
-    assertNoPartner(input);
     const aliasName = aliasOf(input.aliasName);
     await this.assertCodes(input);
     const current = await this.prisma.warehouse.findUnique({
@@ -207,7 +198,6 @@ export class WarehouseService {
         warehouse_code: input.warehouseCode,
         warehouse_name: input.warehouseName,
         warehouse_type_code: input.warehouseTypeCode,
-        is_external: input.isExternal,
         is_defect: input.isDefect,
         ...optional('alias_name', aliasName),
         version_no: { increment: 1 },
@@ -263,17 +253,6 @@ export class WarehouseService {
   }
 }
 
-/**
- * 창고에 거래처를 두지 않는다 — 받지도 저장하지도 않는다(사용자 결정 2026-10-29 · 장부 P-146). 외부창고 표시는 둔다.
- * 계약 칸이라 null 은 받는다. 다른 값을 무시하면 저장된 것처럼 보인다.
- */
-function assertNoPartner(input: { partnerId?: number | null }): void {
-  if (input.partnerId == null) return;
-  throw new ContractException(HttpStatus.BAD_REQUEST, [
-    field('partnerId', ERROR_CODE.INVALID, '창고에 거래처를 두지 않습니다.'),
-  ]);
-}
-
 function view(row: WarehouseRow): WarehouseView {
   return {
     warehouseId: Number(row.warehouse_id),
@@ -282,7 +261,6 @@ function view(row: WarehouseRow): WarehouseView {
     warehouseCode: row.warehouse_code,
     warehouseName: row.warehouse_name,
     warehouseTypeCode: row.warehouse_type_code,
-    isExternal: row.is_external,
     isDefect: row.is_defect,
     isActive: row.is_active,
     aliasName: row.alias_name,

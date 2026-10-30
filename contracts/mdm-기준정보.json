@@ -8335,7 +8335,7 @@
      "lookup"
     ],
     "summary": "거래처 목록",
-    "description": "선택 목록용. 관리 화면이 인벤토리 108건에 없다. 유효성 판정은 서버가 하며 기본은 유효한 것만 내린다 — 공유계약 G-8. 과거 데이터 표시용은 includeInactive=true 로 켜고 isActive 표식을 함께 본다. 화면이 쓰는 것은 partnerId·partnerName 이다. countryCode·erpPartnerCode 는 이 10화면이 표시하지 않는다 — 물리 모델 1:1 유지(00-설계 §3-2 규칙 2)로 옮겼을 뿐이며 서버가 목록에서 빼도 화면은 영향받지 않는다. 근거: W-06-07 §4-A 외부창고 거래처(조건부 필수 ck_external_warehouse_partner) · W-06-05 §4-D 외부코드 거래처",
+    "description": "선택 목록용. 관리 화면이 인벤토리 108건에 없다. 유효성 판정은 서버가 하며 기본은 유효한 것만 내린다 — 공유계약 G-8. 과거 데이터 표시용은 includeInactive=true 로 켜고 isActive 표식을 함께 본다. 화면이 쓰는 것은 partnerId·partnerName 이다. countryCode·erpPartnerCode 는 이 10화면이 표시하지 않는다 — 물리 모델 1:1 유지(00-설계 §3-2 규칙 2)로 옮겼을 뿐이며 서버가 목록에서 빼도 화면은 영향받지 않는다. 근거: W-06-05 §4-D 외부코드 거래처",
     "parameters": [
      {
       "name": "q",
@@ -14926,7 +14926,6 @@
      "warehouseCode",
      "warehouseName",
      "warehouseTypeCode",
-     "isExternal",
      "isDefect",
      "isActive"
     ],
@@ -14971,28 +14970,12 @@
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
-     "isExternal": {
-      "x-source-column": "is_external",
-      "type": "boolean",
-      "default": false,
-      "example": false
-     },
      "isDefect": {
       "x-source-column": "is_defect",
       "type": "boolean",
       "default": false,
-      "description": "불량창고 여부. isExternal 을 대체하지 않고 보완한다 — 창고 유형(자재·제품·반제품·상품·생산) 축과 별개로, 불량은 자재 불량창고도 제품 불량창고도 받을 수 있는 세 번째(품질) 축이다. W-01-06 §3의 창고 선택이 isDefect=true 로 걸러진다. 근거: DR-012 확정 3-C(2026-08-13) · 공유계약 §I-42 · omf-mes#147",
+      "description": "불량창고 여부. 창고 유형(자재·제품·반제품·상품·생산) 축과 별개로, 불량은 자재 불량창고도 제품 불량창고도 받을 수 있는 품질 축이다. W-01-06 §3의 창고 선택이 isDefect=true 로 걸러진다. 근거: DR-012 확정 3-C(2026-08-13) · 공유계약 §I-42 · omf-mes#147",
       "example": false
-     },
-     "partnerId": {
-      "x-source-column": "partner_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "외부창고이면 반드시 있다 — 외부창고가 아니면 비어 있다. 수정 화면이 지금 지정된 거래처를 그대로 보이는 데 쓴다.",
-      "example": 1001
      },
      "isActive": {
       "x-source-column": "is_active",
@@ -15050,28 +15033,12 @@
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
-     "isExternal": {
-      "x-source-column": "is_external",
-      "type": "boolean",
-      "default": false,
-      "example": false
-     },
      "isDefect": {
       "x-source-column": "is_defect",
       "type": "boolean",
       "default": false,
       "description": "불량창고 여부. 근거: DR-012 확정 3-C · omf-mes#147",
       "example": false
-     },
-     "partnerId": {
-      "x-source-column": "partner_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "ck_external_warehouse_partner — isExternal 이 참이면 필수",
-      "example": 1001
      }
     }
    },
@@ -15083,7 +15050,6 @@
      "warehouseCode",
      "warehouseName",
      "warehouseTypeCode",
-     "isExternal",
      "isDefect"
     ],
     "description": "창고 수정 요청. plantId 는 신규만(편집 불가) — 근거: W-06-07 §4-A 편집 열. isActive 는 별도 사용 중지 액션(:deactivate)으로만 바꾼다 — 근거: W-06-07 §5-1. 낙관적 잠금은 공유계약 B-1.",
@@ -15117,26 +15083,11 @@
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
-     "isExternal": {
-      "x-source-column": "is_external",
-      "type": "boolean",
-      "example": false
-     },
      "isDefect": {
       "x-source-column": "is_defect",
       "type": "boolean",
       "description": "불량창고 여부. 근거: DR-012 확정 3-C · omf-mes#147",
       "example": false
-     },
-     "partnerId": {
-      "x-source-column": "partner_id",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "ck_external_warehouse_partner — isExternal 이 참이면 필수",
-      "example": 1001
      }
     }
    },
@@ -20559,7 +20510,7 @@
      "partnerName",
      "isActive"
     ],
-    "description": "선택 목록용. 관리 화면이 인벤토리 108건에 없다. 유효성 판정은 서버가 하며 기본은 유효한 것만 내린다 — 공유계약 G-8. 과거 데이터 표시용은 includeInactive=true 로 켜고 isActive 표식을 함께 본다. 화면이 쓰는 것은 partnerId·partnerName 이다. countryCode·erpPartnerCode 는 이 10화면이 표시하지 않는다 — 물리 모델 1:1 유지(00-설계 §3-2 규칙 2)로 옮겼을 뿐이며 서버가 목록에서 빼도 화면은 영향받지 않는다. 근거: W-06-07 §4-A 외부창고 거래처(조건부 필수 ck_external_warehouse_partner) · W-06-05 §4-D 외부코드 거래처",
+    "description": "선택 목록용. 관리 화면이 인벤토리 108건에 없다. 유효성 판정은 서버가 하며 기본은 유효한 것만 내린다 — 공유계약 G-8. 과거 데이터 표시용은 includeInactive=true 로 켜고 isActive 표식을 함께 본다. 화면이 쓰는 것은 partnerId·partnerName 이다. countryCode·erpPartnerCode 는 이 10화면이 표시하지 않는다 — 물리 모델 1:1 유지(00-설계 §3-2 규칙 2)로 옮겼을 뿐이며 서버가 목록에서 빼도 화면은 영향받지 않는다. 근거: W-06-05 §4-D 외부코드 거래처",
     "properties": {
      "partnerId": {
       "x-source-column": "partner_id",
