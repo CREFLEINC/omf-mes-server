@@ -7826,6 +7826,68 @@
     }
    }
   },
+  "/integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch": {
+   "parameters": [
+    {
+     "name": "purchaseOrderId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "integration"
+    ],
+    "summary": "외자 발주의 통관번호 받아오기",
+    "description": "「ERP 연동 현황·이력 > 구매 발주」의 [통관번호 받아오기]. 취소 안 된 라인마다 ERP 함수(ERP_CC_FUNCTION)를 불러 통관번호가 하나면 그 라인에 적는다(PurchaseOrderLine.erpCustomsClearance*). 없거나 여럿이면 라인을 그대로 둔다. 구매입고를 ERP 로 보낼 때도 적어 둔 값이 없으면 같은 함수를 부른다. 근거: 서버 선행 · 장부 P-143",
+    "responses": {
+     "200": {
+      "description": "라인마다 받은 결과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CustomsClearanceFetchResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "STATE_LOCKED — 외자(ERP 발주유형 PO) 발주가 아니다(MES 발주 포함) · 이 서버에 ERP 통관번호 함수가 설정되지 않았다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 연계 메시지 일괄 재처리와 같은 권한(W-06-10)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 발주",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/audit/events": {
    "get": {
     "tags": [
@@ -19553,6 +19615,94 @@
      }
     ],
     "x-internal-note": "노출 범위 미결 §8-4"
+   },
+   "CustomsClearanceFetchResult": {
+    "type": "object",
+    "required": [
+     "purchaseOrderId",
+     "lines"
+    ],
+    "description": "통관번호 받아오기 결과 — 취소 안 된 라인마다 한 줄, 라인번호 순. 장부 P-143",
+    "properties": {
+     "purchaseOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "purchaseOrderLineId",
+        "lineNo",
+        "result",
+        "customsClearanceNo",
+        "customsClearanceSeq",
+        "candidates"
+       ],
+       "properties": {
+        "purchaseOrderLineId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lineNo": {
+         "type": "integer",
+         "example": 1
+        },
+        "result": {
+         "type": "string",
+         "enum": [
+          "SAVED",
+          "NOT_FOUND",
+          "MULTIPLE"
+         ],
+         "description": "SAVED 하나라 라인에 적었다 · NOT_FOUND ERP 에 없다(적어 둔 값은 그대로) · MULTIPLE 여럿이라 적지 않았다(candidates 에 담는다)",
+         "example": "SAVED"
+        },
+        "customsClearanceNo": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "maxLength": 18,
+         "description": "SAVED 면 받은 값, 아니면 라인에 적어 둔 값. 적어 둔 값이 없으면 null",
+         "example": "CC2026000123"
+        },
+        "customsClearanceSeq": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "description": "customsClearanceNo 의 순번. customsClearanceNo 가 null 이면 null",
+         "example": 1
+        },
+        "candidates": {
+         "type": "array",
+         "description": "MULTIPLE 일 때 ERP 가 준 값들. 아니면 빈 배열",
+         "items": {
+          "type": "object",
+          "required": [
+           "customsClearanceNo",
+           "customsClearanceSeq"
+          ],
+          "properties": {
+           "customsClearanceNo": {
+            "type": "string",
+            "example": "CC2026000123"
+           },
+           "customsClearanceSeq": {
+            "type": "integer",
+            "example": 1
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
    },
    "AuditEvent": {
     "x-source-table": "audit.audit_event",

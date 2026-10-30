@@ -156,10 +156,7 @@ export class InboundReceiptSplitController {
   }
 }
 
-/**
- * 줄마다 입하 한 건(장부 P-117) — 본문은 입하 등록과 같고, 검사(인증·단말 범위·권한·본문·멱등 키)도 입하 등록과
- * 같다(`@ContractAlias`). 계약 사본에 없는 경로라 `@Contract` 를 달지 않는다.
- */
+/** 줄마다 입하 한 건(장부 P-117) — 본문·권한·단말 범위는 입하 등록과 같다. */
 @Controller('logistics')
 export class InboundReceiptPerLineController {
   constructor(
@@ -168,7 +165,7 @@ export class InboundReceiptPerLineController {
   ) {}
 
   @Post('inbound-receipts\\:per-line')
-  @ContractAlias('POST /logistics/inbound-receipts')
+  @Contract('POST /logistics/inbound-receipts:per-line')
   create(@Req() request: Request, @Body() body: InboundReceiptCreateInput): Promise<{ created: InboundReceiptDetail[] }> {
     // 단말 감사·작업자 판정은 입하 등록 오퍼레이션 이름으로 남긴다 — 같은 화면·같은 권한이다.
     const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts');

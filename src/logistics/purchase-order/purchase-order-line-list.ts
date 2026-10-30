@@ -188,6 +188,9 @@ export interface PurchaseOrderLineListItem {
   toleranceUnderQty: number;
   erpStorageLocationCode: string | null;
   cancelledAt: string | null;
+  erpCustomsClearanceNo: string | null;
+  erpCustomsClearanceSeq: number | null;
+  erpCustomsClearanceFetchedAt: string | null;
   receiptStatusCode: ReceiptStatusCode;
 }
 
@@ -220,6 +223,9 @@ export function lineListItem(row: LineRow): PurchaseOrderLineListItem {
     toleranceUnderQty: Number(row.tolerance_under_qty),
     erpStorageLocationCode: row.erp_storage_location_code,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    erpCustomsClearanceNo: row.erp_customs_clearance_no,
+    erpCustomsClearanceSeq: row.erp_customs_clearance_seq,
+    erpCustomsClearanceFetchedAt: row.erp_customs_clearance_fetched_at?.toISOString() ?? null,
     receiptStatusCode: lineReceiptStatus(row, order.status_code),
   };
 }

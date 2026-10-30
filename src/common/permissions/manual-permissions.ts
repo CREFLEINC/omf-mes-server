@@ -430,8 +430,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],
   // 웹 입고 관리(W-01-09)의 「라인 표에서 바로 입하」가 `:per-line` 을 부르고 단추는 웹 입하 등록 W-01-03 으로 선다 — `:per-line` 은
-  // 이 오퍼레이션의 권한을 빌린다(`@ContractAlias` · 장부 P-117). W-01-03 은 이미 `:split` 으로 보통 입하를 만들 수 있어 새로 생기는
+  // 입하 등록과 같은 권한이다(장부 P-117). W-01-03 은 이미 `:split` 으로 보통 입하를 만들 수 있어 새로 생기는
   // 힘은 없다(사용자 결정 2026-10-27).
   'POST /logistics/inbound-receipts': ['W-01-03'],
+  'POST /logistics/inbound-receipts:per-line': ['M-01-01', 'W-01-03'],
+  // 외자 발주의 통관번호 받아오기(장부 P-143) — 「ERP 연동 현황·이력 > 구매 발주」의 단추다. 같은 화면(W-06-10)의 일괄 재처리와 같다.
+  'POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch': ['W-06-10'],
 };
 
