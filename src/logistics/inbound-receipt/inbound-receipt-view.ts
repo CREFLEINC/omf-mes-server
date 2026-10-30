@@ -11,20 +11,11 @@ import { unallocatedQtyOf } from './inbound-allocation';
  */
 
 export type InboundReceiptRow = Prisma.inbound_receiptGetPayload<object>;
-/** 줄을 읽는 곳은 초과분(장부 P-100)과 배정을 함께 읽는다. */
+/** 줄을 읽는 곳은 배정을 함께 읽는다. */
 export const INBOUND_LINE_INCLUDE = {
-  inbound_receipt_excess: { orderBy: { inbound_receipt_excess_id: 'asc' } },
   inbound_receipt_po_allocation: { orderBy: { inbound_receipt_po_allocation_id: 'asc' } },
 } satisfies Prisma.inbound_receipt_lineInclude;
 export type InboundReceiptLineRow = Prisma.inbound_receipt_lineGetPayload<{ include: typeof INBOUND_LINE_INCLUDE }>;
-
-/** 계약 밖(장부 P-100) — 줄의 초과분 한 몫과 이어진 P/O 라인. */
-export interface InboundReceiptExcessView {
-  inboundReceiptExcessId: number;
-  excessQty: number;
-  purchaseOrderLineId: number | null;
-  linkedAt: string | null;
-}
 
 /** 줄의 받은 수량 중 한 P/O 라인에 배정한 몫(장부 P-115). */
 export interface InboundReceiptAllocationView {
@@ -75,9 +66,6 @@ export interface InboundReceiptLineView {
    * 라인 목록(`GET …/lines`·상세)만 싣는다.
    */
   receivableQty?: number | null;
-  /** 계약 밖(장부 P-100) — `receivedQty` 중 P/O 라인에 넣지 않은 몫의 합. 없으면 0. */
-  excessQty: number;
-  excesses: InboundReceiptExcessView[];
   /** P/O 라인별 배정 몫(만든 순서). 무발주 줄은 빈 배열. */
   allocations: InboundReceiptAllocationView[];
   /** `receivedQty` − 배정 합. 아직 어느 P/O 에도 넣지 않은 몫. */
@@ -130,13 +118,6 @@ export function inboundReceiptLineView(row: InboundReceiptLineRow): InboundRecei
     inspectionRequired: row.inspection_required,
     statusCode: row.status_code,
     lotId: id(row.lot_id),
-    excessQty: row.inbound_receipt_excess.reduce((sum, excess) => sum.plus(excess.excess_qty), new Prisma.Decimal(0)).toNumber(),
-    excesses: row.inbound_receipt_excess.map((excess) => ({
-      inboundReceiptExcessId: Number(excess.inbound_receipt_excess_id),
-      excessQty: Number(excess.excess_qty),
-      purchaseOrderLineId: id(excess.purchase_order_line_id),
-      linkedAt: excess.linked_at?.toISOString() ?? null,
-    })),
     allocations: row.inbound_receipt_po_allocation.map((allocation) => ({
       inboundReceiptPoAllocationId: Number(allocation.inbound_receipt_po_allocation_id),
       purchaseOrderLineId: Number(allocation.purchase_order_line_id),

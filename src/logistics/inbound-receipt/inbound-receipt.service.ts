@@ -19,7 +19,6 @@ import {
   attachesLot,
   attributedQtyOf,
   dayOrNull,
-  excessQtyOf,
   supplierLotLabelAttached,
 } from './inbound-receipt-rules';
 import {
@@ -136,17 +135,6 @@ export class InboundReceiptService {
           created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
         },
       });
-      const excessQty = excessQtyOf(line);
-      if (excessQty.greaterThan(0)) {
-        await tx.inbound_receipt_excess.create({
-          data: {
-            inbound_receipt_line_id: created.inbound_receipt_line_id,
-            excess_qty: excessQty,
-            created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
-          },
-        });
-      }
-      // 배정 표(이중 쓰기 — 옛 P/O 칸·초과분과 나란히 적는다. 읽기가 모두 배정으로 옮겨 가면 옛 쓰기를 뗀다).
       // 줄 전체가 초과분이면 몫이 0 이라 배정이 없다 — 미배정으로 남는다.
       const attributed = attributedQtyOf(line);
       if (line.purchaseOrderLineId != null && attributed.greaterThan(0)) {

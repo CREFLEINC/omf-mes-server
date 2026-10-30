@@ -64,7 +64,6 @@ function fake(options: Options = {}) {
     holds: [] as Args[],
     inspectionRequests: [] as Args[],
     increments: [] as { purchaseOrderLineId: bigint; increment: unknown }[],
-    excesses: [] as Args[],
     allocations: [] as Args[],
     transactionOptions: undefined as unknown,
     audits: [] as Args[],
@@ -138,11 +137,6 @@ function fake(options: Options = {}) {
       },
       updateMany: async () => ({ count: 1 }),
     },
-    inbound_receipt_excess: {
-      create: async ({ data }: { data: Args }) => {
-        recorded.excesses.push(data);
-      },
-    },
     inbound_receipt_po_allocation: {
       create: async ({ data }: { data: Args }) => {
         recorded.allocations.push(data);
@@ -210,7 +204,6 @@ function fake(options: Options = {}) {
           version_no: 1,
           // 뷰는 Prisma 가 주는 Decimal 을 기대한다 — 기록은 요청 숫자 그대로라 여기서만 감싼다.
           received_qty: new Prisma.Decimal(data.received_qty as number),
-          inbound_receipt_excess: [],
           inbound_receipt_po_allocation: [],
         })),
     },
@@ -361,7 +354,7 @@ describe('InboundReceiptService.create', () => {
     });
   });
 
-  it('초과분 — P/O 라인에는 받은 수량에서 초과분을 뺀 몫만 올리고 초과분은 따로 남긴다(장부 P-100)', async () => {
+  it('초과분 — P/O 라인에는 받은 수량에서 초과분을 뺀 몫만 올리고 초과분은 미배정으로 남긴다(장부 P-100)', async () => {
     // 발주 100 에 120 이 왔다 — 한도 검사도 100 으로 한다.
     const { service, recorded } = fake();
 
@@ -370,9 +363,7 @@ describe('InboundReceiptService.create', () => {
     expect(recorded.increments.map((row) => String(row.increment))).toEqual(['100']);
     expect(recorded.lines[0]).toMatchObject({ received_qty: 120 });
     expect(recorded.lots[0]).toMatchObject({ initial_qty: 120 });
-    expect(recorded.excesses).toEqual([expect.objectContaining({ inbound_receipt_line_id: 901n })]);
-    expect(String(recorded.excesses[0].excess_qty)).toBe('20');
-    // 배정 표(이중 쓰기) — 줄의 P/O 몫 하나, 초과분은 미배정이라 행이 없다.
+    // 줄의 P/O 몫 하나 — 초과분은 미배정이라 행이 없다.
     expect(recorded.allocations).toEqual([
       expect.objectContaining({ inbound_receipt_line_id: 901n, purchase_order_line_id: 101n, created_by: 99n }),
     ]);
@@ -393,7 +384,6 @@ describe('InboundReceiptService.create', () => {
     await service.create(input({ lines: [line({ receivedQty: 120, excessQty: 120 })] }), 99);
 
     expect(recorded.increments.map((row) => String(row.increment))).toEqual(['0']);
-    expect(String(recorded.excesses[0].excess_qty)).toBe('120');
     expect(recorded.allocations).toEqual([]);
   });
 
@@ -416,7 +406,6 @@ describe('InboundReceiptService.create', () => {
     );
 
     expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.QTY_EXCEEDS_ORDERED });
-    expect(recorded.excesses).toEqual([]);
     expect(recorded.allocations).toEqual([]);
   });
 

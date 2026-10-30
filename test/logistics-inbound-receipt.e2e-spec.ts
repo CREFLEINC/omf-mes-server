@@ -273,7 +273,7 @@ describe('입하 등록 (e2e)', () => {
   // 발주 5,000 — 500 을 먼저 받고, 공급사 포장 사정으로 라벨 한 장 5,000 이 더 왔다. 그 LOT 이 IQC 한 단위라
   // 줄 하나로 받고, 남은 4,500 만 P/O 에 넣고 500 은 ERP 추가 P/O 를 기다리는 초과분으로 남긴다(장부 P-100).
   describe('초과분 — 한 LOT 의 일부만 P/O 에 넣는다', () => {
-    it('초과분 — 줄·LOT 은 5,000 그대로이고 P/O 에는 4,500 만 오르며 초과분 500 이 안 이어진 채 남는다', async () => {
+    it('초과분 — 줄·LOT 은 5,000 그대로이고 P/O 에는 4,500 만 오르며 초과분 500 이 미배정으로 남는다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(5000);
       await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 500 }] });
 
@@ -282,13 +282,12 @@ describe('입하 등록 (e2e)', () => {
       });
 
       expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(5000);
-      const line = detail.lines[0] as LineBody & { excessQty: number; excesses: object[] };
+      const line = detail.lines[0] as LineBody & { unallocatedQty: number };
       expect(line.receivedQty).toBe(5000);
-      expect(line.excessQty).toBe(500);
-      expect(line.excesses).toEqual([expect.objectContaining({ excessQty: 500, purchaseOrderLineId: null, linkedAt: null })]);
+      expect(line.unallocatedQty).toBe(500);
       const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(line.lotId as number) } });
       expect(Number(lot.initial_qty)).toBe(5000);
-      // 배정 표(이중 쓰기) — 줄의 P/O 몫 4,500 하나. 초과분 500 은 미배정이라 행이 없다.
+      // 줄의 P/O 몫 4,500 하나. 초과분 500 은 미배정이라 행이 없다.
       expect(await allocationsOf(line.inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 4500]]);
     });
 
@@ -300,9 +299,8 @@ describe('입하 등록 (e2e)', () => {
       });
 
       expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
-      const line = detail.lines[0] as LineBody & { excessQty: number; excesses: object[] };
-      expect(line.excessQty).toBe(1000);
-      expect(line.excesses).toEqual([expect.objectContaining({ excessQty: 1000, purchaseOrderLineId: null })]);
+      const line = detail.lines[0] as LineBody & { unallocatedQty: number };
+      expect(line.unallocatedQty).toBe(1000);
       expect(await allocationsOf(line.inboundReceiptLineId)).toEqual([]);
       const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(line.lotId as number) } });
       expect(Number(lot.initial_qty)).toBe(1000);
@@ -320,7 +318,6 @@ describe('입하 등록 (e2e)', () => {
 
     it('초과분 — 받은 수량을 넘으면 400 RANGE 가 그 줄을 짚고 아무것도 남지 않는다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
-      const before = await prisma.inbound_receipt_excess.count();
       const allocationsBefore = await prisma.inbound_receipt_po_allocation.count();
 
       const rejected = await send(
@@ -333,7 +330,6 @@ describe('입하 등록 (e2e)', () => {
       ).expect(400);
 
       expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.1.excessQty', code: 'RANGE' })]);
-      expect(await prisma.inbound_receipt_excess.count()).toBe(before);
       expect(await prisma.inbound_receipt_po_allocation.count()).toBe(allocationsBefore);
       expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
     });
@@ -350,7 +346,7 @@ describe('입하 등록 (e2e)', () => {
       expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: 'INVALID' })]);
     });
 
-    it('초과분 — 라인 치환이 초과분을 바꾸면 P/O 에 넣은 몫과 초과분 기록이 함께 바뀐다', async () => {
+    it('초과분 — 라인 치환이 초과분을 바꾸면 P/O 에 넣은 몫과 배정이 함께 바뀐다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
       const detail = await create({
         lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 120, excessQty: 20 }],
@@ -360,12 +356,8 @@ describe('입하 등록 (e2e)', () => {
       const items = await replace(detail.inboundReceipt.inboundReceiptId, [itemOf(detail.lines[0], { excessQty: 30 })]);
 
       expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(90);
-      expect((items[0] as LineBody & { excessQty: number }).excessQty).toBe(30);
-      const rows = await prisma.inbound_receipt_excess.findMany({
-        where: { inbound_receipt_line_id: BigInt(detail.lines[0].inboundReceiptLineId) },
-      });
-      expect(rows.map((row) => Number(row.excess_qty))).toEqual([30]);
-      // 배정도 다시 적힌다 — 몫 120 − 30.
+      expect((items[0] as LineBody & { unallocatedQty: number }).unallocatedQty).toBe(30);
+      // 몫 120 − 30.
       expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 90]]);
     });
 
@@ -531,6 +523,32 @@ describe('입하 등록 (e2e)', () => {
     it('권한 — 로그인 없으면 401, 화면 권한이 없으면 403', async () => {
       await request(app.getHttpServer()).get('/api/logistics/inbound-unallocated').expect(401);
       await api('/inbound-unallocated', 'get', noPermCookie).expect(403);
+    });
+
+    it('다른 P/O 라인에 몫을 이은 입하 줄도, 그 몫을 받은 P/O 라인도 바꾸거나 지울 수 없다(400 SUCCESSOR_EXISTS)', async () => {
+      const { detail, lineId } = await unallocatedOf(100, 100, 20);
+      const order = await createOrder();
+      await api(`/inbound-receipt-lines/${lineId}/allocations`, 'post')
+        .send({ purchaseOrderLineId: order.lines[0].purchaseOrderLineId, qty: 20 })
+        .expect(201);
+
+      const receiptLine = await putLines(detail.inboundReceipt.inboundReceiptId, await receiptEtag(detail.inboundReceipt.inboundReceiptId), [
+        itemOf(detail.lines[0], { receivedQty: 110, excessQty: 10 }),
+      ]).expect(400);
+      const orderLine = await request(app.getHttpServer())
+        .put(`/api/logistics/purchase-orders/${order.purchaseOrder.purchaseOrderId}/lines`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key())
+        .set('If-Match', await orderEtag(order.purchaseOrder.purchaseOrderId))
+        .send({ items: [{ itemId, orderedQty: 100, uomId }] })
+        .expect(400);
+
+      expect(receiptLine.body.errors[0]).toMatchObject({ code: 'SUCCESSOR_EXISTS' });
+      expect(orderLine.body.errors[0]).toMatchObject({ code: 'SUCCESSOR_EXISTS' });
+      expect(await allocationsOf(lineId)).toEqual([
+        [detail.lines[0].purchaseOrderLineId, 100],
+        [order.lines[0].purchaseOrderLineId, 20],
+      ]);
     });
   });
 
