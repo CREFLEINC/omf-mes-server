@@ -2,7 +2,7 @@ import { ContractException } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { inspectionRequestListWhere } from './inspection-request.service';
 
-/** omf-all-around#205 · 장부 P-156 — 의뢰 시각 반열림 구간. 공장 하루의 경계는 화면이 오프셋으로 보낸다. */
+/** omf-all-around#205 — 의뢰 시각 반열림 구간. 공장 하루의 경계는 화면이 오프셋으로 보낸다. */
 const prisma = {} as PrismaService;
 const requestedAtOf = async (query: Record<string, string>) => {
   const where = await inspectionRequestListWhere(prisma, query);

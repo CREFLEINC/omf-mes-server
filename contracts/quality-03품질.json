@@ -853,7 +853,7 @@
        "example": "2026-10-30T00:00:00+07:00"
       },
       "description": "의뢰 시각 시작(이상). 공장 하루는 화면이 공장 시간대로 셈해 오프셋을 붙여 보낸다 — 부품 IQC 「오늘 입고」.",
-      "x-internal-note": "⭐ 선행 구현(P-156 · omf-all-around#205) — 의뢰 시각(requested_at) 반열림 구간. 오프셋 없는 값은 400 INVALID."
+      "x-internal-note": "omf-all-around#205 — 의뢰 시각(requested_at) 반열림 구간. 오프셋 없는 값은 400 INVALID."
      },
      {
       "name": "requestedAtTo",
@@ -864,7 +864,7 @@
        "example": "2026-10-30T00:00:00+07:00"
       },
       "description": "의뢰 시각 끝(미만).",
-      "x-internal-note": "⭐ 선행 구현(P-156 · omf-all-around#205) — 의뢰 시각(requested_at) 반열림 구간. 오프셋 없는 값은 400 INVALID."
+      "x-internal-note": "omf-all-around#205 — 의뢰 시각(requested_at) 반열림 구간. 오프셋 없는 값은 400 INVALID."
      },
      {
       "name": "workOrderId",
@@ -5674,7 +5674,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 불합격 확정의 사유. 실으면 확정과 한 트랜잭션에서 그 회차의 불량 기록을 이 값으로 갈아 끼운다(재시도해도 1벌). 비우면(생략) 이미 붙은 불량 기록을 쓴다. IQC 가 아니거나, 불합격 확정도 아니고 불합격 수량도 0 인데 실으면 400 INVALID, IQC 불합격이거나 불합격 수량이 있는데 빈 배열이면 400 REQUIRED(생략하면 임시 저장한 기록을 쓰되 0건이면 400 REQUIRED). 불합격 수량이 있으면 판정(합격·보류 포함)과 관계없이 받고, 불량 수량 합계가 불합격 수량과 같아야 한다(아니면 400 INVALID · omf-all-around#205 · 장부 P-156). 불합격 수량 0 인 합격·보류 확정은 그 회차의 확정 전 불량 기록을 지운다. 서버 선행 · 장부 P-47 · omf-all-around#121"
+      "description": "⭐ IQC 불합격 확정의 사유. 실으면 확정과 한 트랜잭션에서 그 회차의 불량 기록을 이 값으로 갈아 끼운다(재시도해도 1벌). 비우면(생략) 이미 붙은 불량 기록을 쓴다. IQC 가 아니거나, 불합격 확정도 아니고 불합격 수량도 0 인데 실으면 400 INVALID, IQC 불합격이거나 불합격 수량이 있는데 빈 배열이면 400 REQUIRED(생략하면 임시 저장한 기록을 쓰되 0건이면 400 REQUIRED). 불합격 수량이 있으면 판정(합격·보류 포함)과 관계없이 받고, 불량 수량 합계가 불합격 수량과 같아야 한다(아니면 400 INVALID · omf-all-around#205). 불합격 수량 0 인 합격·보류 확정은 그 회차의 확정 전 불량 기록을 지운다. 서버 선행 · 장부 P-47 · omf-all-around#121"
      },
      "judgmentChangeReason": {
       "type": "string",
@@ -5790,7 +5790,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 1줄 이상은 overallJudgmentCode=REJECTED 이거나 rejectedQty 가 0 보다 클 때만 받는다(아니면 400 INVALID · 장부 P-48 · omf-all-around#122 · #205). 확정으로 저장하면 rejectedQty 가 0 보다 클 때 1줄 이상 필수(없으면 400 REQUIRED)이고 불량 수량 합계가 rejectedQty 와 같아야 한다(장부 P-156). 서버 선행 · 장부 P-42 · omf-all-around#106"
+      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 1줄 이상은 overallJudgmentCode=REJECTED 이거나 rejectedQty 가 0 보다 클 때만 받는다(아니면 400 INVALID · 장부 P-48 · omf-all-around#122 · #205). 확정으로 저장하면 rejectedQty 가 0 보다 클 때 1줄 이상 필수(없으면 400 REQUIRED)이고 불량 수량 합계가 rejectedQty 와 같아야 한다(omf-all-around#205). 서버 선행 · 장부 P-42 · omf-all-around#106"
      },
      "judgmentChangeReason": {
       "type": "string",
@@ -5893,7 +5893,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 불합격 사유의 임시 저장. 실으면 그 회차의 IQC 불량 기록을 이 값으로 갈아 끼우고(빈 배열이면 지운다), 생략하면 손대지 않는다. 1줄 이상은 IQC 결과이면서 판정(본문, 없으면 저장값)이 REJECTED 이거나 불합격 수량(본문, 없으면 저장값)이 0 보다 클 때만 — 아니면 400 INVALID(합계는 확정이 맞춘다 · omf-all-around#205 · 장부 P-156). 갈아 끼울 기록에 수리 이력(수리 결과·수리 실행)이 붙어 있으면 지우지 않고 400 STATE_LOCKED. 작성중 회차의 기록은 불량 집계·기간 목록에 잡히지 않는다(확정이 갈아 끼우거나 지운다). 서버 선행 · 장부 P-48 · omf-all-around#122"
+      "description": "⭐ IQC 불합격 사유의 임시 저장. 실으면 그 회차의 IQC 불량 기록을 이 값으로 갈아 끼우고(빈 배열이면 지운다), 생략하면 손대지 않는다. 1줄 이상은 IQC 결과이면서 판정(본문, 없으면 저장값)이 REJECTED 이거나 불합격 수량(본문, 없으면 저장값)이 0 보다 클 때만 — 아니면 400 INVALID(합계는 확정이 맞춘다 · omf-all-around#205). 갈아 끼울 기록에 수리 이력(수리 결과·수리 실행)이 붙어 있으면 지우지 않고 400 STATE_LOCKED. 작성중 회차의 기록은 불량 집계·기간 목록에 잡히지 않는다(확정이 갈아 끼우거나 지운다). 서버 선행 · 장부 P-48 · omf-all-around#122"
      },
      "fourMChange": {
       "type": [
