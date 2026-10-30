@@ -1020,27 +1020,6 @@ model inbound_receipt {
   @@schema("logistics")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model inbound_receipt_excess {
-  inbound_receipt_excess_id BigInt               @id @default(autoincrement())
-  inbound_receipt_line_id   BigInt
-  excess_qty                Decimal              @db.Decimal(20, 6)
-  purchase_order_line_id    BigInt?
-  linked_at                 DateTime?            @db.Timestamptz(6)
-  linked_by                 BigInt?
-  created_at                DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by                BigInt?
-  updated_at                DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by                BigInt?
-  version_no                Int                  @default(1)
-  inbound_receipt_line      inbound_receipt_line @relation(fields: [inbound_receipt_line_id], references: [inbound_receipt_line_id], onDelete: Cascade, onUpdate: NoAction)
-  purchase_order_line       purchase_order_line? @relation(fields: [purchase_order_line_id], references: [purchase_order_line_id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([inbound_receipt_line_id], map: "ix_inbound_excess_line")
-  @@index([purchase_order_line_id], map: "ix_inbound_excess_po_line")
-  @@schema("logistics")
-}
-
 model inbound_receipt_po_allocation {
   inbound_receipt_po_allocation_id BigInt               @id @default(autoincrement())
   inbound_receipt_line_id          BigInt
@@ -1091,7 +1070,6 @@ model inbound_receipt_line {
   purchase_order_line        purchase_order_line? @relation(fields: [purchase_order_line_id], references: [purchase_order_line_id], onDelete: NoAction, onUpdate: NoAction)
   uom                        uom                  @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   inbound_variance           inbound_variance[]
-  inbound_receipt_excess     inbound_receipt_excess[]
   inbound_receipt_po_allocation inbound_receipt_po_allocation[]
   purchase_order             purchase_order[]
 
@@ -1278,7 +1256,6 @@ model purchase_order_line {
   erp_customs_clearance_fetched_at DateTime? @db.Timestamptz(6)
   asn_line               asn_line[]
   inbound_receipt_line   inbound_receipt_line[]
-  inbound_receipt_excess inbound_receipt_excess[]
   inbound_receipt_po_allocation inbound_receipt_po_allocation[]
   item                   item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   purchase_order         purchase_order         @relation(fields: [purchase_order_id], references: [purchase_order_id], onDelete: NoAction, onUpdate: NoAction)
