@@ -142,6 +142,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-sheet-templates': ['W-06-24'],
   'PUT /quality/inspection-sheet-templates/{inspectionSheetTemplateId}': ['W-06-24'],
   'POST /quality/inspection-sheet-templates/{inspectionSheetTemplateId}:confirm': ['W-06-24'],
+  // 폐기 · 작성 취소 — 같은 화면의 조작이다(omf-all-around#214).
+  'POST /quality/inspection-sheet-templates/{inspectionSheetTemplateId}:obsolete': ['W-06-24'],
+  'DELETE /quality/inspection-sheet-templates/{inspectionSheetTemplateId}': ['W-06-24'],
   // OA 제품 검사표 열기·머리·단계·NG — POP 제품 검사표 입력과 관리웹 제품 검사표 조회의 조작이다(#89 · 장부 P-102).
   'POST /quality/inspection-sheets:open-by-serial': ['P-02-15', 'W-03-13'],
   'PUT /quality/inspection-sheets/{inspectionSheetId}/header': ['P-02-15', 'W-03-13'],
