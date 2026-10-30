@@ -17,10 +17,10 @@ function defectsService() {
   } as unknown as DefectRecordWriteService & { prepareInspectionDefects: jest.Mock; writeInspectionDefectsWithin: jest.Mock };
 }
 
-function prisma(type: string, judgment: string | null) {
+function prisma(type: string, judgment: string | null, rejectedQty = 0) {
   return {
     inspection_result: {
-      findUnique: jest.fn().mockResolvedValue({ uom_id: 2n, overall_judgment_code: judgment, inspection_request: { inspection_type_code: type } }),
+      findUnique: jest.fn().mockResolvedValue({ uom_id: 2n, overall_judgment_code: judgment, rejected_qty: rejectedQty, inspection_request: { inspection_type_code: type } }),
     },
   } as unknown as PrismaService;
 }
@@ -60,7 +60,15 @@ describe('prepareDraftDefects', () => {
     expect(service.prepareInspectionDefects).toHaveBeenCalledWith([ROW], 2);
   });
 
-  it('합격으로 바꾸는 저장에 사유를 실으면 400 defects INVALID', async () => {
+  /* #205 */
+  it('불합격 수량이 있는 합격 저장은 사유를 받는다 — 본문 수량이 저장값보다 앞선다', async () => {
+    const service = defectsService();
+    await expect(
+      prepareDraftDefects(prisma('IQC', 'REJECTED', 0), service, 8, { overallJudgmentCode: 'ACCEPTED', rejectedQty: 2, defects: [ROW] }),
+    ).resolves.toEqual({ prepared: PREPARED });
+  });
+
+  it('불합격 수량 0 인 합격으로 바꾸는 저장에 사유를 실으면 400 defects INVALID', async () => {
     const error = await errorOf(prepareDraftDefects(prisma('IQC', 'REJECTED'), defectsService(), 8, { overallJudgmentCode: 'ACCEPTED', defects: [ROW] }));
     expect(error.errors[0]).toMatchObject({ field: 'defects', code: 'INVALID' });
   });

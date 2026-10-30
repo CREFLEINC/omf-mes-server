@@ -20,6 +20,7 @@ const body = (extra: Record<string, unknown> = {}) => ({
   inspectionRequestId: 9,
   overallJudgmentCode: 'REJECTED',
   uomId: 1,
+  rejectedQty: 0,
   ...extra,
 });
 const reason = [{ defectCodeId: 5, defectQty: 3, defectDescription: '스크래치' }];
@@ -68,6 +69,38 @@ describe('prepareRejectionDefects', () => {
   it('불합격 작성중에 실은 사유는 받는다', async () => {
     const { prisma, defects } = harness('IQC');
     await expect(prepareRejectionDefects(prisma, defects, body({ defects: reason }), false)).resolves.not.toBeNull();
+  });
+
+  /* #205 — 판정과 관계없이 불합격 수량이 있으면 사유를 받는다. 합계는 확정으로 태어날 때 맞춘다. */
+  it.each([
+    ['합격 작성중', false],
+    ['합격 확정', true],
+  ])('불합격 수량이 있는 %s 은 사유를 받는다', async (_label, bornConfirmed) => {
+    const { prisma, defects } = harness('IQC');
+    const input = body({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 3, defects: reason });
+    await expect(prepareRejectionDefects(prisma, defects, input, bornConfirmed)).resolves.not.toBeNull();
+  });
+
+  it('확정으로 태어나는데 불량 수량 합계가 불합격 수량과 다르면 400 INVALID 다', async () => {
+    const { prisma, defects } = harness('IQC');
+    const input = body({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 4, defects: reason });
+    const error = await prepareRejectionDefects(prisma, defects, input, true).catch((e: unknown) => e);
+
+    expect(firstError(error)).toMatchObject({ field: 'defects', code: 'INVALID' });
+  });
+
+  it('불합격 수량이 있으면 합격 확정도 사유가 필수다(사용자 결정 2026-10-30)', async () => {
+    const { prisma, defects } = harness('IQC');
+    const input = body({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 2 });
+    const error = await prepareRejectionDefects(prisma, defects, input, true).catch((e: unknown) => e);
+
+    expect(firstError(error)).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+  });
+
+  it('작성중은 합계가 달라도 받는다', async () => {
+    const { prisma, defects } = harness('IQC');
+    const input = body({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 4, defects: reason });
+    await expect(prepareRejectionDefects(prisma, defects, input, false)).resolves.not.toBeNull();
   });
 
   it('IQC 가 아닌 결과에 사유를 실으면 400 이다', async () => {
