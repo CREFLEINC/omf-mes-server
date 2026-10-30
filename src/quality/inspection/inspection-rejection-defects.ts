@@ -11,7 +11,24 @@ import {
 import type { InspectionResultCreate } from './inspection-result-write-input';
 
 const IQC = 'IQC';
+const NO_REJECTION = '불량 내역은 불합격 수량이 있거나 불합격 판정일 때만 보낼 수 있습니다.';
 const REJECTED = 'REJECTED';
+
+/**
+ * 불량 기록을 둘 수 있는 회차(omf-all-around#205) — 불합격 판정이거나, 판정과 관계없이 불합격 수량이 있다.
+ * 불합격 수량이 합격판정개수 안이라 합격·보류로 확정되는 LOT 도 그 불량의 유형·사유를 남긴다.
+ */
+const keepsDefects = (judgment: string | null | undefined, rejectedQty: number | null | undefined): boolean =>
+  judgment === REJECTED || Number(rejectedQty ?? 0) > 0;
+
+/** 불량 수량 합계 = 불합격 수량(#205) — 불합격 수량이 있을 때만 맞춘다. 0 인 불합격 판정은 종전 그대로다. */
+function assertDefectSum(rows: { defectQty: number }[], rejectedQty: number): void {
+  if (rejectedQty <= 0 || rows.length === 0) return;
+  const sum = rows.reduce((acc, row) => acc + Number(row.defectQty), 0);
+  if (Math.abs(sum - rejectedQty) > 1e-6) {
+    throw one(field('defects', ERROR_CODE.INVALID, `불량 수량 합계(${sum})가 불합격 수량(${rejectedQty})과 같아야 합니다.`));
+  }
+}
 
 /**
  * IQC 불합격 사유(omf-all-around#106 · 장부 P-42) — 확정으로 태어나는 IQC 불합격은 본문 `defects` 가
@@ -21,7 +38,7 @@ const REJECTED = 'REJECTED';
 export async function prepareRejectionDefects(
   prisma: PrismaService,
   defects: DefectRecordWriteService,
-  body: Pick<InspectionResultCreate, 'inspectionRequestId' | 'overallJudgmentCode' | 'uomId' | 'defects'>,
+  body: Pick<InspectionResultCreate, 'inspectionRequestId' | 'overallJudgmentCode' | 'uomId' | 'defects' | 'rejectedQty'>,
   bornConfirmed: boolean,
 ) {
   const rows = body.defects ?? [];
@@ -35,14 +52,16 @@ export async function prepareRejectionDefects(
   if (rows.length > 0 && !isIqc) {
     throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
   }
-  // 불합격이 아닌 회차에는 불량 기록을 두지 않는다 — `:confirm`(#121 · P-47)·작성중 저장(#122 · P-48)과 같은 규칙.
-  if (rows.length > 0 && body.overallJudgmentCode !== REJECTED) {
-    throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격 판정에만 함께 보낼 수 있습니다.'));
+  // 불합격 판정도 불합격 수량도 없는 회차에는 불량 기록을 두지 않는다 — `:confirm`(#121 · P-47)·작성중 저장(#122 · P-48)과 같은 규칙(#205).
+  if (rows.length > 0 && !keepsDefects(body.overallJudgmentCode, body.rejectedQty)) {
+    throw one(field('defects', ERROR_CODE.INVALID, NO_REJECTION));
   }
   if (rows.length === 0) {
     if (isIqc) throw one(field('defects', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 함께 보내야 합니다.'));
     return null;
   }
+  // 합계는 확정으로 태어날 때만 맞춘다 — 작성중은 아직 입력하는 중이다.
+  if (bornConfirmed) assertDefectSum(rows, Number(body.rejectedQty ?? 0));
   return {
     prepared: await defects.prepareInspectionDefects(rows, body.uomId),
     target: { lotId: request?.lot_id ?? null, workOrderId: request?.work_order_id ?? null },
@@ -62,26 +81,35 @@ export async function prepareConfirmDefects(
   if (body.defects === undefined) return null;
   const result = await prisma.inspection_result.findUnique({
     where: { inspection_result_id: inspectionResultId },
-    select: { uom_id: true, overall_judgment_code: true, inspection_request: { select: { inspection_type_code: true } } },
+    select: {
+      uom_id: true,
+      overall_judgment_code: true,
+      rejected_qty: true,
+      inspection_request: { select: { inspection_type_code: true } },
+    },
   });
   // 없는 결과는 트랜잭션의 잠금이 404 로 답한다.
   if (result === null) return null;
   const isIqc = result.inspection_request.inspection_type_code === IQC;
-  const isRejected = (body.overallJudgmentCode ?? result.overall_judgment_code) === REJECTED;
+  const judgment = body.overallJudgmentCode ?? result.overall_judgment_code;
+  const rejectedQty = Number(result.rejected_qty);
   if (body.defects.length === 0) {
-    if (isIqc && isRejected) throw one(field('defects', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 함께 보내야 합니다.'));
+    if (isIqc && judgment === REJECTED) throw one(field('defects', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 함께 보내야 합니다.'));
     return null;
   }
   if (!isIqc) throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
-  if (!isRejected) throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격으로 확정할 때만 보낼 수 있습니다.'));
+  if (!keepsDefects(judgment, rejectedQty)) throw one(field('defects', ERROR_CODE.INVALID, NO_REJECTION));
+  // ⛔ 합계 거부도 트랜잭션·부적합 채번 «앞»이다 — 안에서 다시 보는 것은 잠근 뒤의 수량 대조다.
+  assertDefectSum(body.defects, rejectedQty);
   return defects.prepareInspectionDefects(body.defects, Number(result.uom_id));
 }
 
 /**
- * 확정 직전, 그 회차의 IQC 불량 기록을 확정 판정에 맞춘다(omf-all-around#121 · 장부 P-47).
- * - 불합격 + 본문 사유: 기존 기록을 지우고 본문 값으로 다시 쓴다 — 한 회차의 사유는 확정 시점 입력 1벌이다.
- * - 합격·보류: 확정 전에 붙었던 기록을 지운다 — 합격 회차에 불량이 남지 않는다.
- * - 불합격 + 사유 없음: 손대지 않는다(`assertRejectionRecorded` 가 기록을 요구한다).
+ * 확정 직전, 그 회차의 IQC 불량 기록을 확정 판정·불합격 수량에 맞춘다(omf-all-around#121 · 장부 P-47 · #205).
+ * - 불합격 판정이거나 불합격 수량이 있고 본문 사유: 기존 기록을 지우고 본문 값으로 다시 쓴다 — 한 회차의 사유는 확정 시점 입력 1벌이다.
+ * - 같은 경우 사유 없음: 임시 저장한 기록을 그대로 쓴다(불합격 판정이면 `assertRejectionRecorded` 가 기록을 요구한다).
+ * - 불합격 수량 0 인 합격·보류: 확정 전에 붙었던 기록을 지운다.
+ * - 남는 기록의 수량 합계는 불합격 수량과 같아야 한다(불합격 수량이 있을 때).
  * ⛔ 확정과 같은 트랜잭션이다 — 확정이 실패하면 기록 변경도 함께 되돌려진다.
  */
 export async function syncConfirmDefectsWithin(
@@ -91,22 +119,30 @@ export async function syncConfirmDefectsWithin(
     inspectionResultId: bigint;
     inspectionRequestId: bigint;
     judgment: string | undefined;
+    /** 잠근 뒤 읽은 회차의 불합격 수량. */
+    rejectedQty: number;
     prepared: PreparedInspectionDefects | null;
     detectedAt: Date;
     actor: { appUserId: number; workerId: bigint };
   },
 ): Promise<void> {
-  const isRejected = input.judgment === REJECTED;
-  if (isRejected && input.prepared === null) return;
+  const keeps = keepsDefects(input.judgment, input.rejectedQty);
   const request = await tx.inspection_request.findUnique({
     where: { inspection_request_id: input.inspectionRequestId },
     select: { inspection_type_code: true, lot_id: true, work_order_id: true },
   });
   if (request?.inspection_type_code !== IQC) return;
-  // 밖에서 읽은 판정과 잠근 뒤의 판정이 갈린 경우 — 불합격이 아닌 확정에 사유를 남기지 않는다.
-  if (input.prepared !== null && !isRejected) {
-    throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격으로 확정할 때만 보낼 수 있습니다.'));
+  // 밖에서 읽은 판정·수량과 잠근 뒤의 값이 갈린 경우 — 불량을 둘 수 없는 확정에 사유를 남기지 않는다.
+  if (input.prepared !== null && !keeps) throw one(field('defects', ERROR_CODE.INVALID, NO_REJECTION));
+  if (input.prepared === null && keeps) {
+    const stored = await tx.defect_record.findMany({
+      where: { inspection_result_id: input.inspectionResultId, source_type_code: IQC },
+      select: { defect_qty: true },
+    });
+    assertDefectSum(stored.map((row) => ({ defectQty: Number(row.defect_qty) })), input.rejectedQty);
+    return;
   }
+  if (input.prepared !== null) assertDefectSum(input.prepared.rows, input.rejectedQty);
   await replaceIqcDefectsWithin(tx, defects, request, input);
 }
 
@@ -118,21 +154,27 @@ export async function prepareDraftDefects(
   prisma: PrismaService,
   defects: DefectRecordWriteService,
   inspectionResultId: number,
-  body: { overallJudgmentCode?: string; defects?: InspectionDefectInput[] },
+  body: { overallJudgmentCode?: string; rejectedQty?: number; defects?: InspectionDefectInput[] },
 ): Promise<{ prepared: PreparedInspectionDefects | null } | undefined> {
   if (body.defects === undefined) return undefined;
   if (body.defects.length === 0) return { prepared: null };
   const result = await prisma.inspection_result.findUnique({
     where: { inspection_result_id: BigInt(inspectionResultId) },
-    select: { uom_id: true, overall_judgment_code: true, inspection_request: { select: { inspection_type_code: true } } },
+    select: {
+      uom_id: true,
+      overall_judgment_code: true,
+      rejected_qty: true,
+      inspection_request: { select: { inspection_type_code: true } },
+    },
   });
   // 없는 결과는 트랜잭션이 404 로 답한다.
   if (result === null) return undefined;
   if (result.inspection_request.inspection_type_code !== IQC) {
     throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
   }
-  if ((body.overallJudgmentCode ?? result.overall_judgment_code) !== REJECTED) {
-    throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격 판정에만 함께 보낼 수 있습니다.'));
+  // 합계는 맞추지 않는다 — 작성중은 아직 입력하는 중이다(확정이 맞춘다 · #205).
+  if (!keepsDefects(body.overallJudgmentCode ?? result.overall_judgment_code, body.rejectedQty ?? Number(result.rejected_qty))) {
+    throw one(field('defects', ERROR_CODE.INVALID, NO_REJECTION));
   }
   return { prepared: await defects.prepareInspectionDefects(body.defects, Number(result.uom_id)) };
 }

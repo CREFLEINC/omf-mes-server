@@ -190,6 +190,7 @@ export class InspectionConfirmService {
         inspectionResultId: resultId,
         inspectionRequestId: result.inspection_request_id,
         judgment,
+        rejectedQty: Number(result.rejected_qty),
         prepared: preparedDefects,
         detectedAt: changedAt,
         actor: { appUserId, workerId },

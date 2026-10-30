@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -18,6 +19,12 @@ export interface InspectionRequestListQuery {
   /** LOT 의 공장(omf-all-around#211 · 장부 P-155) — 부품 공장 IQC 화면이 OA 공장 LOT 을 빼고 본다. */
   plantId?: number;
   workOrderId?: number;
+  /**
+   * 의뢰 시각 반열림 구간 `[from, to)`(omf-all-around#205) — 부품 IQC 화면의 「오늘 입고」. 공장 하루의 경계는 화면이 공장
+   * 시간대로 셈해 시각(오프셋 포함)으로 보낸다 — 서버가 UTC 날짜로 자르면 베트남 공장의 아침 7시 전 입고가 전날로 빠진다.
+   */
+  requestedAtFrom?: string;
+  requestedAtTo?: string;
   q?: string;
   page?: number;
   size?: number;
@@ -94,7 +101,7 @@ function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_reques
     ...filter('lot_id', query.lotId),
     ...filter('work_order_id', query.workOrderId),
     // 상태(`AND`)·공급사·공장(둘 다 `lot`) 조건은 펼치면 서로 덮는다 — AND 하나로 묶는다.
-    AND: [statusWhere(query), supplierWhere(query.supplierId), plantWhere(query.plantId)],
+    AND: [statusWhere(query), supplierWhere(query.supplierId), plantWhere(query.plantId), requestedAtWhere(query)],
     // ⛔ 범위는 `inspection_request_no` «하나»다 — 공급사·품목은 훑지 않는다(계약).
     ...(query.q === undefined ? {} : { inspection_request_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } }),
   };
@@ -125,6 +132,25 @@ function supplierWhere(supplierId: number | undefined): Prisma.inspection_reques
 
 function plantWhere(plantId: number | undefined): Prisma.inspection_requestWhereInput {
   return plantId === undefined ? {} : { lot: { plant_id: plantId } };
+}
+
+function requestedAtWhere(query: InspectionRequestListQuery): Prisma.inspection_requestWhereInput {
+  const from = instantOf('requestedAtFrom', query.requestedAtFrom);
+  const to = instantOf('requestedAtTo', query.requestedAtTo);
+  if (from === undefined && to === undefined) return {};
+  return { requested_at: { ...(from === undefined ? {} : { gte: from }), ...(to === undefined ? {} : { lt: to }) } };
+}
+
+/** 오프셋이 붙은 시각만 받는다 — 오프셋 없는 글자는 어느 시간대인지 몰라 400 이다. */
+function instantOf(field: string, value: string | undefined): Date | undefined {
+  if (value === undefined) return undefined;
+  const parsed = new Date(value);
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(value) || Number.isNaN(parsed.getTime())) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field, code: ERROR_CODE.INVALID, message: '시간대가 붙은 시각(예: 2026-10-30T00:00:00+07:00)이어야 합니다.' },
+    ]);
+  }
+  return parsed;
 }
 
 /** 검사 의뢰 목록의 조건 + 단말 범위 — 단말 작업 수(POP OQC)가 같은 함수로 센다(omf-all-around#190). */
