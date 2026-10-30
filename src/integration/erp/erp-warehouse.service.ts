@@ -23,6 +23,7 @@ interface MesWarehouse {
   plantCode: string;
   plantName: string;
   warehouseName: string;
+  isExternal: boolean;
   isActive: boolean;
 }
 
@@ -119,6 +120,7 @@ export class ErpWarehouseService {
         warehouse_id: true,
         warehouse_code: true,
         warehouse_name: true,
+        is_external: true,
         is_active: true,
         plant: { select: { plant_id: true, plant_code: true, plant_name: true } },
       },
@@ -133,6 +135,7 @@ export class ErpWarehouseService {
         plantCode: row.plant.plant_code,
         plantName: row.plant.plant_name,
         warehouseName: row.warehouse_name,
+        isExternal: row.is_external,
         isActive: row.is_active,
       });
     }

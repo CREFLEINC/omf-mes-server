@@ -18,7 +18,8 @@
 --     the ERP source but does not come through the bulk item load.
 --   * Six items are marked inspection_required; the ERP source carries no such flag.
 --   * ERP warehouse codes carry no plant. WH* go to PL11 and S<digit>* to PL13. Other codes
---     are external warehouses, which MES does not manage (2026-10-30); they are not loaded.
+--     go to PL11, except 100667 and 100668, which the customer warehouse list (2026-10-29)
+--     assigns to PL13. Every warehouse is loaded as internal and carries no partner.
 
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -452,7 +453,10 @@ INSERT INTO mdm.warehouse
   (plant_id, business_unit_id, warehouse_code, warehouse_name,
    warehouse_type_code, management_level_code)
 SELECT
-  CASE WHEN source.code LIKE 'WH%' THEN parts.plant_id ELSE oa.plant_id END,
+  CASE WHEN source.code LIKE 'WH%' THEN parts.plant_id
+       WHEN source.code ~ '^S[0-9]' THEN oa.plant_id
+       WHEN source.code IN ('100667', '100668') THEN oa.plant_id
+       ELSE parts.plant_id END,
   unit.business_unit_id,
   source.code,
   left(source.code_name, 200),
@@ -472,7 +476,6 @@ JOIN mdm.plant parts
 JOIN mdm.plant oa
   ON oa.legal_entity_id = entity.legal_entity_id AND oa.plant_code = 'PL13'
 WHERE source.type_code = 'SL_TYPE'
-  AND (source.code LIKE 'WH%' OR source.code ~ '^S[0-9]')
   AND entity.legal_entity_code = 'SAMJIN_LND_VINA'
 ON CONFLICT (plant_id, warehouse_code) DO NOTHING;
 
@@ -561,8 +564,16 @@ BEGIN
     SELECT 1 FROM erp_seed.erp_code source
     WHERE source.type_code = 'SL_TYPE' AND source.code = warehouse.warehouse_code
   );
-  IF actual_count <> 25 THEN
-    RAISE EXCEPTION 'warehouse target count: expected 25, got %', actual_count;
+  IF actual_count <> 33 THEN
+    RAISE EXCEPTION 'warehouse target count: expected 33, got %', actual_count;
+  END IF;
+
+  SELECT count(*) INTO actual_count
+  FROM mdm.warehouse warehouse
+  JOIN mdm.plant plant ON plant.plant_id = warehouse.plant_id
+  WHERE warehouse.warehouse_code IN ('100667', '100668') AND plant.plant_code = 'PL13';
+  IF actual_count <> 2 THEN
+    RAISE EXCEPTION 'PL13 warehouse 100667·100668 count: expected 2, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count FROM planning.bom
