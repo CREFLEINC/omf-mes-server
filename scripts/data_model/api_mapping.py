@@ -23,6 +23,15 @@ RESOURCE_TABLES: dict[str, list[str]] = {
     # 그대로 맞는다 — `contentType`=`mime_type`, `byteSize`=`file_size`.
     "/app/attachments": ["app.attachment"],
     "/app/document-issues": ["app.document_issue_log", "app.printer", "app.attachment"],
+    "/app/handover-alert-settings": [
+        "app.handover_alert_setting",
+        "app.handover_alert_recipient",
+    ],
+    "/app/notification-dispatches": ["app.notification_event", "app.zalo_delivery"],
+    "/app/notification-settings": [
+        "app.notification_department_setting",
+        "app.notification_department_recipient",
+    ],
     "/app/notification-subscriptions": ["app.notification_subscription"],
     "/app/notification-events": ["app.notification_event", "app.notification"],
     "/app/notifications": ["app.notification", "app.notification_event"],
@@ -31,9 +40,21 @@ RESOURCE_TABLES: dict[str, list[str]] = {
     "/app/printers": ["app.printer"],
     "/app/roles/{roleId}/permissions": ["app.role_permission", "app.role"],
     "/app/roles": ["app.role", "app.role_permission"],
+    # 단말 «내 일» 건수. 저장 표가 없는 읽기 전용 합계라 센 표를 모두 적는다.
+    "/app/terminal-work-counts": [
+        "logistics.putaway_task",
+        "logistics.picking_order",
+        "logistics.stock_transfer",
+        "logistics.shipment_request",
+        "logistics.shipment",
+        "production.work_order",
+        "quality.inspection_request",
+    ],
     "/app/users/{userId}/data-scopes": ["app.user_data_scope", "app.app_user"],
     "/app/users/{userId}/roles": ["app.user_role", "app.app_user", "app.role"],
     "/app/users": ["app.app_user", "app.user_credential"],
+    "/app/zalo-connection": ["app.zalo_connection", "app.zalo_template"],
+    "/app/zalo-deliveries": ["app.zalo_delivery", "app.notification_event"],
     "/app/sessions": ["app.app_user", "app.user_credential"],
     "/app/dashboard-summary": [
         "production.work_order",
@@ -42,6 +63,19 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "maintenance.equipment_downtime",
     ],
     "/audit/events": ["audit.audit_event"],
+    # 받기 표별 상태는 `erp_sync_state` 한 줄씩이고, 「지금 읽기」는 그 줄에 요청 시각만
+    # 적는다. 도는 중인지는 `sync_lease` 의 만료로 가른다.
+    "/integration/erp-sync/tables": [
+        "integration.erp_sync_state",
+        "integration.sync_lease",
+    ],
+    # 공통코드(ERP 창고)와 MES 창고 사이에 FK 가 없어 코드로만 짝짓는다.
+    "/integration/erp-sync/warehouses": ["mdm.code_value", "mdm.warehouse"],
+    # 통관번호는 발주 라인의 칸에 적는다 — 별도 표가 없다.
+    "/integration/erp-sync/purchase-orders": [
+        "logistics.purchase_order_line",
+        "logistics.purchase_order",
+    ],
     "/integration/interface-definitions": ["integration.interface_definition"],
     "/integration/outbound-item-settings": [
         "integration.outbound_item_setting",
@@ -100,6 +134,33 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "logistics.goods_receipt",
         "logistics.goods_receipt_line",
     ],
+    "/logistics/goods-receipt-lines": [
+        "logistics.goods_receipt_line",
+        "logistics.goods_receipt",
+        "logistics.inbound_receipt_line",
+    ],
+    # 배정을 더하고 빼면 같은 트랜잭션에서 P/O 라인의 received_qty 도 고친다.
+    "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates": [
+        "logistics.purchase_order_line",
+        "logistics.inbound_receipt_line",
+    ],
+    "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations": [
+        "logistics.inbound_receipt_po_allocation",
+        "logistics.inbound_receipt_line",
+        "logistics.purchase_order_line",
+    ],
+    "/logistics/inbound-unallocated": [
+        "logistics.inbound_receipt_line",
+        "logistics.inbound_receipt",
+        "logistics.inbound_receipt_po_allocation",
+    ],
+    # 줄마다 입하 한 건을 세운다 — 입하 등록과 같은 경로라 배정과 P/O 라인 수량도 함께 쓴다.
+    "/logistics/inbound-receipts:per-line": [
+        "logistics.inbound_receipt",
+        "logistics.inbound_receipt_line",
+        "logistics.inbound_receipt_po_allocation",
+        "logistics.purchase_order_line",
+    ],
     "/logistics/inbound-receipt-lines": [
         "logistics.inbound_variance",
         "logistics.inbound_receipt_line",
@@ -113,6 +174,14 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "logistics.inbound_receipt",
         "logistics.inbound_receipt_line",
     ],
+    # 로케이션 이동. 이동 문서를 만들어 같은 트랜잭션에서 재고를 전기한다.
+    "/logistics/location-moves": [
+        "logistics.stock_transfer",
+        "logistics.stock_transfer_line",
+        "inventory.inventory_transaction",
+        "inventory.inventory_transaction_line",
+        "inventory.inventory_balance",
+    ],
     "/logistics/material-issue-requests": [
         "logistics.material_issue_request",
         "logistics.material_issue_request_line",
@@ -121,6 +190,10 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "logistics.picking_order",
         "logistics.picking_line",
         "inventory.inventory_reservation",
+    ],
+    "/logistics/purchase-order-lines": [
+        "logistics.purchase_order_line",
+        "logistics.purchase_order",
     ],
     "/logistics/purchase-orders/{purchaseOrderId}/lines": [
         "logistics.purchase_order_line",
@@ -140,6 +213,16 @@ RESOURCE_TABLES: dict[str, list[str]] = {
     "/logistics/shipment-requests": [
         "logistics.shipment_request",
         "logistics.shipment_request_line",
+    ],
+    "/logistics/shipment-lines": [
+        "logistics.shipment_line",
+        "logistics.shipment",
+        "logistics.shipment_lot_allocation",
+    ],
+    "/logistics/shipping-units": [
+        "logistics.shipping_unit",
+        "logistics.shipping_unit_handling_unit",
+        "logistics.shipment",
     ],
     "/logistics/shipments": [
         "logistics.shipment",
@@ -203,6 +286,7 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "mdm.equipment",
     ],
     "/mdm/equipments": ["mdm.equipment"],
+    "/mdm/item-resource-maps": ["mdm.item_resource_map", "mdm.item"],
     "/mdm/items/{itemId}/bu-item-maps": ["mdm.item_bu_item_map", "mdm.item"],
     "/mdm/items/{itemId}/external-codes": ["mdm.item_external_code", "mdm.item"],
     "/mdm/items/{itemId}/uom-conversions": ["mdm.item_uom_conversion", "mdm.item"],
@@ -318,6 +402,41 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "quality.nonconformance",
     ],
     "/quality/disposition-decisions": ["quality.disposition_decision"],
+    "/quality/inspection-sheet-templates": [
+        "quality.inspection_sheet_template",
+        "quality.inspection_sheet_template_step",
+        "quality.inspection_sheet_template_item",
+        "quality.inspection_sheet_template_lot_source",
+    ],
+    "/quality/inspection-sheets": [
+        "quality.inspection_sheet",
+        "quality.inspection_sheet_step_result",
+        "quality.inspection_sheet_item_result",
+        "quality.inspection_sheet_ng",
+        "quality.inspection_sheet_event",
+    ],
+    # 시리얼로 시트를 연다 — 양식과 시리얼·투입 LOT 을 읽어 결과 칸을 채워 세운다.
+    "/quality/inspection-sheets:open-by-serial": [
+        "quality.inspection_sheet",
+        "quality.inspection_sheet_step_result",
+        "quality.inspection_sheet_item_result",
+        "quality.inspection_sheet_template",
+        "trace.serial_number",
+        "production.material_consumption",
+    ],
+    "/quality/item-inspection-level-histories": [
+        "quality.item_inspection_level_history",
+        "quality.item_inspection_level",
+    ],
+    "/quality/item-inspection-levels": [
+        "quality.item_inspection_level",
+        "quality.item_inspection_level_history",
+    ],
+    "/quality/oqc-serials": [
+        "quality.oqc_serial_result",
+        "trace.serial_number",
+        "quality.inspection_request",
+    ],
     "/quality/inspection-plan-versions/{inspectionPlanVersionId}/items": [
         "quality.inspection_item_spec",
         "quality.inspection_plan_version",
@@ -343,6 +462,29 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "quality.nonconformance",
         "quality.nonconformance_lot",
         "quality.disposition_decision",
+    ],
+    "/trace/material-input-lines": [
+        "production.material_consumption",
+        "trace.lot",
+        "production.work_order",
+    ],
+    "/trace/packing-lines": [
+        "inventory.handling_unit_content",
+        "inventory.handling_unit",
+        "trace.lot",
+    ],
+    "/trace/material-lot-flows": [
+        "trace.lot",
+        "logistics.goods_receipt_line",
+        "production.material_consumption",
+        "trace.lot_relation",
+        "logistics.shipment_lot_allocation",
+    ],
+    "/trace/product-lot-flows": [
+        "trace.lot",
+        "production.production_result_lot_allocation",
+        "trace.lot_relation",
+        "logistics.shipment_lot_allocation",
     ],
     "/trace/lots/{lotId}/external-identifiers": [
         "trace.lot_external_identifier",
@@ -377,6 +519,8 @@ TABLELESS_PATHS: dict[str, str] = {
     # 있다) ② app.role_permission.permission_code 에 FK 가 없다(FK 는 role_id 하나뿐)
     # ③ 계약 설명이 「앱이 소유한다 — 화면이 늘면 배포로 는다」로 못박았다
     # ④ GET /app/permissions 에 파라미터도 페이징도 없다(화면 수만큼으로 닫힌 고정 목록).
+    # 인계 작업 종류는 코드의 상수 목록이다 — src/core/notification/handover-alert-types.ts.
+    "/app/handover-alert-types": "앱 상수 — 배포로만 는다",
     "/app/permissions": "앱 상수 — 고객이 편집하지 않고 배포로만 는다 (2026-09-02 판정)",
 }
 
