@@ -3688,6 +3688,145 @@
     }
    }
   },
+  "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations": {
+   "parameters": [
+    {
+     "name": "inboundReceiptLineId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "배정 더하기",
+    "description": "이 줄의 미배정 몫 중 qty 를 P/O 라인 하나에 배정한다 — 그 라인의 받은 수량이 같이 오른다. 같은 P/O 라인에 몫을 더 이어도 된다. 줄이 이미 ERP 로 가는 입고에 들어갔고 대상이 ERP 발주면 이 몫의 구매입고를 ERP 로 보낸다. 근거: 서버 선행 · 장부 P-115",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundAllocationCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "배정됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundAllocation"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다 — INVALID/qty 0 이하 · INVALID/purchaseOrderLineId 없는 라인이거나 공장·공급사·품목·단위가 다르거나 취소·닫힌 라인 · RANGE/qty 줄의 미배정 수량을 넘는다 · QTY_EXCEEDS_ORDERED/qty 발주 + 초과 허용치를 넘는다 · STATE_LOCKED/inboundReceiptLineId 취소했거나 취소 요청 중인 입하",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 초과 입하 분리 화면(W-01-03)의 일이다. POST /logistics/inbound-receipts:split 과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 줄",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations/{inboundReceiptPoAllocationId}": {
+   "parameters": [
+    {
+     "name": "inboundReceiptLineId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1
+     }
+    },
+    {
+     "name": "inboundReceiptPoAllocationId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1
+     }
+    }
+   ],
+   "delete": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "배정 빼기",
+    "description": "이 줄의 배정 몫 하나를 뺀다 — 그 P/O 라인의 받은 수량이 되돌아가고 몫은 미배정으로 돌아간다. 근거: 서버 선행 · 장부 P-115",
+    "responses": {
+     "204": {
+      "description": "뺐다"
+     },
+     "400": {
+      "description": "STATE_LOCKED/inboundReceiptPoAllocationId ERP 구매입고로 보낸 배정(줄이 ERP 로 가는 입고에 들어갔고 대상이 ERP 발주) · STATE_LOCKED/inboundReceiptLineId 취소했거나 취소 요청 중인 입하",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 초과 입하 분리 화면(W-01-03)의 일이다. POST /logistics/inbound-receipts:split 과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 줄이거나 그 줄의 배정이 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/inbound-receipts": {
    "get": {
     "tags": [
@@ -12402,6 +12541,27 @@
       }
      }
     ]
+   },
+   "InboundAllocationCreate": {
+    "type": "object",
+    "required": [
+     "purchaseOrderLineId",
+     "qty"
+    ],
+    "description": "배정 한 몫. 장부 P-115",
+    "properties": {
+     "purchaseOrderLineId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "배정할 P/O 라인 — 배정 후보에서 고른다",
+      "example": 1001
+     },
+     "qty": {
+      "type": "number",
+      "description": "배정할 수량. 0 보다 커야 한다",
+      "example": 500
+     }
+    }
    },
    "InboundAllocationOrderLine": {
     "type": "object",
