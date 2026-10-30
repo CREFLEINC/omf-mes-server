@@ -439,5 +439,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/inbound-receipts:per-line': ['M-01-01', 'W-01-03'],
   // 외자 발주의 통관번호 받아오기(장부 P-143) — 「ERP 연동 현황·이력 > 구매 발주」의 단추다. 같은 화면(W-06-10)의 일괄 재처리와 같다.
   'POST /integration/erp-sync/purchase-orders/{purchaseOrderId}/customs-clearances:fetch': ['W-06-10'],
+  // 입하 줄 ↔ P/O 라인 배정(장부 P-115) — 배정은 초과 입하 분리 화면(W-01-03)의 일이다(`:split` 과 같은 화면).
+  'GET /logistics/inbound-unallocated': ['W-01-03'],
+  'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates': ['W-01-03'],
 };
 

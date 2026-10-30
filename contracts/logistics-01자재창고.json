@@ -3624,6 +3624,70 @@
     }
    }
   },
+  "/logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates": {
+   "parameters": [
+    {
+     "name": "inboundReceiptLineId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "배정 후보 P/O 라인",
+    "description": "이 줄의 미배정 수량을 다 받을 수 있는 P/O 라인 — 같은 공장·공급사·품목·단위이고, 라인이 취소되지 않았고 발주가 닫히거나 취소되지 않았으며, 발주 + 초과 허용치 − 받은 수량 ≥ 미배정 수량. 줄 자신의 P/O 라인도 들어간다(ERP 가 원래 발주 수량을 늘려 준 경우). 남은 수량이 미배정과 딱 맞는 라인(exactMatch) 먼저, 그다음 최근 발주. 미배정이 없으면 빈 목록. 근거: 서버 선행 · 장부 P-115",
+    "responses": {
+     "200": {
+      "description": "후보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/InboundAllocationCandidate"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 초과 입하 분리 화면(W-01-03)의 일이다. POST /logistics/inbound-receipts:split 과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 줄",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/inbound-receipts": {
    "get": {
     "tags": [
@@ -4219,6 +4283,131 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-unallocated": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "미배정이 남은 입하 줄 목록",
+    "description": "받은 수량 중 어느 P/O 라인에도 배정하지 않은 몫이 남은 입하 줄(받은 수량 > 배정 합). 취소했거나 취소 요청 중인 입하는 뺀다. 무발주 입하(예외 유형)의 줄도 들어가고 행이 그 유형을 싣는다. 정렬: inboundReceiptLineId 오름. 근거: 서버 선행 · 장부 P-115",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "입하 공장"
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "입하 공급사"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "줄 품목"
+     },
+     {
+      "name": "excludeExceptionTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]{0,49}$"
+       }
+      },
+      "style": "form",
+      "explode": false,
+      "example": [
+       "CUSTOMER_SUPPLY",
+       "FREE_SAMPLE"
+      ],
+      "description": "입하의 예외 유형이 이 중 하나인 줄을 뺀다 — 예외 유형이 없는 줄은 남는다(page.total 도 뺀 수). 값 여럿을 쉼표로 이어 보낸다(같은 키를 되풀이해도 된다). 공통코드에 있는지는 보지 않는다 — 무엇을 뺄지는 화면이 정한다"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/InboundUnallocatedLine"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 초과 입하 분리 화면(W-01-03)의 일이다. POST /logistics/inbound-receipts:split 과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -12123,6 +12312,268 @@
      }
     }
    },
+   "InboundAllocation": {
+    "type": "object",
+    "required": [
+     "inboundReceiptPoAllocationId",
+     "inboundReceiptLineId",
+     "allocatedQty",
+     "allocatedAt",
+     "orderLine"
+    ],
+    "description": "입하 줄의 받은 수량 중 P/O 라인 하나에 배정한 몫. 장부 P-115",
+    "properties": {
+     "inboundReceiptPoAllocationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "inboundReceiptLineId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "allocatedQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "example": 500
+     },
+     "allocatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "배정한 시각",
+      "example": "2026-10-24T09:00:00Z"
+     },
+     "orderLine": {
+      "$ref": "#/components/schemas/InboundAllocationOrderLine"
+     }
+    }
+   },
+   "InboundAllocationCandidate": {
+    "description": "배정 후보 P/O 라인. 장부 P-115",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/InboundAllocationOrderLine"
+     },
+     {
+      "type": "object",
+      "required": [
+       "orderDate",
+       "expectedReceiptDate",
+       "orderedQty",
+       "receivedQty",
+       "roomQty",
+       "exactMatch"
+      ],
+      "properties": {
+       "orderDate": {
+        "type": "string",
+        "format": "date",
+        "example": "2026-10-01"
+       },
+       "expectedReceiptDate": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date",
+        "description": "납기 — 헤더 값",
+        "example": "2026-10-25"
+       },
+       "orderedQty": {
+        "type": "number",
+        "example": 5000
+       },
+       "receivedQty": {
+        "type": "number",
+        "description": "이 P/O 라인에 지금까지 오른 수량",
+        "example": 4500
+       },
+       "roomQty": {
+        "type": "number",
+        "description": "더 받을 수 있는 수량 — 발주 + 초과 허용치 − 받은 수량",
+        "example": 500
+       },
+       "exactMatch": {
+        "type": "boolean",
+        "description": "남은 수량(발주 − 받은 수량)이 줄의 미배정 수량과 같다",
+        "example": true
+       }
+      }
+     }
+    ]
+   },
+   "InboundAllocationOrderLine": {
+    "type": "object",
+    "required": [
+     "purchaseOrderLineId",
+     "purchaseOrderId",
+     "purchaseOrderNo",
+     "erpPurchaseOrderNo",
+     "lineNo"
+    ],
+    "description": "배정 대상 P/O 라인. 장부 P-115",
+    "properties": {
+     "purchaseOrderLineId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "purchaseOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "purchaseOrderNo": {
+      "type": "string",
+      "example": "PO-2026-000123"
+     },
+     "erpPurchaseOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "MES 에서 먼저 만든 P/O 는 null",
+      "example": "EPO-2026-000123"
+     },
+     "lineNo": {
+      "type": "integer",
+      "example": 1
+     }
+    }
+   },
+   "InboundUnallocatedLine": {
+    "type": "object",
+    "required": [
+     "inboundReceiptLineId",
+     "lineNo",
+     "inboundReceiptId",
+     "inboundReceiptNo",
+     "receiptDatetime",
+     "exceptionTypeCode",
+     "receivedQty",
+     "unallocatedQty",
+     "plantId",
+     "supplierId",
+     "supplierCode",
+     "supplierName",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "uomId",
+     "uomCode",
+     "lotId",
+     "lotNo",
+     "allocations"
+    ],
+    "description": "미배정이 남은 입하 줄 한 행 — 줄·입하·공급사·품목·단위·LOT 값과 배정 몫. 장부 P-115",
+    "properties": {
+     "inboundReceiptLineId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lineNo": {
+      "type": "integer",
+      "example": 1
+     },
+     "inboundReceiptId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "inboundReceiptNo": {
+      "type": "string",
+      "example": "IR-2026-000123"
+     },
+     "receiptDatetime": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-10-24T09:00:00Z"
+     },
+     "exceptionTypeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "무발주 입하(예외 유형)면 그 유형. 아니면 null",
+      "example": "OVER_DELIVERY"
+     },
+     "receivedQty": {
+      "type": "number",
+      "description": "줄 전체 수량 — LOT 의 처음 수량",
+      "example": 4800
+     },
+     "unallocatedQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "받은 수량 − 배정 합",
+      "example": 300
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "supplierId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "supplierCode": {
+      "type": "string",
+      "example": "SUP-001"
+     },
+     "supplierName": {
+      "type": "string",
+      "example": "하노이 부품"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "RM-001"
+     },
+     "itemName": {
+      "type": "string",
+      "example": "판재"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "KG"
+     },
+     "lotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "AD9001-00041|50|261016|100001|0001"
+     },
+     "allocations": {
+      "type": "array",
+      "description": "배정 몫 — 만든 순서",
+      "items": {
+       "$ref": "#/components/schemas/InboundAllocation"
+      }
+     }
+    }
+   },
    "InboundReceipt": {
     "x-source-table": "logistics.inbound_receipt",
     "type": "object",
@@ -12411,7 +12862,9 @@
      "supplierLotMissing",
      "inspectionRequired",
      "statusCode",
-     "supplierLotLabelAttached"
+     "supplierLotLabelAttached",
+     "allocations",
+     "unallocatedQty"
     ],
     "description": "입하 라인.",
     "properties": {
@@ -12567,6 +13020,47 @@
       ],
       "description": "서버 선행 P-56 — 이 라인 LOT 의 입고 가능 수량(initial_qty − 선별로 떼어 낸 자식 LOT 수량 − 이미 전기된 입고 수량). 입고 화면의 기본 수량이고 서버 입고 상한이다. LOT 이 없으면 null. 라인 목록(GET …/lines)·상세만 싣는다.",
       "example": 35
+     },
+     "allocations": {
+      "type": "array",
+      "description": "이 줄의 받은 수량 중 P/O 라인마다 배정한 몫 — 만든 순서. 무발주 줄은 빈 배열. 장부 P-115",
+      "items": {
+       "type": "object",
+       "required": [
+        "inboundReceiptPoAllocationId",
+        "purchaseOrderLineId",
+        "allocatedQty",
+        "allocatedAt"
+       ],
+       "properties": {
+        "inboundReceiptPoAllocationId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "purchaseOrderLineId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "allocatedQty": {
+         "type": "number",
+         "exclusiveMinimum": 0,
+         "example": 4500
+        },
+        "allocatedAt": {
+         "type": "string",
+         "format": "date-time",
+         "description": "배정한 시각",
+         "example": "2026-10-24T09:00:00Z"
+        }
+       }
+      }
+     },
+     "unallocatedQty": {
+      "type": "number",
+      "description": "받은 수량 − 배정 합 — 아직 어느 P/O 라인에도 넣지 않은 몫. 장부 P-115",
+      "example": 500
      },
      "splitLots": {
       "type": "array",

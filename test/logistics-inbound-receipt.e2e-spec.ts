@@ -381,6 +381,11 @@ describe('입하 등록 (e2e)', () => {
     const detailOf = async (inboundReceiptId: number): Promise<Detail> =>
       (await request(app.getHttpServer()).get(`/api/logistics/inbound-receipts/${inboundReceiptId}`).set('Cookie', cookie).expect(200)).body as Detail;
     type AllocatedLine = LineBody & { unallocatedQty: number; allocations: { purchaseOrderLineId: number; allocatedQty: number }[] };
+    const expectContract = (operation: string, body: unknown, status = 200): void => {
+      const validate = validator(operation, status);
+      expect(validate(body)).toBe(true);
+      expect(validate.errors ?? []).toEqual([]);
+    };
 
     /** 발주 `ordered` 에 `allocated` 만 넣고 `excess` 를 미배정으로 남긴 줄 하나. */
     async function unallocatedOf(ordered: number, allocated: number, excess: number) {
@@ -399,6 +404,7 @@ describe('입하 등록 (e2e)', () => {
       const small = await seedOrderLine(200);
 
       const list = await api('/inbound-unallocated?size=200').expect(200);
+      expectContract('GET /logistics/inbound-unallocated', list.body);
       const row = (list.body.items as { inboundReceiptLineId: number }[]).find((item) => item.inboundReceiptLineId === lineId);
       expect(row).toMatchObject({
         receivedQty: 4800,
@@ -414,6 +420,7 @@ describe('입하 등록 (e2e)', () => {
       expect(typeof (row as unknown as { exceptionTypeCode: unknown }).exceptionTypeCode).toBe('string');
 
       const candidates = await api(`/inbound-receipt-lines/${lineId}/allocation-candidates`).expect(200);
+      expectContract('GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates', candidates.body);
       const ids = (candidates.body.items as { purchaseOrderLineId: number }[]).map((item) => item.purchaseOrderLineId);
       expect(ids).toContain(source.purchaseOrderLineId);
       expect(ids).not.toContain(small.purchaseOrderLineId);
@@ -431,7 +438,9 @@ describe('입하 등록 (e2e)', () => {
 
       expect(created.body).toMatchObject({ inboundReceiptLineId: lineId, allocatedQty: 500, orderLine: { purchaseOrderLineId: added.purchaseOrderLineId } });
       expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(500);
-      const line = (await detailOf(detail.inboundReceipt.inboundReceiptId)).lines[0] as AllocatedLine;
+      const after = await detailOf(detail.inboundReceipt.inboundReceiptId);
+      expectContract('GET /logistics/inbound-receipts/{inboundReceiptId}', after);
+      const line = after.lines[0] as AllocatedLine;
       expect(line.unallocatedQty).toBe(0);
       expect(line.allocations.map((row) => [row.purchaseOrderLineId, row.allocatedQty])).toEqual([
         [detail.lines[0].purchaseOrderLineId, 5000],
@@ -503,9 +512,9 @@ describe('입하 등록 (e2e)', () => {
     });
 
     it('⛔ excludeExceptionTypeCode 가 비었거나 코드 모양이 아니면 400', async () => {
-      for (const bad of ['', 'customer_supply', 'CUSTOMER_SUPPLY,']) {
+      for (const [bad, at] of [['', 0], ['customer_supply', 0], ['CUSTOMER_SUPPLY,', 1]] as const) {
         const response = await api(`/inbound-unallocated?excludeExceptionTypeCode=${bad}`).expect(400);
-        expect(response.body.errors).toEqual([expect.objectContaining({ field: 'excludeExceptionTypeCode', code: 'INVALID' })]);
+        expect(response.body.errors).toEqual([expect.objectContaining({ field: `excludeExceptionTypeCode[${at}]`, code: 'INVALID' })]);
       }
     });
 
