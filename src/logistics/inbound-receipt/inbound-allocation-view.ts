@@ -1,14 +1,10 @@
-import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { ERROR_CODE, field, one } from '../../common/errors';
 import { toDateString } from '../../common/master';
 import { roomOf, unallocatedQtyOf } from './inbound-allocation';
 
-/**
- * 입하 배정 경로의 질의·본문을 서버 형으로 옮기는 자리와 응답 모양. 목록 질의는 가드가 계약대로 검사해 넘긴다.
- * 더하기·빼기의 경로·본문은 계약에 아직 없어 여기서 손으로 검사하고 오류 모양은 가드와 같게 한다.
- */
+/** 입하 배정 경로(장부 P-115)의 질의·본문을 서버 형으로 옮기는 자리와 응답 모양. 형·필수 검사는 가드가 계약대로 한다. */
 
 export interface UnallocatedQuery {
   plantId?: bigint;
@@ -19,8 +15,6 @@ export interface UnallocatedQuery {
   page?: number;
   size?: number;
 }
-
-const INT64_MAX = 2n ** 63n - 1n;
 
 /** 가드가 계약대로 검사하고 형을 바꿔 넘긴 질의 — `excludeExceptionTypeCode` 는 쉼표·반복 모두 배열로 온다. */
 export interface UnallocatedContractQuery {
@@ -47,34 +41,22 @@ function toId(value: number | undefined): bigint | undefined {
   return value === undefined ? undefined : BigInt(value);
 }
 
-/** 경로의 id — 틀리면 400 field `INVALID`. */
-export function parsePathId(name: string, raw: string): bigint {
-  const value = readId(raw);
-  if (value === undefined) throw new ContractException(HttpStatus.BAD_REQUEST, [invalid(name, '양의 정수여야 합니다.')]);
-  return value;
+/** 가드가 계약대로 검사해 넘긴 배정 추가 본문. */
+export interface AllocationContractBody {
+  purchaseOrderLineId: number;
+  qty: number;
 }
 
-/** 배정 추가 본문 — `{ purchaseOrderLineId, qty }`. JSON 숫자로 온다. 0 이하·한도 검사는 서비스가 한다. */
-export function parseAllocationBody(body: unknown): { purchaseOrderLineId: bigint; qty: Prisma.Decimal } {
-  const errors: ErrorItem[] = [];
-  const raw = (body ?? {}) as { purchaseOrderLineId?: unknown; qty?: unknown };
-  const lineId = raw.purchaseOrderLineId;
-  const lineOk = typeof lineId === 'number' && Number.isSafeInteger(lineId) && lineId > 0;
-  if (!lineOk) errors.push(field('purchaseOrderLineId', lineId === undefined ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID, '양의 정수여야 합니다.'));
-  const qtyOk = typeof raw.qty === 'number' && Number.isFinite(raw.qty);
-  if (!qtyOk) errors.push(field('qty', raw.qty === undefined ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID, '수여야 합니다.'));
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  return { purchaseOrderLineId: BigInt(lineId as number), qty: new Prisma.Decimal(raw.qty as number) };
-}
-
-function readId(value: unknown): bigint | undefined {
-  if (typeof value !== 'string' || !/^[1-9]\d{0,18}$/.test(value)) return undefined;
-  const id = BigInt(value);
-  return id <= INT64_MAX ? id : undefined;
-}
-
-function invalid(name: string, message: string): ErrorItem {
-  return field(name, ERROR_CODE.INVALID, message);
+/**
+ * 가드는 본문 int64 범위를 보지 않는다 — 안전 정수가 아니거나 1 보다 작은 P/O 라인 id 는 여기서 400 `INVALID` 다.
+ * `qty` 0 이하는 서비스가 400 `INVALID` 로 막는다 — 계약에 `exclusiveMinimum` 을 걸면 가드의 `RANGE` 가 된다.
+ */
+export function parseAllocationBody(body: AllocationContractBody): { purchaseOrderLineId: bigint; qty: Prisma.Decimal } {
+  const lineId = body.purchaseOrderLineId;
+  if (!Number.isSafeInteger(lineId) || lineId < 1) {
+    throw one(field('purchaseOrderLineId', ERROR_CODE.INVALID, '양의 정수여야 합니다.'));
+  }
+  return { purchaseOrderLineId: BigInt(lineId), qty: new Prisma.Decimal(body.qty) };
 }
 
 // ---- 응답 모양 ----

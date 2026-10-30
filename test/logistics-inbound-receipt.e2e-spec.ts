@@ -436,6 +436,7 @@ describe('입하 등록 (e2e)', () => {
         .send({ purchaseOrderLineId: added.purchaseOrderLineId, qty: 500 })
         .expect(201);
 
+      expectContract('POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations', created.body, 201);
       expect(created.body).toMatchObject({ inboundReceiptLineId: lineId, allocatedQty: 500, orderLine: { purchaseOrderLineId: added.purchaseOrderLineId } });
       expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(500);
       const after = await detailOf(detail.inboundReceipt.inboundReceiptId);
@@ -468,6 +469,8 @@ describe('입하 등록 (e2e)', () => {
         expect.objectContaining({ field: 'purchaseOrderLineId', code: 'REQUIRED' }),
         expect.objectContaining({ field: 'qty', code: 'INVALID' }),
       ]);
+      const noQty = await api(`/inbound-receipt-lines/${lineId}/allocations`, 'post').send({ purchaseOrderLineId: added.purchaseOrderLineId }).expect(400);
+      expect(noQty.body.errors).toEqual([expect.objectContaining({ field: 'qty', code: 'REQUIRED' })]);
     });
 
     it('전부 미배정으로 받은 줄을 새 P/O 에 통째로 잇는다 — 처음 P/O 에는 아무것도 남지 않는다', async () => {

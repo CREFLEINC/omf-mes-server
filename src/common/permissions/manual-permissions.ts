@@ -442,5 +442,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 입하 줄 ↔ P/O 라인 배정(장부 P-115) — 배정은 초과 입하 분리 화면(W-01-03)의 일이다(`:split` 과 같은 화면).
   'GET /logistics/inbound-unallocated': ['W-01-03'],
   'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocation-candidates': ['W-01-03'],
+  'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations': ['W-01-03'],
+  'DELETE /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations/{inboundReceiptPoAllocationId}': ['W-01-03'],
 };
 

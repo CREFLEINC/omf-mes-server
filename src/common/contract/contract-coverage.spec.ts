@@ -82,7 +82,8 @@ describe('계약 커버리지', () => {
     // 입하 예정 P/O 라인 목록 1 오퍼레이션(#741 · 장부 P-78): 564 → 565.
     // 줄마다 입하 한 건(장부 P-117) · 외자 발주 통관번호 받아오기(장부 P-143) 2 오퍼레이션: 565 → 567.
     // 입하 미배정 목록·배정 후보(장부 P-115) 2 오퍼레이션: 567 → 569.
-    expect(registry.size).toBe(569);
+    // 입하 배정 더하기·빼기(장부 P-115) 2 오퍼레이션: 569 → 571.
+    expect(registry.size).toBe(571);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
