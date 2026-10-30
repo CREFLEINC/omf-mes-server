@@ -33,11 +33,10 @@ export interface InboundReceiptLineWriteInput {
   manufacturedDate?: string | null;
   expiryDate?: string | null;
   /**
-   * 계약 밖(장부 P-100) — `receivedQty` 중 `purchaseOrderLineId` 에 넣지 않는 몫(초과분). LOT·IQC 는
-   * 줄 전체 수량 그대로다. ERP 가 그 몫으로 추가 P/O 를 만들면 그 라인에 잇는다. 가드가 보지 않는 칸이라
-   * `collectExcessErrors` 가 형까지 본다.
+   * `receivedQty` 중 `purchaseOrderLineId` 에 넣지 않는 몫(초과분 · 장부 P-100). LOT·IQC 는 줄 전체 수량
+   * 그대로다. ERP 가 그 몫으로 추가 P/O 를 만들면 그 라인에 잇는다.
    */
-  excessQty?: unknown;
+  excessQty?: number | null;
 }
 
 /** 헤더 한 벌 — 등록 본문과 `:split` 의 한쪽(계약 `InboundReceiptSplitPart`)이 함께 쓴다.
@@ -66,7 +65,7 @@ export interface InboundReceiptCreateInput extends InboundReceiptHeaderWriteInpu
 
 /** 초과분(장부 P-100). 생략·0 은 없음이다. `collectExcessErrors` 를 지난 값만 넘긴다. */
 export function excessQtyOf(line: InboundReceiptLineWriteInput): Prisma.Decimal {
-  return new Prisma.Decimal(typeof line.excessQty === 'number' ? line.excessQty : 0);
+  return new Prisma.Decimal(line.excessQty ?? 0);
 }
 
 /** 이 줄이 P/O 라인에 더하는 수량 — 받은 수량에서 초과분을 뺀 것. */
@@ -77,12 +76,7 @@ export function attributedQtyOf(line: InboundReceiptLineWriteInput): Prisma.Deci
 /** 초과분 칸 검사(장부 P-100). `at` 은 줄의 계약 경로다(`lines.0` · `normal.lines.0` · `items.0`). */
 export function collectExcessErrors(at: string, line: InboundReceiptLineWriteInput, errors: ErrorItem[]): void {
   const value = line.excessQty;
-  if (value === undefined || value === null) return;
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    errors.push(field(`${at}.excessQty`, ERROR_CODE.INVALID, '0 이상의 수여야 합니다.'));
-    return;
-  }
-  if (value === 0) return;
+  if (value == null || value === 0) return;
   if (line.purchaseOrderLineId == null) {
     errors.push(field(`${at}.excessQty`, ERROR_CODE.INVALID, 'P/O 라인이 있는 줄만 초과분을 나눠 적습니다.'));
     return;

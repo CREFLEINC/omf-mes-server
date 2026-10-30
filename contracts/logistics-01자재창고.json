@@ -4372,7 +4372,7 @@
       "$ref": "#/components/parameters/IfMatchVersionOptional"
      },
      {
-      "$ref": "#/components/parameters/WorkerNo"
+      "$ref": "#/components/parameters/WorkerNoOptional"
      }
     ],
     "requestBody": {
@@ -13317,6 +13317,15 @@
       "type": "number",
       "exclusiveMinimum": 0,
       "example": 100
+     },
+     "excessQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "minimum": 0,
+      "description": "receivedQty 중 purchaseOrderLineId 에 배정하지 않고 미배정으로 남기는 몫(초과분). 생략·null·0 은 없음이다. purchaseOrderLineId 가 있는 줄만 적을 수 있고(아니면 400 INVALID) receivedQty 이하다(아니면 400 RANGE). LOT·IQC 는 줄 전체 수량 그대로다. 사용자 결정 2026-10-24 · 장부 P-100·P-115",
+      "example": 20
      },
      "uomId": {
       "x-source-column": "uom_id",

@@ -308,7 +308,17 @@ describe('입하 등록 (e2e)', () => {
       expect(Number(lot.initial_qty)).toBe(1000);
     });
 
-    it('초과분 — 칸이 틀리면 400 이 그 칸을 짚고 아무것도 남지 않는다', async () => {
+    it('초과분 — 수가 아니면 400 INVALID · 음수면 400 RANGE 다(계약 검증기가 막는다 — 칸 표기 lines[0])', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(100);
+      const errorsFor = async (excessQty: unknown): Promise<unknown> =>
+        (await send(await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty }] })).expect(400))
+          .body.errors;
+
+      expect(await errorsFor('5')).toEqual([expect.objectContaining({ field: 'lines[0].excessQty', code: 'INVALID' })]);
+      expect(await errorsFor(-1)).toEqual([expect.objectContaining({ field: 'lines[0].excessQty', code: 'RANGE' })]);
+    });
+
+    it('초과분 — 받은 수량을 넘으면 400 RANGE 가 그 줄을 짚고 아무것도 남지 않는다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
       const before = await prisma.inbound_receipt_excess.count();
       const allocationsBefore = await prisma.inbound_receipt_po_allocation.count();
@@ -316,16 +326,13 @@ describe('입하 등록 (e2e)', () => {
       const rejected = await send(
         await body({
           lines: [
-            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: '5' },
+            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: 5 },
             { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: 51 },
           ],
         }),
       ).expect(400);
 
-      expect(rejected.body.errors).toEqual([
-        expect.objectContaining({ field: 'lines.0.excessQty', code: 'INVALID' }),
-        expect.objectContaining({ field: 'lines.1.excessQty', code: 'RANGE' }),
-      ]);
+      expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.1.excessQty', code: 'RANGE' })]);
       expect(await prisma.inbound_receipt_excess.count()).toBe(before);
       expect(await prisma.inbound_receipt_po_allocation.count()).toBe(allocationsBefore);
       expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
