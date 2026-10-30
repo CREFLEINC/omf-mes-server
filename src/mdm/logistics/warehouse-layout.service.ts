@@ -5,12 +5,24 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 
-/** 계약 `WarehouseLayoutMarker` — 좌표는 도면 «비율»이다(0~1). */
+/** 계약 `WarehouseLayoutMarker` — 좌표·크기는 도면 «비율»이다(0~1). x·y 는 표식의 중심점이다. */
 interface Marker {
   locationId: number;
   x: number;
   y: number;
+  width: number;
+  height: number;
+  rotation: number;
 }
+
+/**
+ * 사용자 결정 2026-10-30 — 화면의 기본 표식 크기 상당. 크기·회전 칸이 생기기 전에 찍은 점도
+ * 이 값으로 읽는다. 저장할 때 실제로 채워 넣어, 이 값이 바뀌어도 이미 찍은 점은 그대로다.
+ */
+const MARKER_DEFAULTS = { width: 0.05, height: 0.05, rotation: 0 };
+
+/** 계약 `WarehouseLayoutMarkerUpsert` — 크기·회전은 빼도 된다. 저장된 옛 점도 이 모양이다. */
+type MarkerInput = Omit<Marker, keyof typeof MARKER_DEFAULTS> & Partial<typeof MARKER_DEFAULTS>;
 
 /** 계약 `WarehouseLayout`. `versionNo` 는 ETag 로도 나가므로 본문에도 싣는다. */
 export interface LayoutView {
@@ -22,7 +34,7 @@ export interface LayoutView {
 
 export interface LayoutReplace {
   drawingAttachmentId?: number;
-  markers: Marker[];
+  markers: MarkerInput[];
 }
 
 /**
@@ -31,7 +43,7 @@ export interface LayoutReplace {
  */
 interface LayoutData {
   drawingAttachmentId?: number;
-  markers: Marker[];
+  markers: MarkerInput[];
 }
 
 /**
@@ -73,7 +85,7 @@ export class WarehouseLayoutService {
       ...(data.drawingAttachmentId === undefined
         ? {}
         : { drawingAttachmentId: data.drawingAttachmentId }),
-      markers: data.markers ?? [],
+      markers: (data.markers ?? []).map(withDefaults),
       versionNo,
     };
   }
@@ -108,7 +120,7 @@ export class WarehouseLayoutService {
         ...(input.drawingAttachmentId === undefined
           ? {}
           : { drawingAttachmentId: input.drawingAttachmentId }),
-        markers: input.markers,
+        markers: input.markers.map(withDefaults),
       };
       await tx.warehouse_layout.upsert({
         where: {
@@ -157,7 +169,7 @@ export class WarehouseLayoutService {
    * 점이 가리키는 위치가 «이 창고»의 것인지 본다. jsonb 라 FK 가 없어 DB 는 아무것도
    * 막지 않는다 — 다른 창고의 위치를 찍으면 화면이 이름을 못 찾고 점만 떠 있게 된다.
    */
-  private async markerErrors(warehouseId: number, markers: Marker[]): Promise<ErrorItem[]> {
+  private async markerErrors(warehouseId: number, markers: MarkerInput[]): Promise<ErrorItem[]> {
     const errors: ErrorItem[] = [];
     const seen = new Map<number, number>();
     markers.forEach((marker, index) => {
@@ -203,4 +215,8 @@ export class WarehouseLayoutService {
     if (!row) throw new NotFoundException('없는 창고입니다.');
     return row.version_no;
   }
+}
+
+function withDefaults(marker: MarkerInput): Marker {
+  return { ...MARKER_DEFAULTS, ...marker };
 }

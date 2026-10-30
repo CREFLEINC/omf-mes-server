@@ -21647,7 +21647,10 @@
     "required": [
      "locationId",
      "x",
-     "y"
+     "y",
+     "width",
+     "height",
+     "rotation"
     ],
     "description": "위치 하나가 도면 어디에 있나. ⭐ 좌표는 도면 «비율»이다 — 0 과 1 사이. 픽셀로 두면 도면을 바꿀 때 점이 전부 어긋난다",
     "properties": {
@@ -21660,13 +21663,90 @@
       "type": "number",
       "minimum": 0,
       "maximum": 1,
+      "description": "표식 중심점의 가로 위치 — 도면 폭 대비 비율",
       "example": 0.42
      },
      "y": {
       "type": "number",
       "minimum": 0,
       "maximum": 1,
+      "description": "표식 중심점의 세로 위치 — 도면 높이 대비 비율",
       "example": 0.18
+     },
+     "width": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "표식 너비 — 도면 폭 대비 비율(x 와 같은 단위). 기본값 0.05",
+      "example": 0.05
+     },
+     "height": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "표식 높이 — 도면 높이 대비 비율(y 와 같은 단위). 기본값 0.05",
+      "example": 0.05
+     },
+     "rotation": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 360,
+      "description": "회전 각도(도) — 시계 방향 · 중심점(x, y) 기준. 기본값 0",
+      "example": 0
+     }
+    }
+   },
+   "WarehouseLayoutMarkerUpsert": {
+    "type": "object",
+    "required": [
+     "locationId",
+     "x",
+     "y"
+    ],
+    "description": "WarehouseLayoutMarker 에서 width·height·rotation 을 선택으로 바꾼 저장 요청 항목. 빼면 서버가 기본값(0.05 · 0.05 · 0)을 채워 저장한다",
+    "properties": {
+     "locationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "x": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "표식 중심점의 가로 위치 — 도면 폭 대비 비율",
+      "example": 0.42
+     },
+     "y": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "표식 중심점의 세로 위치 — 도면 높이 대비 비율",
+      "example": 0.18
+     },
+     "width": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "default": 0.05,
+      "description": "표식 너비 — 도면 폭 대비 비율(x 와 같은 단위). 기본값 0.05",
+      "example": 0.05
+     },
+     "height": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "default": 0.05,
+      "description": "표식 높이 — 도면 높이 대비 비율(y 와 같은 단위). 기본값 0.05",
+      "example": 0.05
+     },
+     "rotation": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 360,
+      "default": 0,
+      "description": "회전 각도(도) — 시계 방향 · 중심점(x, y) 기준. 기본값 0",
+      "example": 0
      }
     }
    },
@@ -21685,7 +21765,7 @@
      "markers": {
       "type": "array",
       "items": {
-       "$ref": "#/components/schemas/WarehouseLayoutMarker"
+       "$ref": "#/components/schemas/WarehouseLayoutMarkerUpsert"
       }
      }
     }
