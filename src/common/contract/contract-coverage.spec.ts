@@ -78,7 +78,8 @@ describe('계약 커버리지', () => {
     // 위치 이동 1 오퍼레이션(위치 ⑤): 566 → 567.
     // 위치 품목 제한 조회·바꾸기 2 오퍼레이션: 567 → 569.
     // 적치 규칙 7 오퍼레이션 제거(사용자 결정 2026-10-29): 569 → 562.
-    expect(registry.size).toBe(562);
+    // 입하 예정 P/O 라인 목록 1 오퍼레이션(#741 · 장부 P-78): 562 → 563.
+    expect(registry.size).toBe(563);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

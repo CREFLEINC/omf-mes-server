@@ -7,10 +7,7 @@ import { OrderSort, readSort } from './purchase-order-list-sort';
 import { INBOUND_STAGE_GROUPS, InboundStageGroup } from './inbound-stage';
 import { ReceiptStatusCode, dateOnly, lineReceiptStatus, remainingQtyOf } from './purchase-order-receipt';
 
-/**
- * 입하 예정 — 구매발주 «라인» 목록(장부 P-78 · P-85 · #741). 화면은 관리웹 W-01-09 의 오른쪽 표다. 계약 사본에 없는 경로라 질의를 여기서 손으로 검사한다
- * (가드가 보지 않는다). 오류 모양은 가드와 같다 — 400 field `INVALID`.
- */
+/** 입하 예정 — 구매발주 «라인» 목록(장부 P-78 · P-85 · #741). 화면은 관리웹 W-01-09 의 오른쪽 표다. */
 
 export interface PurchaseOrderLineListQuery {
   /** 이 P/O 의 라인만(장부 P-85). */
@@ -29,44 +26,41 @@ export interface PurchaseOrderLineListQuery {
   size?: number;
 }
 
-const INT64_MAX = 2n ** 63n - 1n;
-const ID_FIELDS = ['purchaseOrderId', 'supplierId', 'plantId', 'itemId'] as const;
-const DATE_FIELDS = ['expectedReceiptDateFrom', 'expectedReceiptDateTo'] as const;
-const FLAG_FIELDS = ['openOnly', 'overdueOnly'] as const;
-const PAGE_FIELDS = ['page', 'size'] as const;
+/** 가드가 계약대로 검사하고 형을 바꿔 넘긴 질의. */
+export interface LineListContractQuery {
+  purchaseOrderId?: number;
+  expectedReceiptDateFrom?: string;
+  expectedReceiptDateTo?: string;
+  supplierId?: number;
+  plantId?: number;
+  itemId?: number;
+  q?: string;
+  openOnly?: boolean;
+  overdueOnly?: boolean;
+  page?: number;
+  size?: number;
+}
 
-export function parseLineListQuery(raw: Record<string, unknown>): PurchaseOrderLineListQuery {
-  const errors: ErrorItem[] = [];
-  const parsed: PurchaseOrderLineListQuery = { openOnly: true, overdueOnly: false };
+/** id 는 bigint 로 옮기고 빈 `q` 는 없는 것으로 본다. 가드는 계약 `default` 를 채우지 않는다 — 기본값은 여기서 건다. */
+export function parseLineListQuery(raw: LineListContractQuery): PurchaseOrderLineListQuery {
+  const q = raw.q?.trim();
+  return {
+    purchaseOrderId: toId(raw.purchaseOrderId),
+    expectedReceiptDateFrom: raw.expectedReceiptDateFrom,
+    expectedReceiptDateTo: raw.expectedReceiptDateTo,
+    supplierId: toId(raw.supplierId),
+    plantId: toId(raw.plantId),
+    itemId: toId(raw.itemId),
+    q: q === '' ? undefined : q,
+    openOnly: raw.openOnly ?? true,
+    overdueOnly: raw.overdueOnly ?? false,
+    page: raw.page,
+    size: raw.size,
+  };
+}
 
-  for (const name of ID_FIELDS) {
-    const value = raw[name];
-    if (value === undefined) continue;
-    if (typeof value === 'string' && /^[1-9]\d{0,18}$/.test(value) && BigInt(value) <= INT64_MAX) {
-      parsed[name] = BigInt(value);
-    } else {
-      errors.push(invalid(name, '양의 정수여야 합니다.'));
-    }
-  }
-  for (const name of DATE_FIELDS) {
-    const value = readDate(raw, name, errors);
-    if (value !== undefined) parsed[name] = value;
-  }
-  for (const name of FLAG_FIELDS) {
-    const value = readFlag(raw, name, errors);
-    if (value !== undefined) parsed[name] = value;
-  }
-  for (const name of PAGE_FIELDS) {
-    const value = raw[name];
-    if (value === undefined) continue;
-    if (typeof value === 'string' && /^[1-9]\d{0,8}$/.test(value)) parsed[name] = Number(value);
-    else errors.push(invalid(name, '1 이상의 정수여야 합니다.'));
-  }
-  const q = readText(raw, 'q', errors);
-  if (q !== undefined) parsed.q = q;
-
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  return parsed;
+function toId(value: number | undefined): bigint | undefined {
+  return value === undefined ? undefined : BigInt(value);
 }
 
 /**
