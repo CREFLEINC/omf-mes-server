@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { IF_GOODS_RECEIPT } from '../../../core/outbox/outbox.service';
 import {
   ALLOCATION_TARGET,
-  EXCESS_TARGET,
   RECEIPT_CANCEL_TARGET,
   allocationMessageKey,
   erpInboundLines,
@@ -69,8 +68,7 @@ interface Share {
  *   몫만 싣는다. 시각 비교 없이 갈린다.
  * - 수불유형·창고·공급처·구매그룹은 발주에서 이어받는다(컬럼 정의서). 입고 일시는 공장 현지 시각이다.
  * - 통관번호는 외자 발주만 싣는다(`CustomsClearances`) — 그 밖은 빈 값, 순번 칸은 0 이다(NOT NULL).
- * 옛 초과분 묶음(`INBOUND_RECEIPT_EXCESS`)은 그 초과분의 몫 한 행이다 — 배정으로 옮기기 전에 적재된 것만 남았다.
- * 입고 취소 묶음(`GOODS_RECEIPT_CANCEL`)은 그 입고번호로 넣은 행(입고 행·초과분 행)마다 취소 행(C)이다.
+ * 입고 취소 묶음(`GOODS_RECEIPT_CANCEL`)은 그 입고번호로 넣은 행(입고 행·배정 몫 행)마다 취소 행(C)이다.
  */
 export function goodsReceiptBuilder(
   prisma: PrismaService,
@@ -81,8 +79,6 @@ export function goodsReceiptBuilder(
 
 async function build(prisma: PrismaService, customs: CustomsClearances, message: OutboundMessage): Promise<RowDraft[]> {
   if (message.targetTypeCode === ALLOCATION_TARGET) return allocationRows(prisma, customs, message.targetId);
-  // 옛 초과분 묶음 — 배정으로 옮기기 전에 적재된 것만 남아 있다(새로 적재하지 않는다).
-  if (message.targetTypeCode === EXCESS_TARGET) return excessRows(prisma, customs, message.targetId);
   if (message.targetTypeCode === RECEIPT_CANCEL_TARGET) return cancelRows(prisma, message.targetId);
   const receipt = await prisma.goods_receipt.findUniqueOrThrow({
     where: { goods_receipt_id: message.targetId },
@@ -233,64 +229,6 @@ async function ownBundles(
     select: { message_key: true },
   });
   return new Set(queued.map((row) => keys.get(row.message_key) as bigint));
-}
-
-/** 초과분 하나의 몫 — 입고 수량으로 P/O 라인 몫부터 채우고 남은 수량을 초과분 순서대로 나눈다(P-100). */
-async function excessRows(prisma: PrismaService, customs: CustomsClearances, excessId: bigint): Promise<RowDraft[]> {
-  const excess = await prisma.inbound_receipt_excess.findUniqueOrThrow({
-    where: { inbound_receipt_excess_id: excessId },
-    select: {
-      inbound_receipt_line_id: true,
-      purchase_order_line: { select: ORDER_LINE },
-      inbound_receipt_line: {
-        select: {
-          received_qty: true,
-          inspection_required: true,
-          uom_id: true,
-          item: { select: { item_code: true, base_uom_id: true } },
-          uom: { select: { uom_code: true } },
-          inbound_receipt_excess: {
-            orderBy: { inbound_receipt_excess_id: 'asc' },
-            select: { inbound_receipt_excess_id: true, excess_qty: true },
-          },
-        },
-      },
-    },
-  });
-  const orderLine = excess.purchase_order_line;
-  if (orderLine === null || orderLine.purchase_order.erp_purchase_order_no === null) return [];
-  const inbound = excess.inbound_receipt_line;
-  const at = `초과분 ${excessId}`;
-  if (inbound.uom_id !== inbound.item.base_uom_id || orderLine.uom_id !== inbound.uom_id) {
-    throw new Error(`${at} — 단위가 품목 기본단위·발주 라인과 달라 환산이 필요하다`);
-  }
-  const taken = await erpReceiptLinesOf(prisma, excess.inbound_receipt_line_id);
-  const receiptNos = [...new Set(taken.map((line) => line.goodsReceiptNo))];
-  if (receiptNos.length === 0) return [];
-  if (receiptNos.length > 1) throw new Error(`${at} — 입하 줄이 ERP 로 가는 입고 여럿(${receiptNos.join(', ')})에 나뉘어 몫을 나눌 수 없다`);
-
-  const received = taken.reduce((sum, line) => sum.plus(line.receiptQty), new Prisma.Decimal(0));
-  const excessTotal = inbound.inbound_receipt_excess.reduce((sum, row) => sum.plus(row.excess_qty), new Prisma.Decimal(0));
-  let rest = received.minus(Prisma.Decimal.min(received, inbound.received_qty.minus(excessTotal)));
-  let mine = new Prisma.Decimal(0);
-  for (const row of inbound.inbound_receipt_excess) {
-    const share = Prisma.Decimal.min(rest, row.excess_qty);
-    rest = rest.minus(share);
-    if (row.inbound_receipt_excess_id === excessId) mine = share;
-  }
-  if (mine.lessThanOrEqualTo(0)) return [];
-  const receipt = await prisma.goods_receipt.findUniqueOrThrow({
-    where: { goods_receipt_id: taken[0].goodsReceiptId },
-    select: { goods_receipt_no: true, receipt_datetime: true, plant: { select: { plant_code: true, timezone_code: true } } },
-  });
-  const share: Share = {
-    orderLine,
-    itemCode: inbound.item.item_code,
-    uomCode: inbound.uom.uom_code,
-    qty: mine,
-    inspected: inbound.inspection_required,
-  };
-  return [rowOf(receipt, share, await customs.forReceipt(orderLine))];
 }
 
 /**
