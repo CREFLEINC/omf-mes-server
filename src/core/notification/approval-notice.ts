@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { approvalTypeName } from './approval-type-names';
+import { approvalTypeName, approvalTypeNameEn } from './approval-type-names';
 import { resolveByUser } from './department-resolver';
 import { NotificationEmitter } from './notification-emitter';
 
@@ -47,6 +47,7 @@ export class ApprovalNotifier {
         step: `${current.step_no}/${request.approval_step.length}`,
         actor: requester,
       },
+      zaloValues: { request_type: approvalTypeNameEn(request.approval_type_code) },
     });
   }
 }
