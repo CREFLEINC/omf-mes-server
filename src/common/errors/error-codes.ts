@@ -47,6 +47,9 @@ export const ERROR_CODE = {
   // (`received_qty <= ordered_qty + tolerance_over_qty`)를 손으로 앞당겨 막는 이름이다.
   // ⛔ `RANGE`(발주를 이미 받은 양보다 «적게» 고친다 — 반대 방향)와 갈린다. I-3.md §1-5.
   QTY_EXCEEDS_ORDERED: 'QTY_EXCEEDS_ORDERED',
+  // 계약이 이름을 안 준 자리다 — 생산계획 등록·수정·확정이 「확정 계획량 + 작성 수량 ≤ ERP W/O 수량」을 넘길 때(`plan-quantity.ts`).
+  // `QTY_EXCEEDS_ORDERED`(P/O 입하)와 도메인이 달라 갈라 둔다.
+  PLAN_QTY_EXCEEDS_ORDER: 'PLAN_QTY_EXCEEDS_ORDER',
   // 계약이 이름을 안 준 자리다(grep 실측: `contracts/*.json` 에 이 문자열 0건) —
   // `contracts/logistics-01자재창고.json:6803` 이 「역처리가 재고 잔액을 음수로 만들면
   // 400 이다」로 자리만 세웠고 `plan-api.md` §5.4(1061행)가 S06 에 배정하며 이름을 지었다.

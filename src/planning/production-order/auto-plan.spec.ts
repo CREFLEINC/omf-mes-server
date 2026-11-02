@@ -6,7 +6,7 @@ import { AutoPlanReason, PlanFact, autoPlanDate, autoPlanView, chooseMasters, ex
 const qty = (value: number) => new Prisma.Decimal(value);
 /** 자동 계획을 시도한 오더의 상태. */
 const attempted = (orderQty: Prisma.Decimal, plans: PlanFact[], unplanned: AutoPlanReason[]) => autoPlanView(orderQty, plans, unplanned, true);
-const plan = (overrides: Partial<PlanFact>): PlanFact => ({ confirmed: false, plannedQty: qty(100), lineKnown: true, ...overrides });
+const plan = (overrides: Partial<PlanFact>): PlanFact => ({ confirmed: false, cancelled: false, plannedQty: qty(100), lineKnown: true, ...overrides });
 const injection: OperationNeed = { routingOperationId: 101n, processId: 1n, equipmentRequired: true, moldRequired: true };
 const map = (overrides: Partial<DefaultMap>): DefaultMap => ({ processId: null, equipmentId: null, equipmentLineId: null, moldId: null, ...overrides });
 
@@ -66,6 +66,10 @@ describe('autoPlanView — 목록·상세의 자동 계획 상태', () => {
       status: 'DONE',
       reasons: [],
     });
+  });
+
+  it('W/O 가 취소된 확정 계획은 확정 계획량에서 빠져 DONE 이 아니다', () => {
+    expect(attempted(qty(100), [plan({ confirmed: true, cancelled: true })], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['AUTO_PLAN_RERUN_NEEDED'] });
   });
 
   it('계획이 없으면 자동 계획을 막은 사유를 낸다', () => {

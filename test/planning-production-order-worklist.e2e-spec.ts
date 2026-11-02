@@ -83,7 +83,8 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
         { code: 'WORK_ORDER_LOCATION_MISSING', workOrderCount: 1 },
       ],
       OTHERPLANT: [{ code: 'LINE_PLANT_MISMATCH', workOrderCount: 1 }],
-      ALLCANCELLED: [{ code: 'NO_LIVE_WORK_ORDER', workOrderCount: 0 }],
+      // W/O 가 모두 취소된 확정 계획은 확정 계획량에서 빠져 자동 계획이 DONE 이 아니다 — 까닭은 autoPlan.reasons 다.
+      ALLCANCELLED: undefined,
       RERUN: undefined,
       DONE: undefined,
       CANCEL: undefined,

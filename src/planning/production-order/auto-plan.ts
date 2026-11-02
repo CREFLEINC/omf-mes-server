@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { PlanQtyFact, sumPlanQty } from '../production-plan/plan-quantity';
 import { DefaultMap, OperationNeed, assignResources } from '../production-plan/resource-assign';
 
 /** 계약 `AutoPlanReason` — 응답은 이 순서로 낸다. */
@@ -79,15 +80,13 @@ export function autoPlanDate(plannedStartDate: string | null, today: string): st
   return plannedStartDate !== null && plannedStartDate >= today ? plannedStartDate : today;
 }
 
-export interface PlanFact {
-  confirmed: boolean;
-  plannedQty: Prisma.Decimal;
+export interface PlanFact extends PlanQtyFact {
   /** 작성중 계획을 지금 확정하면 W/O 에 라인이 서는가. 확정 계획은 보지 않는다. */
   lineKnown: boolean;
 }
 
 /**
- * 확정 계획 수량이 오더 수량을 채우면 끝이다. 아니면 사람이 볼 이유를 낸다 — 계획이 없으면
+ * 확정 계획량(W/O 가 취소되지 않은 확정 계획 — `plan-quantity.ts`)이 오더 수량을 채우면 끝이다. 아니면 사람이 볼 이유를 낸다 — 계획이 없으면
  * 자동 계획을 막은 이유(`unplannedReasons`), 작성중 계획이 있으면 미확정과 그 원인, 확정분이 모자라면 잔량.
  * 자동 계획을 시도한 적이 없고 계획도 없으면 상태가 없다(null) — 그 기능 전에 받은 오더를 「확인 필요」로 쌓지 않는다.
  * 확인 필요는 이유가 늘 하나 이상이다 — 막던 기준정보가 그 뒤 갖춰졌으면 「다시 실행」(`AUTO_PLAN_RERUN_NEEDED`)이다.
@@ -100,9 +99,7 @@ export function autoPlanView(
   attempted: boolean,
 ): AutoPlanView | null {
   if (!attempted && plans.length === 0) return null;
-  const confirmedQty = plans
-    .filter((plan) => plan.confirmed)
-    .reduce((sum, plan) => sum.plus(plan.plannedQty), new Prisma.Decimal(0));
+  const { confirmedQty } = sumPlanQty(plans);
   if (confirmedQty.gte(orderQty)) return { status: 'DONE', reasons: [] };
 
   const reasons = new Set<AutoPlanReason>();
