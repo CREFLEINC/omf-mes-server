@@ -186,29 +186,37 @@ describe('창고 마스터 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'warehouseCode', code: 'REQUIRED' });
   });
 
-  it('⭐ 등록·수정 본문의 isExternal·partnerId 는 무시한다 — 외부 창고는 MES 관리 대상이 아니다', async () => {
-    const created = await request(app.getHttpServer())
+  it('⭐ 외부 창고 표시는 등록·수정이 저장하고 응답에 낸다 — 빼고 등록하면 내부 창고다', async () => {
+    const internal = await request(app.getHttpServer())
       .post('/api/mdm/warehouses')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send(body(`${PREFIX}-EXT`, { isExternal: true, partnerId: 1 }))
+      .send(body(`${PREFIX}-INT`))
       .expect(201);
-    expect(created.body).not.toHaveProperty('isExternal');
-    expect(created.body).not.toHaveProperty('partnerId');
-    const id = created.body.warehouseId;
-    const detail = await request(app.getHttpServer()).get(`/api/mdm/warehouses/${id}`).set('Cookie', cookie).expect(200);
+    expect(internal.body.isExternal).toBe(false);
 
+    const external = await createWarehouse(`${PREFIX}-EXT`, { isExternal: true });
+    const detail = await request(app.getHttpServer()).get(`/api/mdm/warehouses/${external.id}`).set('Cookie', cookie).expect(200);
+    const validateDetail = validator('GET /mdm/warehouses/{warehouseId}');
+    expect(validateDetail(detail.body)).toBe(true);
+    expect(validateDetail.errors ?? []).toEqual([]);
+    expect(detail.body.warehouse.isExternal).toBe(true);
+
+    const id = internal.body.warehouseId;
+    const before = await request(app.getHttpServer()).get(`/api/mdm/warehouses/${id}`).set('Cookie', cookie).expect(200);
     const updated = await request(app.getHttpServer())
       .put(`/api/mdm/warehouses/${id}`)
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .set('If-Match', detail.headers.etag)
-      .send({ ...body(`${PREFIX}-EXT`), plantId: undefined, isDefect: false, isExternal: true, partnerId: 1 })
+      .set('If-Match', before.headers.etag)
+      .send({ ...body(`${PREFIX}-INT`), plantId: undefined, isExternal: true, isDefect: false })
       .expect(200);
-    expect(updated.body).not.toHaveProperty('isExternal');
-    expect(updated.body).not.toHaveProperty('partnerId');
-    const stored = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id }, select: { is_external: true, partner_id: true } });
-    expect(stored).toEqual({ is_external: false, partner_id: null });
+    const validateUpdate = validator('PUT /mdm/warehouses/{warehouseId}');
+    expect(validateUpdate(updated.body)).toBe(true);
+    expect(validateUpdate.errors ?? []).toEqual([]);
+    expect(updated.body.isExternal).toBe(true);
+    const stored = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id }, select: { is_external: true } });
+    expect(stored.is_external).toBe(true);
   });
 
   it('⛔ 마스터에 없는 공통코드는 400 이다 — 계약이 enum 을 안 적었다', async () => {
@@ -258,6 +266,7 @@ describe('창고 마스터 (e2e)', () => {
         warehouseCode: `${PREFIX}-V`,
         warehouseName: '고친 이름',
         warehouseTypeCode,
+        isExternal: false,
         isDefect: true,
       })
       .expect(200);
@@ -276,6 +285,7 @@ describe('창고 마스터 (e2e)', () => {
         warehouseCode: `${PREFIX}-V`,
         warehouseName: '뒤늦게',
         warehouseTypeCode,
+        isExternal: false,
         isDefect: false,
       })
       .expect(409);
@@ -439,7 +449,7 @@ describe('창고 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', ifMatch)
-      .send({ ...body(code, { warehouseName: 'ERP 자재창고' }), plantId: undefined, isDefect: false, ...changes });
+      .send({ ...body(code, { warehouseName: 'ERP 자재창고' }), plantId: undefined, isExternal: false, isDefect: false, ...changes });
     const locked = await put({ warehouseCode: `${PREFIX}-RENAMED`, warehouseName: '고친 이름' }, etag).expect(400);
     expect(locked.body.errors.map((e: { field: string }) => e.field).sort()).toEqual(['warehouseCode', 'warehouseName']);
 

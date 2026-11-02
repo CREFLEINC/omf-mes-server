@@ -20,3 +20,24 @@ export const APPROVAL_TYPE_NAMES: Readonly<Record<string, string>> = {
 export function approvalTypeName(code: string): string {
   return APPROVAL_TYPE_NAMES[code] ?? code;
 }
+
+/**
+ * 결재 유형 영어 이름 — Zalo `request_type` 용. 템플릿 본문이 영어·베트남어라 한국어 이름을 싣지 않는다(server #878).
+ */
+export const APPROVAL_TYPE_NAMES_EN: Readonly<Record<string, string>> = {
+  GOODS_ISSUE_DISPOSAL: 'Disposal issue',
+  INVENTORY_ADJUSTMENT: 'Inventory adjustment',
+  PURCHASE_ORDER: 'Purchase order',
+  INBOUND_RECEIPT_CANCEL: 'Inbound receipt cancel',
+  GOODS_RECEIPT_CANCEL: 'Goods receipt cancel',
+  GOODS_ISSUE_CANCEL: 'Goods issue cancel',
+  SHIPMENT_CANCEL: 'Shipment cancel',
+  IQC_SKIP: 'IQC skip',
+  PRODUCTION_RESULT_CORRECT: 'Production result correction',
+  CONCESSION: 'Concession',
+  OQC_SKIP: 'OQC skip',
+};
+
+export function approvalTypeNameEn(code: string): string {
+  return APPROVAL_TYPE_NAMES_EN[code] ?? code;
+}

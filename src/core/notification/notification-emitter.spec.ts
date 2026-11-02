@@ -60,6 +60,7 @@ function input(extra: Partial<EmitInput> = {}): EmitInput {
     occurredAt: OCCURRED,
     departmentId: 7n,
     values: { wo_no: 'WO-1', item: 'P100 커버', process: '사출', line: 'L1', actor: '홍길동' },
+    zaloValues: { product: '커버' },
     ...extra,
   };
 }
@@ -98,8 +99,10 @@ describe('NotificationEmitter', () => {
       department_id: 7n,
       expires_at: new Date('2026-10-22T07:30:00.000Z'),
     });
-    expect(written.deliveries[0].template_data).toMatchObject({ wo_no: 'WO-1', item: 'P100 ', event_time: '21/10' });
+    expect(written.deliveries[0].template_data).toEqual({ line: 'L1', product: '커버', work_order: 'WO-1', event_time: '14:30' });
     expect(written.events[0].payload).toMatchObject({ zaloSkippedNoPhone: 1 });
+    // Zalo 전용 값은 payload 에 남지 않는다(server #878).
+    expect(written.events[0].payload).not.toHaveProperty('product');
   });
 
   it.each([

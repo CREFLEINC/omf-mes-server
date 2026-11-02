@@ -46,13 +46,13 @@ export async function workOrderNotice(
   tx: Tx,
   workOrderId: bigint,
   options: WorkOrderNoticeOptions,
-): Promise<{ departmentId: bigint | null; values: NotificationValues }> {
+): Promise<{ departmentId: bigint | null; values: NotificationValues; zaloValues: NotificationValues }> {
   const workOrder = await tx.work_order.findUniqueOrThrow({
     where: { work_order_id: workOrderId },
     select: {
       work_order_no: true,
       order_qty: true,
-      item: { select: { item_code: true, item_name: true } },
+      item: { select: { item_code: true, item_name: true, uom: { select: { uom_code: true } } } },
       routing_operation: { select: { process: { select: { process_name: true } } } },
       production_line: { select: { line_name: true, department: { select: { department_id: true, is_active: true } } } },
     },
@@ -65,12 +65,17 @@ export async function workOrderNotice(
     actor: await actorName(tx, options),
     reason: options.reason,
   };
+  // Zalo 파라미터는 30자다 — 품목은 코드를 빼고 품목명만, 수량은 한 값에 단위까지 싣는다(server #878).
+  const zaloValues: NotificationValues = { product: workOrder.item.item_name };
   if (options.quantities !== undefined) {
     values.plan_qty = workOrder.order_qty.toString();
     values.good_qty = (options.quantities.goodQty ?? (await goodQty(tx, workOrderId))).toString();
+    const unit = workOrder.item.uom.uom_code;
+    zaloValues.result = `${values.good_qty}/${values.plan_qty} ${unit}`;
+    zaloValues.quantity = `${values.good_qty} ${unit}`;
   }
   // `resolveByLine` 과 같은 규칙 — 라인을 이미 읽었으니 다시 읽지 않는다.
-  return { departmentId: activeDepartment(workOrder.production_line?.department ?? null), values };
+  return { departmentId: activeDepartment(workOrder.production_line?.department ?? null), values, zaloValues };
 }
 
 async function actorName(tx: Tx, options: WorkOrderNoticeOptions): Promise<string | undefined> {

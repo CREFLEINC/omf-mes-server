@@ -82,6 +82,7 @@ describe('ERP 창고 목록 (e2e)', () => {
         warehouse_name: 'MES 이름',
         warehouse_type_code: 'GENERAL',
         management_level_code: 'WAREHOUSE',
+        is_external: true,
       },
     });
     warehouseId = Number(warehouse.warehouse_id);
@@ -106,7 +107,7 @@ describe('ERP 창고 목록 (e2e)', () => {
     expect(denied.body.errors[0]).toMatchObject({ scope: 'screen', code: 'PERMISSION_DENIED' });
   });
 
-  it('⭐ ERP 창고마다 한 줄이고 같은 코드의 MES 창고를 싣는다 — 없으면 null(「MES 창고 없음」)', async () => {
+  it('⭐ ERP 창고마다 한 줄이고 같은 코드의 MES 창고를 외부 표시와 함께 싣는다 — 없으면 null(「MES 창고 없음」)', async () => {
     const response = await list({}).expect(200);
 
     const validate = validator('GET /integration/erp-sync/warehouses');
@@ -124,6 +125,7 @@ describe('ERP 창고 목록 (e2e)', () => {
           plantCode: expect.any(String),
           plantName: expect.any(String),
           warehouseName: 'MES 이름',
+          isExternal: true,
           isActive: true,
         },
       },

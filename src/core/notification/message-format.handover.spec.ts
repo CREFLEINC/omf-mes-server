@@ -30,7 +30,7 @@ describe('인계 작업 알림 메시지', () => {
   it('SC-006 기존 6종 키 집합은 그대로다', () => {
     expect(Object.keys(EVENT_PARAMS)).toHaveLength(6);
     expect(Object.keys(templateData('WORK_SESSION_STARTED', {}, AT, 100))).toEqual([
-      'wo_no', 'item', 'process', 'line', 'event_time', 'actor',
+      'line', 'product', 'work_order', 'event_time',
     ]);
   });
 

@@ -88,6 +88,9 @@ describe('결재 알림 (e2e)', () => {
       });
       const deliveries = await prisma.zalo_delivery.findMany({ where: { notification_event_id: events[0].notification_event_id } });
       expect(deliveries.map((d) => d.recipient_user_id)).toEqual([ids.first]);
+      // Zalo 는 등록 템플릿 키에 영어 유형 이름을 싣는다(server #878).
+      expect(deliveries[0].template_data).toMatchObject({ requester: '상신자', request_type: 'Inventory adjustment' });
+      expect(Object.keys(deliveries[0].template_data as object).sort()).toEqual(['event_time', 'request_no', 'request_type', 'requester']);
     } finally {
       await deactivate(routeId);
     }

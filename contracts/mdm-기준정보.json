@@ -14926,6 +14926,7 @@
      "warehouseCode",
      "warehouseName",
      "warehouseTypeCode",
+     "isExternal",
      "isDefect",
      "isActive"
     ],
@@ -14969,6 +14970,13 @@
       "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
+     },
+     "isExternal": {
+      "x-source-column": "is_external",
+      "type": "boolean",
+      "default": false,
+      "description": "외부 창고 여부. ERP 에서 받은 창고도 false 로 들어오고 사람이 화면에서 켠다 — 사용자 결정 2026-10-30",
+      "example": false
      },
      "isDefect": {
       "x-source-column": "is_defect",
@@ -15033,6 +15041,12 @@
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
+     "isExternal": {
+      "x-source-column": "is_external",
+      "type": "boolean",
+      "default": false,
+      "example": false
+     },
      "isDefect": {
       "x-source-column": "is_defect",
       "type": "boolean",
@@ -15050,6 +15064,7 @@
      "warehouseCode",
      "warehouseName",
      "warehouseTypeCode",
+     "isExternal",
      "isDefect"
     ],
     "description": "창고 수정 요청. plantId 는 신규만(편집 불가) — 근거: W-06-07 §4-A 편집 열. isActive 는 별도 사용 중지 액션(:deactivate)으로만 바꾼다 — 근거: W-06-07 §5-1. 낙관적 잠금은 공유계약 B-1.",
@@ -15082,6 +15097,11 @@
       "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
+     },
+     "isExternal": {
+      "x-source-column": "is_external",
+      "type": "boolean",
+      "example": false
      },
      "isDefect": {
       "x-source-column": "is_defect",
@@ -20201,6 +20221,7 @@
        "plantCode",
        "plantName",
        "warehouseName",
+       "isExternal",
        "isActive"
       ],
       "properties": {
@@ -20231,6 +20252,12 @@
         "type": "string",
         "maxLength": 200,
         "example": "1공장 자재창고"
+       },
+       "isExternal": {
+        "x-source-column": "is_external",
+        "type": "boolean",
+        "description": "외부 창고 여부 — true 인 창고는 화면이 숨긴다. 사용자 결정 2026-10-30",
+        "example": false
        },
        "isActive": {
         "x-source-column": "is_active",

@@ -1,11 +1,12 @@
 /**
  * 알림 값 조립 — 알림센터 `message` 와 Zalo `template_data` 를 «같은 값»에서 만든다(research R-12).
  *
- * ⭐ Zalo 파라미터 이름은 고정이다(data-model §6 · research R-4) — 고객사가 이 이름으로 템플릿을 등록한다.
- * 서버에 다국어 장치가 없어 문장은 값 위주로 잇고, 라벨은 사유·수량에만 붙인다(한국어 · 사용자 확인 2026-10-21).
+ * ⭐ payload 키(`EVENT_PARAMS`)와 Zalo 템플릿 키(`ZALO_PARAMS`)는 따로다 — 고객사가 등록한 템플릿 6종의
+ * 키를 따른다(server #878). 서버에 다국어 장치가 없어 문장은 값 위주로 잇고, 라벨은 사유·수량에만 붙인다
+ * (한국어 · 사용자 확인 2026-10-21).
  */
 
-/** 이벤트별 고유 파라미터. 공통 `event_time`·`actor` 는 아래 `COMMON_PARAMS`. */
+/** 이벤트별 payload·알림센터 파라미터. 공통 `event_time`·`actor` 는 아래 `COMMON_PARAMS`. */
 export const EVENT_PARAMS: Readonly<Record<string, readonly string[]>> = {
   WORK_SESSION_STARTED: ['wo_no', 'item', 'process', 'line'],
   WORK_SESSION_STOPPED: ['wo_no', 'item', 'process', 'line', 'reason'],
@@ -49,6 +50,19 @@ const HANDOVER_LABELS: Readonly<Record<string, string>> = {
 
 export const COMMON_PARAMS = ['event_time', 'actor'] as const;
 
+/**
+ * Zalo 템플릿 키 → 값을 읽을 키. 값은 `values` 위에 `zaloValues` 를 덮은 것에서 읽는다(server #878).
+ * 템플릿 본문이 영어·베트남어 두 언어라 값은 어느 쪽에서도 읽히게 만든다 — 명칭, 영어 유형 이름, 수량+단위.
+ */
+export const ZALO_PARAMS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  WORK_SESSION_STARTED: { line: 'line', product: 'product', work_order: 'wo_no', event_time: 'event_time' },
+  WORK_SESSION_STOPPED: { line: 'line', work_order: 'wo_no', event_time: 'event_time', reason: 'reason' },
+  WORK_SESSION_ENDED: { line: 'line', work_order: 'wo_no', event_time: 'event_time', result: 'result' },
+  WORK_ORDER_CLOSED: { line: 'line', work_order: 'wo_no', quantity: 'quantity', event_time: 'event_time' },
+  EQUIPMENT_BREAKDOWN_OCCURRED: { line: 'line', equipment: 'equipment', event_time: 'event_time', description: 'symptom' },
+  APPROVAL_ACTION_REQUIRED: { requester: 'requester', request_type: 'request_type', request_no: 'request_no', event_time: 'event_time' },
+};
+
 /** 문장에서 값 앞에 붙는 라벨. 없는 키는 값만 쓴다. */
 const LABELS: Readonly<Record<string, string>> = {
   reason: '사유: ',
@@ -72,7 +86,7 @@ export const SITE_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 export type NotificationValues = Record<string, string | number | null | undefined>;
 
-function siteParts(at: Date): { yyyy: string; MM: string; dd: string; HH: string; mm: string } {
+function siteParts(at: Date): { yyyy: string; MM: string; dd: string; HH: string; mm: string; ss: string } {
   const local = new Date(at.getTime() + SITE_OFFSET_MS);
   const two = (n: number) => String(n).padStart(2, '0');
   return {
@@ -81,13 +95,20 @@ function siteParts(at: Date): { yyyy: string; MM: string; dd: string; HH: string
     dd: two(local.getUTCDate()),
     HH: two(local.getUTCHours()),
     mm: two(local.getUTCMinutes()),
+    ss: two(local.getUTCSeconds()),
   };
 }
 
-/** Zalo `event_time` — `dd/MM/yyyy HH:mm`(UTC+7). */
+/** 메시지 시각 — `dd/MM/yyyy HH:mm`(UTC+7). 인계 작업 10종의 `event_time`·`required_at` 이 쓴다. */
 export function formatEventTime(at: Date): string {
   const p = siteParts(at);
   return `${p.dd}/${p.MM}/${p.yyyy} ${p.HH}:${p.mm}`;
+}
+
+/** 6종 Zalo `event_time` — `HH:mm:ss dd/MM/yyyy`(UTC+7). 고객사가 등록한 시간 파라미터 형식이다(server #878). */
+export function formatZaloEventTime(at: Date): string {
+  const p = siteParts(at);
+  return `${p.HH}:${p.mm}:${p.ss} ${p.dd}/${p.MM}/${p.yyyy}`;
 }
 
 /** 알림센터 문장 끝의 짧은 시각 — `MM-dd HH:mm`(UTC+7). 날짜 전체는 화면이 `occurredAt` 으로 보인다. */
@@ -111,19 +132,25 @@ function paramsOf(eventCode: string): readonly string[] {
 }
 
 /**
- * Zalo `template_data` — 정해진 키만, 모두 문자열, `maxLength` 로 자른다. 빈 값은 `-`.
- * `event_time` 은 발생 시각에서 만든다(보낸 값이 있어도 덮는다).
+ * Zalo `template_data` — 템플릿 키만, 모두 문자열, `maxLength` 로 자른다. 빈 값은 `-`.
+ * 6종은 `ZALO_PARAMS` 로 키를 옮기고, `zaloValues` 는 Zalo 에만 쓰는 값이다(payload 에 남지 않는다).
+ * 인계 10종은 `HANDOVER_PARAMS` 키를 그대로 쓴다. `event_time` 은 발생 시각에서 만든다(보낸 값이 있어도 덮는다).
  */
 export function templateData(
   eventCode: string,
   values: NotificationValues,
   occurredAt: Date,
   maxLength: number,
+  zaloValues: NotificationValues = {},
 ): Record<string, string> {
-  const all: NotificationValues = { ...values, event_time: formatEventTime(occurredAt) };
+  const handover = HANDOVER_PARAMS[eventCode];
+  const params = handover === undefined ? ZALO_PARAMS[eventCode] : Object.fromEntries(handover.map((key) => [key, key]));
+  if (params === undefined) throw new Error(`Zalo 템플릿 키 정의가 없는 이벤트입니다: ${eventCode}`);
+  const eventTime = handover === undefined ? formatZaloEventTime(occurredAt) : formatEventTime(occurredAt);
+  const all: NotificationValues = { ...values, ...zaloValues, event_time: eventTime };
   const data: Record<string, string> = {};
-  for (const key of HANDOVER_PARAMS[eventCode] ?? [...paramsOf(eventCode), ...COMMON_PARAMS]) {
-    const value = text(all[key]);
+  for (const [key, source] of Object.entries(params)) {
+    const value = text(all[source]);
     // 코드 포인트로 자른다 — UTF-16 단위로 자르면 이모지 한가운데가 잘려 홀로 남은 서로게이트가 실린다.
     data[key] = value === '' ? EMPTY_PARAM : Array.from(value).slice(0, maxLength).join('');
   }

@@ -13,7 +13,7 @@ export async function breakdownNotice(
   equipmentId: bigint,
   symptom: string,
   reporterName: string | undefined,
-): Promise<{ departmentId: bigint | null; values: NotificationValues }> {
+): Promise<{ departmentId: bigint | null; values: NotificationValues; zaloValues: NotificationValues }> {
   const equipment = await tx.equipment.findUniqueOrThrow({
     where: { equipment_id: equipmentId },
     select: {
@@ -40,6 +40,8 @@ export async function breakdownNotice(
       symptom,
       actor: reporterName,
     },
+    // Zalo 파라미터는 30자다 — 코드를 빼고 설비명만 싣는다(server #878).
+    zaloValues: { equipment: equipment.equipment_name },
   };
 }
 

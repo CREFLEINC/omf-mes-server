@@ -54,6 +54,7 @@ interface WarehouseView {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
+  isExternal: boolean;
   isDefect: boolean;
   isActive: boolean;
   /** MES 별칭 — 계약 밖(장부 P-148). */
@@ -66,6 +67,7 @@ interface WarehouseCreate {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
+  isExternal?: boolean;
   isDefect?: boolean;
   /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
   aliasName?: unknown;
@@ -76,6 +78,7 @@ interface WarehouseUpdate {
   warehouseCode: string;
   warehouseName: string;
   warehouseTypeCode: string;
+  isExternal: boolean;
   isDefect: boolean;
   aliasName?: unknown;
 }
@@ -170,6 +173,7 @@ export class WarehouseService {
           warehouse_name: input.warehouseName,
           warehouse_type_code: input.warehouseTypeCode,
           management_level_code: UNUSED_MANAGEMENT_LEVEL,
+          ...optional('is_external', input.isExternal),
           ...optional('is_defect', input.isDefect),
           ...optional('alias_name', aliasName),
         },
@@ -198,6 +202,7 @@ export class WarehouseService {
         warehouse_code: input.warehouseCode,
         warehouse_name: input.warehouseName,
         warehouse_type_code: input.warehouseTypeCode,
+        is_external: input.isExternal,
         is_defect: input.isDefect,
         ...optional('alias_name', aliasName),
         version_no: { increment: 1 },
@@ -261,6 +266,7 @@ function view(row: WarehouseRow): WarehouseView {
     warehouseCode: row.warehouse_code,
     warehouseName: row.warehouse_name,
     warehouseTypeCode: row.warehouse_type_code,
+    isExternal: row.is_external,
     isDefect: row.is_defect,
     isActive: row.is_active,
     aliasName: row.alias_name,

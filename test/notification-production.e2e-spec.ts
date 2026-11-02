@@ -14,7 +14,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { SecretBox } from '../src/core/crypto/secret-box';
-import { NotificationEmitter, formatEventTime } from '../src/core/notification';
+import { NotificationEmitter, formatZaloEventTime } from '../src/core/notification';
 import { SyncLease } from '../src/integration/erp/sync-lease';
 import { ZaloClient } from '../src/integration/zalo/zalo-client';
 import { ZaloDeliveryRunner } from '../src/integration/zalo/zalo-delivery.runner';
@@ -81,7 +81,7 @@ describe('생산 알림 (e2e)', () => {
     expect(await recipientsOf(event.notification_event_id)).toEqual([ids.rPhone, ids.rNoPhone].sort());
   });
 
-  it('US1-2 Zalo 켬 — 번호 있는 수신자만 PENDING 1건, template_data 키가 data-model §6 과 같다', async () => {
+  it('US1-2 Zalo 켬 — 번호 있는 수신자만 PENDING 1건, template_data 키가 등록 템플릿과 같다(server #878)', async () => {
     const wo = await workOrder('A2', ids.lineA);
     await start(wo, '2026-10-21T02:00:00.000Z').expect(201);
 
@@ -89,10 +89,12 @@ describe('생산 알림 (e2e)', () => {
     expect(deliveries.map((d) => d.recipient_user_id)).toEqual([ids.rPhone]);
     expect(deliveries[0]).toMatchObject({ status_code: 'PENDING', phone_number: '84912345678', attempt_count: 0 });
     expect(deliveries[0].tracking_id).toBe(`zd-${deliveries[0].zalo_delivery_id}`);
-    expect(Object.keys(deliveries[0].template_data as object).sort()).toEqual(
-      ['wo_no', 'item', 'process', 'line', 'event_time', 'actor'].sort(),
-    );
-    expect(deliveries[0].template_data).toMatchObject({ wo_no: `${PREFIX}-A2`, event_time: '21/10/2026 09:00' });
+    expect(deliveries[0].template_data).toEqual({
+      line: '알림라인A',
+      product: '알림검사품목',
+      work_order: `${PREFIX}-A2`,
+      event_time: '09:00:00 21/10/2026',
+    });
   });
 
   it('US1-7 SC-003 다른 부서 수신자는 받지 않는다', async () => {
@@ -178,7 +180,7 @@ describe('생산 알림 (e2e)', () => {
     const event = await eventOf('WORK_SESSION_STOPPED', wo);
     expect(event.occurred_at.toISOString()).toBe(sentAt.toISOString());
     const [delivery] = await deliveriesOf('WORK_SESSION_STOPPED', wo);
-    expect((delivery.template_data as Record<string, string>).event_time).toBe(formatEventTime(sentAt));
+    expect((delivery.template_data as Record<string, string>).event_time).toBe(formatZaloEventTime(sentAt));
   });
 
   it('US1-4 US1-5 종료는 계획·양품 누계 스냅샷을, 마감은 마감 때 누계를 싣는다(정정 원본 제외)', async () => {
@@ -194,12 +196,17 @@ describe('생산 알림 (e2e)', () => {
     expect(ended.payload).toMatchObject({ plan_qty: '100', good_qty: '65' });
     const endedNote = await prisma.notification.findFirstOrThrow({ where: { notification_event_id: ended.notification_event_id } });
     expect(endedNote.message).toContain('계획 100 · 양품 65');
+    const unit = (await prisma.uom.findUniqueOrThrow({ where: { uom_id: ids.uom } })).uom_code;
+    const [endedDelivery] = await deliveriesOf('WORK_SESSION_ENDED', wo);
+    expect(endedDelivery.template_data).toMatchObject({ work_order: `${PREFIX}-E1`, result: `65/100 ${unit}` });
 
     await result(wo, 4, 5);
     await close(wo, 200);
     const closed = await prisma.notification_event.findMany({ where: { event_type_code: 'WORK_ORDER_CLOSED', aggregate_id: wo } });
     expect(closed).toHaveLength(1);
     expect(closed[0].payload).toMatchObject({ plan_qty: '100', good_qty: '70', actor: '알림관리자' });
+    const [closedDelivery] = await deliveriesOf('WORK_ORDER_CLOSED', wo);
+    expect(closedDelivery.template_data).toMatchObject({ work_order: `${PREFIX}-E1`, quantity: `70 ${unit}` });
     expect(await recipientsOf(closed[0].notification_event_id)).toEqual([ids.rPhone, ids.rNoPhone].sort());
   });
 
