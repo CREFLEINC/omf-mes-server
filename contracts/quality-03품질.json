@@ -3907,6 +3907,18 @@
       }
      },
      {
+      "name": "formLayoutCode",
+      "in": "query",
+      "description": "출력 양식(OP향 · PP향 제품검사표)으로 거른다 — 검사표 기준의 양식이다(omf-all-around#217).",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "OP",
+        "PP"
+       ]
+      }
+     },
+     {
       "name": "createdFrom",
       "in": "query",
       "schema": {
