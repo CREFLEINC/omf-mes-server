@@ -793,6 +793,170 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     });
   });
 
+  describe('잔량 · 부분 확정 · 오더 수량 초과 차단', () => {
+    let seq = 0;
+
+    /** 이 describe 전용 ERP W/O — 다른 단언과 계획 수가 섞이지 않는다. */
+    async function makeOrder(orderQty: number, extra: Record<string, unknown> = {}): Promise<number> {
+      seq += 1;
+      const base = await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: BigInt(orderWId) } });
+      const created = await prisma.production_order.create({
+        data: {
+          production_order_no: `${PREFIX}-Q${String(seq).padStart(2, '0')}`,
+          business_unit_id: base.business_unit_id,
+          plant_id: base.plant_id,
+          item_id: base.item_id,
+          order_qty: orderQty,
+          uom_id: base.uom_id,
+          status_code: 'RECEIVED',
+          ...extra,
+        },
+      });
+      return Number(created.production_order_id);
+    }
+
+    const createPlan = (productionOrderId: number, plannedQty: number) =>
+      request(app.getHttpServer())
+        .post('/api/planning/production-plans')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ productionOrderId, planDate: '2026-10-05', plannedQty, uomId, bomId, routingId });
+
+    const updateQty = async (productionPlanId: number, plannedQty: number) =>
+      request(app.getHttpServer())
+        .put(`/api/planning/production-plans/${productionPlanId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(productionPlanId))
+        .send({ plannedQty });
+
+    const confirmRaw = async (productionPlanId: number) =>
+      request(app.getHttpServer())
+        .post(`/api/planning/production-plans/${productionPlanId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(productionPlanId));
+
+    const orderOf = async (productionOrderId: number) =>
+      (await request(app.getHttpServer()).get(`/api/planning/production-orders/${productionOrderId}`).set('Cookie', cookie).expect(200)).body as Record<string, unknown>;
+
+    const exceeded = (response: request.Response, fieldName: string | undefined) => {
+      expect(response.status).toBe(400);
+      expect(response.body.errors[0]).toMatchObject({
+        scope: fieldName === undefined ? 'screen' : 'field',
+        ...(fieldName === undefined ? {} : { field: fieldName }),
+        code: 'PLAN_QTY_EXCEEDS_ORDER',
+      });
+    };
+
+    it('등록은 확정 + 작성 + 이번 수량이 오더량을 넘으면 400 이고, 딱 채우면 된다', async () => {
+      const orderId = await makeOrder(100);
+      expect((await createPlan(orderId, 60)).status).toBe(201);
+
+      exceeded(await createPlan(orderId, 41), 'plannedQty');
+      expect((await createPlan(orderId, 40)).status).toBe(201);
+      exceeded(await createPlan(orderId, 1), 'plannedQty');
+    });
+
+    it('수정은 수량을 «늘려» 넘을 때만 400 이다 — 같은 값·줄이기·다른 칸 수정은 된다', async () => {
+      const orderId = await makeOrder(100);
+      const first = (await createPlan(orderId, 60)).body.productionPlanId as number;
+      await createPlan(orderId, 30);
+
+      exceeded(await updateQty(first, 71), 'plannedQty');
+      expect((await updateQty(first, 70)).status).toBe(200);
+      expect((await updateQty(first, 70)).status).toBe(200);
+      expect((await updateQty(first, 20)).status).toBe(200);
+    });
+
+    it('오더 수량이 줄어 이미 넘은 작성중 계획은 확정이 400 이고, 계획을 줄이면 확정된다', async () => {
+      const orderId = await makeOrder(100);
+      const planId = (await createPlan(orderId, 100)).body.productionPlanId as number;
+      await prisma.production_order.update({ where: { production_order_id: BigInt(orderId) }, data: { order_qty: 80 } });
+
+      exceeded(await confirmRaw(planId), undefined);
+      expect((await updateQty(planId, 80)).status).toBe(200);
+      expect((await confirmRaw(planId)).status).toBe(200);
+    });
+
+    it('동시에 등록해도 합계가 오더량을 넘지 않는다', async () => {
+      const orderId = await makeOrder(100);
+      const responses = await Promise.all([1, 2, 3, 4, 5].map(() => createPlan(orderId, 30)));
+
+      expect(responses.filter((response) => response.status === 201)).toHaveLength(3);
+      responses.filter((response) => response.status !== 201).forEach((response) => exceeded(response, 'plannedQty'));
+      const sum = await prisma.production_plan.aggregate({ where: { production_order_id: BigInt(orderId) }, _sum: { planned_qty: true } });
+      expect(Number(sum._sum.planned_qty)).toBe(90);
+    });
+
+    it('일부 수량만 확정하면 잔량과 계획 상태가 목록·단건에 나오고 계획 상태 조건이 같은 판정으로 거른다', async () => {
+      const none = await makeOrder(100);
+      const part = await makeOrder(100);
+      const full = await makeOrder(100);
+      const planId = (await createPlan(part, 60)).body.productionPlanId as number;
+      await confirmRaw(planId).then((response) => expect(response.status).toBe(200));
+      await createPlan(full, 100);
+
+      expect(await orderOf(none)).toMatchObject({ confirmedPlanQty: 0, draftPlanQty: 0, remainingQty: 100, planStatusCode: 'UNPLANNED' });
+      expect(await orderOf(part)).toMatchObject({ confirmedPlanQty: 60, draftPlanQty: 0, remainingQty: 40, planStatusCode: 'PARTIAL' });
+      expect(await orderOf(full)).toMatchObject({ confirmedPlanQty: 0, draftPlanQty: 100, remainingQty: 0, planStatusCode: 'PLANNED' });
+
+      for (const [planStatusCode, expected] of [['UNPLANNED', none], ['PARTIAL', part], ['PLANNED', full]] as const) {
+        const response = await request(app.getHttpServer())
+          .get('/api/planning/production-orders')
+          .query({ q: `${PREFIX}-Q`, planStatusCode })
+          .set('Cookie', cookie)
+          .expect(200);
+        const rows = response.body.items as { productionOrderId: number; planStatusCode: string }[];
+        expect(rows.map((row) => row.productionOrderId)).toContain(expected);
+        expect(rows.every((row) => row.planStatusCode === planStatusCode)).toBe(true);
+        expect(validator('GET /planning/production-orders')(response.body)).toBe(true);
+      }
+      await request(app.getHttpServer()).get('/api/planning/production-orders').query({ planStatusCode: 'DONE' }).set('Cookie', cookie).expect(400);
+    });
+
+    it('W/O 를 모두 취소한 확정 계획의 수량은 확정 계획량에서 빠지고 자동 계획 DONE 도 풀린다', async () => {
+      const orderId = await makeOrder(100);
+      const planId = (await createPlan(orderId, 100)).body.productionPlanId as number;
+      await confirmRaw(planId).then((response) => expect(response.status).toBe(200));
+      expect(await orderOf(orderId)).toMatchObject({ confirmedPlanQty: 100, remainingQty: 0, autoPlan: { status: 'DONE', reasons: [] } });
+
+      await prisma.work_order.updateMany({ where: { production_plan_id: BigInt(planId) }, data: { status_code: 'CANCELLED' } });
+
+      expect(await orderOf(orderId)).toMatchObject({ confirmedPlanQty: 0, remainingQty: 100, planStatusCode: 'UNPLANNED', autoPlan: { status: 'NEEDS_REVIEW' } });
+      const done = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ q: `${PREFIX}-Q`, autoPlanStatus: 'DONE' })
+        .set('Cookie', cookie)
+        .expect(200);
+      expect((done.body.items as { productionOrderId: number }[]).map((row) => row.productionOrderId)).not.toContain(orderId);
+      expect((await createPlan(orderId, 100)).status).toBe(201);
+    });
+
+    it('품목그룹 코드·이름을 싣고 품목그룹과 계획 시작일 기간으로 거른다', async () => {
+      const inside = await makeOrder(10, { planned_start_date: new Date('2026-11-10T00:00:00.000Z') });
+      const outside = await makeOrder(10, { planned_start_date: new Date('2026-12-10T00:00:00.000Z') });
+      const base = await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: BigInt(inside) } });
+      await prisma.item.update({ where: { item_id: base.item_id }, data: { erp_item_group_code: 'ZZ-Q', erp_item_group_name: '검사 품목그룹' } });
+
+      expect(await orderOf(inside)).toMatchObject({ itemGroupCode: 'ZZ-Q', itemGroupName: '검사 품목그룹', plannedStartDate: '2026-11-10' });
+
+      const idsOf = async (query: Record<string, string>) => {
+        const response = await request(app.getHttpServer())
+          .get('/api/planning/production-orders')
+          .query({ q: `${PREFIX}-Q`, ...query })
+          .set('Cookie', cookie)
+          .expect(200);
+        return (response.body.items as { productionOrderId: number }[]).map((row) => row.productionOrderId);
+      };
+      expect(await idsOf({ itemGroupCode: 'ZZ-Q', plannedStartDateFrom: '2026-11-01', plannedStartDateTo: '2026-11-30' })).toEqual([inside]);
+      expect(await idsOf({ itemGroupCode: 'ZZ-Q', plannedStartDateFrom: '2026-12-01' })).toEqual([outside]);
+      expect(await idsOf({ itemGroupCode: 'NOPE' })).toEqual([]);
+      // 계획 시작일 오름차순이 기본 정렬이다.
+      expect(await idsOf({ itemGroupCode: 'ZZ-Q', plannedStartDateFrom: '2026-11-01' })).toEqual([inside, outside]);
+    });
+  });
+
   /** `:confirm` 200 — 확정도 실제 오퍼레이션으로 한다(§8-1 관행). */
   async function confirmPlan(productionPlanId: number): Promise<request.Response> {
     return request(app.getHttpServer())

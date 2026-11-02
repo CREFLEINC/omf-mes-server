@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AutoPlanStatus } from './auto-plan';
 import { AutoPlanService } from './auto-plan.service';
 import { progressSql, progressStatusCode, progressWhere } from './production-order-progress';
+import { CONFIRMED_PLAN_QTY_SQL, DRAFT_PLAN_QTY_SQL, PLAN_STATUSES, PLAN_STATUS_SQL, PlanQuantities, planQuantities } from '../production-plan/plan-quantity';
 import { plantScopeFor, scopeSql, scopeWhere, scopedPlantIds } from './production-order-scope';
 import {
   AUTO_PLAN_DONE_SQL,
@@ -58,6 +59,10 @@ export interface ProductionOrderListQuery {
   autoPlanStatus?: AutoPlanStatus;
   /** 「작업지시 목록」 칩(장부 P-142) — 값 하나. */
   worklistState?: string;
+  /** 계획 상태 — UNPLANNED·PARTIAL·PLANNED. */
+  planStatusCode?: string;
+  /** 품목그룹 코드(ERP ITEM_GROUP_CD) 일치. */
+  itemGroupCode?: string;
   /** 계약 밖 질의(장부 P-133) — `OPEN`·`COMPLETED`. includeChildren 이면 루트에 건다. */
   progress?: string;
   page?: number;
@@ -90,8 +95,9 @@ export class ProductionOrderService {
     const page = pageRequest(query);
     const withLastChange = query.withLastChange === true;
     const worklistState = assertWorklistState(query.worklistState);
-    if (query.autoPlanStatus !== undefined || worklistState !== undefined) {
-      return this.listBySql(query, scope, sqlFilters(query.autoPlanStatus, worklistState), page, withLastChange);
+    assertPlanStatus(query.planStatusCode);
+    if (query.autoPlanStatus !== undefined || worklistState !== undefined || query.planStatusCode !== undefined) {
+      return this.listBySql(query, scope, sqlFilters(query.autoPlanStatus, worklistState, query.planStatusCode), page, withLastChange);
     }
     const base: Prisma.production_orderWhereInput = { AND: [buildWhere(query), scopeWhere(scope)] };
     const where = query.unacknowledgedOnly === true ? await this.excludeAcknowledged(base) : base;
@@ -223,11 +229,13 @@ export class ProductionOrderService {
   /** 페이지 파생 — 집계 2칸 + 확인 3칸을 한 쿼리로, (요청 시) 변경 이력을 더한다. 행마다 돌지 않는다. */
   private async viewsOf(rows: ProductionOrderRow[], withLastChange: boolean): Promise<ProductionOrderView[]> {
     const ids = rows.map((r) => r.production_order_id);
-    const [derived, changes, autoPlans, worklist] = await Promise.all([
+    const [derived, changes, autoPlans, worklist, quantities, itemGroups] = await Promise.all([
       this.derivedOf(ids),
       withLastChange ? this.lastChangesOf(rows) : Promise.resolve(new Map<bigint, ProductionOrderLastChange>()),
       this.autoPlans.viewsOf(rows),
       this.worklistStatesOf(ids),
+      this.quantitiesOf(rows),
+      this.itemGroupsOf(rows),
     ]);
     return rows.map((row) => {
       const d = derived.get(row.production_order_id);
@@ -242,6 +250,8 @@ export class ProductionOrderService {
         worklistReasons: worklist.get(row.production_order_id)?.reasons,
         releasePendingWorkOrderCount: worklist.get(row.production_order_id)?.pending,
         liveWorkOrderCount: worklist.get(row.production_order_id)?.live,
+        quantities: quantities.get(row.production_order_id),
+        itemGroup: itemGroups.get(row.item_id),
       });
     });
   }
@@ -281,6 +291,28 @@ export class ProductionOrderService {
        WHERE o.production_order_id IN (${Prisma.join(ids)})`);
     for (const row of rows) map.set(row.production_order_id, row);
     return map;
+  }
+
+  /** 확정 계획량·작성 수량은 목록 필터(`PLAN_STATUS_SQL`)와 같은 조각으로 읽고, 잔량·상태는 같은 정의의 순수 함수로 낸다. */
+  private async quantitiesOf(rows: ProductionOrderRow[]): Promise<Map<bigint, PlanQuantities>> {
+    if (rows.length === 0) return new Map();
+    const sums = await this.prisma.$queryRaw<{ production_order_id: bigint; confirmed: Prisma.Decimal; draft: Prisma.Decimal }[]>(Prisma.sql`
+      SELECT o.production_order_id, ${CONFIRMED_PLAN_QTY_SQL} AS confirmed, ${DRAFT_PLAN_QTY_SQL} AS draft
+        FROM planning.production_order o WHERE o.production_order_id IN (${Prisma.join(rows.map((r) => r.production_order_id))})`);
+    const orderQty = new Map(rows.map((row) => [row.production_order_id, row.order_qty]));
+    return new Map(sums.map((sum) => [
+      sum.production_order_id,
+      planQuantities(new Prisma.Decimal(orderQty.get(sum.production_order_id) as Prisma.Decimal), new Prisma.Decimal(sum.confirmed), new Prisma.Decimal(sum.draft)),
+    ]));
+  }
+
+  private async itemGroupsOf(rows: ProductionOrderRow[]): Promise<Map<bigint, { code?: string; name?: string }>> {
+    if (rows.length === 0) return new Map();
+    const items = await this.prisma.item.findMany({
+      where: { item_id: { in: [...new Set(rows.map((row) => row.item_id))] } },
+      select: { item_id: true, erp_item_group_code: true, erp_item_group_name: true },
+    });
+    return new Map(items.map((item) => [item.item_id, { code: item.erp_item_group_code ?? undefined, name: item.erp_item_group_name ?? undefined }]));
   }
 
   /** 페이지의 칩 판정·조치 필요 까닭·W/O 수 — 목록 필터와 같은 식(`worklistStateSql`)을 한 질의로. */
@@ -353,6 +385,9 @@ function filterSql(query: ProductionOrderListQuery): Prisma.Sql[] {
     dateQuery('plannedStartDateTo', query.plannedStartDateTo);
     conditions.push(Prisma.sql`o.planned_start_date <= ${query.plannedStartDateTo}::date`);
   }
+  if (query.itemGroupCode !== undefined) {
+    conditions.push(Prisma.sql`o.item_id IN (SELECT i.item_id FROM mdm.item i WHERE i.erp_item_group_code = ${query.itemGroupCode})`);
+  }
   if (query.q !== undefined) conditions.push(Prisma.sql`strpos(lower(o.production_order_no), lower(${query.q})) > 0`);
   if (query.unacknowledgedOnly === true) {
     conditions.push(Prisma.sql`NOT EXISTS (
@@ -365,8 +400,9 @@ function filterSql(query: ProductionOrderListQuery): Prisma.Sql[] {
   return conditions;
 }
 
-function sqlFilters(autoPlanStatus: AutoPlanStatus | undefined, worklistState: WorklistState | undefined): Prisma.Sql[] {
+function sqlFilters(autoPlanStatus: AutoPlanStatus | undefined, worklistState: WorklistState | undefined, planStatusCode: string | undefined): Prisma.Sql[] {
   return [
+    ...(planStatusCode === undefined ? [] : [Prisma.sql`(${PLAN_STATUS_SQL}) = ${planStatusCode}`]),
     ...(autoPlanStatus === undefined ? [] : [autoPlanStatusSql(autoPlanStatus)]),
     ...(worklistState === undefined ? [] : [Prisma.sql`(${worklistStateSql()}) = ${worklistState}`]),
   ];
@@ -378,12 +414,22 @@ function autoPlanStatusSql(status: AutoPlanStatus): Prisma.Sql {
   return Prisma.sql`(o.status_code <> 'CANCELLED' AND NOT (${AUTO_PLAN_DONE_SQL}) AND NOT ${AUTO_PLAN_UNTOUCHED_SQL})`;
 }
 
+/** 계약 enum 밖 값은 400 — 틀린 값을 무시하면 전체가 한쪽처럼 보인다. */
+function assertPlanStatus(value: string | undefined): void {
+  if (value === undefined || (PLAN_STATUSES as readonly string[]).includes(value)) return;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [{
+    scope: 'field', field: 'planStatusCode', code: ERROR_CODE.INVALID,
+    message: `계획 상태 값이 아닙니다(${value}) — ${PLAN_STATUSES.join('·')} 중 하나로 다시 조회하세요.`,
+  }]);
+}
+
 function buildWhere(query: ProductionOrderListQuery): Prisma.production_orderWhereInput {
   return {
     ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
     ...filter('business_unit_id', query.businessUnitId),
     ...filter('plant_id', query.plantId),
     ...filter('item_id', query.itemId),
+    ...(query.itemGroupCode === undefined ? {} : { item: { erp_item_group_code: query.itemGroupCode } }),
     ...dueDateWhere(query.dueDateFrom, query.dueDateTo),
     ...plannedStartDateWhere(query.plannedStartDateFrom, query.plannedStartDateTo),
     // 「P/O 번호 검색」(계약) — 부분일치.
