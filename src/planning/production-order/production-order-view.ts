@@ -97,7 +97,8 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     confirmedPlanQty: extras.quantities?.confirmedQty.toNumber(),
     draftPlanQty: extras.quantities?.draftQty.toNumber(),
     remainingQty: extras.quantities?.remainingQty.toNumber(),
-    planStatusCode: extras.quantities?.status,
+    // 취소된 ERP W/O 는 계획할 일이 없다 — 상태를 내지 않는다(수량 칸은 그대로).
+    planStatusCode: row.status_code === 'CANCELLED' ? undefined : extras.quantities?.status,
     itemGroupCode: extras.itemGroup?.code,
     itemGroupName: extras.itemGroup?.name,
   });

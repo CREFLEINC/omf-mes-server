@@ -107,7 +107,8 @@ export function autoPlanView(
   const drafts = plans.filter((plan) => !plan.confirmed);
   if (drafts.length > 0) reasons.add('PLAN_NOT_CONFIRMED');
   if (drafts.some((plan) => !plan.lineKnown)) reasons.add('LINE_UNKNOWN');
-  if (confirmedQty.gt(0)) reasons.add('QTY_REMAINING');
+  // 확정 계획이 있는데 확정 계획량이 모자라다 — W/O 가 모두 취소돼 확정 계획량이 0 인 경우도 포함한다(다시 실행해도 달라지지 않는다).
+  if (plans.some((plan) => plan.confirmed)) reasons.add('QTY_REMAINING');
   if (reasons.size === 0) reasons.add('AUTO_PLAN_RERUN_NEEDED');
   return { status: 'NEEDS_REVIEW', reasons: AUTO_PLAN_REASONS.filter((reason) => reasons.has(reason)) };
 }

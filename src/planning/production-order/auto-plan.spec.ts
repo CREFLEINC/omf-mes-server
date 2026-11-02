@@ -68,8 +68,8 @@ describe('autoPlanView — 목록·상세의 자동 계획 상태', () => {
     });
   });
 
-  it('W/O 가 취소된 확정 계획은 확정 계획량에서 빠져 DONE 이 아니다', () => {
-    expect(attempted(qty(100), [plan({ confirmed: true, cancelled: true })], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['AUTO_PLAN_RERUN_NEEDED'] });
+  it('W/O 가 취소된 확정 계획은 확정 계획량에서 빠져 DONE 이 아니고 사유는 QTY_REMAINING 이다 — 다시 실행해도 달라지지 않는다', () => {
+    expect(attempted(qty(100), [plan({ confirmed: true, cancelled: true })], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['QTY_REMAINING'] });
   });
 
   it('계획이 없으면 자동 계획을 막은 사유를 낸다', () => {

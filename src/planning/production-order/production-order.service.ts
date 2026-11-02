@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AutoPlanStatus } from './auto-plan';
 import { AutoPlanService } from './auto-plan.service';
 import { progressSql, progressStatusCode, progressWhere } from './production-order-progress';
-import { CONFIRMED_PLAN_QTY_SQL, DRAFT_PLAN_QTY_SQL, PLAN_STATUSES, PLAN_STATUS_SQL, PlanQuantities, planQuantities } from '../production-plan/plan-quantity';
+import { CONFIRMED_PLAN_QTY_SQL, DRAFT_PLAN_QTY_SQL, PLAN_STATUS_SQL, PlanQuantities, planQuantities } from '../production-plan/plan-quantity';
 import { plantScopeFor, scopeSql, scopeWhere, scopedPlantIds } from './production-order-scope';
 import {
   AUTO_PLAN_DONE_SQL,
@@ -50,7 +50,7 @@ export interface ProductionOrderListQuery {
   itemId?: number;
   dueDateFrom?: string;
   dueDateTo?: string;
-  /** 계약 밖 질의(장부 P-66) — 계약 검증이 보지 않아 형식을 여기서 본다. */
+  /** 날짜 형식은 계약 검증에 더해 여기서도 본다 — `2026-02-30` 처럼 달력에 없는 날짜를 거른다. */
   plannedStartDateFrom?: string;
   plannedStartDateTo?: string;
   q?: string;
@@ -95,7 +95,6 @@ export class ProductionOrderService {
     const page = pageRequest(query);
     const withLastChange = query.withLastChange === true;
     const worklistState = assertWorklistState(query.worklistState);
-    assertPlanStatus(query.planStatusCode);
     if (query.autoPlanStatus !== undefined || worklistState !== undefined || query.planStatusCode !== undefined) {
       return this.listBySql(query, scope, sqlFilters(query.autoPlanStatus, worklistState, query.planStatusCode), page, withLastChange);
     }
@@ -402,7 +401,7 @@ function filterSql(query: ProductionOrderListQuery): Prisma.Sql[] {
 
 function sqlFilters(autoPlanStatus: AutoPlanStatus | undefined, worklistState: WorklistState | undefined, planStatusCode: string | undefined): Prisma.Sql[] {
   return [
-    ...(planStatusCode === undefined ? [] : [Prisma.sql`(${PLAN_STATUS_SQL}) = ${planStatusCode}`]),
+    ...(planStatusCode === undefined ? [] : [Prisma.sql`(o.status_code <> 'CANCELLED' AND (${PLAN_STATUS_SQL}) = ${planStatusCode})`]),
     ...(autoPlanStatus === undefined ? [] : [autoPlanStatusSql(autoPlanStatus)]),
     ...(worklistState === undefined ? [] : [Prisma.sql`(${worklistStateSql()}) = ${worklistState}`]),
   ];
@@ -412,15 +411,6 @@ function sqlFilters(autoPlanStatus: AutoPlanStatus | undefined, worklistState: W
 function autoPlanStatusSql(status: AutoPlanStatus): Prisma.Sql {
   if (status === 'DONE') return Prisma.sql`(o.status_code <> 'CANCELLED' AND ${AUTO_PLAN_DONE_SQL})`;
   return Prisma.sql`(o.status_code <> 'CANCELLED' AND NOT (${AUTO_PLAN_DONE_SQL}) AND NOT ${AUTO_PLAN_UNTOUCHED_SQL})`;
-}
-
-/** 계약 enum 밖 값은 400 — 틀린 값을 무시하면 전체가 한쪽처럼 보인다. */
-function assertPlanStatus(value: string | undefined): void {
-  if (value === undefined || (PLAN_STATUSES as readonly string[]).includes(value)) return;
-  throw new ContractException(HttpStatus.BAD_REQUEST, [{
-    scope: 'field', field: 'planStatusCode', code: ERROR_CODE.INVALID,
-    message: `계획 상태 값이 아닙니다(${value}) — ${PLAN_STATUSES.join('·')} 중 하나로 다시 조회하세요.`,
-  }]);
 }
 
 function buildWhere(query: ProductionOrderListQuery): Prisma.production_orderWhereInput {

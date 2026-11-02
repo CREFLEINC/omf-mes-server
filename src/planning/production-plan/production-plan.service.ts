@@ -136,6 +136,10 @@ export class ProductionPlanService {
       try {
         const planNo = await this.numbering.next(PRODUCTION_PLAN, order.plant_id, body.planDate);
         const created = await this.prisma.$transaction(async (tx) => {
+          // 분할 원본 계획의 FK 검사가 그 행에 KEY SHARE 를 건다 — 수정·확정은 «계획 → ERP W/O» 순으로 잠그므로 여기서 먼저 잡아 순서를 맞춘다.
+          if (body.splitOfPlanId?.sourcePlanId !== undefined) {
+            await tx.$queryRaw`SELECT 1 FROM planning.production_plan WHERE production_plan_id = ${BigInt(body.splitOfPlanId.sourcePlanId)} FOR KEY SHARE`;
+          }
           await assertWithinOrder(tx, BigInt(body.productionOrderId), new Prisma.Decimal(body.plannedQty), 'plannedQty');
           return tx.production_plan.create({
             data: {
@@ -186,10 +190,10 @@ export class ProductionPlanService {
       if (body.plannedQty !== undefined && body.plannedQty <= 0) {
         throw one(field('plannedQty', ERROR_CODE.INVALID, '0보다 커야 합니다.'));
       }
-      // 수량을 «바꿀 때만» 본다 — 오더 수량이 ERP 변경으로 줄어 이미 넘은 계획도 날짜·라인은 고칠 수 있다.
+      // 수량을 «늘릴 때만» 본다 — 오더 수량이 ERP 변경으로 줄어 이미 넘은 계획도 날짜·라인을 고치고 수량을 줄일 수 있다(아직 넘으면 확정이 막는다).
       if (body.plannedQty !== undefined) {
         const delta = new Prisma.Decimal(body.plannedQty).minus(locked.planned_qty);
-        if (!delta.isZero()) await assertWithinOrder(tx, locked.production_order_id, delta, 'plannedQty');
+        if (delta.gt(0)) await assertWithinOrder(tx, locked.production_order_id, delta, 'plannedQty');
       }
       // Routing 을 «바꿀 때만» 본다 — 계획 뒤에 Rev 가 폐기돼도 수량·날짜는 고칠 수 있고, 확정이 막는다.
       if (body.routingId !== undefined) {

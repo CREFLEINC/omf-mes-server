@@ -42,7 +42,7 @@ const BLOCKED = Prisma.sql`(${LINE_MISSING} OR ${LOCATION_MISSING} OR ${LINE_PLA
 
 /**
  * 오더 별칭 `o` 의 판정 식. 목록 필터(`WHERE … = 값`)와 응답 칸이 같은 식을 쓴다 — 두 벌이면 칩 건수와 행 표시가 갈린다.
- * ⚠ DONE 인데 살아 있는 W/O 가 없으면(전개 전·전부 취소) 조치 필요다 — W/O 를 전개해야 배포할 수 있다.
+ * ⚠ DONE 인데 살아 있는 W/O 가 없으면(W/O 를 전개하지 않은 확정 계획) 조치 필요다 — W/O 를 전개해야 배포할 수 있다.
  */
 export function worklistStateSql(): Prisma.Sql {
   return Prisma.sql`CASE
