@@ -901,48 +901,64 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       expect(Number(sum._sum.planned_qty)).toBe(90);
     });
 
-    it('동시에 수량을 늘려도 합계가 오더량을 넘지 않는다 — 수정 둘은 하나만 통과한다', async () => {
-      const orderId = await makeOrder(100);
-      const a = (await createPlan(orderId, 50)).body.productionPlanId as number;
-      const b = (await createPlan(orderId, 30)).body.productionPlanId as number;
-      const etags = [await etagOf(a), await etagOf(b)];
-      const put = (id: number, plannedQty: number, etag: string) =>
-        request(app.getHttpServer())
-          .put(`/api/planning/production-plans/${id}`)
-          .set('Cookie', cookie)
-          .set('Idempotency-Key', randomUUID())
-          .set('If-Match', etag)
-          .send({ plannedQty });
+    // 잠금이 없으면 동시 요청이 같은 합계를 읽고 모두 통과하므로 확률적으로만 드러난다 — 라운드를 반복한다.
+    const ROUNDS = 5;
 
-      const responses = await Promise.all([put(a, 70, etags[0]), put(b, 50, etags[1])]);
+    it('동시에 수량을 늘려도 합계가 오더량을 넘지 않는다 — 수정 5건 중 3건만 통과한다', async () => {
+      for (let round = 0; round < ROUNDS; round += 1) {
+        const orderId = await makeOrder(100);
+        const planIds: number[] = [];
+        for (let i = 0; i < 5; i += 1) planIds.push((await createPlan(orderId, 10)).body.productionPlanId as number);
+        const etags = await Promise.all(planIds.map((id) => etagOf(id)));
 
-      expect(responses.map((response) => response.status).sort()).toEqual([200, 400]);
-      responses.filter((response) => response.status === 400).forEach((response) => exceeded(response, 'plannedQty'));
-      const sum = await prisma.production_plan.aggregate({ where: { production_order_id: BigInt(orderId) }, _sum: { planned_qty: true } });
-      expect(Number(sum._sum.planned_qty)).toBe(100);
+        const responses = await Promise.all(
+          planIds.map((id, i) =>
+            request(app.getHttpServer())
+              .put(`/api/planning/production-plans/${id}`)
+              .set('Cookie', cookie)
+              .set('Idempotency-Key', randomUUID())
+              .set('If-Match', etags[i])
+              .send({ plannedQty: 25 }),
+          ),
+        );
+
+        expect(responses.filter((response) => response.status === 200)).toHaveLength(3);
+        responses.filter((response) => response.status !== 200).forEach((response) => exceeded(response, 'plannedQty'));
+        const sum = await prisma.production_plan.aggregate({ where: { production_order_id: BigInt(orderId) }, _sum: { planned_qty: true } });
+        expect(Number(sum._sum.planned_qty)).toBe(95);
+      }
     });
 
-    it('확정·수정·등록이 동시에 와도 합계가 오더량을 넘지 않고 서버 오류가 없다', async () => {
-      const orderId = await makeOrder(100);
-      const a = (await createPlan(orderId, 40)).body.productionPlanId as number;
-      const b = (await createPlan(orderId, 40)).body.productionPlanId as number;
-      const etags = [await etagOf(a), await etagOf(b)];
-      const send = (verb: 'put' | 'post', path: string, etag: string | undefined, body: object) => {
-        const call = verb === 'put' ? request(app.getHttpServer()).put(path) : request(app.getHttpServer()).post(path);
-        call.set('Cookie', cookie).set('Idempotency-Key', randomUUID());
-        if (etag !== undefined) call.set('If-Match', etag);
-        return call.send(body);
-      };
+    it('확정·수정·등록이 동시에 와도 합계가 오더량을 넘지 않는다 — 각각은 들어가지만 둘은 안 들어간다', async () => {
+      for (let round = 0; round < ROUNDS; round += 1) {
+        const orderId = await makeOrder(100);
+        const a = (await createPlan(orderId, 40)).body.productionPlanId as number;
+        const b = (await createPlan(orderId, 40)).body.productionPlanId as number;
+        const [etagA, etagB] = [await etagOf(a), await etagOf(b)];
 
-      const responses = await Promise.all([
-        send('post', `/api/planning/production-plans/${a}:confirm`, etags[0], {}),
-        send('put', `/api/planning/production-plans/${b}`, etags[1], { plannedQty: 60 }),
-        send('post', '/api/planning/production-plans', undefined, { productionOrderId: orderId, planDate: '2026-10-05', plannedQty: 30, uomId, bomId, routingId }),
-      ]);
+        // 수정(+20)과 등록(+20)은 각각 100 을 채우지만 함께는 120 이다. 확정은 합계를 바꾸지 않아 늘 통과한다.
+        const [confirmed, updated, created] = await Promise.all([
+          request(app.getHttpServer())
+            .post(`/api/planning/production-plans/${a}:confirm`)
+            .set('Cookie', cookie)
+            .set('Idempotency-Key', randomUUID())
+            .set('If-Match', etagA),
+          request(app.getHttpServer())
+            .put(`/api/planning/production-plans/${b}`)
+            .set('Cookie', cookie)
+            .set('Idempotency-Key', randomUUID())
+            .set('If-Match', etagB)
+            .send({ plannedQty: 60 }),
+          createPlan(orderId, 20),
+        ]);
 
-      expect(responses.every((response) => response.status < 500)).toBe(true);
-      const plans = await prisma.production_plan.findMany({ where: { production_order_id: BigInt(orderId) } });
-      expect(plans.reduce((sum, plan) => sum + Number(plan.planned_qty), 0)).toBeLessThanOrEqual(100);
+        expect(confirmed.status).toBe(200);
+        expect([updated.status === 200, created.status === 201].filter(Boolean)).toHaveLength(1);
+        const failed = updated.status === 200 ? created : updated;
+        exceeded(failed, 'plannedQty');
+        const sum = await prisma.production_plan.aggregate({ where: { production_order_id: BigInt(orderId) }, _sum: { planned_qty: true } });
+        expect(Number(sum._sum.planned_qty)).toBe(100);
+      }
     });
 
     it('일부 수량만 확정하면 잔량과 계획 상태가 목록·단건에 나오고 계획 상태 조건이 같은 판정으로 거른다', async () => {
