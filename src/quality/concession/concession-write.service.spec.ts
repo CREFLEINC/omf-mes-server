@@ -7,9 +7,10 @@ import { DocumentStateService } from '../../core/document-state';
 import { LotHoldService, LotQualityStatusService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DispositionSortService } from '../disposition/disposition-sort';
 import { ConcessionCreate, ConcessionWriteService } from './concession-write.service';
 
-/** omf-all-around#84 — 특채 요청·적용(장부 P-79). */
+/** omf-all-around#84 — 특채 요청·적용(장부 P-79) · #207 — 일부 특채는 LOT 을 나눈다. */
 
 const D = (value: number) => new Prisma.Decimal(value);
 
@@ -19,6 +20,7 @@ interface Options {
   decided?: number;
   affected?: number;
   ncStatus?: string;
+  lotCount?: number;
 }
 
 const harness = (options: Options = {}) => {
@@ -37,10 +39,16 @@ const harness = (options: Options = {}) => {
       }
       return [{ status_code: options.ncStatus ?? 'PENDING_DECISION' }];
     }),
-    nonconformance_lot: { aggregate: jest.fn().mockResolvedValue({ _sum: { affected_qty: D(options.affected ?? 100) } }) },
+    nonconformance_lot: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { affected_qty: D(options.affected ?? 100) } }),
+      count: jest.fn().mockResolvedValue(options.lotCount ?? 1),
+    },
     disposition_decision: {
       aggregate: jest.fn().mockResolvedValue({ _sum: { decision_qty: D(options.decided ?? 0) }, _count: options.decided ? 1 : 0 }),
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => decisions.push(data)),
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        decisions.push(data);
+        return { disposition_decision_id: 55n, decision_qty: data.decision_qty };
+      }),
     },
     concession: {
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -57,9 +65,18 @@ const harness = (options: Options = {}) => {
       findUnique: jest.fn().mockResolvedValue({ status_code: 'PENDING_DECISION', nonconformance_lot: [{ lot_id: 10n, uom_id: 1n }] }),
     },
     uom: { findUniqueOrThrow: jest.fn().mockResolvedValue({ decimal_scale: 0 }) },
+    concession: {
+      findUnique: jest.fn().mockResolvedValue({
+        nonconformance_id: 41n, approved_qty: D(30), status_code: options.concessionStatus ?? 'PENDING',
+      }),
+    },
+    nonconformance_lot: tx.nonconformance_lot,
+    disposition_decision: tx.disposition_decision,
     $transaction: jest.fn(async (run: (client: typeof tx) => Promise<unknown>) => run(tx)),
   } as unknown as PrismaService;
-  const numbering = { next: jest.fn(async (type: string) => (type === 'CONCESSION' ? 'CNC-1' : 'AP-1')) } as unknown as NumberingService;
+  const numbering = {
+    next: jest.fn(async (type: string) => ({ CONCESSION: 'CNC-1', NONCONFORMANCE: 'NC-2' })[type] ?? 'AP-1'),
+  } as unknown as NumberingService;
   const approvals = {
     request: jest.fn(async (_tx: unknown, input: Record<string, unknown>) => {
       calls.push(`approval:${String(input.approvalTypeCode)}:${String(input.targetTypeCode)}`);
@@ -80,8 +97,16 @@ const harness = (options: Options = {}) => {
       return { openAfter: 0 };
     }),
   } as unknown as LotHoldService;
-  const service = new ConcessionWriteService(prisma, numbering, approvals, documentState, lots, holds);
-  return { service, calls, created, updates, decisions };
+  const splits: Record<string, unknown>[] = [];
+  const sorts = {
+    splitOffWithin: jest.fn(async (_tx: unknown, input: Record<string, unknown>) => {
+      calls.push('split');
+      splits.push(input);
+      return { splitLotId: 11, splitLotNo: 'L-1-S1', splitNonconformanceId: 42, splitNonconformanceNo: 'NC-2' };
+    }),
+  } as unknown as DispositionSortService;
+  const service = new ConcessionWriteService(prisma, numbering, approvals, documentState, lots, holds, sorts);
+  return { service, calls, created, updates, decisions, splits, numbering };
 };
 
 const body = (extra: Partial<ConcessionCreate> = {}): ConcessionCreate => ({
@@ -120,10 +145,29 @@ describe('ConcessionWriteService.apply', () => {
     ]);
   });
 
-  it('남은 수량이 있으면 부적합을 닫지 않는다', async () => {
+  it('⭐ 일부 특채면 나머지를 자식 LOT·새 부적합으로 떼고(원 LOT 전이 «전») 원 부적합을 닫는다(#207)', async () => {
     const h = harness({ affected: 100 });
-    await h.service.apply(7, 9);
-    expect(h.updates[0]).toEqual({ nc: expect.not.objectContaining({ status_code: 'DECIDED' }) });
+    await expect(h.service.apply(7, 9, { businessDate: '2026-11-03' })).resolves.toMatchObject({ splitLotNo: 'L-1-S1' });
+    expect(h.calls).toEqual(['split', 'move:concession-apply', 'release:CONCESSION_APPROVED']);
+    expect(h.splits[0]).toMatchObject({
+      parentLotId: 10n, qty: D(70), decisionId: 55n, businessDate: '2026-11-03', splitNonconformanceNo: 'NC-2', label: '특채 후 불량으로 남은 수량',
+    });
+    // 판정 수량은 남은 수량 전체 — 나머지 70 이 새 부적합으로 넘어가 원 부적합이 닫힌다.
+    expect(h.decisions[0]).toMatchObject({ decision_qty: D(100) });
+    expect(h.updates[0]).toEqual({ nc: expect.objectContaining({ status_code: 'DECIDED' }) });
+  });
+
+  it('⛔ 일부 특채인데 LOT 이 여럿인 부적합이면 400 이고 아무것도 바꾸지 않는다', async () => {
+    const h = harness({ affected: 100, lotCount: 2 });
+    await expect(h.service.apply(7, 9)).rejects.toBeInstanceOf(ContractException);
+    expect(h.decisions).toEqual([]);
+    expect(h.calls).toEqual([]);
+  });
+
+  it('업무 일자가 날짜가 아니면 채번 전에 400 이다', async () => {
+    const h = harness({ affected: 100 });
+    await expect(h.service.apply(7, 9, { businessDate: '11/03' })).rejects.toBeInstanceOf(ContractException);
+    expect(h.numbering.next).not.toHaveBeenCalled();
   });
 
   it('결재 진행 중이면 400, 반려면 특채를 REJECTED 로 닫고 LOT 은 그대로다', async () => {
@@ -146,10 +190,12 @@ describe('ConcessionWriteService.apply', () => {
     expect(h.updates).toEqual([]);
   });
 
-  it('남은 수량이 승인 수량과 같으면 적용하고 부적합을 닫는다', async () => {
+  it('남은 수량이 승인 수량과 같으면 나누지 않고 적용해 부적합을 닫는다', async () => {
     const h = harness({ affected: 100, decided: 70 });
-    await h.service.apply(7, 9);
+    await expect(h.service.apply(7, 9)).resolves.toBeNull();
     expect(h.decisions).toHaveLength(1);
+    expect(h.splits).toEqual([]);
+    expect(h.numbering.next).not.toHaveBeenCalled();
     expect(h.updates[0]).toEqual({ nc: expect.objectContaining({ status_code: 'DECIDED' }) });
   });
 
