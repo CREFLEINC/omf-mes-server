@@ -18,6 +18,8 @@ interface DepartmentView {
   businessUnitId: number | null;
   isActive: boolean;
   sourceSystemCode: string;
+  /** 목록에만 싣는다(피처 003 · W-06-06 부서 목록 「생산 창고」 열). */
+  productionWarehouseCount?: number;
 }
 
 interface DepartmentWrite {
@@ -56,10 +58,15 @@ export class DepartmentService {
         orderBy: { department_code: 'asc' },
         skip: page.skip,
         take: page.take,
+        include: { _count: { select: { department_production_warehouse: true } } },
       }),
       this.prisma.department.count({ where }),
     ]);
-    return pagedResponse(rows.map(view), total, page);
+    return pagedResponse(
+      rows.map((row) => ({ ...view(row), productionWarehouseCount: row._count.department_production_warehouse })),
+      total,
+      page,
+    );
   }
 
   async get(departmentId: number): Promise<DepartmentResult> {

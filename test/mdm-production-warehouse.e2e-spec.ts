@@ -159,6 +159,16 @@ describe('부서 생산 창고 (e2e)', () => {
       { warehouseId: Number(warehouses.A), warehouseCode: `${PREFIX}-A`, warehouseName: '생산 창고 A', plantId: Number(plantId) },
       { warehouseId: Number(warehouses.B), warehouseCode: `${PREFIX}-B`, warehouseName: '생산 창고 B', plantId: Number(plantId) },
     ]);
+
+    // 부서 목록 「생산 창고」 열 — 목록 행이 연결 수를 싣는다.
+    const departments = await request(app.getHttpServer())
+      .get('/api/mdm/departments')
+      .query({ q: `${PREFIX}-D` })
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(departments.body.items).toEqual([
+      expect.objectContaining({ departmentId: Number(departmentId), productionWarehouseCount: 2 }),
+    ]);
   });
 
   it('US8-1 쓰지 않는 창고·없는 창고는 400 이고 아무것도 바꾸지 않는다', async () => {

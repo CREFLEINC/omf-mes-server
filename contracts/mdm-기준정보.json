@@ -17395,6 +17395,12 @@
       "description": "이 행의 출처 — ERP(Legacy 수신본, 수정/삭제 불가) · MES(자체 등록). WF06 S7 Result 「'Legacy 출처' 플래그 + MES 원천 등록분과 연계분의 구분 플래그」를 되살린 하나의 축이다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-09 §4-D · W-06-05 §9-1 · W-06-06 §5-4",
       "example": "MES",
       "x-code-key": "CD-SOURCE-SYSTEM"
+     },
+     "productionWarehouseCount": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 2,
+      "description": "이 부서에 연결한 생산 창고 수(W-06-06 부서 목록 「생산 창고」 열). 목록(GET /mdm/departments)에만 싣는다 — 상세·쓰기 응답에는 없다. 근거: 피처 003 · omf-all-around#66"
      }
     },
     "x-internal-note": "미착지: 수신본 식별 플래그 — 되살렸다(sourceSystemCode, 2026-08-30). DepartmentUpdate가 노출하는 필드는 이 값으로 편집 잠금을 판정한다(editability). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다."
