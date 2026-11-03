@@ -1136,12 +1136,25 @@ model material_issue_request {
   updated_by                  BigInt?
   version_no                  Int                           @default(1)
   reason_code                 String?                       @db.VarChar(50)
+  source_warehouse_id         BigInt?
+  issue_work_date             DateTime?                     @db.Date
+  released_at                 DateTime?                     @db.Timestamptz(6)
+  release_attempted_at        DateTime?                     @db.Timestamptz(6)
+  release_error_text          String?                       @db.VarChar(1000)
+  closed_at                   DateTime?                     @db.Timestamptz(6)
+  close_reason_code           String?                       @db.VarChar(50)
+  cancelled_at                DateTime?                     @db.Timestamptz(6)
+  cancelled_by                BigInt?
   location                    location                      @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   app_user                    app_user?                     @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   work_order                  work_order                    @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  source_warehouse            warehouse?                    @relation(fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   material_issue_request_line material_issue_request_line[]
+  material_issue_unsourced_shortage material_issue_unsourced_shortage[]
 
   @@index([destination_location_id], map: "ix_material_issue_request_destination_location")
+  @@index([status_code, issue_work_date], map: "ix_material_issue_request_status_work_date")
+  @@index([source_warehouse_id, status_code], map: "ix_material_issue_request_source_status")
   @@schema("logistics")
 }
 
@@ -1154,6 +1167,7 @@ model material_issue_request_line {
   item_id                        BigInt
   requested_qty                  Decimal                @db.Decimal(20, 6)
   issued_qty                     Decimal                @default(0) @db.Decimal(20, 6)
+  shortage_qty                   Decimal                @default(0) @db.Decimal(20, 6)
   uom_id                         BigInt
   created_at                     DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                     BigInt?
@@ -1164,6 +1178,24 @@ model material_issue_request_line {
   picking_line                   picking_line[]
 
   @@unique([material_issue_request_id, line_no], map: "uq_material_issue_request_line")
+  @@schema("logistics")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model material_issue_unsourced_shortage {
+  material_issue_unsourced_shortage_id BigInt                  @id @default(autoincrement())
+  work_order_id                        BigInt
+  item_id                              BigInt
+  uom_id                               BigInt
+  shortage_qty                         Decimal                 @db.Decimal(20, 6)
+  resolved_request_id                  BigInt?
+  created_at                           DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  work_order                           work_order              @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  item                                 item                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                  uom                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  resolved_request                     material_issue_request? @relation(fields: [resolved_request_id], references: [material_issue_request_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([work_order_id, item_id], map: "uq_material_issue_unsourced_shortage")
   @@schema("logistics")
 }
 
@@ -1906,6 +1938,7 @@ model department {
   production_line      production_line[]
   notification_event   notification_event[]
   notification_department_setting notification_department_setting[]
+  department_production_warehouse department_production_warehouse[]
 
   @@index([parent_department_id], map: "ix_department_parent")
   @@schema("mdm")
@@ -2046,6 +2079,7 @@ model item {
   goods_receipt_line                                   goods_receipt_line[]
   inbound_receipt_line                                 inbound_receipt_line[]
   material_issue_request_line                          material_issue_request_line[]
+  material_issue_unsourced_shortage                    material_issue_unsourced_shortage[]
   picking_line                                         picking_line[]
   purchase_order_line                                  purchase_order_line[]
   putaway_rule                                         putaway_rule[]
@@ -2230,6 +2264,19 @@ model location {
 
   @@unique([warehouse_id, location_code], map: "uq_location")
   @@index([parent_location_id], map: "ix_location_parent")
+  @@schema("mdm")
+}
+
+model department_production_warehouse {
+  department_id BigInt
+  warehouse_id  BigInt
+  created_at    DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by    BigInt?
+  department    department @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse     warehouse  @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([department_id, warehouse_id], map: "pk_department_production_warehouse")
+  @@index([warehouse_id], map: "ix_department_production_warehouse_warehouse")
   @@schema("mdm")
 }
 
@@ -2561,6 +2608,7 @@ model uom {
   inbound_receipt_line                                          inbound_receipt_line[]
   inbound_variance                                              inbound_variance[]
   material_issue_request_line                                   material_issue_request_line[]
+  material_issue_unsourced_shortage                             material_issue_unsourced_shortage[]
   picking_line                                                  picking_line[]
   purchase_order_line                                           purchase_order_line[]
   putaway_rule                                                  putaway_rule[]
@@ -2651,6 +2699,8 @@ model warehouse {
   material_return                                                                    material_return[]
   recycle_entry                                                                      recycle_entry[]
   terminal                                                                           terminal[]
+  material_issue_request          material_issue_request[]
+  department_production_warehouse department_production_warehouse[]
 
   @@unique([plant_id, warehouse_code], map: "uq_warehouse")
   @@schema("mdm")
@@ -3307,6 +3357,7 @@ model work_order {
   close_judgment_code                                                               String?                          @db.VarChar(10)
   notice                                                                            notice[]
   material_issue_request                                                            material_issue_request[]
+  material_issue_unsourced_shortage                                                 material_issue_unsourced_shortage[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
   subcontract_order                                                                 subcontract_order[]
   tool_usage                                                                        tool_usage[]
