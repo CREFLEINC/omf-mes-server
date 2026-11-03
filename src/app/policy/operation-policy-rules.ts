@@ -230,13 +230,25 @@ export function assertScope(code: PolicyCode, scope: PolicyScope): void {
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
-/** 운영 정책 화면 권한이 없으면 그 코드 전용 화면 권한이 있어야 쓴다. */
+/** 운영 정책 화면 권한이 없으면 그 코드 전용 화면 권한이 있어야 읽고 쓴다. */
 export function assertWritable(code: PolicyCode, permissions: readonly string[]): void {
   const screen = CODE_SCREENS[code];
   if (permissions.includes(POLICY_SCREEN) || (screen !== undefined && permissions.includes(screen))) return;
   throw new ContractException(HttpStatus.FORBIDDEN, [
-    { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 정책 코드를 쓸 권한이 없습니다.' },
+    { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 정책 코드를 볼 권한이 없습니다.' },
   ]);
+}
+
+/**
+ * 목록에서 볼 수 있는 코드. `W-05-01` 이 있거나 코드 전용 화면 권한이 하나도 없으면 거르지 않는다(지금과 같다 —
+ * 목록은 권한을 보지 않는 경로다). 코드 전용 화면 권한만 있으면 그 코드들만 본다.
+ */
+export function readableCodes(permissions: readonly string[]): PolicyCode[] | null {
+  if (permissions.includes(POLICY_SCREEN)) return null;
+  const codes = (Object.entries(CODE_SCREENS) as [PolicyCode, string][])
+    .filter(([, screen]) => permissions.includes(screen))
+    .map(([code]) => code);
+  return codes.length === 0 ? null : codes;
 }
 
 /**
