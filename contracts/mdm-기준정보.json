@@ -6621,6 +6621,277 @@
     }
    }
   },
+  "/quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings": {
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사기준 버전 도면 추가",
+    "description": "⭐ 서버 선행(omf-all-around#227) — 도면 한 장을 버전 끝에 붙인다. 작성중 버전만 고친다 — 상태≠작성중이면 400(code=STATE_LOCKED), 확정 버전은 신규 버전에서 고친다. 그림 파일은 지우지 않는다(신규 버전 발행이 같은 파일을 가리킬 수 있다). 도면 목록·내용은 GET /app/attachments(targetTypeCode=INSPECTION_PLAN_VERSION)·GET /app/attachments/{attachmentId}/content 로 읽는다. 근거: omf-all-around#227",
+    "parameters": [
+     {
+      "name": "inspectionPlanVersionId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary",
+          "example": "(바이너리)",
+          "description": "도면 그림. PNG·JPEG 만 받는다(앞 바이트로 가린다). 10MB 까지."
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "붙은 도면",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InspectionPlanDrawing"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "파일이 없거나 PNG·JPEG 가 아니다, 또는 작성중 버전이 아니다(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 검사기준 버전",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "413": {
+      "description": "파일이 10MB 를 넘는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings/{attachmentId}": {
+   "put": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사기준 버전 도면 바꾸기",
+    "description": "⭐ 서버 선행(omf-all-around#227) — 그 도면 자리의 그림을 바꾼다. 첨부 id 가 그대로라 도면 순서가 유지된다. 작성중 버전만 고친다 — 상태≠작성중이면 400(code=STATE_LOCKED), 확정 버전은 신규 버전에서 고친다. 그림 파일은 지우지 않는다(신규 버전 발행이 같은 파일을 가리킬 수 있다). 도면 목록·내용은 GET /app/attachments(targetTypeCode=INSPECTION_PLAN_VERSION)·GET /app/attachments/{attachmentId}/content 로 읽는다. 근거: omf-all-around#227",
+    "parameters": [
+     {
+      "name": "inspectionPlanVersionId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "attachmentId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary",
+          "example": "(바이너리)",
+          "description": "도면 그림. PNG·JPEG 만 받는다(앞 바이트로 가린다). 10MB 까지."
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "바뀐 도면",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InspectionPlanDrawing"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "파일이 없거나 PNG·JPEG 가 아니다, 또는 작성중 버전이 아니다(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 검사기준 버전이거나 이 버전의 도면이 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "413": {
+      "description": "파일이 10MB 를 넘는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사기준 버전 도면 빼기",
+    "description": "⭐ 서버 선행(omf-all-around#227) — 버전에서 도면 한 장을 뺀다. 작성중 버전만 고친다 — 상태≠작성중이면 400(code=STATE_LOCKED), 확정 버전은 신규 버전에서 고친다. 그림 파일은 지우지 않는다(신규 버전 발행이 같은 파일을 가리킬 수 있다). 도면 목록·내용은 GET /app/attachments(targetTypeCode=INSPECTION_PLAN_VERSION)·GET /app/attachments/{attachmentId}/content 로 읽는다. 근거: omf-all-around#227",
+    "parameters": [
+     {
+      "name": "inspectionPlanVersionId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "attachmentId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "빠짐"
+     },
+     "400": {
+      "description": "작성중 버전이 아니다(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 검사기준 버전이거나 이 버전의 도면이 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/quality/defect-codes": {
    "get": {
     "tags": [
@@ -25226,6 +25497,70 @@
        1001,
        1002
       ]
+     }
+    }
+   },
+   "InspectionPlanDrawing": {
+    "type": "object",
+    "description": "검사기준 버전 도면 한 장 — 첨부(Attachment, targetTypeCode=INSPECTION_PLAN_VERSION)와 같은 모양이다. omf-all-around#227",
+    "required": [
+     "attachmentId",
+     "targetTypeCode",
+     "targetId",
+     "fileName",
+     "contentType",
+     "byteSize",
+     "uploadedAt"
+    ],
+    "properties": {
+     "attachmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "targetTypeCode": {
+      "type": "string",
+      "enum": [
+       "INSPECTION_PLAN_VERSION"
+      ],
+      "example": "INSPECTION_PLAN_VERSION"
+     },
+     "targetId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "검사기준 버전 id"
+     },
+     "fileName": {
+      "type": "string",
+      "maxLength": 255,
+      "example": "drawing.png"
+     },
+     "contentType": {
+      "type": "string",
+      "enum": [
+       "image/png",
+       "image/jpeg"
+      ],
+      "example": "image/png"
+     },
+     "byteSize": {
+      "type": "integer",
+      "format": "int64",
+      "example": 204800
+     },
+     "uploadedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-03T09:12:00+07:00"
+     },
+     "uploadedBy": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
      }
     }
    }

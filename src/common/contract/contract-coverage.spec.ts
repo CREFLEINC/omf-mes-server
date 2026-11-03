@@ -85,7 +85,8 @@ describe('계약 커버리지', () => {
     // 입하 배정 더하기·빼기(장부 P-115) 2 오퍼레이션: 569 → 571.
     // ERP 받기 표별 상태·지금 읽기(장부 P-81) · ERP 창고(장부 P-147) 3 오퍼레이션: 571 → 574.
     // 입고 기본값(장부 P-150) 1 오퍼레이션: 574 → 575.
-    expect(registry.size).toBe(575);
+    // 검사기준 버전 도면 추가·바꾸기·빼기(omf-all-around#227) 3 오퍼레이션: 575 → 578.
+    expect(registry.size).toBe(578);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
