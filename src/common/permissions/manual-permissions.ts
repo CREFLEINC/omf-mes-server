@@ -260,6 +260,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['W-06-02'],
   // 검사기준 엑셀 올리기(장부 P-140) — 같은 화면 헤더의 [엑셀 올리기]다.
   'POST /quality/inspection-plans:import': ['W-06-02'],
+  // 검사기준 버전 도면 추가·바꾸기·빼기(omf-all-around#227) — 같은 화면 버전 상세 「도면」 탭이다.
+  'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings': ['W-06-02'],
+  'PUT /quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings/{attachmentId}': ['W-06-02'],
+  'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings/{attachmentId}': ['W-06-02'],
 
   // `M-01-05` 적치·입고 완료 — ⭐ 도출표에 «이미 있는» 키에 화면을 더하는 둘째 자리다
   // (`GET /app/users` 선례). 도출표는 제품 입고(`M-04-04`)만 적었는데 자재 적치를 소유한
