@@ -18,6 +18,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { MaterialIssueFixture } from './support/material-issue-fixture';
 
 const PREFIX = `E2E_DPW_${randomUUID().slice(0, 8)}`;
 const CONTRACT_PATH = '/mdm/departments/{departmentId}/production-warehouses';
@@ -205,9 +206,38 @@ describe('부서 생산 창고 (e2e)', () => {
     expect(await linked()).toEqual([]);
   });
 
-  // S5(배포 때 대기 요청 생성) 뒤 활성화 — 출발 창고가 있는 요청은 그때 처음 생긴다(tasks T008).
-  it.todo('US8-2 뺄 창고가 출발지인 이 부서의 대기·배포 요청 수를 내고, 저장해도 요청은 그대로다');
-  it.todo('US8-3 연결을 바꿔도 이미 만든 요청의 sourceWarehouseId 는 그대로다');
+  it('US8-2 US8-3 뺄 창고가 출발지인 이 부서의 대기 요청 수를 내고, 저장해도 요청의 출발 창고는 그대로다', async () => {
+    const fx = new MaterialIssueFixture(app, prisma, `${PREFIX}F`);
+    try {
+      await fx.setup();
+      const plant = await fx.plant('P');
+      const a = await fx.warehouse(plant, 'A');
+      const b = await fx.warehouse(plant, 'B');
+      await fx.stock(a, 'X', 100);
+      const department = await fx.department('D', [a.warehouseId, b.warehouseId]);
+      const lineId = await fx.line('P', 'L', department);
+      const workOrderId = await fx.workOrder({ plantKey: 'P', lineId, operation: 'X20', productionDate: fx.nextWeekday('P', 1) });
+      await fx.release(workOrderId).expect(200);
+      const [waiting] = await fx.requests(workOrderId);
+      expect(waiting).toMatchObject({ status_code: 'WAITING', source_warehouse_id: a.warehouseId });
+
+      const replace = (query: string) =>
+        request(app.getHttpServer())
+          .put(`/api/mdm/departments/${department}/production-warehouses${query}`)
+          .set('Cookie', fx.cookie)
+          .set('Idempotency-Key', randomUUID())
+          .send({ warehouseIds: [Number(b.warehouseId)] });
+      const preview = await replace('?dryRun=true').expect(200);
+      expect(preview.body.removed).toEqual([{ warehouseId: Number(a.warehouseId), activeRequestCount: 1 }]);
+      const saved = await replace('').expect(200);
+      expect(saved.body.removed).toEqual([{ warehouseId: Number(a.warehouseId), activeRequestCount: 1 }]);
+
+      const [after] = await fx.requests(workOrderId);
+      expect(after).toMatchObject({ status_code: 'WAITING', source_warehouse_id: a.warehouseId, version_no: waiting.version_no });
+    } finally {
+      await fx.cleanup();
+    }
+  });
 
   it('W-06-06 이 없으면 조회·저장 모두 403, 없는 부서는 404', async () => {
     await request(app.getHttpServer()).get(path()).set('Cookie', deniedCookie).expect(403);
