@@ -49,7 +49,7 @@ export class InspectionPlanDrawingService {
     const userId = sessionUserOf(request);
     const operation = `PUT /quality/inspection-plan-versions/${String(versionId)}/drawings/${String(attachmentId)}`;
     return this.store(request, operation, HttpStatus.OK, drawing, async (tx, storageKey) => {
-      await lockDraft(tx, versionId, '도면을 바꿀');
+      await lockDraft(tx, versionId, '도면을 수정할');
       await assertDrawing(tx, versionId, attachmentId);
       return attachmentView(await tx.attachment.update({
         where: { attachment_id: BigInt(attachmentId) },
@@ -60,7 +60,7 @@ export class InspectionPlanDrawingService {
 
   async remove(versionId: number, attachmentId: number, request: Request): Promise<void> {
     await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async (tx) => {
-      await lockDraft(tx, versionId, '도면을 뺄');
+      await lockDraft(tx, versionId, '도면을 제거할');
       await assertDrawing(tx, versionId, attachmentId);
       await tx.attachment.delete({ where: { attachment_id: BigInt(attachmentId) } });
       return undefined;
