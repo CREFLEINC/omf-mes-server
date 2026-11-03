@@ -38,7 +38,7 @@ function validator(operation: string): ValidateFunction {
 }
 
 const key = (): string => randomUUID();
-const DEFAULT_SIZE = { width: 0.05, height: 0.05, rotation: 0 };
+const DEFAULT_SIZE = { width: 0.12, height: 0.05, rotation: 0 };
 
 describe('창고 배치도 (e2e)', () => {
   let app: INestApplication;

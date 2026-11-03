@@ -21704,8 +21704,8 @@
       "type": "number",
       "exclusiveMinimum": 0,
       "maximum": 1,
-      "description": "표식 너비 — 도면 폭 대비 비율(x 와 같은 단위). 기본값 0.05",
-      "example": 0.05
+      "description": "표식 너비 — 도면 폭 대비 비율(x 와 같은 단위). 기본값 0.12",
+      "example": 0.12
      },
      "height": {
       "type": "number",
@@ -21730,7 +21730,7 @@
      "x",
      "y"
     ],
-    "description": "WarehouseLayoutMarker 에서 width·height·rotation 을 선택으로 바꾼 저장 요청 항목. 빼면 서버가 기본값(0.05 · 0.05 · 0)을 채워 저장한다",
+    "description": "WarehouseLayoutMarker 에서 width·height·rotation 을 선택으로 바꾼 저장 요청 항목. 빼면 서버가 기본값(0.12 · 0.05 · 0)을 채워 저장한다",
     "properties": {
      "locationId": {
       "type": "integer",
@@ -21755,9 +21755,9 @@
       "type": "number",
       "exclusiveMinimum": 0,
       "maximum": 1,
-      "default": 0.05,
-      "description": "표식 너비 — 도면 폭 대비 비율(x 와 같은 단위). 기본값 0.05",
-      "example": 0.05
+      "default": 0.12,
+      "description": "표식 너비 — 도면 폭 대비 비율(x 와 같은 단위). 기본값 0.12",
+      "example": 0.12
      },
      "height": {
       "type": "number",
