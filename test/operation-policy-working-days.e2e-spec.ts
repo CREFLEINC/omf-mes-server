@@ -1,5 +1,5 @@
 /**
- * 공장 주간 근무일 — 운영 정책 `WEEKLY_WORKING_DAYS`(피처 003 · omf-all-around#66 · 장부 P-158).
+ * 공장 주간 근무일 — 운영 정책 `WEEKLY_WORKING_DAYS`(피처 003 · omf-all-around#66).
  *
  * 범위는 공장만, 값은 5|6. 설정하지 않은 공장은 서버가 5 로 계산한다(이 코드만의 예외 — effective 는
  * 그대로 resolved=false). 설정 화면 `W-CO-15` 는 이 코드만 읽고 쓴다.

@@ -30,7 +30,7 @@ import {
 
 /**
  * 운영 정책. 화면은 `W-05-01` 이 소유하고, 실행 화면들이 `effective` 로 값을 묻는다.
- * 공장 근무일(`WEEKLY_WORKING_DAYS`)만은 `W-CO-15` 도 읽고 쓴다(피처 003 · 장부 P-158).
+ * 공장 근무일(`WEEKLY_WORKING_DAYS`)만은 `W-CO-15` 도 읽고 쓴다(피처 003).
  */
 @Controller('app/operation-policies')
 export class OperationPolicyController {
