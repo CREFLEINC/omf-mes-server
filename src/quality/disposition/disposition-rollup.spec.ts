@@ -136,10 +136,13 @@ describe('followUpPending — 「후속 원천이 있는 유형만」(통보 089
 });
 
 describe('reinstatable — 재고로 되돌릴 수 있는 결정(통보 089 §4 #4)', () => {
-  it('NORMAL 만 참이다 — 후속 진행과 무관하다', () => {
+  it('NORMAL 과 불량창고 재고가 남은 CONCESSION 이 참이다 — 후속 진행과 무관하다', () => {
     // 결정 — 통보 089 (계약의 「재작업이고 끝난 것」 절은 원천이 0이라 닿지 않는다 · 089 §4 #4)
     expect(dispositionFollowUp('NORMAL', dec('160'), []).reinstatable).toBe(true);
     expect(dispositionFollowUp('NORMAL', dec('160'), [posted('160')]).reinstatable).toBe(true);
+    // #207 — 특채는 그 LOT 에 불량창고 재고가 남았을 때만이다(입고 전 특채 · 이미 옮긴 특채는 거짓).
+    expect(dispositionFollowUp('CONCESSION', dec('6'), [], true).reinstatable).toBe(true);
+    expect(dispositionFollowUp('CONCESSION', dec('6'), []).reinstatable).toBe(false);
   });
 
   it('⛔ SCRAP 은 계약이 명시로 뺐고 REWORK 는 「끝난 재작업」을 오늘 셀 수 없어 둘 다 거짓이다', () => {
