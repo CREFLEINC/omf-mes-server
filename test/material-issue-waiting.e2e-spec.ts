@@ -190,6 +190,15 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     const [row] = await fx.requests(second);
     expect(row.source_warehouse_id).toBe(warehouses.A);
     expect(qtys(row.material_issue_request_line)).toEqual([['X', 0, 20]]);
+
+    // 같은 처지의 요청을 바로 배포해도 피킹은 요청 0 줄을 건너뛴다 — 수량 0 인 피킹 줄을 만들지 않는다.
+    const now = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: localDate(new Date(), HANOI) });
+    await fx.release(now).expect(200);
+    const [released] = await fx.requests(now);
+    expect(released.status_code).toBe('REGISTERED');
+    expect(qtys(released.material_issue_request_line)).toEqual([['X', 0, 20]]);
+    expect(await fx.pickings(released.material_issue_request_id)).toEqual([]);
+    expect(await prisma.picking_line.count({ where: { picking_order: { warehouse_id: warehouses.A }, planned_qty: { lte: 0 } } })).toBe(0);
   });
 
   it('US2-9 SC-007 어느 생산 창고에도 재고 없는 자재 → 요청 없음 · W/O 단위 부족 행 · 배포 성공', async () => {
