@@ -21,20 +21,11 @@ function fakeTx(balances: [bigint, bigint, number, string, string | null][], pla
   const tx = {
     $queryRaw: lock,
     inventory_balance: {
-      groupBy: jest.fn().mockImplementation(() => {
-        const sums = new Map<string, { warehouse_id: bigint; item_id: bigint; _sum: { available_qty: Prisma.Decimal } }>();
-        for (const [w, i, qty] of balances) {
-          const key = `${w}:${i}`;
-          const row = sums.get(key) ?? { warehouse_id: w, item_id: i, _sum: { available_qty: d(0) } };
-          row._sum.available_qty = row._sum.available_qty.plus(qty);
-          sums.set(key, row);
-        }
-        return Promise.resolve([...sums.values()]);
-      }),
       findMany: jest.fn().mockResolvedValue(
-        balances.map(([w, i, , created, expiry], index) => ({
+        balances.map(([w, i, qty, created, expiry], index) => ({
           warehouse_id: w,
           item_id: i,
+          available_qty: d(qty),
           lot_id: BigInt(index + 1),
           location_id: 1n,
           lot: { created_at: at(created), expiry_date: expiry === null ? null : at(expiry) },
