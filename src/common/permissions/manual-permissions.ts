@@ -24,6 +24,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/departments/{departmentId}:activate': ['W-06-06'],
   'POST /mdm/departments/{departmentId}:deactivate': ['W-06-06'],
   'PUT /mdm/workers/{workerId}/qualifications': ['W-06-06'],
+  // 공장 근무일 설정(W-CO-15) — 운영 정책 표에서 `WEEKLY_WORKING_DAYS` 하나만 읽고 쓴다. 다른 코드는 서비스가
+  // 막는다(`assertWritable`)(omf-all-around#66 · 장부 P-158).
+  'GET /app/operation-policies/effective': ['W-CO-15'],
+  'GET /app/operation-policies/{operationPolicyId}': ['W-CO-15'],
+  'POST /app/operation-policies': ['W-CO-15'],
+  'PUT /app/operation-policies/{operationPolicyId}': ['W-CO-15'],
   // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66 · 장부 P-157).
   'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
   'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
