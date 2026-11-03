@@ -47,7 +47,7 @@ export class MaterialIssueReleaser {
       select: {
         issue_request_no: true,
         work_order_id: true,
-        source_warehouse: { select: { warehouse_id: true, plant_id: true } },
+        source_warehouse: { select: { warehouse_id: true, plant_id: true, is_active: true } },
         work_order: { select: { responsible_worker_id: true } },
         material_issue_request_line: {
           select: { material_issue_request_line_id: true, line_no: true, item_id: true, uom_id: true, requested_qty: true },
@@ -57,6 +57,8 @@ export class MaterialIssueReleaser {
     });
     const source = request.source_warehouse;
     if (source === null) throw new Error(`출발 창고가 없는 요청은 대기가 될 수 없다: ${requestId}`);
+    // 재고 부족은 집을 수 있는 만큼만 담고 배포한다(US3-4). 창고를 쓰지 않게 된 것은 다르다 — 배포 실패로 남긴다(FR-022).
+    if (!source.is_active) throw new Error('출발 창고가 사용 중지되어 배포할 수 없습니다.');
 
     const lines = request.material_issue_request_line;
     const allocation = await allocateStock(tx, {
