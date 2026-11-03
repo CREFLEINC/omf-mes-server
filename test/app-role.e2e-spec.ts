@@ -133,7 +133,8 @@ describe('역할·기능 권한 (e2e)', () => {
     // W-CO-14(인계작업 알림 설정)(장부 P-134).
     // W-06-14(적치 규칙 마스터)는 없앴다(사용자 결정 2026-10-29).
     // W-CO-05(통합 대시보드)는 권한 대상에서 뺐다(사용자 결정 2026-11-03 · omf-all-around#229).
-    expect(response.body.items).toHaveLength(137);
+    // W-02-11(출고 요청 현황)·W-CO-15(공장 근무일 설정)(피처 003 · omf-all-around#66).
+    expect(response.body.items).toHaveLength(139);
     expect(response.body.items.map((p: { code: string }) => p.code)).not.toContain('W-CO-05');
     // 이 화면 자신의 권한이 목록에 있어야 격자에서 관리자를 만들 수 있다.
     expect(response.body.items.map((p: { code: string }) => p.code)).toContain('W-CO-02');
