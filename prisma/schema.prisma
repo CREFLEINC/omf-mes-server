@@ -2308,7 +2308,6 @@ model partner {
   subcontract_order                                             subcontract_order[]
   item_external_code                                            item_external_code[]
   partner_role                                                  partner_role[]
-  warehouse                                                     warehouse[]
   material_substitution_rule                                    material_substitution_rule[]
   concession                                                    concession[]
   lot_external_identifier                                       lot_external_identifier[]
@@ -2624,7 +2623,6 @@ model warehouse {
   warehouse_type_code                                                                String                       @db.VarChar(50)
   management_level_code                                                              String                       @db.VarChar(50)
   is_external                                                                        Boolean                      @default(false)
-  partner_id                                                                         BigInt?
   is_active                                                                          Boolean                      @default(true)
   created_at                                                                         DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                                                         BigInt?
@@ -2648,7 +2646,6 @@ model warehouse {
   stock_transfer_stock_transfer_to_warehouse_idTowarehouse                           stock_transfer[]             @relation("stock_transfer_to_warehouse_idTowarehouse")
   location                                                                           location[]
   business_unit                                                                      business_unit                @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
-  partner                                                                            partner?                     @relation(fields: [partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   plant                                                                              plant                        @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   warehouse_layout                                                                   warehouse_layout[]
   material_return                                                                    material_return[]

@@ -3,6 +3,7 @@
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 
 import * as mssql from 'mssql';
 
@@ -15,7 +16,7 @@ import { RelayClient } from '../src/integration/erp/relay-client';
 import { goodsReceiptBuilder } from '../src/integration/erp/send/goods-receipt.send';
 import { enqueueReceiptCancel } from '../src/logistics/goods-receipt/erp-receipt';
 import { GoodsReceiptService } from '../src/logistics/goods-receipt/goods-receipt.service';
-import { InboundExcessService } from '../src/logistics/inbound-receipt/inbound-excess.service';
+import { InboundAllocationService } from '../src/logistics/inbound-receipt/inbound-allocation.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RELAY, connectSa, createCopy, describeRelay, dropCopy, ensurePlant } from './erp-relay.fixture';
 
@@ -26,7 +27,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let receipts: GoodsReceiptService;
-  let excesses: InboundExcessService;
+  let allocations: InboundAllocationService;
   const createdPlants: bigint[] = [];
   const ids: Record<string, bigint> = {};
   let userId: number;
@@ -38,7 +39,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     receipts = app.get(GoodsReceiptService);
-    excesses = app.get(InboundExcessService);
+    allocations = app.get(InboundAllocationService);
     await ensurePlant(prisma, 'PL11', createdPlants);
     await seed();
   });
@@ -147,14 +148,14 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
   }
 
   /**
-   * ERP·MES 발주 라인에 이은 입하 줄 하나와 그 LOT. 초과분은 다른 P/O 라인에 이었거나(`orderLine`) 아직 안 이었다.
-   * 쓰기 경로처럼 배정도 적는다 — 줄의 P/O 몫(받은 수량 − 초과분) 하나와 이은 초과분마다 하나.
+   * ERP·MES 발주 라인에 이은 입하 줄 하나와 그 LOT. 초과분은 다른 P/O 라인에 배정했거나(`orderLine`) 미배정으로 남았다.
+   * 배정은 줄의 P/O 몫(받은 수량 − 초과분) 하나와 배정한 초과분마다 하나다.
    */
   async function inboundLot(
     orderLine: bigint,
     qty: number,
     excesses: { qty: number; orderLine: bigint | null }[] = [],
-  ): Promise<{ inboundLineId: bigint; lotId: bigint; excessIds: bigint[] }> {
+  ): Promise<{ inboundLineId: bigint; lotId: bigint }> {
     sequence += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
@@ -169,18 +170,6 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
         status_code: 'REGISTERED',
       },
     });
-    const created: bigint[] = [];
-    for (const excess of excesses) {
-      const row = await prisma.inbound_receipt_excess.create({
-        data: {
-          inbound_receipt_line_id: line.inbound_receipt_line_id,
-          excess_qty: excess.qty,
-          purchase_order_line_id: excess.orderLine,
-          linked_at: excess.orderLine === null ? null : RECEIVED_AT,
-        },
-      });
-      created.push(row.inbound_receipt_excess_id);
-    }
     const shares = [
       { orderLine, qty: qty - excesses.reduce((sum, excess) => sum + excess.qty, 0) },
       ...excesses.flatMap((excess) => (excess.orderLine === null ? [] : [{ orderLine: excess.orderLine, qty: excess.qty }])),
@@ -204,7 +193,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
         status_code: 'NORMAL',
       },
     });
-    return { inboundLineId: line.inbound_receipt_line_id, lotId: lot.lot_id, excessIds: created };
+    return { inboundLineId: line.inbound_receipt_line_id, lotId: lot.lot_id };
   }
 
   async function receive(
@@ -527,10 +516,9 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
 
   it('입고 뒤에 이은 몫은 이을 때 자기 묶음을 적재하고 입고 묶음에서는 빠진다 · 그 뒤에는 풀지 못한다', async () => {
     const lot = await inboundLot(ids.erpOrderLine, 50, [{ qty: 10, orderLine: null }]);
-    const [excessId] = lot.excessIds;
     const detail = await receive('warehouse', [{ ...lot, qty: 50 }]);
 
-    await excesses.link(excessId, ids.erpOrderLine2, userId);
+    await allocations.addToLine(lot.inboundLineId, ids.erpOrderLine2, new Prisma.Decimal(10), userId);
 
     const allocationId = await allocationOf(lot.inboundLineId, ids.erpOrderLine2);
     expect(await allocationMessage(allocationId)).toMatchObject({
@@ -544,20 +532,19 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     expect(rows[0].values).toMatchObject({ POP_INF_KEY: detail.goodsReceipt.goodsReceiptNo });
     // 입고 묶음이 늦게 바뀌어도 같은 몫을 두 번 싣지 않는다.
     expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '40']]);
-    await expect(excesses.unlink(excessId, userId)).rejects.toMatchObject({
+    await expect(allocations.removeFromLine(lot.inboundLineId, allocationId, userId)).rejects.toMatchObject({
       response: { errors: [expect.objectContaining({ code: 'STATE_LOCKED', message: 'ERP 구매입고로 보낸 배정입니다.' })] },
     });
   });
 
   it('입고 전에는 이어도 적재하지 않고 풀 수 있다 — 입고할 때 함께 간다', async () => {
     const lot = await inboundLot(ids.erpOrderLine, 30, [{ qty: 5, orderLine: null }]);
-    const [excessId] = lot.excessIds;
 
-    await excesses.link(excessId, ids.erpOrderLine2, userId);
-    expect(await allocationMessage(await allocationOf(lot.inboundLineId, ids.erpOrderLine2))).toBeNull();
+    await allocations.addToLine(lot.inboundLineId, ids.erpOrderLine2, new Prisma.Decimal(5), userId);
+    const allocationId = await allocationOf(lot.inboundLineId, ids.erpOrderLine2);
+    expect(await allocationMessage(allocationId)).toBeNull();
 
-    await excesses.unlink(excessId, userId);
-    expect((await prisma.inbound_receipt_excess.findUniqueOrThrow({ where: { inbound_receipt_excess_id: excessId } })).purchase_order_line_id).toBeNull();
+    await allocations.removeFromLine(lot.inboundLineId, allocationId, userId);
     expect(await prisma.inbound_receipt_po_allocation.count({ where: { inbound_receipt_line_id: lot.inboundLineId, purchase_order_line_id: ids.erpOrderLine2 } })).toBe(0);
   });
 
@@ -567,7 +554,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     expect(detail.goodsReceipt.erpMessageQueued).toBe(true);
     expect(await build(detail.goodsReceipt.goodsReceiptId)).toEqual([]);
 
-    await excesses.link(lot.excessIds[0], ids.erpOrderLine2, userId);
+    await allocations.addToLine(lot.inboundLineId, ids.erpOrderLine2, new Prisma.Decimal(15), userId);
 
     expect(summary(await buildAllocation(await allocationOf(lot.inboundLineId, ids.erpOrderLine2)))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '15']]);
   });
