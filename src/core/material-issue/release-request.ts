@@ -33,7 +33,7 @@ export class MaterialIssueReleaser {
     requestId: bigint,
     pickingOrderNo: string,
     appUserId: number | null,
-    options: { zaloNotBefore?: Date } = {},
+    options: { zaloNotBefore?: Date; now?: Date } = {},
   ): Promise<boolean> {
     const [locked] = await tx.$queryRaw<{ status_code: string }[]>`
       SELECT status_code FROM logistics.material_issue_request
@@ -92,7 +92,8 @@ export class MaterialIssueReleaser {
       ...(options.zaloNotBefore === undefined ? {} : { zaloNotBefore: options.zaloNotBefore }),
     });
 
-    const now = new Date();
+    // 러너는 회차 시각을 넘긴다 — 실패 기록(release_attempted_at)과 같은 시계다.
+    const now = options.now ?? new Date();
     await tx.material_issue_request.update({
       where: { material_issue_request_id: requestId },
       data: {
