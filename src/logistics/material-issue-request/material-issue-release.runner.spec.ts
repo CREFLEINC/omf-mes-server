@@ -11,18 +11,20 @@ const SEOUL = 'Asia/Seoul';
 
 /** 공장 표·대기 요청 질의·트랜잭션·실패 기록을 메모리로. `due` 는 공장마다 고를 요청 id. */
 function fake(
-  seed: { enabled?: boolean; lease?: () => boolean; plants?: [bigint, string][]; due?: Record<string, bigint[]>; fail?: bigint[]; onRelease?: () => void } = {},
+  seed: { enabled?: boolean; lease?: () => boolean; plants?: [bigint, string][]; due?: Record<string, bigint[]>; fail?: bigint[]; onRelease?: () => void; locked?: bigint[] } = {},
 ) {
   const asked: { plantId: bigint; today: string }[] = [];
   const recorded: { id: bigint; message: string }[] = [];
   const released: bigint[] = [];
   const prisma = {
-    plant: { findMany: jest.fn(async () => (seed.plants ?? []).map(([plant_id, timezone_code]) => ({ plant_id, timezone_code }))) },
+    plant: { findMany: jest.fn(async (_args?: { where: { is_active: boolean } }) => (seed.plants ?? []).map(([plant_id, timezone_code]) => ({ plant_id, timezone_code }))) },
     $queryRaw: jest.fn(async (_strings: TemplateStringsArray, plantId: bigint, today: string, _retry: Date, tried: bigint[]) => {
       asked.push({ plantId, today });
       return (seed.due?.[String(plantId)] ?? []).filter((id) => !released.includes(id) && !tried.includes(id)).map((id) => ({ id }));
     }),
-    $transaction: jest.fn(async (work: (tx: unknown) => Promise<boolean>) => work({})),
+    $transaction: jest.fn(async (work: (tx: unknown) => Promise<boolean>) =>
+      work({ $queryRaw: async (_s: TemplateStringsArray, id: bigint) => (seed.locked?.includes(id) ? [] : [{ id }]) }),
+    ),
     material_issue_request: {
       updateMany: jest.fn(async ({ where, data }: { where: { material_issue_request_id: bigint }; data: { release_error_text: string } }) => {
         recorded.push({ id: where.material_issue_request_id, message: data.release_error_text });
@@ -135,5 +137,13 @@ describe('00:00 출고 요청 배포 러너', () => {
     expect(holdZaloUntil(new Date('2026-11-12T17:00:30Z'))?.toISOString()).toBe('2026-11-13T00:00:00.000Z');
     expect(holdZaloUntil(new Date('2026-11-13T00:00:01Z'))).toBeUndefined();
     expect(holdZaloUntil(new Date('2026-11-13T16:59:00Z'))).toBeUndefined();
+  });
+
+  it('남이 쥔 요청은 기다리지 않고 건너뛴다(SKIP LOCKED) · 활성 공장만 돈다', async () => {
+    const { runner, released, releaser, prisma } = fake({ plants: [[1n, HANOI]], due: { '1': [11n, 12n] }, locked: [11n] });
+    expect(await runner.tick(new Date('2026-11-12T17:00:30Z'))).toBe(1);
+    expect(released).toEqual([12n]);
+    expect(releaser.release).toHaveBeenCalledTimes(1);
+    expect((prisma.plant.findMany as jest.Mock).mock.calls[0][0]).toMatchObject({ where: { is_active: true } });
   });
 });
