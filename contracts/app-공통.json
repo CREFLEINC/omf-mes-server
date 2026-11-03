@@ -3101,6 +3101,16 @@
         "x-internal-note": "본문 비노출은 공유계약 A-4, 전송 자체는 B-1 구현에 필요하다."
        }
       }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-05-01 · W-CO-15(공장 근무일 설정)는 policyCode=WEEKLY_WORKING_DAYS 인 행만 읽는다 — 피처 003 · omf-all-around#66",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     }
    },

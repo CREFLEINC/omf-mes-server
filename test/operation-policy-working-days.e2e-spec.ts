@@ -167,6 +167,22 @@ describe('공장 주간 근무일 (e2e)', () => {
     expect(withItem.body.errors[0]).toMatchObject({ field: 'itemId', code: 'INVALID' });
   });
 
+  it('US7-3 W-CO-15 는 이 코드만 읽는다 — 다른 코드 행 상세는 403, 목록은 근무일 행만', async () => {
+    const other = await prisma.operation_policy.create({
+      data: { policy_code: 'MINOR_STOP_THRESHOLD_MINUTES', plant_id: plantId, value_numeric: 5, effective_from: new Date(`${TODAY}T00:00:00Z`) },
+    });
+    await request(app.getHttpServer()).get(`${PATH}/${other.operation_policy_id}`).set('Cookie', screenCookie).expect(403);
+    const listed = await request(app.getHttpServer()).get(PATH).query({ plantId: Number(plantId) }).set('Cookie', screenCookie).expect(200);
+    expect(listed.body.items.length).toBeGreaterThan(0);
+    expect(new Set(listed.body.items.map((item: { policyCode: string }) => item.policyCode))).toEqual(new Set([CODE]));
+    const asked = await request(app.getHttpServer())
+      .get(PATH)
+      .query({ plantId: Number(plantId), policyCode: 'MINOR_STOP_THRESHOLD_MINUTES' })
+      .set('Cookie', screenCookie)
+      .expect(200);
+    expect(asked.body.items).toEqual([]);
+  });
+
   it('US7-3 W-CO-15 는 이 코드만 쓴다 — 다른 정책 코드는 403, 권한이 없으면 403', async () => {
     await post({ policyCode: 'MINOR_STOP_THRESHOLD_MINUTES', plantId: Number(plantId), valueNumeric: 5, effectiveFrom: TODAY }).expect(403);
     await post({ policyCode: CODE, plantId: Number(plantId), valueNumeric: 6, effectiveFrom: TODAY }, deniedCookie).expect(403);

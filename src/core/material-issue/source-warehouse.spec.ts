@@ -121,8 +121,10 @@ describe('출발 생산 창고 고르기', () => {
   });
 
   describe('US2-5 후보 집합 D·입고지 — 빠진 기준정보를 모은다', () => {
-    function lineDb(line: { department_id: bigint | null; default_wip_location_id: bigint | null } | null, links: bigint[]) {
-      const findLinks = jest.fn().mockResolvedValue(links.map((warehouse_id) => ({ warehouse_id })));
+    function lineDb(line: { department_id: bigint | null; default_wip_location_id: bigint | null } | null, links: bigint[], inactive: bigint[] = []) {
+      const findLinks = jest.fn().mockResolvedValue(
+        [...links, ...inactive].map((warehouse_id) => ({ warehouse_id, warehouse: { is_active: !inactive.includes(warehouse_id) } })),
+      );
       const db = {
         production_line: { findUnique: jest.fn().mockResolvedValue(line) },
         department_production_warehouse: { findMany: findLinks },
@@ -143,10 +145,20 @@ describe('출발 생산 창고 고르기', () => {
       const { db, findLinks } = lineDb({ department_id: 7n, default_wip_location_id: 40n }, []);
       const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
       expect('errors' in result && result.errors.map((e) => e.code)).toEqual(['PRODUCTION_WAREHOUSE_MISSING']);
-      expect(findLinks.mock.calls[0][0].where).toEqual({
-        department_id: 7n,
-        warehouse: { plant_id: 1n, is_active: true },
-      });
+      expect(findLinks.mock.calls[0][0].where).toEqual({ department_id: 7n, warehouse: { plant_id: 1n } });
+    });
+
+    it('연결된 생산 창고가 모두 사용 중지면 같은 사유 · 다른 안내', async () => {
+      const { db } = lineDb({ department_id: 7n, default_wip_location_id: 40n }, [], [3n]);
+      const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
+      expect('errors' in result && result.errors).toEqual([
+        expect.objectContaining({ code: 'PRODUCTION_WAREHOUSE_MISSING', message: expect.stringContaining('모두 사용 중지') }),
+      ]);
+    });
+
+    it('사용 중지된 창고는 D 에서 빠진다', async () => {
+      const { db } = lineDb({ department_id: 7n, default_wip_location_id: 40n }, [1n], [2n]);
+      expect(await resolveCandidates(db, { plantId: 1n, productionLineId: 5n })).toEqual({ warehouseIds: [1n], destinationLocationId: 40n });
     });
 
     it('다 있으면 D 와 라인 생산 현장을 낸다', async () => {
