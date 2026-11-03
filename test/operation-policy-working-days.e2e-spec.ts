@@ -118,6 +118,22 @@ describe('공장 주간 근무일 (e2e)', () => {
     expect(await weeklyWorkingDays(prisma, plantId, TODAY)).toBe(5);
   });
 
+  it('US7-3 W-CO-15 저장 방식 — 앞 행을 닫지 않고 「오늘부터」 새 행을 더해도 겹침을 거부하지 않고 시작일이 늦은 행이 이긴다', async () => {
+    await post({ policyCode: CODE, plantId: Number(plantId), valueNumeric: 6, effectiveFrom: '2026-11-10' }).expect(201);
+    expect(await weeklyWorkingDays(prisma, plantId, '2026-11-09')).toBe(5);
+    expect(await weeklyWorkingDays(prisma, plantId, '2026-11-10')).toBe(6);
+    const read = await request(app.getHttpServer())
+      .get(`${PATH}/effective`)
+      .query({ policyCode: CODE, plantId: Number(plantId), on: '2026-11-10' })
+      .set('Cookie', screenCookie)
+      .expect(200);
+    expect(read.body).toMatchObject({ resolved: true, valueNumeric: 6 });
+
+    // 같은 날 두 번 저장하면 나중에 만든 행이 이긴다.
+    await post({ policyCode: CODE, plantId: Number(plantId), valueNumeric: 5, effectiveFrom: '2026-11-10' }).expect(201);
+    expect(await weeklyWorkingDays(prisma, plantId, '2026-11-10')).toBe(5);
+  });
+
   it('US7-3 값은 5·6 만 받는다 — 그 밖은 400 RANGE', async () => {
     for (const value of [4, 7, 5.5]) {
       const response = await post({ policyCode: CODE, plantId: Number(plantId), valueNumeric: value, effectiveFrom: TODAY }).expect(400);
