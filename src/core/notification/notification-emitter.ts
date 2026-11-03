@@ -55,6 +55,11 @@ export interface HandoverEmitInput {
   /** zalo-templates.md 의 파라미터 값(`event_time` 은 생성기가 만든다). */
   values: NotificationValues;
   refs?: Record<string, number>;
+  /**
+   * Zalo 를 이 시각 전에는 보내지 않는다(피처 003 FR-021a — 00:00 자동 배포분은 현장 아침 07:00). 알림센터 행은
+   * 그대로 바로 쓴다. 주지 않으면 지금과 같다(바로).
+   */
+  zaloNotBefore?: Date;
 }
 
 interface WriteInput {
@@ -69,6 +74,7 @@ interface WriteInput {
   zaloValues?: NotificationValues;
   refs?: Record<string, number>;
   priority: number;
+  zaloNotBefore?: Date;
   skipReason: SkipReason | null;
   recipients: Recipient[];
   zaloEnabled: boolean;
@@ -191,6 +197,7 @@ export class NotificationEmitter {
       values: input.values,
       refs: input.refs,
       priority: HANDOVER_PRIORITY,
+      ...(input.zaloNotBefore === undefined ? {} : { zaloNotBefore: input.zaloNotBefore }),
       ...decision,
     });
   }
@@ -321,6 +328,7 @@ export class NotificationEmitter {
         tracking_id: `zd-${ids[index].id}`,
         expires_at: new Date(input.occurredAt.getTime() + ZALO_TTL_MS),
         priority: input.priority,
+        ...(input.zaloNotBefore === undefined ? {} : { next_attempt_at: input.zaloNotBefore }),
       })),
     });
   }

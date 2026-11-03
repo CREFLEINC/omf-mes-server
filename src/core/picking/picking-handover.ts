@@ -15,7 +15,7 @@ export class PickingHandoverNotifier {
   async notify(
     tx: Prisma.TransactionClient,
     pickings: readonly WrittenPicking[],
-    source: { workOrderId: bigint; requiredAt: Date | null },
+    source: { workOrderId: bigint; requiredAt: Date | null; zaloNotBefore?: Date },
   ): Promise<void> {
     await this.emitter.guarded(tx, `MATERIAL_PICKING_REQUESTED ${source.workOrderId}`, async () => {
       if (pickings.length === 0) return;
@@ -49,6 +49,7 @@ export class PickingHandoverNotifier {
             warehouse: warehouse.warehouse_name,
             required_at: source.requiredAt === null ? null : formatEventTime(source.requiredAt),
           },
+          ...(source.zaloNotBefore === undefined ? {} : { zaloNotBefore: source.zaloNotBefore }),
         });
       }
     }, undefined);
