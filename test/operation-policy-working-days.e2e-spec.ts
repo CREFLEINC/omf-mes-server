@@ -129,8 +129,18 @@ describe('공장 주간 근무일 (e2e)', () => {
       .expect(200);
     expect(read.body).toMatchObject({ resolved: true, valueNumeric: 6 });
 
-    // 같은 날 두 번 저장하면 나중에 만든 행이 이긴다.
-    await post({ policyCode: CODE, plantId: Number(plantId), valueNumeric: 5, effectiveFrom: '2026-11-10' }).expect(201);
+    // ⚠ 같은 공장·같은 시작일의 두 번째 POST 는 유일 인덱스(uq_operation_policy)로 400 이다 — 같은 날 다시
+    //   저장하려면 그 행을 PUT 으로 고친다.
+    await post({ policyCode: CODE, plantId: Number(plantId), valueNumeric: 5, effectiveFrom: '2026-11-10' }).expect(400);
+    const id = read.body.operationPolicyId as number;
+    const detail = await request(app.getHttpServer()).get(`${PATH}/${id}`).set('Cookie', screenCookie).expect(200);
+    await request(app.getHttpServer())
+      .put(`${PATH}/${id}`)
+      .set('Cookie', screenCookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', detail.headers.etag as string)
+      .send({ valueNumeric: 5, effectiveFrom: '2026-11-10' })
+      .expect(200);
     expect(await weeklyWorkingDays(prisma, plantId, '2026-11-10')).toBe(5);
   });
 
