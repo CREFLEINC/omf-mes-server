@@ -90,6 +90,15 @@ export const ERROR_CODE = {
   // 단말의 창고가 단말 공장의 것이 아니다(omf-all-around#190 · 장부 P-136). `INVALID`(없는·사용 중지 창고)와 갈라
   // 화면이 「공장을 먼저 맞추라」를 따로 말한다.
   PLANT_MISMATCH: 'PLANT_MISMATCH',
+  // 계획 기반 출고 요청(피처 003 · omf-all-around#66). 배포 400 의 빠진 기준정보 셋 — 화면이 사유마다 고칠
+  // 자리(라인 부서 · 부서 생산 창고 · 라인 생산 현장)로 바로 보낸다.
+  LINE_DEPARTMENT_MISSING: 'LINE_DEPARTMENT_MISSING',
+  PRODUCTION_WAREHOUSE_MISSING: 'PRODUCTION_WAREHOUSE_MISSING',
+  PRODUCTION_FLOOR_LOCATION_MISSING: 'PRODUCTION_FLOOR_LOCATION_MISSING',
+  // 새 요청이 생산 창고의 쓸 수 있는 양(가용 − 출고 예정)을 넘는다(409 · 긴급 대응·부족 보충만 확인 뒤 진행).
+  PLANNED_STOCK_CONFLICT: 'PLANNED_STOCK_CONFLICT',
+  // 출고 작업일을 휴일로 바꾸려면 확인(acknowledgeHoliday)이 필요하다(422).
+  HOLIDAY_ACK_REQUIRED: 'HOLIDAY_ACK_REQUIRED',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */

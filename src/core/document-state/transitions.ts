@@ -427,6 +427,17 @@ export const TRANSITIONS: TransitionRegistry = {
    * ⛔ 취소 두 액션을 안 붙인다 — 역시 `cancelable: false` 다. 그래서 되돌리는 전이도 없다.
    */
   'logistics.material_issue_request.status_code': {
+    /**
+     * 계획 기반 출고 요청의 배포(피처 003 · research R-1·R-8) — 대기 요청을 피킹 지시와 함께 내보낸다. W/O 배포가
+     * 출고 작업일이 지난 요청을 같은 트랜잭션에서 즉시 배포하고, 00:00 러너가 나머지를 배포한다. 「한 번만」은
+     * 이 전이가 지킨다 — 대기가 아니면 공용 배포 함수가 아무것도 하지 않는다.
+     * ⚠ 미룸(REGISTERED→WAITING)·취소는 그 경로(`PUT`·`:cancel`)가 계약에 설 때 더한다.
+     */
+    'material-issue-request-release': {
+      from: ['WAITING'],
+      to: 'REGISTERED',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:release',
+    },
     'material-issue-request-issue': {
       from: ['REGISTERED'],
       to: 'POSTED',

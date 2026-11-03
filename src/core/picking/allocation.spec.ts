@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { PickingDemand, StockCandidate, allocatePicking } from './allocation';
+import { allocateStock } from './picking-generation';
 
 const D = (value: number) => new Prisma.Decimal(value);
 const day = (n: number) => new Date(Date.UTC(2026, 8, n));
@@ -113,5 +114,28 @@ describe('피킹 배정 (P-12 · 문의 045)', () => {
   it('단위가 다른 재고는 후보가 아니다', () => {
     const result = allocatePicking([demand(1, 100n, 5, 2n)], [stock({ warehouseId: 1n, lotId: 11n, qty: 50 })], new Set());
     expect(shape(result)).toEqual({ orders: [], shortages: [[1, 100n, 5]] });
+  });
+});
+
+describe('배정 후보 창고 — 출발 창고 지정(피처 003 · 확정 항목 5)', () => {
+  function fakeDb() {
+    const balances = jest.fn().mockResolvedValue([]);
+    const db = {
+      inventory_balance: { findMany: balances },
+      item: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as Prisma.TransactionClient;
+    return { db, balances };
+  }
+
+  it('warehouseId 를 주면 그 창고만 보고 창고 유형 조건을 쓰지 않는다', async () => {
+    const { db, balances } = fakeDb();
+    await allocateStock(db, { plantId: 1n, demands: [demand(1, 100n, 5)], warehouseId: 7n });
+    expect(balances.mock.calls[0][0].where.warehouse).toEqual({ warehouse_id: 7n, plant_id: 1n, is_active: true });
+  });
+
+  it('주지 않으면 지금과 같다 — 공장의 자재 유형 활성 창고', async () => {
+    const { db, balances } = fakeDb();
+    await allocateStock(db, { plantId: 1n, demands: [demand(1, 100n, 5)] });
+    expect(balances.mock.calls[0][0].where.warehouse).toEqual({ plant_id: 1n, warehouse_type_code: 'MATERIAL', is_active: true });
   });
 });
