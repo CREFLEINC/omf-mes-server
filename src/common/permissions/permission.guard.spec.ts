@@ -66,6 +66,13 @@ describe('권한 가드 (단위)', () => {
     expect(guard().canActivate(context(UNGATED, []))).toBe(true);
   });
 
+  it('⛔ 403 을 선언했어도 로그인 전용 자리는 권한을 보지 않는다 — 대시보드(omf-all-around#229)', () => {
+    const responses = (registry.get('GET /app/dashboard-summary')?.operation as { responses?: Record<string, unknown> })
+      ?.responses;
+    expect(responses).toHaveProperty('403');
+    expect(guard().canActivate(context('GET /app/dashboard-summary', []))).toBe(true);
+  });
+
   it('세션이 없으면 여기서 다시 세지 않는다 — 인증 가드가 이미 막았다', () => {
     expect(guard().canActivate(context(GATED, null))).toBe(true);
   });

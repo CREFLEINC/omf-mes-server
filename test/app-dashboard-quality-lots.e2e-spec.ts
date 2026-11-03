@@ -28,7 +28,8 @@ type Quality = {
 
 /**
  * 품질 종합 「현재 현황」 상태별 LOT 목록(장부 P-58). ⭐ totalCount 가 대시보드 숫자와 같아야 한다.
- * ⛔ 계약 사본에 없는 경로라 가드 대신 컨트롤러가 인증·권한·질의를 막는다 — 401·403·400 을 여기서 고정한다.
+ * ⛔ 계약 사본에 없는 경로라 가드 대신 컨트롤러가 인증·질의를 막는다 — 401·400 을 여기서 고정한다.
+ * 기능 권한은 보지 않는다 — 로그인한 사용자는 누구나 대시보드를 본다(omf-all-around#229).
  */
 describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () => {
   let app: INestApplication;
@@ -212,15 +213,13 @@ describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () =
     expect(open.items[0]).toMatchObject({ lotNo: `${PREFIX}-LOT-1`, qty: 15 });
   });
 
-  it('로그인 없음 401 · 권한 없음 403 — 가드와 같은 오류 모양', async () => {
+  it('로그인 없음 401 — 가드와 같은 오류 모양 · 기능 권한이 없어도 200(omf-all-around#229)', async () => {
     const anonymous = await request(app.getHttpServer()).get(PATH).query({ status: 'NC_OPEN' }).expect(401);
     expect(anonymous.body).toEqual({
       errors: [{ scope: 'screen', code: 'PERMISSION_DENIED', message: '로그인이 필요합니다.' }],
     });
-    const denied = await get(PATH, { status: 'NC_OPEN' }, outsider).expect(403);
-    expect(denied.body).toEqual({
-      errors: [{ scope: 'screen', code: 'PERMISSION_DENIED', message: '이 기능을 쓸 권한이 없습니다.' }],
-    });
+    const allowed = await get(PATH, { status: 'NC_OPEN' }, outsider).expect(200);
+    expect(allowed.body).toMatchObject({ status: 'NC_OPEN' });
   });
 
   it('데이터 범위 밖 공장은 403 — 요약과 같은 공장 규칙(omf-all-around#120 · P-62)', async () => {
@@ -263,7 +262,7 @@ describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () =
       await prisma.app_user.create({ data: { login_id: `${PREFIX}-OUT`, user_name: PREFIX, status_code: 'EMPLOYED' } })
     ).app_user_id;
     ids.role = (await prisma.role.create({ data: { role_code: `${PREFIX}-ROLE`, role_name: PREFIX } })).role_id;
-    await prisma.role_permission.create({ data: { role_id: ids.role, permission_code: 'W-CO-05' } });
+    // 기능 권한을 주지 않는다 — 대시보드는 로그인만 본다(omf-all-around#229).
     await prisma.user_role.create({ data: { app_user_id: ids.user, role_id: ids.role } });
 
     ids.legal = (

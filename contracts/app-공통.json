@@ -2651,16 +2651,6 @@
      "204": {
       "description": "확인됐다"
      },
-     "403": {
-      "description": "권한·단말 게이팅에 막혔다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
      "404": {
       "description": "없다",
       "content": {
@@ -2816,7 +2806,7 @@
       }
      },
      "403": {
-      "description": "권한·단말 게이팅에 막혔다",
+      "description": "볼 수 없는 공장이다 — plantId 가 사용자 데이터 범위 밖이다(field: plantId). 기능 권한은 보지 않는다 — 로그인한 사용자는 누구나 본다",
       "content": {
        "application/json": {
         "schema": {
@@ -3434,16 +3424,6 @@
      },
      "400": {
       "description": "확인 요구가 켜진 공지다 — 닫을 수 없다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한·단말 게이팅에 막혔다",
       "content": {
        "application/json": {
         "schema": {

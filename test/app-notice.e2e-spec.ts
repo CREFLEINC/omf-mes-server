@@ -19,13 +19,13 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-notice-probe';
-/** 작성 권한(W-CO-04)은 없고 읽기·확인 권한(W-CO-05)만 있는 둘째 사용자. */
+/** 기능 권한이 하나도 없는 둘째 사용자 — 공지 읽기·확인·닫기는 로그인만 본다(omf-all-around#229). */
 const READER_ID = 'e2e-notice-reader';
 const PASSWORD = '공지-검사-비밀번호';
 const PREFIX = 'NOTICE-E2E';
 const ROLE = 'E2E_NOTICE';
 const READER_ROLE = 'E2E_NOTICE_READER';
-const PERMISSIONS = ['W-CO-04', 'W-CO-05'];
+const PERMISSIONS = ['W-CO-04'];
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 const shift = (days: number): string =>
@@ -87,9 +87,6 @@ describe('공지 (e2e)', () => {
     });
     const readerRole = await prisma.role.create({
       data: { role_code: READER_ROLE, role_name: '공지읽기용' },
-    });
-    await prisma.role_permission.create({
-      data: { role_id: readerRole.role_id, permission_code: 'W-CO-05' },
     });
     await prisma.user_role.create({
       data: { app_user_id: other.app_user_id, role_id: readerRole.role_id },

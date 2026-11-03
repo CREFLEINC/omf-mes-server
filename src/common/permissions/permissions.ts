@@ -175,7 +175,6 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-CO-02', name: '사용자·역할·권한 관리', groupCode: 'CO' },
   { code: 'W-CO-03', name: '알림센터', groupCode: 'CO' },
   { code: 'W-CO-04', name: '공지·전달 게시/조회', groupCode: 'CO' },
-  { code: 'W-CO-05', name: '통합 대시보드(경영·생산)', groupCode: 'CO' },
   { code: 'W-CO-06', name: '단말기-공정 매핑 설정', groupCode: 'CO' },
   { code: 'W-CO-08', name: '창고 적재 위치 배치도', groupCode: 'CO' },
   { code: 'W-CO-09', name: '결재함(승인 요청 목록)', groupCode: 'CO' },
