@@ -17,9 +17,9 @@ function candidate(warehouseId: bigint, code: string, available: number, planned
 
 /** 창고 A(1)·B(2), 품목 X(10)·Y(11). 잔액 행 = [창고, 품목, 가용, LOT 생성일, 유효기한]. */
 function fakeTx(balances: [bigint, bigint, number, string, string | null][], planned: [bigint, bigint, number][] = [], fefo: bigint[] = []) {
-  const executeRaw = jest.fn().mockResolvedValue(1);
+  const lock = jest.fn().mockResolvedValue([]);
   const tx = {
-    $executeRaw: executeRaw,
+    $queryRaw: lock,
     inventory_balance: {
       groupBy: jest.fn().mockImplementation(() => {
         const sums = new Map<string, { warehouse_id: bigint; item_id: bigint; _sum: { available_qty: Prisma.Decimal } }>();
@@ -60,7 +60,7 @@ function fakeTx(balances: [bigint, bigint, number, string, string | null][], pla
     },
     item: { findMany: jest.fn().mockResolvedValue(fefo.map((item_id) => ({ item_id }))) },
   };
-  return { tx: tx as unknown as Prisma.TransactionClient, executeRaw };
+  return { tx: tx as unknown as Prisma.TransactionClient, lock };
 }
 
 describe('출발 생산 창고 고르기', () => {
@@ -122,11 +122,11 @@ describe('출발 생산 창고 고르기', () => {
   });
 
   it('같은 자재 줄이 여럿이어도 자재 단위로 한 번 고르고, 모든 (창고, 자재) 쌍을 정렬해 잠근다', async () => {
-    const { tx, executeRaw } = fakeTx([[1n, 10n, 30, '2026-10-01', null]]);
+    const { tx, lock } = fakeTx([[1n, 10n, 30, '2026-10-01', null]]);
     const result = await chooseSources(tx, { warehouseIds: [2n, 1n], itemIds: [10n, 10n] });
     expect([...result.chosen.keys()]).toEqual([10n]);
-    const keys = executeRaw.mock.calls.map((call) => call[1]);
-    expect(keys).toEqual(['mir:1:10', 'mir:2:10']);
+    expect(lock).toHaveBeenCalledTimes(1);
+    expect(lock.mock.calls[0][1]).toEqual(['mir:1:10', 'mir:2:10']);
   });
 
   describe('US2-5 후보 집합 D·입고지 — 빠진 기준정보를 모은다', () => {
