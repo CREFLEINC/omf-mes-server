@@ -156,9 +156,11 @@ export async function lockPairs(
   pairs: readonly { warehouseId: bigint; itemId: bigint }[],
 ): Promise<void> {
   const keys = [...new Set(pairs.map((pair) => `mir:${pairKey(pair.warehouseId, pair.itemId)}`))].sort();
-  for (const key of keys) {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
-  }
+  if (keys.length === 0) return;
+  // 한 문장으로 잡는다 — ORDER BY 가 잡는 순서를 정한다.
+  await tx.$queryRaw`
+    SELECT pg_advisory_xact_lock(hashtextextended(k, 0))::text
+      FROM unnest(${keys}::text[]) AS k ORDER BY k`;
 }
 
 /**
