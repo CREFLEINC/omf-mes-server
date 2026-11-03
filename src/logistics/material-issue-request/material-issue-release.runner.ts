@@ -15,6 +15,8 @@ export const STARTUP_DELAY_MS = 10_000;
 export const BATCH_SIZE = 20;
 /** 배포에 실패한 요청은 이 간격 뒤에 다시 시도한다 — 회차마다 같은 실패로 채번·로그를 쌓지 않는다. */
 export const RETRY_AFTER_MS = 10 * 60_000;
+/** 리스 연장 간격 — TTL(120초)보다 넉넉히 짧게. 건마다 늘리면 밀린 묶음에서 쓰기가 건수만큼이다(Zalo 러너와 같다). */
+export const LEASE_EXTEND_MS = 30_000;
 const SITE_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 class Stopping extends Error {}
@@ -33,6 +35,7 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
   private timer?: NodeJS.Timeout;
   private running?: Promise<void>;
   private stopping = false;
+  private leaseExtendedAt = 0;
 
   constructor(
     private readonly enabled: boolean,
@@ -70,6 +73,7 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
   /** 한 회차. 배포한 요청 수를 낸다. 검사는 이것을 직접 부른다. */
   async tick(now: Date = new Date()): Promise<number> {
     if (!(await this.lease.acquire().catch(() => false))) return 0;
+    this.leaseExtendedAt = Date.now();
     const plants = await this.prisma.plant.findMany({ select: { plant_id: true, timezone_code: true } });
     let released = 0;
     try {
@@ -84,15 +88,15 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
 
   private async releasePlant(plantId: bigint, today: string, now: Date): Promise<number> {
     let released = 0;
-    const tried = new Set<bigint>();
+    // 이 회차에 이미 손댄 요청은 다시 고르지 않는다 — 실패 기록마저 실패해도 다음 묶음으로 넘어간다.
+    const tried: bigint[] = [];
     for (;;) {
-      const due = (await this.due(plantId, today, now)).filter((id) => !tried.has(id));
+      const due = await this.due(plantId, today, now, tried);
       if (due.length === 0) return released;
       for (const requestId of due) {
         if (this.stopping) throw new Stopping();
-        // 회차를 넘기면 리스를 늘린다 — 남이 가져갔으면 이 회차를 접는다.
-        if (!(await this.lease.acquire().catch(() => false))) throw new Stopping();
-        tried.add(requestId);
+        await this.keepLease();
+        tried.push(requestId);
         if (await this.releaseOne(plantId, requestId, today, now)) released += 1;
       }
     }
@@ -102,7 +106,14 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
    * 출고 작업일이 공장 오늘 이하인 대기 요청. 공장은 출발 창고의 공장이다. 최근에 실패한 건은 간격을 둔다.
    * ⛔ 시간대 캐스팅이 없다 — 공장 오늘은 앱이 `timezone_code` 로 풀어 날짜 문자열로 넘긴다.
    */
-  private async due(plantId: bigint, today: string, now: Date): Promise<bigint[]> {
+  /** 30초마다 리스를 늘린다 — 남이 가져갔으면 이 회차를 접는다. */
+  private async keepLease(): Promise<void> {
+    if (Date.now() - this.leaseExtendedAt < LEASE_EXTEND_MS) return;
+    if (!(await this.lease.acquire().catch(() => false))) throw new Stopping();
+    this.leaseExtendedAt = Date.now();
+  }
+
+  private async due(plantId: bigint, today: string, now: Date, tried: bigint[]): Promise<bigint[]> {
     const retryBefore = new Date(now.getTime() - RETRY_AFTER_MS);
     const rows = await this.prisma.$queryRaw<{ id: bigint }[]>`
       SELECT r.material_issue_request_id AS id
@@ -112,6 +123,7 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
          AND w.plant_id = ${plantId}
          AND r.issue_work_date <= ${today}::date
          AND (r.release_error_text IS NULL OR r.release_attempted_at IS NULL OR r.release_attempted_at < ${retryBefore})
+         AND NOT (r.material_issue_request_id = ANY(${tried}::bigint[]))
        ORDER BY r.issue_work_date, r.material_issue_request_id
        LIMIT ${BATCH_SIZE}`;
     return rows.map((row) => row.id);
@@ -123,7 +135,7 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
       const pickingOrderNo = await this.numbering.next('PICKING_ORDER', plantId, today);
       const zaloNotBefore = holdZaloUntil(now);
       return await this.prisma.$transaction(
-        (tx) => this.releaser.release(tx, requestId, pickingOrderNo, null, zaloNotBefore === undefined ? {} : { zaloNotBefore }),
+        (tx) => this.releaser.release(tx, requestId, pickingOrderNo, null, { now, ...(zaloNotBefore === undefined ? {} : { zaloNotBefore }) }),
       );
     } catch (error) {
       const message = messageOf(error).slice(0, 1000);

@@ -10,15 +10,17 @@ const HANOI = 'Asia/Ho_Chi_Minh';
 const SEOUL = 'Asia/Seoul';
 
 /** 공장 표·대기 요청 질의·트랜잭션·실패 기록을 메모리로. `due` 는 공장마다 고를 요청 id. */
-function fake(seed: { enabled?: boolean; lease?: () => boolean; plants?: [bigint, string][]; due?: Record<string, bigint[]>; fail?: bigint[] } = {}) {
+function fake(
+  seed: { enabled?: boolean; lease?: () => boolean; plants?: [bigint, string][]; due?: Record<string, bigint[]>; fail?: bigint[]; onRelease?: () => void } = {},
+) {
   const asked: { plantId: bigint; today: string }[] = [];
   const recorded: { id: bigint; message: string }[] = [];
   const released: bigint[] = [];
   const prisma = {
     plant: { findMany: jest.fn(async () => (seed.plants ?? []).map(([plant_id, timezone_code]) => ({ plant_id, timezone_code }))) },
-    $queryRaw: jest.fn(async (_strings: TemplateStringsArray, plantId: bigint, today: string) => {
+    $queryRaw: jest.fn(async (_strings: TemplateStringsArray, plantId: bigint, today: string, _retry: Date, tried: bigint[]) => {
       asked.push({ plantId, today });
-      return (seed.due?.[String(plantId)] ?? []).filter((id) => !released.includes(id)).map((id) => ({ id }));
+      return (seed.due?.[String(plantId)] ?? []).filter((id) => !released.includes(id) && !tried.includes(id)).map((id) => ({ id }));
     }),
     $transaction: jest.fn(async (work: (tx: unknown) => Promise<boolean>) => work({})),
     material_issue_request: {
@@ -31,6 +33,7 @@ function fake(seed: { enabled?: boolean; lease?: () => boolean; plants?: [bigint
   const lease = { acquire: jest.fn(async () => (seed.lease ?? (() => true))()), release: jest.fn(async () => undefined) };
   const releaser = {
     release: jest.fn(async (_tx: unknown, id: bigint) => {
+      seed.onRelease?.();
       if (seed.fail?.includes(id)) throw new Error('출발 창고가 사용 중지되어 배포할 수 없습니다.');
       released.push(id);
       return true;
@@ -99,11 +102,33 @@ describe('00:00 출고 요청 배포 러너', () => {
     expect(recorded).toEqual([{ id: 12n, message: '출발 창고가 사용 중지되어 배포할 수 없습니다.' }]);
   });
 
-  it('회차 중에 리스를 잃으면 그 회차를 접는다', async () => {
+  it('30초마다 리스를 늘리고, 회차 중에 잃으면 그 회차를 접는다', async () => {
+    jest.useFakeTimers();
     let calls = 0;
-    const { runner, released } = fake({ lease: () => ++calls <= 2, plants: [[1n, HANOI]], due: { '1': [11n, 12n, 13n] } });
+    const { runner, released, lease } = fake({
+      lease: () => ++calls <= 2,
+      plants: [[1n, HANOI]],
+      due: { '1': [11n, 12n, 13n] },
+      // 배포 한 건이 31초 걸린다 — 다음 건 전에 리스를 늘려야 한다.
+      onRelease: () => jest.setSystemTime(Date.now() + 31_000),
+    });
     await runner.tick(new Date('2026-11-12T17:00:30Z'));
-    expect(released).toEqual([11n]);
+    expect(released).toEqual([11n, 12n]);
+    expect(lease.acquire).toHaveBeenCalledTimes(3);
+  });
+
+  it('리스 연장은 건마다가 아니다 — 빠른 묶음은 회차 첫 획득 한 번', async () => {
+    const { runner, released, lease } = fake({ plants: [[1n, HANOI]], due: { '1': [11n, 12n, 13n] } });
+    await runner.tick(new Date('2026-11-12T17:00:30Z'));
+    expect(released).toEqual([11n, 12n, 13n]);
+    expect(lease.acquire).toHaveBeenCalledTimes(1);
+  });
+
+  it('실패를 기록하지 못해도 같은 요청을 다시 고르지 않고 다음 요청으로 간다', async () => {
+    const { runner, released, prisma } = fake({ plants: [[1n, HANOI]], due: { '1': [11n, 12n] }, fail: [11n] });
+    (prisma.material_issue_request.updateMany as jest.Mock).mockRejectedValue(new Error('PG 끊김'));
+    expect(await runner.tick(new Date('2026-11-12T17:00:30Z'))).toBe(1);
+    expect(released).toEqual([12n]);
   });
 
   it('US3-6 현장 07:00 전 배포는 그날 07:00 까지 Zalo 를 미루고, 07:00 이후면 바로', () => {
