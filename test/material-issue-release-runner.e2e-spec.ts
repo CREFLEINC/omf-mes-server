@@ -148,6 +148,35 @@ describe('00:00 출고 요청 배포 러너 (e2e)', () => {
     }
   });
 
+  it('다른 트랜잭션이 쥔 요청은 기다리지 않고 건너뛴다(SKIP LOCKED) — 그 건은 다음 회차에', async () => {
+    const stock = await line('P1', [['X', 100]]);
+    const held = await waiting('P1', stock, 'X20', 2);
+    const other = await waiting('P1', stock, 'X20', 2);
+
+    let unlock: () => void = () => undefined;
+    let lockedSignal: () => void = () => undefined;
+    const locked = new Promise<void>((resolve) => (lockedSignal = resolve));
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM logistics.material_issue_request WHERE material_issue_request_id = ${held.requestId} FOR UPDATE`;
+        lockedSignal();
+        await new Promise<void>((resolve) => (unlock = resolve));
+      },
+      { timeout: 30_000 },
+    );
+    await locked;
+
+    await runner.tick(at(held.workDate, '00:00:30'));
+    expect(await status(other.requestId)).toBe('REGISTERED');
+    expect(await status(held.requestId)).toBe('WAITING');
+
+    unlock();
+    await holder;
+    await runner.tick(at(held.workDate, '00:01:30'));
+    expect(await status(held.requestId)).toBe('REGISTERED');
+    expect(await fx.pickings(held.requestId)).toHaveLength(1);
+  });
+
   it('US3-4 배포 때 재고가 모자라면 집을 수 있는 만큼만 피킹하고 부족으로 보인다', async () => {
     const stock = await line('P1', [['X', 100]]);
     const { requestId, workDate } = await waiting('P1', stock, 'X50', 3);
