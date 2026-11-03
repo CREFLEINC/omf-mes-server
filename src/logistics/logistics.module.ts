@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
@@ -7,9 +8,16 @@ import { DocumentStateModule } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
-import { NumberingModule } from '../core/numbering';
+import { NumberingModule, NumberingService } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
+import { MaterialIssueReleaser } from '../core/material-issue/release-request';
 import { PickingHandoverNotifier } from '../core/picking';
+import { SyncLease } from '../integration/erp/sync-lease';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  MATERIAL_ISSUE_RELEASE_LEASE,
+  MaterialIssueReleaseRunner,
+} from './material-issue-request/material-issue-release.runner';
 import { PrismaModule } from '../prisma/prisma.module';
 import { LogisticsHandoverNotifier } from './logistics-handover';
 import { AsnController } from './asn/asn.controller';
@@ -148,6 +156,25 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   providers: [
     LogisticsHandoverNotifier,
     PickingHandoverNotifier,
+    MaterialIssueReleaser,
+    // 출고 작업일 00:00 자동 배포(피처 003) — 운영 서버에서 MATERIAL_ISSUE_RELEASE_ENABLED=true 여야 돈다(확정 항목 7).
+    {
+      provide: MaterialIssueReleaseRunner,
+      inject: [ConfigService, PrismaService, MaterialIssueReleaser, NumberingService],
+      useFactory: (
+        config: ConfigService,
+        prisma: PrismaService,
+        releaser: MaterialIssueReleaser,
+        numbering: NumberingService,
+      ): MaterialIssueReleaseRunner =>
+        new MaterialIssueReleaseRunner(
+          config.get<string>('MATERIAL_ISSUE_RELEASE_ENABLED') === 'true',
+          prisma,
+          new SyncLease(prisma, MATERIAL_ISSUE_RELEASE_LEASE),
+          releaser,
+          numbering,
+        ),
+    },
     IqcHandoverNotifier,
     GoodsIssueQueryService,
     GoodsIssueService,
