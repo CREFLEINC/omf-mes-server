@@ -6,7 +6,7 @@ import { currentSession } from '../../auth/session-resolver.service';
 import type { Session } from '../../auth/session.types';
 import { ContractRegistry, contractOperationOf } from '../contract';
 import { ContractException, ERROR_CODE } from '../errors';
-import { OPERATION_PERMISSIONS } from './operation-permissions';
+import { LOGIN_ONLY_OPERATIONS, OPERATION_PERMISSIONS } from './operation-permissions';
 
 /**
  * 계약에 묶인 오퍼레이션에 기능 권한을 요구한다. 계약이 **403 을 253 오퍼레이션**에
@@ -64,6 +64,7 @@ export class PermissionGuard implements CanActivate {
     //    어긋난다 — 예를 들어 GET /app/sessions/current 는 200 만 선언한다(「지금 나는
     //    누구인가」라 권한을 물을 자리가 아니다). 계약 실측: 선언 253 · 미선언 237.
     if (!this.declaresForbidden(key)) return true;
+    if (LOGIN_ONLY_OPERATIONS.has(key)) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
     const session = currentSession(request);
