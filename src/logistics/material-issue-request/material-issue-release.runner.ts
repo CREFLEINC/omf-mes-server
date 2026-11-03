@@ -26,8 +26,8 @@ class Stopping extends Error {}
  * 한 건씩 각자의 트랜잭션으로 배포한다(FR-019). 한 건 실패가 나머지를 막지 않고, 실패는 별도 트랜잭션으로
  * `release_attempted_at`·`release_error_text` 에 남긴다(FR-022).
  *
- * 「한 대만」은 리스가, 「한 번만」은 공용 배포 함수의 행 잠금·대기 가드가 지킨다(FR-020) — 리스가 넘어가는
- * 순간 두 러너가 같은 요청을 잡아도 늦은 쪽은 대기가 아니어서 아무것도 하지 않는다.
+ * 「한 대만」은 리스가, 「한 번만」은 행 잠금·대기 가드가 지킨다(FR-020) — 건마다 트랜잭션에서
+ * `FOR UPDATE SKIP LOCKED` 로 그 한 건을 집고, 남이 쥐고 있으면(다른 러너·수정·취소) 건너뛰어 다음 회차에 다시 본다.
  * 시각은 `tick(now)` 로만 받는다 — 검사가 시각을 움직인다.
  */
 export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -74,7 +74,7 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
   async tick(now: Date = new Date()): Promise<number> {
     if (!(await this.lease.acquire().catch(() => false))) return 0;
     this.leaseExtendedAt = Date.now();
-    const plants = await this.prisma.plant.findMany({ select: { plant_id: true, timezone_code: true } });
+    const plants = await this.prisma.plant.findMany({ where: { is_active: true }, select: { plant_id: true, timezone_code: true } });
     let released = 0;
     try {
       for (const plant of plants) {
@@ -134,9 +134,18 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
       // 채번은 트랜잭션 밖이다 — 쓰지 않으면(이미 배포됨·재고 없음) 결번이다.
       const pickingOrderNo = await this.numbering.next('PICKING_ORDER', plantId, today);
       const zaloNotBefore = holdZaloUntil(now);
-      return await this.prisma.$transaction(
-        (tx) => this.releaser.release(tx, requestId, pickingOrderNo, null, { now, ...(zaloNotBefore === undefined ? {} : { zaloNotBefore }) }),
-      );
+      return await this.prisma.$transaction(async (tx) => {
+        // 남이 쥔 요청(수정·취소 중)은 기다리지 않고 건너뛴다 — 다음 회차가 다시 고른다.
+        const [free] = await tx.$queryRaw<{ id: bigint }[]>`
+          SELECT material_issue_request_id AS id FROM logistics.material_issue_request
+           WHERE material_issue_request_id = ${requestId} AND status_code = 'WAITING'
+             FOR UPDATE SKIP LOCKED`;
+        if (free === undefined) return false;
+        return this.releaser.release(tx, requestId, pickingOrderNo, null, {
+          now,
+          ...(zaloNotBefore === undefined ? {} : { zaloNotBefore }),
+        });
+      });
     } catch (error) {
       const message = messageOf(error).slice(0, 1000);
       this.logger.warn(`출고 요청 배포 실패 — ${requestId}: ${message}`);
