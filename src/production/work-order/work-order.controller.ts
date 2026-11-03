@@ -140,8 +140,9 @@ export class WorkOrderController {
   ): Promise<WorkOrderView> {
     const version = versionOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.releases.release(workOrderId, version, body, userOf(request));
-      return (await this.queries.detail(workOrderId, {})).view;
+      const waiting = await this.releases.release(workOrderId, version, body, userOf(request));
+      // 생산 창고 공장이면 창고별 요청 요약·미배정 자재를 함께 싣는다(피처 003). 지금 방식 공장은 그대로다.
+      return { ...(await this.queries.detail(workOrderId, {})).view, ...(waiting ?? {}) };
     }, FAMILY_CONFLICT_CODE);
   }
 

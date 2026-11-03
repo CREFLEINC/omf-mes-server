@@ -1,9 +1,13 @@
 import { HttpStatus, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { weeklyWorkingDays } from '../../app/policy/working-days';
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
+import { issueWorkDate } from '../../core/calendar/issue-work-date';
 import { slotQtys } from '../../core/lot';
+import { resolveCandidates, usesProductionWarehouses } from '../../core/material-issue/source-warehouse';
 import { NumberingService } from '../../core/numbering';
+import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BOM_COMPONENT_SELECT, BomComponentRow, skipsMaterialIssue } from './material-issue';
 
@@ -22,6 +26,7 @@ const RELEASE_SELECT = {
   // 라인이 비었거나 다른 공장이면 배포 뒤 전부 거부된다(omf-all-around#36). 여기서 막는다.
   production_line_id: true,
   production_line: { select: { plant_id: true } },
+  planned_start_at: true,
   routing_operation: {
     select: {
       standard_cycle_time_sec: true,
@@ -36,7 +41,7 @@ const RELEASE_SELECT = {
     select: {
       bom_id: true,
       bom: { select: { bom_version: true, base_qty: true } },
-      production_order: { select: { plant_id: true } },
+      production_order: { select: { plant_id: true, plant: { select: { timezone_code: true } } } },
     },
   },
 } satisfies Prisma.work_orderSelect;
@@ -54,6 +59,24 @@ export interface ReleasePlan {
   components: BomComponentRow[];
   /** 담을 라인이 0건이면 뽑지 않는다 — 그때는 헤더도 만들지 않는다. */
   issueRequestNo: string | null;
+  /** 생산 창고를 쓰는 공장(피처 003)이면 채운다. 비었으면 이 기능 전 경로 그대로다(FR-009a). */
+  waiting: WaitingPlan | null;
+}
+
+/** 출발 창고별 대기 요청을 만드는 데 필요한 값 — 채번까지 트랜잭션 밖에서 끝낸다. */
+export interface WaitingPlan {
+  /** 부서 생산 창고 D(W/O 공장의 활성 창고). */
+  warehouseIds: bigint[];
+  /** 라인의 생산 현장. */
+  destinationLocationId: bigint;
+  /** 생산일(공장 현지 `planned_start_at` 날짜)의 직전 근무일. 만들 때 한 번 계산한다(FR-033). */
+  issueWorkDate: string;
+  /** 출고 작업일이 공장 오늘 이하 — 같은 트랜잭션에서 배포한다(FR-003). */
+  releaseNow: boolean;
+  /** 요청은 창고마다 한 장 — 고를 수 있는 창고 수(|D|)만큼 미리 받는다. 안 쓴 번호는 결번이다. */
+  issueRequestNos: string[];
+  /** 즉시 배포면 요청마다 피킹 지시 한 장 — 역시 |D| 만큼. */
+  pickingOrderNos: string[];
 }
 
 /**
@@ -99,6 +122,11 @@ export async function releasePlan(
   const qtys = slotQtys(row.order_qty, new Prisma.Decimal(lotSize));
   const components = await bomComponents(prisma, row, plan.bom_id);
   const businessDate = today();
+  const plantId = plan.production_order.plant_id;
+  const waiting =
+    components.length > 0 && row.production_line_id !== null && (await usesProductionWarehouses(prisma, plantId))
+      ? await waitingPlan(prisma, numbering, { row, plantId, productionLineId: row.production_line_id, businessDate })
+      : null;
 
   return {
     row,
@@ -106,14 +134,46 @@ export async function releasePlan(
     qtys,
     businessDate,
     components,
+    waiting,
     issueRequestNo:
-      components.length === 0
+      components.length === 0 || waiting !== null
         ? null
         : await numbering.next(
             'MATERIAL_ISSUE_REQUEST',
             plan.production_order.plant_id,
             businessDate,
           ),
+  };
+}
+
+/**
+ * 생산 창고 공장의 대기 요청 준비(피처 003 · research R-5·R-7). 빠진 기준정보(라인 부서 · 부서 생산 창고 · 라인
+ * 생산 현장)는 모아 400 이다(FR-009) — 재고 부족은 배포를 막지 않는다. 창고 고르기는 재고에 기대므로 트랜잭션 안이다.
+ */
+async function waitingPlan(
+  prisma: PrismaService,
+  numbering: NumberingService,
+  input: { row: ReleaseRow; plantId: bigint; productionLineId: bigint; businessDate: string },
+): Promise<WaitingPlan> {
+  const scope = await resolveCandidates(prisma, { plantId: input.plantId, productionLineId: input.productionLineId });
+  if ('errors' in scope) throw new ContractException(HttpStatus.BAD_REQUEST, scope.errors);
+
+  const timezone = input.row.production_plan?.production_order.plant.timezone_code ?? 'UTC';
+  const plantToday = localDate(new Date(), timezone);
+  // 계획 시작 시각이 없으면 생산일을 알 수 없다 — 오늘로 보아 바로 배포한다(지금 방식과 같은 결과).
+  const productionDate =
+    input.row.planned_start_at === null ? plantToday : localDate(input.row.planned_start_at, timezone);
+  const workDate = issueWorkDate(productionDate, await weeklyWorkingDays(prisma, input.plantId, plantToday));
+  const releaseNow = workDate <= plantToday;
+  const count = scope.warehouseIds.length;
+  return {
+    ...scope,
+    issueWorkDate: workDate,
+    releaseNow,
+    issueRequestNos: await numbering.nextMany('MATERIAL_ISSUE_REQUEST', input.plantId, input.businessDate, count),
+    pickingOrderNos: releaseNow
+      ? await numbering.nextMany('PICKING_ORDER', input.plantId, input.businessDate, count)
+      : [],
   };
 }
 
