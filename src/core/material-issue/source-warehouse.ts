@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { LotKey, lotOrder } from '../picking/allocation';
 import { PICKABLE_BALANCE } from '../picking/picking-generation';
-import { freeQty, lockPairs, pairKey } from './planned-stock';
+import { lockPairs, pairKey, plannedLines, sumPlanned } from './planned-stock';
 
 /**
  * 출고 요청의 출발 생산 창고(피처 003 · research R-5).
@@ -112,8 +112,8 @@ export async function chooseSources(
     tx,
     input.warehouseIds.flatMap((warehouseId) => itemIds.map((itemId) => ({ warehouseId, itemId }))),
   );
-  const [stock, balances, warehouses, fefoItems] = await Promise.all([
-    freeQty(tx, input.warehouseIds, itemIds),
+  const [lines, balances, warehouses, fefoItems] = await Promise.all([
+    plannedLines(tx, { warehouseIds: input.warehouseIds, itemIds }),
     tx.inventory_balance.findMany({
       where: { ...PICKABLE_BALANCE, warehouse_id: { in: input.warehouseIds }, item_id: { in: itemIds } },
       select: {
@@ -121,6 +121,7 @@ export async function chooseSources(
         item_id: true,
         lot_id: true,
         location_id: true,
+        available_qty: true,
         lot: { select: { expiry_date: true, created_at: true } },
       },
     }),
@@ -133,10 +134,14 @@ export async function chooseSources(
   const codeOf = new Map(warehouses.map((w) => [w.warehouse_id, w.warehouse_code]));
   const fefo = new Set(fefoItems.map((row) => row.item_id));
 
+  const planned = sumPlanned(lines);
+  // 가용 합과 가장 이른 LOT 을 같은 잔액 행에서 한 번에 센다 — 피킹이 집을 수 있는 행만이다.
+  const available = new Map<string, Prisma.Decimal>();
   const earliest = new Map<string, LotKey>();
   for (const row of balances) {
     if (row.lot_id === null || row.lot === null) continue;
     const key = pairKey(row.warehouse_id, row.item_id);
+    available.set(key, (available.get(key) ?? new Prisma.Decimal(0)).plus(row.available_qty ?? 0));
     const lot: LotKey = {
       lotId: row.lot_id,
       locationId: row.location_id,
@@ -160,8 +165,8 @@ export async function chooseSources(
             {
               warehouseId,
               warehouseCode: codeOf.get(warehouseId) ?? '',
-              availableQty: stock.available.get(key) ?? zero,
-              plannedQty: stock.planned.get(key) ?? zero,
+              availableQty: available.get(key) ?? zero,
+              plannedQty: planned.get(key) ?? zero,
               earliest: lot,
             },
           ];
