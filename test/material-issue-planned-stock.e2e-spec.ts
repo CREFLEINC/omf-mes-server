@@ -82,6 +82,12 @@ describe('출고 예정 재고 (e2e)', () => {
     await fx.release(second).expect(200);
     expect(await lineQtys(second)).toEqual([[30, 20]]);
     expect(await planned(at.warehouseId)).toBe(100);
+
+    // 예정이 다 찬 창고에서 바로 배포되는 요청은 요청 0 · 부족 전부이고, 수량 0 인 피킹 줄을 만들지 않는다.
+    const third = await fx.workOrder({ plantKey: 'P1', lineId: at.lineId, operation: 'X20', productionDate: localDate(new Date(), 'Asia/Ho_Chi_Minh') });
+    await fx.release(third).expect(200);
+    expect(await lineQtys(third)).toEqual([[0, 20]]);
+    expect(await prisma.picking_line.count({ where: { picking_order: { warehouse_id: at.warehouseId }, planned_qty: { lte: 0 } } })).toBe(0);
   });
 
   it('US4-3 70 요청을 배포해 30 을 출고하면 예정 40 · 가용 70', async () => {
