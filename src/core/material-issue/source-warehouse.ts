@@ -69,15 +69,18 @@ export async function resolveCandidates(
     errors.push(field('productionLineId', ERROR_CODE.LINE_DEPARTMENT_MISSING, '생산라인에 담당 부서를 지정해야 합니다.'));
   } else {
     const links = await db.department_production_warehouse.findMany({
-      where: { department_id: line.department_id, warehouse: { plant_id: input.plantId, is_active: true } },
-      select: { warehouse_id: true },
+      where: { department_id: line.department_id, warehouse: { plant_id: input.plantId } },
+      select: { warehouse_id: true, warehouse: { select: { is_active: true } } },
       orderBy: { warehouse_id: 'asc' },
     });
-    warehouseIds = links.map((link) => link.warehouse_id);
+    warehouseIds = links.filter((link) => link.warehouse.is_active).map((link) => link.warehouse_id);
     if (warehouseIds.length === 0) {
-      errors.push(
-        field('departmentId', ERROR_CODE.PRODUCTION_WAREHOUSE_MISSING, '라인 담당 부서에 이 공장의 생산 창고를 연결해야 합니다.'),
-      );
+      // 연결은 있는데 모두 사용 중지면 고칠 자리가 다르다 — 창고를 다시 쓰거나 다른 창고를 연결한다.
+      const message =
+        links.length === 0
+          ? '라인 담당 부서에 이 공장의 생산 창고를 연결해야 합니다.'
+          : '라인 담당 부서에 연결된 이 공장의 생산 창고가 모두 사용 중지되었습니다. 창고를 다시 쓰거나 다른 생산 창고를 연결해야 합니다.';
+      errors.push(field('departmentId', ERROR_CODE.PRODUCTION_WAREHOUSE_MISSING, message));
     }
   }
   if (line?.default_wip_location_id == null) {

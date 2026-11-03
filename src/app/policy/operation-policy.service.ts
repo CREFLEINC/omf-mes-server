@@ -17,6 +17,7 @@ import {
   assertValues,
   assertWritable,
   axisCandidates,
+  readableCodes,
   scopeOf,
   unresolved,
   winnerOf,
@@ -77,13 +78,16 @@ type PolicyRow = Prisma.operation_policyGetPayload<object>;
 export class OperationPolicyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PolicyQuery): Promise<PagedResponse<PolicyView>> {
+  /** `permissions` 는 요청자 세션의 권한 — 코드 전용 화면(W-CO-15)만 가진 사용자는 그 코드만 본다. */
+  async list(query: PolicyQuery, permissions: readonly string[] = []): Promise<PagedResponse<PolicyView>> {
+    const readable = readableCodes(permissions);
     const page = pageRequest({ page: loose(query.page), size: loose(query.size) });
     const on =
       query.effectiveOn === undefined ? undefined : assertDate('effectiveOn', query.effectiveOn);
 
     const where: Prisma.operation_policyWhereInput = {
       ...optional('policy_code', query.policyCode),
+      ...(readable === null ? {} : { AND: [{ policy_code: { in: readable } }] }),
       ...optional('business_unit_id', assertId('businessUnitId', query.businessUnitId)),
       ...optional('plant_id', assertId('plantId', query.plantId)),
       ...optional('item_id', assertId('itemId', query.itemId)),
