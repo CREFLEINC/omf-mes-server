@@ -19,7 +19,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
-import { EffectiveView } from './operation-policy-rules';
+import { EffectiveView, PolicyCode, assertWritable } from './operation-policy-rules';
 import {
   EffectiveQuery,
   OperationPolicyService,
@@ -41,8 +41,8 @@ export class OperationPolicyController {
 
   @Get()
   @Contract('GET /app/operation-policies')
-  list(@Query() query: PolicyQuery): Promise<PagedResponse<unknown>> {
-    return this.policies.list(query);
+  list(@Req() request: Request, @Query() query: PolicyQuery): Promise<PagedResponse<unknown>> {
+    return this.policies.list(query, currentSession(request)?.permissions ?? []);
   }
 
   /**
@@ -58,10 +58,13 @@ export class OperationPolicyController {
   @Get(':operationPolicyId')
   @Contract('GET /app/operation-policies/{operationPolicyId}')
   async get(
+    @Req() request: Request,
     @Param('operationPolicyId', ParseIntPipe) operationPolicyId: number,
     @Res({ passthrough: true }) response: Response,
   ): Promise<unknown> {
     const { policy, versionNo } = await this.policies.get(operationPolicyId);
+    // W-CO-15 는 공장 근무일 행만 읽는다(피처 003 · 계약 §4).
+    assertWritable(policy.policyCode as PolicyCode, currentSession(request)?.permissions ?? []);
     setEtag(response, versionNo);
     return policy;
   }
