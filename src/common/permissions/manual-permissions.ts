@@ -24,7 +24,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/departments/{departmentId}:activate': ['W-06-06'],
   'POST /mdm/departments/{departmentId}:deactivate': ['W-06-06'],
   'PUT /mdm/workers/{workerId}/qualifications': ['W-06-06'],
-  // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66 · 장부 P-157).
+  // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
   'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
   'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
 
