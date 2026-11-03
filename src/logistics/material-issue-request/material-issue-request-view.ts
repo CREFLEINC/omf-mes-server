@@ -27,6 +27,13 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
     requestedBy: id(row.requested_by),
     reasonCode: row.reason_code,
     remarks: row.remarks,
+    // 계획 기반 출고 요청(피처 003) — 이 기능 전 요청·생산 창고 없는 공장의 요청은 모두 null 이다.
+    sourceWarehouseId: id(row.source_warehouse_id ?? null),
+    issueWorkDate: row.issue_work_date?.toISOString().slice(0, 10) ?? null,
+    releasedAt: row.released_at?.toISOString() ?? null,
+    releaseErrorText: row.release_error_text ?? null,
+    closedAt: row.closed_at?.toISOString() ?? null,
+    closeReasonCode: row.close_reason_code ?? null,
   };
 }
 
@@ -44,6 +51,8 @@ export function materialIssueRequestLineView(
     // `shortage` 의 기출고는 여전히 출고 전표 축으로 센다(축이 다르다 · `shortage.service.ts`).
     issuedQty: Number(row.issued_qty),
     uomId: Number(row.uom_id),
+    // 만들 때 생산 창고의 쓸 수 있는 양에 걸려 줄인 양(피처 003). 소요 = requestedQty + shortageQty.
+    shortageQty: Number(row.shortage_qty),
   };
 }
 
