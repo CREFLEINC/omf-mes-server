@@ -1,4 +1,4 @@
-import { NORMAL, POSTED, SCRAP } from './disposition-rollup';
+import { CONCESSION, NORMAL, POSTED, SCRAP } from './disposition-rollup';
 
 /**
  * `GET /quality/disposition-decisions` 의 SQL — 원시 SQL 이다(0단계 선례 `lot-status-query.ts`).
@@ -43,6 +43,16 @@ const FROM_CORE = `
          AND gi.status_code = '${POSTED}'
     ) fu ON TRUE`;
 
+/**
+ * 특채 판정의 LOT(적용된 특채의 LOT)에 불량창고 재고가 남았는가 — 재고 재등록이 할 일이 있는가(omf-all-around#207).
+ * 입고 전에 특채된 LOT 은 입고가 바로 정상 창고로 넣으므로 재등록 대상이 아니다. WHERE 와 응답이 같은 식을 쓴다.
+ */
+const CONCESSION_DEFECT_STOCK = `EXISTS (
+      SELECT 1 FROM quality.concession c
+        JOIN inventory.inventory_balance b ON b.lot_id = c.lot_id AND b.on_hand_qty > 0
+        JOIN mdm.warehouse w ON w.warehouse_id = b.warehouse_id AND w.is_defect
+       WHERE c.approval_request_id = d.approval_request_id AND c.status_code = 'APPROVED')`;
+
 // `lotinfo` — 하나일 때만 값(§1-4-1). 응답 전용(WHERE 가 안 본다) — count 는 `FROM_CORE` 만 쓴다(Nit-3).
 const FROM = `${FROM_CORE}
     LEFT JOIN LATERAL (
@@ -57,10 +67,11 @@ const SELECT_COLUMNS = `
       d.disposition_decision_id, d.nonconformance_id, d.disposition_type_code, d.decision_qty,
       d.uom_id, d.reason, d.decided_by, d.decided_at, d.approval_request_id,
       nc.nonconformance_no, nc.item_id, i.item_code, i.item_name, u.user_name AS decided_by_name,
-      lotinfo.lot_id, lotinfo.lot_no, fu.posted_qty`;
+      lotinfo.lot_id, lotinfo.lot_no, fu.posted_qty,
+      ${CONCESSION_DEFECT_STOCK} AS concession_defect_stock`;
 
 /**
- * ⭐⭐ `reinstatable`(= `dispositionTypeCode = NORMAL`)과 `followUpPending`(= `SCRAP` 이고
+ * ⭐⭐ `reinstatable`(= 정상이거나, 특채이고 그 LOT 에 불량창고 재고가 남은 것)과 `followUpPending`(= `SCRAP` 이고
  * «전기된 폐기 출고 합 < decisionQty»)은 `dispositionFollowUp()` 의 판정과 «한 글자도」 달라선
  * 안 된다(§2). `numeric(20,6)` 비교는 PostgreSQL 이 정확히 하므로(부동소수 함정은 TS 의
  * `Number()` 산술에만 있다 · ①a Major-2) 여기서는 그대로 비교해도 된다.
@@ -89,7 +100,11 @@ function conditionsOf(filters: DispositionFilters): { where: string; params: unk
   // ⛔ 「미만」 반열림(공유계약 L-3-1) — decidedTo 와 같은 시각의 행은 뺀다.
   if (filters.decidedFrom !== undefined) add('d.decided_at >= ?::timestamptz', filters.decidedFrom);
   if (filters.decidedTo !== undefined) add('d.decided_at < ?::timestamptz', filters.decidedTo);
-  if (filters.reinstatable !== undefined) add(filters.reinstatable ? 'd.disposition_type_code = ?' : 'd.disposition_type_code <> ?', NORMAL);
+  if (filters.reinstatable !== undefined) {
+    params.push(NORMAL, CONCESSION);
+    const reinstatable = `(d.disposition_type_code = $${params.length - 1} OR (d.disposition_type_code = $${params.length} AND ${CONCESSION_DEFECT_STOCK}))`;
+    parts.push(filters.reinstatable ? reinstatable : `NOT ${reinstatable}`);
+  }
   if (filters.followUpPending !== undefined) {
     add(
       filters.followUpPending ? 'd.disposition_type_code = ? AND fu.posted_qty < d.decision_qty' : '(d.disposition_type_code <> ? OR fu.posted_qty >= d.decision_qty)',

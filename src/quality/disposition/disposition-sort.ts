@@ -44,6 +44,25 @@ interface SortContext {
   splitNonconformanceNo: string | null;
 }
 
+/** 원 LOT 에서 떼어 낼 불량분 — 선별과 특채 적용(omf-all-around#207)이 같이 쓴다. */
+export interface SplitOffInput {
+  nonconformanceId: bigint;
+  /** 이 분할을 일으킨 처분 판정 — 계보·원장·새 부적합이 되짚는다. */
+  decisionId: bigint;
+  parentLotId: bigint;
+  qty: Prisma.Decimal;
+  uomId: number;
+  /** 원장 영업일(C-8) — 원 LOT 에 재고가 있을 때만 쓴다. */
+  businessDate: string | undefined;
+  reason: string;
+  /** 새 부적합 설명 머리 — 「선별 불량분」·「특채 후 불량으로 남은 수량」. */
+  label: string;
+  appUserId: number;
+  decidedAt: Date;
+  /** 트랜잭션 «밖»에서 미리 뽑은 부적합 번호(채번 코어 규약). */
+  splitNonconformanceNo: string;
+}
+
 /** 본문 검사 — 채번·트랜잭션 «앞»에 부른다(400 이 될 저장에 번호를 태우지 않는다). 양품 + 불량 = 판정 수량. */
 export function assertSortShape(body: SortQuantities & { decisionQty: number }): void {
   const errors: ErrorItem[] = [];
@@ -99,21 +118,13 @@ export class DispositionSortService {
     const move = { changedBy: BigInt(ctx.appUserId), changedAt: ctx.decidedAt, sourceDocumentTypeCode: SOURCE_TYPE,
       sourceDocumentId: ctx.decisionId, reason: ctx.reason };
 
-    let result: SortResult | null = null;
-    if (rejected.greaterThan(0)) {
-      const child = await splitLotWithin(tx, {
-        parentLotId, qty: rejected, sourceEventTypeCode: SOURCE_TYPE, sourceEventId: ctx.decisionId,
-        occurredAt: ctx.decidedAt, createdBy: BigInt(ctx.appUserId),
-      });
-      await this.moveStock(tx, parentLotId, child.lotId, rejected, body.businessDate as string, ctx);
-      const moved = await this.lots.moveWithin(tx, [child.lotId], 'disposition-sort-defect', move);
-      if (moved.movedLotIds.length === 0) throw stateLocked();
-      const nc = await this.openSplitNonconformance(tx, child.lotId, rejected, ctx);
-      result = {
-        splitLotId: Number(child.lotId), splitLotNo: child.lotNo,
-        splitNonconformanceId: Number(nc.nonconformance_id), splitNonconformanceNo: nc.nonconformance_no,
-      };
-    }
+    const result = rejected.greaterThan(0)
+      ? await this.splitOffWithin(tx, {
+        nonconformanceId: ctx.nonconformanceId, decisionId: ctx.decisionId, parentLotId, qty: rejected,
+        uomId: ctx.uomId, businessDate: body.businessDate, reason: ctx.reason, label: '선별 불량분',
+        appUserId: ctx.appUserId, decidedAt: ctx.decidedAt, splitNonconformanceNo: ctx.splitNonconformanceNo as string,
+      })
+      : null;
     const moved = await this.lots.moveWithin(tx, [parentLotId], 'disposition-sort', move);
     if (moved.movedLotIds.length === 0) throw stateLocked();
     // 양품분(원 LOT)이 정상이 됐다 — 수입검사 대기 보류도 닫는다(장부 P-63). 불량분 자식은 그대로다.
@@ -121,9 +132,30 @@ export class DispositionSortService {
     return result;
   }
 
-  private async moveStock(
-    tx: Tx, parentLotId: bigint, childLotId: bigint, qty: Prisma.Decimal, businessDate: string, ctx: SortContext,
-  ): Promise<void> {
+  /**
+   * 불량분 떼어 내기 — 자식 LOT(불량 C24) · 같은 위치 원장 이동 · 새 부적합(판정 대기). 원 LOT 의 상태는
+   * 호출자가 정한다(선별은 정상 C23, 특채는 정상 C25).
+   */
+  async splitOffWithin(tx: Tx, input: SplitOffInput): Promise<SortResult> {
+    const child = await splitLotWithin(tx, {
+      parentLotId: input.parentLotId, qty: input.qty, sourceEventTypeCode: SOURCE_TYPE, sourceEventId: input.decisionId,
+      occurredAt: input.decidedAt, createdBy: BigInt(input.appUserId),
+    });
+    await this.moveStock(tx, child.lotId, input);
+    const moved = await this.lots.moveWithin(tx, [child.lotId], 'disposition-sort-defect', {
+      changedBy: BigInt(input.appUserId), changedAt: input.decidedAt, sourceDocumentTypeCode: SOURCE_TYPE,
+      sourceDocumentId: input.decisionId, reason: input.reason,
+    });
+    if (moved.movedLotIds.length === 0) throw stateLocked();
+    const nc = await this.openSplitNonconformance(tx, child.lotId, input);
+    return {
+      splitLotId: Number(child.lotId), splitLotNo: child.lotNo,
+      splitNonconformanceId: Number(nc.nonconformance_id), splitNonconformanceNo: nc.nonconformance_no,
+    };
+  }
+
+  private async moveStock(tx: Tx, childLotId: bigint, input: SplitOffInput): Promise<void> {
+    const { parentLotId, qty, businessDate } = input;
     const balances = await tx.inventory_balance.findMany({
       where: { lot_id: parentLotId, on_hand_qty: { gt: 0 } },
       select: {
@@ -131,11 +163,16 @@ export class DispositionSortService {
         inventory_status_code: true, ownership_type_code: true, owner_partner_id: true, on_hand_qty: true,
       },
     });
-    // 공정 중이라 아직 재고가 없는 LOT 은 LOT 기록만 나눈다.
+    // 공정 중·입고 전이라 아직 재고가 없는 LOT 은 LOT 기록만 나눈다.
     if (balances.length === 0) return;
+    if (businessDate === undefined) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('businessDate', ERROR_CODE.REQUIRED, '재고가 있는 LOT 을 나누려면 업무 일자(YYYY-MM-DD)가 필요합니다.'),
+      ]);
+    }
     if (balances.length > 1) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
-        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '재고가 여러 위치에 있는 LOT 은 선별할 수 없습니다. 먼저 한 위치로 옮기세요.' },
+        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '재고가 여러 위치에 있는 LOT 은 나눌 수 없습니다. 먼저 한 위치로 옮기세요.' },
       ]);
     }
     const balance = balances[0];
@@ -149,15 +186,15 @@ export class DispositionSortService {
       qualityStatusCode: balance.quality_status_code, inventoryStatusCode: balance.inventory_status_code,
     };
     const common = {
-      itemId: Number(balance.item_id), qty: Number(qty), uomId: ctx.uomId,
+      itemId: Number(balance.item_id), qty: Number(qty), uomId: input.uomId,
       ownershipTypeCode: balance.ownership_type_code,
       ...(balance.owner_partner_id === null ? {} : { ownerPartnerId: Number(balance.owner_partner_id) }),
     };
-    const transactionNo = `${SORT}-${ctx.decisionId.toString()}`;
+    const transactionNo = `${SORT}-${input.decisionId.toString()}`;
     await this.posting.post(tx, {
-      businessDate, occurredAt: ctx.decidedAt, transactionTypeCode: SOURCE_TYPE, transactionNo, statusCode: POSTED,
-      plantId: Number(balance.plant_id), sourceDocumentTypeCode: SOURCE_TYPE, sourceDocumentId: Number(ctx.decisionId),
-      idempotencyKey: `${SOURCE_TYPE}:${transactionNo}`, createdBy: ctx.appUserId,
+      businessDate, occurredAt: input.decidedAt, transactionTypeCode: SOURCE_TYPE, transactionNo, statusCode: POSTED,
+      plantId: Number(balance.plant_id), sourceDocumentTypeCode: SOURCE_TYPE, sourceDocumentId: Number(input.decisionId),
+      idempotencyKey: `${SOURCE_TYPE}:${transactionNo}`, createdBy: input.appUserId,
       // 원 LOT 에서 빼고 자식 LOT 에 넣는다 — 같은 위치·같은 차원이라 위치 재고 합은 그대로다.
       lines: [
         { ...common, lotId: Number(parentLotId), from: endpoint },
@@ -166,24 +203,24 @@ export class DispositionSortService {
     });
   }
 
-  private async openSplitNonconformance(tx: Tx, childLotId: bigint, qty: Prisma.Decimal, ctx: SortContext) {
+  private async openSplitNonconformance(tx: Tx, childLotId: bigint, input: SplitOffInput) {
     const source = await tx.nonconformance.findUniqueOrThrow({
-      where: { nonconformance_id: ctx.nonconformanceId },
+      where: { nonconformance_id: input.nonconformanceId },
       select: { nonconformance_no: true, item_id: true, work_order_id: true, inspection_result_id: true,
         severity_code: true, responsible_department_id: true },
     });
-    const by = BigInt(ctx.appUserId);
+    const by = BigInt(input.appUserId);
     const created = await tx.nonconformance.create({
       data: {
-        nonconformance_no: ctx.splitNonconformanceNo as string,
+        nonconformance_no: input.splitNonconformanceNo,
         item_id: source.item_id,
         work_order_id: source.work_order_id,
         inspection_result_id: source.inspection_result_id,
         severity_code: source.severity_code,
-        description: `${source.nonconformance_no} 선별 불량분 — ${ctx.reason}`,
+        description: `${source.nonconformance_no} ${input.label} — ${input.reason}`,
         responsible_department_id: source.responsible_department_id,
         status_code: PENDING_DECISION,
-        opened_at: ctx.decidedAt,
+        opened_at: input.decidedAt,
         created_by: by,
         updated_by: by,
       },
@@ -191,7 +228,7 @@ export class DispositionSortService {
     });
     await tx.nonconformance_lot.create({
       data: {
-        nonconformance_id: created.nonconformance_id, lot_id: childLotId, affected_qty: qty, uom_id: BigInt(ctx.uomId),
+        nonconformance_id: created.nonconformance_id, lot_id: childLotId, affected_qty: input.qty, uom_id: BigInt(input.uomId),
         quality_status_before_code: DEFECTIVE, quality_status_after_code: DEFECTIVE, created_by: by,
       },
     });

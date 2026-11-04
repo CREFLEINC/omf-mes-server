@@ -56,6 +56,7 @@ const FULL_INSPECTION = 'FULL_INSPECTION';
  *   아니라 **공정·라우팅**으로도 걸린다(`inspection_plan.process_id`·`routing_id`). 그래서
  *   그 함수를 쓰지 않고 여기서 따로 고른다. 여러 건이면 좁은 쪽(공정 지정)이 이긴다 —
  *   품목 전체 기준과 공정별 기준이 함께 있으면 공정별이 그 공정의 답이다.
+ *   품목 전용 기준이 하나도 없으면 「전 품목 공통」 기준에서 같은 규칙으로 고른다.
  */
 async function resolvePqcPlanVersion(
   prisma: PrismaService,
@@ -64,7 +65,7 @@ async function resolvePqcPlanVersion(
   routingId: bigint,
   effectiveDate: Date,
 ): Promise<PqcPlanVersion | null> {
-  const versions = latestPerPlan(await prisma.inspection_plan_version.findMany({
+  const find = async (planItemId: bigint | null) => latestPerPlan(await prisma.inspection_plan_version.findMany({
     where: {
       status_code: 'CONFIRMED',
       effective_from: { lte: effectiveDate },
@@ -72,8 +73,12 @@ async function resolvePqcPlanVersion(
       inspection_plan: {
         inspection_type_code: 'PQC',
         is_active: true,
-        item_id: itemId,
-        OR: [{ process_id: processId }, { routing_id: routingId }, { process_id: null, routing_id: null }],
+        item_id: planItemId,
+        /* 공정 · 라우팅은 둘 다 맞아야 한다 — 비운 칸만 「아무거나」다. 한쪽만 맞춰 받으면 같은 라우팅의 다른 공정 기준이 끼어든다. */
+        AND: [
+          { OR: [{ process_id: processId }, { process_id: null }] },
+          { OR: [{ routing_id: routingId }, { routing_id: null }] },
+        ],
       },
     },
     select: {
@@ -86,14 +91,16 @@ async function resolvePqcPlanVersion(
       inspection_plan: { select: { process_id: true, routing_id: true, default_skip: true } },
     },
   }));
+  /* 품목 전용 기준이 먼저다. 없을 때만 「전 품목 공통」(품목 칸이 빈 기준)으로 내려간다 — IQC 와 같은 규칙(사용자 결정 2026-11-04). */
+  const own = await find(itemId);
+  const versions = own.length > 0 ? own : await find(null);
   if (versions.length === 0) return null;
 
-  /* 공정·라우팅을 지정한 기준이 품목 전체 기준을 이긴다 — 둘 다 「이 공정의 답」을 적은 것이다. */
-  const scoped = versions.filter(
-    (version) =>
-      version.inspection_plan.process_id !== null || version.inspection_plan.routing_id !== null,
-  );
-  const candidates = scoped.length > 0 ? scoped : versions;
+  /* 더 좁게 지정한 기준이 이긴다 — 공정 + 라우팅 > 공정이나 라우팅 하나 > 품목 전체. */
+  const narrowness = (version: (typeof versions)[number]): number =>
+    Number(version.inspection_plan.process_id !== null) + Number(version.inspection_plan.routing_id !== null);
+  const narrowest = Math.max(...versions.map(narrowness));
+  const candidates = versions.filter((version) => narrowness(version) === narrowest);
   /* 좁힌 뒤에도 둘 이상이면 고르지 않는다 — 임의로 고르면 어느 기준으로 검사했는지가 기록에서 사라진다. */
   if (candidates.length !== 1) return null;
 

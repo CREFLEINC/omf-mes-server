@@ -9,8 +9,12 @@ function harness() {
       create: jest.fn().mockResolvedValue({ inspection_plan_id: 1n, item_id: 40n, process_id: null, routing_id: null, approved_by: null, approved_at: null }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', item_id: 40n, default_skip: true }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ inspection_plan_id: 1n, item_id: 40n, process_id: 2n, routing_id: null, approved_by: null, approved_at: null }),
     },
+    // 확정 Rev 복사는 `pqc-routing-sync.spec` 이 본다 — 여기서는 확정 Rev 가 없다.
+    routing: { findMany: jest.fn().mockResolvedValue([]) },
     item: { updateMany: itemUpdateMany },
+    routing_operation: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   };
   const prisma = {
     $transaction: jest.fn((run: (client: typeof tx) => unknown) => run(tx)),
@@ -55,7 +59,6 @@ describe('검사 기준 저장 — 품목 「수입검사 대상」 연동 (omf-
   });
 
   it.each([
-    ['공통 기준(품목 없음)', { itemId: null }],
     ['PQC 기준', { inspectionTypeCode: 'PQC' }],
     ['OQC 기준', { inspectionTypeCode: 'OQC' }],
     ['기본 생략을 보내지 않은 저장', { defaultSkip: undefined }],
@@ -89,5 +92,108 @@ describe('검사 기준 저장 — 품목 「수입검사 대상」 연동 (omf-
     await service.setActive(1, 1, false);
 
     expect(itemUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+/** 「전 품목 공통」 IQC 기준 — 전용 IQC 기준이 없는 품목의 「수입검사 대상」을 맞춘다(사용자 결정 2026-11-04). */
+describe('검사 기준 저장 — 공통 IQC 기준의 품목 연동', () => {
+  const common = (overrides: Record<string, unknown> = {}) => ({
+    inspection_plan_id: 1n, item_id: null, process_id: null, routing_id: null, approved_by: null, approved_at: null,
+    inspection_type_code: 'IQC', is_active: true, default_skip: false, ...overrides,
+  });
+  const syncAll = (skip: boolean) => ({
+    where: { inspection_required: skip, inspection_plan: { none: { inspection_type_code: 'IQC', is_active: true } } },
+    data: { inspection_required: !skip, version_no: { increment: 1 } },
+  });
+
+  it('공통 IQC 기준을 등록하면 전용 기준이 없는 품목을 맞춘다', async () => {
+    const { service, tx, itemUpdateMany } = harness();
+    tx.inspection_plan.create.mockResolvedValueOnce(common());
+    await service.create(plan({ itemId: null, defaultSkip: false }));
+
+    expect(itemUpdateMany).toHaveBeenCalledWith(syncAll(false));
+  });
+
+  it('기본 생략을 바꿔 저장하면 맞춘다', async () => {
+    const { service, tx, itemUpdateMany } = harness();
+    tx.inspection_plan.findUnique.mockResolvedValueOnce(common({ default_skip: false })).mockResolvedValueOnce(common({ default_skip: true }));
+    await service.update(1, 1, plan({ itemId: null, defaultSkip: true }));
+
+    expect(itemUpdateMany).toHaveBeenCalledWith(syncAll(true));
+  });
+
+  it('기본 생략이 그대로인 저장(이름만 고침)은 품목을 건드리지 않는다', async () => {
+    const { service, tx, itemUpdateMany } = harness();
+    tx.inspection_plan.findUnique.mockResolvedValueOnce(common()).mockResolvedValueOnce(common());
+    await service.update(1, 1, plan({ itemId: null, defaultSkip: false }));
+
+    expect(itemUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('공통 IQC 기준을 다시 사용하면 맞춘다', async () => {
+    const { service, tx, itemUpdateMany } = harness();
+    tx.inspection_plan.findUnique.mockResolvedValueOnce(common({ default_skip: true }));
+    await service.setActive(1, 1, true);
+
+    expect(itemUpdateMany).toHaveBeenCalledWith(syncAll(true));
+  });
+
+  it.each<[string, Record<string, unknown>]>([
+    ['공통 PQC 기준', { inspection_type_code: 'PQC' }],
+    ['공통 OQC 기준', { inspection_type_code: 'OQC' }],
+    ['사용 중지된 공통 IQC 기준', { is_active: false }],
+  ])('%s 은 품목을 건드리지 않는다', async (_label, overrides) => {
+    const { service, tx, itemUpdateMany } = harness();
+    tx.inspection_plan.create.mockResolvedValueOnce(common(overrides));
+    await service.create(plan({ itemId: null, inspectionTypeCode: String(overrides.inspection_type_code ?? 'IQC') }));
+
+    expect(itemUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+/** 공정이 지정된 PQC 기준 — 라우팅 공정 「검사 관리」를 맞춘다(사용자 결정 2026-11-04). */
+describe('검사 기준 저장 — PQC 기준의 라우팅 연동', () => {
+  const pqc = (overrides: Record<string, unknown> = {}) => ({
+    inspection_plan_id: 1n, item_id: 40n, process_id: 2n, routing_id: null, approved_by: null, approved_at: null,
+    inspection_type_code: 'PQC', is_active: true, default_skip: false, ...overrides,
+  });
+
+  it('등록하면 그 품목 라우팅의 그 공정을 맞춘다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.create.mockResolvedValueOnce(pqc());
+    await service.create(plan({ inspectionTypeCode: 'PQC', processId: 2, defaultSkip: false }));
+
+    expect(tx.routing_operation.updateMany).toHaveBeenCalledWith({
+      where: { process_id: 2n, inspection_managed: false, routing: { item_id: 40n, status_code: 'DRAFT' } },
+      data: { inspection_managed: true, version_no: { increment: 1 } },
+    });
+  });
+
+  it('기본 생략을 바꿔 저장하면 맞추고, 그대로면(이름만 고침) 건드리지 않는다', async () => {
+    const changed = harness();
+    changed.tx.inspection_plan.findUnique.mockResolvedValueOnce(pqc()).mockResolvedValueOnce(pqc({ default_skip: true }));
+    await changed.service.update(1, 1, plan({ inspectionTypeCode: 'PQC', processId: 2, defaultSkip: true }));
+    expect(changed.tx.routing_operation.updateMany).toHaveBeenCalledTimes(1);
+
+    const same = harness();
+    same.tx.inspection_plan.findUnique.mockResolvedValueOnce(pqc()).mockResolvedValueOnce(pqc());
+    await same.service.update(1, 1, plan({ inspectionTypeCode: 'PQC', processId: 2, defaultSkip: false }));
+    expect(same.tx.routing_operation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('공정이 빈 PQC 기준은 라우팅을 건드리지 않는다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.create.mockResolvedValueOnce(pqc({ process_id: null, item_id: null }));
+    await service.create(plan({ inspectionTypeCode: 'PQC', itemId: null }));
+
+    expect(tx.routing_operation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('다시 사용하면 맞춘다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.findUnique.mockResolvedValueOnce(pqc({ default_skip: true }));
+    await service.setActive(1, 1, true);
+
+    expect(tx.routing_operation.updateMany).toHaveBeenCalledTimes(1);
   });
 });
