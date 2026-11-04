@@ -2,12 +2,14 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 
 import { DocumentStateService } from '../../core/document-state';
 import { LotRegistryService, nextMesLotNos, Tx } from '../../core/lot';
+import { MaterialIssueReleaser } from '../../core/material-issue/release-request';
 import { NumberingService } from '../../core/numbering';
 import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ISSUE_REGISTERED, MaterialIssueLine, materialRequirements } from './material-issue';
 import { PqcRequestPlan, preparePqcRequest, writePqcRequest } from './work-order-pqc-request';
 import { ReleasePlan, operationSettings, releasePlan } from './release-plan';
+import { WaitingResult, writeWaitingRequests } from './release-waiting';
 import { WorkOrderHandoverNotifier } from './work-order-handover';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
@@ -42,14 +44,20 @@ export class WorkOrderReleaseService {
     private readonly lots: LotRegistryService,
     private readonly pickingNotices: PickingHandoverNotifier,
     private readonly workOrderNotices: WorkOrderHandoverNotifier,
-  ) {}
+  ) {
+    this.issueReleaser = new MaterialIssueReleaser(documentState, pickingNotices);
+  }
 
+  /** 대기 요청 즉시 배포 — 00:00 러너와 같은 함수다. 쓰는 의존이 이 서비스의 것과 같아 여기서 짓는다. */
+  private readonly issueReleaser: MaterialIssueReleaser;
+
+  /** 생산 창고 공장(피처 003)이면 만든 대기 요청과 미배정 자재를 돌려준다. 아니면 `null` — 지금 방식이다. */
   async release(
     workOrderId: number,
     version: number,
     body: WorkOrderRelease,
     appUserId: number,
-  ): Promise<void> {
+  ): Promise<WaitingResult | null> {
     const plan = await releasePlan(this.prisma, this.numbering, workOrderId, body.lotSize);
     const issue = plan.issueRequestNo === null ? null : await this.issuePlan(plan, plan.issueRequestNo);
     /* 검사 공정이면 PQC 의뢰도 이 배포가 만든다 — 채번·기준 조회는 트랜잭션 밖이다. */
@@ -61,7 +69,7 @@ export class WorkOrderReleaseService {
       orderQty: plan.row.order_qty,
       businessDate: plan.businessDate,
     });
-    await this.prisma.$transaction((tx) =>
+    return this.prisma.$transaction((tx) =>
       this.commit(tx, workOrderId, version, plan, issue, pqc, appUserId),
     );
   }
@@ -90,7 +98,7 @@ export class WorkOrderReleaseService {
     issue: IssuePlan | null,
     pqc: PqcRequestPlan | null,
     appUserId: number,
-  ): Promise<void> {
+  ): Promise<WaitingResult | null> {
     const locked = await lockWorkOrder(tx, workOrderId);
     // ⭐ 버전 대조가 전이 검사보다 «먼저»다(`document-cancel.service.ts` 선례).
     assertVersion(locked, version);
@@ -142,7 +150,21 @@ export class WorkOrderReleaseService {
     if (issue !== null && destination !== null) {
       await this.issueRequest(tx, workOrderId, issue, destination, appUserId);
     }
+    const waiting =
+      plan.waiting === null
+        ? null
+        : await writeWaitingRequests(
+            tx,
+            {
+              workOrderId: BigInt(workOrderId),
+              waiting: plan.waiting,
+              lines: materialRequirements(plan.components, plan.row.order_qty, plan.plan.bom.base_qty),
+              appUserId,
+            },
+            this.issueReleaser,
+          );
     await this.workOrderNotices.released(tx, BigInt(workOrderId));
+    return waiting;
   }
 
   private async issueRequest(

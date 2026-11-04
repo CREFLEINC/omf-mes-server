@@ -125,6 +125,8 @@ function stub(options: {
     // 가용 재고가 없다 — 피킹 지시는 0건이고 채번도 안 부른다(피킹 규칙은 `core/picking` spec).
     inventory_balance: { findMany: () => Promise.resolve([]) },
     item: { findMany: () => Promise.resolve([]) },
+    // 생산 창고를 연결한 적 없는 공장 — 이 기능 전 경로(피처 003 FR-009a)를 탄다.
+    department_production_warehouse: { findFirst: () => Promise.resolve(null) },
     inspection_plan_version: { findMany: () => Promise.resolve(options.pqcVersions ?? []) },
     bom_component: {
       findMany: ({ where }: { where: Row }) => {
