@@ -589,7 +589,8 @@ describe('DocumentStateService', () => {
       // +1 — PQC 생략 허용(C26 · omf-all-around#119 · 장부 P-82).
       // +1 — 승인된 OQC 생략 실행(C27 · omf-all-around#119 · 장부 P-83).
       // +1 — 승인된 PQC 생략 실행(C28 · omf-all-around#212 · 장부 P-152).
-      expect(service.registered()).toHaveLength(60);
+      // +1 — 자재 출고요청 배포 WAITING→REGISTERED(피처 003 · omf-all-around#66).
+      expect(service.registered()).toHaveLength(61);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {
