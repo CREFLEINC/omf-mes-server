@@ -1,6 +1,7 @@
 import { Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 
 import { MaterialIssueReleaser } from '../../core/material-issue/release-request';
+import { recordRequestAudit } from '../../core/material-issue/request-lifecycle';
 import { NumberingService } from '../../core/numbering';
 import { SyncLease } from '../../integration/erp/sync-lease';
 import { nextSiteMorning } from '../../integration/zalo/zalo-error-policy';
@@ -149,10 +150,13 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
     } catch (error) {
       const message = messageOf(error).slice(0, 1000);
       this.logger.warn(`출고 요청 배포 실패 — ${requestId}: ${message}`);
-      await this.prisma.material_issue_request
-        .updateMany({
-          where: { material_issue_request_id: requestId, status_code: 'WAITING' },
-          data: { release_attempted_at: now, release_error_text: message },
+      await this.prisma
+        .$transaction(async (tx) => {
+          const { count } = await tx.material_issue_request.updateMany({
+            where: { material_issue_request_id: requestId, status_code: 'WAITING' },
+            data: { release_attempted_at: now, release_error_text: message },
+          });
+          if (count > 0) await recordRequestAudit(tx, { requestId, action: 'RELEASE_FAILED', actorId: null, reason: message, at: now });
         })
         .catch((recordError: unknown) => this.logger.warn(`배포 실패 기록 실패 — ${messageOf(recordError)}`));
       return false;

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { DocumentStateService } from '../document-state';
 import { PickingHandoverNotifier, allocateStock, writePicking } from '../picking';
+import { recordRequestAudit } from './request-lifecycle';
 
 const STATUS_COLUMN = 'logistics.material_issue_request.status_code';
 const RELEASE_ACTION = 'material-issue-request-release';
@@ -105,6 +106,13 @@ export class MaterialIssueReleaser {
         updated_by: appUserId,
         version_no: { increment: 1 },
       },
+    });
+    await recordRequestAudit(tx, {
+      requestId,
+      action: 'RELEASE',
+      actorId: appUserId,
+      after: { statusCode: transition.to, pickingOrderCount: pickings.length },
+      at: now,
     });
     return true;
   }

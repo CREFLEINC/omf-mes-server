@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 
 import { MaterialIssueReleaser } from '../../core/material-issue/release-request';
+import { recordRequestAudit } from '../../core/material-issue/request-lifecycle';
 import { chooseSources, resolveCandidates } from '../../core/material-issue/source-warehouse';
 import { MaterialIssueLine } from './material-issue';
 import { WaitingPlan } from './release-plan';
@@ -87,6 +88,12 @@ export async function writeWaitingRequests(
         line_no: lineIndex + 1,
         material_issue_request_id: header.material_issue_request_id,
       })),
+    });
+    await recordRequestAudit(tx, {
+      requestId: header.material_issue_request_id,
+      action: 'CREATE',
+      actorId: input.appUserId,
+      after: { statusCode: WAITING, sourceWarehouseId: Number(warehouseId), issueWorkDate: waiting.issueWorkDate },
     });
     const released =
       waiting.releaseNow &&
