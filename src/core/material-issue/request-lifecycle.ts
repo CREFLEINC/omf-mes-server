@@ -35,6 +35,9 @@ export interface RequestEventDetail {
   before?: unknown;
   after?: unknown;
   itemCode?: string;
+  /** QTY_CHANGED — 상한에 걸려 줄인 양(부족)의 전·후. */
+  shortageBefore?: number;
+  shortageAfter?: number;
   reason?: string | null;
   errorText?: string;
 }

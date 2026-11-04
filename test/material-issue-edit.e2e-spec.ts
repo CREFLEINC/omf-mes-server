@@ -80,6 +80,12 @@ describe('출고 요청 수정·취소 (e2e)', () => {
     const [order] = (await pickings(requestId)).filter((o) => o.status_code === 'REGISTERED');
     const pl = order.picking_line[0];
     await prisma.picking_line.update({ where: { picking_line_id: pl.picking_line_id }, data: { picked_qty: { increment: qty } } });
+    // 잔액에도 같은 결과 — 집으면 picked 가 오르고, 출고하면 on_hand 가 내려간다(가용이 상한 계산에 쓰인다).
+    const balance = await prisma.inventory_balance.findFirstOrThrow({ where: { warehouse_id: order.warehouse_id, lot_id: pl.lot_id } });
+    await prisma.inventory_balance.update({
+      where: { inventory_balance_id: balance.inventory_balance_id },
+      data: issue ? { on_hand_qty: { decrement: qty } } : { picked_qty: { increment: qty } },
+    });
     if (issue && pl.material_issue_request_line_id !== null) {
       await prisma.material_issue_request_line.update({ where: { material_issue_request_line_id: pl.material_issue_request_line_id }, data: { issued_qty: { increment: qty } } });
     }
@@ -200,7 +206,7 @@ describe('출고 요청 수정·취소 (e2e)', () => {
     expect(history.body.items).toEqual([
       { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'DESTINATION_CHANGED', detail: { before: await locationName(row.destination_location_id), after: await locationName(other.locationId) } },
       { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'SOURCE_CHANGED', detail: { before: await sourceName(a.warehouseId), after: await sourceName(b.warehouseId) } },
-      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'QTY_CHANGED', detail: { itemCode: `${PREFIX}-X`, before: 20, after: 10 } },
+      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'QTY_CHANGED', detail: { itemCode: `${PREFIX}-X`, before: 20, after: 10, shortageBefore: 0, shortageAfter: 10 } },
       { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'CREATED', detail: {} },
     ]);
   });
@@ -221,6 +227,64 @@ describe('출고 요청 수정·취소 (e2e)', () => {
     expect(old.source_warehouse_id).toBeNull();
     expect((await put(old.material_issue_request_id, { versionNo: old.version_no, issueWorkDate: friday() })).body.errors[0].code).toBe('STATE_LOCKED');
     expect((await cancel(old.material_issue_request_id, { versionNo: old.version_no })).status).toBe(409);
+  });
+
+  it('US5-9 FR-012 진행 중 수량을 늘리면 상한을 건다 — 넘는 양은 부족, 이력에 부족 전·후', async () => {
+    const { lineId } = await line([['X', 75]]);
+    const { row } = await made(lineId, 'X70', today);
+    await pick(row.material_issue_request_id, 40, true);
+    const lineId0 = Number(row.material_issue_request_line[0].material_issue_request_line_id);
+    // 가용 35(75 − 출고 40) · 집은 40 → 요청은 많아야 75.
+    await put(row.material_issue_request_id, { versionNo: row.version_no, lines: [{ materialIssueRequestLineId: lineId0, requestedQty: 80 }] }).expect(200);
+    const after = await reload(row.material_issue_request_id);
+    expect(after.material_issue_request_line.map((l) => [l.requested_qty.toNumber(), l.shortage_qty.toNumber()])).toEqual([[75, 5]]);
+    const history = await request(app.getHttpServer()).get(`${BASE}/${row.material_issue_request_id}/history`).set('Cookie', fx.cookie).expect(200);
+    expect(history.body.items[0]).toMatchObject({ eventCode: 'QTY_CHANGED', detail: { before: 70, after: 75, shortageBefore: 0, shortageAfter: 5 } });
+  });
+
+  it('FR-025 진행 중 수량을 기출고까지 줄이면 미출고 0 — 완료(DONE)로 옮기고 피킹도 닫는다', async () => {
+    const { lineId } = await line([['X', 100]]);
+    const { row } = await made(lineId, 'X70', today);
+    await pick(row.material_issue_request_id, 40, true);
+    const lineId0 = Number(row.material_issue_request_line[0].material_issue_request_line_id);
+    const response = await put(row.material_issue_request_id, { versionNo: row.version_no, lines: [{ materialIssueRequestLineId: lineId0, requestedQty: 40 }] }).expect(200);
+    expect(response.body.materialIssueRequest).toMatchObject({ statusCode: 'POSTED', displayStatus: 'DONE' });
+    expect((await pickings(row.material_issue_request_id)).map((o) => [o.status_code, o.picking_line.map((l) => l.planned_qty.toNumber())])).toEqual([['POSTED', [40]]]);
+  });
+
+  it('FR-027 대기 요청을 상한 넘게 늘려 요청은 그대로여도 부족이 바뀌면 QTY_CHANGED 가 남는다', async () => {
+    const { lineId } = await line([['X', 20]]);
+    const { row } = await made(lineId, 'X20', fx.nextWeekday('P1', 1));
+    const lineId0 = Number(row.material_issue_request_line[0].material_issue_request_line_id);
+    await put(row.material_issue_request_id, { versionNo: row.version_no, lines: [{ materialIssueRequestLineId: lineId0, requestedQty: 25 }] }).expect(200);
+    const after = await reload(row.material_issue_request_id);
+    expect(after.material_issue_request_line.map((l) => [l.requested_qty.toNumber(), l.shortage_qty.toNumber()])).toEqual([[20, 5]]);
+    expect(after.version_no).toBe(row.version_no + 1);
+    const history = await request(app.getHttpServer()).get(`${BASE}/${row.material_issue_request_id}/history`).set('Cookie', fx.cookie).expect(200);
+    expect(history.body.items[0]).toMatchObject({ eventCode: 'QTY_CHANGED', detail: { itemCode: `${PREFIX}-X`, before: 20, after: 20, shortageBefore: 0, shortageAfter: 5 } });
+  });
+
+  it('본문에 없는 줄은 값도 이력도 그대로 — 재고가 줄어도 고친 줄만 다시 담는다', async () => {
+    const { a, lineId } = await line([['X', 30], ['Y', 10]]);
+    const { row } = await made(lineId, 'XX', fx.nextWeekday('P1', 1));
+    expect(row.material_issue_request_line.map((l) => l.requested_qty.toNumber())).toEqual([10, 15, 5]);
+    const balance = await prisma.inventory_balance.findFirstOrThrow({ where: { warehouse_id: a.warehouseId, item_id: fx.items.X } });
+    await prisma.inventory_balance.update({ where: { inventory_balance_id: balance.inventory_balance_id }, data: { on_hand_qty: 12 } });
+    const yLine = Number(row.material_issue_request_line[2].material_issue_request_line_id);
+    await put(row.material_issue_request_id, { versionNo: row.version_no, lines: [{ materialIssueRequestLineId: yLine, requestedQty: 4 }] }).expect(200);
+    const after = await reload(row.material_issue_request_id);
+    expect(after.material_issue_request_line.map((l) => [l.requested_qty.toNumber(), l.shortage_qty.toNumber()])).toEqual([[10, 0], [15, 0], [4, 0]]);
+    const history = await request(app.getHttpServer()).get(`${BASE}/${row.material_issue_request_id}/history`).set('Cookie', fx.cookie).expect(200);
+    expect(history.body.items.filter((i: { eventCode: string }) => i.eventCode === 'QTY_CHANGED').map((i: { detail: { itemCode: string } }) => i.detail.itemCode)).toEqual([`${PREFIX}-Y`]);
+  });
+
+  it('FR-010 출발 창고는 라인 담당 부서의 생산 창고만 — 공장의 다른 활성 창고는 400', async () => {
+    const { lineId } = await line([['X', 100]]);
+    const { row } = await made(lineId, 'X20', fx.nextWeekday('P1', 1));
+    const other = await fx.warehouse(fx.ids.p1, `S${seq}-OTHER`);
+    await fx.stock(other, 'X', 100);
+    const refused = await put(row.material_issue_request_id, { versionNo: row.version_no, sourceWarehouseId: Number(other.warehouseId) }).expect(400);
+    expect(refused.body.errors[0]).toMatchObject({ field: 'sourceWarehouseId', code: 'INVALID' });
   });
 
   describe('W/O 취소·마감 연결', () => {

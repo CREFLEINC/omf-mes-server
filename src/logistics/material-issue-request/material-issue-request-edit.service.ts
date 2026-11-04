@@ -6,6 +6,7 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { availableQty, lockPairs, pairKey, plannedLines } from '../../core/material-issue/planned-stock';
+import { resolveCandidates } from '../../core/material-issue/source-warehouse';
 import { MaterialIssueReleaser } from '../../core/material-issue/release-request';
 import {
   REQUEST_AUDIT_TARGET,
@@ -205,13 +206,9 @@ export class MaterialIssueRequestEditService {
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     if (wanted.size === 0) return;
 
+    // 늘리는 양에도 상한을 건다(FR-012) — 집은 양은 이미 가용에서 빠졌으므로 「요청 − 집은 양」이 쓸 수 있는 양 안이어야 한다.
     const events: Event[] = [];
-    for (const line of request.material_issue_request_line) {
-      const qty = wanted.get(line.material_issue_request_line_id);
-      if (qty === undefined || qty.eq(line.requested_qty)) continue;
-      await tx.material_issue_request_line.update({ where: { material_issue_request_line_id: line.material_issue_request_line_id }, data: { requested_qty: qty } });
-      events.push(qtyChanged(line, qty));
-    }
+    await this.cap(tx, request, request.source_warehouse_id as bigint, wanted, progress.picked, events);
     await closePickings(tx, this.documentState, request.material_issue_request_id, appUserId);
     const lines = await tx.material_issue_request_line.findMany({ where: { material_issue_request_id: request.material_issue_request_id } });
     const demands = lines.flatMap((line) => {
@@ -233,7 +230,10 @@ export class MaterialIssueRequestEditService {
       );
       await this.pickingNotices.notify(tx, pickings, { workOrderId: request.work_order_id, requiredAt: null });
     }
-    await this.touch(tx, request, {}, appUserId);
+    // 미출고가 모두 0 이면 더 나갈 것이 없다 — 출고 전기와 같은 완료(POSTED)로 옮기고 집은 만큼으로 줄인 피킹도 닫는다(FR-025).
+    const done = lines.every((line) => line.requested_qty.lte(line.issued_qty));
+    await this.touch(tx, request, done ? { status_code: requestTransition(this.documentState, 'material-issue-request-issue', request.status_code) } : {}, appUserId);
+    if (done) await this.finishPickings(tx, request.material_issue_request_id, appUserId);
     await record(tx, request, events, appUserId);
   }
 
@@ -257,7 +257,7 @@ export class MaterialIssueRequestEditService {
       }
     }
     const source = body.sourceWarehouseId === undefined ? (request.source_warehouse_id as bigint) : BigInt(body.sourceWarehouseId);
-    if (source !== request.source_warehouse_id) await this.assertWarehouse(tx, source, head.plantId);
+    if (source !== request.source_warehouse_id) await this.assertWarehouse(tx, request, source, head.plantId);
     const destination = body.destinationLocationId === undefined ? request.destination_location_id : BigInt(body.destinationLocationId);
     if (destination !== request.destination_location_id && (await tx.location.count({ where: { location_id: destination } })) === 0) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('destinationLocationId', ERROR_CODE.INVALID, '없는 위치입니다.')]);
@@ -265,8 +265,15 @@ export class MaterialIssueRequestEditService {
 
     const events: Event[] = [];
     const wanted = this.wantedQty(request, body);
-    if (wanted.size > 0 || source !== request.source_warehouse_id) {
-      await this.recap(tx, request, source, wanted, events);
+    if (source !== request.source_warehouse_id) {
+      // 출발 창고가 바뀌면 줄 전부를 새 창고의 쓸 수 있는 양으로 다시 담는다 — 소요(요청 + 부족)는 그대로.
+      const all = new Map(request.material_issue_request_line.map((line) => [
+        line.material_issue_request_line_id,
+        wanted.get(line.material_issue_request_line_id) ?? line.requested_qty.plus(line.shortage_qty),
+      ]));
+      await this.cap(tx, request, source, all, new Map(), events);
+    } else if (wanted.size > 0) {
+      await this.cap(tx, request, source, wanted, new Map(), events);
     }
     if (request.status_code === 'REGISTERED') await closePickings(tx, this.documentState, request.material_issue_request_id, appUserId);
     if (workDate !== dateOf(request.issue_work_date)) {
@@ -304,40 +311,57 @@ export class MaterialIssueRequestEditService {
     }
   }
 
-  /** 새 소요(줄마다 요청 + 부족)를 출발 창고의 쓸 수 있는 양(다른 요청의 예정을 뺀 가용)까지만 담는다. */
-  private async recap(
+  /**
+   * 고칠 줄(`targets` — 줄 → 새 소요)만 출발 창고의 쓸 수 있는 양까지 담고 넘는 양은 부족으로 남긴다(FR-012).
+   * 쓸 수 있는 양 = 가용 − 다른 요청의 예정 − 이 요청의 고치지 않는 줄이 잡은 예정. 고치지 않는 줄은 값도 이력도 그대로다.
+   * 집은 양(`picked`)은 이미 가용에서 빠졌으므로 줄의 예정은 「요청 − 집은 양」이다.
+   */
+  private async cap(
     tx: Prisma.TransactionClient,
     request: Locked,
     source: bigint,
-    wanted: Map<bigint, Prisma.Decimal>,
+    targets: Map<bigint, Prisma.Decimal>,
+    picked: ReadonlyMap<bigint, Prisma.Decimal>,
     events: Event[],
   ): Promise<void> {
     const lines = request.material_issue_request_line;
-    const itemIds = [...new Set(lines.map((line) => line.item_id))];
+    const itemIds = [...new Set(lines.filter((l) => targets.has(l.material_issue_request_line_id)).map((l) => l.item_id))];
+    if (itemIds.length === 0) return;
     await lockPairs(tx, itemIds.map((itemId) => ({ warehouseId: source, itemId })));
-    const [available, others] = await Promise.all([
-      availableQty(tx, [source], itemIds),
-      plannedLines(tx, { warehouseIds: [source], itemIds }),
-    ]);
+    const [available, planned] = await Promise.all([availableQty(tx, [source], itemIds), plannedLines(tx, { warehouseIds: [source], itemIds })]);
     const free = new Map<bigint, Prisma.Decimal>();
     for (const itemId of itemIds) {
-      const planned = others
-        .filter((line) => line.itemId === itemId && line.requestId !== request.material_issue_request_id)
-        .reduce((sum, line) => sum.plus(line.plannedQty), ZERO);
-      free.set(itemId, Prisma.Decimal.max((available.get(pairKey(source, itemId)) ?? ZERO).minus(planned), ZERO));
+      const held = planned
+        .filter((l) => l.itemId === itemId && (l.requestId !== request.material_issue_request_id || !targets.has(l.requestLineId)))
+        .reduce((sum, l) => sum.plus(l.plannedQty), ZERO);
+      free.set(itemId, Prisma.Decimal.max((available.get(pairKey(source, itemId)) ?? ZERO).minus(held), ZERO));
     }
     for (const line of lines) {
-      const need = wanted.get(line.material_issue_request_line_id) ?? line.requested_qty.plus(line.shortage_qty);
+      const need = targets.get(line.material_issue_request_line_id);
+      if (need === undefined) continue;
+      const took = picked.get(line.material_issue_request_line_id) ?? ZERO;
       const left = free.get(line.item_id) ?? ZERO;
-      const requested = Prisma.Decimal.min(need, left);
-      free.set(line.item_id, left.minus(requested));
+      const requested = Prisma.Decimal.min(need, took.plus(left));
+      free.set(line.item_id, Prisma.Decimal.max(left.minus(requested.minus(took)), ZERO));
       const shortage = need.minus(requested);
       if (requested.eq(line.requested_qty) && shortage.eq(line.shortage_qty)) continue;
       await tx.material_issue_request_line.update({
         where: { material_issue_request_line_id: line.material_issue_request_line_id },
         data: { requested_qty: requested, shortage_qty: shortage },
       });
-      if (!requested.eq(line.requested_qty)) events.push(qtyChanged(line, requested));
+      events.push(qtyChanged(line, requested, shortage));
+    }
+  }
+
+  /** 완료된 요청의 열린 피킹 — 집은 만큼으로 줄였으니 더 집을 것이 없다. 출고 전기가 닫는 것과 같은 전이다. */
+  private async finishPickings(tx: Prisma.TransactionClient, requestId: bigint, appUserId: number): Promise<void> {
+    const orders = await tx.picking_order.findMany({
+      where: { source_document_type_code: 'MATERIAL_ISSUE_REQUEST', source_document_id: requestId, status_code: 'REGISTERED' },
+      select: { picking_order_id: true, status_code: true },
+    });
+    for (const order of orders) {
+      const to = this.documentState.assertTransition('logistics.picking_order.status_code', 'picking-issue', order.status_code, HttpStatus.CONFLICT).to;
+      await tx.picking_order.update({ where: { picking_order_id: order.picking_order_id }, data: { status_code: to, updated_by: appUserId, version_no: { increment: 1 } } });
     }
   }
 
@@ -351,10 +375,12 @@ export class MaterialIssueRequestEditService {
     return new Map((body.lines ?? []).map((line) => [BigInt(line.materialIssueRequestLineId), new Prisma.Decimal(line.requestedQty)]));
   }
 
-  private async assertWarehouse(tx: Prisma.TransactionClient, warehouseId: bigint, plantId: bigint): Promise<void> {
-    const found = await tx.warehouse.count({ where: { warehouse_id: warehouseId, plant_id: plantId, is_active: true } });
-    if (found === 0) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '이 공장의 사용 중인 창고가 아닙니다.')]);
+  /** 새 출발 창고는 W/O 라인 담당 부서의 이 공장 활성 생산 창고여야 한다(FR-010 「출발 생산 창고」). */
+  private async assertWarehouse(tx: Prisma.TransactionClient, request: Locked, warehouseId: bigint, plantId: bigint): Promise<void> {
+    const workOrder = await tx.work_order.findUniqueOrThrow({ where: { work_order_id: request.work_order_id }, select: { production_line_id: true } });
+    const scope = workOrder.production_line_id === null ? null : await resolveCandidates(tx, { plantId, productionLineId: workOrder.production_line_id });
+    if (scope === null || !scope.warehouseIds.includes(warehouseId)) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '라인 담당 부서의 생산 창고가 아닙니다.')]);
     }
   }
 
@@ -373,8 +399,18 @@ function dateOf(value: Date | null): string | null {
   return value === null ? null : value.toISOString().slice(0, 10);
 }
 
-function qtyChanged(line: Locked['material_issue_request_line'][number], qty: Prisma.Decimal): Event {
-  return { action: 'QTY_CHANGED', detail: { itemCode: line.item.item_code, before: line.requested_qty.toNumber(), after: qty.toNumber() } };
+/** 소요(요청 + 부족)가 바뀌었다 — 요청이 상한에 걸려 그대로여도 부족이 바뀌면 남긴다(FR-027). */
+function qtyChanged(line: Locked['material_issue_request_line'][number], qty: Prisma.Decimal, shortage: Prisma.Decimal): Event {
+  return {
+    action: 'QTY_CHANGED',
+    detail: {
+      itemCode: line.item.item_code,
+      before: line.requested_qty.toNumber(),
+      after: qty.toNumber(),
+      shortageBefore: line.shortage_qty.toNumber(),
+      shortageAfter: shortage.toNumber(),
+    },
+  };
 }
 
 /** 한 저장의 바뀐 칸마다 이력 한 줄 — 같은 시각이다. */
