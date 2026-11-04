@@ -242,6 +242,13 @@ export class MaterialIssueFixture {
     const plant = { plant: { plant_code: { startsWith: prefix } } };
     const workOrder = { work_order: { work_order_no: { startsWith: prefix } } };
     const warehouse = { warehouse: { warehouse_code: { startsWith: prefix } } };
+    const users = await p.app_user.findMany({ where: { login_id: { startsWith: prefix } }, select: { app_user_id: true } });
+    const userIds = users.map((u) => u.app_user_id);
+    // 러너 시험이 남기는 인계 알림 — 담당자(이 준비의 사용자)를 가리키므로 사용자보다 먼저 지운다.
+    await p.zalo_delivery.deleteMany({ where: { recipient_user_id: { in: userIds } } });
+    await p.notification.deleteMany({ where: { recipient_user_id: { in: userIds } } });
+    await p.handover_alert_recipient.deleteMany({ where: { setting: plant } });
+    await p.handover_alert_setting.deleteMany({ where: plant });
     await p.picking_line.deleteMany({ where: { picking_order: warehouse } });
     await p.picking_order.deleteMany({ where: warehouse });
     await p.material_issue_unsourced_shortage.deleteMany({ where: workOrder });
@@ -268,8 +275,6 @@ export class MaterialIssueFixture {
     await p.plant.deleteMany({ where: { plant_code: { startsWith: prefix } } });
     await p.business_unit.deleteMany({ where: { business_unit_code: { startsWith: prefix } } });
     await p.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: prefix } } });
-    const users = await p.app_user.findMany({ where: { login_id: { startsWith: prefix } }, select: { app_user_id: true } });
-    const userIds = users.map((u) => u.app_user_id);
     await p.idempotency_record.deleteMany({ where: { app_user_id: { in: userIds } } });
     await p.user_role.deleteMany({ where: { app_user_id: { in: userIds } } });
     await p.app_user.deleteMany({ where: { app_user_id: { in: userIds } } });
