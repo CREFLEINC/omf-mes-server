@@ -87,7 +87,8 @@ describe('계약 커버리지', () => {
     // 입고 기본값(장부 P-150) 1 오퍼레이션: 574 → 575.
     // 검사기준 버전 도면 추가·바꾸기·빼기(omf-all-around#227) 3 오퍼레이션: 575 → 578.
     // 부서 생산 창고 조회·바꾸기(omf-all-around#66) 2 오퍼레이션: 578 → 580.
-    expect(registry.size).toBe(580);
+    // 출고 요청 수정·취소·이력(omf-all-around#66) 3 오퍼레이션: 580 → 583.
+    expect(registry.size).toBe(583);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

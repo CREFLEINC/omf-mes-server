@@ -30,6 +30,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /app/operation-policies/{operationPolicyId}': ['W-CO-15'],
   'POST /app/operation-policies': ['W-CO-15'],
   'PUT /app/operation-policies/{operationPolicyId}': ['W-CO-15'],
+  // 출고 요청 현황(W-02-11 · 피처 003 · omf-all-around#66) — 이 화면이 요청을 고치고 취소하고 이력을 본다.
+  'PUT /logistics/material-issue-requests/{materialIssueRequestId}': ['W-02-11'],
+  'POST /logistics/material-issue-requests/{materialIssueRequestId}:cancel': ['W-02-11'],
+  'GET /logistics/material-issue-requests/{materialIssueRequestId}/history': ['W-02-11'],
   // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
   'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
   'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
