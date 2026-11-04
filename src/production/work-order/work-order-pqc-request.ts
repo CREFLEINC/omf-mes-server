@@ -74,7 +74,11 @@ async function resolvePqcPlanVersion(
         inspection_type_code: 'PQC',
         is_active: true,
         item_id: planItemId,
-        OR: [{ process_id: processId }, { routing_id: routingId }, { process_id: null, routing_id: null }],
+        /* 공정 · 라우팅은 둘 다 맞아야 한다 — 비운 칸만 「아무거나」다. 한쪽만 맞춰 받으면 같은 라우팅의 다른 공정 기준이 끼어든다. */
+        AND: [
+          { OR: [{ process_id: processId }, { process_id: null }] },
+          { OR: [{ routing_id: routingId }, { routing_id: null }] },
+        ],
       },
     },
     select: {
@@ -92,12 +96,11 @@ async function resolvePqcPlanVersion(
   const versions = own.length > 0 ? own : await find(null);
   if (versions.length === 0) return null;
 
-  /* 공정·라우팅을 지정한 기준이 품목 전체 기준을 이긴다 — 둘 다 「이 공정의 답」을 적은 것이다. */
-  const scoped = versions.filter(
-    (version) =>
-      version.inspection_plan.process_id !== null || version.inspection_plan.routing_id !== null,
-  );
-  const candidates = scoped.length > 0 ? scoped : versions;
+  /* 더 좁게 지정한 기준이 이긴다 — 공정 + 라우팅 > 공정이나 라우팅 하나 > 품목 전체. */
+  const narrowness = (version: (typeof versions)[number]): number =>
+    Number(version.inspection_plan.process_id !== null) + Number(version.inspection_plan.routing_id !== null);
+  const narrowest = Math.max(...versions.map(narrowness));
+  const candidates = versions.filter((version) => narrowness(version) === narrowest);
   /* 좁힌 뒤에도 둘 이상이면 고르지 않는다 — 임의로 고르면 어느 기준으로 검사했는지가 기록에서 사라진다. */
   if (candidates.length !== 1) return null;
 
