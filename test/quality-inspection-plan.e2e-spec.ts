@@ -375,10 +375,12 @@ describe('검사기준 헤더 (e2e)', () => {
       .post('/api/quality/inspection-plans')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
+      // ⚠ IQC 가 아니다 — 품목 칸이 빈 IQC 기준은 저장할 때 전용 기준 없는 «모든» 품목의 IQC 대상을 바꿔(사용자 결정 2026-11-04)
+      //    같은 워커 DB 를 쓰는 다른 스위트의 품목까지 건드린다. 이 도우미는 헤더 CRUD 만 본다.
       .send({
         inspectionPlanCode: `${PREFIX}-${suffix}`,
         inspectionPlanName: suffix,
-        inspectionTypeCode: 'IQC',
+        inspectionTypeCode: 'OQC',
       })
       .expect(201);
     const validate = validator('POST /quality/inspection-plans');

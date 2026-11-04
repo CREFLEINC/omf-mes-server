@@ -56,6 +56,7 @@ const FULL_INSPECTION = 'FULL_INSPECTION';
  *   아니라 **공정·라우팅**으로도 걸린다(`inspection_plan.process_id`·`routing_id`). 그래서
  *   그 함수를 쓰지 않고 여기서 따로 고른다. 여러 건이면 좁은 쪽(공정 지정)이 이긴다 —
  *   품목 전체 기준과 공정별 기준이 함께 있으면 공정별이 그 공정의 답이다.
+ *   품목 전용 기준이 하나도 없으면 「전 품목 공통」 기준에서 같은 규칙으로 고른다.
  */
 async function resolvePqcPlanVersion(
   prisma: PrismaService,
@@ -64,7 +65,7 @@ async function resolvePqcPlanVersion(
   routingId: bigint,
   effectiveDate: Date,
 ): Promise<PqcPlanVersion | null> {
-  const versions = latestPerPlan(await prisma.inspection_plan_version.findMany({
+  const find = async (planItemId: bigint | null) => latestPerPlan(await prisma.inspection_plan_version.findMany({
     where: {
       status_code: 'CONFIRMED',
       effective_from: { lte: effectiveDate },
@@ -72,7 +73,7 @@ async function resolvePqcPlanVersion(
       inspection_plan: {
         inspection_type_code: 'PQC',
         is_active: true,
-        item_id: itemId,
+        item_id: planItemId,
         OR: [{ process_id: processId }, { routing_id: routingId }, { process_id: null, routing_id: null }],
       },
     },
@@ -86,6 +87,9 @@ async function resolvePqcPlanVersion(
       inspection_plan: { select: { process_id: true, routing_id: true, default_skip: true } },
     },
   }));
+  /* 품목 전용 기준이 먼저다. 없을 때만 「전 품목 공통」(품목 칸이 빈 기준)으로 내려간다 — IQC 와 같은 규칙(사용자 결정 2026-11-04). */
+  const own = await find(itemId);
+  const versions = own.length > 0 ? own : await find(null);
   if (versions.length === 0) return null;
 
   /* 공정·라우팅을 지정한 기준이 품목 전체 기준을 이긴다 — 둘 다 「이 공정의 답」을 적은 것이다. */
