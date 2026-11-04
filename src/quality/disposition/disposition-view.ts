@@ -22,6 +22,8 @@ export interface DispositionDecisionRow {
   lot_id: bigint | number | null;
   lot_no: string | null;
   posted_qty: unknown;
+  /** 특채 LOT 에 불량창고 재고가 남았는가(#207) — `reinstatable` 판정에만 쓴다. */
+  concession_defect_stock?: boolean | null;
 }
 
 /** 계약 `DispositionDecision` 과 동형(required 10 / 프로퍼티 18). */
@@ -64,7 +66,10 @@ export function dispositionDecisionView(row: DispositionDecisionRow): Dispositio
   const postedQty = new Prisma.Decimal(String(row.posted_qty ?? 0));
   // SQL 의 `fu` LATERAL 이 이미 POSTED 만 더했다(CANCELLED 는 빠졌다) — 합성 행 «하나」로 넘겨도
   // `dispositionFollowUp()` 안의 `postedQty()` 합과 같은 값이 된다.
-  const followUp = dispositionFollowUp(row.disposition_type_code, decisionQty, postedQty.isZero() ? [] : [{ statusCode: POSTED, issueQty: postedQty }]);
+  const followUp = dispositionFollowUp(
+    row.disposition_type_code, decisionQty, postedQty.isZero() ? [] : [{ statusCode: POSTED, issueQty: postedQty }],
+    row.concession_defect_stock === true,
+  );
 
   const view: DispositionDecisionView = omitEmpty({
     dispositionDecisionId: Number(row.disposition_decision_id),

@@ -38,9 +38,12 @@ export class StockReinstatementService {
   async create(body: StockReinstatementCreate, appUserId: number): Promise<StockReinstatementView> {
     // ⛔ 본문만 보고 거를 수 있는 것은 DB 왕복 «전»이다 — numeric(20,6) 두 벽(R-12 · 초안은 이 경로 0건).
     assertQty('qty', body.qty);
-    await assertCodeValues(this.prisma, [
-      { field: 'releaseReasonCode', value: body.releaseReasonCode, groupCode: HOLD_RELEASE_REASON_GROUP },
-    ]);
+    // 해제 사유는 정상 처분에만 실린다 — 특채는 닫을 보류가 없다(필수 판정은 처분 유형을 아는 트랜잭션 안이다 · #207).
+    if (body.releaseReasonCode != null) {
+      await assertCodeValues(this.prisma, [
+        { field: 'releaseReasonCode', value: body.releaseReasonCode, groupCode: HOLD_RELEASE_REASON_GROUP },
+      ]);
+    }
     const target = await this.resolveTarget(body);
     for (let attempt = 1; ; attempt += 1) {
       try {
