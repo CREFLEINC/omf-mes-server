@@ -23,6 +23,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { ISSUE_REQUEST_REGISTERED } from '../src/logistics/material-issue-request/material-issue-request.constants';
 import { parseIfMatch } from '../src/common/optimistic-lock';
+import { MaterialIssueFixture } from './support/material-issue-fixture';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ISSUE_REGISTERED } from '../src/production/work-order/material-issue';
 
@@ -754,4 +755,124 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
     });
     await prisma.role.deleteMany({ where: { role_code: { in: [ROLE, NO_PERM_ROLE] } } });
   }
+});
+
+/**
+ * 생산 창고를 쓰는 공장의 추가 출고 요청(피처 003 · omf-all-around#66 · US4-6~4-8 · US2-12 · FR-011·017·018).
+ * ⭐ 위 스위트는 생산 창고 없는 공장(지금 방식)이라 그대로 두고 여기 더하기만 한다.
+ */
+describe('추가 출고 요청 — 생산 창고 공장 (e2e)', () => {
+  const PLANNED_PREFIX = `MIM${randomUUID().slice(0, 6)}`;
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let fx: MaterialIssueFixture;
+  let seq = 0;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configureApp(app, 'api');
+    await app.init();
+    prisma = app.get(PrismaService);
+    fx = new MaterialIssueFixture(app, prisma, PLANNED_PREFIX);
+    await fx.setup();
+    fx.ids.p1 = await fx.plant('P1');
+  });
+
+  afterAll(async () => {
+    await prisma.audit_event.deleteMany({ where: { target_type_code: 'MATERIAL_ISSUE_REQUEST', performed_by: fx.ids.user } });
+    await fx.cleanup();
+    await app.close();
+  });
+
+  async function setup(stocks: Record<string, [string, number][]>) {
+    const code = `S${++seq}`;
+    const warehouses: Record<string, bigint> = {};
+    for (const [key, rows] of Object.entries(stocks)) {
+      const at = await fx.warehouse(fx.ids.p1, `${code}-${key}`);
+      warehouses[key] = at.warehouseId;
+      for (const [item, qty] of rows) await fx.stock(at, item as 'X', qty);
+    }
+    const lineId = await fx.line('P1', `${code}-L`, await fx.department(`${code}-D`, Object.values(warehouses)));
+    return { lineId, warehouses };
+  }
+  const post = (body: Record<string, unknown>) =>
+    request(app.getHttpServer())
+      .post('/api/logistics/material-issue-requests')
+      .set('Cookie', fx.cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ businessDate: '2026-11-04', occurredAt: '2026-11-04T03:00:00.000Z', ...body });
+  const lineOf = (item: 'X' | 'Y' | 'Z' | 'W', qty: number) => ({ itemId: Number(fx.items[item]), requestedQty: qty, uomId: Number(fx.ids.uom) });
+
+  it('US4-7 긴급 대응 사유로 예정을 넘으면 409(가져갈 수 있음) → 확인하면 만들고, 다음 주 요청에 동적 부족 20 · 이력', async () => {
+    const { lineId, warehouses } = await setup({ A: [['X', 100]] });
+    const nextWeek = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X50', productionDate: fx.nextWeekday('P1', 1, 8) });
+    await fx.release(nextWeek).expect(200);
+    const nextWeek2 = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X50', productionDate: fx.nextWeekday('P1', 2, 8) });
+    await fx.release(nextWeek2).expect(200);
+    const urgent = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+
+    const warned = await post({ workOrderId: Number(urgent), reasonCode: 'URGENT_WO_RESPONSE', lines: [lineOf('X', 20)] }).expect(409);
+    expect(warned.body.errors[0].code).toBe('PLANNED_STOCK_CONFLICT');
+    expect(warned.body.plannedStockConflicts).toEqual([
+      expect.objectContaining({ itemId: Number(fx.items.X), requestedQty: 20, freeQty: 0, takeFromPlannedQty: 20, overridable: true }),
+    ]);
+    expect(warned.body.plannedStockConflicts[0].affectedRequests).toHaveLength(2);
+
+    const made = await post({ workOrderId: Number(urgent), reasonCode: 'URGENT_WO_RESPONSE', acceptPlannedOverride: true, lines: [lineOf('X', 20)] }).expect(201);
+    expect(made.body.requests).toHaveLength(1);
+    expect(made.body.materialIssueRequest).toMatchObject({ statusCode: 'REGISTERED', sourceWarehouseId: Number(warehouses.A) });
+    const [later] = await fx.requests(nextWeek2);
+    const detail = await request(app.getHttpServer()).get(`/api/logistics/material-issue-requests/${later.material_issue_request_id}`).set('Cookie', fx.cookie).expect(200);
+    expect(detail.body.lines[0].dynamicShortageQty).toBe(20);
+    const history = await request(app.getHttpServer()).get(`/api/logistics/material-issue-requests/${made.body.materialIssueRequest.materialIssueRequestId}/history`).set('Cookie', fx.cookie).expect(200);
+    expect(history.body.items.map((i: { actionCode: string }) => i.actionCode)).toEqual(expect.arrayContaining(['CREATE', 'PLANNED_OVERRIDE', 'RELEASE']));
+    expect(history.body.items.find((i: { actionCode: string }) => i.actionCode === 'PLANNED_OVERRIDE')).toMatchObject({ reason: 'URGENT_WO_RESPONSE', performedBy: Number(fx.ids.user) });
+  });
+
+  it('US4-8 다른 사유는 쓸 수 있는 양이 0 이면 409 overridable=false — 확인해도 못 만든다', async () => {
+    const { lineId } = await setup({ A: [['X', 50]] });
+    const holder = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X50', productionDate: fx.nextWeekday('P1', 1) });
+    await fx.release(holder).expect(200);
+    const wo = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
+    for (const accept of [false, true]) {
+      const refused = await post({ workOrderId: Number(wo), reasonCode: 'OTHER', acceptPlannedOverride: accept, lines: [lineOf('X', 20)] }).expect(409);
+      expect(refused.body.plannedStockConflicts[0]).toMatchObject({ overridable: false, freeQty: 0 });
+    }
+  });
+
+  it('FR-011 출발 창고를 비우면 자재마다 규칙으로 채우고 창고별로 나눈다 · 입고지는 라인 생산 현장 · 바로 배포', async () => {
+    const { lineId, warehouses } = await setup({ A: [['X', 100]], B: [['Z', 100]] });
+    const wo = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+    const made = await post({ workOrderId: Number(wo), reasonCode: 'OTHER', lines: [lineOf('X', 5), lineOf('Z', 7)] }).expect(201);
+    expect(made.body.requests.map((r: { sourceWarehouseId: number; statusCode: string }) => [r.sourceWarehouseId, r.statusCode])).toEqual([
+      [Number(warehouses.A), 'REGISTERED'],
+      [Number(warehouses.B), 'REGISTERED'],
+    ]);
+    const line = await prisma.production_line.findUniqueOrThrow({ where: { production_line_id: lineId } });
+    expect(made.body.materialIssueRequest.destinationLocationId).toBe(Number(line.default_wip_location_id));
+  });
+
+  it('US4-6 US2-12 부족 목록의 「재고 있는 생산 창고 없음」 행에서 보충 요청 → 보충 요청됨 · 「자동」인데 재고 없으면 409 noStockedWarehouse', async () => {
+    const { lineId, warehouses } = await setup({ A: [['X', 100]] });
+    const wo = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'WVX', productionDate: fx.nextWeekday('P1', 1) });
+    await fx.release(wo).expect(200);
+    const [w] = await prisma.material_issue_unsourced_shortage.findMany({ where: { work_order_id: wo, item_id: fx.items.W } });
+
+    const none = await post({ workOrderId: Number(wo), reasonCode: 'SHORTAGE_SUPPLEMENT', unsourcedShortageId: Number(w.material_issue_unsourced_shortage_id), lines: [lineOf('W', 20)] }).expect(409);
+    expect(none.body.plannedStockConflicts[0]).toMatchObject({ itemId: Number(fx.items.W), noStockedWarehouse: true, overridable: false });
+
+    // 생산 창고를 채운 뒤 보충 요청.
+    const location = await prisma.location.findFirstOrThrow({ where: { warehouse_id: warehouses.A } });
+    await fx.stock({ warehouseId: warehouses.A, locationId: location.location_id }, 'W', 30);
+    const shortages = await request(app.getHttpServer()).get('/api/logistics/material-issue-requests/planned-stock').query({ plantId: Number(fx.ids.p1), onlyShortage: true }).set('Cookie', fx.cookie).expect(200);
+    expect(shortages.body.unsourced.map((u: { unsourcedShortageId: number }) => u.unsourcedShortageId)).toContain(Number(w.material_issue_unsourced_shortage_id));
+    const made = await post({ workOrderId: Number(wo), reasonCode: 'SHORTAGE_SUPPLEMENT', unsourcedShortageId: Number(w.material_issue_unsourced_shortage_id), lines: [lineOf('W', 20)] }).expect(201);
+    const resolved = await prisma.material_issue_unsourced_shortage.findUniqueOrThrow({ where: { material_issue_unsourced_shortage_id: w.material_issue_unsourced_shortage_id } });
+    expect(Number(resolved.resolved_request_id)).toBe(made.body.materialIssueRequest.materialIssueRequestId);
+    const after = await request(app.getHttpServer()).get('/api/logistics/material-issue-requests/planned-stock').query({ plantId: Number(fx.ids.p1), onlyShortage: true }).set('Cookie', fx.cookie).expect(200);
+    expect(after.body.unsourced.find((u: { unsourcedShortageId: number }) => u.unsourcedShortageId === Number(w.material_issue_unsourced_shortage_id))).toMatchObject({
+      resolvedRequestNo: made.body.materialIssueRequest.issueRequestNo,
+    });
+  });
 });
