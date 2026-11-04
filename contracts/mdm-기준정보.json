@@ -18697,7 +18697,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "공정. ⛔ inspectionTypeCode=PQC 면 필수 — 비우면 400 REQUIRED(field: processId). 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04 · 라우팅 「검사 관리」 연동이 공정으로 걸린다). IQC · OQC 는 비워도 된다"
+      "description": "공정. ⛔ inspectionTypeCode=PQC 면 필수 — 비우면 400 REQUIRED(field: processId). 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04 · 라우팅 「검사 관리」 연동이 공정으로 걸린다). routingId 가 있으면 그 라우팅의 공정 라인에 있는 공정이어야 한다 — 아니면 400 INVALID(field: processId). IQC · OQC 는 비워도 된다"
      },
      "routingId": {
       "x-source-column": "routing_id",
@@ -18791,7 +18791,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "공정. ⛔ inspectionTypeCode=PQC 면 필수 — 비우면 400 REQUIRED(field: processId). 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04 · 라우팅 「검사 관리」 연동이 공정으로 걸린다). IQC · OQC 는 비워도 된다"
+      "description": "공정. ⛔ inspectionTypeCode=PQC 면 필수 — 비우면 400 REQUIRED(field: processId). 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04 · 라우팅 「검사 관리」 연동이 공정으로 걸린다). routingId 가 있으면 그 라우팅의 공정 라인에 있는 공정이어야 한다 — 아니면 400 INVALID(field: processId). IQC · OQC 는 비워도 된다"
      },
      "routingId": {
       "x-source-column": "routing_id",
