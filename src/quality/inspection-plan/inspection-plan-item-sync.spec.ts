@@ -9,7 +9,10 @@ function harness() {
       create: jest.fn().mockResolvedValue({ inspection_plan_id: 1n, item_id: 40n, process_id: null, routing_id: null, approved_by: null, approved_at: null }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', item_id: 40n, default_skip: true }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ inspection_plan_id: 1n, item_id: 40n, process_id: 2n, routing_id: null, approved_by: null, approved_at: null }),
     },
+    // 확정 Rev 복사는 `pqc-routing-sync.spec` 이 본다 — 여기서는 확정 Rev 가 없다.
+    routing: { findMany: jest.fn().mockResolvedValue([]) },
     item: { updateMany: itemUpdateMany },
     routing_operation: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   };
@@ -161,7 +164,7 @@ describe('검사 기준 저장 — PQC 기준의 라우팅 연동', () => {
     await service.create(plan({ inspectionTypeCode: 'PQC', processId: 2, defaultSkip: false }));
 
     expect(tx.routing_operation.updateMany).toHaveBeenCalledWith({
-      where: { process_id: 2n, inspection_managed: false, routing: { item_id: 40n } },
+      where: { process_id: 2n, inspection_managed: false, routing: { item_id: 40n, status_code: 'DRAFT' } },
       data: { inspection_managed: true, version_no: { increment: 1 } },
     });
   });

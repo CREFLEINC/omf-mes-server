@@ -92,51 +92,9 @@ export class RoutingRevisionService {
       ]);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const latest = await tx.routing.aggregate({
-        where: { item_id: source.item_id },
-        _max: { routing_version: true },
-      });
-      const created = await tx.routing.create({
-        data: {
-          item_id: source.item_id,
-          routing_code: source.routing_code,
-          routing_version: (latest._max.routing_version ?? source.routing_version) + 1,
-          status_code: REVISION_STATUS.DRAFT,
-          effective_from: source.effective_from,
-          effective_to: source.effective_to,
-          // 새 초안이 기본 Rev 를 빼앗지 않는다 — 지정은 `:set-default` 가 한다.
-        },
-      });
-
-      const lines = await tx.routing_operation.findMany({
-        where: { routing_id: routingId },
-        orderBy: { operation_seq: 'asc' },
-      });
-      // 원본 라인 id → 새 라인 id. 선후행을 옮기려면 이 대응이 필요하다.
-      const moved = new Map<bigint, bigint>();
-      for (const line of lines) {
-        const copy = await tx.routing_operation.create({
-          data: { ...lineData(line), routing_id: created.routing_id },
-        });
-        moved.set(line.routing_operation_id, copy.routing_operation_id);
-      }
-
-      const dependencies = await tx.routing_operation_dependency.findMany({
-        where: { predecessor_operation_id: { in: [...moved.keys()] } },
-      });
-      if (dependencies.length > 0) {
-        await tx.routing_operation_dependency.createMany({
-          data: dependencies.map((dependency) => ({
-            predecessor_operation_id: moved.get(dependency.predecessor_operation_id) as bigint,
-            successor_operation_id: moved.get(dependency.successor_operation_id) as bigint,
-            dependency_type_code: dependency.dependency_type_code,
-          })),
-        });
-      }
-
-      return Number(created.routing_id);
-    });
+    return this.prisma.$transaction(async (tx) =>
+      Number(await copyRoutingRevision(tx, source, REVISION_STATUS.DRAFT)),
+    );
   }
 
   private async load(routingId: number): Promise<Prisma.routingGetPayload<object>> {
@@ -144,6 +102,60 @@ export class RoutingRevisionService {
     if (!row) throw new NotFoundException('없는 Routing 입니다.');
     return row;
   }
+}
+
+/**
+ * Rev 를 복사해 품목의 최댓값 +1 번 Rev 를 만든다 — 라인 · 선후행까지(`newRevision` 의 규칙).
+ * `adjustLine` 은 복사하는 라인 칸을 고친다 — PQC 기준 연동이 확정 Rev 를 새 Rev 로 바꿀 때 쓴다.
+ * 새 Rev 는 기본 Rev 를 빼앗지 않는다 — 넘길 일이면 부르는 쪽이 한다.
+ */
+export async function copyRoutingRevision(
+  tx: Prisma.TransactionClient,
+  source: Prisma.routingGetPayload<object>,
+  statusCode: string,
+  adjustLine: (line: Prisma.routing_operationGetPayload<object>) => Partial<Prisma.routing_operationUncheckedCreateInput> = () => ({}),
+): Promise<bigint> {
+  const latest = await tx.routing.aggregate({
+    where: { item_id: source.item_id },
+    _max: { routing_version: true },
+  });
+  const created = await tx.routing.create({
+    data: {
+      item_id: source.item_id,
+      routing_code: source.routing_code,
+      routing_version: (latest._max.routing_version ?? source.routing_version) + 1,
+      status_code: statusCode,
+      effective_from: source.effective_from,
+      effective_to: source.effective_to,
+    },
+  });
+
+  const lines = await tx.routing_operation.findMany({
+    where: { routing_id: source.routing_id },
+    orderBy: { operation_seq: 'asc' },
+  });
+  // 원본 라인 id → 새 라인 id. 선후행을 옮기려면 이 대응이 필요하다.
+  const moved = new Map<bigint, bigint>();
+  for (const line of lines) {
+    const copy = await tx.routing_operation.create({
+      data: { ...lineData(line), ...adjustLine(line), routing_id: created.routing_id },
+    });
+    moved.set(line.routing_operation_id, copy.routing_operation_id);
+  }
+
+  const dependencies = await tx.routing_operation_dependency.findMany({
+    where: { predecessor_operation_id: { in: [...moved.keys()] } },
+  });
+  if (dependencies.length > 0) {
+    await tx.routing_operation_dependency.createMany({
+      data: dependencies.map((dependency) => ({
+        predecessor_operation_id: moved.get(dependency.predecessor_operation_id) as bigint,
+        successor_operation_id: moved.get(dependency.successor_operation_id) as bigint,
+        dependency_type_code: dependency.dependency_type_code,
+      })),
+    });
+  }
+  return created.routing_id;
 }
 
 /** 복제할 라인 칸만 고른다 — id·감사 칸·버전은 새 행이 스스로 갖는다. */

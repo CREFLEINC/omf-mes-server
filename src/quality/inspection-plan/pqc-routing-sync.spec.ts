@@ -20,21 +20,68 @@ describe('isRoutingLinkedPqc', () => {
 });
 
 describe('syncRoutingOperationsToPqcPlan — 기준 → 라우팅', () => {
-  const tx = () => ({ routing_operation: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } });
+  const confirmedRev = { routing_id: 9n, item_id: 40n, routing_code: 'R-01', routing_version: 2, effective_from: null, effective_to: null, is_default: true };
+  const tx = (confirmed: unknown[] = []) => ({
+    routing_operation: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findMany: jest.fn().mockResolvedValue([
+        { routing_operation_id: 1n, operation_seq: 10, process_id: 2n, inspection_managed: true },
+        { routing_operation_id: 2n, operation_seq: 20, process_id: 3n, inspection_managed: true },
+      ]),
+      create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ routing_operation_id: 100n + BigInt(data.operation_seq) })),
+    },
+    routing_operation_dependency: { findMany: jest.fn().mockResolvedValue([]), createMany: jest.fn() },
+    routing: {
+      findMany: jest.fn().mockResolvedValue(confirmed),
+      aggregate: jest.fn().mockResolvedValue({ _max: { routing_version: 3 } }),
+      create: jest.fn().mockResolvedValue({ routing_id: 11n }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    inspection_plan: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+  });
+  const run = (client: ReturnType<typeof tx>, overrides: Record<string, unknown> = {}) =>
+    syncRoutingOperationsToPqcPlan(client as unknown as Prisma.TransactionClient, plan(overrides));
 
-  it('품목 기준은 그 품목 라우팅(확정 Rev 포함)의 그 공정 검사 관리를 반대로 맞춘다(어긋난 공정만)', async () => {
+  it('작성중 Rev 는 그 품목 라우팅의 그 공정 검사 관리를 그 자리에서 반대로 맞춘다(어긋난 공정만)', async () => {
     const client = tx();
-    await syncRoutingOperationsToPqcPlan(client as unknown as Prisma.TransactionClient, plan());
+    await run(client);
 
     expect(client.routing_operation.updateMany).toHaveBeenCalledWith({
-      where: { process_id: 2n, inspection_managed: true, routing: { item_id: 40n } },
+      where: { process_id: 2n, inspection_managed: true, routing: { item_id: 40n, status_code: 'DRAFT' } },
       data: { inspection_managed: false, version_no: { increment: 1 } },
     });
+    expect(client.routing.findMany.mock.calls[0][0].where).toEqual({
+      item_id: 40n, status_code: 'CONFIRMED', routing_operation: { some: { process_id: 2n, inspection_managed: true } },
+    });
+    expect(client.routing.create).not.toHaveBeenCalled();
+  });
+
+  it('확정 Rev 는 새 Rev 로 복사해 바로 확정하고 그 공정만 고친 뒤 옛 Rev 를 폐기한다', async () => {
+    const client = tx([confirmedRev]);
+    await run(client, { routing_id: 9n });
+
+    expect(client.routing.create.mock.calls[0][0].data).toMatchObject({ item_id: 40n, routing_code: 'R-01', routing_version: 4, status_code: 'CONFIRMED' });
+    expect(client.routing_operation.create.mock.calls.map(([arg]) => [arg.data.process_id, arg.data.inspection_managed, arg.data.routing_id]))
+      .toEqual([[2n, false, 11n], [3n, true, 11n]]);
+    expect(client.routing.update.mock.calls).toEqual([
+      [{ where: { routing_id: 9n }, data: { status_code: 'OBSOLETE', is_default: false, version_no: { increment: 1 } } }],
+      [{ where: { routing_id: 11n }, data: { is_default: true } }],
+    ]);
+    expect(client.inspection_plan.updateMany).toHaveBeenCalledWith({
+      where: { routing_id: 9n }, data: { routing_id: 11n, version_no: { increment: 1 } },
+    });
+  });
+
+  it('기본 Rev 가 아니던 확정 Rev 는 기본 지정을 옮기지 않는다', async () => {
+    const client = tx([{ ...confirmedRev, is_default: false }]);
+    await run(client);
+
+    expect(client.routing.update).toHaveBeenCalledTimes(1);
   });
 
   it('라우팅이 지정된 기준은 그 라우팅만', async () => {
     const client = tx();
-    await syncRoutingOperationsToPqcPlan(client as unknown as Prisma.TransactionClient, plan({ routing_id: 9n, default_skip: false }));
+    await run(client, { routing_id: 9n, default_skip: false });
 
     expect(client.routing_operation.updateMany.mock.calls[0][0]).toMatchObject({
       where: { process_id: 2n, inspection_managed: false, routing: { item_id: 40n, routing_id: 9n } },
@@ -44,10 +91,11 @@ describe('syncRoutingOperationsToPqcPlan — 기준 → 라우팅', () => {
 
   it('품목이 빈 기준은 그 공정에 품목 전용 PQC 기준이 없는 품목만', async () => {
     const client = tx();
-    await syncRoutingOperationsToPqcPlan(client as unknown as Prisma.TransactionClient, plan({ item_id: null }));
+    await run(client, { item_id: null });
 
     expect(client.routing_operation.updateMany.mock.calls[0][0].where.routing).toEqual({
       item: { inspection_plan: { none: { inspection_type_code: 'PQC', is_active: true, item_id: { not: null }, process_id: 2n } } },
+      status_code: 'DRAFT',
     });
   });
 });

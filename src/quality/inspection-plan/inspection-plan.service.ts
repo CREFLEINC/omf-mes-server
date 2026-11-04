@@ -148,8 +148,10 @@ export class InspectionPlanService {
         });
         await syncItemInspectionRequired(tx, input);
         if (isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
-        if (isRoutingLinkedPqc(row)) await syncRoutingOperationsToPqcPlan(tx, row);
-        return row;
+        if (!isRoutingLinkedPqc(row)) return row;
+        await syncRoutingOperationsToPqcPlan(tx, row);
+        // 확정 Rev 가 새 Rev 로 바뀌면 이 기준의 라우팅도 옮겨 갔다.
+        return tx.inspection_plan.findUniqueOrThrow({ where: { inspection_plan_id: row.inspection_plan_id } });
       }),
     );
   }

@@ -1,5 +1,8 @@
 import { Prisma } from '@prisma/client';
 
+import { REVISION_STATUS } from '../../planning/revision-status';
+import { copyRoutingRevision } from '../../planning/routing/routing-revision.service';
+
 /** 연동 대상 PQC 기준 — 사용 중이고 공정이 지정됐다. */
 type PqcPlanRow = Pick<
   Prisma.inspection_planGetPayload<object>,
@@ -15,21 +18,45 @@ export function isRoutingLinkedPqc(row: PqcPlanRow): row is PqcPlanRow & { proce
  * PQC 기준의 「기본 생략」을 라우팅 공정의 「검사 관리」에 반대로 맞춘다(사용자 결정 2026-11-04 · IQC 품목 연동과 같은 결).
  * - 품목이 지정된 기준: 그 품목 라우팅(기준에 라우팅이 있으면 그 라우팅만)의 그 공정
  * - 품목이 빈 기준: 그 공정에 품목 전용 PQC 기준이 없는 품목의 라우팅 그 공정
- * ⭐ 확정 Rev 도 «검사 관리» 칸 하나만 바로 고친다 — W/O 배포가 확정 Rev 를 읽어, 작성 중 Rev 만 고치면 연동이 서지 않는다.
+ * 작성중 Rev 는 그 자리에서 고친다. ⭐ 확정 Rev 는 고치지 않고(결정 07) 새 Rev 로 복사해 바로 확정하고 옛 Rev 를 폐기한다
+ * — 기본 Rev 지정과 그 Rev 를 가리키던 검사 기준도 새 Rev 로 옮긴다(사용자 결정 2026-11-04). 폐기 Rev 는 건드리지 않는다.
  * 이미 맞는 공정은 건드리지 않는다(라우팅 화면의 저장 토큰을 지킨다).
  */
 export async function syncRoutingOperationsToPqcPlan(
   tx: Prisma.TransactionClient,
   plan: PqcPlanRow & { process_id: bigint },
 ): Promise<void> {
-  const routing: Prisma.routingWhereInput =
+  const scope: Prisma.routingWhereInput =
     plan.item_id !== null
       ? { item_id: plan.item_id, ...(plan.routing_id === null ? {} : { routing_id: plan.routing_id }) }
       : { item: { inspection_plan: { none: { ...ownActivePqc, process_id: plan.process_id } } } };
+  const mismatched = { process_id: plan.process_id, inspection_managed: plan.default_skip };
+  const managed = !plan.default_skip;
+
   await tx.routing_operation.updateMany({
-    where: { process_id: plan.process_id, inspection_managed: plan.default_skip, routing },
-    data: { inspection_managed: !plan.default_skip, version_no: { increment: 1 } },
+    where: { ...mismatched, routing: { ...scope, status_code: REVISION_STATUS.DRAFT } },
+    data: { inspection_managed: managed, version_no: { increment: 1 } },
   });
+
+  const confirmed = await tx.routing.findMany({
+    where: { ...scope, status_code: REVISION_STATUS.CONFIRMED, routing_operation: { some: mismatched } },
+    orderBy: { routing_id: 'asc' },
+  });
+  for (const source of confirmed) {
+    const routingId = await copyRoutingRevision(tx, source, REVISION_STATUS.CONFIRMED, (line) =>
+      line.process_id === plan.process_id ? { inspection_managed: managed } : {},
+    );
+    // 옛 Rev 를 먼저 내린다 — `uq_routing_default(item_id) WHERE is_default` 가 중간 상태에서 깨지지 않게.
+    await tx.routing.update({
+      where: { routing_id: source.routing_id },
+      data: { status_code: REVISION_STATUS.OBSOLETE, is_default: false, version_no: { increment: 1 } },
+    });
+    if (source.is_default) await tx.routing.update({ where: { routing_id: routingId }, data: { is_default: true } });
+    await tx.inspection_plan.updateMany({
+      where: { routing_id: source.routing_id },
+      data: { routing_id: routingId, version_no: { increment: 1 } },
+    });
+  }
 }
 
 const ownActivePqc = { inspection_type_code: 'PQC', is_active: true, item_id: { not: null } } as const;
