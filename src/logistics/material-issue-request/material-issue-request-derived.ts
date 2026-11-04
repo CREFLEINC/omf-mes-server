@@ -37,14 +37,16 @@ export function displayStatusWhere(codes: readonly DisplayStatus[]): Prisma.mate
   return { OR: codes.map((code) => STATUS_WHERE[code]) };
 }
 
+/** 이름 칸까지 한 질의로 — 목록이 줄마다·행마다 다시 읽지 않는다. */
 export const DERIVED_INCLUDE = {
   source_warehouse: { select: { warehouse_name: true } },
+  location: { select: { location_name: true } },
   work_order: {
     select: {
       work_order_no: true,
       planned_start_at: true,
       production_plan_id: true,
-      production_plan: { select: { production_order: { select: { plant: { select: { timezone_code: true } } } } } },
+      production_plan: { select: { plan_no: true, production_order: { select: { plant: { select: { timezone_code: true } } } } } },
     },
   },
   material_issue_request_line: {
@@ -53,6 +55,8 @@ export const DERIVED_INCLUDE = {
       requested_qty: true,
       issued_qty: true,
       shortage_qty: true,
+      item: { select: { item_code: true, item_name: true } },
+      uom: { select: { uom_code: true } },
       picking_line: { where: { picking_order: { status_code: { not: 'CANCELLED' } } }, select: { picked_qty: true } },
     },
   },
@@ -61,6 +65,9 @@ export const DERIVED_INCLUDE = {
 export type DerivedRow = Prisma.material_issue_requestGetPayload<{ include: typeof DERIVED_INCLUDE }>;
 
 export interface LineDerived {
+  itemCode: string;
+  itemName: string;
+  uomCode: string;
   pickedQty: number;
   outstandingQty: number;
   dynamicShortageQty: number;
@@ -72,8 +79,13 @@ export interface RequestDerived {
   workOrderNo: string;
   productionDate: string | null;
   productionPlanId: number | null;
-  itemCount: number;
-  shortageQty: number;
+  productionPlanNo: string | null;
+  destinationLocationName: string;
+  lineCount: number;
+  /** 줄 저장 부족(만들 때 줄인 양)의 합. */
+  shortageQtyTotal: number;
+  /** 줄에 배분된 동적 부족(예정 > 가용)의 합 — 「부족 N」 = 둘의 합. */
+  dynamicShortageQtyTotal: number;
   lines: Map<bigint, LineDerived>;
 }
 
@@ -92,13 +104,18 @@ export async function lineDynamicShortages(db: Prisma.TransactionClient, rows: r
 export function derive(row: DerivedRow, dynamic: ReadonlyMap<bigint, Prisma.Decimal>): RequestDerived {
   const lines = new Map<bigint, LineDerived>();
   let started = false;
-  let shortage = ZERO;
+  let stored = ZERO;
+  let dynamicTotal = ZERO;
   for (const line of row.material_issue_request_line) {
     const picked = line.picking_line.reduce((sum, p) => sum.plus(p.picked_qty), ZERO);
     const dyn = dynamic.get(line.material_issue_request_line_id) ?? ZERO;
     if (picked.gt(0) || line.issued_qty.gt(0)) started = true;
-    shortage = shortage.plus(line.shortage_qty).plus(dyn);
+    stored = stored.plus(line.shortage_qty);
+    dynamicTotal = dynamicTotal.plus(dyn);
     lines.set(line.material_issue_request_line_id, {
+      itemCode: line.item.item_code,
+      itemName: line.item.item_name,
+      uomCode: line.uom.uom_code,
       pickedQty: picked.toNumber(),
       outstandingQty: Prisma.Decimal.max(line.requested_qty.minus(line.issued_qty), ZERO).toNumber(),
       dynamicShortageQty: dyn.toNumber(),
@@ -111,8 +128,11 @@ export function derive(row: DerivedRow, dynamic: ReadonlyMap<bigint, Prisma.Deci
     workOrderNo: row.work_order.work_order_no,
     productionDate: row.work_order.planned_start_at === null || timezone === null ? null : localDate(row.work_order.planned_start_at, timezone),
     productionPlanId: row.work_order.production_plan_id === null ? null : Number(row.work_order.production_plan_id),
-    itemCount: row.material_issue_request_line.length,
-    shortageQty: shortage.toNumber(),
+    productionPlanNo: row.work_order.production_plan?.plan_no ?? null,
+    destinationLocationName: row.location.location_name,
+    lineCount: row.material_issue_request_line.length,
+    shortageQtyTotal: stored.toNumber(),
+    dynamicShortageQtyTotal: dynamicTotal.toNumber(),
     lines,
   };
 }

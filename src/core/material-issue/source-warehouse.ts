@@ -58,7 +58,7 @@ export async function usesProductionWarehouses(db: Prisma.TransactionClient, pla
 export async function resolveCandidates(
   db: Prisma.TransactionClient,
   input: { plantId: bigint; productionLineId: bigint },
-): Promise<SourceScope | { errors: ErrorItem[] }> {
+): Promise<SourceScope | { errors: ErrorItem[]; warehouseIds: bigint[] }> {
   const line = await db.production_line.findUnique({
     where: { production_line_id: input.productionLineId },
     select: { department_id: true, default_wip_location_id: true },
@@ -88,7 +88,7 @@ export async function resolveCandidates(
       field('productionLineId', ERROR_CODE.PRODUCTION_FLOOR_LOCATION_MISSING, '생산라인에 생산 현장 위치를 지정해야 합니다.'),
     );
   }
-  if (errors.length > 0 || line?.default_wip_location_id == null) return { errors };
+  if (errors.length > 0 || line?.default_wip_location_id == null) return { errors, warehouseIds };
   return { warehouseIds, destinationLocationId: line.default_wip_location_id };
 }
 
@@ -185,4 +185,39 @@ export async function chooseSources(
     });
   }
   return { chosen, unsourced };
+}
+
+/**
+ * W-02-10 출발 창고 칸(W/O 상세) — 이 W/O 공장이 새 규칙인가와, 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(코드순).
+ * 지금 방식 공장이거나 부서·연결이 없으면 빈 배열이다. 공장 모드는 배포와 같은 판정이다(FR-009a).
+ */
+export async function productionWarehouseChoices(
+  db: Prisma.TransactionClient,
+  workOrderId: bigint,
+): Promise<{ productionWarehouseMode: boolean; productionWarehouses: { warehouseId: number; warehouseCode: string; warehouseName: string }[] }> {
+  const workOrder = await db.work_order.findUnique({
+    where: { work_order_id: workOrderId },
+    select: { production_line: { select: { department_id: true } }, production_plan: { select: { production_order: { select: { plant_id: true } } } } },
+  });
+  const plantId = workOrder?.production_plan?.production_order.plant_id;
+  if (plantId === undefined || !(await usesProductionWarehouses(db, plantId))) {
+    return { productionWarehouseMode: false, productionWarehouses: [] };
+  }
+  const departmentId = workOrder?.production_line?.department_id;
+  const links =
+    departmentId == null
+      ? []
+      : await db.department_production_warehouse.findMany({
+          where: { department_id: departmentId, warehouse: { plant_id: plantId, is_active: true } },
+          select: { warehouse: { select: { warehouse_id: true, warehouse_code: true, warehouse_name: true } } },
+          orderBy: { warehouse: { warehouse_code: 'asc' } },
+        });
+  return {
+    productionWarehouseMode: true,
+    productionWarehouses: links.map(({ warehouse }) => ({
+      warehouseId: Number(warehouse.warehouse_id),
+      warehouseCode: warehouse.warehouse_code,
+      warehouseName: warehouse.warehouse_name,
+    })),
+  };
 }

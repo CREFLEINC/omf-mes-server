@@ -73,8 +73,11 @@ describe('출고 요청 현황 조회 (e2e)', () => {
       sourceWarehouseId: Number(a.warehouseId),
       sourceWarehouseName: expect.stringContaining('-A'),
       displayStatus: 'WAITING',
-      itemCount: 1,
-      shortageQty: 0,
+      lineCount: 1,
+      shortageQtyTotal: 0,
+      dynamicShortageQtyTotal: 0,
+      destinationLocationName: expect.any(String),
+      productionPlanNo: expect.stringContaining('-PP-P1'),
     });
     const other = await list({ productionDateFrom: today, productionDateTo: today, sourceWarehouseId: Number(a.warehouseId) });
     expect(idsOf(other.body)).not.toContain(Number(row.material_issue_request_id));
@@ -107,7 +110,9 @@ describe('출고 요청 현황 조회 (e2e)', () => {
     const busy = await list({ sourceWarehouseId: Number(a.warehouseId), displayStatus: 'RELEASED,IN_PROGRESS' });
     expect(idsOf(busy.body)).toEqual([zero.row.material_issue_request_id, started.row.material_issue_request_id].map(Number).sort());
     const detail = await request(app.getHttpServer()).get(`${BASE}/${started.row.material_issue_request_id}`).set('Cookie', fx.cookie).expect(200);
-    expect(detail.body.lines).toEqual(expect.arrayContaining([expect.objectContaining({ pickedQty: 1, outstandingQty: 10, dynamicShortageQty: 0 })]));
+    expect(detail.body.lines).toEqual(expect.arrayContaining([expect.objectContaining({ pickedQty: 1, outstandingQty: 10, dynamicShortageQty: 0, uomCode: expect.any(String) })]));
+    expect(detail.body.lines.map((l: { itemCode: string }) => l.itemCode)).toEqual([`${PREFIX}-X`, `${PREFIX}-Y`, `${PREFIX}-Z`]);
+    expect(detail.body.materialIssueRequest).toMatchObject({ workOrderNo: expect.any(String), versionNo: expect.any(Number) });
   });
 
   it('US6-2 부족 있는 요청만 — 저장 부족 · 동적 부족 · 배포 실패만', async () => {
@@ -124,7 +129,7 @@ describe('출고 요청 현황 조회 (e2e)', () => {
     found = await list({ sourceWarehouseId: Number(a.warehouseId), hasShortage: true });
     expect(idsOf(found.body)).toEqual([full.row.material_issue_request_id, short.row.material_issue_request_id].map(Number).sort());
     const shortRow = found.body.items.find((i: { materialIssueRequestId: number }) => i.materialIssueRequestId === Number(short.row.material_issue_request_id));
-    expect(shortRow.shortageQty).toBe(20);
+    expect(shortRow).toMatchObject({ shortageQtyTotal: 10, dynamicShortageQtyTotal: 10 });
 
     await prisma.material_issue_request.update({ where: { material_issue_request_id: full.row.material_issue_request_id }, data: { release_error_text: '시험 실패' } });
     found = await list({ sourceWarehouseId: Number(a.warehouseId), releaseFailed: true });

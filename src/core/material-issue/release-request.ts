@@ -107,13 +107,7 @@ export class MaterialIssueReleaser {
         version_no: { increment: 1 },
       },
     });
-    await recordRequestAudit(tx, {
-      requestId,
-      action: 'RELEASE',
-      actorId: appUserId,
-      after: { statusCode: transition.to, pickingOrderCount: pickings.length },
-      at: now,
-    });
+    await recordRequestAudit(tx, { requestId, action: 'RELEASED', actorId: appUserId, at: now });
     return true;
   }
 }

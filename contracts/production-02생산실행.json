@@ -7560,6 +7560,34 @@
    "WorkOrder": {
     "type": "object",
     "properties": {
+     "productionWarehouseMode": {
+      "type": "boolean",
+      "description": "상세(GET /production/work-orders/{id})에만 — 이 W/O 공장이 생산 창고 규칙(FR-009a 공장 모드 · 공장 기준)인가. W-02-10 출발 창고 칸이 쓴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "productionWarehouses": {
+      "type": "array",
+      "description": "상세에만 — 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(코드순). 지금 방식 공장이거나 부서·연결이 없으면 빈 배열. productionWarehouseMode 가 참인데 비면 추가 출고 요청은 400 PRODUCTION_WAREHOUSE_MISSING. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouseId",
+        "warehouseCode",
+        "warehouseName"
+       ],
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "warehouseCode": {
+         "type": "string"
+        },
+        "warehouseName": {
+         "type": "string"
+        }
+       }
+      }
+     },
      "workOrderId": {
       "type": "integer",
       "format": "int64",

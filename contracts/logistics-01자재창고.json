@@ -16938,7 +16938,7 @@
      "destinationLocationId",
      "statusCode"
     ],
-    "description": "자재 출고 요청. 01 화면은 읽기만 한다 — 요청을 만드는 것은 생산 도메인이다. 근거: M-01-08",
+    "description": "자재 출고 요청. 01 화면은 읽기만 한다 — 요청을 만드는 것은 생산 도메인이다. 근거: M-01-08 목록·상세·발행·수정·취소 응답이 같은 모양이다(이름·화면 값 포함). 저장 충돌 보호는 versionNo 로 하고 ETag 를 쓰지 않는다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
     "properties": {
      "materialIssueRequestId": {
       "x-source-column": "material_issue_request_id",
@@ -17113,15 +17113,31 @@
       "format": "int64",
       "description": "W/O 의 생산계획. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      },
-     "itemCount": {
+     "productionPlanNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "생산계획 번호(없으면 null). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "destinationLocationName": {
+      "type": "string",
+      "description": "입고지 이름. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "lineCount": {
       "type": "integer",
       "minimum": 0,
       "description": "줄 수(목록 「품목 수」). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      },
-     "shortageQty": {
+     "shortageQtyTotal": {
       "type": "number",
       "minimum": 0,
-      "description": "부족 합 — 줄의 저장 부족(shortageQty) + 지금의 동적 부족 배분. 0 이면 부족 없음. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+      "description": "줄 shortageQty(만들 때 줄인 양)의 합 — 목록이 줄을 싣지 않으므로. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "dynamicShortageQtyTotal": {
+      "type": "number",
+      "minimum": 0,
+      "description": "줄에 배분된 동적 부족(예정 > 가용)의 합. 화면 「부족 N」 = shortageQtyTotal + 이 값. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
@@ -17370,6 +17386,18 @@
       "type": "number",
       "minimum": 0,
       "description": "지금 예정이 가용을 넘어 이 줄에 배분된 부족(파생 · FR-018). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "itemCode": {
+      "type": "string",
+      "description": "품목 코드. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "itemName": {
+      "type": "string",
+      "description": "품목 이름. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "uomCode": {
+      "type": "string",
+      "description": "단위 코드. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
@@ -20335,7 +20363,8 @@
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/MaterialIssueRequestHistoryItem"
-      }
+      },
+      "description": "최근 것이 먼저. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
@@ -20343,52 +20372,64 @@
     "type": "object",
     "required": [
      "occurredAt",
-     "actionCode"
+     "actorName",
+     "eventCode",
+     "detail"
     ],
     "properties": {
      "occurredAt": {
       "type": "string",
       "format": "date-time"
      },
-     "actionCode": {
-      "type": "string",
-      "enum": [
-       "CREATE",
-       "UPDATE",
-       "CANCEL",
-       "RELEASE",
-       "RELEASE_FAILED",
-       "POSTPONE",
-       "CLOSE",
-       "PLANNED_OVERRIDE"
-      ],
-      "description": "만듦 · 수정(날짜·창고·입고지·수량 — before/after 에 바뀐 칸만) · 취소 · 배포 · 배포 실패 · 미룸(배포 → 대기) · 닫힘(W/O 취소·마감) · 예정 가져감(긴급 대응·부족 보충)"
-     },
-     "performedBy": {
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "사용자. 00:00 러너·W/O 처리 같은 서버 일은 null 일 수 있다"
-     },
-     "before": {
-      "type": [
-       "object",
-       "null"
-      ]
-     },
-     "after": {
-      "type": [
-       "object",
-       "null"
-      ]
-     },
-     "reason": {
+     "actorName": {
       "type": [
        "string",
        "null"
-      ]
+      ],
+      "description": "한 사람 이름. 00:00 러너 배포·배포 실패처럼 사람이 없으면 null"
+     },
+     "eventCode": {
+      "type": "string",
+      "enum": [
+       "CREATED",
+       "RELEASED",
+       "RELEASE_FAILED",
+       "REVERTED_TO_WAITING",
+       "ISSUE_DATE_CHANGED",
+       "SOURCE_CHANGED",
+       "DESTINATION_CHANGED",
+       "QTY_CHANGED",
+       "CANCELLED",
+       "CLOSED",
+       "PLANNED_OVERRIDE"
+      ],
+      "description": "만듦 · 배포 · 배포 실패 · 대기로 되돌림 · 출고 작업일 변경 · 출발 창고 변경 · 입고지 변경 · 수량 변경 · 취소 · 닫힘(W/O 취소·마감) · 예정 가져감(긴급 대응·부족 보충, FR-018). 한 저장이 여러 칸을 바꾸면 칸마다 한 줄. 문장은 화면이 이 코드로 만든다"
+     },
+     "detail": {
+      "type": "object",
+      "properties": {
+       "before": {
+        "description": "바뀌기 전 값 — 날짜(YYYY-MM-DD) · 창고/위치 이름 · 수량"
+       },
+       "after": {
+        "description": "바뀐 값. PLANNED_OVERRIDE 는 [{itemId, requestedQty}]"
+       },
+       "itemCode": {
+        "type": "string",
+        "description": "QTY_CHANGED 의 품목"
+       },
+       "reason": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "취소 사유 · 닫힘 사유(WO_CANCELLED·WO_CLOSED) · 요청 사유 코드"
+       },
+       "errorText": {
+        "type": "string",
+        "description": "RELEASE_FAILED 원인"
+       }
+      }
      }
     }
    },

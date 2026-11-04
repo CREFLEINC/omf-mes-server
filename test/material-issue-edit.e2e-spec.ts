@@ -194,12 +194,15 @@ describe('출고 요청 수정·취소 (e2e)', () => {
     expect(await planned(b.warehouseId)).toBe(10);
 
     const history = await request(app.getHttpServer()).get(`${BASE}/${row.material_issue_request_id}/history`).set('Cookie', fx.cookie).expect(200);
-    expect(history.body.items.map((i: { actionCode: string }) => i.actionCode)).toEqual(['UPDATE', 'CREATE']);
-    expect(history.body.items[0]).toMatchObject({
-      performedBy: Number(fx.ids.user),
-      before: expect.objectContaining({ sourceWarehouseId: Number(a.warehouseId), destinationLocationId: Number(row.destination_location_id) }),
-      after: expect.objectContaining({ sourceWarehouseId: Number(b.warehouseId), destinationLocationId: Number(other.locationId), line1RequestedQty: 10 }),
-    });
+    // 바뀐 칸마다 한 줄(최근 것이 먼저) — 문장은 화면이 eventCode 로 만든다.
+    const sourceName = async (id: bigint) => (await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id } })).warehouse_name;
+    const locationName = async (id: bigint) => (await prisma.location.findUniqueOrThrow({ where: { location_id: id } })).location_name;
+    expect(history.body.items).toEqual([
+      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'DESTINATION_CHANGED', detail: { before: await locationName(row.destination_location_id), after: await locationName(other.locationId) } },
+      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'SOURCE_CHANGED', detail: { before: await sourceName(a.warehouseId), after: await sourceName(b.warehouseId) } },
+      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'QTY_CHANGED', detail: { itemCode: `${PREFIX}-X`, before: 20, after: 10 } },
+      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'CREATED', detail: {} },
+    ]);
   });
 
   it('VERSION_CONFLICT 버전이 다르면 409 저장 충돌 · 지금 방식 요청은 PUT·:cancel 모두 409', async () => {

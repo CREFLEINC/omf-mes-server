@@ -121,6 +121,17 @@ export class MaterialIssueRequestQueryService {
     };
   }
 
+  /** 발행 응답의 `requests` — 만든 요청들을 목록과 같은 모양으로(한 질의). */
+  async headers(ids: number[]): Promise<MaterialIssueRequestView[]> {
+    const rows = await this.prisma.material_issue_request.findMany({
+      where: { material_issue_request_id: { in: ids } },
+      include: DERIVED_INCLUDE,
+      orderBy: { material_issue_request_id: 'asc' },
+    });
+    const dynamic = await lineDynamicShortages(this.prisma, rows);
+    return rows.map((row) => materialIssueRequestView(row, derive(row, dynamic)));
+  }
+
   /** 없으면 404 다(계약 선언 · 출고 상세 선례). */
   async get(materialIssueRequestId: number): Promise<MaterialIssueRequestDetail> {
     const row = await this.prisma.material_issue_request.findUnique({

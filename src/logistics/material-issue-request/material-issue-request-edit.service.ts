@@ -10,6 +10,8 @@ import { MaterialIssueReleaser } from '../../core/material-issue/release-request
 import {
   REQUEST_AUDIT_TARGET,
   closePickings,
+  RequestAction,
+  RequestEventDetail,
   recordRequestAudit,
   requestProgress,
   requestTransition,
@@ -36,20 +38,24 @@ export interface MaterialIssueRequestCancel {
   reason?: string | null;
 }
 
+/** 계약 `MaterialIssueRequestHistoryItem` — 문장은 화면이 `eventCode` 로 만든다. */
 export interface HistoryItem {
   occurredAt: string;
-  actionCode: string;
-  performedBy: number | null;
-  before: Record<string, unknown> | null;
-  after: Record<string, unknown> | null;
-  reason: string | null;
+  actorName: string | null;
+  eventCode: string;
+  detail: RequestEventDetail;
 }
+
+type Event = { action: RequestAction; detail: RequestEventDetail };
 
 const OPEN = ['WAITING', 'REGISTERED'];
 const ZERO = new Prisma.Decimal(0);
 
 type Locked = Prisma.material_issue_requestGetPayload<{
-  include: { material_issue_request_line: true; source_warehouse: { select: { plant: { select: { plant_id: true; timezone_code: true } } } } };
+  include: {
+    material_issue_request_line: { include: { item: { select: { item_code: true } } } };
+    source_warehouse: { select: { plant: { select: { plant_id: true; timezone_code: true } } } };
+  };
 }>;
 
 /**
@@ -110,11 +116,9 @@ export class MaterialIssueRequestEditService {
       });
       await recordRequestAudit(tx, {
         requestId: request.material_issue_request_id,
-        action: 'CANCEL',
+        action: 'CANCELLED',
         actorId: appUserId,
-        before: { statusCode: request.status_code },
-        after: { statusCode: 'CANCELLED' },
-        reason: body.reason ?? null,
+        detail: { reason: body.reason ?? null },
         at: now,
       });
     });
@@ -128,16 +132,18 @@ export class MaterialIssueRequestEditService {
       where: { target_type_code: REQUEST_AUDIT_TARGET, target_id: BigInt(id) },
       orderBy: [{ occurred_at: 'desc' }, { audit_event_id: 'desc' }],
     });
+    // 이름은 한 번에 — 이력 줄마다 사용자를 읽지 않는다.
+    const actorIds = [...new Set(rows.map((row) => row.performed_by).filter((v): v is bigint => v !== null))];
+    const users = await this.prisma.app_user.findMany({ where: { app_user_id: { in: actorIds } }, select: { app_user_id: true, user_name: true } });
+    const nameOf = new Map(users.map((u) => [u.app_user_id, u.user_name]));
     return {
       items: rows.map((row) => {
-        const { action, ...after } = (row.after_value ?? {}) as Record<string, unknown>;
+        const stored = (row.after_value ?? {}) as { eventCode?: string; detail?: RequestEventDetail };
         return {
           occurredAt: row.occurred_at.toISOString(),
-          actionCode: typeof action === 'string' ? action : row.event_type_code,
-          performedBy: row.performed_by === null ? null : Number(row.performed_by),
-          before: (row.before_value as Record<string, unknown> | null) ?? null,
-          after: Object.keys(after).length === 0 ? null : after,
-          reason: row.reason,
+          actorName: row.performed_by === null ? null : (nameOf.get(row.performed_by) ?? null),
+          eventCode: stored.eventCode ?? row.event_type_code,
+          detail: stored.detail ?? {},
         };
       }),
     };
@@ -160,7 +166,7 @@ export class MaterialIssueRequestEditService {
     const request = await tx.material_issue_request.findUniqueOrThrow({
       where: { material_issue_request_id: id },
       include: {
-        material_issue_request_line: { orderBy: { line_no: 'asc' } },
+        material_issue_request_line: { orderBy: { line_no: 'asc' }, include: { item: { select: { item_code: true } } } },
         source_warehouse: { select: { plant: { select: { plant_id: true, timezone_code: true } } } },
       },
     });
@@ -199,14 +205,12 @@ export class MaterialIssueRequestEditService {
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     if (wanted.size === 0) return;
 
-    const before: Record<string, unknown> = {};
-    const after: Record<string, unknown> = {};
+    const events: Event[] = [];
     for (const line of request.material_issue_request_line) {
       const qty = wanted.get(line.material_issue_request_line_id);
       if (qty === undefined || qty.eq(line.requested_qty)) continue;
       await tx.material_issue_request_line.update({ where: { material_issue_request_line_id: line.material_issue_request_line_id }, data: { requested_qty: qty } });
-      before[`line${line.line_no}RequestedQty`] = line.requested_qty.toNumber();
-      after[`line${line.line_no}RequestedQty`] = qty.toNumber();
+      events.push(qtyChanged(line, qty));
     }
     await closePickings(tx, this.documentState, request.material_issue_request_id, appUserId);
     const lines = await tx.material_issue_request_line.findMany({ where: { material_issue_request_id: request.material_issue_request_id } });
@@ -230,7 +234,7 @@ export class MaterialIssueRequestEditService {
       await this.pickingNotices.notify(tx, pickings, { workOrderId: request.work_order_id, requiredAt: null });
     }
     await this.touch(tx, request, {}, appUserId);
-    await recordRequestAudit(tx, { requestId: request.material_issue_request_id, action: 'UPDATE', actorId: appUserId, before, after });
+    await record(tx, request, events, appUserId);
   }
 
   /** 진행 없음 — 날짜·창고·입고지·수량. 수량·창고가 바뀌면 상한을 다시 건다(FR-010·012). */
@@ -259,16 +263,25 @@ export class MaterialIssueRequestEditService {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('destinationLocationId', ERROR_CODE.INVALID, '없는 위치입니다.')]);
     }
 
-    const before: Record<string, unknown> = {};
-    const after: Record<string, unknown> = {};
+    const events: Event[] = [];
     const wanted = this.wantedQty(request, body);
     if (wanted.size > 0 || source !== request.source_warehouse_id) {
-      await this.recap(tx, request, source, wanted, before, after);
+      await this.recap(tx, request, source, wanted, events);
     }
     if (request.status_code === 'REGISTERED') await closePickings(tx, this.documentState, request.material_issue_request_id, appUserId);
-    note(before, after, 'issueWorkDate', dateOf(request.issue_work_date), workDate);
-    note(before, after, 'sourceWarehouseId', Number(request.source_warehouse_id), Number(source));
-    note(before, after, 'destinationLocationId', Number(request.destination_location_id), Number(destination));
+    if (workDate !== dateOf(request.issue_work_date)) {
+      events.unshift({ action: 'ISSUE_DATE_CHANGED', detail: { before: dateOf(request.issue_work_date), after: workDate } });
+    }
+    if (source !== request.source_warehouse_id) {
+      const names = await tx.warehouse.findMany({ where: { warehouse_id: { in: [request.source_warehouse_id as bigint, source] } }, select: { warehouse_id: true, warehouse_name: true } });
+      const name = (id: bigint | null) => names.find((w) => w.warehouse_id === id)?.warehouse_name ?? null;
+      events.push({ action: 'SOURCE_CHANGED', detail: { before: name(request.source_warehouse_id), after: name(source) } });
+    }
+    if (destination !== request.destination_location_id) {
+      const names = await tx.location.findMany({ where: { location_id: { in: [request.destination_location_id, destination] } }, select: { location_id: true, location_name: true } });
+      const name = (id: bigint) => names.find((l) => l.location_id === id)?.location_name ?? null;
+      events.push({ action: 'DESTINATION_CHANGED', detail: { before: name(request.destination_location_id), after: name(destination) } });
+    }
 
     const releaseNow = workDate <= head.today;
     const backToWaiting = request.status_code === 'REGISTERED';
@@ -283,11 +296,11 @@ export class MaterialIssueRequestEditService {
       },
       appUserId,
     );
-    await recordRequestAudit(tx, { requestId: request.material_issue_request_id, action: 'UPDATE', actorId: appUserId, before, after });
+    await record(tx, request, events, appUserId);
     if (releaseNow) {
       await this.releaser.release(tx, request.material_issue_request_id, pickingOrderNo, appUserId);
     } else if (backToWaiting) {
-      await recordRequestAudit(tx, { requestId: request.material_issue_request_id, action: 'POSTPONE', actorId: appUserId, after: { statusCode: 'WAITING' } });
+      await recordRequestAudit(tx, { requestId: request.material_issue_request_id, action: 'REVERTED_TO_WAITING', actorId: appUserId });
     }
   }
 
@@ -297,8 +310,7 @@ export class MaterialIssueRequestEditService {
     request: Locked,
     source: bigint,
     wanted: Map<bigint, Prisma.Decimal>,
-    before: Record<string, unknown>,
-    after: Record<string, unknown>,
+    events: Event[],
   ): Promise<void> {
     const lines = request.material_issue_request_line;
     const itemIds = [...new Set(lines.map((line) => line.item_id))];
@@ -325,12 +337,7 @@ export class MaterialIssueRequestEditService {
         where: { material_issue_request_line_id: line.material_issue_request_line_id },
         data: { requested_qty: requested, shortage_qty: shortage },
       });
-      before[`line${line.line_no}RequestedQty`] = line.requested_qty.toNumber();
-      after[`line${line.line_no}RequestedQty`] = requested.toNumber();
-      if (!shortage.eq(line.shortage_qty)) {
-        before[`line${line.line_no}ShortageQty`] = line.shortage_qty.toNumber();
-        after[`line${line.line_no}ShortageQty`] = shortage.toNumber();
-      }
+      if (!requested.eq(line.requested_qty)) events.push(qtyChanged(line, requested));
     }
   }
 
@@ -366,9 +373,15 @@ function dateOf(value: Date | null): string | null {
   return value === null ? null : value.toISOString().slice(0, 10);
 }
 
-function note(before: Record<string, unknown>, after: Record<string, unknown>, key: string, from: unknown, to: unknown): void {
-  if (from === to) return;
-  before[key] = from;
-  after[key] = to;
+function qtyChanged(line: Locked['material_issue_request_line'][number], qty: Prisma.Decimal): Event {
+  return { action: 'QTY_CHANGED', detail: { itemCode: line.item.item_code, before: line.requested_qty.toNumber(), after: qty.toNumber() } };
+}
+
+/** 한 저장의 바뀐 칸마다 이력 한 줄 — 같은 시각이다. */
+async function record(tx: Prisma.TransactionClient, request: Locked, events: Event[], appUserId: number): Promise<void> {
+  const at = new Date();
+  for (const event of events) {
+    await recordRequestAudit(tx, { requestId: request.material_issue_request_id, action: event.action, actorId: appUserId, detail: event.detail, at });
+  }
 }
 

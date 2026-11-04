@@ -16,15 +16,28 @@ const SOURCE_MATERIAL_ISSUE_REQUEST = 'MATERIAL_ISSUE_REQUEST';
 export const REQUEST_AUDIT_TARGET = 'MATERIAL_ISSUE_REQUEST';
 const ZERO = new Prisma.Decimal(0);
 
+/** 이력 사건 — 계약 `MaterialIssueRequestHistoryItem.eventCode`. 문장은 화면이 이 코드로 만든다. */
 export type RequestAction =
-  | 'CREATE'
-  | 'UPDATE'
-  | 'CANCEL'
-  | 'RELEASE'
+  | 'CREATED'
+  | 'RELEASED'
   | 'RELEASE_FAILED'
-  | 'POSTPONE'
-  | 'CLOSE'
+  | 'REVERTED_TO_WAITING'
+  | 'ISSUE_DATE_CHANGED'
+  | 'SOURCE_CHANGED'
+  | 'DESTINATION_CHANGED'
+  | 'QTY_CHANGED'
+  | 'CANCELLED'
+  | 'CLOSED'
   | 'PLANNED_OVERRIDE';
+
+/** 계약 `detail` — 바뀐 값·품목·사유·오류. */
+export interface RequestEventDetail {
+  before?: unknown;
+  after?: unknown;
+  itemCode?: string;
+  reason?: string | null;
+  errorText?: string;
+}
 
 export interface RequestProgress {
   /** 줄마다 집은 양(취소 안 된 피킹) · 기출고. */
@@ -97,31 +110,22 @@ export function requestTransition(documentState: DocumentStateService, action: s
 }
 
 /**
- * 이력 한 줄 — `audit.audit_event`. 이벤트 유형은 감사 코드(CREATE·UPDATE)로 두고, 무엇을 했는지는 `after.action`
- * 에 둔다(감사 유형 코드가 시스템 소유 5값이다). `before`·`after` 는 바뀐 칸만, 계약 칸 이름으로.
+ * 이력 한 줄 — `audit.audit_event`(target MATERIAL_ISSUE_REQUEST). 감사 유형 코드는 시스템 소유 5값이라 CREATE·UPDATE 만
+ * 쓰고, 사건은 `after_value.eventCode`, 내용은 `after_value.detail` 에 둔다. 한 저장이 여러 칸을 바꾸면 칸마다 한 줄이다.
  */
 export async function recordRequestAudit(
   tx: Prisma.TransactionClient,
-  entry: {
-    requestId: bigint;
-    action: RequestAction;
-    actorId: number | null;
-    before?: Record<string, unknown> | null;
-    after?: Record<string, unknown> | null;
-    reason?: string | null;
-    at?: Date;
-  },
+  entry: { requestId: bigint; action: RequestAction; actorId: number | null; detail?: RequestEventDetail; at?: Date },
 ): Promise<void> {
   await tx.audit_event.create({
     data: {
       occurred_at: entry.at ?? new Date(),
       target_type_code: REQUEST_AUDIT_TARGET,
       target_id: entry.requestId,
-      event_type_code: entry.action === 'CREATE' ? 'CREATE' : 'UPDATE',
+      event_type_code: entry.action === 'CREATED' ? 'CREATE' : 'UPDATE',
       performed_by: entry.actorId === null ? null : BigInt(entry.actorId),
-      before_value: (entry.before ?? undefined) as Prisma.InputJsonValue | undefined,
-      after_value: { ...(entry.after ?? {}), action: entry.action } as Prisma.InputJsonValue,
-      reason: entry.reason ?? null,
+      after_value: { eventCode: entry.action, detail: entry.detail ?? {} } as unknown as Prisma.InputJsonValue,
+      reason: entry.detail?.reason ?? null,
     },
   });
 }
@@ -165,10 +169,9 @@ export async function settleWorkOrderRequests(
     });
     await recordRequestAudit(tx, {
       requestId: request.id,
-      action: progress.started ? 'CLOSE' : 'CANCEL',
+      action: progress.started ? 'CLOSED' : 'CANCELLED',
       actorId: input.appUserId,
-      after: progress.started ? { closeReasonCode: input.reason } : { statusCode: 'CANCELLED' },
-      reason: input.reason,
+      detail: { reason: input.reason },
       at: now,
     });
   }
