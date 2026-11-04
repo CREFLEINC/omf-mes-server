@@ -84,7 +84,7 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-02-08', name: 'W/O 진행현황 조회(생산 실적 집계 포함)', groupCode: '02' },
   // 설계 밖 화면 — 생산 관리 > W/O 진행현황 조회 아래(장부 P-119).
   { code: 'W-02-09', name: 'LOT 생산 이력 조회', groupCode: '02' },
-  { code: 'W-02-10', name: '추가 자재 출고 요청(수동)', groupCode: '02' },
+  { code: 'W-02-10', name: '추가 출고 요청(수동)', groupCode: '02' },
   // 설계 저장소 생성본에 없는 화면 — 피처 003 계획 기반 출고 요청(omf-all-around#66). 시드가 관리자에게 준다.
   { code: 'W-02-11', name: '출고 요청 현황', groupCode: '02' },
   // 03 품질

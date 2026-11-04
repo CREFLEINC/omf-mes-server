@@ -138,7 +138,7 @@ export class MaterialIssueRequestQueryService {
       where: { material_issue_request_id: materialIssueRequestId },
       include: DERIVED_INCLUDE,
     });
-    if (!row) throw new NotFoundException('없는 자재 출고요청입니다.');
+    if (!row) throw new NotFoundException('없는 출고 요청입니다.');
     const lines = await this.prisma.material_issue_request_line.findMany({
       where: { material_issue_request_id: materialIssueRequestId },
       orderBy: { line_no: 'asc' },

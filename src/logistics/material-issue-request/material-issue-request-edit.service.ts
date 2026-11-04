@@ -128,7 +128,7 @@ export class MaterialIssueRequestEditService {
 
   async history(id: number): Promise<{ items: HistoryItem[] }> {
     const exists = await this.prisma.material_issue_request.count({ where: { material_issue_request_id: id } });
-    if (exists === 0) throw new NotFoundException('없는 자재 출고요청입니다.');
+    if (exists === 0) throw new NotFoundException('없는 출고 요청입니다.');
     const rows = await this.prisma.audit_event.findMany({
       where: { target_type_code: REQUEST_AUDIT_TARGET, target_id: BigInt(id) },
       orderBy: [{ occurred_at: 'desc' }, { audit_event_id: 'desc' }],
@@ -156,7 +156,7 @@ export class MaterialIssueRequestEditService {
       where: { material_issue_request_id: id },
       select: { source_warehouse: { select: { plant: { select: { plant_id: true, timezone_code: true } } } } },
     });
-    if (row === null) throw new NotFoundException('없는 자재 출고요청입니다.');
+    if (row === null) throw new NotFoundException('없는 출고 요청입니다.');
     if (row.source_warehouse === null) throw locked('생산 창고 규칙으로 만든 요청만 고치거나 취소할 수 있습니다.');
     const { plant_id: plantId, timezone_code: timezone } = row.source_warehouse.plant;
     return { plantId, timezone, today: localDate(new Date(), timezone) };
