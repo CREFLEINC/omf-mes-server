@@ -201,7 +201,7 @@
      "quality"
     ],
     "summary": "특채 적용",
-    "description": "승인된 특채를 적용한다 — 한 트랜잭션에서 특채 APPROVED · 부적합에 처분 판정(CONCESSION) 1건 · LOT 정상(C25) · 수입검사 대기 보류 해제(CONCESSION_APPROVED). 결재가 진행 중이면 400 APPROVAL_IN_PROGRESS, 반려면 특채를 REJECTED 로 닫고 200(statusCode=REJECTED · LOT 은 그대로). 이미 적용·반려된 특채는 400 STATE_LOCKED. 근거: omf-all-around#84 (서버 선행 · 장부 P-79)",
+    "description": "승인된 특채를 적용한다 — 한 트랜잭션에서 특채 APPROVED · 부적합에 처분 판정(CONCESSION) 1건 · LOT 정상(C25) · 수입검사 대기 보류 해제(CONCESSION_APPROVED). ⭐ 일부 특채(승인 수량 < 부적합의 남은 수량)면 LOT 을 나눈다 — 나머지는 선별처럼 자식 LOT(불량 · C24) + 새 부적합(판정 대기)으로 떼고, 판정 수량은 남은 수량 전체라 원 부적합이 닫힌다. 원 LOT 에 재고가 있으면 같은 위치에서 원장으로 나누므로 businessDate 가 필요하다(없으면 400 businessDate). LOT 이 여럿인 부적합 · 재고가 여러 위치인 LOT 은 일부 특채를 400 STATE_LOCKED 로 막는다. 결재가 진행 중이면 400 APPROVAL_IN_PROGRESS, 반려면 특채를 REJECTED 로 닫고 200(statusCode=REJECTED · LOT 은 그대로). 이미 적용·반려된 특채는 400 STATE_LOCKED. 근거: omf-all-around#84 · #207 (장부 P-79)",
     "parameters": [
      {
       "name": "concessionId",
@@ -217,6 +217,16 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConcessionApply"
+       }
+      }
+     }
+    },
     "responses": {
      "200": {
       "description": "적용됨",
@@ -4546,6 +4556,18 @@
      }
     }
    },
+   "ConcessionApply": {
+    "type": "object",
+    "description": "특채 적용 본문(선택 · omf-all-around#207).",
+    "properties": {
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "원장 영업일(C-8) — 일부 특채로 재고가 있는 LOT 을 나눌 때만 쓴다. 화면은 늘 보낸다.",
+      "example": "2026-11-03"
+     }
+    }
+   },
    "Concession": {
     "type": "object",
     "properties": {
@@ -4650,6 +4672,35 @@
      "versionNo": {
       "type": "integer",
       "example": 1
+     },
+     "splitResult": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "적용(:apply) «응답»에만 — 일부 특채로 LOT 을 나눴을 때 떼어 낸 자식 LOT 과 새 부적합. 나누지 않았으면 null. 조회 응답에는 없다. 근거: omf-all-around#207",
+      "required": [
+       "splitLotId",
+       "splitLotNo",
+       "splitNonconformanceId",
+       "splitNonconformanceNo"
+      ],
+      "properties": {
+       "splitLotId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "splitLotNo": {
+        "type": "string"
+       },
+       "splitNonconformanceId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "splitNonconformanceNo": {
+        "type": "string"
+       }
+      }
      }
     },
     "required": [
