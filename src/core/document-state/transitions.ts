@@ -411,6 +411,12 @@ export const TRANSITIONS: TransitionRegistry = {
    * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다.
    */
   'logistics.picking_order.status_code': {
+    /** 집은 것이 없는 피킹 지시를 닫는다 — 출고 요청의 취소·미룸·재배정·W/O 취소·마감(피처 003). */
+    'picking-cancel': {
+      from: ['REGISTERED'],
+      to: 'CANCELLED',
+      sourceOperation: 'POST /logistics/material-issue-requests/{materialIssueRequestId}:cancel',
+    },
     'picking-issue': {
       from: ['REGISTERED'],
       to: 'POSTED',
@@ -431,12 +437,27 @@ export const TRANSITIONS: TransitionRegistry = {
      * 계획 기반 출고 요청의 배포(피처 003 · research R-1·R-8) — 대기 요청을 피킹 지시와 함께 내보낸다. W/O 배포가
      * 출고 작업일이 지난 요청을 같은 트랜잭션에서 즉시 배포하고, 00:00 러너가 나머지를 배포한다. 「한 번만」은
      * 이 전이가 지킨다 — 대기가 아니면 공용 배포 함수가 아무것도 하지 않는다.
-     * ⚠ 미룸(REGISTERED→WAITING)·취소는 그 경로(`PUT`·`:cancel`)가 계약에 설 때 더한다.
      */
     'material-issue-request-release': {
       from: ['WAITING'],
       to: 'REGISTERED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:release',
+    },
+    /** 배포됐지만 집은 것이 없는 요청의 출고 작업일을 미래로 미룸 — 피킹 지시를 닫고 대기로 되돌린다(FR-024). */
+    'material-issue-request-postpone': {
+      from: ['REGISTERED'],
+      to: 'WAITING',
+      sourceOperation: 'PUT /logistics/material-issue-requests/{materialIssueRequestId}',
+    },
+    /**
+     * 진행(집은 양·기출고) 없는 요청의 취소(FR-023) — 요청 화면의 `:cancel` 과 W/O 취소·마감(FR-028)이 같은 전이를 탄다.
+     * ⚠ 승인 기반 물류 문서 취소(`document-request-cancel`·`document-cancel`, 3종 경로)와 다른 길이다 — 레지스트리
+     *   `cancelable` 은 그 길을 여는 축이라 켜지 않는다.
+     */
+    'material-issue-request-cancel': {
+      from: ['WAITING', 'REGISTERED'],
+      to: 'CANCELLED',
+      sourceOperation: 'POST /logistics/material-issue-requests/{materialIssueRequestId}:cancel',
     },
     'material-issue-request-issue': {
       from: ['REGISTERED'],

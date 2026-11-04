@@ -16,22 +16,26 @@ function fake(
   const asked: { plantId: bigint; today: string }[] = [];
   const recorded: { id: bigint; message: string }[] = [];
   const released: bigint[] = [];
+  const record = jest.fn(async ({ where, data }: { where: { material_issue_request_id: bigint }; data: { release_error_text: string } }) => {
+    recorded.push({ id: where.material_issue_request_id, message: data.release_error_text });
+    return { count: 1 };
+  });
+  const audits: string[] = [];
+  // 건마다 트랜잭션 — SKIP LOCKED 로 집기 · 실패 기록과 이력.
+  const tx = {
+    $queryRaw: async (_s: TemplateStringsArray, id: bigint) => (seed.locked?.includes(id) ? [] : [{ id }]),
+    material_issue_request: { updateMany: record },
+    audit_event: { create: jest.fn(async ({ data }: { data: { reason: string } }) => audits.push(data.reason)) },
+  };
   const prisma = {
     plant: { findMany: jest.fn(async (_args?: { where: { is_active: boolean } }) => (seed.plants ?? []).map(([plant_id, timezone_code]) => ({ plant_id, timezone_code }))) },
     $queryRaw: jest.fn(async (_strings: TemplateStringsArray, plantId: bigint, today: string, _retry: Date, tried: bigint[]) => {
       asked.push({ plantId, today });
       return (seed.due?.[String(plantId)] ?? []).filter((id) => !released.includes(id) && !tried.includes(id)).map((id) => ({ id }));
     }),
-    $transaction: jest.fn(async (work: (tx: unknown) => Promise<boolean>) =>
-      work({ $queryRaw: async (_s: TemplateStringsArray, id: bigint) => (seed.locked?.includes(id) ? [] : [{ id }]) }),
-    ),
-    material_issue_request: {
-      updateMany: jest.fn(async ({ where, data }: { where: { material_issue_request_id: bigint }; data: { release_error_text: string } }) => {
-        recorded.push({ id: where.material_issue_request_id, message: data.release_error_text });
-        return { count: 1 };
-      }),
-    },
-  } as unknown as PrismaService;
+    $transaction: jest.fn(async (work: (tx: unknown) => Promise<boolean>) => work(tx)),
+    material_issue_request: { updateMany: record },
+    } as unknown as PrismaService;
   const lease = { acquire: jest.fn(async () => (seed.lease ?? (() => true))()), release: jest.fn(async () => undefined) };
   const releaser = {
     release: jest.fn(async (_tx: unknown, id: bigint) => {
@@ -43,7 +47,7 @@ function fake(
   };
   const numbering = { next: jest.fn(async () => 'PK-20261113-0001') };
   const runner = new MaterialIssueReleaseRunner(seed.enabled ?? true, prisma, lease, releaser, numbering);
-  return { runner, asked, recorded, released, lease, releaser, numbering, prisma };
+  return { runner, asked, recorded, released, lease, releaser, numbering, prisma, audits };
 }
 
 describe('00:00 출고 요청 배포 러너', () => {
@@ -98,10 +102,11 @@ describe('00:00 출고 요청 배포 러너', () => {
   });
 
   it('FR-022 한 건이 실패해도 나머지는 배포하고, 실패는 원인과 함께 따로 남긴다', async () => {
-    const { runner, released, recorded } = fake({ plants: [[1n, HANOI]], due: { '1': [11n, 12n, 13n] }, fail: [12n] });
+    const { runner, released, recorded, audits } = fake({ plants: [[1n, HANOI]], due: { '1': [11n, 12n, 13n] }, fail: [12n] });
     expect(await runner.tick(new Date('2026-11-12T17:00:30Z'))).toBe(2);
     expect(released).toEqual([11n, 13n]);
     expect(recorded).toEqual([{ id: 12n, message: '출발 창고가 사용 중지되어 배포할 수 없습니다.' }]);
+    expect(audits).toEqual(['출발 창고가 사용 중지되어 배포할 수 없습니다.']);
   });
 
   it('30초마다 리스를 늘리고, 회차 중에 잃으면 그 회차를 접는다', async () => {
