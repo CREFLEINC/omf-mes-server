@@ -20,6 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
 import { syncItemsToCommonIqcPlan } from './item-iqc-plan-sync';
+import { isRoutingLinkedPqc, syncRoutingOperationsToPqcPlan } from './pqc-routing-sync';
 
 /** `quality.inspection_plan` 을 FK 로 가리키는 자리 전부. 실측이고 e2e 가 대조한다. */
 export const INSPECTION_PLAN_REFERRERS: readonly Referrer[] = [
@@ -147,6 +148,7 @@ export class InspectionPlanService {
         });
         await syncItemInspectionRequired(tx, input);
         if (isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
+        if (isRoutingLinkedPqc(row)) await syncRoutingOperationsToPqcPlan(tx, row);
         return row;
       }),
     );
@@ -184,6 +186,10 @@ export class InspectionPlanService {
         if (after !== null && isCommonIqc(after) && !(before !== null && isCommonIqc(before) && before.default_skip === after.default_skip)) {
           await syncItemsToCommonIqcPlan(tx, after.default_skip);
         }
+        // 공정이 지정된 PQC 기준은 라우팅 「검사 관리」와 맞춘다 — 같은 규칙(기본 생략 · 대상이 바뀐 저장만 · 사용자 결정 2026-11-04).
+        if (after !== null && isRoutingLinkedPqc(after) && !(before !== null && isRoutingLinkedPqc(before) && samePqcTarget(before, after))) {
+          await syncRoutingOperationsToPqcPlan(tx, after);
+        }
       }
       return result;
     });
@@ -206,9 +212,10 @@ export class InspectionPlanService {
       if (result.count > 0 && isActive) {
         const row = await tx.inspection_plan.findUnique({
           where: { inspection_plan_id: inspectionPlanId },
-          select: { inspection_type_code: true, item_id: true, default_skip: true, is_active: true },
+          select: { inspection_type_code: true, item_id: true, process_id: true, routing_id: true, default_skip: true, is_active: true },
         });
         if (row !== null && isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
+        if (row !== null && isRoutingLinkedPqc(row)) await syncRoutingOperationsToPqcPlan(tx, row);
         if (row !== null) {
           await syncItemInspectionRequired(tx, {
             inspectionTypeCode: row.inspection_type_code,
@@ -379,6 +386,16 @@ async function syncItemInspectionRequired(
     where: { item_id: input.itemId, inspection_required: skip },
     data: { inspection_required: !skip, version_no: { increment: 1 } },
   });
+}
+
+/** 라우팅에 맞출 값(기본 생략 · 품목 · 공정 · 라우팅)이 그대로인가 — 이름만 고친 저장은 라우팅을 건드리지 않는다. */
+function samePqcTarget(before: PlanRow, after: PlanRow): boolean {
+  return (
+    before.default_skip === after.default_skip &&
+    before.item_id === after.item_id &&
+    before.process_id === after.process_id &&
+    before.routing_id === after.routing_id
+  );
 }
 
 /** 사용 중인 「전 품목 공통」 IQC 기준인가 — 품목 칸이 비었다. */

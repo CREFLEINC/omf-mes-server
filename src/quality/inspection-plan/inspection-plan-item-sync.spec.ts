@@ -11,6 +11,7 @@ function harness() {
       findUnique: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', item_id: 40n, default_skip: true }),
     },
     item: { updateMany: itemUpdateMany },
+    routing_operation: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   };
   const prisma = {
     $transaction: jest.fn((run: (client: typeof tx) => unknown) => run(tx)),
@@ -144,5 +145,52 @@ describe('검사 기준 저장 — 공통 IQC 기준의 품목 연동', () => {
     await service.create(plan({ itemId: null, inspectionTypeCode: String(overrides.inspection_type_code ?? 'IQC') }));
 
     expect(itemUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+/** 공정이 지정된 PQC 기준 — 라우팅 공정 「검사 관리」를 맞춘다(사용자 결정 2026-11-04). */
+describe('검사 기준 저장 — PQC 기준의 라우팅 연동', () => {
+  const pqc = (overrides: Record<string, unknown> = {}) => ({
+    inspection_plan_id: 1n, item_id: 40n, process_id: 2n, routing_id: null, approved_by: null, approved_at: null,
+    inspection_type_code: 'PQC', is_active: true, default_skip: false, ...overrides,
+  });
+
+  it('등록하면 그 품목 라우팅의 그 공정을 맞춘다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.create.mockResolvedValueOnce(pqc());
+    await service.create(plan({ inspectionTypeCode: 'PQC', processId: 2, defaultSkip: false }));
+
+    expect(tx.routing_operation.updateMany).toHaveBeenCalledWith({
+      where: { process_id: 2n, inspection_managed: false, routing: { item_id: 40n } },
+      data: { inspection_managed: true, version_no: { increment: 1 } },
+    });
+  });
+
+  it('기본 생략을 바꿔 저장하면 맞추고, 그대로면(이름만 고침) 건드리지 않는다', async () => {
+    const changed = harness();
+    changed.tx.inspection_plan.findUnique.mockResolvedValueOnce(pqc()).mockResolvedValueOnce(pqc({ default_skip: true }));
+    await changed.service.update(1, 1, plan({ inspectionTypeCode: 'PQC', processId: 2, defaultSkip: true }));
+    expect(changed.tx.routing_operation.updateMany).toHaveBeenCalledTimes(1);
+
+    const same = harness();
+    same.tx.inspection_plan.findUnique.mockResolvedValueOnce(pqc()).mockResolvedValueOnce(pqc());
+    await same.service.update(1, 1, plan({ inspectionTypeCode: 'PQC', processId: 2, defaultSkip: false }));
+    expect(same.tx.routing_operation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('공정이 빈 PQC 기준은 라우팅을 건드리지 않는다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.create.mockResolvedValueOnce(pqc({ process_id: null, item_id: null }));
+    await service.create(plan({ inspectionTypeCode: 'PQC', itemId: null }));
+
+    expect(tx.routing_operation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('다시 사용하면 맞춘다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.findUnique.mockResolvedValueOnce(pqc({ default_skip: true }));
+    await service.setActive(1, 1, true);
+
+    expect(tx.routing_operation.updateMany).toHaveBeenCalledTimes(1);
   });
 });
