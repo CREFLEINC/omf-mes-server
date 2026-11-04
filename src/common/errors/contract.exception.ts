@@ -10,8 +10,13 @@ import { ErrorItem } from './error-response';
 export class ContractException extends HttpException {
   readonly errors: ErrorItem[];
 
-  constructor(status: HttpStatus, errors: ErrorItem[]) {
-    super({ errors }, status);
+  /** `extra` 는 계약이 `errors` 옆에 둔 칸 — 예: 출고 예정 충돌의 `plannedStockConflicts`(피처 003). */
+  constructor(
+    status: HttpStatus,
+    errors: ErrorItem[],
+    readonly extra?: Record<string, unknown>,
+  ) {
+    super({ errors, ...extra }, status);
     this.errors = errors;
   }
 }
