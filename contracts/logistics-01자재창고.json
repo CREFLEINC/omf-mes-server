@@ -4831,7 +4831,7 @@
      "logistics"
     ],
     "summary": "추가 자재 출고 요청 발행",
-    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 추가 자재 출고 요청(W-02-10)은 관리웹이고, 관리웹 셸에는 오프라인이 없다(공유계약 C-5 · W-02-10 §1). Idempotency-Key 는 필수이나 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(C-8) — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6",
+    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 추가 자재 출고 요청(W-02-10)은 관리웹이고, 관리웹 셸에는 오프라인이 없다(공유계약 C-5 · W-02-10 §1). Idempotency-Key 는 필수이나 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(C-8) — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6 ⭐ 생산 창고를 쓰는 공장(피처 003): 출발 생산 창고별로 요청을 나눠 만들고 바로 배포한다. 쓸 수 있는 양(가용 − 예정)을 넘으면 409 PLANNED_STOCK_CONFLICT — 사유가 긴급 대응·부족 보충이면 overridable=true(acceptPlannedOverride 로 다시 보내면 실제 가용까지 가져가고 다른 요청에 동적 부족이 생기며 이력이 남는다), 그 밖 사유는 쓸 수 있는 양까지만 담고(나머지 부족) 쓸 수 있는 양이 0 이면 overridable=false. 「자동」인데 어느 부서 생산 창고에도 가용 재고가 없는 자재는 noStockedWarehouse=true · overridable=false. 응답에 만든 요청 전부 requests(하나여도 배열 · 지금 방식 공장도 싣는다). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4856,7 +4856,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/MaterialIssueRequestDetailResponse"
+         "$ref": "#/components/schemas/MaterialIssueRequestCreated"
         }
        }
       }
@@ -4882,11 +4882,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "저장 충돌(ConflictResponse) 또는 생산 창고 예정 재고 충돌(PlannedStockConflictResponse)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/PlannedStockConflictResponse"
+          }
+         ]
         }
        }
       }
@@ -17122,7 +17129,6 @@
     "type": "object",
     "required": [
      "workOrderId",
-     "destinationLocationId",
      "lines",
      "businessDate",
      "occurredAt"
@@ -17140,7 +17146,7 @@
       "x-source-column": "destination_location_id",
       "type": "integer",
       "format": "int64",
-      "description": "도착 위치. FK 라 실재하는 위치여야 한다. 근거: W-02-10 §5-4",
+      "description": "도착 위치. FK 라 실재하는 위치여야 한다. 근거: W-02-10 §5-4 생산 창고를 쓰는 공장에서는 비울 수 있다 — 라인의 생산 현장. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
       "example": 1001
      },
      "requiredAt": {
@@ -17191,6 +17197,26 @@
       "format": "date-time",
       "description": "단말에서 실제로 일어난 시각. 근거: 공유계약 C-8",
       "example": "2026-08-12T10:22:00+09:00"
+     },
+     "sourceWarehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "출발 생산 창고(생산 창고를 쓰는 공장만). 비우면 자재마다 FR-007 규칙으로 채우고 창고가 여럿이면 요청을 나눈다. 고르면 모든 줄을 그 창고에서. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "acceptPlannedOverride": {
+      "type": "boolean",
+      "description": "409 PLANNED_STOCK_CONFLICT(overridable=true)를 보고 다른 W/O 의 예정분을 가져가겠다고 확인했다 — 사유가 URGENT_WO_RESPONSE·SHORTAGE_SUPPLEMENT 일 때만 받는다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "unsourcedShortageId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "「재고 있는 생산 창고 없음」 부족 행에서 연 보충 요청 — 만들면 그 행 resolvedRequestId 를 채운다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
@@ -20539,6 +20565,105 @@
        "null"
       ],
       "description": "보충 요청을 만들었으면 그 요청 번호(「보충 요청됨」)"
+     }
+    }
+   },
+   "MaterialIssueRequestCreated": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/MaterialIssueRequestDetailResponse"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "requests": {
+        "type": "array",
+        "description": "만든 요청 전부(출발 창고별). 첫 요청은 materialIssueRequest·lines 와 같다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+        "items": {
+         "$ref": "#/components/schemas/MaterialIssueRequest"
+        }
+       }
+      }
+     }
+    ]
+   },
+   "PlannedStockConflictResponse": {
+    "type": "object",
+    "required": [
+     "errors",
+     "plannedStockConflicts"
+    ],
+    "properties": {
+     "errors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErrorItem"
+      }
+     },
+     "plannedStockConflicts": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "itemId",
+        "requestedQty",
+        "freeQty",
+        "takeFromPlannedQty",
+        "overridable"
+       ],
+       "properties": {
+        "itemId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "sourceWarehouseId": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64"
+        },
+        "requestedQty": {
+         "type": "number"
+        },
+        "freeQty": {
+         "type": "number",
+         "description": "쓸 수 있는 양(가용 − 예정, 0 미만은 0)"
+        },
+        "takeFromPlannedQty": {
+         "type": "number",
+         "description": "확인하면 다른 요청의 예정에서 가져갈 양"
+        },
+        "overridable": {
+         "type": "boolean"
+        },
+        "noStockedWarehouse": {
+         "type": "boolean",
+         "description": "어느 부서 생산 창고에도 가용 재고가 없다"
+        },
+        "affectedRequests": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "issueRequestNo": {
+            "type": "string"
+           },
+           "workOrderNo": {
+            "type": "string"
+           },
+           "issueWorkDate": {
+            "type": [
+             "string",
+             "null"
+            ],
+            "format": "date"
+           }
+          }
+         }
+        }
+       }
+      }
      }
     }
    }

@@ -40,7 +40,8 @@ export class ErrorResponseFilter implements ExceptionFilter {
     }
 
     const { status, errors } = this.toErrorResponse(exception);
-    response.status(status).json({ errors } satisfies ErrorResponse);
+    const extra = exception instanceof ContractException ? exception.extra : undefined;
+    response.status(status).json({ errors, ...extra } satisfies ErrorResponse);
   }
 
   private toErrorResponse(exception: unknown): { status: number; errors: ErrorItem[] } {

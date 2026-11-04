@@ -79,7 +79,7 @@ export class MaterialIssueRequestController {
   create(
     @Req() request: Request,
     @Body() body: MaterialIssueRequestCreate,
-  ): Promise<MaterialIssueRequestDetail> {
+  ): Promise<unknown> {
     const appUserId = userOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
       this.requests.create(body, appUserId),
