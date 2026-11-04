@@ -144,7 +144,8 @@ export async function writePicking(
     issueRequestNo: string;
     requestLineIds: ReadonlyMap<number, bigint>;
   },
-  appUserId: number,
+  /** 00:00 러너의 배포는 사람이 없다 — `null`. */
+  appUserId: number | null,
 ): Promise<WrittenPicking[]> {
   const written: WrittenPicking[] = [];
   for (const shortage of plan.shortages) {

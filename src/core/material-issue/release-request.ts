@@ -24,12 +24,16 @@ export class MaterialIssueReleaser {
     private readonly pickingNotices: PickingHandoverNotifier,
   ) {}
 
-  /** 배포했으면 참, 대기가 아니어서 건너뛰었으면 거짓. */
+  /**
+   * 배포했으면 참, 대기가 아니어서 건너뛰었으면 거짓. `appUserId` 는 00:00 러너면 `null`(사람이 없다).
+   * `zaloNotBefore` 는 러너가 현장 새벽에 배포할 때만 준다 — T2 의 Zalo 를 07:00 에 보낸다(FR-021a).
+   */
   async release(
     tx: Prisma.TransactionClient,
     requestId: bigint,
     pickingOrderNo: string,
-    appUserId: number,
+    appUserId: number | null,
+    options: { zaloNotBefore?: Date; now?: Date } = {},
   ): Promise<boolean> {
     const [locked] = await tx.$queryRaw<{ status_code: string }[]>`
       SELECT status_code FROM logistics.material_issue_request
@@ -82,9 +86,14 @@ export class MaterialIssueReleaser {
       },
       appUserId,
     );
-    await this.pickingNotices.notify(tx, pickings, { workOrderId: request.work_order_id, requiredAt: null });
+    await this.pickingNotices.notify(tx, pickings, {
+      workOrderId: request.work_order_id,
+      requiredAt: null,
+      ...(options.zaloNotBefore === undefined ? {} : { zaloNotBefore: options.zaloNotBefore }),
+    });
 
-    const now = new Date();
+    // 러너는 회차 시각을 넘긴다 — 실패 기록(release_attempted_at)과 같은 시계다.
+    const now = options.now ?? new Date();
     await tx.material_issue_request.update({
       where: { material_issue_request_id: requestId },
       data: {
