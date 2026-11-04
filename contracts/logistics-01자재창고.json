@@ -16881,6 +16881,12 @@
        null
       ],
       "description": "닫힌 사유. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "versionNo": {
+      "x-source-column": "version_no",
+      "type": "integer",
+      "minimum": 1,
+      "description": "저장 충돌 보호 버전 — PUT·:cancel 본문 versionNo 로 되돌려 보낸다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },

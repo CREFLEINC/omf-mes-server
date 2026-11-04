@@ -34,6 +34,8 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
     releaseErrorText: row.release_error_text ?? null,
     closedAt: row.closed_at?.toISOString() ?? null,
     closeReasonCode: row.close_reason_code ?? null,
+    // 수정·취소의 저장 충돌 보호 — 본문 versionNo 로 되돌려 보낸다(W-02-11).
+    versionNo: row.version_no,
   };
 }
 
