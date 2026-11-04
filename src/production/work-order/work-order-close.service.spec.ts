@@ -35,6 +35,8 @@ function stub(options: { status?: string; goodSum?: number; openSession?: boolea
           planned_end_at: null,
         },
       ]),
+    // 생산 창고 규칙의 출고 요청이 없는 W/O — 마감이 정리할 요청이 없다(피처 003 FR-028).
+    material_issue_request: { findMany: () => Promise.resolve([]) },
     work_session: {
       findMany: () =>
         Promise.resolve(

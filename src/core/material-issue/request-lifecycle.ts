@@ -136,9 +136,16 @@ export async function settleWorkOrderRequests(
   documentState: DocumentStateService,
   input: { workOrderId: bigint; reason: 'WO_CANCELLED' | 'WO_CLOSED'; appUserId: number | null },
 ): Promise<void> {
+  const open = await tx.material_issue_request.findMany({
+    where: { work_order_id: input.workOrderId, source_warehouse_id: { not: null }, status_code: { in: ['WAITING', 'REGISTERED'] }, closed_at: null },
+    select: { material_issue_request_id: true },
+    orderBy: { material_issue_request_id: 'asc' },
+  });
+  if (open.length === 0) return;
+  // 러너·요청 화면과 같은 행을 다룬다 — 잠근 뒤 상태를 다시 읽는다.
   const requests = await tx.$queryRaw<{ id: bigint; status_code: string }[]>`
     SELECT material_issue_request_id AS id, status_code FROM logistics.material_issue_request
-     WHERE work_order_id = ${input.workOrderId} AND source_warehouse_id IS NOT NULL
+     WHERE material_issue_request_id = ANY(${open.map((row) => row.material_issue_request_id)}::bigint[])
        AND status_code IN ('WAITING', 'REGISTERED') AND closed_at IS NULL
      ORDER BY material_issue_request_id FOR UPDATE`;
   const now = new Date();

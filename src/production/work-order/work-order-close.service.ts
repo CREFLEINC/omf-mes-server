@@ -5,6 +5,7 @@ import { ConflictException, ContractException, ERROR_CODE, OpenSessionView } fro
 import { assertCodeValues, resolveWorkerId } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { LotLifecycleService, Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import { settleWorkOrderRequests } from '../../core/material-issue/request-lifecycle';
 import { IF_WO_CLOSE, OutboxService, outboxMessageKey } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderClose, assertCloseBody, closePayload } from './close-rules';
@@ -105,6 +106,8 @@ export class WorkOrderCloseService {
     });
 
     await this.voidEmptySlots(tx, workOrderId, closedAt);
+    // 생산 창고 규칙의 출고 요청 정리 — 진행 없음 취소, 진행 있음 미출고분 닫기(피처 003 FR-028).
+    await settleWorkOrderRequests(tx, this.documentState, { workOrderId: BigInt(workOrderId), reason: 'WO_CLOSED', appUserId: appUserId ?? null });
     await this.outbox.enqueue(tx, {
       interfaceCode: IF_WO_CLOSE,
       messageKey: outboxMessageKey(IF_WO_CLOSE, row.work_order_no),
