@@ -5,8 +5,16 @@ import { ItemService, ItemUpdate } from './item.service';
 function harness() {
   const planUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
   const tx = {
-    item: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
-    inspection_plan: { updateMany: planUpdateMany },
+    item: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUnique: jest.fn().mockResolvedValue({ item_id: 40n, item_code: 'RM-01', item_name: '레진', inspection_required: true }),
+    },
+    inspection_plan: {
+      updateMany: planUpdateMany,
+      count: jest.fn().mockResolvedValue(1),
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({}),
+    },
   };
   const prisma = {
     $transaction: jest.fn((run: (client: typeof tx) => unknown) => run(tx)),
@@ -55,5 +63,45 @@ describe('품목 저장 — IQC 검사 기준 「기본 생략」 연동 (omf-al
     await service.update(40, 1, body(false));
 
     expect(planUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+/** 전용 IQC 기준이 없는 품목에서 바꾸면 전용 기준을 만들어 설정을 고정한다 — 공통 기준 저장이 덮지 않게(사용자 결정 2026-11-04). */
+describe('품목 저장 — 전용 IQC 기준 만들기', () => {
+  it('전용 기준이 없는 품목의 수입검사 대상을 바꾸면 그 품목 전용 IQC 기준을 만든다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.count.mockResolvedValueOnce(0);
+    await service.update(40, 1, body(false));
+
+    expect(tx.inspection_plan.create).toHaveBeenCalledWith({
+      data: {
+        inspection_plan_code: 'IQC-RM-01', inspection_plan_name: '레진 수입검사', inspection_type_code: 'IQC',
+        item_id: 40n, default_skip: true, pqc_skip_allowed: true,
+      },
+    });
+  });
+
+  it('코드가 이미 쓰였으면 품목 id 로 만든다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.count.mockResolvedValueOnce(0);
+    tx.inspection_plan.findUnique.mockResolvedValueOnce({ inspection_plan_id: 9n });
+    await service.update(40, 1, body(false));
+
+    expect(tx.inspection_plan.create.mock.calls[0][0].data.inspection_plan_code).toBe('IQC-ITEM-40');
+  });
+
+  it('전용 기준이 이미 있으면 만들지 않는다', async () => {
+    const { service, tx } = harness();
+    await service.update(40, 1, body(false));
+
+    expect(tx.inspection_plan.create).not.toHaveBeenCalled();
+  });
+
+  it('수입검사 대상을 바꾸지 않은 저장은 기준을 만들지 않는다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_plan.count.mockResolvedValue(0);
+    await service.update(40, 1, body(true));
+
+    expect(tx.inspection_plan.create).not.toHaveBeenCalled();
   });
 });

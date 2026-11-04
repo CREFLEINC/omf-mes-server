@@ -102,6 +102,8 @@ export class InspectionPlanImportService {
     const missing: ErrorItem[] = [];
     if (plan.inspectionPlanName === null) missing.push(fail(row, 'inspectionPlanName', ERROR_CODE.REQUIRED, '새 기준코드라 기준명이 필요합니다.'));
     if (plan.inspectionTypeCode === null) missing.push(fail(row, 'inspectionTypeCode', ERROR_CODE.REQUIRED, '새 기준코드라 검사유형이 필요합니다.'));
+    // PQC 기준은 공정이 필수다(사용자 결정 2026-11-04).
+    if (plan.inspectionTypeCode === 'PQC' && plan.processCode === null) missing.push(fail(row, 'processCode', ERROR_CODE.REQUIRED, '공정검사(PQC) 기준은 공정이 필요합니다.'));
     if (missing.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, missing);
 
     const created = await this.plans.create({

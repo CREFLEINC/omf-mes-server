@@ -19,6 +19,8 @@ import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
+import { syncItemsToCommonIqcPlan } from './item-iqc-plan-sync';
+import { isRoutingLinkedPqc, syncRoutingOperationsToPqcPlan } from './pqc-routing-sync';
 
 /** `quality.inspection_plan` 을 FK 로 가리키는 자리 전부. 실측이고 e2e 가 대조한다. */
 export const INSPECTION_PLAN_REFERRERS: readonly Referrer[] = [
@@ -145,7 +147,11 @@ export class InspectionPlanService {
           },
         });
         await syncItemInspectionRequired(tx, input);
-        return row;
+        if (isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
+        if (!isRoutingLinkedPqc(row)) return row;
+        await syncRoutingOperationsToPqcPlan(tx, row);
+        // 확정 Rev 가 새 Rev 로 바뀌면 이 기준의 라우팅도 옮겨 갔다.
+        return tx.inspection_plan.findUniqueOrThrow({ where: { inspection_plan_id: row.inspection_plan_id } });
       }),
     );
   }
@@ -158,6 +164,7 @@ export class InspectionPlanService {
     await this.assertWritable(input, inspectionPlanId);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.inspection_plan.findUnique({ where: { inspection_plan_id: inspectionPlanId } });
       const result = await tx.inspection_plan.updateMany({
         // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
         where: { inspection_plan_id: inspectionPlanId, version_no: version },
@@ -174,7 +181,18 @@ export class InspectionPlanService {
           version_no: { increment: 1 },
         },
       });
-      if (result.count > 0) await syncItemInspectionRequired(tx, input);
+      if (result.count > 0) {
+        await syncItemInspectionRequired(tx, input);
+        // 공통 IQC 기준은 「기본 생략」이 바뀌었거나 이번 저장으로 공통 IQC 가 됐을 때만 품목에 반영한다 — 이름만 고친 저장이 품목을 덮지 않게.
+        const after = await tx.inspection_plan.findUnique({ where: { inspection_plan_id: inspectionPlanId } });
+        if (after !== null && isCommonIqc(after) && !(before !== null && isCommonIqc(before) && before.default_skip === after.default_skip)) {
+          await syncItemsToCommonIqcPlan(tx, after.default_skip);
+        }
+        // 공정이 지정된 PQC 기준은 라우팅 「검사 관리」와 맞춘다 — 같은 규칙(기본 생략 · 대상이 바뀐 저장만 · 사용자 결정 2026-11-04).
+        if (after !== null && isRoutingLinkedPqc(after) && !(before !== null && isRoutingLinkedPqc(before) && samePqcTarget(before, after))) {
+          await syncRoutingOperationsToPqcPlan(tx, after);
+        }
+      }
       return result;
     });
     await this.assertExists(inspectionPlanId, updated.count);
@@ -191,12 +209,15 @@ export class InspectionPlanService {
         where: { inspection_plan_id: inspectionPlanId, version_no: version },
         data: { is_active: isActive, version_no: { increment: 1 } },
       });
-      // 다시 사용하는 품목 전용 IQC 기준은 품목 「IQC 대상」을 그 기준에 맞춘다 — 사용 중지 동안 품목만 바뀌었을 수 있다(#215).
+      // 다시 사용하는 IQC 기준은 품목 「IQC 대상」을 그 기준에 맞춘다 — 사용 중지 동안 품목만 바뀌었을 수 있다(#215).
+      // 공통 기준은 전용 기준이 없는 품목에 맞춘다(사용자 결정 2026-11-04).
       if (result.count > 0 && isActive) {
         const row = await tx.inspection_plan.findUnique({
           where: { inspection_plan_id: inspectionPlanId },
-          select: { inspection_type_code: true, item_id: true, default_skip: true },
+          select: { inspection_type_code: true, item_id: true, process_id: true, routing_id: true, default_skip: true, is_active: true },
         });
+        if (row !== null && isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
+        if (row !== null && isRoutingLinkedPqc(row)) await syncRoutingOperationsToPqcPlan(tx, row);
         if (row !== null) {
           await syncItemInspectionRequired(tx, {
             inspectionTypeCode: row.inspection_type_code,
@@ -277,7 +298,24 @@ export class InspectionPlanService {
       },
     ]);
     await this.assertCodeFree(input.inspectionPlanCode, self);
+    await this.assertPqcProcess(input, self);
     await this.assertTargets(input);
+  }
+
+  /**
+   * PQC 기준은 공정이 필수다(사용자 결정 2026-11-04) — 공정 단위 검사이고, 라우팅 「검사 관리」 연동이 공정으로 걸린다.
+   * 수정 본문에 공정이 없으면(보내지 않음) 저장된 값을 본다. 이미 저장된 공정 없는 PQC 기준은 다음 저장 때 공정을 골라야 한다.
+   */
+  private async assertPqcProcess(input: InspectionPlanWrite, self: number | null): Promise<void> {
+    if (input.inspectionTypeCode !== 'PQC') return;
+    const processId =
+      input.processId !== undefined || self === null
+        ? input.processId
+        : (await this.prisma.inspection_plan.findUnique({ where: { inspection_plan_id: self }, select: { process_id: true } }))?.process_id;
+    if (processId !== null && processId !== undefined) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field: 'processId', code: ERROR_CODE.REQUIRED, message: '공정검사(PQC) 기준은 공정을 골라야 합니다.' },
+    ]);
   }
 
   /**
@@ -353,7 +391,7 @@ function view(row: PlanRow): InspectionPlanView {
 
 /**
  * 품목 전용 IQC 기준의 「기본 생략」에 품목 「수입검사 대상」을 반대로 맞춘다 — 두 설정은 같은 뜻이다(omf-all-around#215).
- * 공통 기준(품목 없음)·PQC·OQC 는 맞추지 않는다. 이미 맞으면 품목 행을 건드리지 않는다(품목 화면의 저장 토큰을 지킨다).
+ * 공통 기준(품목 없음)은 `syncItemsToCommonIqcPlan` 이 맡는다. PQC·OQC 는 맞추지 않는다. 이미 맞으면 품목 행을 건드리지 않는다(품목 화면의 저장 토큰을 지킨다).
  */
 async function syncItemInspectionRequired(
   tx: Prisma.TransactionClient,
@@ -367,6 +405,21 @@ async function syncItemInspectionRequired(
     where: { item_id: input.itemId, inspection_required: skip },
     data: { inspection_required: !skip, version_no: { increment: 1 } },
   });
+}
+
+/** 라우팅에 맞출 값(기본 생략 · 품목 · 공정 · 라우팅)이 그대로인가 — 이름만 고친 저장은 라우팅을 건드리지 않는다. */
+function samePqcTarget(before: PlanRow, after: PlanRow): boolean {
+  return (
+    before.default_skip === after.default_skip &&
+    before.item_id === after.item_id &&
+    before.process_id === after.process_id &&
+    before.routing_id === after.routing_id
+  );
+}
+
+/** 사용 중인 「전 품목 공통」 IQC 기준인가 — 품목 칸이 비었다. */
+function isCommonIqc(row: Pick<PlanRow, 'inspection_type_code' | 'item_id' | 'is_active'>): boolean {
+  return row.inspection_type_code === 'IQC' && row.item_id === null && row.is_active;
 }
 
 /**
