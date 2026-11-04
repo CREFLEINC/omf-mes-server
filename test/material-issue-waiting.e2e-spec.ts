@@ -295,8 +295,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     expect(unchanged).toMatchObject({ status_code: 'REGISTERED', source_warehouse_id: null, version_no: old.version_no });
   });
 
-  // 수정·취소 경로(S7)가 서면 활성화한다(tasks T066).
-  it.todo('US2-8 지금 방식 요청은 PUT·:cancel 대상이 아니다(409)');
+  // US2-8 의 「지금 방식 요청은 PUT·:cancel 대상이 아니다(409)」는 material-issue-edit.e2e-spec.ts 가 본다.
 
   /** SC-007 — BOM 의 자재마다 요청 줄 또는 미배정 부족 행 «한 곳»에만 있다. */
   async function expectEachMaterialOnce(workOrderId: bigint, operation: string): Promise<void> {

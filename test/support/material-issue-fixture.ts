@@ -98,7 +98,7 @@ export class MaterialIssueFixture {
     this.ids.user = user.app_user_id;
     const role = await p.role.create({ data: { role_code: `${this.prefix}-R`, role_name: '출고요청시험' } });
     await p.role_permission.createMany({
-      data: ['W-02-04', 'W-02-10', 'W-06-06'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
+      data: ['W-02-04', 'W-02-05', 'W-02-06', 'W-02-10', 'W-02-11', 'W-06-06'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await p.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     this.cookie = `${SESSION_COOKIE}=${this.app.get(JwtService).sign({ sub: Number(user.app_user_id), typ: 'session' })}`;
@@ -262,6 +262,15 @@ export class MaterialIssueFixture {
     await p.production_order.deleteMany({ where: { production_order_no: { startsWith: prefix } } });
     await p.production_line.deleteMany({ where: { line_code: { startsWith: prefix } } });
     await p.department_production_warehouse.deleteMany({ where: { department: { department_code: { startsWith: prefix } } } });
+    // W/O 취소·마감이 라인 부서로 남기는 알림 사건(피처 001) — 부서보다 먼저 지운다.
+    const events = await p.notification_event.findMany({
+      where: { department: { department_code: { startsWith: prefix } } },
+      select: { notification_event_id: true },
+    });
+    const eventIds = events.map((e) => e.notification_event_id);
+    await p.zalo_delivery.deleteMany({ where: { notification_event_id: { in: eventIds } } });
+    await p.notification.deleteMany({ where: { notification_event_id: { in: eventIds } } });
+    await p.notification_event.deleteMany({ where: { notification_event_id: { in: eventIds } } });
     await p.department.deleteMany({ where: { department_code: { startsWith: prefix } } });
     await p.location.deleteMany({ where: warehouse });
     await p.warehouse.deleteMany({ where: { warehouse_code: { startsWith: prefix } } });
