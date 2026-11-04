@@ -296,7 +296,24 @@ export class InspectionPlanService {
       },
     ]);
     await this.assertCodeFree(input.inspectionPlanCode, self);
+    await this.assertPqcProcess(input, self);
     await this.assertTargets(input);
+  }
+
+  /**
+   * PQC 기준은 공정이 필수다(사용자 결정 2026-11-04) — 공정 단위 검사이고, 라우팅 「검사 관리」 연동이 공정으로 걸린다.
+   * 수정 본문에 공정이 없으면(보내지 않음) 저장된 값을 본다. 이미 저장된 공정 없는 PQC 기준은 다음 저장 때 공정을 골라야 한다.
+   */
+  private async assertPqcProcess(input: InspectionPlanWrite, self: number | null): Promise<void> {
+    if (input.inspectionTypeCode !== 'PQC') return;
+    const processId =
+      input.processId !== undefined || self === null
+        ? input.processId
+        : (await this.prisma.inspection_plan.findUnique({ where: { inspection_plan_id: self }, select: { process_id: true } }))?.process_id;
+    if (processId !== null && processId !== undefined) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field: 'processId', code: ERROR_CODE.REQUIRED, message: '공정검사(PQC) 기준은 공정을 골라야 합니다.' },
+    ]);
   }
 
   /**
