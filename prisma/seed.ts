@@ -469,7 +469,7 @@ const SEED: CodeGroupSeed[] = [
   {
     // logistics.material_issue_request.reason_code
     groupCode: 'MATERIAL_ISSUE_REQUEST_REASON',
-    groupName: '자재 출고요청 사유',
+    groupName: '출고 요청 사유',
     values: [
       { code: 'URGENT_WO_RESPONSE', codeName: '긴급 MES W/O 대응', order: 10 },
       { code: 'SHORTAGE_SUPPLEMENT', codeName: '부족분 보충', order: 20 },
