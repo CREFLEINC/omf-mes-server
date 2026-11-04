@@ -22,8 +22,9 @@ describe('ContractRegistry', () => {
   // ERP 받기 표별 상태·지금 읽기 2건(장부 P-81): 573. ERP 창고 1건(장부 P-147): 574.
   // 입고 기본값 1건(장부 P-150): 575. 검사기준 버전 도면 추가·바꾸기·빼기 3건(omf-all-around#227): 578.
   // 부서 생산 창고 조회·바꾸기 2건(omf-all-around#66): 580.
-  it('계약 7파일에서 오퍼레이션 580건을 적재한다', () => {
-    expect(registry.size).toBe(580);
+  // 출고 요청 수정·취소·이력 3건(omf-all-around#66): 583.
+  it('계약 7파일에서 오퍼레이션 583건을 적재한다', () => {
+    expect(registry.size).toBe(583);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
