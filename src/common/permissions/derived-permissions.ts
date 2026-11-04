@@ -15,6 +15,9 @@
  * 화면의 변동(50키 · 화면이 빠지는 자리 포함)이 함께 들어온다 — 그 검토는 따로 한다.
  *
  * ⚠ 2026-10-29 — 적치 규칙 마스터(W-06-14)를 없앴다(사용자 결정) — 그 화면 몫을 손으로 뺐다. 다시 돌리면 되살아난다.
+ *
+ * ⚠ 2026-11-03 — 통합 대시보드(W-CO-05)를 권한 대상에서 뺐다(사용자 결정 · omf-all-around#229) — 로그인한
+ * 사용자는 누구나 본다. 그 화면 몫을 손으로 뺐다. 다시 돌리면 되살아난다.
  */
 export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /app/sessions/current': ['W-CO-01'],
@@ -23,11 +26,10 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /app/approval-requests/{approvalRequestId}': ['W-03-09'],
   'GET /app/approval-routes': ['W-01-06', 'W-04-10'],
   'GET /app/attachments/{attachmentId}/content': ['W-CO-08'],
-  'GET /app/dashboard-summary': ['W-CO-05'],
   'GET /app/document-issues': ['P-02-09', 'P-04-02', 'P-04-04', 'W-05-13'],
   'GET /app/document-issues/summary': ['P-02-05', 'P-02-09', 'P-04-02', 'W-05-13'],
   'GET /app/document-issues/{documentIssueLogId}/rendition': ['P-01-01', 'W-05-13', 'W-06-07'],
-  'GET /app/notices': ['W-CO-04', 'W-CO-05'],
+  'GET /app/notices': ['W-CO-04'],
   'GET /app/notification-events': ['W-CO-03', 'W-CO-11'],
   'GET /app/notification-subscriptions': ['W-CO-11'],
   'GET /app/notifications': ['W-CO-03', 'W-CO-04'],
@@ -101,7 +103,6 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /mdm/plants': ['W-06-21', 'W-06-23'],
   'GET /mdm/processes': ['W-06-01'],
   'GET /mdm/processes/{processId}': ['W-06-01'],
-  'GET /mdm/production-lines': ['W-CO-05'],
   'GET /mdm/spare-parts': ['W-05-06'],
   'GET /mdm/terminals': ['W-CO-06'],
   'GET /mdm/terminals/{terminalId}': ['P-02-01', 'P-CO-01'],
@@ -120,7 +121,7 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /planning/routings/{routingId}/operations': ['W-02-02'],
   'GET /production/production-results': ['P-02-06', 'W-02-05'],
   'GET /production/repair-executions': ['M-02-02'],
-  'GET /production/work-orders': ['M-02-01', 'M-02-02', 'P-02-01', 'P-02-12', 'P-04-03', 'W-02-02', 'W-02-04', 'W-02-05', 'W-02-06', 'W-02-07', 'W-02-08', 'W-02-10', 'W-CO-04', 'W-CO-05'],
+  'GET /production/work-orders': ['M-02-01', 'M-02-02', 'P-02-01', 'P-02-12', 'P-04-03', 'W-02-02', 'W-02-04', 'W-02-05', 'W-02-06', 'W-02-07', 'W-02-08', 'W-02-10', 'W-CO-04'],
   'GET /production/work-orders/{workOrderId}': ['P-02-04', 'W-02-03', 'W-02-05', 'W-02-06', 'W-02-08'],
   'GET /production/work-orders/{workOrderId}/validation': ['W-02-03'],
   'GET /quality/concessions': ['W-03-09'],
@@ -157,8 +158,6 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'POST /app/document-issues': ['P-01-01', 'P-01-02', 'P-02-05', 'P-02-07', 'P-02-09', 'P-04-02', 'W-05-13', 'W-06-07'],
   'POST /app/document-issues/{documentIssueLogId}:report-print': ['P-01-01', 'P-01-02'],
   'POST /app/notices': ['W-CO-04'],
-  'POST /app/notices/{noticeId}:acknowledge': ['W-CO-05'],
-  'POST /app/notices/{noticeId}:dismiss': ['W-CO-05'],
   'POST /app/notification-subscriptions/recipients:preview': ['W-CO-11'],
   'POST /app/notifications:read-all': ['W-CO-03'],
   'POST /app/operation-policies': ['W-05-01'],
