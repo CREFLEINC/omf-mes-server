@@ -50,6 +50,8 @@ import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
 import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
+import { MaterialIssueRequestEditController } from './material-issue-request/material-issue-request-edit.controller';
+import { MaterialIssueRequestEditService } from './material-issue-request/material-issue-request-edit.service';
 import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
 import { MaterialIssueRequestService } from './material-issue-request/material-issue-request.service';
 import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
@@ -149,6 +151,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundAllocationController,
     InboundVarianceController,
     MaterialIssueRequestController,
+    MaterialIssueRequestEditController,
     RecycleEntryController,
     ShopfloorReceiptController,
     StockTransferController,
@@ -217,6 +220,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundAllocationService,
     InboundVarianceService,
     MaterialIssueRequestQueryService,
+    MaterialIssueRequestEditService,
     MaterialIssueShortageService,
     MaterialIssueRequestService,
     RecycleEntryService,
