@@ -133,7 +133,7 @@ export class MaterialIssueRequestService {
     await this.pickingNotices.notify(tx, pickings, { workOrderId: header.work_order_id, requiredAt: header.required_at });
     return {
       materialIssueRequest: materialIssueRequestView(header),
-      lines: lines.map(materialIssueRequestLineView),
+      lines: lines.map((line) => materialIssueRequestLineView(line)),
     };
   }
 

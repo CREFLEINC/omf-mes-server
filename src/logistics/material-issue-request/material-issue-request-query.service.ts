@@ -1,8 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { dynamicShortages } from '../../core/material-issue/planned-stock';
+import { zonedToUtc } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  DERIVED_INCLUDE,
+  DISPLAY_STATUSES,
+  DisplayStatus,
+  derive,
+  displayStatusWhere,
+  lineDynamicShortages,
+} from './material-issue-request-derived';
 import {
   MaterialIssueRequestDetail,
   MaterialIssueRequestView,
@@ -18,7 +29,22 @@ export interface MaterialIssueRequestQuery {
   q?: string;
   page?: unknown;
   size?: unknown;
+  // 피처 003 — W-02-11 출고 요청 현황.
+  displayStatus?: unknown;
+  issueWorkDateFrom?: string;
+  issueWorkDateTo?: string;
+  productionDateFrom?: string;
+  productionDateTo?: string;
+  plantId?: unknown;
+  sourceWarehouseId?: unknown;
+  productionPlanId?: unknown;
+  hasShortage?: unknown;
+  releaseFailed?: unknown;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** 공장을 주지 않은 생산일 조건은 현장(하노이) 날짜로 푼다 — 지금 공장은 모두 UTC+7(계약 설명). */
+const SITE_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 /**
  * 자재 출고요청 목록·상세(화면 `M-01-08`).
@@ -30,20 +56,12 @@ export class MaterialIssueRequestQueryService {
 
   async list(query: MaterialIssueRequestQuery): Promise<PagedResponse<MaterialIssueRequestView>> {
     const page = pageRequest({ page: int(query.page), size: int(query.size) });
-    const workOrderId = int(query.workOrderId);
-    const where: Prisma.material_issue_requestWhereInput = {
-      ...(workOrderId === undefined ? {} : { work_order_id: workOrderId }),
-      // ⛔ 4값 대조를 걸지 않는다 — 필터에 값 목록을 걸면 값이 늘 때 조회가 400 을 낸다(§8-2).
-      ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
-      ...requiredAtWhere(query.requiredAtFrom, query.requiredAtTo),
-      ...(query.q === undefined
-        ? {}
-        : { issue_request_no: { contains: query.q, mode: 'insensitive' } }),
-    };
+    const where = await this.where(query);
 
     const [rows, total] = await Promise.all([
       this.prisma.material_issue_request.findMany({
         where,
+        include: DERIVED_INCLUDE,
         // 계약 침묵 — PK 역순이다(§8-1 · PK 가 유일해 페이지 경계가 흔들리지 않는다).
         orderBy: { material_issue_request_id: 'desc' },
         skip: page.skip,
@@ -51,22 +69,73 @@ export class MaterialIssueRequestQueryService {
       }),
       this.prisma.material_issue_request.count({ where }),
     ]);
-    return pagedResponse(rows.map(materialIssueRequestView), total, page);
+    const dynamic = await lineDynamicShortages(this.prisma, rows);
+    return pagedResponse(rows.map((row) => materialIssueRequestView(row, derive(row, dynamic))), total, page);
+  }
+
+  private async where(query: MaterialIssueRequestQuery): Promise<Prisma.material_issue_requestWhereInput> {
+    const workOrderId = int(query.workOrderId);
+    const plantId = int(query.plantId);
+    const sourceWarehouseId = int(query.sourceWarehouseId);
+    const productionPlanId = int(query.productionPlanId);
+    const and: Prisma.material_issue_requestWhereInput[] = [];
+    const statuses = displayStatuses(query.displayStatus);
+    if (statuses.length > 0) and.push(displayStatusWhere(statuses));
+    if (bool(query.releaseFailed)) and.push({ status_code: 'WAITING', release_error_text: { not: null } });
+    if (bool(query.hasShortage)) {
+      const ids = (await dynamicShortages(this.prisma, plantId === undefined ? {} : { plantId: BigInt(plantId) }))
+        .flatMap((s) => s.lines.map((line) => line.requestId));
+      and.push({ OR: [{ material_issue_request_line: { some: { shortage_qty: { gt: 0 } } } }, { material_issue_request_id: { in: ids } }] });
+    }
+    const workOrder: Prisma.work_orderWhereInput = {
+      ...(plantId === undefined ? {} : { production_plan: { production_order: { plant_id: plantId } } }),
+      ...(productionPlanId === undefined ? {} : { production_plan_id: productionPlanId }),
+      ...(await this.productionDateWhere(query, plantId)),
+    };
+    return {
+      ...(workOrderId === undefined ? {} : { work_order_id: workOrderId }),
+      // ⛔ 4값 대조를 걸지 않는다 — 필터에 값 목록을 걸면 값이 늘 때 조회가 400 을 낸다(§8-2).
+      ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
+      ...requiredAtWhere(query.requiredAtFrom, query.requiredAtTo),
+      ...(query.q === undefined
+        ? {}
+        : { issue_request_no: { contains: query.q, mode: 'insensitive' } }),
+      ...(sourceWarehouseId === undefined ? {} : { source_warehouse_id: sourceWarehouseId }),
+      ...dateRange('issue_work_date', query.issueWorkDateFrom, query.issueWorkDateTo),
+      ...(Object.keys(workOrder).length === 0 ? {} : { work_order: workOrder }),
+      ...(and.length === 0 ? {} : { AND: and }),
+    };
+  }
+
+  /** 생산일 = W/O 계획 시작의 공장 현지 날짜 — 그 날의 현지 00:00 ~ 다음 날 00:00 순간 구간으로 바꾼다(캐스팅 없이). */
+  private async productionDateWhere(query: MaterialIssueRequestQuery, plantId: number | undefined): Promise<Prisma.work_orderWhereInput> {
+    if (query.productionDateFrom === undefined && query.productionDateTo === undefined) return {};
+    const plant = plantId === undefined ? null : await this.prisma.plant.findUnique({ where: { plant_id: plantId }, select: { timezone_code: true } });
+    const timezone = plant?.timezone_code ?? SITE_TIMEZONE;
+    const next = (date: string) => new Date(new Date(`${date}T00:00:00Z`).getTime() + DAY_MS).toISOString().slice(0, 10);
+    return {
+      planned_start_at: {
+        ...(query.productionDateFrom === undefined ? {} : { gte: zonedToUtc(query.productionDateFrom, '00:00:00', timezone) }),
+        ...(query.productionDateTo === undefined ? {} : { lt: zonedToUtc(next(query.productionDateTo), '00:00:00', timezone) }),
+      },
+    };
   }
 
   /** 없으면 404 다(계약 선언 · 출고 상세 선례). */
   async get(materialIssueRequestId: number): Promise<MaterialIssueRequestDetail> {
     const row = await this.prisma.material_issue_request.findUnique({
       where: { material_issue_request_id: materialIssueRequestId },
+      include: DERIVED_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 자재 출고요청입니다.');
     const lines = await this.prisma.material_issue_request_line.findMany({
       where: { material_issue_request_id: materialIssueRequestId },
       orderBy: { line_no: 'asc' },
     });
+    const derived = derive(row, await lineDynamicShortages(this.prisma, [row]));
     return {
-      materialIssueRequest: materialIssueRequestView(row),
-      lines: lines.map(materialIssueRequestLineView),
+      materialIssueRequest: materialIssueRequestView(row, derived),
+      lines: lines.map((line) => materialIssueRequestLineView(line, derived.lines.get(line.material_issue_request_line_id))),
     };
   }
 }
@@ -85,4 +154,28 @@ function requiredAtWhere(from?: string, to?: string): Prisma.material_issue_requ
 
 function int(value: unknown): number | undefined {
   return value === undefined || value === '' ? undefined : Number(value);
+}
+
+function dateRange(column: 'issue_work_date', from?: string, to?: string): Prisma.material_issue_requestWhereInput {
+  if (from === undefined && to === undefined) return {};
+  return {
+    [column]: {
+      ...(from === undefined ? {} : { gte: new Date(`${from}T00:00:00Z`) }),
+      ...(to === undefined ? {} : { lte: new Date(`${to}T00:00:00Z`) }),
+    },
+  };
+}
+
+/** 계약은 쉼표로 이은 배열이다 — 가드가 배열로 바꿔 두지만 문자열로 와도 받는다. */
+function displayStatuses(value: unknown): DisplayStatus[] {
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  const unknown = raw.filter((code) => !(DISPLAY_STATUSES as readonly string[]).includes(String(code)));
+  if (unknown.length > 0) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [field('displayStatus', ERROR_CODE.INVALID, `표시 상태는 ${DISPLAY_STATUSES.join(' · ')} 중에서 고릅니다.`)]);
+  }
+  return raw as DisplayStatus[];
+}
+
+function bool(value: unknown): boolean {
+  return value === true || value === 'true';
 }

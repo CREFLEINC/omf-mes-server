@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 
+import { LineDerived, RequestDerived } from './material-issue-request-derived';
+
 /**
  * 계약 `MaterialIssueRequest`·`MaterialIssueRequestLine` 으로 옮기는 자리 —
  * `x-source-column` 1:1 이고 라벨 칸(`itemCode`·`workOrderNo`)을 지어 넣지 않는다(문의 047).
@@ -16,7 +18,7 @@ export interface MaterialIssueRequestDetail {
   lines: MaterialIssueRequestLineView[];
 }
 
-export function materialIssueRequestView(row: Prisma.material_issue_requestGetPayload<object>) {
+export function materialIssueRequestView(row: Prisma.material_issue_requestGetPayload<object>, derived?: RequestDerived) {
   return {
     materialIssueRequestId: Number(row.material_issue_request_id),
     issueRequestNo: row.issue_request_no,
@@ -36,11 +38,24 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
     closeReasonCode: row.close_reason_code ?? null,
     // 수정·취소의 저장 충돌 보호 — 본문 versionNo 로 되돌려 보낸다(W-02-11).
     versionNo: row.version_no,
+    // 화면 값(파생 · W-02-11) — 목록·상세가 싣는다. 발행 응답은 만든 직후라 싣지 않는다.
+    ...(derived === undefined
+      ? {}
+      : {
+          displayStatus: derived.displayStatus,
+          sourceWarehouseName: derived.sourceWarehouseName,
+          workOrderNo: derived.workOrderNo,
+          productionDate: derived.productionDate,
+          productionPlanId: derived.productionPlanId,
+          itemCount: derived.itemCount,
+          shortageQty: derived.shortageQty,
+        }),
   };
 }
 
 export function materialIssueRequestLineView(
   row: Prisma.material_issue_request_lineGetPayload<object>,
+  derived?: LineDerived,
 ) {
   return {
     materialIssueRequestLineId: Number(row.material_issue_request_line_id),
@@ -55,6 +70,7 @@ export function materialIssueRequestLineView(
     uomId: Number(row.uom_id),
     // 만들 때 생산 창고의 쓸 수 있는 양에 걸려 줄인 양(피처 003). 소요 = requestedQty + shortageQty.
     shortageQty: Number(row.shortage_qty),
+    ...(derived === undefined ? {} : derived),
   };
 }
 

@@ -169,10 +169,10 @@ export async function lockPairs(
  */
 export async function dynamicShortages(
   db: Prisma.TransactionClient,
-  scope: { plantId: bigint; warehouseId?: bigint },
+  scope: { plantId?: bigint; warehouseId?: bigint },
 ): Promise<DynamicShortage[]> {
   const lines = await plannedLines(db, {
-    plantId: scope.plantId,
+    ...(scope.plantId === undefined ? {} : { plantId: scope.plantId }),
     ...(scope.warehouseId === undefined ? {} : { warehouseIds: [scope.warehouseId] }),
   });
   if (lines.length === 0) return [];
