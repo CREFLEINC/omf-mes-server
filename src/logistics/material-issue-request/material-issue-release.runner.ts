@@ -156,7 +156,7 @@ export class MaterialIssueReleaseRunner implements OnApplicationBootstrap, OnApp
             where: { material_issue_request_id: requestId, status_code: 'WAITING' },
             data: { release_attempted_at: now, release_error_text: message },
           });
-          if (count > 0) await recordRequestAudit(tx, { requestId, action: 'RELEASE_FAILED', actorId: null, reason: message, at: now });
+          if (count > 0) await recordRequestAudit(tx, { requestId, action: 'RELEASE_FAILED', actorId: null, detail: { errorText: message }, at: now });
         })
         .catch((recordError: unknown) => this.logger.warn(`배포 실패 기록 실패 — ${messageOf(recordError)}`));
       return false;

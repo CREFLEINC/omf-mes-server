@@ -89,12 +89,7 @@ export async function writeWaitingRequests(
         material_issue_request_id: header.material_issue_request_id,
       })),
     });
-    await recordRequestAudit(tx, {
-      requestId: header.material_issue_request_id,
-      action: 'CREATE',
-      actorId: input.appUserId,
-      after: { statusCode: WAITING, sourceWarehouseId: Number(warehouseId), issueWorkDate: waiting.issueWorkDate },
-    });
+    await recordRequestAudit(tx, { requestId: header.material_issue_request_id, action: 'CREATED', actorId: input.appUserId });
     const released =
       waiting.releaseNow &&
       (await releaser.release(tx, header.material_issue_request_id, waiting.pickingOrderNos[index], input.appUserId));

@@ -25,7 +25,11 @@ function fake(
   const tx = {
     $queryRaw: async (_s: TemplateStringsArray, id: bigint) => (seed.locked?.includes(id) ? [] : [{ id }]),
     material_issue_request: { updateMany: record },
-    audit_event: { create: jest.fn(async ({ data }: { data: { reason: string } }) => audits.push(data.reason)) },
+    audit_event: {
+      create: jest.fn(async ({ data }: { data: { after_value: { eventCode: string; detail: { errorText: string } } } }) =>
+        audits.push(`${data.after_value.eventCode} ${data.after_value.detail.errorText}`),
+      ),
+    },
   };
   const prisma = {
     plant: { findMany: jest.fn(async (_args?: { where: { is_active: boolean } }) => (seed.plants ?? []).map(([plant_id, timezone_code]) => ({ plant_id, timezone_code }))) },
@@ -106,7 +110,7 @@ describe('00:00 출고 요청 배포 러너', () => {
     expect(await runner.tick(new Date('2026-11-12T17:00:30Z'))).toBe(2);
     expect(released).toEqual([11n, 13n]);
     expect(recorded).toEqual([{ id: 12n, message: '출발 창고가 사용 중지되어 배포할 수 없습니다.' }]);
-    expect(audits).toEqual(['출발 창고가 사용 중지되어 배포할 수 없습니다.']);
+    expect(audits).toEqual(['RELEASE_FAILED 출발 창고가 사용 중지되어 배포할 수 없습니다.']);
   });
 
   it('30초마다 리스를 늘리고, 회차 중에 잃으면 그 회차를 접는다', async () => {

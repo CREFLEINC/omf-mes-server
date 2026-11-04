@@ -38,7 +38,7 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
     closeReasonCode: row.close_reason_code ?? null,
     // 수정·취소의 저장 충돌 보호 — 본문 versionNo 로 되돌려 보낸다(W-02-11).
     versionNo: row.version_no,
-    // 화면 값(파생 · W-02-11) — 목록·상세가 싣는다. 발행 응답은 만든 직후라 싣지 않는다.
+    // 화면 값(파생 · W-02-11) — 목록·상세·발행·수정·취소 응답이 싣는다(조회 서비스를 거친다).
     ...(derived === undefined
       ? {}
       : {
@@ -47,8 +47,11 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
           workOrderNo: derived.workOrderNo,
           productionDate: derived.productionDate,
           productionPlanId: derived.productionPlanId,
-          itemCount: derived.itemCount,
-          shortageQty: derived.shortageQty,
+          productionPlanNo: derived.productionPlanNo,
+          destinationLocationName: derived.destinationLocationName,
+          lineCount: derived.lineCount,
+          shortageQtyTotal: derived.shortageQtyTotal,
+          dynamicShortageQtyTotal: derived.dynamicShortageQtyTotal,
         }),
   };
 }

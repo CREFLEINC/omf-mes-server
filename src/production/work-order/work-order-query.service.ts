@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PagedResponse, pageRequest } from '../../common/pagination';
 import type { TerminalContext } from '../../auth/terminal-context';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import { productionWarehouseChoices } from '../../core/material-issue/source-warehouse';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CLOSE_TOLERANCE } from './completion';
 import { ValidationSummary, summarize, validateWorkOrder } from './validation';
@@ -241,15 +242,20 @@ export class WorkOrderQueryService {
     const row = await this.prisma.work_order.findUnique({ where: { work_order_id: workOrderId }, include: DISPLAY_JOIN });
     if (!row) throw new NotFoundException('없는 MES W/O 입니다.');
 
-    const [progress, preIssuedLots, erpMessageQueued, voidedLotCount, closers] = await Promise.all([
+    const [progress, preIssuedLots, erpMessageQueued, voidedLotCount, closers, warehouses] = await Promise.all([
       query.withProgress === false ? undefined : this.progress(row),
       query.withPreIssuedLots === true ? this.preIssuedLots(row.work_order_id) : undefined,
       this.erpQueued(row.work_order_id),
       row.closed_at === null ? undefined : this.voidedLots(row.work_order_id),
       this.closersOf([row]),
+      // W-02-10 출발 창고 칸(피처 003) — 상세에만 싣는다.
+      productionWarehouseChoices(this.prisma, row.work_order_id),
     ]);
     const closedByUser = closedByUserOf(row, closers);
-    return { view: workOrderView(row, { progress, preIssuedLots, erpMessageQueued, voidedLotCount, closedByUser }), versionNo: row.version_no };
+    return {
+      view: { ...workOrderView(row, { progress, preIssuedLots, erpMessageQueued, voidedLotCount, closedByUser }), ...warehouses },
+      versionNo: row.version_no,
+    };
   }
 
   /** 404 는 계약 미선언이나 낸다 — 없는 W/O 의 빈 배열과 「배정이 없다」를 가른다(§7-3 · 선례). */

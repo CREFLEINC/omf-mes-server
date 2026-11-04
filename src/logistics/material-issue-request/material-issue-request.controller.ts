@@ -81,9 +81,12 @@ export class MaterialIssueRequestController {
     @Body() body: MaterialIssueRequestCreate,
   ): Promise<unknown> {
     const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.requests.create(body, appUserId),
-    );
+    // 응답은 조회와 같은 모양(이름·화면 값)이다 — 만든 뒤 조회 서비스로 다시 읽는다(피처 003 · W-02-10).
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
+      const created = await this.requests.create(body, appUserId);
+      const ids = created.requests.map((row) => row.materialIssueRequestId);
+      return { ...(await this.queries.get(ids[0])), requests: await this.queries.headers(ids) };
+    });
   }
 }
 

@@ -826,8 +826,11 @@ describe('추가 출고 요청 — 생산 창고 공장 (e2e)', () => {
     const detail = await request(app.getHttpServer()).get(`/api/logistics/material-issue-requests/${later.material_issue_request_id}`).set('Cookie', fx.cookie).expect(200);
     expect(detail.body.lines[0].dynamicShortageQty).toBe(20);
     const history = await request(app.getHttpServer()).get(`/api/logistics/material-issue-requests/${made.body.materialIssueRequest.materialIssueRequestId}/history`).set('Cookie', fx.cookie).expect(200);
-    expect(history.body.items.map((i: { actionCode: string }) => i.actionCode)).toEqual(expect.arrayContaining(['CREATE', 'PLANNED_OVERRIDE', 'RELEASE']));
-    expect(history.body.items.find((i: { actionCode: string }) => i.actionCode === 'PLANNED_OVERRIDE')).toMatchObject({ reason: 'URGENT_WO_RESPONSE', performedBy: Number(fx.ids.user) });
+    expect(history.body.items.map((i: { eventCode: string }) => i.eventCode)).toEqual(['RELEASED', 'PLANNED_OVERRIDE', 'CREATED']);
+    expect(history.body.items[1]).toMatchObject({
+      actorName: '출고요청시험',
+      detail: { reason: 'URGENT_WO_RESPONSE', after: [{ itemId: Number(fx.items.X), requestedQty: 20 }] },
+    });
   });
 
   it('US4-8 다른 사유는 쓸 수 있는 양이 0 이면 409 overridable=false — 확인해도 못 만든다', async () => {
@@ -851,6 +854,48 @@ describe('추가 출고 요청 — 생산 창고 공장 (e2e)', () => {
     ]);
     const line = await prisma.production_line.findUniqueOrThrow({ where: { production_line_id: lineId } });
     expect(made.body.materialIssueRequest.destinationLocationId).toBe(Number(line.default_wip_location_id));
+  });
+
+  it('W/O 상세의 출발 창고 칸 · 라인 부서에 생산 창고가 없으면 400 PRODUCTION_WAREHOUSE_MISSING · 고른 창고는 그 목록 안', async () => {
+    const { lineId, warehouses } = await setup({ B: [['X', 10]], A: [['X', 10]] });
+    const wo = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+    const detail = await request(app.getHttpServer()).get(`/api/production/work-orders/${wo}`).set('Cookie', fx.cookie).expect(200);
+    const codes = await prisma.warehouse.findMany({ where: { warehouse_id: { in: Object.values(warehouses) } }, orderBy: { warehouse_code: 'asc' } });
+    expect(detail.body).toMatchObject({
+      productionWarehouseMode: true,
+      productionWarehouses: codes.map((w) => ({ warehouseId: Number(w.warehouse_id), warehouseCode: w.warehouse_code, warehouseName: w.warehouse_name })),
+    });
+
+    const outside = await fx.warehouse(fx.ids.p1, `S${++seq}-OUT`);
+    const wrong = await post({ workOrderId: Number(wo), reasonCode: 'OTHER', sourceWarehouseId: Number(outside.warehouseId), lines: [lineOf('X', 1)] }).expect(400);
+    expect(wrong.body.errors[0]).toMatchObject({ field: 'sourceWarehouseId', code: 'INVALID' });
+
+    const emptyDept = await fx.department(`S${seq}-EMPTY`, []);
+    const bareLine = await fx.line('P1', `S${seq}-BARE`, emptyDept);
+    const bareWo = await fx.workOrder({ plantKey: 'P1', lineId: bareLine, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+    const bare = await request(app.getHttpServer()).get(`/api/production/work-orders/${bareWo}`).set('Cookie', fx.cookie).expect(200);
+    expect(bare.body).toMatchObject({ productionWarehouseMode: true, productionWarehouses: [] });
+    for (const sourceWarehouseId of [undefined, Number(warehouses.A)]) {
+      const refused = await post({ workOrderId: Number(bareWo), reasonCode: 'OTHER', sourceWarehouseId, lines: [lineOf('X', 1)] }).expect(400);
+      expect(refused.body.errors.map((e: { code: string }) => e.code)).toContain('PRODUCTION_WAREHOUSE_MISSING');
+    }
+  });
+
+  it('발행 응답은 조회와 같은 모양 — 이름·화면 값·versionNo', async () => {
+    const { lineId } = await setup({ A: [['X', 100]] });
+    const wo = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+    const made = await post({ workOrderId: Number(wo), reasonCode: 'OTHER', lines: [lineOf('X', 5)] }).expect(201);
+    expect(made.body.materialIssueRequest).toMatchObject({
+      versionNo: expect.any(Number),
+      workOrderNo: expect.any(String),
+      destinationLocationName: expect.any(String),
+      sourceWarehouseName: expect.any(String),
+      displayStatus: 'RELEASED',
+      lineCount: 1,
+      shortageQtyTotal: 0,
+    });
+    expect(made.body.lines[0]).toMatchObject({ itemCode: `${PLANNED_PREFIX}-X`, itemName: 'X', uomCode: expect.any(String), pickedQty: 0, outstandingQty: 5 });
+    expect(made.body.requests[0]).toMatchObject({ workOrderNo: expect.any(String), displayStatus: 'RELEASED' });
   });
 
   it('US4-6 US2-12 부족 목록의 「재고 있는 생산 창고 없음」 행에서 보충 요청 → 보충 요청됨 · 「자동」인데 재고 없으면 409 noStockedWarehouse', async () => {
