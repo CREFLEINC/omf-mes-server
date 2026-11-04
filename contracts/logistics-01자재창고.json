@@ -16563,7 +16563,7 @@
       "x-source-column": "status_code",
       "type": "string",
       "maxLength": 50,
-      "description": "전표의 진행 상태 — 등록(REGISTERED) · 전기완료(POSTED) · 취소요청(CANCEL_REQUESTED) · 취소완료(CANCELLED). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOGISTICS_DOCUMENT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서 이 값을 편집하면 안 된다. 취소 가부 판정이 이 값에 걸린다(W-01-13 §5-1 관문 ② 「전기됐는가」 — 전기 전은 상태 전이만, 전기 후는 원장 역트랜잭션이다). 근거: W-01-13 §5-3 이 문서 9종을 동형으로 두고 같은 화면 §3 목업이 네 값을 그린다(사용자 결정 2026-09-02).",
+      "description": "전표의 진행 상태 — 등록(REGISTERED) · 전기완료(POSTED) · 취소요청(CANCEL_REQUESTED) · 취소완료(CANCELLED). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOGISTICS_DOCUMENT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서 이 값을 편집하면 안 된다. 취소 가부 판정이 이 값에 걸린다(W-01-13 §5-1 관문 ② 「전기됐는가」 — 전기 전은 상태 전이만, 전기 후는 원장 역트랜잭션이다). 근거: W-01-13 §5-3 이 문서 9종을 동형으로 두고 같은 화면 §3 목업이 네 값을 그린다(사용자 결정 2026-09-02). WAITING(대기) = 출고 작업일 00:00 전의 계획 기반 요청 — 피킹 지시가 없다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
       "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다.",
       "x-code-key": "CD-LOGISTICS-DOCUMENT-STATUS"
@@ -16594,6 +16594,66 @@
        "null"
       ],
       "example": "비고 문자열"
+     },
+     "sourceWarehouseId": {
+      "x-source-column": "source_warehouse_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 12,
+      "description": "출발 생산 창고. null = 이 기능 전 요청이거나 생산 창고를 쓰지 않는 공장의 요청 — 출고 예정 재고에 들지 않는다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "issueWorkDate": {
+      "x-source-column": "issue_work_date",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "example": "2026-11-13",
+      "description": "출고 작업일(공장 현지 날짜) — 생산일의 직전 근무일. 이날 공장 현지 00:00 에 대기 요청이 배포된다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "releasedAt": {
+      "x-source-column": "released_at",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "대기 → 배포 시각. 즉시 배포도 기록한다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "releaseErrorText": {
+      "x-source-column": "release_error_text",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 1000,
+      "description": "마지막 배포 실패 원인. 성공하면 null. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "closedAt": {
+      "x-source-column": "closed_at",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "진행된 요청의 미출고분을 W/O 취소·마감으로 닫은 시각. 상태는 그대로다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "closeReasonCode": {
+      "x-source-column": "close_reason_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "WO_CANCELLED",
+       "WO_CLOSED",
+       null
+      ],
+      "description": "닫힌 사유. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
@@ -16784,8 +16844,9 @@
      "requestedQty": {
       "x-source-column": "requested_qty",
       "type": "number",
-      "exclusiveMinimum": 0,
-      "example": 100
+      "example": 100,
+      "minimum": 0,
+      "description": "0 일 수 있다 — 생산 창고의 쓸 수 있는 양이 없어 전부 부족(shortageQty)으로 만든 줄. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      },
      "issuedQty": {
       "x-source-column": "issued_qty",
@@ -16800,6 +16861,13 @@
       "type": "integer",
       "format": "int64",
       "example": 1001
+     },
+     "shortageQty": {
+      "x-source-column": "shortage_qty",
+      "type": "number",
+      "minimum": 0,
+      "example": 20,
+      "description": "만들 때 생산 창고의 쓸 수 있는 양(가용 − 출고 예정)에 걸려 줄인 양. 소요 = requestedQty + shortageQty. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
