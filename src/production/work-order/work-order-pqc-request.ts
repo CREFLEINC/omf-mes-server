@@ -50,19 +50,15 @@ export interface PqcRequestPlan {
 const FULL_INSPECTION = 'FULL_INSPECTION';
 
 /**
- * 이 공정에 유효한 PQC 기준 버전.
+ * 이 제품에 유효한 PQC 기준 버전.
  *
- * ⚠ IQC·OQC 의 `resolveInspectionPlanVersion` 과 조회 축이 다르다 — PQC 기준은 품목뿐
- *   아니라 **공정·라우팅**으로도 걸린다(`inspection_plan.process_id`·`routing_id`). 그래서
- *   그 함수를 쓰지 않고 여기서 따로 고른다. 여러 건이면 좁은 쪽(공정 지정)이 이긴다 —
- *   품목 전체 기준과 공정별 기준이 함께 있으면 공정별이 그 공정의 답이다.
- *   품목 전용 기준이 하나도 없으면 「전 품목 공통」 기준에서 같은 규칙으로 고른다.
+ * ⭐ PQC 기준은 제품(품목)에 붙는다 — 어느 공정을 검사할지는 라우팅 공정의 「검사 관리」가 정하고, 켜진 공정은
+ *   모두 이 제품의 같은 기준을 쓴다(사용자 결정 2026-11-04). 옛 기준에 남은 공정 · 라우팅 값은 보지 않는다.
+ *   품목 전용 기준이 하나도 없으면 「전 품목 공통」 기준을 쓴다.
  */
 async function resolvePqcPlanVersion(
   prisma: PrismaService,
   itemId: bigint,
-  processId: bigint,
-  routingId: bigint,
   effectiveDate: Date,
 ): Promise<PqcPlanVersion | null> {
   const find = async (planItemId: bigint | null) => latestPerPlan(await prisma.inspection_plan_version.findMany({
@@ -70,16 +66,7 @@ async function resolvePqcPlanVersion(
       status_code: 'CONFIRMED',
       effective_from: { lte: effectiveDate },
       OR: [{ effective_to: null }, { effective_to: { gte: effectiveDate } }],
-      inspection_plan: {
-        inspection_type_code: 'PQC',
-        is_active: true,
-        item_id: planItemId,
-        /* 공정 · 라우팅은 둘 다 맞아야 한다 — 비운 칸만 「아무거나」다. 한쪽만 맞춰 받으면 같은 라우팅의 다른 공정 기준이 끼어든다. */
-        AND: [
-          { OR: [{ process_id: processId }, { process_id: null }] },
-          { OR: [{ routing_id: routingId }, { routing_id: null }] },
-        ],
-      },
+      inspection_plan: { inspection_type_code: 'PQC', is_active: true, item_id: planItemId },
     },
     select: {
       inspection_plan_version_id: true,
@@ -88,20 +75,13 @@ async function resolvePqcPlanVersion(
       sampling_method_code: true,
       sampling_ratio: true,
       sampling_qty: true,
-      inspection_plan: { select: { process_id: true, routing_id: true, default_skip: true } },
+      inspection_plan: { select: { default_skip: true } },
     },
   }));
   /* 품목 전용 기준이 먼저다. 없을 때만 「전 품목 공통」(품목 칸이 빈 기준)으로 내려간다 — IQC 와 같은 규칙(사용자 결정 2026-11-04). */
   const own = await find(itemId);
-  const versions = own.length > 0 ? own : await find(null);
-  if (versions.length === 0) return null;
-
-  /* 더 좁게 지정한 기준이 이긴다 — 공정 + 라우팅 > 공정이나 라우팅 하나 > 품목 전체. */
-  const narrowness = (version: (typeof versions)[number]): number =>
-    Number(version.inspection_plan.process_id !== null) + Number(version.inspection_plan.routing_id !== null);
-  const narrowest = Math.max(...versions.map(narrowness));
-  const candidates = versions.filter((version) => narrowness(version) === narrowest);
-  /* 좁힌 뒤에도 둘 이상이면 고르지 않는다 — 임의로 고르면 어느 기준으로 검사했는지가 기록에서 사라진다. */
+  const candidates = own.length > 0 ? own : await find(null);
+  /* 둘 이상이면 고르지 않는다 — 임의로 고르면 어느 기준으로 검사했는지가 기록에서 사라진다. 저장 때 제품당 하나로 막는다. */
   if (candidates.length !== 1) return null;
 
   const [only] = candidates;
@@ -149,21 +129,13 @@ export async function preparePqcRequest(
   input: {
     inspectionManaged: boolean;
     itemId: bigint;
-    processId: bigint;
-    routingId: bigint;
     orderQty: Prisma.Decimal;
     businessDate: string;
   },
 ): Promise<PqcRequestPlan | null> {
   if (!input.inspectionManaged) return null;
 
-  const version = await resolvePqcPlanVersion(
-    prisma,
-    input.itemId,
-    input.processId,
-    input.routingId,
-    new Date(input.businessDate),
-  );
+  const version = await resolvePqcPlanVersion(prisma, input.itemId, new Date(input.businessDate));
   const requestNo = await numbering.next('INSPECTION_REQUEST', null, input.businessDate);
 
   return {

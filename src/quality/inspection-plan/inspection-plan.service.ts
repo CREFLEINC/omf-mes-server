@@ -20,7 +20,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
 import { syncItemsToCommonIqcPlan } from './item-iqc-plan-sync';
-import { isRoutingLinkedPqc, syncRoutingOperationsToPqcPlan } from './pqc-routing-sync';
 
 /** `quality.inspection_plan` 을 FK 로 가리키는 자리 전부. 실측이고 e2e 가 대조한다. */
 export const INSPECTION_PLAN_REFERRERS: readonly Referrer[] = [
@@ -141,17 +140,14 @@ export class InspectionPlanService {
             ...optional('name_ko', input.nameKo),
             ...optional('name_vi', input.nameVi),
             ...optional('item_id', input.itemId),
-            ...optional('process_id', input.processId),
+            ...processData(input),
             ...optional('routing_id', input.routingId),
             ...defaultSkipData(input),
           },
         });
         await syncItemInspectionRequired(tx, input);
         if (isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
-        if (!isRoutingLinkedPqc(row)) return row;
-        await syncRoutingOperationsToPqcPlan(tx, row);
-        // 확정 Rev 가 새 Rev 로 바뀌면 이 기준의 라우팅도 옮겨 갔다.
-        return tx.inspection_plan.findUniqueOrThrow({ where: { inspection_plan_id: row.inspection_plan_id } });
+        return row;
       }),
     );
   }
@@ -175,7 +171,7 @@ export class InspectionPlanService {
           ...optional('name_ko', input.nameKo),
           ...optional('name_vi', input.nameVi),
           ...optional('item_id', input.itemId),
-          ...optional('process_id', input.processId),
+          ...processData(input),
           ...optional('routing_id', input.routingId),
           ...defaultSkipData(input),
           version_no: { increment: 1 },
@@ -187,10 +183,6 @@ export class InspectionPlanService {
         const after = await tx.inspection_plan.findUnique({ where: { inspection_plan_id: inspectionPlanId } });
         if (after !== null && isCommonIqc(after) && !(before !== null && isCommonIqc(before) && before.default_skip === after.default_skip)) {
           await syncItemsToCommonIqcPlan(tx, after.default_skip);
-        }
-        // 공정이 지정된 PQC 기준은 라우팅 「검사 관리」와 맞춘다 — 같은 규칙(기본 생략 · 대상이 바뀐 저장만 · 사용자 결정 2026-11-04).
-        if (after !== null && isRoutingLinkedPqc(after) && !(before !== null && isRoutingLinkedPqc(before) && samePqcTarget(before, after))) {
-          await syncRoutingOperationsToPqcPlan(tx, after);
         }
       }
       return result;
@@ -204,6 +196,13 @@ export class InspectionPlanService {
     version: number,
     isActive: boolean,
   ): Promise<InspectionPlanResult> {
+    if (isActive) {
+      const row = await this.prisma.inspection_plan.findUnique({
+        where: { inspection_plan_id: inspectionPlanId },
+        select: { inspection_type_code: true, item_id: true },
+      });
+      if (row !== null) await this.assertSinglePqc(row, inspectionPlanId);
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.inspection_plan.updateMany({
         where: { inspection_plan_id: inspectionPlanId, version_no: version },
@@ -214,10 +213,9 @@ export class InspectionPlanService {
       if (result.count > 0 && isActive) {
         const row = await tx.inspection_plan.findUnique({
           where: { inspection_plan_id: inspectionPlanId },
-          select: { inspection_type_code: true, item_id: true, process_id: true, routing_id: true, default_skip: true, is_active: true },
+          select: { inspection_type_code: true, item_id: true, default_skip: true, is_active: true },
         });
         if (row !== null && isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
-        if (row !== null && isRoutingLinkedPqc(row)) await syncRoutingOperationsToPqcPlan(tx, row);
         if (row !== null) {
           await syncItemInspectionRequired(tx, {
             inspectionTypeCode: row.inspection_type_code,
@@ -298,23 +296,41 @@ export class InspectionPlanService {
       },
     ]);
     await this.assertCodeFree(input.inspectionPlanCode, self);
-    await this.assertPqcProcess(input, self);
+    await this.assertSinglePqc({ inspection_type_code: input.inspectionTypeCode, item_id: input.itemId }, self);
     await this.assertTargets(input);
   }
 
   /**
-   * PQC 기준은 공정이 필수다(사용자 결정 2026-11-04) — 공정 단위 검사이고, 라우팅 「검사 관리」 연동이 공정으로 걸린다.
-   * 수정 본문에 공정이 없으면(보내지 않음) 저장된 값을 본다. 이미 저장된 공정 없는 PQC 기준은 다음 저장 때 공정을 골라야 한다.
+   * PQC 기준은 제품(품목)에 하나만 사용한다(사용자 결정 2026-11-04) — 의뢰는 품목으로 기준을 고르고, 둘이면 고르지 못해
+   * 검사 항목 없는 의뢰가 된다. 「전 품목 공통」(품목 없음)도 하나다. 수정 본문에 품목이 없으면(보내지 않음) 저장된 값을 본다.
    */
-  private async assertPqcProcess(input: InspectionPlanWrite, self: number | null): Promise<void> {
-    if (input.inspectionTypeCode !== 'PQC') return;
-    const processId =
-      input.processId !== undefined || self === null
-        ? input.processId
-        : (await this.prisma.inspection_plan.findUnique({ where: { inspection_plan_id: self }, select: { process_id: true } }))?.process_id;
-    if (processId !== null && processId !== undefined) return;
+  private async assertSinglePqc(
+    target: { inspection_type_code: string; item_id: bigint | number | null | undefined },
+    self: number | null,
+  ): Promise<void> {
+    if (target.inspection_type_code !== 'PQC') return;
+    const itemId =
+      target.item_id !== undefined || self === null
+        ? (target.item_id ?? null)
+        : ((await this.prisma.inspection_plan.findUnique({ where: { inspection_plan_id: self }, select: { item_id: true } }))?.item_id ?? null);
+    const other = await this.prisma.inspection_plan.findFirst({
+      where: {
+        inspection_type_code: 'PQC',
+        is_active: true,
+        item_id: itemId,
+        ...(self === null ? {} : { inspection_plan_id: { not: self } }),
+      },
+      select: { inspection_plan_code: true },
+    });
+    if (other === null) return;
     throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field: 'processId', code: ERROR_CODE.REQUIRED, message: '공정검사(PQC) 기준은 공정을 골라야 합니다.' },
+      {
+        scope: 'field',
+        field: 'itemId',
+        code: ERROR_CODE.UNIQUE_VIOLATION,
+        uniqueScope: ['inspectionTypeCode', 'itemId'],
+        message: `이 품목에는 사용 중인 공정검사(PQC) 기준이 이미 있습니다(${other.inspection_plan_code}).`,
+      },
     ]);
   }
 
@@ -407,14 +423,9 @@ async function syncItemInspectionRequired(
   });
 }
 
-/** 라우팅에 맞출 값(기본 생략 · 품목 · 공정 · 라우팅)이 그대로인가 — 이름만 고친 저장은 라우팅을 건드리지 않는다. */
-function samePqcTarget(before: PlanRow, after: PlanRow): boolean {
-  return (
-    before.default_skip === after.default_skip &&
-    before.item_id === after.item_id &&
-    before.process_id === after.process_id &&
-    before.routing_id === after.routing_id
-  );
+/** PQC 기준은 공정에 붙지 않는다 — 제품에 붙고, 검사할 공정은 라우팅 「검사 관리」가 정한다(사용자 결정 2026-11-04). 옛 공정 값도 저장 때 비운다. */
+function processData(input: Pick<InspectionPlanWrite, 'inspectionTypeCode' | 'processId'>): { process_id?: number | null } {
+  return input.inspectionTypeCode === 'PQC' ? { process_id: null } : optional('process_id', input.processId);
 }
 
 /** 사용 중인 「전 품목 공통」 IQC 기준인가 — 품목 칸이 비었다. */

@@ -280,8 +280,8 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(String(harness.inspectionRequests[0].target_qty)).toBe('10');
   });
 
-  /* 라우팅만 지정한 기준도 「좁은 쪽」이다 — 품목 전체 기준과 함께 서면 이쪽이 이긴다. */
-  it('PQC — 라우팅 지정 기준이 품목 전체 기준을 이긴다', async () => {
+  /* PQC 기준은 제품에 하나다 — 둘이 서 있으면(옛 공정 · 라우팅 값이 달라도) 고르지 않는다(사용자 결정 2026-11-04). */
+  it('PQC — 제품 기준이 둘이면 기준 없는 의뢰다', async () => {
     const harness = stub({
       inspectionManaged: true,
       pqcVersions: [
@@ -308,7 +308,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
 
     await release(harness);
 
-    expect(harness.inspectionRequests[0]).toMatchObject({ inspection_plan_version_id: 602n });
+    expect(harness.inspectionRequests[0]).toMatchObject({ inspection_plan_version_id: null });
   });
 
   /* #119 · 장부 P-82 — 고른 기준이 「PQC 생략 허용」이면 의뢰를 생략(SKIPPED)으로 만든다(번호·기준은 남긴다). */

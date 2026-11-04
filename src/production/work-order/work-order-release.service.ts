@@ -64,8 +64,6 @@ export class WorkOrderReleaseService {
     const pqc = await preparePqcRequest(this.prisma, this.numbering, {
       inspectionManaged: plan.row.routing_operation.inspection_managed,
       itemId: plan.row.item_id,
-      processId: plan.row.routing_operation.process_id,
-      routingId: plan.row.routing_operation.routing_id,
       orderQty: plan.row.order_qty,
       businessDate: plan.businessDate,
     });
