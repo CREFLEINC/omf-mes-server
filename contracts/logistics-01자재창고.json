@@ -4696,6 +4696,106 @@
        "type": "integer",
        "default": 50
       }
+     },
+     {
+      "name": "displayStatus",
+      "in": "query",
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "enum": [
+         "WAITING",
+         "RELEASED",
+         "IN_PROGRESS",
+         "DONE",
+         "CANCELLED"
+        ]
+       }
+      },
+      "description": "표시 상태로 거른다 — 여럿은 쉼표로 이어 보낸다. WAITING 대기 · RELEASED 배포(집은 것·출고 없음) · IN_PROGRESS 진행 중 · DONE 완료(전기완료 또는 W/O 취소·마감으로 닫힘) · CANCELLED 취소 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+      "style": "form",
+      "explode": false
+     },
+     {
+      "name": "issueWorkDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "출고 작업일 기간 시작(포함) 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "issueWorkDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "출고 작업일 기간 끝(포함) 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "productionDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "생산일(W/O 계획 시작의 공장 현지 날짜) 기간 시작. plantId 가 없으면 하노이 시간대로 푼다 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "productionDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "생산일 기간 끝(포함) 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 — W/O 계획의 공장 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "sourceWarehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "출발 생산 창고 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "productionPlanId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "생산계획(W/O 의 계획) 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "hasShortage",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "참이면 저장 부족(만들 때 줄인 양) 또는 동적 부족(예정 > 가용)이 있는 요청만 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "releaseFailed",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "참이면 배포 실패 원인이 남은 대기 요청만 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     ],
     "responses": {
@@ -4827,6 +4927,86 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-issue-requests/planned-stock": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "생산 창고 출고 예정 재고·부족",
+    "description": "생산 창고의 출고 예정 재고(FR-015)와 부족(FR-016). 행 = (출발 창고, 품목) — 가용 · 예정 · 여유(가용 − 예정, 0 미만은 0) · 부족(예정 − 가용, 0 미만은 0) · 그 쌍을 잡은 요청 배분(부족은 출고 작업일이 늦은 요청부터). onlyShortage=true 면 부족 > 0 인 행만, 그리고 unsourced(재고 있는 생산 창고가 없어 요청에 넣지 못한 자재 — W/O 가 취소·마감이 아닌 것)를 함께 싣는다. 기존 …/shortage(W/O BOM 대비 부족)와 다르다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+      "required": true
+     },
+     {
+      "name": "sourceWarehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "출발 생산 창고 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "onlyShortage",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "부족 행만 + 미배정 자재 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "예정·부족",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PlannedStockResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-02-11 · W-02-10",
       "content": {
        "application/json": {
         "schema": {
@@ -16887,6 +17067,54 @@
       "type": "integer",
       "minimum": 1,
       "description": "저장 충돌 보호 버전 — PUT·:cancel 본문 versionNo 로 되돌려 보낸다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "displayStatus": {
+      "type": "string",
+      "enum": [
+       "WAITING",
+       "RELEASED",
+       "IN_PROGRESS",
+       "DONE",
+       "CANCELLED"
+      ],
+      "description": "화면 표시 상태(파생 · 저장하지 않음). closedAt 이 있으면 DONE — closeReasonCode 를 함께 보인다. 요청 줄이 모두 0 인 배포 요청은 피킹이 없어 RELEASED 다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "sourceWarehouseName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "출발 생산 창고 이름(목록·상세 표기용). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "workOrderNo": {
+      "type": "string",
+      "description": "W/O 번호(목록 표기용). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "productionDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "description": "생산일 — W/O 계획 시작의 공장 현지 날짜. 계획 시작이 없으면 null. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "productionPlanId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "W/O 의 생산계획. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "itemCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "줄 수(목록 「품목 수」). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "shortageQty": {
+      "type": "number",
+      "minimum": 0,
+      "description": "부족 합 — 줄의 저장 부족(shortageQty) + 지금의 동적 부족 배분. 0 이면 부족 없음. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
@@ -17101,6 +17329,21 @@
       "minimum": 0,
       "example": 20,
       "description": "만들 때 생산 창고의 쓸 수 있는 양(가용 − 출고 예정)에 걸려 줄인 양. 소요 = requestedQty + shortageQty. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "pickedQty": {
+      "type": "number",
+      "minimum": 0,
+      "description": "집은 양(취소 안 된 피킹 줄의 합 · 파생). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "outstandingQty": {
+      "type": "number",
+      "minimum": 0,
+      "description": "미출고 = requestedQty − issuedQty(파생). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "dynamicShortageQty": {
+      "type": "number",
+      "minimum": 0,
+      "description": "지금 예정이 가용을 넘어 이 줄에 배분된 부족(파생 · FR-018). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      }
     }
    },
@@ -20120,6 +20363,182 @@
        "string",
        "null"
       ]
+     }
+    }
+   },
+   "PlannedStockResponse": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/PlannedStockRow"
+      }
+     },
+     "unsourced": {
+      "type": "array",
+      "description": "onlyShortage=true 일 때만 — 재고 있는 생산 창고 없음(FR-007a).",
+      "items": {
+       "$ref": "#/components/schemas/UnsourcedShortage"
+      }
+     }
+    }
+   },
+   "PlannedStockRow": {
+    "type": "object",
+    "required": [
+     "sourceWarehouseId",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "availableQty",
+     "plannedQty",
+     "freeQty",
+     "shortageQty",
+     "requests"
+    ],
+    "properties": {
+     "sourceWarehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "sourceWarehouseName": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "availableQty": {
+      "type": "number"
+     },
+     "plannedQty": {
+      "type": "number"
+     },
+     "freeQty": {
+      "type": "number",
+      "minimum": 0
+     },
+     "shortageQty": {
+      "type": "number",
+      "minimum": 0
+     },
+     "requests": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "materialIssueRequestId",
+        "issueRequestNo",
+        "workOrderId",
+        "workOrderNo",
+        "issueWorkDate",
+        "plannedQty",
+        "shortageQty"
+       ],
+       "properties": {
+        "materialIssueRequestId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "issueRequestNo": {
+         "type": "string"
+        },
+        "workOrderId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "workOrderNo": {
+         "type": "string"
+        },
+        "issueWorkDate": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "format": "date"
+        },
+        "plannedQty": {
+         "type": "number"
+        },
+        "shortageQty": {
+         "type": "number",
+         "description": "이 요청에 배분된 동적 부족 + 이 요청 줄의 저장 부족"
+        }
+       }
+      }
+     }
+    }
+   },
+   "UnsourcedShortage": {
+    "type": "object",
+    "required": [
+     "unsourcedShortageId",
+     "workOrderId",
+     "workOrderNo",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "shortageQty",
+     "uomCode"
+    ],
+    "properties": {
+     "unsourcedShortageId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "workOrderId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "workOrderNo": {
+      "type": "string"
+     },
+     "productionDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "shortageQty": {
+      "type": "number"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "resolvedRequestId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "resolvedRequestNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "보충 요청을 만들었으면 그 요청 번호(「보충 요청됨」)"
      }
     }
    }
