@@ -52,6 +52,7 @@ import { InboundVarianceService } from './inbound-receipt/inbound-variance.servi
 import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
 import { MaterialIssueRequestEditController } from './material-issue-request/material-issue-request-edit.controller';
 import { MaterialIssueRequestEditService } from './material-issue-request/material-issue-request-edit.service';
+import { PlannedStockService } from './material-issue-request/planned-stock.service';
 import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
 import { MaterialIssueRequestService } from './material-issue-request/material-issue-request.service';
 import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
@@ -221,6 +222,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundVarianceService,
     MaterialIssueRequestQueryService,
     MaterialIssueRequestEditService,
+    PlannedStockService,
     MaterialIssueShortageService,
     MaterialIssueRequestService,
     RecycleEntryService,

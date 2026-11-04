@@ -20,6 +20,7 @@ import { PagedResponse } from '../../common/pagination';
 import { MaterialIssueRequestQuery, MaterialIssueRequestQueryService } from './material-issue-request-query.service';
 import { MaterialIssueRequestDetail, MaterialIssueRequestView } from './material-issue-request-view';
 import { MaterialIssueRequestCreate, MaterialIssueRequestService } from './material-issue-request.service';
+import { PlannedStockQuery, PlannedStockService } from './planned-stock.service';
 import { MaterialIssueShortageLine, MaterialIssueShortageService } from './shortage.service';
 
 /**
@@ -34,6 +35,7 @@ export class MaterialIssueRequestController {
     private readonly shortages: MaterialIssueShortageService,
     private readonly requests: MaterialIssueRequestService,
     private readonly idempotency: IdempotencyService,
+    private readonly plannedStock: PlannedStockService,
   ) {}
 
   @Get()
@@ -50,6 +52,13 @@ export class MaterialIssueRequestController {
     @Query() query: { workOrderId?: unknown },
   ): Promise<{ items: MaterialIssueShortageLine[] }> {
     return this.shortages.shortage(query);
+  }
+
+  /** 생산 창고 예정·부족(피처 003) — 역시 `:materialIssueRequestId` 앞이다. */
+  @Get('planned-stock')
+  @Contract('GET /logistics/material-issue-requests/planned-stock')
+  plannedStockRows(@Query() query: PlannedStockQuery): Promise<unknown> {
+    return this.plannedStock.query(query);
   }
 
   @Get(':materialIssueRequestId')
