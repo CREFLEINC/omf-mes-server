@@ -13,11 +13,14 @@ import {
   PolicyValues,
   SCOPES,
   assertPolicyCode,
+  assertScope,
   assertValues,
+  assertWritable,
   axisCandidates,
+  readableCodes,
   scopeOf,
-  scopeRank,
   unresolved,
+  winnerOf,
 } from './operation-policy-rules';
 
 /**
@@ -75,13 +78,16 @@ type PolicyRow = Prisma.operation_policyGetPayload<object>;
 export class OperationPolicyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PolicyQuery): Promise<PagedResponse<PolicyView>> {
+  /** `permissions` 는 요청자 세션의 권한 — 코드 전용 화면(W-CO-15)만 가진 사용자는 그 코드만 본다. */
+  async list(query: PolicyQuery, permissions: readonly string[] = []): Promise<PagedResponse<PolicyView>> {
+    const readable = readableCodes(permissions);
     const page = pageRequest({ page: loose(query.page), size: loose(query.size) });
     const on =
       query.effectiveOn === undefined ? undefined : assertDate('effectiveOn', query.effectiveOn);
 
     const where: Prisma.operation_policyWhereInput = {
       ...optional('policy_code', query.policyCode),
+      ...(readable === null ? {} : { AND: [{ policy_code: { in: readable } }] }),
       ...optional('business_unit_id', assertId('businessUnitId', query.businessUnitId)),
       ...optional('plant_id', assertId('plantId', query.plantId)),
       ...optional('item_id', assertId('itemId', query.itemId)),
@@ -119,8 +125,11 @@ export class OperationPolicyService {
     return { policy: view(row), versionNo: row.version_no };
   }
 
-  async create(input: PolicyCreate): Promise<PolicyView> {
+  /** `permissions` 는 요청자 세션의 권한 — 코드 전용 화면(W-CO-15)이 다른 코드를 못 쓰게 한다. */
+  async create(input: PolicyCreate, permissions: readonly string[]): Promise<PolicyView> {
     const code = assertPolicyCode(input.policyCode);
+    assertWritable(code, permissions);
+    assertScope(code, input);
     assertValues(code, input);
 
     return view(
@@ -143,8 +152,10 @@ export class OperationPolicyService {
     operationPolicyId: number,
     version: number,
     input: PolicyUpdate,
+    permissions: readonly string[],
   ): Promise<PolicyResult> {
     const current = await this.get(operationPolicyId);
+    assertWritable(current.policy.policyCode as PolicyCode, permissions);
     // ⛔ 코드는 바꿀 수 없으므로(계약) 값 검사는 «저장된» 코드로 한다.
     assertValues(current.policy.policyCode as PolicyCode, input);
 
@@ -189,16 +200,8 @@ export class OperationPolicyService {
         ],
       },
     });
-    if (rows.length === 0) return unresolved(code);
-
-    // 좁은 축이 이기고, 같으면 늦게 시작한 것 → 나중에 만든 것 순이다. 겹치는 정책을
-    // 물리가 막지 않으므로 «결정적으로» 고르는 것이 서버 몫이다.
-    const winner = [...rows].sort(
-      (a, b) =>
-        scopeRank(a) - scopeRank(b) ||
-        b.effective_from.getTime() - a.effective_from.getTime() ||
-        Number(b.operation_policy_id - a.operation_policy_id),
-    )[0];
+    const winner = winnerOf(rows);
+    if (winner === undefined) return unresolved(code);
 
     return {
       policyCode: code,
