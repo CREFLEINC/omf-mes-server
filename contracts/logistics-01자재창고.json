@@ -5071,7 +5071,7 @@
      "logistics"
     ],
     "summary": "출고 요청 수정",
-    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 VALIDATION), 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고(W/O 라인 담당 부서의 이 공장 활성 생산 창고만 — 아니면 400 sourceWarehouseId INVALID)·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 RANGE), 늘리면 같은 상한을 건다(넘는 양은 부족), 미출고가 모두 0 이 되면 완료(POSTED · displayStatus DONE)로 옮기고 남은 피킹을 닫는다, 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -20299,7 +20299,7 @@
      "sourceWarehouseId": {
       "type": "integer",
       "format": "int64",
-      "description": "새 출발 생산 창고 — 이 공장의 활성 창고"
+      "description": "새 출발 생산 창고 — W/O 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(W/O 상세 productionWarehouses)"
      },
      "destinationLocationId": {
       "type": "integer",
@@ -20428,6 +20428,14 @@
        "errorText": {
         "type": "string",
         "description": "RELEASE_FAILED 원인"
+       },
+       "shortageBefore": {
+        "type": "number",
+        "description": "QTY_CHANGED — 부족(상한에 걸려 줄인 양)의 전 값"
+       },
+       "shortageAfter": {
+        "type": "number",
+        "description": "QTY_CHANGED — 부족의 뒤 값. 요청은 그대로여도 소요가 바뀌어 부족이 바뀌면 이력이 남는다"
        }
       }
      }
