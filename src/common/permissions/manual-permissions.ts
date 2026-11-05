@@ -25,11 +25,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/departments/{departmentId}:deactivate': ['W-06-06'],
   'PUT /mdm/workers/{workerId}/qualifications': ['W-06-06'],
   // 공장 근무일 설정(W-CO-15) — 운영 정책 표에서 `WEEKLY_WORKING_DAYS` 하나만 읽고 쓴다. 다른 코드는 서비스가
-  // 막는다(`assertWritable`)(omf-all-around#66).
-  'GET /app/operation-policies/effective': ['W-CO-15'],
-  'GET /app/operation-policies/{operationPolicyId}': ['W-CO-15'],
-  'POST /app/operation-policies': ['W-CO-15'],
-  'PUT /app/operation-policies/{operationPolicyId}': ['W-CO-15'],
+  // 막는다(`assertWritable`)(omf-all-around#66). 생산 창고 보충(W-02-12 · 피처 004)도 같은 방식으로
+  // `REPLENISHMENT_RUN_TIME`(공장 기본 실행 시각) 하나만 읽고 쓴다.
+  'GET /app/operation-policies/effective': ['W-CO-15', 'W-02-12'],
+  'GET /app/operation-policies/{operationPolicyId}': ['W-CO-15', 'W-02-12'],
+  'POST /app/operation-policies': ['W-CO-15', 'W-02-12'],
+  'PUT /app/operation-policies/{operationPolicyId}': ['W-CO-15', 'W-02-12'],
   // 출고 요청 현황(W-02-11 · 피처 003 · omf-all-around#66) — 이 화면이 요청을 고치고 취소하고 이력을 본다.
   'PUT /logistics/material-issue-requests/{materialIssueRequestId}': ['W-02-11'],
   // 창고 보충 요청(W-02-12 · 피처 004)도 같은 경로로 취소한다 — 어느 화면 몫인지는 서비스가 요청 유형으로 가른다.
@@ -38,6 +39,13 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 생산 창고 예정·부족 — 부족 탭(W-02-11)과 보충 요청(W-02-10)이 같은 값을 본다. 생산 창고 보충(W-02-12 · 피처 004)의
   // 「생산 창고 쓸 수 있는 양」·「자재 창고 남은 수량」도 이 값이다(FR-037).
   'GET /logistics/material-issue-requests/planned-stock': ['W-02-10', 'W-02-11', 'W-02-12'],
+  // 생산 창고 보충(W-02-12 · 피처 004 · omf-all-around#230) — 이 화면이 관리 품목·실행 시각을 소유한다.
+  'GET /logistics/replenishment-items': ['W-02-12'],
+  'POST /logistics/replenishment-items': ['W-02-12'],
+  'PUT /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
+  'DELETE /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
+  'GET /logistics/replenishment-settings': ['W-02-12'],
+  'PUT /logistics/replenishment-settings/warehouses/{warehouseId}': ['W-02-12'],
   // 쓸 수 있는 양 — W-02-10 품목 줄의 남은 수량(omf-all-around#232).
   'GET /logistics/material-issue-requests/free-stock': ['W-02-10'],
   // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
