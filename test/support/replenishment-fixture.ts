@@ -224,12 +224,16 @@ export class ReplenishmentFixture extends MaterialIssueFixture {
     });
     await db.picking_line.deleteMany({ where: { picking_order: warehouse } });
     await db.picking_order.deleteMany({ where: warehouse });
+    // 자동 보충 실행 기록 — 줄이 요청을, 요청이 실행을 가리킨다(줄 → 요청 → 실행 순).
+    await db.replenishment_run_line.deleteMany({ where: { replenishment_run: warehouse } });
     await db.material_issue_request_line.deleteMany({
       where: { material_issue_request_id: { in: ids } },
     });
     await db.material_issue_request.deleteMany({
       where: { material_issue_request_id: { in: ids } },
     });
+    await db.replenishment_run.deleteMany({ where: warehouse });
+    await db.replenishment_warehouse_setting.deleteMany({ where: warehouse });
     await db.replenishment_item.deleteMany({ where: warehouse });
     await super.cleanup();
   }
