@@ -814,10 +814,10 @@ describe('ERP W/O 조회 (e2e)', () => {
     });
 
     it('⭐ autoPlanStatus 와 함께 걸어도 progress 가 듣는다', async () => {
-      // NONE 은 계획이 없고 ERPCANC 는 취소라 DONE 에 들지 않는다.
+      // NONE 은 계획이 없고 ERPCANC 는 취소라 DONE 에 들지 않는다. ALLCANC 는 W/O 가 모두 취소된 확정 계획이라 확정 계획량이 0 이다.
       const open = await listOf({ autoPlanStatus: 'DONE', progress: 'OPEN' });
-      expect(open.ids).toEqual(idsOf('PART', 'ALLCANC', 'PRODDONE'));
-      expect(open.total).toBe(3);
+      expect(open.ids).toEqual(idsOf('PART', 'PRODDONE'));
+      expect(open.total).toBe(2);
 
       const completed = await listOf({ autoPlanStatus: 'DONE', progress: 'COMPLETED' });
       expect(completed.ids).toEqual(idsOf('DONE', 'MIX'));

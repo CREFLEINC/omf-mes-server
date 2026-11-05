@@ -18,6 +18,7 @@ export const itemTable: RowTable = {
       item_type_code: itemTypeOf(text(row, 'ITEM_ACCT_CD')),
       erp_spec: text(row, 'SPEC') === '' ? null : text(row, 'SPEC'),
       erp_item_group_code: text(row, 'ITEM_GROUP_CD') === '' ? null : text(row, 'ITEM_GROUP_CD'),
+      erp_item_group_name: text(row, 'ITEM_GROUP_NM') === '' ? null : text(row, 'ITEM_GROUP_NM'),
     };
     const unit = requiredText(row, 'BASIC_UNIT');
     const uomId = (await uomIdsByCode(tx, [unit])).get(unit) as bigint;
@@ -46,7 +47,8 @@ export const itemTable: RowTable = {
       item.item_name !== values.item_name ||
       item.item_type_code !== values.item_type_code ||
       item.erp_spec !== values.erp_spec ||
-      item.erp_item_group_code !== values.erp_item_group_code;
+      item.erp_item_group_code !== values.erp_item_group_code ||
+      item.erp_item_group_name !== values.erp_item_group_name;
     // 사용 여부는 MES 도 고친다 — ERP 가 취소했을 때만 끈다.
     const cancel = isCancel(row) && item.is_active;
     if (changed || cancel) {
