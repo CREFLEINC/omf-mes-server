@@ -23,7 +23,8 @@ import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConcessionFilters, concessionByIdQuery, concessionCountQuery, concessionRowsQuery, todayUtc } from './concession-query';
 import { ConcessionRow, ConcessionView, assertUsableInvariant, concessionView } from './concession-view';
-import { ConcessionCreate, ConcessionWriteService } from './concession-write.service';
+import type { SortResult } from '../disposition/disposition-sort';
+import { ConcessionApply, ConcessionCreate, ConcessionWriteService } from './concession-write.service';
 
 export interface ConcessionListQuery extends ConcessionFilters {
   page?: number;
@@ -55,15 +56,22 @@ export class ConcessionController {
       this.get(await this.writes.request(body, appUserId)));
   }
 
-  /** 특채 적용 — 승인됐으면 LOT 을 정상으로 열고, 반려됐으면 특채를 닫는다. */
+  /**
+   * 특채 적용 — 승인됐으면 LOT 을 정상으로 열고, 반려됐으면 특채를 닫는다. 일부 특채면 나머지를 자식 LOT 으로
+   * 떼어 `splitResult` 로 알린다(«적용 응답»에만 · omf-all-around#207).
+   */
   @Post('concessions/:concessionId\\:apply')
   @Contract('POST /quality/concessions/{concessionId}:apply')
   @HttpCode(HttpStatus.OK)
-  apply(@Req() request: Request, @Param('concessionId', ParseIntPipe) concessionId: number): Promise<ConcessionView> {
+  apply(
+    @Req() request: Request,
+    @Param('concessionId', ParseIntPipe) concessionId: number,
+    @Body() body: ConcessionApply | undefined,
+  ): Promise<ConcessionView & { splitResult: SortResult | null }> {
     const appUserId = userOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.writes.apply(concessionId, appUserId);
-      return this.get(concessionId);
+      const splitResult = await this.writes.apply(concessionId, appUserId, body ?? {});
+      return { ...(await this.get(concessionId)), splitResult };
     });
   }
 

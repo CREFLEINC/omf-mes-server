@@ -1,7 +1,7 @@
 import { ContractRegistry } from '../contract';
 import { DERIVED_PERMISSIONS } from './derived-permissions';
 import { MANUAL_PERMISSIONS } from './manual-permissions';
-import { OPERATION_PERMISSIONS } from './operation-permissions';
+import { LOGIN_ONLY_OPERATIONS, OPERATION_PERMISSIONS } from './operation-permissions';
 import { PERMISSION_CODES } from './permissions';
 
 describe('오퍼레이션 권한 매핑', () => {
@@ -47,13 +47,18 @@ describe('오퍼레이션 권한 매핑', () => {
     }
   });
 
+  it('⛔ 로그인 전용 자리는 계약에 실재하고 권한표에 없다 — 있으면 다시 권한을 본다(omf-all-around#229)', () => {
+    expect([...LOGIN_ONLY_OPERATIONS].filter((key) => !registry.has(key))).toEqual([]);
+    expect([...LOGIN_ONLY_OPERATIONS].filter((key) => key in OPERATION_PERMISSIONS)).toEqual([]);
+  });
+
   it('⭐ 계약이 403 을 선언한 자리가 «전건» 등록됐다 — 게이트가 완성됐다', () => {
     const declares403 = registry.keys().filter((key) => {
       const responses = (registry.get(key)?.operation as { responses?: Record<string, unknown> })
         .responses;
       return responses !== undefined && '403' in responses;
     });
-    const missing = declares403.filter((key) => !(key in OPERATION_PERMISSIONS));
+    const missing = declares403.filter((key) => !(key in OPERATION_PERMISSIONS) && !LOGIN_ONLY_OPERATIONS.has(key));
 
     // 253 → 250(a6a87e1) — 403 을 선언하던 물류 취소 6건이 다형 2건으로, 실적 정정 승인
     // 상신 1건이 늘어 합이 셋 줄었다.
@@ -96,7 +101,18 @@ describe('오퍼레이션 권한 매핑', () => {
     // 입하 배정 더하기·빼기 2건(장부 P-115) — `W-01-03` 소유다: 318.
     // ERP 받기 표별 상태·지금 읽기 2건(장부 P-81) · ERP 창고 1건(장부 P-147) — 연계 메시지 목록·일괄 재처리의 권한이다: 321.
     // 입고 기본값 1건(장부 P-150) — 입고 처리의 권한이다: 322.
-    expect(declares403).toHaveLength(322);
+    // 검사기준 버전 도면 추가·바꾸기·빼기 3건 — `W-06-02` 소유다(omf-all-around#227): 325.
+    // 공지 확인·닫기 2건의 403 을 뺐다 — 로그인만 보는 자리가 됐다(omf-all-around#229): 323.
+    // 부서 생산 창고 조회·바꾸기 2건 — `W-06-06` 소유다(omf-all-around#66): 325.
+    // 운영 정책 상세 1건 — `W-05-01`·`W-CO-15` 가 읽는다(W-CO-15 는 근무일 행만 · omf-all-around#66): 326.
+    // 출고 요청 수정·취소·이력 3건 — `W-02-11` 소유다(omf-all-around#66): 329.
+    // 생산 창고 예정·부족 1건 — `W-02-10`·`W-02-11`(omf-all-around#66): 330.
+    // 쓸 수 있는 양 1건 — `W-02-10`(omf-all-around#232): 331.
+    // 창고 보충 관리 품목·실행 시각 6건 — `W-02-12`(omf-all-around#230): 337.
+    // 창고 보충 직접 요청·잔량 마감 2건 — `W-02-12`(omf-all-around#230): 339.
+    // 창고 보충 도착 대기·개별·일괄 수령 3건 — `W-02-12`(omf-all-around#230): 342.
+    // 창고 보충 자동 보충 실행 기록 1건 — `W-02-12`(omf-all-around#230): 343.
+    expect(declares403).toHaveLength(343);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.

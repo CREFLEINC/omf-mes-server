@@ -127,7 +127,10 @@ function sourceWarehouse(pool: Slot[]): bigint | null {
   return best === null ? null : best[0];
 }
 
-function lotOrder(a: StockCandidate, b: StockCandidate, fefo: boolean): number {
+export type LotKey = Pick<StockCandidate, 'expiryDate' | 'lotCreatedAt' | 'lotId' | 'locationId'>;
+
+/** 선출 순서(ⓒ) — 출발 창고 동점 가르기(`core/material-issue/source-warehouse.ts`)도 이 키를 쓴다. */
+export function lotOrder(a: LotKey, b: LotKey, fefo: boolean): number {
   if (fefo) {
     const byExpiry = compareExpiry(a.expiryDate, b.expiryDate);
     if (byExpiry !== 0) return byExpiry;

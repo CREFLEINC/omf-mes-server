@@ -285,6 +285,12 @@ describe('품목 마스터 (e2e)', () => {
       .expect(200);
 
     expect(updated.body.inspectionRequired).toBe(true);
+    // 전용 IQC 기준이 없던 품목이라 서버가 하나 만들어 설정을 고정한다(사용자 결정 2026-11-04).
+    const ownPlans = await prisma.inspection_plan.findMany({
+      where: { item_id: BigInt(plainItemId), inspection_type_code: 'IQC' },
+      select: { default_skip: true },
+    });
+    expect(ownPlans).toEqual([{ default_skip: false }]);
     expect(updated.body.nameVi).toBe('Vat lieu');
     expect(updated.body.developmentItem).toBe(true);
     // 원본은 그대로다 — 보낼 자리가 없으므로 구조로 막힌다.
@@ -495,6 +501,8 @@ describe('품목 마스터 (e2e)', () => {
     const ids = items.map((i) => i.item_id);
     await prisma.routing.deleteMany({ where: { item_id: { in: ids } } });
     await prisma.bom.deleteMany({ where: { parent_item_id: { in: ids } } });
+    // IQC 대상을 바꾸면 서버가 그 품목 전용 IQC 기준을 만든다(사용자 결정 2026-11-04).
+    await prisma.inspection_plan.deleteMany({ where: { item_id: { in: ids } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });

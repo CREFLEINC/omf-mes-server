@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { UsableResource, unusable } from '../../core/work-order';
+import { RELEASED_WORK_ORDER_STATUSES, UsableResource, unusable } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -76,7 +76,7 @@ export function checkMoldLife(ids: bigint[], facts: Map<bigint, MoldFacts>): Val
 /**
  * #6 설비 중복 배정 — 반열림 구간 `[start, end)` 겹침. 자기 W/O 든 상대 W/O 든 두 시각이 다
  * 있어야 판정한다(도출하지 않는 쪽).
- * ⛔ 상대를 상태로 거르지 않는다 — 계약도 화면도 제외를 적지 않았다(취소·마감 W/O 도 잡힌다).
+ * 상대 후보는 `rivalWindows` 가 설비를 더는 붙잡지 않는 W/O(취소·마감·완료)를 빼고 가져온다(omf-all-around#219).
  */
 export function checkDoubleBooked(ids: bigint[], self: PlanWindow, rivals: RivalWindow[]): ValidationFinding[] {
   const { planned_start_at: start, planned_end_at: end } = self;
@@ -157,14 +157,24 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
 /** 겹침 판정 자체는 순수 함수가 한다 — 여기서는 후보만 좁힌다(같은 산수를 두 곳에 두지 않는다). 4M 추천도 이 조회를 쓴다. */
 export function rivalWindows(prisma: PrismaService, workOrderId: number, equipmentIds: bigint[]): Promise<RivalWindow[]> | RivalWindow[] {
   return when(equipmentIds, () => prisma.work_order.findMany({
-    where: {
-      work_order_id: { not: BigInt(workOrderId) },
-      planned_equipment_id: { in: equipmentIds },
-      planned_start_at: { not: null },
-      planned_end_at: { not: null },
-    },
+    where: rivalWindowsWhere(workOrderId, equipmentIds),
     select: { planned_equipment_id: true, planned_start_at: true, planned_end_at: true },
   }));
+}
+
+/**
+ * 중복 배정 상대 후보 — 같은 설비에 계획 시각이 둘 다 있는 다른 W/O.
+ * 취소·마감·완료 W/O 는 설비를 더는 붙잡지 않아 뺀다(omf-all-around#219) — 4M 추천의 교대·작업자
+ * «사용 중»과 같은 `RELEASED_WORK_ORDER_STATUSES` 한 벌이다.
+ */
+export function rivalWindowsWhere(workOrderId: number, equipmentIds: bigint[]): Prisma.work_orderWhereInput {
+  return {
+    work_order_id: { not: BigInt(workOrderId) },
+    planned_equipment_id: { in: equipmentIds },
+    planned_start_at: { not: null },
+    planned_end_at: { not: null },
+    status_code: { notIn: RELEASED_WORK_ORDER_STATUSES },
+  };
 }
 
 /** 배정이 없는 축은 질의하지 않는다 — `in: []` 를 던지면 빈 IN 절이 돈다. */

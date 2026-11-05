@@ -25,6 +25,18 @@ const PICKING_REGISTERED = 'REGISTERED';
 
 const logger = new Logger('PickingGeneration');
 
+/**
+ * 집을 수 있는 잔액 — 정상 품질·가용 상태·가용 > 0, 보류 중인 LOT 제외. 라인의 `lot_id` 가 NOT NULL 이고,
+ * 보류 중인 LOT 은 `:pick` 이 400 으로 막는다 — 집을 수 없는 LOT 을 지시에 넣지 않는다.
+ * 출고 예정 재고·출발 창고 결정(`core/material-issue`)도 같은 조건으로 «가용»을 센다.
+ */
+export const PICKABLE_BALANCE: Prisma.inventory_balanceWhereInput = {
+  quality_status_code: QUALITY_NORMAL,
+  inventory_status_code: INVENTORY_AVAILABLE,
+  available_qty: { gt: 0 },
+  lot: { is: { lot_hold: { none: { released_at: null } } } },
+};
+
 export interface PickingPlan extends PickingAllocation {
   orderNos: string[];
   assignedWorkerId: bigint | null;
@@ -45,6 +57,11 @@ export interface PickingPlanInput {
   periodDate: string;
   /** ⓔ W/O 의 책임 작업자 그대로 — 비었으면 비운다. */
   assignedWorkerId: bigint | null;
+  /**
+   * 출발 창고를 정한 요청(계획 기반 출고 요청 · 피처 003)은 그 창고에서만 집고 창고 유형을 보지 않는다 —
+   * 생산 창고는 유형 코드로 가르지 않는다. 주지 않으면 지금 규칙(공장의 자재 유형 창고)이다.
+   */
+  warehouseId?: bigint;
 }
 
 export async function planPicking(
@@ -52,19 +69,30 @@ export async function planPicking(
   numbering: NumberingService,
   input: PickingPlanInput,
 ): Promise<PickingPlan> {
+  const allocation = await allocateStock(prisma, input);
+  const orderNos =
+    allocation.orders.length === 0
+      ? []
+      : await numbering.nextMany('PICKING_ORDER', input.plantId, input.periodDate, allocation.orders.length);
+  return { ...allocation, orderNos, assignedWorkerId: input.assignedWorkerId };
+}
+
+/**
+ * 읽기와 배정만 — 채번은 하지 않는다. 출발 창고가 정해진 요청을 트랜잭션 «안»에서 배포할 때
+ * (`core/material-issue/release-request.ts`) 지시 번호를 밖에서 미리 받아 두고 이것을 부른다.
+ */
+export async function allocateStock(
+  db: Prisma.TransactionClient,
+  input: Omit<PickingPlanInput, 'periodDate' | 'assignedWorkerId'>,
+): Promise<PickingAllocation> {
   const itemIds = [...new Set(input.demands.map((demand) => demand.itemId))];
+  const warehouse: Prisma.warehouseWhereInput =
+    input.warehouseId === undefined
+      ? { plant_id: input.plantId, warehouse_type_code: MATERIAL_WAREHOUSE, is_active: true }
+      : { warehouse_id: input.warehouseId, plant_id: input.plantId, is_active: true };
   const [balances, fefoItems] = await Promise.all([
-    prisma.inventory_balance.findMany({
-      where: {
-        item_id: { in: itemIds },
-        quality_status_code: QUALITY_NORMAL,
-        inventory_status_code: INVENTORY_AVAILABLE,
-        available_qty: { gt: 0 },
-        warehouse: { plant_id: input.plantId, warehouse_type_code: MATERIAL_WAREHOUSE, is_active: true },
-        // 라인의 `lot_id` 가 NOT NULL 이고, 보류 중인 LOT 은 `:pick` 이 400 으로 막는다 — 집을 수
-        // 없는 LOT 을 지시에 넣지 않는다.
-        lot: { is: { lot_hold: { none: { released_at: null } } } },
-      },
+    db.inventory_balance.findMany({
+      where: { ...PICKABLE_BALANCE, item_id: { in: itemIds }, warehouse },
       select: {
         warehouse_id: true,
         location_id: true,
@@ -75,13 +103,13 @@ export async function planPicking(
         lot: { select: { expiry_date: true, created_at: true } },
       },
     }),
-    prisma.item.findMany({
+    db.item.findMany({
       where: { item_id: { in: itemIds }, fifo_policy_code: FEFO },
       select: { item_id: true },
     }),
   ]);
 
-  const allocation = allocatePicking(
+  return allocatePicking(
     input.demands,
     balances.flatMap((row) =>
       row.lot_id === null || row.lot === null || row.available_qty === null
@@ -101,11 +129,6 @@ export async function planPicking(
     ),
     new Set(fefoItems.map((row) => row.item_id)),
   );
-  const orderNos =
-    allocation.orders.length === 0
-      ? []
-      : await numbering.nextMany('PICKING_ORDER', input.plantId, input.periodDate, allocation.orders.length);
-  return { ...allocation, orderNos, assignedWorkerId: input.assignedWorkerId };
 }
 
 /**
@@ -121,7 +144,8 @@ export async function writePicking(
     issueRequestNo: string;
     requestLineIds: ReadonlyMap<number, bigint>;
   },
-  appUserId: number,
+  /** 00:00 러너의 배포는 사람이 없다 — `null`. */
+  appUserId: number | null,
 ): Promise<WrittenPicking[]> {
   const written: WrittenPicking[] = [];
   for (const shortage of plan.shortages) {

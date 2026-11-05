@@ -12,6 +12,7 @@ export interface InspectionSheetListQuery {
   workOrderId?: number;
   itemId?: number;
   statusCode?: string;
+  formLayoutCode?: string;
   createdFrom?: string;
   createdTo?: string;
   page?: number;
@@ -63,6 +64,7 @@ export class InspectionSheetQueryService {
       ...(query.workOrderId === undefined ? {} : { work_order_id: query.workOrderId }),
       ...(query.itemId === undefined ? {} : { item_id: query.itemId }),
       ...(query.statusCode ? { status_code: query.statusCode } : {}),
+      ...(query.formLayoutCode ? { template: { form_layout_code: query.formLayoutCode } } : {}),
       ...(query.createdFrom || query.createdTo
         ? {
             created_at: {

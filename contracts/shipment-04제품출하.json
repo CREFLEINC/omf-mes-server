@@ -776,7 +776,7 @@
      "shipment"
     ],
     "summary": "재고 재등록 확정",
-    "description": "판정이 끝난 반품품을 판매 가능 재고로 되돌린다. 반출·도착·보류 해제·Lot Status 전이를 한 트랜잭션으로 처리한다 — 이 화면의 「재등록 확정」은 한 번의 확정이고 중간 상태를 남기지 않는다(공유계약 B-8 규칙 1 · B-8-1). ⭐ 이 경로에서만 반영 목적의 Hold → 정상 전이가 허용된다 — 「Release 로 할 것인가」를 정하는 것은 W-03-02·W-04-03 이고 이 경로는 그 결정을 재고에 반영할 뿐이다(공유계약 B-13). ⛔ 창고 간 이동의 2단계 스캔(POST /logistics/stock-transfers → :arrive)을 쓰지 않는다 — 재등록은 이동 중 구간이 없는 한 번의 행위라 그 형태가 맞지 않는다. 근거: W-04-11 §0 · §5-3 · §5-6",
+    "description": "판정이 끝난 반품품을 판매 가능 재고로 되돌린다. 반출·도착·보류 해제·Lot Status 전이를 한 트랜잭션으로 처리한다 — 이 화면의 「재등록 확정」은 한 번의 확정이고 중간 상태를 남기지 않는다(공유계약 B-8 규칙 1 · B-8-1). ⭐ 이 경로에서만 반영 목적의 Hold → 정상 전이가 허용된다 — 「Release 로 할 것인가」를 정하는 것은 W-03-02·W-04-03 이고 이 경로는 그 결정을 재고에 반영할 뿐이다(공유계약 B-13). ⛔ 창고 간 이동의 2단계 스캔(POST /logistics/stock-transfers → :arrive)을 쓰지 않는다 — 재등록은 이동 중 구간이 없는 한 번의 행위라 그 형태가 맞지 않는다. 근거: W-04-11 §0 · §5-3 · §5-6 ⭐ 처분이 특채(CONCESSION)여도 받는다 — 특채 LOT 의 불량창고 재고를 정상 창고로 옮기며 정상·가용으로 등록한다. 특채는 보류를 고르지 않고(lotHoldId·releaseReasonCode 비움) 보류 해제·LOT 전이를 하지 않으며(LOT 은 적용 때 이미 정상), 한도는 판정 수량이 아니라 특채 승인 수량이다. 근거: omf-all-around#207",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4809,9 +4809,12 @@
       "x-no-example": "하위 프로퍼티(lotId·versionNo)가 각각 example 을 갖는다 — 객체 통째 예시는 중복이다"
      },
      "lotHoldId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "description": "닫을 보류 문서. GET /quality/lot-holds?lotId=&open=true 에서 얻는다 — 식별자이지 잠금 토큰이 아니다",
+      "description": "닫을 보류 문서. GET /quality/lot-holds?lotId=&open=true 에서 얻는다 — 식별자이지 잠금 토큰이 아니다 ⭐ 처분이 정상(NORMAL)이면 필수(없으면 400 REQUIRED), 특채(CONCESSION)면 비운다 — 특채 적용이 수입검사 보류를 이미 닫았다(실으면 400 INVALID). 근거: omf-all-around#207",
       "example": 1001
      },
      "toWarehouseId": {
@@ -4842,9 +4845,12 @@
       "example": 1001
      },
      "releaseReasonCode": {
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
-      "description": "보류 해제 사유 — 필수다. LotHoldRelease 와 같은 축을 유지한다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON. 근거: 공유계약 G-32 · omf-mes#293",
+      "description": "보류 해제 사유 — 처분이 정상이면 필수다(없으면 400 REQUIRED), 특채면 닫을 보류가 없어 쓰지 않는다(#207). LotHoldRelease 와 같은 축을 유지한다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON. 근거: 공유계약 G-32 · omf-mes#293",
       "example": "RETEST_PASS",
       "x-code-key": "CD-LOT-HOLD-RELEASE-REASON"
      },
@@ -4883,11 +4889,9 @@
     "required": [
      "dispositionDecisionId",
      "lot",
-     "lotHoldId",
      "toWarehouseId",
      "qty",
      "uomId",
-     "releaseReasonCode",
      "businessDate",
      "occurredAt"
     ],
@@ -4920,9 +4924,12 @@
       "x-code-key": "CD-LOT-STATUS"
      },
      "releasedLotHoldId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "description": "닫힌 보류",
+      "description": "닫힌 보류 — 특채 재등록은 닫을 보류가 없어 null(omf-all-around#207)",
       "example": 1001
      },
      "reinstatedQty": {
@@ -4980,7 +4987,7 @@
        "HOLD_ALREADY_RELEASED",
        "DISPOSITION_NOT_REINSTATABLE"
       ],
-      "description": "ALREADY_REINSTATED 는 이 처분 결정이 이미 재등록됐다는 뜻이다 — followUpPending 이 이미 내려갔다. HOLD_ALREADY_RELEASED 는 다른 경로에서 보류가 먼저 풀렸다는 뜻이다(판정 화면 W-03-02 가 그럴 수 있다). DISPOSITION_NOT_REINSTATABLE 은 처분이 폐기이거나 아직 판정 대기라는 뜻이다. 근거: W-04-11 §5-2 · §6",
+      "description": "ALREADY_REINSTATED 는 이 처분 결정이 이미 재등록됐다는 뜻이다 — followUpPending 이 이미 내려갔다. HOLD_ALREADY_RELEASED 는 다른 경로에서 보류가 먼저 풀렸다는 뜻이다(판정 화면 W-03-02 가 그럴 수 있다). DISPOSITION_NOT_REINSTATABLE 은 처분이 정상도 특채도 아니거나(폐기·재작업·판정 대기), 특채인데 이 LOT 에 적용된 특채가 없다는 뜻이다(#207). 근거: W-04-11 §5-2 · §6",
       "example": "VERSION_CONFLICT"
      },
      "message": {

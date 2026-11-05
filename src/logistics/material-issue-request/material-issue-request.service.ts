@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
+import { usesProductionWarehouses } from '../../core/material-issue/source-warehouse';
 import { NumberingService } from '../../core/numbering';
 import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,6 +13,7 @@ import {
   materialIssueRequestView,
 } from './material-issue-request-view';
 import { ISSUE_REQUEST_REGISTERED } from './material-issue-request.constants';
+import { PlannedCreateResult, PlannedManualRequestCreator } from './manual-request-planned';
 
 /** 계약 `MaterialIssueRequestCreateLine` — required 3. `bomComponentId` 가 비면 BOM 밖 품목이다. */
 export interface MaterialIssueRequestCreateLine {
@@ -24,7 +26,12 @@ export interface MaterialIssueRequestCreateLine {
 /** 계약 `MaterialIssueRequestCreate` — required 5 · 선택 3. */
 export interface MaterialIssueRequestCreate {
   workOrderId: number;
-  destinationLocationId: number;
+  /** 생산 창고를 쓰는 공장에서만 비울 수 있다 — 라인의 생산 현장(피처 003). */
+  destinationLocationId?: number | null;
+  /** 이하 셋은 생산 창고를 쓰는 공장만(피처 003 · FR-011·017 · US2-12). */
+  sourceWarehouseId?: number | null;
+  acceptPlannedOverride?: boolean;
+  unsourcedShortageId?: number | null;
   requiredAt?: string | null;
   reasonCode?: string | null;
   remarks?: string | null;
@@ -51,13 +58,23 @@ export class MaterialIssueRequestService {
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
     private readonly pickingNotices: PickingHandoverNotifier,
+    // 생산 창고 공장의 경로(피처 003). 모듈은 늘 넣는다 — 비어 있으면 이 기능 전 경로만 탄다.
+    private readonly planned?: PlannedManualRequestCreator,
   ) {}
 
+  /** 응답의 `requests` 는 만든 요청 전부다 — 지금 방식 공장은 한 장이다(피처 003 · 계약 `MaterialIssueRequestCreated`). */
   async create(
     input: MaterialIssueRequestCreate,
     appUserId: number,
-  ): Promise<MaterialIssueRequestDetail> {
+  ): Promise<PlannedCreateResult> {
     const { plantId, responsibleWorkerId } = await this.assertCreatable(input);
+    // 생산 창고를 쓰는 공장은 생산 창고 → 생산 현장 요청이다(FR-011). 아니면 이 기능 전 경로 그대로(FR-009a).
+    if (this.planned !== undefined && (await usesProductionWarehouses(this.prisma, plantId))) {
+      return this.planned.create(input, appUserId, plantId);
+    }
+    if (input.destinationLocationId == null) {
+      throw one(field('destinationLocationId', ERROR_CODE.REQUIRED, '도착 위치를 골라야 합니다.'));
+    }
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을 둘 쥐어
     //    풀 고갈 시 `P2024` 로 죽는다(I-2 R-2 · `release-plan.ts:78-86`). 결번은 허용한다.
     //    기간 축은 클라이언트가 준 `businessDate` 그대로다(공유계약 C-8 · CLAUDE.md).
@@ -73,7 +90,8 @@ export class MaterialIssueRequestService {
       periodDate: input.businessDate,
       assignedWorkerId: responsibleWorkerId,
     });
-    return this.prisma.$transaction((tx) => this.write(tx, input, no, picking, appUserId));
+    const detail = await this.prisma.$transaction((tx) => this.write(tx, input, no, picking, appUserId));
+    return { ...detail, requests: [detail.materialIssueRequest] };
   }
 
   /** 헤더 → 라인 → 같은 트랜잭션에서 되읽기(§4-1 ②③④ · 상세 매퍼는 PR ② 것 그대로다). */
@@ -88,7 +106,7 @@ export class MaterialIssueRequestService {
       data: {
         issue_request_no: issueRequestNo,
         work_order_id: input.workOrderId,
-        destination_location_id: input.destinationLocationId,
+        destination_location_id: input.destinationLocationId as number,
         required_at: input.requiredAt == null ? null : new Date(input.requiredAt),
         status_code: ISSUE_REQUEST_REGISTERED,
         // 주체는 세션 계정이다 — 자동 발행(`work-order-release.service.ts:111`)과 같은 축이라야
@@ -130,10 +148,14 @@ export class MaterialIssueRequestService {
       },
       appUserId,
     );
-    await this.pickingNotices.notify(tx, pickings, { workOrderId: header.work_order_id, requiredAt: header.required_at });
+    await this.pickingNotices.notify(tx, pickings, {
+      workOrderId: header.work_order_id,
+      issueRequest: { id: header.material_issue_request_id, no: header.issue_request_no },
+      requiredAt: header.required_at,
+    });
     return {
       materialIssueRequest: materialIssueRequestView(header),
-      lines: lines.map(materialIssueRequestLineView),
+      lines: lines.map((line) => materialIssueRequestLineView(line)),
     };
   }
 
@@ -168,7 +190,7 @@ export class MaterialIssueRequestService {
           production_plan: { select: { production_order: { select: { plant_id: true } } } },
         },
       }),
-      this.prisma.location.count({ where: { location_id: input.destinationLocationId } }),
+      input.destinationLocationId == null ? Promise.resolve(1) : this.prisma.location.count({ where: { location_id: input.destinationLocationId } }),
       this.prisma.item.findMany({ where: { item_id: { in: ids((l) => l.itemId) } }, select: { item_id: true } }),
       this.prisma.uom.findMany({ where: { uom_id: { in: ids((l) => l.uomId) } }, select: { uom_id: true } }),
       this.prisma.bom_component.findMany({

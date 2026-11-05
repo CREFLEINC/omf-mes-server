@@ -6,7 +6,7 @@ import { assertWorkerNoPresent } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어는 PR ① 로 닫혔고 이 PR 은 코어 파일을 안 고친다.
-import { lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
+import { lockBalancesInOrder, withoutEmptyBalances } from '../../core/inventory-posting/balance-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { LogisticsWriteActor } from '../logistics-write-actor';
@@ -125,7 +125,7 @@ export class PickingPickService {
       where: { warehouse_id: line.warehouse_id },
       select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } },
     });
-    const [row, ...rest] = await lockBalancesInOrder(tx, [
+    const [row, ...rest] = withoutEmptyBalances(await lockBalancesInOrder(tx, [
       {
         legalEntityId: warehouse.plant.legal_entity_id,
         businessUnitId: warehouse.business_unit_id,
@@ -135,7 +135,7 @@ export class PickingPickService {
         itemId: line.item_id,
         lotKey: line.lot_id,
       },
-    ]);
+    ]));
     const path = 'pickedQty';
     if (row === undefined) throw one(field(path, ERROR_CODE.NEGATIVE_BALANCE, '이 위치에 그 LOT 의 재고가 없습니다.'));
     // 설계 미정 — 문의 031. 출고(`issue-posting.ts:126-129`)와 «같은 문장·같은 코드»다.

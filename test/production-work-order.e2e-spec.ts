@@ -265,6 +265,38 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         .set('Cookie', noPermCookie)
         .expect(403);
     });
+
+    it('유효성 — 중복 배정 상대에서 취소·마감·완료 W/O 를 뺀다 (omf-all-around#219)', async () => {
+      const window = { planned_start_at: new Date('2026-09-06T00:00:00.000Z'), planned_end_at: new Date('2026-09-06T12:00:00.000Z') };
+      const self = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      const rival = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(secondWorkOrderId) } });
+      const doubleBooked = async (): Promise<boolean> => {
+        const report = await request(app.getHttpServer())
+          .get(`/api/production/work-orders/${workOrderId}/validation`)
+          .set('Cookie', cookie)
+          .expect(200);
+        return (report.body.findings as { code: string }[]).some((item) => item.code === 'EQUIPMENT_DOUBLE_BOOKED');
+      };
+      try {
+        await prisma.work_order.update({ where: { work_order_id: self.work_order_id }, data: { planned_equipment_id: twinId, ...window } });
+        await prisma.work_order.update({ where: { work_order_id: rival.work_order_id }, data: { planned_equipment_id: twinId, ...window, status_code: 'CONFIRMED' } });
+        expect(await doubleBooked()).toBe(true);
+
+        for (const status of ['CANCELLED', 'CLOSED', 'COMPLETED']) {
+          await prisma.work_order.update({ where: { work_order_id: rival.work_order_id }, data: { status_code: status } });
+          expect({ status, doubleBooked: await doubleBooked() }).toEqual({ status, doubleBooked: false });
+        }
+      } finally {
+        await prisma.work_order.update({
+          where: { work_order_id: self.work_order_id },
+          data: { planned_equipment_id: self.planned_equipment_id, planned_start_at: self.planned_start_at, planned_end_at: self.planned_end_at },
+        });
+        await prisma.work_order.update({
+          where: { work_order_id: rival.work_order_id },
+          data: { planned_equipment_id: rival.planned_equipment_id, planned_start_at: rival.planned_start_at, planned_end_at: rival.planned_end_at, status_code: rival.status_code },
+        });
+      }
+    });
   });
 
   describe('목록 GET (PR ②)', () => {
@@ -1082,11 +1114,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
      *    그전까지 서버에 PQC 의뢰를 만드는 코드가 없어 P-02-13(POP 제품 검사)이 열릴 대상이
      *    0건이었다 — 이 시험이 그 공백을 막는다.
      */
-    it('PQC — 검사 공정을 배포하면 작업지시 대상 의뢰가 선다', async () => {
-      await prisma.routing_operation.update({
-        where: { routing_operation_id: ids.routingOperation },
-        data: { inspection_managed: true },
-      });
+    /* PQC 대상은 품목이다 — 품목 전용 PQC 기준이 있으면 공정 「검사 관리」와 무관하게 선다(사용자 결정 2026-11-05). */
+    it('PQC — 품목 전용 PQC 기준이 있는 품목을 배포하면 작업지시 대상 의뢰가 선다', async () => {
       const plan = await prisma.inspection_plan.create({
         data: {
           inspection_plan_code: `${PREFIX}-PQC`,
@@ -1143,19 +1172,13 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           statusCode: 'REQUESTED',
         });
       } finally {
-        await prisma.routing_operation.update({
-          where: { routing_operation_id: ids.routingOperation },
-          data: { inspection_managed: false },
-        });
+        /* 뒤 시험의 배포가 PQC 대상이 되지 않게 기준을 끈다. */
+        await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { is_active: false } });
       }
     });
 
     /* #119 · 장부 P-82 — 고른 PQC 기준이 「생략 허용」이면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다. */
     it('PQC — 기준이 기본 생략이면 의뢰를 SKIPPED 로 세우고 목록의 대기·진행에는 안 뜬다', async () => {
-      await prisma.routing_operation.update({
-        where: { routing_operation_id: ids.routingOperation },
-        data: { inspection_managed: true },
-      });
       const existing = await prisma.inspection_plan.findUnique({ where: { inspection_plan_code: `${PREFIX}-PQC` } });
       const plan =
         existing ??
@@ -1181,7 +1204,10 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         });
       }
       // 의뢰를 생략으로 세우는 칸은 「기본 생략」이다(#886) — 「PQC 생략 허용」은 건별 생략 결재를 연다.
-      await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { default_skip: true } });
+      await prisma.inspection_plan.update({
+        where: { inspection_plan_id: plan.inspection_plan_id },
+        data: { default_skip: true, is_active: true },
+      });
 
       try {
         const workOrderId = await releaseWorkOrder(40);
@@ -1197,15 +1223,12 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         expect(pending.body.items).toHaveLength(0);
       } finally {
         await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { pqc_skip_allowed: false } });
-        await prisma.routing_operation.update({
-          where: { routing_operation_id: ids.routingOperation },
-          data: { inspection_managed: false },
-        });
+        await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { is_active: false } });
       }
     });
 
-    /* ⛔ 검사 공정이 아니면 의뢰를 만들지 않는다 — 전 공정에 붙으면 현장이 검사에 파묻힌다. */
-    it('PQC — 검사 공정이 아니면 의뢰가 서지 않는다', async () => {
+    /* ⛔ PQC 대상 품목이 아니면 의뢰를 만들지 않는다 — 사용 중인 품목 전용 PQC 기준이 없다. */
+    it('PQC — 품목 전용 PQC 기준이 없으면 의뢰가 서지 않는다', async () => {
       const workOrderId = await releaseWorkOrder(60);
 
       expect(await prisma.inspection_request.count({ where: { work_order_id: BigInt(workOrderId) } })).toBe(0);

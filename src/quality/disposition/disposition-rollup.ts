@@ -23,6 +23,8 @@ export type DispositionProgressCode = 'NOT_STARTED' | 'PARTIAL' | 'COMPLETED';
  */
 export const SCRAP = 'SCRAP';
 export const NORMAL = 'NORMAL';
+/** 특채 적용이 남기는 처분 — 불량창고 재고를 재고 재등록(W-04-11)으로 되돌린다(omf-all-around#207). */
+export const CONCESSION = 'CONCESSION';
 /** `logistics.goods_issue.status_code` 4값 중 원장을 지난 하나. */
 export const POSTED = 'POSTED';
 const ZERO = new Prisma.Decimal(0);
@@ -119,6 +121,8 @@ export function dispositionFollowUp(
   dispositionTypeCode: string,
   decisionQty: Prisma.Decimal,
   issueLines: FollowUpIssueLine[],
+  /** 특채 LOT 에 불량창고 재고가 남았는가 — 없으면 재등록할 것이 없다(입고 전 특채 · 이미 옮김 · #207). */
+  concessionDefectStock = false,
 ): DispositionFollowUp {
   const followUpQty = dispositionTypeCode === SCRAP ? postedQty(issueLines) : ZERO;
   const followUpStatusCode = followUpProgress(followUpQty, decisionQty);
@@ -135,6 +139,8 @@ export function dispositionFollowUp(
     // ⛔ 되살리는 것은 I-23 이 «아니라» `production_result`·`work_order` 에 결정 축 칸이 서는 날이다
     // (089 §4 ⓑ · §11 ④). 계약도 거절 쪽에서 같은 두 갈래를 적었다 —
     // `StockReinstatementConflictResponse.DISPOSITION_NOT_REINSTATABLE` = 「폐기이거나 판정 대기」. // 결정 — 통보 089
-    reinstatable: dispositionTypeCode === NORMAL,
+    // ⭐ 특채(#207)는 불량창고 재고가 남았을 때만 참이다 — 그 재고를 정상 창고로 옮기는 길이 재고 재등록뿐이고,
+    //    입고 전에 특채된 LOT 은 입고가 바로 정상 창고로 넣는다.
+    reinstatable: dispositionTypeCode === NORMAL || (dispositionTypeCode === CONCESSION && concessionDefectStock),
   };
 }

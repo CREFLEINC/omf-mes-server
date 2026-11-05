@@ -43,6 +43,7 @@ interface BalanceSeed extends Row {
   inventory_status_code: string;
   ownership_type_code: string;
   owner_partner_id: bigint | null;
+  on_hand_qty: Prisma.Decimal;
   available_qty: Prisma.Decimal | null;
 }
 
@@ -58,6 +59,7 @@ const balance = (over: Partial<BalanceSeed> = {}): BalanceSeed => ({
   inventory_status_code: 'ON_HOLD',
   ownership_type_code: 'CONSIGNMENT',
   owner_partner_id: 9n,
+  on_hand_qty: new Prisma.Decimal(100),
   available_qty: new Prisma.Decimal(100),
   ...over,
 });
@@ -148,6 +150,19 @@ describe('재고 이동 전기', () => {
     expect(posted[0].transactionNo).toBe(NO);
     expect(posted[0].idempotencyKey).toBe(`STOCK_TRANSFER:${NO}:ISSUE`);
     expect(ledgerLineIds).toEqual([5000n]);
+  });
+
+  it('반출 — 앞선 이동이 남긴 보유 0 IN_TRANSIT 행은 빼고 고른다(#233)', async () => {
+    const { tx, posting, posted } = fake({
+      balances: [
+        balance({ inventory_status_code: 'IN_TRANSIT', on_hand_qty: new Prisma.Decimal(0), available_qty: new Prisma.Decimal(0) }),
+        balance(),
+      ],
+    });
+
+    await postTransferIssue(tx, posting, input(), 1);
+
+    expect(posted[0].lines[0].from).toMatchObject({ inventoryStatusCode: 'ON_HOLD' });
   });
 
   it('handlingUnitId 는 있을 때만 원장 라인에 실린다', async () => {

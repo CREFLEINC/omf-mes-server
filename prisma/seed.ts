@@ -469,11 +469,23 @@ const SEED: CodeGroupSeed[] = [
   {
     // logistics.material_issue_request.reason_code
     groupCode: 'MATERIAL_ISSUE_REQUEST_REASON',
-    groupName: '자재 출고요청 사유',
+    groupName: '출고 요청 사유',
     values: [
       { code: 'URGENT_WO_RESPONSE', codeName: '긴급 MES W/O 대응', order: 10 },
       { code: 'SHORTAGE_SUPPLEMENT', codeName: '부족분 보충', order: 20 },
       { code: 'DEFECT_REPLACEMENT', codeName: '불량 대체', order: 30 },
+      { code: 'OTHER', codeName: '기타', order: 40 },
+    ],
+  },
+  {
+    // logistics.material_issue_request.close_reason_detail_code — 창고 보충 잔량 마감 사유(피처 004).
+    // 고객이 늘린다. 마이그 20261105120000 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
+    groupCode: 'REPLENISHMENT_CLOSE_REASON',
+    groupName: '창고 보충 잔량 마감 사유',
+    values: [
+      { code: 'STOCK_OUT', codeName: '자재 창고 결품', order: 10 },
+      { code: 'SOURCE_ISSUE', codeName: '자재 창고 사정', order: 20 },
+      { code: 'REQUEST_ERROR', codeName: '요청 착오', order: 30 },
       { code: 'OTHER', codeName: '기타', order: 40 },
     ],
   },
@@ -1131,6 +1143,8 @@ const SEED: CodeGroupSeed[] = [
     groupName: '물류 전표 상태',
     isSystemOwned: true,
     values: [
+      // 계획 기반 출고 요청의 배포 전 상태(피처 003) — 마이그 20261103120000 도 넣는다.
+      { code: 'WAITING', codeName: '대기', order: 5 },
       { code: 'REGISTERED', codeName: '등록', order: 10 },
       { code: 'POSTED', codeName: '전기완료', order: 20 },
       { code: 'CANCEL_REQUESTED', codeName: '취소요청', order: 30 },
@@ -1662,6 +1676,11 @@ const ROLES = [
       'W-CO-13',
       // 인계작업 알림 설정(omf-all-around#190 · 장부 P-134) — 같은 이유다.
       'W-CO-14',
+      // 출고 요청 현황·공장 근무일 설정(피처 003 · omf-all-around#66) — 같은 이유다.
+      'W-02-11',
+      'W-CO-15',
+      // 생산 창고 보충(피처 004 · omf-all-around#230) — 같은 이유다.
+      'W-02-12',
       // 검사표 기준(omf-all-around#89 · 장부 P-102) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
       'W-06-24',
       // 제품 검사표 조회·출력(omf-all-around#89 · 장부 P-102) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.

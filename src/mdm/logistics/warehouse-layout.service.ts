@@ -16,10 +16,10 @@ interface Marker {
 }
 
 /**
- * 사용자 결정 2026-10-30 — 화면의 기본 표식 크기 상당. 크기·회전 칸이 생기기 전에 찍은 점도
+ * 사용자 결정 2026-10-30 — 화면의 기본 표식 크기 상당. 너비는 2026-10-31 에 0.05 → 0.12. 크기·회전 칸이 생기기 전에 찍은 점도
  * 이 값으로 읽는다. 저장할 때 실제로 채워 넣어, 이 값이 바뀌어도 이미 찍은 점은 그대로다.
  */
-const MARKER_DEFAULTS = { width: 0.05, height: 0.05, rotation: 0 };
+const MARKER_DEFAULTS = { width: 0.12, height: 0.05, rotation: 0 };
 
 /** 계약 `WarehouseLayoutMarkerUpsert` — 크기·회전은 빼도 된다. 저장된 옛 점도 이 모양이다. */
 type MarkerInput = Omit<Marker, keyof typeof MARKER_DEFAULTS> & Partial<typeof MARKER_DEFAULTS>;

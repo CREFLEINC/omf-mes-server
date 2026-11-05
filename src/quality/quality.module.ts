@@ -28,6 +28,8 @@ import { ReworkWorkOrderService } from './disposition/rework-work-order.service'
 import { InspectionLevelController } from './inspection-level/inspection-level.controller';
 import { InspectionLevelService } from './inspection-level/inspection-level.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
+import { InspectionPlanDrawingController } from './inspection-plan/inspection-plan-drawing.controller';
+import { InspectionPlanDrawingService } from './inspection-plan/inspection-plan-drawing.service';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanImportController } from './inspection-plan/inspection-plan-import.controller';
 import { InspectionPlanImportService } from './inspection-plan/inspection-plan-import.service';
@@ -92,6 +94,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InspectionSheetController,
     InspectionSheetOpenController,
     InspectionPlanVersionController,
+    InspectionPlanDrawingController,
     InspectionRequestController,
     OqcSerialController,
     // ⭐ `InspectionResultController` 보다 «먼저» — 라우트가 등록 순서로 잡혀, 뒤에 두면
@@ -122,6 +125,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InspectionSheetQueryService,
     InspectionSheetSignService,
     InspectionPlanVersionService,
+    InspectionPlanDrawingService,
     InspectionRequestService,
     InspectionHistoryService,
     OqcSerialQueryService,

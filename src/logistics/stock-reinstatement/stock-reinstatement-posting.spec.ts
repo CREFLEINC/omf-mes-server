@@ -48,6 +48,8 @@ interface Seed {
   skipMove?: boolean;
   alreadyPosted?: boolean;
   afterStatus?: string;
+  /** 특채 결정(#207)의 적용된 특채 승인 수량 — null 이면 적용된 특채가 없다. */
+  concessionQty?: number | null;
 }
 
 function build(seed: Seed = {}) {
@@ -67,6 +69,7 @@ function build(seed: Seed = {}) {
           disposition_type_code: seed.disposition ?? 'NORMAL',
           decision_qty: new Prisma.Decimal(seed.decisionQty ?? 10),
           uom_id: BigInt(seed.decisionUom ?? UOM),
+          approval_request_id: 88n,
           nonconformance: { nonconformance_lot: seed.inDecision === false ? [{ lot_id: 9999n }] : [{ lot_id: LOT }] },
         });
       },
@@ -90,6 +93,12 @@ function build(seed: Seed = {}) {
           available_qty: new Prisma.Decimal(seed.available ?? 10),
         })),
       );
+    },
+    concession: {
+      findFirst: () => {
+        order.push('concession');
+        return Promise.resolve(seed.concessionQty == null ? null : { approved_qty: new Prisma.Decimal(seed.concessionQty) });
+      },
     },
     lot_hold: {
       findUnique: () => {
@@ -297,6 +306,47 @@ describe('postStockReinstatement — 한 트랜잭션', () => {
     expect((await caught<ConflictException>(() => postStockReinstatement(tx, deps, write()))).conflict.code).toBe(
       'DISPOSITION_NOT_REINSTATABLE',
     );
+  });
+
+  describe('특채 처분(omf-all-around#207) — 보류 없이 불량창고 재고만 정상 창고로', () => {
+    const concession = { lotHoldId: null, releaseReasonCode: null };
+
+    it('⭐ 보류를 찾지도 닫지도 않고 LOT 도 옮기지 않는다 · 도착은 NORMAL/AVAILABLE · 닫은 보류 null', async () => {
+      const { tx, deps, order, posted } = build({ disposition: 'CONCESSION', decisionQty: 10, concessionQty: 6, available: 6 });
+
+      const view = await postStockReinstatement(tx, deps, write({ ...concession, qty: 6 }));
+
+      expect(order).toEqual(['lockLot', 'decision', 'concession', 'sumReinstated', 'lockBalances', 'transfer.create', 'post', 'line.update']);
+      expect(posted[0].lines[0].to).toMatchObject({ qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE' });
+      expect(view).toMatchObject({ releasedLotHoldId: null, remainingHeldQty: null, reinstatedQty: 6 });
+    });
+
+    it('⛔ 한도는 판정 수량(남은 수량 전체)이 아니라 특채 승인 수량이다', async () => {
+      const { tx, deps } = build({ disposition: 'CONCESSION', decisionQty: 10, concessionQty: 6, available: 10 });
+
+      const error = await caught<ContractException>(() => postStockReinstatement(tx, deps, write({ ...concession, qty: 7 })));
+      expect(error.errors[0]).toMatchObject({ field: 'qty', code: 'RANGE' });
+    });
+
+    it('⛔ 적용된 특채가 없으면 409 DISPOSITION_NOT_REINSTATABLE · 보류를 고르면 400 INVALID(lotHoldId)', async () => {
+      const none = build({ disposition: 'CONCESSION', concessionQty: null });
+      const held = build({ disposition: 'CONCESSION', concessionQty: 10 });
+
+      expect((await caught<ConflictException>(() => postStockReinstatement(none.tx, none.deps, write(concession)))).conflict.code)
+        .toBe('DISPOSITION_NOT_REINSTATABLE');
+      expect((await caught<ContractException>(() => postStockReinstatement(held.tx, held.deps, write({ releaseReasonCode: null }))))
+        .errors[0]).toMatchObject({ field: 'lotHoldId', code: 'INVALID' });
+    });
+  });
+
+  it('⛔ 정상 처분은 보류와 해제 사유가 필수다 — 비우면 400 REQUIRED', async () => {
+    const hold = build();
+    const reason = build();
+
+    expect((await caught<ContractException>(() => postStockReinstatement(hold.tx, hold.deps, write({ lotHoldId: null })))).errors[0])
+      .toMatchObject({ field: 'lotHoldId', code: 'REQUIRED' });
+    expect((await caught<ContractException>(() => postStockReinstatement(reason.tx, reason.deps, write({ releaseReasonCode: null })))).errors[0])
+      .toMatchObject({ field: 'releaseReasonCode', code: 'REQUIRED' });
   });
 
   it('⛔ 보류 — 이미 풀렸으면 409 HOLD_ALREADY_RELEASED · 남의 LOT 보류면 400 INVALID(lotHoldId)', async () => {

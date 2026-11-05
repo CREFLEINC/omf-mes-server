@@ -7,7 +7,7 @@ import { PagedResponse, pageRequest, pagedResponse } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalListScope } from '../terminal-list-scope';
 import { allowedKey, allowedLocationsOf } from './allowed-locations';
-import { PutawayTaskView, TASK_INCLUDE, TaskRow, taskView } from './putaway-task-view';
+import { PutawayTaskView, TASK_INCLUDE, TaskRow, originDocumentNos, taskView, taskWarehouseId } from './putaway-task-view';
 
 /** 계약 검증 가드가 이미 int64/boolean 을 캐스트한다 — page·size·temporaryOnly 는 그 값을 믿는다. */
 export interface PutawayTaskQuery {
@@ -49,9 +49,9 @@ export class PutawayTaskService {
   }
 
   private async views(rows: TaskRow[]): Promise<PutawayTaskView[]> {
-    const pairs = rows.map((row) => ({ itemId: row.item_id, warehouseId: row.goods_receipt_line.goods_receipt.warehouse_id }));
-    const allowed = await allowedLocationsOf(this.prisma, pairs);
-    return rows.map((row, index) => taskView(row, allowed.get(allowedKey(pairs[index])) ?? []));
+    const pairs = rows.map((row) => ({ itemId: row.item_id, warehouseId: taskWarehouseId(row) }));
+    const [allowed, originNos] = await Promise.all([allowedLocationsOf(this.prisma, pairs), originDocumentNos(this.prisma, rows)]);
+    return rows.map((row, index) => taskView(row, allowed.get(allowedKey(pairs[index])) ?? [], originNos.get(row.putaway_task_id) ?? null));
   }
 }
 
@@ -61,6 +61,18 @@ function numeric(name: string, value: unknown): number | undefined {
   const parsed = Number(value);
   if (Number.isInteger(parsed) && parsed >= 0) return parsed;
   throw one(field(name, ERROR_CODE.INVALID, '숫자여야 합니다.'));
+}
+
+/**
+ * 지시의 창고 축 — 구매 입고 원천은 입고 전표의 창고(지금 그대로), 창고 보충 수령 원천(피처 004)은 출발 위치의 창고.
+ */
+function inWarehouse(axis: { warehouse_id?: number | bigint; plant_id?: number | bigint }): Prisma.putaway_taskWhereInput {
+  return {
+    OR: [
+      { goods_receipt_line: { goods_receipt: axis } },
+      { goods_receipt_line_id: null, location_putaway_task_from_location_idTolocation: { warehouse: axis } },
+    ],
+  };
 }
 
 /**
@@ -78,9 +90,9 @@ export function putawayTaskWhere(query: PutawayTaskQuery, terminal?: TerminalLis
       query.statusCode === undefined ? {} : { status_code: query.statusCode },
       query.temporaryOnly === true ? { status_code: 'COMPLETED_TEMPORARY' } : {},
       goodsReceiptId === undefined ? {} : { goods_receipt_line: { goods_receipt_id: goodsReceiptId } },
-      warehouseId === undefined ? {} : { goods_receipt_line: { goods_receipt: { warehouse_id: warehouseId } } },
-      terminal === undefined ? {} : { goods_receipt_line: { goods_receipt: { plant_id: terminal.plantId } } },
-      terminal?.warehouseId == null ? {} : { goods_receipt_line: { goods_receipt: { warehouse_id: terminal.warehouseId } } },
+      warehouseId === undefined ? {} : inWarehouse({ warehouse_id: warehouseId }),
+      terminal === undefined ? {} : inWarehouse({ plant_id: terminal.plantId }),
+      terminal?.warehouseId == null ? {} : inWarehouse({ warehouse_id: terminal.warehouseId }),
     ],
   };
 }

@@ -3,7 +3,12 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
-import { BalanceLockKey, LockedBalanceRow, lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
+import {
+  BalanceLockKey,
+  LockedBalanceRow,
+  lockBalancesInOrder,
+  withoutEmptyBalances,
+} from '../../core/inventory-posting/balance-lock';
 
 /**
  * 재고 이동 «전기» — 한 문서가 원장을 **두 번** 남긴다(반출 · 도착). 두 전기가 한
@@ -110,7 +115,7 @@ export async function postTransferIssue(
   const errors: ErrorItem[] = [];
   const picked = new Map<string, LockedBalanceRow>();
   for (const [id, { qty, index }] of demanded) {
-    const rows = found.get(id) ?? [];
+    const rows = withoutEmptyBalances(found.get(id) ?? []);
     const at = `lines[${index}]`;
     if (rows.length === 0) {
       errors.push(field(`${at}.lotId`, ERROR_CODE.NEGATIVE_BALANCE, '이 위치에 그 LOT 의 재고가 없습니다.'));

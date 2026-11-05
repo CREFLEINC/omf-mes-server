@@ -84,6 +84,12 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     };
   const card = (cards: Card[], code: string): Card => cards.find((item) => item.cardCode === code) as Card;
 
+  it('기능 권한 없이 로그인만으로 본다 — 로그인 없으면 401(omf-all-around#229)', async () => {
+    await request(app.getHttpServer()).get(PATH).query({ baseDate: BASE_DATE }).expect(401);
+    expect(await prisma.role_permission.count({ where: { role_id: ids.role } })).toBe(0);
+    await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() });
+  });
+
   it('계약 모양으로 여섯 카드·추이·알람을 낸다', async () => {
     const body = await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() });
 
@@ -412,7 +418,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     });
     ids.user = user.app_user_id;
     ids.role = (await prisma.role.create({ data: { role_code: `${PREFIX}-ROLE`, role_name: PREFIX } })).role_id;
-    await prisma.role_permission.create({ data: { role_id: ids.role, permission_code: 'W-CO-05' } });
+    // 기능 권한을 주지 않는다 — 대시보드는 로그인만 본다(omf-all-around#229).
     await prisma.user_role.create({ data: { app_user_id: ids.user, role_id: ids.role } });
 
     const legal = await prisma.legal_entity.create({

@@ -42,11 +42,11 @@ describe('resolveInspectionPlanVersion — 전 품목 공통 기준 (omf-all-aro
     await expect(resolveInspectionPlanVersion(tx, 'IQC', 10, '2026-10-16')).rejects.toBeInstanceOf(ContractException);
   });
 
-  it('OQC 는 공통 기준으로 내려가지 않는다 — 품목 전용 기준이 없으면 종전처럼 400 이다', async () => {
+  it('OQC 도 품목 전용 기준이 없으면 공통 기준을 쓴다 (사용자 결정 2026-11-04)', async () => {
     const { tx, asked } = stub(new Map([[null, [2n]]]));
 
-    await expect(resolveInspectionPlanVersion(tx, 'OQC', 10, '2026-10-16')).rejects.toBeInstanceOf(ContractException);
-    expect(asked).toEqual([10]);
+    await expect(resolveInspectionPlanVersion(tx, 'OQC', 10, '2026-10-16')).resolves.toBe(2n);
+    expect(asked).toEqual([10, null]);
   });
 
   it('공통 기준이 여러 개면 종전처럼 400 이다', async () => {

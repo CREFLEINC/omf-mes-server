@@ -3,6 +3,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { assertCodeValues, assertNotBlank } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { LotLifecycleService, Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import { settleWorkOrderRequests } from '../../core/material-issue/request-lifecycle';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
@@ -25,8 +26,9 @@ const WORK_ORDER_DOCUMENT = 'WORK_ORDER';
  * 취소는 전건이다(계약이 직접 대비해 적었다).
  * ⛔ `app.document_cancellation` 다형 표를 쓰지 않는다 — 그 표는 `CD-CANCELABLE-DOCUMENT-TYPE`
  *    3값(입하·입고·출고)으로 닫힌 축이고 W/O 는 그 목록에 없다(§6-1).
- * ⛔ 이미 발행된 자재 출고요청을 **건드리지 않는다**(계약도 화면도 침묵 · 문의 038) ·
- *    아웃박스에도 적재하지 않는다(마감만 ERP 로 나간다).
+ * ⭐ 생산 창고 규칙의 출고 요청은 같은 트랜잭션에서 정리한다 — 진행 없음은 취소, 진행 있음은 미출고분을 닫는다
+ *    (피처 003 FR-028 · 문의 038 결정을 바꿨다). 지금 방식 요청(출발 창고 없음)은 여전히 건드리지 않는다.
+ * ⛔ 아웃박스에 적재하지 않는다(마감만 ERP 로 나간다).
  */
 @Injectable()
 export class WorkOrderCancelService {
@@ -68,6 +70,7 @@ export class WorkOrderCancelService {
         version_no: { increment: 1 },
       },
     });
+    await settleWorkOrderRequests(tx, this.documentState, { workOrderId: BigInt(workOrderId), reason: 'WO_CANCELLED', appUserId: appUserId ?? null });
 
     const slots = await tx.lot.findMany({
       where: {

@@ -98,7 +98,7 @@ describe('통합 대시보드 부적합 현황 — 확정 전 검사 결과의 �
     ids.user = (await prisma.app_user.create({ data: { login_id: `${PREFIX}-USER`, user_name: PREFIX, status_code: 'EMPLOYED' } }))
       .app_user_id;
     ids.role = (await prisma.role.create({ data: { role_code: `${PREFIX}-ROLE`, role_name: PREFIX } })).role_id;
-    await prisma.role_permission.create({ data: { role_id: ids.role, permission_code: 'W-CO-05' } });
+    // 기능 권한을 주지 않는다 — 대시보드는 로그인만 본다(omf-all-around#229).
     await prisma.user_role.create({ data: { app_user_id: ids.user, role_id: ids.role } });
     ids.legal = (
       await prisma.legal_entity.create({

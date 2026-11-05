@@ -98,8 +98,9 @@ describe('출하검사 의뢰 준비', () => {
 
   it('⛔ 기준이 둘이면 서버가 고르지 않고 막는다', async () => {
     (prisma.inspection_plan_version.findMany as jest.Mock).mockResolvedValueOnce([
-      { inspection_plan_version_id: 77n },
-      { inspection_plan_version_id: 78n },
+      // 서로 다른 기준이다 — 같은 기준의 버전 둘이면 최신 하나로 센다(omf-all-around#208).
+      { inspection_plan_version_id: 77n, inspection_plan_id: 1n, plan_version: 1 },
+      { inspection_plan_version_id: 78n, inspection_plan_id: 2n, plan_version: 1 },
     ]);
 
     await expect(

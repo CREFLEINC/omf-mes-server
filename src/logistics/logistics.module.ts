@@ -1,15 +1,24 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
-import { DocumentStateModule } from '../core/document-state';
+import { DocumentStateModule, DocumentStateService } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
-import { NumberingModule } from '../core/numbering';
+import { NumberingModule, NumberingService } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
+import { MaterialIssueReleaser } from '../core/material-issue/release-request';
+import { ReplenishmentCreator } from '../core/material-issue/replenishment-create';
 import { PickingHandoverNotifier } from '../core/picking';
+import { SyncLease } from '../integration/erp/sync-lease';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  MATERIAL_ISSUE_RELEASE_LEASE,
+  MaterialIssueReleaseRunner,
+} from './material-issue-request/material-issue-release.runner';
 import { PrismaModule } from '../prisma/prisma.module';
 import { LogisticsHandoverNotifier } from './logistics-handover';
 import { AsnController } from './asn/asn.controller';
@@ -33,9 +42,7 @@ import {
   InboundReceiptSplitController,
 } from './inbound-receipt/inbound-receipt.controller';
 import { InboundAllocationController } from './inbound-receipt/inbound-allocation.controller';
-import { InboundExcessController } from './inbound-receipt/inbound-excess.controller';
 import { InboundAllocationService } from './inbound-receipt/inbound-allocation.service';
-import { InboundExcessService } from './inbound-receipt/inbound-excess.service';
 import { InboundReceiptLineListService } from './inbound-receipt/inbound-receipt-line-list.service';
 import { InboundReceiptPerLineService } from './inbound-receipt/inbound-receipt-per-line.service';
 import { InboundReceiptSplitService } from './inbound-receipt/inbound-receipt-split.service';
@@ -44,10 +51,26 @@ import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
 import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
+import { MaterialIssueRequestEditController } from './material-issue-request/material-issue-request-edit.controller';
+import { MaterialIssueRequestEditService } from './material-issue-request/material-issue-request-edit.service';
+import { FreeStockService } from './material-issue-request/free-stock.service';
+import { PlannedStockService } from './material-issue-request/planned-stock.service';
+import { PlannedManualRequestCreator } from './material-issue-request/manual-request-planned';
 import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
 import { MaterialIssueRequestService } from './material-issue-request/material-issue-request.service';
 import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
 import { PickingController } from './picking/picking.controller';
+import { ReplenishmentArrivalController } from './replenishment/replenishment-arrival.controller';
+import { ReplenishmentArrivalService } from './replenishment/replenishment-arrival.service';
+import { ReplenishmentRunController } from './replenishment/replenishment-run.controller';
+import { ReplenishmentRunService } from './replenishment/replenishment-run.service';
+import { REPLENISHMENT_LEASE, ReplenishmentRunner } from './replenishment/replenishment.runner';
+import { ReplenishmentItemController } from './replenishment/replenishment-item.controller';
+import { ReplenishmentItemService } from './replenishment/replenishment-item.service';
+import { ReplenishmentRequestController } from './replenishment/replenishment-request.controller';
+import { ReplenishmentRequestService } from './replenishment/replenishment-request.service';
+import { ReplenishmentSettingController } from './replenishment/replenishment-setting.controller';
+import { ReplenishmentSettingService } from './replenishment/replenishment-setting.service';
 import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayCompleteService } from './putaway/putaway-complete.service';
@@ -119,6 +142,11 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   ],
   controllers: [
     GoodsIssueController,
+    ReplenishmentItemController,
+    ReplenishmentRunController,
+    ReplenishmentArrivalController,
+    ReplenishmentSettingController,
+    ReplenishmentRequestController,
     GoodsReceiptController,
     ReceiptDefaultsController,
     GoodsReceiptLineListController,
@@ -141,9 +169,9 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundReceiptPerLineController,
     InboundReceiptSplitController,
     InboundAllocationController,
-    InboundExcessController,
     InboundVarianceController,
     MaterialIssueRequestController,
+    MaterialIssueRequestEditController,
     RecycleEntryController,
     ShopfloorReceiptController,
     StockTransferController,
@@ -151,6 +179,44 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   providers: [
     LogisticsHandoverNotifier,
     PickingHandoverNotifier,
+    MaterialIssueReleaser,
+    // 출고 작업일 00:00 자동 배포(피처 003) — 운영 서버에서 MATERIAL_ISSUE_RELEASE_ENABLED=true 여야 돈다(확정 항목 7).
+    {
+      provide: MaterialIssueReleaseRunner,
+      inject: [ConfigService, PrismaService, MaterialIssueReleaser, NumberingService],
+      useFactory: (
+        config: ConfigService,
+        prisma: PrismaService,
+        releaser: MaterialIssueReleaser,
+        numbering: NumberingService,
+      ): MaterialIssueReleaseRunner =>
+        new MaterialIssueReleaseRunner(
+          config.get<string>('MATERIAL_ISSUE_RELEASE_ENABLED') === 'true',
+          prisma,
+          new SyncLease(prisma, MATERIAL_ISSUE_RELEASE_LEASE),
+          releaser,
+          numbering,
+        ),
+    },
+    // 생산 창고 자동 보충(피처 004) — 운영 서버에서 REPLENISHMENT_ENABLED=true 여야 돈다(research R-13).
+    {
+      provide: ReplenishmentRunner,
+      inject: [ConfigService, PrismaService, DocumentStateService, PickingHandoverNotifier, NumberingService],
+      useFactory: (
+        config: ConfigService,
+        prisma: PrismaService,
+        documentState: DocumentStateService,
+        pickingNotices: PickingHandoverNotifier,
+        numbering: NumberingService,
+      ): ReplenishmentRunner =>
+        new ReplenishmentRunner(
+          config.get<string>('REPLENISHMENT_ENABLED') === 'true',
+          prisma,
+          new SyncLease(prisma, REPLENISHMENT_LEASE),
+          new ReplenishmentCreator(documentState, pickingNotices),
+          numbering,
+        ),
+    },
     IqcHandoverNotifier,
     GoodsIssueQueryService,
     GoodsIssueService,
@@ -191,9 +257,17 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundReceiptPerLineService,
     InboundReceiptSplitService,
     InboundAllocationService,
-    InboundExcessService,
     InboundVarianceService,
     MaterialIssueRequestQueryService,
+    MaterialIssueRequestEditService,
+    PlannedStockService,
+    FreeStockService,
+    PlannedManualRequestCreator,
+    ReplenishmentItemService,
+    ReplenishmentRunService,
+    ReplenishmentArrivalService,
+    ReplenishmentSettingService,
+    ReplenishmentRequestService,
     MaterialIssueShortageService,
     MaterialIssueRequestService,
     RecycleEntryService,

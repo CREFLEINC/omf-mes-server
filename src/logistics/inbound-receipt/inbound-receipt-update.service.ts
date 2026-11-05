@@ -13,7 +13,6 @@ import {
   supplierLotLabelAttached,
   attributedQtyOf,
   collectExcessErrors,
-  excessQtyOf,
 } from './inbound-receipt-rules';
 import {
   InboundReceiptLineView,
@@ -53,7 +52,7 @@ const EXISTING_LINE_SELECT = {
   purchase_order_line_id: true,
   received_qty: true,
   lot_id: true,
-  inbound_receipt_excess: { select: { excess_qty: true } },
+  inbound_receipt_po_allocation: { select: { purchase_order_line_id: true, allocated_qty: true } },
 } satisfies Prisma.inbound_receipt_lineSelect;
 type ExistingLine = Prisma.inbound_receipt_lineGetPayload<{ select: typeof EXISTING_LINE_SELECT }>;
 
@@ -152,10 +151,11 @@ export class InboundReceiptUpdateService {
         throw one(banner(ERROR_CODE.STATE_LOCKED, 'LOT 이 만들어진 라인은 지울 수 없습니다.'));
       }
       const removed = gone.map((row) => row.inbound_receipt_line_id);
-      await assertNoSuccessor(tx, [...removed, ...changed(items, known)]);
+      const touched = [...gone, ...changed(items, known)];
+      await assertNoSuccessor(tx, touched);
       await this.applyAttribution(tx, attributionsOf(existing, items), appUserId);
       await this.writeLines(tx, inboundReceiptId, items, removed, appUserId);
-      await writeExcesses(tx, inboundReceiptId, items, known, appUserId);
+      await writeAllocations(tx, inboundReceiptId, items, known, appUserId);
 
       const rows = await tx.inbound_receipt_line.findMany({
         where: { inbound_receipt_id: inboundReceiptId },
@@ -339,40 +339,45 @@ function attributionsOf(existing: ExistingLine[], items: InboundReceiptLineWrite
     const sum = (carried?.qty ?? new Prisma.Decimal(0)).plus(qty);
     attributions.set(key, { qty: sum, index: carried?.index ?? index });
   };
-  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어간다(장부 P-100).
-  for (const row of existing) add(row.purchase_order_line_id, excessOf(row).minus(row.received_qty));
+  for (const row of existing) add(row.purchase_order_line_id, ownShare(row).negated());
   for (const [index, item] of items.entries()) {
     add(item.purchaseOrderLineId == null ? null : BigInt(item.purchaseOrderLineId), attributedQtyOf(item), index);
   }
   return attributions;
 }
 
-/** 수량·초과분·P/O 라인이 달라진 «기존» 라인 — 삭제와 같은 자물쇠를 받는다(§7-4 · 장부 P-100). */
-function changed(items: InboundReceiptLineWriteInput[], known: Map<number, ExistingLine>): bigint[] {
-  const ids: bigint[] = [];
-  for (const item of items) {
+/** 받은 수량·P/O 라인·P/O 몫(받은 수량 − 초과분)이 달라진 «기존» 라인 — 삭제와 같은 자물쇠를 받는다(§7-4 · 장부 P-100). */
+function changed(items: InboundReceiptLineWriteInput[], known: Map<number, ExistingLine>): ExistingLine[] {
+  return items.flatMap((item) => {
     const row = item.inboundReceiptLineId === undefined ? undefined : known.get(item.inboundReceiptLineId);
-    if (row && (!row.received_qty.equals(item.receivedQty) || excessChanged(row, item))) {
-      ids.push(row.inbound_receipt_line_id);
-    }
-  }
-  return ids;
+    return row !== undefined && stale(row, item) ? [row] : [];
+  });
 }
 
-function excessOf(row: ExistingLine): Prisma.Decimal {
-  return row.inbound_receipt_excess.reduce((qty, excess) => qty.plus(excess.excess_qty), new Prisma.Decimal(0));
-}
-
-function excessChanged(row: ExistingLine, item: InboundReceiptLineWriteInput): boolean {
+function stale(row: ExistingLine, item: InboundReceiptLineWriteInput): boolean {
   const lineId = item.purchaseOrderLineId == null ? null : BigInt(item.purchaseOrderLineId);
-  return !excessOf(row).equals(excessQtyOf(item)) || row.purchase_order_line_id !== lineId;
+  if (!row.received_qty.equals(item.receivedQty) || row.purchase_order_line_id !== lineId) return true;
+  return lineId !== null && !ownShare(row).equals(attributedQtyOf(item));
 }
 
-/** 초과분·배정을 요청대로 다시 적는다. 이어진 초과분이 있는 줄은 바뀌었으면 `assertNoSuccessor` 가
- *  이미 막았으니, 여기 닿는 바뀐 줄의 초과분은 모두 안 이어진 것이고 배정은 줄 자신의 P/O 몫 하나다.
- *  배정은 이중 쓰기다 — 옛 P/O 칸·초과분과 나란히 적는다(읽기가 모두 배정으로 옮겨 가면 옛 쓰기를 뗀다).
- *  초과분은 초과분·P/O 라인이 바뀐 줄만, 배정은 받은 수량이 바뀐 줄도 다시 적는다(몫 = 받은 수량 − 초과분). */
-async function writeExcesses(
+/** 줄 자신의 P/O 라인 몫 — 등록·치환이 적은 배정(받은 수량 − 초과분)이다. */
+function ownShare(row: ExistingLine): Prisma.Decimal {
+  return row.inbound_receipt_po_allocation
+    .filter((allocation) => allocation.purchase_order_line_id === row.purchase_order_line_id)
+    .reduce((qty, allocation) => qty.plus(allocation.allocated_qty), new Prisma.Decimal(0));
+}
+
+/** 배정 경로로 몫을 더한 줄 — 치환이 적는 모양(자기 P/O 라인 몫 하나)이 아니다. 바꾸게 두면 다른 P/O 라인의
+ *  받은 수량이 근거를 잃거나, 사람이 더한 몫을 요청의 몫 하나로 덮는다(장부 P-100 의 「이어진 초과분」 자물쇠). */
+function reallocated(row: ExistingLine): boolean {
+  const allocations = row.inbound_receipt_po_allocation;
+  if (allocations.length > 1) return true;
+  return allocations.some((allocation) => allocation.purchase_order_line_id !== row.purchase_order_line_id);
+}
+
+/** 바뀐 줄·새 줄의 배정을 요청대로 다시 적는다(몫 = 받은 수량 − 초과분). 배정 경로로 몫을 더한 줄은 바뀌었으면
+ *  `assertNoSuccessor` 가 이미 막았으니, 여기서 지우는 배정은 줄 자신의 P/O 몫뿐이다. */
+async function writeAllocations(
   tx: Prisma.TransactionClient,
   inboundReceiptId: number,
   items: InboundReceiptLineWriteInput[],
@@ -389,20 +394,9 @@ async function writeExcesses(
   });
   for (const [index, item] of items.entries()) {
     const row = item.inboundReceiptLineId === undefined ? undefined : known.get(item.inboundReceiptLineId);
-    const excessStale = row === undefined || excessChanged(row, item);
-    const allocationStale = row === undefined || excessStale || !row.received_qty.equals(item.receivedQty);
-    if (!allocationStale) continue;
+    if (row !== undefined && !stale(row, item)) continue;
     const lineId = row?.inbound_receipt_line_id ?? created.find((line) => line.line_no === index + 1)?.inbound_receipt_line_id;
     if (lineId === undefined) continue;
-    if (excessStale) {
-      if (row !== undefined) await tx.inbound_receipt_excess.deleteMany({ where: { inbound_receipt_line_id: lineId } });
-      const excessQty = excessQtyOf(item);
-      if (!excessQty.isZero()) {
-        await tx.inbound_receipt_excess.create({
-          data: { inbound_receipt_line_id: lineId, excess_qty: excessQty, created_by: BigInt(appUserId) },
-        });
-      }
-    }
     if (row !== undefined) await tx.inbound_receipt_po_allocation.deleteMany({ where: { inbound_receipt_line_id: lineId } });
     const attributed = attributedQtyOf(item);
     if (item.purchaseOrderLineId != null && attributed.greaterThan(0)) {
@@ -421,14 +415,14 @@ async function writeExcesses(
 /** 계약이 LOT 만 적었다 — 입고·차이·역참조 P/O 도 막는다(I-3.md §7-4). 안 막으면 FK 위반이 500
  *  으로 새고, 수량만 고치면 원장이 가리키는 근거가 조용히 달라진다. 「전기 완료」 축이 서면
  *  걷어낼 임시 자물쇠다(문의 026). */
-async function assertNoSuccessor(tx: Prisma.TransactionClient, lineIds: bigint[]): Promise<void> {
-  if (lineIds.length === 0) return;
+async function assertNoSuccessor(tx: Prisma.TransactionClient, lines: ExistingLine[]): Promise<void> {
+  if (lines.length === 0) return;
+  const lineIds = lines.map((row) => row.inbound_receipt_line_id);
   const where = { inbound_receipt_line_id: { in: lineIds } };
   const successors =
+    lines.filter(reallocated).length +
     (await tx.goods_receipt_line.count({ where })) +
     (await tx.inbound_variance.count({ where })) +
-    // 초과분이 다른 P/O 라인에 이어졌으면 그 라인의 받은 수량이 이 줄을 근거로 한다(장부 P-100).
-    (await tx.inbound_receipt_excess.count({ where: { ...where, purchase_order_line_id: { not: null } } })) +
     (await tx.purchase_order.count({
       where: { source_inbound_receipt_line_id: { in: lineIds } },
     }));

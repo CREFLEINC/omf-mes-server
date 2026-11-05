@@ -54,7 +54,7 @@ export interface InboundLotRow {
   progress: InboundLotProgress;
 }
 
-/** 취소했거나 취소 요청 중인 입하 — 취소가 받은 수량을 되돌린다(`inbound-excess.service.ts` 와 같은 기준). */
+/** 취소했거나 취소 요청 중인 입하 — 취소가 받은 수량을 되돌린다(`inbound-allocation.service.ts` 와 같은 기준). */
 const RECEIPT_CANCEL_STATUSES = ['CANCELLED', 'CANCEL_REQUESTED'];
 const POSTED = 'POSTED';
 /** 선별의 선별 정도면 충분하다 — `lot-receivable.ts` 의 상한과 같다. 순환이 생겨도 멈춘다. */

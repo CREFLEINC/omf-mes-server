@@ -24,6 +24,40 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/departments/{departmentId}:activate': ['W-06-06'],
   'POST /mdm/departments/{departmentId}:deactivate': ['W-06-06'],
   'PUT /mdm/workers/{workerId}/qualifications': ['W-06-06'],
+  // 공장 근무일 설정(W-CO-15) — 운영 정책 표에서 `WEEKLY_WORKING_DAYS` 하나만 읽고 쓴다. 다른 코드는 서비스가
+  // 막는다(`assertWritable`)(omf-all-around#66). 생산 창고 보충(W-02-12 · 피처 004)도 같은 방식으로
+  // `REPLENISHMENT_RUN_TIME`(공장 기본 실행 시각) 하나만 읽고 쓴다.
+  'GET /app/operation-policies/effective': ['W-CO-15', 'W-02-12'],
+  'GET /app/operation-policies/{operationPolicyId}': ['W-CO-15', 'W-02-12'],
+  'POST /app/operation-policies': ['W-CO-15', 'W-02-12'],
+  'PUT /app/operation-policies/{operationPolicyId}': ['W-CO-15', 'W-02-12'],
+  // 출고 요청 현황(W-02-11 · 피처 003 · omf-all-around#66) — 이 화면이 요청을 고치고 취소하고 이력을 본다.
+  'PUT /logistics/material-issue-requests/{materialIssueRequestId}': ['W-02-11'],
+  // 창고 보충 요청(W-02-12 · 피처 004)도 같은 경로로 취소한다 — 어느 화면 몫인지는 서비스가 요청 유형으로 가른다.
+  'POST /logistics/material-issue-requests/{materialIssueRequestId}:cancel': ['W-02-11', 'W-02-12'],
+  // 이력도 취소처럼 W-02-12(창고 보충 요청 상세의 이력·닫은 사람 — FR-037)가 함께 들어오고 서비스가 유형으로 가른다.
+  'GET /logistics/material-issue-requests/{materialIssueRequestId}/history': ['W-02-11', 'W-02-12'],
+  // 생산 창고 예정·부족 — 부족 탭(W-02-11)과 보충 요청(W-02-10)이 같은 값을 본다. 생산 창고 보충(W-02-12 · 피처 004)의
+  // 「생산 창고 쓸 수 있는 양」·「자재 창고 남은 수량」도 이 값이다(FR-037).
+  'GET /logistics/material-issue-requests/planned-stock': ['W-02-10', 'W-02-11', 'W-02-12'],
+  // 생산 창고 보충(W-02-12 · 피처 004 · omf-all-around#230) — 이 화면이 관리 품목·실행 시각을 소유한다.
+  'GET /logistics/replenishment-items': ['W-02-12'],
+  'POST /logistics/replenishment-items': ['W-02-12'],
+  'PUT /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
+  'DELETE /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
+  'POST /logistics/replenishment-requests': ['W-02-12'],
+  'GET /logistics/replenishment-requests/arrivals': ['W-02-12'],
+  'GET /logistics/replenishment-runs': ['W-02-12'],
+  'POST /logistics/replenishment-requests/arrivals/{goodsIssueId}:receive': ['W-02-12'],
+  'POST /logistics/shopfloor-receipts:bulk': ['W-02-12'],
+  'POST /logistics/material-issue-requests/{materialIssueRequestId}:close-remaining': ['W-02-12'],
+  'GET /logistics/replenishment-settings': ['W-02-12'],
+  'PUT /logistics/replenishment-settings/warehouses/{warehouseId}': ['W-02-12'],
+  // 쓸 수 있는 양 — W-02-10 품목 줄의 남은 수량(omf-all-around#232).
+  'GET /logistics/material-issue-requests/free-stock': ['W-02-10'],
+  // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
+  'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
+  'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
 
   // `W-06-07` 물류 마스터 — §3 이 「창고 등록」만 적어 도출표에 `POST` 만 들어왔다.
   // 수정과 활성 전이는 같은 화면의 같은 자원이다.
@@ -260,6 +294,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['W-06-02'],
   // 검사기준 엑셀 올리기(장부 P-140) — 같은 화면 헤더의 [엑셀 올리기]다.
   'POST /quality/inspection-plans:import': ['W-06-02'],
+  // 검사기준 버전 도면 추가·바꾸기·빼기(omf-all-around#227) — 같은 화면 버전 상세 「도면」 탭이다.
+  'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings': ['W-06-02'],
+  'PUT /quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings/{attachmentId}': ['W-06-02'],
+  'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}/drawings/{attachmentId}': ['W-06-02'],
 
   // `M-01-05` 적치·입고 완료 — ⭐ 도출표에 «이미 있는» 키에 화면을 더하는 둘째 자리다
   // (`GET /app/users` 선례). 도출표는 제품 입고(`M-04-04`)만 적었는데 자재 적치를 소유한

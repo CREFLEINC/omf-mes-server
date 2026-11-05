@@ -2,6 +2,13 @@ import { DERIVED_PERMISSIONS } from './derived-permissions';
 import { MANUAL_PERMISSIONS } from './manual-permissions';
 
 /**
+ * 계약이 403 을 선언했지만 기능 권한은 보지 않는 자리 — 그 403 은 다른 사유다.
+ * 통합 대시보드는 로그인한 사용자 누구나 보고(omf-all-around#229), 403 은 데이터 범위 밖 공장뿐이다(#120).
+ * ⛔ `OPERATION_PERMISSIONS` 에 함께 두지 않는다 — 두면 다시 권한을 본다.
+ */
+export const LOGIN_ONLY_OPERATIONS: ReadonlySet<string> = new Set(['GET /app/dashboard-summary']);
+
+/**
  * 오퍼레이션 → 그것을 부를 수 있는 권한(그중 **하나**만 있으면 된다).
  *
  * 두 겹이다 — 설계 자료에서 «도출한 것»과 §3 이 짝지어 주지 않아 «근거를 적어 손으로
