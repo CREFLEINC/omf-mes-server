@@ -146,6 +146,19 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
       detailRequestId,
     ]);
 
+    // W-02-11 조건 칸은 「W/O 번호」다 — q 는 요청번호와 W/O 번호를 함께 찾는다(대소문자 무시 · omf-all-around#232 1).
+    const workOrderNo = (await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: ids.workOrder } })).work_order_no;
+    const byWorkOrderNo = await request(app.getHttpServer())
+      .get(`${BASE}?q=${encodeURIComponent(workOrderNo.toLowerCase())}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(byWorkOrderNo.body.items.map((row: RequestBody) => row.materialIssueRequestId)).toEqual(
+      expect.arrayContaining([detailRequestId, firstRequestId]),
+    );
+    for (const row of byWorkOrderNo.body.items as { workOrderNo: string }[]) {
+      expect(row.workOrderNo.toLowerCase()).toContain(workOrderNo.toLowerCase());
+    }
+
     const other = await request(app.getHttpServer())
       .get(`${BASE}?workOrderId=${Number(ids.workOrder) + 987654}`)
       .set('Cookie', cookie)

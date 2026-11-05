@@ -81,6 +81,15 @@ export class MaterialIssueRequestQueryService {
     const and: Prisma.material_issue_requestWhereInput[] = [];
     const statuses = displayStatuses(query.displayStatus);
     if (statuses.length > 0) and.push(displayStatusWhere(statuses));
+    if (query.q !== undefined) {
+      // 요청번호 또는 W/O 번호 — W-02-11 조건 칸이 「W/O 번호」다(omf-all-around#232 1).
+      and.push({
+        OR: [
+          { issue_request_no: { contains: query.q, mode: 'insensitive' } },
+          { work_order: { work_order_no: { contains: query.q, mode: 'insensitive' } } },
+        ],
+      });
+    }
     if (bool(query.releaseFailed)) and.push({ status_code: 'WAITING', release_error_text: { not: null } });
     if (bool(query.hasShortage)) {
       const ids = (await dynamicShortages(this.prisma, plantId === undefined ? {} : { plantId: BigInt(plantId) }))
@@ -97,9 +106,6 @@ export class MaterialIssueRequestQueryService {
       // ⛔ 4값 대조를 걸지 않는다 — 필터에 값 목록을 걸면 값이 늘 때 조회가 400 을 낸다(§8-2).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...requiredAtWhere(query.requiredAtFrom, query.requiredAtTo),
-      ...(query.q === undefined
-        ? {}
-        : { issue_request_no: { contains: query.q, mode: 'insensitive' } }),
       ...(sourceWarehouseId === undefined ? {} : { source_warehouse_id: sourceWarehouseId }),
       ...dateRange('issue_work_date', query.issueWorkDateFrom, query.issueWorkDateTo),
       ...(Object.keys(workOrder).length === 0 ? {} : { work_order: workOrder }),
