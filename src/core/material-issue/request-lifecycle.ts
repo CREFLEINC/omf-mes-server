@@ -108,6 +108,23 @@ export async function closePickings(
   }
 }
 
+/** 열린 피킹 지시를 완료로 — 집은 만큼으로 줄였고 그만큼 출고됐을 때. 출고 전기가 닫는 것과 같은 전이다. */
+export async function finishPickings(
+  tx: Prisma.TransactionClient,
+  documentState: DocumentStateService,
+  requestId: bigint,
+  appUserId: number | null,
+): Promise<void> {
+  const orders = await tx.picking_order.findMany({
+    where: { source_document_type_code: SOURCE_MATERIAL_ISSUE_REQUEST, source_document_id: requestId, status_code: PICKING_REGISTERED },
+    select: { picking_order_id: true, status_code: true },
+  });
+  for (const order of orders) {
+    const to = documentState.assertTransition(PICKING_STATUS, 'picking-issue', order.status_code, HttpStatus.CONFLICT).to;
+    await tx.picking_order.update({ where: { picking_order_id: order.picking_order_id }, data: { status_code: to, updated_by: appUserId, version_no: { increment: 1 } } });
+  }
+}
+
 /** 요청 상태를 전이표대로 옮긴다. */
 export function requestTransition(documentState: DocumentStateService, action: string, from: string): string {
   return documentState.assertTransition(REQUEST_STATUS, action, from, HttpStatus.CONFLICT).to;
@@ -149,6 +166,8 @@ export async function closeRemaining(
   if (!progress.started) throw stateLocked('아직 피킹·출고가 시작되지 않았습니다. 요청 취소를 쓰세요.');
   if (progress.inFlight) throw stateLocked('집었지만 아직 출고하지 않은 자재가 있습니다. 집은 양을 먼저 출고하세요.');
   await closePickings(tx, documentState, input.requestId, input.appUserId);
+  // 집은 양이 모두 출고됐으니 남은 지시는 더 집을 것이 없다 — 열어 두면 모바일 피킹 목록·작업 수에 남는다.
+  await finishPickings(tx, documentState, input.requestId, input.appUserId);
   const now = new Date();
   const actor = BigInt(input.appUserId);
   await tx.material_issue_request.update({

@@ -12,6 +12,7 @@ import {
   REQUEST_AUDIT_TARGET,
   closePickings,
   closeRemaining,
+  finishPickings,
   RequestAction,
   RequestEventDetail,
   recordRequestAudit,
@@ -280,7 +281,7 @@ export class MaterialIssueRequestEditService {
     // 미출고가 모두 0 이면 더 나갈 것이 없다 — 출고 전기와 같은 완료(POSTED)로 옮기고 집은 만큼으로 줄인 피킹도 닫는다(FR-025).
     const done = lines.every((line) => line.requested_qty.lte(line.issued_qty));
     await this.touch(tx, request, done ? { status_code: requestTransition(this.documentState, 'material-issue-request-issue', request.status_code) } : {}, appUserId);
-    if (done) await this.finishPickings(tx, request.material_issue_request_id, appUserId);
+    if (done) await finishPickings(tx, this.documentState, request.material_issue_request_id, appUserId);
     await record(tx, request, events, appUserId);
   }
 
@@ -397,18 +398,6 @@ export class MaterialIssueRequestEditService {
         data: { requested_qty: requested, shortage_qty: shortage },
       });
       events.push(qtyChanged(line, requested, shortage));
-    }
-  }
-
-  /** 완료된 요청의 열린 피킹 — 집은 만큼으로 줄였으니 더 집을 것이 없다. 출고 전기가 닫는 것과 같은 전이다. */
-  private async finishPickings(tx: Prisma.TransactionClient, requestId: bigint, appUserId: number): Promise<void> {
-    const orders = await tx.picking_order.findMany({
-      where: { source_document_type_code: 'MATERIAL_ISSUE_REQUEST', source_document_id: requestId, status_code: 'REGISTERED' },
-      select: { picking_order_id: true, status_code: true },
-    });
-    for (const order of orders) {
-      const to = this.documentState.assertTransition('logistics.picking_order.status_code', 'picking-issue', order.status_code, HttpStatus.CONFLICT).to;
-      await tx.picking_order.update({ where: { picking_order_id: order.picking_order_id }, data: { status_code: to, updated_by: appUserId, version_no: { increment: 1 } } });
     }
   }
 

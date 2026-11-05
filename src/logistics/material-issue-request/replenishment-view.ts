@@ -2,7 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
-import { DerivedRow } from './material-issue-request-derived';
+import { DerivedRow, DisplayStatus, STARTED } from './material-issue-request-derived';
 
 /**
  * 창고 보충 요청만의 화면 값(피처 004 · FR-023 · contracts §1) — 상태 다섯·한 품목 수량 합·출고 전표와 수령.
@@ -13,18 +13,6 @@ export const REPLENISHMENT_STATUSES = ['DISPATCHED', 'IN_PROGRESS', 'COMPLETED',
 export type ReplenishmentStatus = (typeof REPLENISHMENT_STATUSES)[number];
 const REPLENISHMENT = 'REPLENISHMENT';
 const ZERO = new Prisma.Decimal(0);
-
-/** 진행 — 줄에 기출고가 있거나 취소 안 된 피킹에서 집은 양이 있다(003 과 같은 판정). */
-const STARTED: Prisma.material_issue_requestWhereInput = {
-  material_issue_request_line: {
-    some: {
-      OR: [
-        { issued_qty: { gt: 0 } },
-        { picking_line: { some: { picked_qty: { gt: 0 }, picking_order: { status_code: { not: 'CANCELLED' } } } } },
-      ],
-    },
-  },
-};
 
 /** 배포 실패로 남은 대기(WAITING)도 「배포」로 보인다 — 보충 요청은 만들자마자 배포한다. */
 const STATUS_WHERE: Record<ReplenishmentStatus, Prisma.material_issue_requestWhereInput> = {
@@ -93,29 +81,28 @@ export async function replenishmentGoodsIssues(db: Prisma.TransactionClient, req
   return result;
 }
 
-/** 응답에 덧붙는 보충 칸. `goodsIssues` 는 상세에만 싣는다. */
-export function replenishmentFields(row: DerivedRow, issues: readonly GoodsIssueRef[] | undefined, detail: boolean) {
+/** 응답에 덧붙는 보충 칸. `goodsIssues` 는 상세에만 싣는다. 상태는 003 표시 상태에서 푼다(진행 판정이 하나다). */
+export function replenishmentFields(row: DerivedRow, displayStatus: DisplayStatus, issues: readonly GoodsIssueRef[] | undefined, detail: boolean) {
   if (row.request_type_code !== REPLENISHMENT) {
     return { replenishmentStatus: null, qtySummary: null, receiptSummary: null, ...(detail ? { goodsIssues: null } : {}) };
   }
   const list = issues ?? [];
   return {
-    replenishmentStatus: statusOf(row),
+    replenishmentStatus: STATUS_OF[displayStatus](row),
     qtySummary: qtySummary(row),
     receiptSummary: { issuedCount: list.length, receivedCount: list.filter((i) => i.received).length },
     ...(detail ? { goodsIssues: list } : {}),
   };
 }
 
-function statusOf(row: DerivedRow): ReplenishmentStatus {
-  if (row.status_code === 'CANCELLED') return 'CANCELLED';
-  if (row.closed_at !== null && row.close_reason_code === 'REMAINDER_CLOSED') return 'REMAINDER_CLOSED';
-  if (row.status_code === 'POSTED') return 'COMPLETED';
-  const started = row.material_issue_request_line.some(
-    (line) => line.issued_qty.gt(0) || line.picking_line.some((p) => p.picked_qty.gt(0)),
-  );
-  return row.status_code === 'REGISTERED' && started ? 'IN_PROGRESS' : 'DISPATCHED';
-}
+/** 003 표시 상태 → 보충 상태. DONE 은 완료(POSTED)와 잔량 마감(closed_at)이 함께 든다. */
+const STATUS_OF: Record<DisplayStatus, (row: DerivedRow) => ReplenishmentStatus> = {
+  WAITING: () => 'DISPATCHED',
+  RELEASED: () => 'DISPATCHED',
+  IN_PROGRESS: () => 'IN_PROGRESS',
+  DONE: (row) => (row.close_reason_code === 'REMAINDER_CLOSED' ? 'REMAINDER_CLOSED' : 'COMPLETED'),
+  CANCELLED: () => 'CANCELLED',
+};
 
 /** 한 품목 요청만 — 단위가 다른 줄을 더하지 않는다. 마감 = 잔량 마감한 요청의 요청 − 출고. */
 function qtySummary(row: DerivedRow) {

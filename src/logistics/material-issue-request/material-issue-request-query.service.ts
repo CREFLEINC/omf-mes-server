@@ -84,10 +84,10 @@ export class MaterialIssueRequestQueryService {
   private async views(rows: DerivedRow[]): Promise<MaterialIssueRequestView[]> {
     const dynamic = await lineDynamicShortages(this.prisma, rows);
     const issues = await replenishmentGoodsIssues(this.prisma, replenishmentIds(rows));
-    return rows.map((row) => ({
-      ...materialIssueRequestView(row, derive(row, dynamic)),
-      ...replenishmentFields(row, issues.get(row.material_issue_request_id), false),
-    }));
+    return rows.map((row) => {
+      const derived = derive(row, dynamic);
+      return { ...materialIssueRequestView(row, derived), ...replenishmentFields(row, derived.displayStatus, issues.get(row.material_issue_request_id), false) };
+    });
   }
 
   private async where(query: MaterialIssueRequestQuery): Promise<Prisma.material_issue_requestWhereInput> {
@@ -122,7 +122,8 @@ export class MaterialIssueRequestQueryService {
       ...(await this.productionDateWhere(query, plantId)),
     };
     return {
-      request_type_code: query.requestTypeCode ?? 'WORK_ORDER',
+      // 보충 상태 조건만 주면 보충 요청을 찾는 것이다 — W/O 기본값을 걸면 언제나 빈 목록이 된다.
+      request_type_code: query.requestTypeCode ?? (replenishmentStatus === undefined ? 'WORK_ORDER' : 'REPLENISHMENT'),
       ...(query.replenishmentOriginCode === undefined ? {} : { replenishment_origin_code: query.replenishmentOriginCode }),
       ...(destinationWarehouseId === undefined ? {} : { location: { warehouse_id: destinationWarehouseId } }),
       ...(itemId === undefined ? {} : { material_issue_request_line: { some: { item_id: itemId } } }),
@@ -175,10 +176,10 @@ export class MaterialIssueRequestQueryService {
       where: { material_issue_request_id: materialIssueRequestId },
       orderBy: { line_no: 'asc' },
     });
-    const derived = derive(row, await lineDynamicShortages(this.prisma, [row]));
-    const issues = await replenishmentGoodsIssues(this.prisma, replenishmentIds([row]));
+    const [dynamic, issues] = await Promise.all([lineDynamicShortages(this.prisma, [row]), replenishmentGoodsIssues(this.prisma, replenishmentIds([row]))]);
+    const derived = derive(row, dynamic);
     return {
-      materialIssueRequest: { ...materialIssueRequestView(row, derived), ...replenishmentFields(row, issues.get(row.material_issue_request_id), true) },
+      materialIssueRequest: { ...materialIssueRequestView(row, derived), ...replenishmentFields(row, derived.displayStatus, issues.get(row.material_issue_request_id), true) },
       lines: lines.map((line) => materialIssueRequestLineView(line, derived.lines.get(line.material_issue_request_line_id))),
     };
   }
