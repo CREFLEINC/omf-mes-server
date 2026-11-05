@@ -39,8 +39,9 @@ export interface PlannedCreateResult {
  * 생산 창고를 쓰는 공장의 추가 출고 요청(W-02-10 · 피처 003 · research R-13, FR-011·017·018).
  *
  * 출발 창고를 고르지 않으면 자재마다 배포와 같은 규칙으로 채우고 창고별로 요청을 나눈다. 쓸 수 있는 양(가용 − 예정)을
- * 넘으면: 긴급 대응·부족 보충은 확인(acceptPlannedOverride) 뒤 실제 가용까지 가져가고(다른 요청에 동적 부족 · 이력),
- * 그 밖 사유는 쓸 수 있는 양까지만 담는다(0 이면 409). 만든 요청은 바로 배포한다(FR-005).
+ * 넘으면: 긴급 대응·부족 보충은 가져갈 예정분이 있을 때만 확인(acceptPlannedOverride) 뒤 실제 가용까지 가져가고
+ * (다른 요청에 동적 부족 · 이력), 가져갈 예정분이 없거나 그 밖 사유면 쓸 수 있는 양까지만 담는다(0 이면 409).
+ * 만든 요청은 바로 배포한다(FR-005).
  */
 @Injectable()
 export class PlannedManualRequestCreator {
@@ -140,12 +141,15 @@ export class PlannedManualRequestCreator {
       const avail = available.get(key) ?? ZERO;
       const free = Prisma.Decimal.max(avail.minus(pairLines.reduce((s, l) => s.plus(l.plannedQty), ZERO)), ZERO);
       const desired = this.desired(input, itemId);
+      // 가져갈 수 있는 사유라도 실제로 다른 요청의 예정분을 쓰는 것은 「가용까지 − 쓸 수 있는 양」 만큼이다.
+      // 그 양이 0 이면(예정이 없거나 가용이 모자란 것뿐) 묻지도, 이력을 남기지도 않는다(omf-all-around#232 3).
+      const fromPlanned = override ? Prisma.Decimal.max(Prisma.Decimal.min(desired, avail).minus(free), ZERO) : ZERO;
       if (desired.lte(free)) {
         take.set(itemId, desired);
-      } else if (override && input.acceptPlannedOverride === true) {
+      } else if (fromPlanned.gt(0) && input.acceptPlannedOverride === true) {
         take.set(itemId, Prisma.Decimal.min(desired, avail));
         overridden.push(itemId);
-      } else if (!override && free.gt(0)) {
+      } else if (fromPlanned.isZero() && free.gt(0)) {
         take.set(itemId, free);
       } else {
         conflicts.push({
@@ -153,8 +157,8 @@ export class PlannedManualRequestCreator {
           sourceWarehouseId: Number(warehouseId),
           requestedQty: desired.toNumber(),
           freeQty: free.toNumber(),
-          takeFromPlannedQty: override ? Prisma.Decimal.max(Prisma.Decimal.min(desired, avail).minus(free), ZERO).toNumber() : 0,
-          overridable: override,
+          takeFromPlannedQty: fromPlanned.toNumber(),
+          overridable: fromPlanned.gt(0),
           affectedRequests: await this.affected(tx, pairLines),
         });
       }
