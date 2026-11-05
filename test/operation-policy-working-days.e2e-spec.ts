@@ -58,7 +58,13 @@ describe('공장 주간 근무일 (e2e)', () => {
         },
       })
     ).plant_id;
-    itemId = (await prisma.item.findFirstOrThrow({ orderBy: { item_id: 'asc' } })).item_id;
+    // 자기 품목을 만든다 — 시드에는 품목이 없어 같은 일꾼의 앞 스위트가 남긴 행에 기대면 순서가 바뀔 때 깨진다.
+    const uom = await prisma.uom.findFirstOrThrow({ orderBy: { uom_id: 'asc' } });
+    itemId = (
+      await prisma.item.create({
+        data: { item_code: PREFIX, item_name: PREFIX, item_type_code: 'RAW_MATERIAL', base_uom_id: uom.uom_id, fifo_policy_code: 'FIFO' },
+      })
+    ).item_id;
 
     const jwt = app.get(JwtService);
     const sign = (id: bigint) => `${SESSION_COOKIE}=${jwt.sign({ sub: Number(id), typ: 'session' })}`;
@@ -69,6 +75,7 @@ describe('공장 주간 근무일 (e2e)', () => {
   afterAll(async () => {
     await prisma.operation_policy.deleteMany({ where: { plant_id: plantId } });
     await prisma.plant.deleteMany({ where: { plant_id: plantId } });
+    await prisma.item.deleteMany({ where: { item_id: itemId } });
     await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: userIds } } });
     await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
     await prisma.role_permission.deleteMany({ where: { role_id: { in: roleIds } } });
