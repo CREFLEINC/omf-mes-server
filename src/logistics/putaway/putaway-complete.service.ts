@@ -41,7 +41,9 @@ interface LockedTask {
   putaway_task_id: bigint; putaway_task_no: string; item_id: bigint; lot_id: bigint;
   task_qty: Prisma.Decimal; uom_id: bigint; from_location_id: bigint;
   status_code: string; version_no: number;
-  plant_id: bigint; warehouse_id: bigint; receipt_status_code: string;
+  /** 창고 보충 수령 원천(피처 004)이면 입고 전표가 없어 셋 다 출발 위치 창고에서 푼다(취소 여부는 null). */
+  goods_receipt_line_id?: bigint | null;
+  plant_id: bigint; warehouse_id: bigint; receipt_status_code: string | null;
   to_warehouse_id: bigint | null; to_location_id: bigint | null;
   to_quality_status_code: string | null; to_inventory_status_code: string | null;
   ownership_type_code: string | null; owner_partner_id: bigint | null; handling_unit_id: bigint | null;
@@ -61,7 +63,7 @@ export class PutawayCompleteService {
 
   async complete(
     putawayTaskId: number, body: PutawayTaskComplete, context: PutawayCompleteContext, mode: PutawayMode,
-  ): Promise<PutawayTaskView> {
+  ): Promise<PutawayTaskView & { movedQty: number }> {
     await assertWorkerNoExists(this.prisma, context.workerNo);
     if (mode === 'TEMPORARY') {
       // 코드값 대조는 트랜잭션 «밖»이다 — 잠글 필요가 없는 마스터 조회다(LOT 완료 선례).
@@ -75,7 +77,7 @@ export class PutawayCompleteService {
   private async commit(
     tx: Tx, putawayTaskId: number, body: PutawayTaskComplete, context: PutawayCompleteContext,
     mode: PutawayMode,
-  ): Promise<PutawayTaskView> {
+  ): Promise<PutawayTaskView & { movedQty: number }> {
     const task = await lockTask(tx, putawayTaskId);
     // ⭐ 상태를 If-Match «앞»에 본다 — 재로드로 안 풀리는 사실을 먼저 알린다(LOT 완료 선례).
     const action = mode === 'TEMPORARY' ? 'putaway-complete-temporary' : 'putaway-complete';
@@ -86,23 +88,30 @@ export class PutawayCompleteService {
       throw new ConflictException('user', '다른 사용자가 먼저 저장했습니다. 다시 불러온 뒤 저장하세요.');
     }
     // 잔액으로만 거르면 «같은 LOT 의 재입고»가 잔액을 채워 남의 물건을 조용히 옮긴다.
-    if (BLOCKED_RECEIPT.includes(task.receipt_status_code)) {
+    if (task.receipt_status_code !== null && BLOCKED_RECEIPT.includes(task.receipt_status_code)) {
       throw one(field('putawayTaskId', ERROR_CODE.STATE_LOCKED, '취소된 입고의 적치 지시입니다.'));
     }
     await assertLocation(tx, body.actualLocationId, task.warehouse_id);
     const pair = { itemId: task.item_id, warehouseId: task.warehouse_id };
     const allowed = (await allowedLocationsOf(tx, [pair])).get(allowedKey(pair)) ?? [];
     if (mode === 'NORMAL') assertAllowed(allowed, body.actualLocationId);
-    const origin = originOf(task);
-    await assertBalance(tx, task, origin, body.actualLocationId);
-    const lineId = await postPutaway(tx, this.posting, {
-      businessDate: body.businessDate, occurredAt: new Date(body.occurredAt),
-      plantId: Number(task.plant_id), putawayTaskId, putawayTaskNo: task.putaway_task_no,
-      itemId: Number(task.item_id), lotId: Number(task.lot_id),
-      qty: task.task_qty, uomId: Number(task.uom_id), origin,
-      toWarehouseId: Number(task.warehouse_id), toLocationId: body.actualLocationId,
-      createdBy: context.actor?.appUserId ?? context.appUserId,
-    });
+    // 창고 보충 수령 원천은 적치 대기에 «남은» 만큼만 옮긴다 — 그사이 피킹이 집어 갔을 수 있다(R-8 · US6-4·6-5).
+    const receiptOrigin = task.goods_receipt_line_id === null;
+    const remaining = receiptOrigin ? await remainingAtOrigin(tx, task) : null;
+    const origin = remaining === null ? originOf(task) : remaining?.origin;
+    const qty = remaining === null ? task.task_qty : remaining.qty;
+    let lineId: bigint | null = null;
+    if (origin !== undefined && qty.gt(0)) {
+      await assertBalance(tx, task, origin, body.actualLocationId, qty);
+      lineId = await postPutaway(tx, this.posting, {
+        businessDate: body.businessDate, occurredAt: new Date(body.occurredAt),
+        plantId: Number(task.plant_id), putawayTaskId, putawayTaskNo: task.putaway_task_no,
+        itemId: Number(task.item_id), lotId: Number(task.lot_id),
+        qty, uomId: Number(task.uom_id), origin,
+        toWarehouseId: Number(task.warehouse_id), toLocationId: body.actualLocationId,
+        createdBy: context.actor?.appUserId ?? context.appUserId,
+      });
+    }
     const row = await tx.putaway_task.update({
       where: { putaway_task_id: task.putaway_task_id },
       data: {
@@ -123,22 +132,26 @@ export class PutawayCompleteService {
       targetId: task.putaway_task_id, eventTypeCode: mode === 'TEMPORARY' ? 'COMPLETE_TEMPORARY' : 'COMPLETE',
     });
     // ⛔ `setEtag` 를 부르지 않는다 — 계약이 두 200 에 응답 헤더를 선언하지 않았다.
-    return taskView(row, allowed);
+    return { ...taskView(row, allowed), movedQty: lineId === null ? 0 : qty.toNumber() };
   }
 }
 
 /** ⛔ `FOR UPDATE OF t` — 지시 «만» 잠근다(`lockLot` 선례). 판정에 드는 나머지는 조인해 온다. */
 async function lockTask(tx: Tx, putawayTaskId: number): Promise<LockedTask> {
+  // 창고 보충 수령 원천(피처 004)은 입고 줄이 없다 — LEFT 로 잇고 공장·창고는 출발 위치 창고에서 푼다.
   const rows = await tx.$queryRaw<LockedTask[]>`
     SELECT t.putaway_task_id, t.putaway_task_no, t.item_id, t.lot_id, t.task_qty, t.uom_id,
-           t.from_location_id, t.status_code, t.version_no,
-           r.plant_id, r.warehouse_id, r.status_code AS receipt_status_code,
+           t.from_location_id, t.status_code, t.version_no, t.goods_receipt_line_id,
+           COALESCE(r.plant_id, fw.plant_id) AS plant_id, COALESCE(r.warehouse_id, fw.warehouse_id) AS warehouse_id,
+           r.status_code AS receipt_status_code,
            il.to_warehouse_id, il.to_location_id, il.to_quality_status_code,
            il.to_inventory_status_code, il.ownership_type_code, il.owner_partner_id,
            il.handling_unit_id
       FROM logistics.putaway_task t
-      JOIN logistics.goods_receipt_line l ON l.goods_receipt_line_id = t.goods_receipt_line_id
-      JOIN logistics.goods_receipt r ON r.goods_receipt_id = l.goods_receipt_id
+      JOIN mdm.location fl ON fl.location_id = t.from_location_id
+      JOIN mdm.warehouse fw ON fw.warehouse_id = fl.warehouse_id
+      LEFT JOIN logistics.goods_receipt_line l ON l.goods_receipt_line_id = t.goods_receipt_line_id
+      LEFT JOIN logistics.goods_receipt r ON r.goods_receipt_id = l.goods_receipt_id
       LEFT JOIN inventory.inventory_transaction_line il
              ON il.inventory_transaction_line_id = l.inventory_transaction_line_id
      WHERE t.putaway_task_id = ${BigInt(putawayTaskId)}
@@ -195,12 +208,39 @@ function originOf(task: LockedTask): PutawayOrigin {
 const id = (value: bigint | null): number | null => (value === null ? null : Number(value));
 
 /**
+ * 창고 보충 수령 원천의 출발 끝점과 옮길 양 — 적치 대기에 남은 그 LOT 의 가용(여러 상태 행이면 가장 큰 것)과 지시 수량 중
+ * 작은 양. 남은 것이 없으면 끝점 없이 0 — 원장 없이 완료한다.
+ */
+async function remainingAtOrigin(tx: Tx, task: LockedTask): Promise<{ origin?: PutawayOrigin; qty: Prisma.Decimal }> {
+  const [row] = await tx.$queryRaw<{
+    quality_status_code: string; inventory_status_code: string; ownership_type_code: string;
+    owner_partner_id: bigint | null; available_qty: Prisma.Decimal | null;
+  }[]>`
+    SELECT quality_status_code, inventory_status_code, ownership_type_code, owner_partner_id, available_qty
+      FROM inventory.inventory_balance
+     WHERE location_id = ${task.from_location_id} AND item_id = ${task.item_id} AND lot_id = ${task.lot_id}
+       AND available_qty > 0
+     ORDER BY available_qty DESC
+     LIMIT 1`;
+  const available = row?.available_qty ?? new Prisma.Decimal(0);
+  if (row === undefined || available.lte(0)) return { qty: new Prisma.Decimal(0) };
+  return {
+    origin: {
+      warehouseId: Number(task.warehouse_id), locationId: Number(task.from_location_id),
+      qualityStatusCode: row.quality_status_code, inventoryStatusCode: row.inventory_status_code,
+      ownershipTypeCode: row.ownership_type_code, ownerPartnerId: id(row.owner_partner_id), handlingUnitId: null,
+    },
+    qty: Prisma.Decimal.min(available, task.task_qty),
+  };
+}
+
+/**
  * ⭐ 하한 판정은 **호출 도메인 몫**이다 — 코어 `post()` 는 잠글 뿐 판정하지 않고 트리거에
  * 맡기면 500 이 샌다(출고·피킹 처방). ⛔ `on_hand_qty` 만 보지 않는다 — 트리거 첫 갈래가
  * 「on_hand < reserved+picked+blocked」도 막는다. 출발·도착을 **한 문장에** 잠근다(교착 방지).
  */
 async function assertBalance(
-  tx: Tx, task: LockedTask, origin: PutawayOrigin, actualLocationId: number,
+  tx: Tx, task: LockedTask, origin: PutawayOrigin, actualLocationId: number, qty: Prisma.Decimal = task.task_qty,
 ): Promise<void> {
   const warehouse = await tx.warehouse.findUniqueOrThrow({
     where: { warehouse_id: BigInt(origin.warehouseId) },
@@ -230,7 +270,7 @@ async function assertBalance(
       { scope: 'screen', code: ERROR_CODE.NEGATIVE_BALANCE, message },
     ]);
   if (from === undefined) throw short('이 위치에 그 LOT 의 재고가 없습니다.');
-  if ((from.available_qty ?? new Prisma.Decimal(0)).lessThan(task.task_qty)) {
+  if ((from.available_qty ?? new Prisma.Decimal(0)).lessThan(qty)) {
     throw short('보유 수량보다 많이 옮길 수 없습니다.');
   }
 }

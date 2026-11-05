@@ -64,6 +64,18 @@ function numeric(name: string, value: unknown): number | undefined {
 }
 
 /**
+ * 지시의 창고 축 — 구매 입고 원천은 입고 전표의 창고(지금 그대로), 창고 보충 수령 원천(피처 004)은 출발 위치의 창고.
+ */
+function inWarehouse(axis: { warehouse_id?: number | bigint; plant_id?: number | bigint }): Prisma.putaway_taskWhereInput {
+  return {
+    OR: [
+      { goods_receipt_line: { goods_receipt: axis } },
+      { goods_receipt_line_id: null, location_putaway_task_from_location_idTolocation: { warehouse: axis } },
+    ],
+  };
+}
+
+/**
  * 적치 지시 목록의 조건 — 단말 작업 수가 같은 함수로 센다(배지 = 목록 · omf-all-around#190).
  * ⭐ AND — 겹치는 statusCode·temporaryOnly 모순은 빈 목록(400 아니다). warehouseId 는
  *   응답과 같은 칸(goods_receipt.warehouse_id)으로 거른다. 단말에 창고가 있으면 그 창고만.
@@ -78,9 +90,9 @@ export function putawayTaskWhere(query: PutawayTaskQuery, terminal?: TerminalLis
       query.statusCode === undefined ? {} : { status_code: query.statusCode },
       query.temporaryOnly === true ? { status_code: 'COMPLETED_TEMPORARY' } : {},
       goodsReceiptId === undefined ? {} : { goods_receipt_line: { goods_receipt_id: goodsReceiptId } },
-      warehouseId === undefined ? {} : { goods_receipt_line: { goods_receipt: { warehouse_id: warehouseId } } },
-      terminal === undefined ? {} : { goods_receipt_line: { goods_receipt: { plant_id: terminal.plantId } } },
-      terminal?.warehouseId == null ? {} : { goods_receipt_line: { goods_receipt: { warehouse_id: terminal.warehouseId } } },
+      warehouseId === undefined ? {} : inWarehouse({ warehouse_id: warehouseId }),
+      terminal === undefined ? {} : inWarehouse({ plant_id: terminal.plantId }),
+      terminal?.warehouseId == null ? {} : inWarehouse({ warehouse_id: terminal.warehouseId }),
     ],
   };
 }

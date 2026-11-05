@@ -92,7 +92,11 @@ export async function assertTerminalLogisticsScope(
   const inbound = async (v: unknown) => check(await prisma.inbound_receipt.findFirst({ where: { inbound_receipt_id: id(v), plant_id: plant }, select: { inbound_receipt_id: true } }));
   const inboundLine = async (v: unknown) => check(await prisma.inbound_receipt_line.findFirst({ where: { inbound_receipt_line_id: id(v), inbound_receipt: { plant_id: plant } }, select: { inbound_receipt_line_id: true } }));
   const pickOrder = async (v: unknown) => check(await prisma.picking_order.findFirst({ where: { picking_order_id: id(v), warehouse: { plant_id: plant } }, select: { picking_order_id: true } }));
-  const putaway = async (v: unknown) => check(await prisma.putaway_task.findFirst({ where: { putaway_task_id: id(v), goods_receipt_line: { goods_receipt: { plant_id: plant } } }, select: { putaway_task_id: true } }));
+  // 창고 보충 수령 원천(피처 004)은 입고 전표가 없다 — 출발 위치 창고의 공장으로 본다.
+  const putaway = async (v: unknown) => check(await prisma.putaway_task.findFirst({ where: { putaway_task_id: id(v), OR: [
+    { goods_receipt_line: { goods_receipt: { plant_id: plant } } },
+    { goods_receipt_line_id: null, location_putaway_task_from_location_idTolocation: { warehouse: { plant_id: plant } } },
+  ] }, select: { putaway_task_id: true } }));
   const shipment = async (v: unknown) => check(await prisma.shipment.findFirst({ where: { shipment_id: id(v), warehouse: { plant_id: plant } }, select: { shipment_id: true } }));
   // 미배정 요청은 터미널에서 피킹할 수 없고, 출하가 생기기 전에도 이행 공장으로 소유를 판정한다.
   const shipmentRequest = async (v: unknown) => check(await prisma.shipment_request.findFirst({ where: { shipment_request_id: id(v), fulfillment_plant_id: plant }, select: { shipment_request_id: true } }));

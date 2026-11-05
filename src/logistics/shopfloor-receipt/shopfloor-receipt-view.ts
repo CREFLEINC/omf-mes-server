@@ -43,6 +43,8 @@ export interface ShopfloorReceiptView {
   receivedBy: number | null;
   statusCode: string;
   lines: ShopfloorReceiptLineView[];
+  /** 확정 응답에만 — 창고 보충 수령이 나뉜 생산 창고로 들어와 만든 적치 지시(피처 004). */
+  putawayTaskIds?: number[];
 }
 
 export interface ShopfloorReceiptLineView {
