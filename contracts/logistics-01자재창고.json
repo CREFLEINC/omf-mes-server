@@ -6673,7 +6673,8 @@
       "schema": {
        "type": "integer",
        "format": "int64"
-      }
+      },
+      "description": "구매 입고 원천은 입고 전표의 창고, 창고 보충 수령 원천은 출발 위치의 창고로 거른다(입고 지시 결과는 그대로). 단말 범위도 같은 축. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      {
       "name": "statusCode",
@@ -6825,7 +6826,7 @@
      "logistics"
     ],
     "summary": "적치 완료",
-    "description": "`allowedLocations` 가 있으면 그 중 하나여야 한다 — 아니면 400 으로 막는다. 비어 있으면 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있으며, 이때도 실제 위치는 반드시 남는다. 근거: M-01-05 §5-2-1 · 사용자 결정 2026-10-29(적치 규칙 제거)",
+    "description": "`allowedLocations` 가 있으면 그 중 하나여야 한다 — 아니면 400 으로 막는다. 비어 있으면 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있으며, 이때도 실제 위치는 반드시 남는다. 근거: M-01-05 §5-2-1 · 사용자 결정 2026-10-29(적치 규칙 제거) 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6909,7 +6910,7 @@
      "logistics"
     ],
     "summary": "임시 위치 적재",
-    "description": "정상 적치와 상태가 구분된다. 사유 코드와 비고 중 적어도 하나는 있어야 한다. 근거: M-01-07 §5-5",
+    "description": "정상 적치와 상태가 구분된다. 사유 코드와 비고 중 적어도 하나는 있어야 한다. 근거: M-01-07 §5-5 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -19737,9 +19738,34 @@
      },
      "goodsReceiptLineId": {
       "x-source-column": "goods_receipt_line_id",
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "구매 입고 원천의 입고 줄. 창고 보충 수령 원천이면 null(shopfloorReceiptLineId 가 있다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "shopfloorReceiptLineId": {
+      "x-source-column": "shopfloor_receipt_line_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "창고 보충 수령 원천의 생산창고 입고 줄. 구매 입고 원천이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "originCode": {
+      "type": "string",
+      "enum": [
+       "GOODS_RECEIPT",
+       "REPLENISHMENT_RECEIPT"
+      ],
+      "description": "지시 원천 — 구매 입고 · 창고 보충 수령. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "movedQty": {
+      "type": "number",
+      "description": ":complete·:complete-temporary 응답에만 — 실제로 옮긴 양. 창고 보충 수령 원천은 적치 대기에 남은 그 LOT 가용과 지시 수량 중 작은 양을 옮기고 끝내며, 0 이면 원장 없이 완료한다. 구매 입고 원천은 지시 수량. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "itemId": {
       "x-source-column": "item_id",
@@ -19792,7 +19818,7 @@
      "warehouseId": {
       "type": "integer",
       "format": "int64",
-      "description": "적치 «목적» 창고. GET /mdm/locations?warehouseId= 가 이 값을 required 로 받으므로 지시가 실어 내린다 — fromLocationId(입하장·하역장)는 다른 창고일 수 있어 대신 쓸 수 없다. 근거: M-01-05 §5-3 · M-01-07 §5-5",
+      "description": "적치 «목적» 창고. GET /mdm/locations?warehouseId= 가 이 값을 required 로 받으므로 지시가 실어 내린다 — fromLocationId(입하장·하역장)는 다른 창고일 수 있어 대신 쓸 수 없다. 근거: M-01-05 §5-3 · M-01-07 §5-5 창고 보충 수령 원천은 출발 위치(적치 대기)의 창고. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
       "example": 1001
      },
      "priorityNo": {
@@ -20169,6 +20195,14 @@
        "$ref": "#/components/schemas/ShopfloorReceiptLine"
       },
       "description": "이 수령 전표의 라인. 목록 응답도 라인을 함께 싣는다 — 한 W/O 에 수령 전표가 여러 건 서므로 라인을 보려고 전표마다 상세를 다시 부르면 1+N 왕복이 된다. 근거: P-02-03 §3 · M-01-09 §4-B"
+     },
+     "putawayTaskIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "확정 응답(POST /shopfloor-receipts · …/arrivals/{goodsIssueId}:receive)에만 — 창고 보충 수령이 나뉜 생산 창고의 적치 대기로 들어와 받은 줄마다 만든 적치 지시. 그 밖에는 빈 배열. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      }
     }
    },
