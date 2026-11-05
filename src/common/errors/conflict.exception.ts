@@ -17,7 +17,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
  */
 export type ConflictCause = 'user' | 'erpSync' | 'workerLease';
 
-/** 계열이 요구하는 선택 칸 여섯. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
+/** 계열이 요구하는 선택 칸. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
 export interface ConflictExtra {
   /** `ProductionConflictResponse.code` 등 — 거부의 업무 사유. */
   code?: string;
@@ -47,6 +47,10 @@ export interface ConflictExtra {
    * 「어느 단말에서 끝내라」를 안내할 축이다(장부 P-108).
    */
   openSessions?: OpenSessionView[];
+  /** `ProductionConflictResponse.proposalChanges` — `PROPOSAL_CHANGED` 일 때 바뀐 제안 기준. */
+  proposalChanges?: { basis: string; message: string }[];
+  /** `ProductionConflictResponse.currentProposal` — 같은 때 지금 기준으로 다시 계산한 제안(계약 `ProductionPlanProposal`). */
+  currentProposal?: object;
 }
 
 export interface OpenSessionView {

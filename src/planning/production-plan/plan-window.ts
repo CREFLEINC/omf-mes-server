@@ -32,6 +32,33 @@ export function dayWindow(planDate: string, dayStart: string, timezone: string):
   return { plannedStartAt, plannedEndAt: new Date(plannedStartAt.getTime() + DAY_MS) };
 }
 
+/** 교대 시각 — `HH:MM:SS`(`timeOfColumn`). */
+export interface ShiftTimes {
+  startTime: string;
+  endTime: string;
+  crossesMidnight: boolean;
+}
+
+/**
+ * 교대를 정한 W/O 의 창 — 계획일의 그 교대 시작부터 종료까지. 자정을 넘기는 교대는 다음 날 끝난다.
+ * ⛔ 화면 4M 배정(`plannedWindowLocal`)과 같은 규칙이다 — 갈리면 확정한 W/O 시각과 4M 화면이 다시 낸 시각이 다르다.
+ */
+export function shiftWindow(planDate: string, shift: ShiftTimes, timezone: string): PlanWindow {
+  return {
+    plannedStartAt: zonedToUtc(planDate, shift.startTime, timezone),
+    plannedEndAt: zonedToUtc(shift.crossesMidnight ? addDays(planDate, 1) : planDate, shift.endTime, timezone),
+  };
+}
+
+/** 근무일 시작 — 가장 이른 활성 교대의 시작. 활성 교대가 없으면 08:00. */
+export function dayStartOf(activeShiftStarts: readonly string[]): string {
+  return [...activeShiftStarts].sort()[0] ?? DEFAULT_DAY_START;
+}
+
+function addDays(date: string, days: number): string {
+  return new Date(new Date(`${date}T00:00:00.000Z`).getTime() + days * DAY_MS).toISOString().slice(0, 10);
+}
+
 /** 그 순간 `timezone` 의 벽시계 날짜(`YYYY-MM-DD`). */
 export function localDate(instant: Date, timezone: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);

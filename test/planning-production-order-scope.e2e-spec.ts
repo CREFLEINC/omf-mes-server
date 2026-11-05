@@ -83,7 +83,7 @@ describe('ERP W/O 사용자 데이터 범위 (e2e)', () => {
 
     expect(await totalOf({ worklistState: 'CANCELLED', size: 1 })).toBe(1);
     expect(await noOf({ worklistState: 'CANCELLED' })).toEqual(['P1']);
-    expect(await totalOf({ worklistState: 'ACTION_REQUIRED', size: 1 })).toBe(2);
+    expect(await totalOf({ worklistState: 'BEFORE_PLAN', size: 1 })).toBe(2);
     expect(await noOf({ autoPlanStatus: 'NEEDS_REVIEW' })).toEqual(['A1', 'C1']);
     await list({ worklistState: 'CANCELLED', plantId: Number(ids.plant3) }).expect(403);
     await list({ autoPlanStatus: 'NEEDS_REVIEW', plantId: Number(ids.plant3) }).expect(403);
@@ -97,7 +97,7 @@ describe('ERP W/O 사용자 데이터 범위 (e2e)', () => {
     await setScopes([{ plant_id: ids.plant1 }]);
     // A1 은 확인됨이라 빠지고, 범위 밖 A3 은 확인 안 했어도 안 보인다.
     expect(await noOf({ unacknowledgedOnly: true })).toEqual(['P1', 'C1']);
-    expect(await noOf({ unacknowledgedOnly: true, worklistState: 'ACTION_REQUIRED' })).toEqual(['C1']);
+    expect(await noOf({ unacknowledgedOnly: true, worklistState: 'BEFORE_PLAN' })).toEqual(['C1']);
 
     await setScopes([]);
     expect(await noOf({ unacknowledgedOnly: true })).toEqual(['P1', 'P2', 'P3', 'P4', 'A3', 'C1', 'C3', 'CX']);
@@ -109,15 +109,15 @@ describe('ERP W/O 사용자 데이터 범위 (e2e)', () => {
     // CX 는 A1 의 하위지만 다른 공장이라 보이지 않는다.
     expect(await noOf({ includeChildren: true })).toEqual(['P1', 'A1', 'C1']);
     expect(await totalOf({ includeChildren: true })).toBe(2);
-    expect(await noOf({ includeChildren: true, worklistState: 'ACTION_REQUIRED' })).toEqual(['A1', 'C1']);
+    expect(await noOf({ includeChildren: true, worklistState: 'BEFORE_PLAN' })).toEqual(['A1', 'C1']);
     expect(await noOf({ includeChildren: true, autoPlanStatus: 'NEEDS_REVIEW' })).toEqual(['A1', 'C1']);
 
     await setScopes([{ plant_id: ids.plant3 }]);
     expect(await noOf({ includeChildren: true })).toEqual(['P3', 'A3', 'C3']);
-    expect(await noOf({ includeChildren: true, worklistState: 'ACTION_REQUIRED' })).toEqual(['A3', 'C3']);
+    expect(await noOf({ includeChildren: true, worklistState: 'BEFORE_PLAN' })).toEqual(['A3', 'C3']);
 
     await setScopes([]);
-    expect(await noOf({ includeChildren: true, worklistState: 'ACTION_REQUIRED' })).toEqual(['A1', 'A3', 'C1', 'C3', 'CX']);
+    expect(await noOf({ includeChildren: true, worklistState: 'BEFORE_PLAN' })).toEqual(['A1', 'A3', 'C1', 'C3', 'CX']);
   });
 
   it('공장 범위 — 단건·자동 계획·확인·재동기는 범위 밖이면 404', async () => {
@@ -222,7 +222,7 @@ describe('ERP W/O 사용자 데이터 범위 (e2e)', () => {
     const uom = await prisma.uom.findFirstOrThrow({ where: { decimal_scale: 0 } });
     const item = await prisma.item.create({ data: { item_code: `${PREFIX}-IT`, item_name: PREFIX, item_type_code: 'FINISHED_GOOD', base_uom_id: uom.uom_id } });
 
-    // 만든 순서가 목록 순서다(계획 시작일·납기가 없으면 id 순). 취소 오더는 칩 CANCELLED, 그 밖은 시도했으나 계획이 없어 ACTION_REQUIRED·NEEDS_REVIEW.
+    // 만든 순서가 목록 순서다(계획 시작일·납기가 없으면 id 순). 취소 오더는 칩 CANCELLED, 그 밖은 시도했으나 계획이 없어 BEFORE_PLAN·NEEDS_REVIEW.
     const order = async (key: string, plantId: bigint, opts: { cancelled?: boolean; parent?: string } = {}) => {
       const row = await prisma.production_order.create({ data: {
         production_order_no: `${PREFIX}-${key}`, business_unit_id: unitOf[String(plantId)], plant_id: plantId, item_id: item.item_id,

@@ -7,7 +7,8 @@ import { DocumentStateService } from '../../core/document-state';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertPlannableRouting } from '../routing/routing.service';
-import { PlanLine, PlanToExpand, dependencyRows, workOrderRows } from './expand';
+import { PlanLine, PlanToExpand, WorkOrderSupplement, dependencyRows, workOrderRows } from './expand';
+import { assertDefaultBom } from './master-choice';
 import { DEFAULT_DAY_START, PlanWindow, dayWindow, timeOfColumn } from './plan-window';
 import { assertWithinOrder } from './plan-quantity';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
@@ -37,9 +38,10 @@ export class PlanConfirmService {
 
   async confirm(productionPlanId: number, version: number, appUserId: number | undefined): Promise<ProductionPlanView> {
     for (let attempt = 0; ; attempt += 1) {
-      const plan = await this.read(productionPlanId);
+      const plan = await this.materials(this.prisma, productionPlanId);
       try {
-        return await this.expand(plan, version, await this.workOrderNos(plan), appUserId);
+        const workOrderNos = await this.workOrderNos(plan);
+        return await this.prisma.$transaction((tx) => this.confirmIn(tx, plan, version, workOrderNos, appUserId));
       } catch (error) {
         if (!isDuplicateWorkOrderNo(error)) throw error;
         if (attempt >= NUMBER_RETRY) {
@@ -49,9 +51,12 @@ export class PlanConfirmService {
     }
   }
 
-  /** tx 밖 ①~③ — 없는 계획은 404, 공정 0건 Routing 은 400 `LINE_REQUIRED`, 쓸 수 없는 Routing 은 400 `INVALID` 다(§3-7). */
-  private async read(productionPlanId: number): Promise<PlanToExpand> {
-    const plan = await this.prisma.production_plan.findUnique({
+  /**
+   * ①~③ — 없는 계획은 404, 공정 0건 Routing 은 400 `LINE_REQUIRED`, 쓸 수 없는 Routing 은 400 `INVALID` 다(§3-7).
+   * `:confirm` 은 트랜잭션 밖에서, 계획 제안 확정은 방금 그 트랜잭션에서 쓴 계획을 읽어야 해 그 트랜잭션으로 부른다.
+   */
+  async materials(client: Prisma.TransactionClient, productionPlanId: number): Promise<PlanToExpand> {
+    const plan = await client.production_plan.findUnique({
       where: { production_plan_id: BigInt(productionPlanId) },
       select: {
         planned_qty: true, routing_id: true, status_code: true, uom_id: true, plan_date: true, planned_line_id: true,
@@ -60,64 +65,34 @@ export class PlanConfirmService {
     });
     if (!plan) throw new NotFoundException('없는 생산계획입니다.');
 
-    const operations = await this.prisma.routing_operation.findMany({
+    const operations = await client.routing_operation.findMany({
       where: { routing_id: plan.routing_id },
       orderBy: { operation_seq: 'asc' },
       select: { routing_operation_id: true, process_id: true, equipment_required: true, mold_required: true },
     });
     if (operations.length === 0) throw one(field('routingId', ERROR_CODE.LINE_REQUIRED, '공정이 한 줄도 없습니다.'));
     // 작성 중 계획만 본다 — 확정된 계획의 재확정은 아래 전이 판정이 400 STATE_LOCKED 로 막는다.
-    if (plan.status_code === DRAFT) await assertPlannableRouting(this.prisma, plan.routing_id, plan.production_order.item_id);
+    if (plan.status_code === DRAFT) await assertPlannableRouting(client, plan.routing_id, plan.production_order.item_id);
     const operationIds = operations.map((operation) => operation.routing_operation_id);
-    const dependencies = await this.prisma.routing_operation_dependency.findMany({
+    const dependencies = await client.routing_operation_dependency.findMany({
       where: { predecessor_operation_id: { in: operationIds }, successor_operation_id: { in: operationIds } },
       select: { predecessor_operation_id: true, successor_operation_id: true, dependency_type_code: true },
     });
     const { item_id: itemId, plant_id: plantId } = plan.production_order;
-    const window = await this.planWindow(plantId, plan.plan_date);
-    const line = await this.planLine(plan.planned_line_id);
+    const window = await planWindow(client, plantId, plan.plan_date);
+    const line = await planLine(client, plan.planned_line_id);
     const needs = operations.map((operation) => ({
       routingOperationId: operation.routing_operation_id,
       processId: operation.process_id,
       equipmentRequired: operation.equipment_required,
       moldRequired: operation.mold_required,
     }));
-    const resources = assignResources(needs, await readDefaultMaps(this.prisma, plantId, itemId));
-    const equipmentLines = await this.equipmentLines([...resources.values()].map((resource) => resource.equipmentLineId));
+    const resources = assignResources(needs, await readDefaultMaps(client, plantId, itemId));
+    const equipmentLines = await equipmentLinesOf(client, [...resources.values()].map((resource) => resource.equipmentLineId));
     return {
       productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id,
       operationIds, window, line, resources, equipmentLines, dependencies,
     };
-  }
-
-  private async equipmentLines(lineIds: (bigint | null)[]): Promise<Map<bigint, PlanLine>> {
-    const ids = [...new Set(lineIds.filter((id) => id !== null))];
-    const lines = await Promise.all(ids.map((id) => this.planLine(id)));
-    return new Map(ids.map((id, index) => [id, lines[index]]));
-  }
-
-  /** 계획의 라인과 그 라인의 기본 위치 셋 — 4M 에서 W/O 마다 고르지 않게 미리 채운다. */
-  private async planLine(lineId: bigint | null): Promise<PlanLine> {
-    const row = lineId === null ? null : await this.prisma.production_line.findUnique({
-      where: { production_line_id: lineId },
-      select: { default_wip_location_id: true, default_fg_location_id: true, default_scrap_location_id: true },
-    });
-    return {
-      productionLineId: lineId,
-      defaultWipLocationId: row?.default_wip_location_id ?? null,
-      defaultFgLocationId: row?.default_fg_location_id ?? null,
-      defaultScrapLocationId: row?.default_scrap_location_id ?? null,
-    };
-  }
-
-  /** 근무일 하루 — 가장 이른 활성 교대 시작부터 24시간. 교대가 없으면 08:00 부터다. */
-  private async planWindow(plantId: bigint, planDate: Date): Promise<PlanWindow> {
-    const [plant, firstShift] = await Promise.all([
-      this.prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId }, select: { timezone_code: true } }),
-      this.prisma.shift.findFirst({ where: { plant_id: plantId, is_active: true }, orderBy: { start_time: 'asc' }, select: { start_time: true } }),
-    ]);
-    const dayStart = firstShift === null ? DEFAULT_DAY_START : timeOfColumn(firstShift.start_time);
-    return dayWindow(planDate.toISOString().slice(0, 10), dayStart, plant.timezone_code);
   }
 
   /**
@@ -137,41 +112,82 @@ export class PlanConfirmService {
     return numbers;
   }
 
-  /** tx 안 ⑤~⑪ — 404 → 409 → 400 `STATE_LOCKED` 순이다(§3-7). */
-  private expand(plan: PlanToExpand, version: number, workOrderNos: string[], appUserId: number | undefined): Promise<ProductionPlanView> {
+  /**
+   * tx 안 ⑤~⑪ — 404 → 409 → 400 `STATE_LOCKED` → 400 `BOM_NOT_DEFAULT` 순이다(§3-7). 번호는 호출자가 트랜잭션 «밖»에서 뽑아 넘긴다.
+   * `supplements` 는 계획 제안 확정이 공정마다 고른 4M 이다 — 없는 공정은 계획 라인·기본 매핑을 쓴다.
+   */
+  async confirmIn(
+    tx: Prisma.TransactionClient,
+    plan: PlanToExpand,
+    version: number,
+    workOrderNos: string[],
+    appUserId: number | undefined,
+    supplements?: ReadonlyMap<bigint, WorkOrderSupplement>,
+  ): Promise<ProductionPlanView> {
     const productionPlanId = BigInt(plan.productionPlanId);
-    return this.prisma.$transaction(async (tx) => {
-      const locked = await lockPlan(tx, plan.productionPlanId);
-      assertPlanVersion(locked, version);
-      // ⛔ 400 이다 — 409 는 If-Match 저장 충돌이 쓴다(계약 `statusCode` 설명).
-      const transition = this.documentState.assertTransition(STATUS_COLUMN, 'plan-confirm', locked.status_code, HttpStatus.BAD_REQUEST);
+    const locked = await lockPlan(tx, plan.productionPlanId);
+    assertPlanVersion(locked, version);
+    // ⛔ 400 이다 — 409 는 If-Match 저장 충돌이 쓴다(계약 `statusCode` 설명).
+    const transition = this.documentState.assertTransition(STATUS_COLUMN, 'plan-confirm', locked.status_code, HttpStatus.BAD_REQUEST);
+    // 저장한 뒤 ERP 가 BOM 판을 바꿨을 수 있다 — 확정 직전에 다시 본다. 확정된 계획은 위 전이가 이미 막았다.
+    const { bom_id: bomId } = await tx.production_plan.findUniqueOrThrow({ where: { production_plan_id: productionPlanId }, select: { bom_id: true } });
+    await assertDefaultBom(tx, bomId, plan.itemId);
 
-      // 작성 → 확정은 합계를 바꾸지 않는다 — 오더 수량이 줄어 이미 넘은 계획이 확정되는 것을 막는다.
-      await assertWithinOrder(tx, locked.production_order_id, new Prisma.Decimal(0));
+    // 작성 → 확정은 합계를 바꾸지 않는다 — 오더 수량이 줄어 이미 넘은 계획이 확정되는 것을 막는다.
+    await assertWithinOrder(tx, locked.production_order_id, new Prisma.Decimal(0));
 
-      const created = await tx.work_order.createManyAndReturn({
-        data: workOrderRows(plan, workOrderNos, appUserId),
-        select: { work_order_id: true, routing_operation_id: true },
-      });
-      if (plan.dependencies.length > 0) {
-        const workOrderIdOf = new Map(created.map((row) => [row.routing_operation_id, row.work_order_id]));
-        await tx.work_order_dependency.createMany({ data: dependencyRows(plan, workOrderIdOf, appUserId) });
-      }
-
-      const updated = await tx.production_plan.updateMany({
-        where: { production_plan_id: productionPlanId, version_no: version },
-        data: { status_code: transition.to, confirmed_at: new Date(), confirmed_by: appUserId ?? null, updated_by: appUserId ?? null, version_no: { increment: 1 } },
-      });
-      // 잠금 밖 경합의 마지막 그물 — 위 토큰 대조와 겹치는 것이 맞다.
-      assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT });
-
-      return productionPlanView(await tx.production_plan.findUniqueOrThrow({ where: { production_plan_id: productionPlanId } }));
+    const created = await tx.work_order.createManyAndReturn({
+      data: workOrderRows(plan, workOrderNos, appUserId, supplements),
+      select: { work_order_id: true, routing_operation_id: true },
     });
+    if (plan.dependencies.length > 0) {
+      const workOrderIdOf = new Map(created.map((row) => [row.routing_operation_id, row.work_order_id]));
+      await tx.work_order_dependency.createMany({ data: dependencyRows(plan, workOrderIdOf, appUserId) });
+    }
+
+    const updated = await tx.production_plan.updateMany({
+      where: { production_plan_id: productionPlanId, version_no: version },
+      data: { status_code: transition.to, confirmed_at: new Date(), confirmed_by: appUserId ?? null, updated_by: appUserId ?? null, version_no: { increment: 1 } },
+    });
+    // 잠금 밖 경합의 마지막 그물 — 위 토큰 대조와 겹치는 것이 맞다.
+    assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT });
+
+    return productionPlanView(await tx.production_plan.findUniqueOrThrow({ where: { production_plan_id: productionPlanId } }));
   }
 }
 
-function isDuplicateWorkOrderNo(error: unknown): boolean {
+export function isDuplicateWorkOrderNo(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
   const target = (error.meta ?? {}).target;
   return Array.isArray(target) && target.includes('work_order_no');
+}
+
+async function equipmentLinesOf(client: Prisma.TransactionClient, lineIds: (bigint | null)[]): Promise<Map<bigint, PlanLine>> {
+  const ids = [...new Set(lineIds.filter((id) => id !== null))];
+  const lines = await Promise.all(ids.map((id) => planLine(client, id)));
+  return new Map(ids.map((id, index) => [id, lines[index]]));
+}
+
+/** 계획의 라인과 그 라인의 기본 위치 셋 — 4M 에서 W/O 마다 고르지 않게 미리 채운다. */
+async function planLine(client: Prisma.TransactionClient, lineId: bigint | null): Promise<PlanLine> {
+  const row = lineId === null ? null : await client.production_line.findUnique({
+    where: { production_line_id: lineId },
+    select: { default_wip_location_id: true, default_fg_location_id: true, default_scrap_location_id: true },
+  });
+  return {
+    productionLineId: lineId,
+    defaultWipLocationId: row?.default_wip_location_id ?? null,
+    defaultFgLocationId: row?.default_fg_location_id ?? null,
+    defaultScrapLocationId: row?.default_scrap_location_id ?? null,
+  };
+}
+
+/** 근무일 하루 — 가장 이른 활성 교대 시작부터 24시간. 교대가 없으면 08:00 부터다. */
+async function planWindow(client: Prisma.TransactionClient, plantId: bigint, planDate: Date): Promise<PlanWindow> {
+  const [plant, firstShift] = await Promise.all([
+    client.plant.findUniqueOrThrow({ where: { plant_id: plantId }, select: { timezone_code: true } }),
+    client.shift.findFirst({ where: { plant_id: plantId, is_active: true }, orderBy: { start_time: 'asc' }, select: { start_time: true } }),
+  ]);
+  const dayStart = firstShift === null ? DEFAULT_DAY_START : timeOfColumn(firstShift.start_time);
+  return dayWindow(planDate.toISOString().slice(0, 10), dayStart, plant.timezone_code);
 }

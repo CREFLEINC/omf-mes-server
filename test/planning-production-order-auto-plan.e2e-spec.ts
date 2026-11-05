@@ -1,6 +1,7 @@
 /**
- * ERP W/O 수신 시 계획 자동 작성·확정(장부 P-67) — 등록 `POST`·ERP 받기 뒤 자동 계획, `:auto-plan` 재시도,
- * 목록·상세의 `autoPlan` 과 `autoPlanStatus` 필터. ERP 받기는 중계 DB 대신 흉내낸 중계로 실제 회차를 돈다.
+ * ERP W/O 자동 계획(장부 P-67 · 대체 예정) — `:auto-plan`, 목록·상세의 `autoPlan` 과 `autoPlanStatus` 필터.
+ * 등록 `POST`·ERP 받기는 더 이상 계획을 세우지 않는다(계획 제안을 사람이 골라 확정한다) — 그것도 여기서 본다.
+ * ERP 받기는 중계 DB 대신 흉내낸 중계로 실제 회차를 돈다.
  *
  * ⚠ 자동 계획이 채번한 `plan_no`·`work_order_no` 는 `PREFIX` 로 시작하지 않는다 — 정리는 오더 관계로 좁힌다.
  */
@@ -20,8 +21,6 @@ import { productionOrderTable } from '../src/integration/erp/apply/production-or
 import { InboundCycle } from '../src/integration/erp/inbound-cycle';
 import { RelayClient } from '../src/integration/erp/relay-client';
 import { PRODUCTION_ORDER, RelayRow } from '../src/integration/erp/relay-tables';
-import { AutoPlanService } from '../src/planning/production-order/auto-plan.service';
-import { PlanConfirmService } from '../src/planning/production-plan/plan-confirm.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-ap74-probe';
@@ -90,14 +89,18 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     await app.close();
   });
 
-  describe('등록 뒤 자동 계획', () => {
-    it('1. 정할 수 있으면 계획을 세우고 확정해 W/O 에 설비·금형·라인이 선다', async () => {
+  describe('등록은 계획을 세우지 않는다 — :auto-plan 이 세운다', () => {
+    it('1. 등록은 계획도 시도 기록도 남기지 않고, :auto-plan 이 계획을 세우고 확정해 W/O 에 설비·금형·라인이 선다', async () => {
       const response = await postOrder('OK', items.ok, 120).expect(201);
       okOrderId = response.body.productionOrderId as number;
 
-      expect(response.body.autoPlan).toEqual({ status: 'DONE', reasons: [] });
+      expect(response.body.autoPlan).toBeNull();
       expect(validator('POST /planning/production-orders', 201)(response.body)).toBe(true);
+      expect(await plansOf(okOrderId)).toEqual([]);
+      expect((await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: BigInt(okOrderId) } })).auto_plan_attempted_at).toBeNull();
 
+      const planned = await autoPlan(okOrderId).expect(200);
+      expect(planned.body).toMatchObject({ outcome: 'CONFIRMED', reasons: [] });
       const plans = await plansOf(okOrderId);
       expect(plans).toHaveLength(1);
       expect(plans[0]).toMatchObject({ status_code: 'CONFIRMED', planned_line_id: null, uom_id: uomId });
@@ -109,43 +112,27 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       expect(assembly).toMatchObject({ planned_equipment_id: null, planned_mold_id: null });
     });
 
-    it('2. 금형만 매핑돼 라인을 모르면 작성중 계획만 두고 LINE_UNKNOWN 이다', async () => {
+    it('2. 금형만 매핑돼 라인을 모르면 :auto-plan 은 작성중 계획만 두고 LINE_UNKNOWN 이다', async () => {
       const response = await postOrder('MOLD', items.moldOnly, 80).expect(201);
       moldOrderId = response.body.productionOrderId as number;
 
-      expect(response.body.autoPlan).toEqual({ status: 'NEEDS_REVIEW', reasons: ['LINE_UNKNOWN', 'PLAN_NOT_CONFIRMED'] });
+      const planned = await autoPlan(moldOrderId).expect(200);
+      expect(planned.body).toMatchObject({ outcome: 'DRAFT', reasons: ['LINE_UNKNOWN', 'PLAN_NOT_CONFIRMED'] });
       const plans = await plansOf(moldOrderId);
       expect(plans.map((plan) => plan.status_code)).toEqual(['DRAFT']);
       expect(await workOrdersOf(plans[0].production_plan_id)).toEqual([]);
     });
 
-    it('3. 쓸 수 있는 Routing 이 없으면 계획을 세우지 않고 ROUTING_MISSING 이다', async () => {
+    it('3. 쓸 수 있는 Routing 이 없으면 :auto-plan 은 계획을 세우지 않고 ROUTING_MISSING 이다', async () => {
       const response = await postOrder('NORT', items.noRouting, 50).expect(201);
       noRoutingOrderId = response.body.productionOrderId as number;
 
-      expect(response.body.autoPlan).toEqual({ status: 'NEEDS_REVIEW', reasons: ['ROUTING_MISSING'] });
+      const planned = await autoPlan(noRoutingOrderId).expect(200);
+      expect(planned.body).toMatchObject({ outcome: 'NOT_PLANNED', reasons: ['ROUTING_MISSING'] });
       expect(await plansOf(noRoutingOrderId)).toEqual([]);
     });
 
-    it('4. 자동 계획이 실패해도 등록은 201 이고, :auto-plan 으로 다시 세운다', async () => {
-      // 자동 계획 첫걸음(점유)에서 실패해도 시도 시각은 수신이 이미 찍었다.
-      const spy = jest.spyOn(app.get(AutoPlanService), 'run').mockRejectedValueOnce(new Error('자동 계획 강제 실패'));
-      const response = await postOrder('FAIL', items.ok, 30).expect(201);
-      spy.mockRestore();
-      const orderId = response.body.productionOrderId as number;
-
-      // 시도는 했으나 계획이 없고 막는 것도 없다 — 「다시 실행」 사유의 확인 필요.
-      expect(response.body.autoPlan).toEqual({ status: 'NEEDS_REVIEW', reasons: ['AUTO_PLAN_RERUN_NEEDED'] });
-      expect(await plansOf(orderId)).toEqual([]);
-
-      const retry = await autoPlan(orderId).expect(200);
-      expect(retry.body).toMatchObject({ productionOrderId: orderId, outcome: 'CONFIRMED', reasons: [] });
-      expect((await plansOf(orderId)).map((plan) => plan.status_code)).toEqual(['CONFIRMED']);
-    });
-  });
-
-  describe('수신 때 건너뛰는 오더', () => {
-    it('4-1. 납기가 공장 현지 오늘보다 앞이면 자동 계획하지 않고 상태도 없다 — :auto-plan 으로는 세운다', async () => {
+    it('4. 납기가 지난 오더도 :auto-plan 으로는 세운다', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/planning/production-orders')
         .set('Cookie', cookie)
@@ -155,22 +142,8 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       const orderId = response.body.productionOrderId as number;
 
       expect(response.body.autoPlan).toBeNull();
-      expect(await plansOf(orderId)).toEqual([]);
-      expect((await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: BigInt(orderId) } })).auto_plan_attempted_at).toBeNull();
-
       const retry = await autoPlan(orderId).expect(200);
       expect(retry.body).toMatchObject({ outcome: 'CONFIRMED', reasons: [] });
-    });
-
-    it('4-2. 납기가 오늘이면 자동 계획한다', async () => {
-      const response = await request(app.getHttpServer())
-        .post('/api/planning/production-orders')
-        .set('Cookie', cookie)
-        .set('Idempotency-Key', randomUUID())
-        .send({ productionOrderNo: `${PREFIX}-PO-TODAY`, plantId: Number(plantId), itemId: Number(items.ok), orderQty: 15, dueDate: localToday() })
-        .expect(201);
-
-      expect(response.body.autoPlan).toEqual({ status: 'DONE', reasons: [] });
     });
   });
 
@@ -252,30 +225,6 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       expect(after.auto_plan_running_until).toBeNull();
     });
 
-    it('9-1-1. 확정이 5초를 넘겨도 등록은 201 이고, 같은 키 재전송도 201 이며 계획은 하나다', async () => {
-      const confirms = app.get(PlanConfirmService);
-      const original = confirms.confirm.bind(confirms);
-      const spy = jest.spyOn(confirms, 'confirm').mockImplementationOnce(async (...args) => {
-        await new Promise((resolve) => setTimeout(resolve, 6_000));
-        return original(...args);
-      });
-      const key = randomUUID();
-      const send = () =>
-        request(app.getHttpServer())
-          .post('/api/planning/production-orders')
-          .set('Cookie', cookie)
-          .set('Idempotency-Key', key)
-          .send({ productionOrderNo: `${PREFIX}-PO-SLOW`, plantId: Number(plantId), itemId: Number(items.ok), orderQty: 12 });
-
-      const first = await send().expect(201);
-      spy.mockRestore();
-      expect(first.body.autoPlan).toEqual({ status: 'DONE', reasons: [] });
-
-      const again = await send().expect(201);
-      expect(again.body.productionOrderId).toBe(first.body.productionOrderId);
-      expect(await plansOf(first.body.productionOrderId as number)).toHaveLength(1);
-    }, 20_000);
-
     it('9-1-2. 취소된 ERP W/O 는 400 STATE_LOCKED 이고 autoPlan 이 null 이다', async () => {
       const order = await prisma.production_order.create({
         data: {
@@ -319,20 +268,23 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     });
   });
 
-  describe('ERP 받기 뒤 자동 계획', () => {
-    it('14. 처음 받은 ERP W/O 는 반영이 커밋된 뒤 계획을 세우고 확정한다 — 계획일은 ERP 계획 시작일이다', async () => {
+  describe('ERP 받기', () => {
+    it('14. 처음 받은 ERP W/O 도 계획을 세우지 않고 시도 기록도 남기지 않는다 — :auto-plan 은 ERP 계획 시작일로 세운다', async () => {
       const planStart = shiftDays(localToday(), 3);
       const result = await receiveFromErp([erpRow(1, 'ERP1', 1, 60, planStart)]);
 
       expect(result).toMatchObject({ applied: 1, failed: 0 });
       const order = await prisma.production_order.findUniqueOrThrow({ where: { production_order_no: `${PREFIX}-PO-ERP1` } });
+      expect(order.auto_plan_attempted_at).toBeNull();
+      expect(await plansOf(Number(order.production_order_id))).toEqual([]);
+
+      await autoPlan(Number(order.production_order_id)).expect(200);
       const plans = await plansOf(Number(order.production_order_id));
-      expect(plans.map((plan) => [plan.status_code, Number(plan.planned_qty), plan.created_by])).toEqual([['CONFIRMED', 60, null]]);
+      expect(plans.map((plan) => [plan.status_code, Number(plan.planned_qty)])).toEqual([['CONFIRMED', 60]]);
       expect(plans[0].plan_date.toISOString().slice(0, 10)).toBe(planStart);
-      expect(await workOrdersOf(plans[0].production_plan_id)).not.toEqual([]);
     });
 
-    it('14-1. 계획 시작일이 지난 ERP W/O 는 받을 때 계획하지 않고, :auto-plan 은 오늘로 세운다', async () => {
+    it('14-1. 계획 시작일이 지난 ERP W/O 는 :auto-plan 이 오늘로 세운다', async () => {
       const result = await receiveFromErp([erpRow(3, 'ERP3', 1, 20, shiftDays(localToday(), -5))]);
 
       expect(result).toMatchObject({ applied: 1, failed: 0 });
@@ -526,8 +478,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       ack: async () => undefined,
       writeError: async () => undefined,
     };
-    const autoPlans = app.get(AutoPlanService);
-    const table = { ...productionOrderTable((id) => autoPlans.planReceived(Number(id), undefined)), source: ERP_SOURCE };
+    const table = { ...productionOrderTable, source: ERP_SOURCE };
     return new InboundCycle(prisma, relay as unknown as RelayClient).run(table);
   }
 

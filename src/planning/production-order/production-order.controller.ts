@@ -34,8 +34,7 @@ export class ProductionOrderController {
 
   /**
    * ⛔ ETag 를 안 내린다 — 201 에 선언하지 않았다(`POST /planning/production-plans` 와 같다).
-   * 자동 계획은 멱등 트랜잭션 «밖»에서 돈다 — 그 안에서 돌면 길어진 계획·전개가 멱등 기록을 롤백시켜 재전송이 중복 번호가 된다.
-   * 그래서 멱등 기록에는 오더 id 만 남기고, 응답은 매번 지금 상태로 다시 읽는다(재전송도 그렇다).
+   * 멱등 기록에는 오더 id 만 남기고, 응답은 매번 지금 상태로 다시 읽는다(재전송도 그렇다).
    */
   @Post()
   @Contract('POST /planning/production-orders')
@@ -43,7 +42,6 @@ export class ProductionOrderController {
   async create(@Req() request: Request, @Body() body: ProductionOrderCreate): Promise<ProductionOrderView> {
     const appUserId = currentSession(request)?.userId;
     const created = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.creates.create(body, appUserId), FAMILY_CONFLICT_CODE);
-    if (created.autoPlan) await this.autoPlans.planReceived(created.productionOrderId, appUserId);
     return (await this.queries.detailOf(created.productionOrderId, {})).view;
   }
 

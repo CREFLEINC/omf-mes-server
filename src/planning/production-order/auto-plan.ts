@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { RoutingCandidate, chooseRouting, defaultBomOf } from '../production-plan/master-choice';
 import { PlanQtyFact, sumPlanQty } from '../production-plan/plan-quantity';
 import { DefaultMap, OperationNeed, assignResources } from '../production-plan/resource-assign';
 
@@ -23,10 +24,7 @@ export interface AutoPlanView {
   reasons: AutoPlanReason[];
 }
 
-export interface RoutingCandidate {
-  routingId: bigint;
-  isDefault: boolean;
-}
+export type { RoutingCandidate } from '../production-plan/master-choice';
 
 export interface MasterChoice {
   bomId: bigint | null;
@@ -34,25 +32,15 @@ export interface MasterChoice {
   reasons: AutoPlanReason[];
 }
 
-/**
- * W-02-02 가 계획 행에 미리 채우는 BOM·Routing 과 같은 규칙이다(`master-check-pane.tsx` 의
- * `automaticBomId`·`automaticRoutingId`) — 화면에서 사람이 고를 값과 자동 계획이 고른 값이 갈리지 않게.
- * BOM 은 기본 Rev 하나, Routing 은 쓸 수 있는 Rev 가 하나면 그것, 여럿이면 그중 기본 Rev 하나다.
- */
+/** 고르는 규칙은 계획 제안과 같은 `master-choice.ts` 다 — 사유 이름만 이 계약의 것으로 옮긴다. */
 export function chooseMasters(defaultBomIds: readonly bigint[], usableRoutings: readonly RoutingCandidate[]): MasterChoice {
   const reasons: AutoPlanReason[] = [];
-  const bomId = defaultBomIds.length === 1 ? defaultBomIds[0] : null;
+  const bomId = defaultBomOf(defaultBomIds);
   if (bomId === null) reasons.push('BOM_MISSING');
-
-  let routingId: bigint | null = null;
-  if (usableRoutings.length === 0) reasons.push('ROUTING_MISSING');
-  else if (usableRoutings.length === 1) routingId = usableRoutings[0].routingId;
-  else {
-    const defaults = usableRoutings.filter((routing) => routing.isDefault);
-    if (defaults.length === 1) routingId = defaults[0].routingId;
-    else reasons.push('ROUTING_AMBIGUOUS');
-  }
-  return { bomId, routingId, reasons };
+  const routing = chooseRouting(usableRoutings);
+  if (routing.reason === 'ROUTING_REQUIRED') reasons.push('ROUTING_MISSING');
+  if (routing.reason === 'ROUTING_DEFAULT_REQUIRED') reasons.push('ROUTING_AMBIGUOUS');
+  return { bomId, routingId: routing.routingId, reasons };
 }
 
 /**

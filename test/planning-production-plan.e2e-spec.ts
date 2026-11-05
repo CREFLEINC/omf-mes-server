@@ -1199,6 +1199,8 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
         bom_code: `${PREFIX}-BOM`,
         bom_version: 1,
         status_code: 'ACTIVE',
+        // 작성중 계획은 품목의 ERP 기본 BOM 만 쓴다.
+        is_default: true,
         effective_from: new Date('2026-01-01T00:00:00.000Z'),
         base_qty: 1,
         base_uom_id: uom.uom_id,

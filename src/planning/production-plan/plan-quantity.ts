@@ -80,10 +80,33 @@ export async function assertWithinOrder(
   delta: Prisma.Decimal,
   fieldName?: string,
 ): Promise<void> {
-  const locked = await tx.$queryRaw<{ order_qty: Prisma.Decimal }[]>`
-    SELECT order_qty FROM planning.production_order WHERE production_order_id = ${productionOrderId} FOR UPDATE`;
+  await checkWithinOrder(tx, productionOrderId, delta, fieldName, true);
+}
+
+/**
+ * 잠그지 않고 같은 검사를 미리 한다 — 채번 «전»에 불러 넘칠 것이 뻔한 요청이 번호를 쓰지 않게. 통과해도 트랜잭션 안의 `assertWithinOrder` 가
+ * 다시 본다(그 사이 다른 계획이 들어올 수 있다).
+ */
+export async function precheckWithinOrder(
+  client: Prisma.TransactionClient,
+  productionOrderId: bigint,
+  delta: Prisma.Decimal,
+  fieldName?: string,
+): Promise<void> {
+  await checkWithinOrder(client, productionOrderId, delta, fieldName, false);
+}
+
+async function checkWithinOrder(
+  client: Prisma.TransactionClient,
+  productionOrderId: bigint,
+  delta: Prisma.Decimal,
+  fieldName: string | undefined,
+  lock: boolean,
+): Promise<void> {
+  const locked = await client.$queryRaw<{ order_qty: Prisma.Decimal }[]>(Prisma.sql`
+    SELECT order_qty FROM planning.production_order WHERE production_order_id = ${productionOrderId} ${lock ? Prisma.sql`FOR UPDATE` : Prisma.empty}`);
   if (locked.length === 0) return;
-  const sums = await tx.$queryRaw<{ confirmed: Prisma.Decimal; draft: Prisma.Decimal }[]>(Prisma.sql`
+  const sums = await client.$queryRaw<{ confirmed: Prisma.Decimal; draft: Prisma.Decimal }[]>(Prisma.sql`
     SELECT ${CONFIRMED_PLAN_QTY_SQL} AS confirmed, ${DRAFT_PLAN_QTY_SQL} AS draft
       FROM planning.production_order o WHERE o.production_order_id = ${productionOrderId}`);
   const orderQty = new Prisma.Decimal(locked[0].order_qty);

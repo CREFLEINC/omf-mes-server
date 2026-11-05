@@ -7,8 +7,10 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { scopeWhere } from '../production-order/production-order-scope';
 import { assertPlannableRouting } from '../routing/routing.service';
-import { assertWithinOrder } from './plan-quantity';
+import { assertDefaultBom } from './master-choice';
+import { assertWithinOrder, precheckWithinOrder } from './plan-quantity';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
 
 /** 조회 2 + CRUD 3(PR ①a·②) — `:confirm` 은 PR ③ 몫이다. */
@@ -76,10 +78,11 @@ export class ProductionPlanService {
     private readonly numbering: NumberingService,
   ) {}
 
-  /** 4축 AND — 모순 조합은 빈 목록이다(400 아니다 · I-12 §9-1 #14 선례). */
-  async list(query: ProductionPlanListQuery): Promise<PagedResponse<ProductionPlanView>> {
+  /** 4축 AND — 모순 조합은 빈 목록이다(400 아니다 · I-12 §9-1 #14 선례). `scope` 는 사용자 데이터 범위의 공장(null = 제한 없음). */
+  async list(query: ProductionPlanListQuery, scope: bigint[] | null): Promise<PagedResponse<ProductionPlanView>> {
     const page = pageRequest(query);
     const where: Prisma.production_planWhereInput = {
+      ...planScopeWhere(scope),
       ...filter('production_order_id', query.productionOrderId),
       // `statusCode` 는 값 목록 검사를 하지 않는다(조회 전용 · ERP W/O 목록 선례).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
@@ -98,20 +101,29 @@ export class ProductionPlanService {
     return pagedResponse(rows.map(productionPlanView), total, page);
   }
 
-  /** 없으면 404 다(계약 선언). */
-  async detail(productionPlanId: number): Promise<{ view: ProductionPlanView; versionNo: number }> {
-    const row = await this.prisma.production_plan.findUnique({
-      where: { production_plan_id: productionPlanId },
+  /** 없거나 범위 밖 공장 ERP W/O 의 계획이면 404 다(계약 선언) — 범위 밖 계획의 존재를 드러내지 않는다. */
+  async detail(productionPlanId: number, scope: bigint[] | null): Promise<{ view: ProductionPlanView; versionNo: number }> {
+    const row = await this.prisma.production_plan.findFirst({
+      where: { production_plan_id: productionPlanId, ...planScopeWhere(scope) },
     });
     if (!row) throw new NotFoundException('없는 생산계획입니다.');
     return { view: productionPlanView(row), versionNo: row.version_no };
   }
 
+  /** 단건 쓰기(수정·확정·삭제)가 멱등 처리보다 먼저 부른다 — 범위 밖이면 404. */
+  async assertInScope(productionPlanId: number, scope: bigint[] | null): Promise<void> {
+    if (scope === null) return;
+    const found = await this.prisma.production_plan.count({ where: { production_plan_id: productionPlanId, ...planScopeWhere(scope) } });
+    if (found === 0) throw new NotFoundException('없는 생산계획입니다.');
+  }
+
   /**
    * POST — 201. 채번은 `$transaction` «밖»(I-24 §3-5 · §4-1). 오더 수량 초과 검사는 ERP W/O 행을
    * 잠근 트랜잭션 안에서 한다. ⛔ 원본 수량 조정은 없다.
+   * 거부될 요청이 번호를 쓰지 않게 Routing·BOM·수량을 채번 «전»에 한 번 본다 — 수량은 잠금 없이 보고 트랜잭션이 다시 본다.
+   * `scope` 를 주면 범위 밖 공장의 ERP W/O 는 없는 것과 같다(필드 오류). 안 주면 범위를 보지 않는다(`:auto-plan` — 호출자가 이미 봤다).
    */
-  async create(body: ProductionPlanCreate, appUserId: number | undefined): Promise<ProductionPlanView> {
+  async create(body: ProductionPlanCreate, appUserId: number | undefined, scope?: bigint[] | null): Promise<ProductionPlanView> {
     await assertCodeValues(this.prisma, [
       {
         field: 'splitOfPlanId.reasonCode',
@@ -123,14 +135,16 @@ export class ProductionPlanService {
       throw one(field('plannedQty', ERROR_CODE.INVALID, '0보다 커야 합니다.'));
     }
     // ⛔ 404 가 아니다(계약 미선언) — 없는 ERP W/O 는 필드 오류로 낸다.
-    const order = await this.prisma.production_order.findUnique({
-      where: { production_order_id: BigInt(body.productionOrderId) },
+    const order = await this.prisma.production_order.findFirst({
+      where: { production_order_id: BigInt(body.productionOrderId), ...scopeWhere(scope ?? null) },
       select: { plant_id: true, item_id: true },
     });
     if (!order) {
       throw one(field('productionOrderId', ERROR_CODE.INVALID, '없는 ERP W/O 입니다.'));
     }
     await assertPlannableRouting(this.prisma, body.routingId, order.item_id);
+    await assertDefaultBom(this.prisma, body.bomId, order.item_id);
+    await precheckWithinOrder(this.prisma, BigInt(body.productionOrderId), new Prisma.Decimal(body.plannedQty), 'plannedQty');
 
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -196,15 +210,17 @@ export class ProductionPlanService {
         if (delta.gt(0)) await assertWithinOrder(tx, locked.production_order_id, delta, 'plannedQty');
       }
       // Routing 을 «바꿀 때만» 본다 — 계획 뒤에 Rev 가 폐기돼도 수량·날짜는 고칠 수 있고, 확정이 막는다.
-      if (body.routingId !== undefined) {
+      // BOM 은 «보낼 때» 본다 — 보낸 값은 지금 기본 BOM 이어야 하고, 안 보내면 저장값을 두고 확정이 본다.
+      if (body.routingId !== undefined || body.bomId !== undefined) {
         const current = await tx.production_plan.findUniqueOrThrow({
           where: { production_plan_id: BigInt(productionPlanId) },
           select: { routing_id: true, production_order: { select: { item_id: true } } },
         });
         // 전체 본문을 싣는 호출자가 같은 값을 다시 보내도 «바꾼» 것이 아니다.
-        if (current.routing_id !== BigInt(body.routingId)) {
+        if (body.routingId !== undefined && current.routing_id !== BigInt(body.routingId)) {
           await assertPlannableRouting(tx, body.routingId, current.production_order.item_id);
         }
+        if (body.bomId !== undefined) await assertDefaultBom(tx, body.bomId, current.production_order.item_id);
       }
       const updated = await tx.production_plan.update({
         where: { production_plan_id: BigInt(productionPlanId) },
@@ -246,6 +262,11 @@ export class ProductionPlanService {
       await tx.production_plan.delete({ where: { production_plan_id: BigInt(productionPlanId) } });
     });
   }
+}
+
+/** 계획 별칭 없이 — 범위는 계획의 ERP W/O 공장으로 본다. */
+export function planScopeWhere(scope: bigint[] | null): Prisma.production_planWhereInput {
+  return scope === null ? {} : { production_order: { plant_id: { in: scope } } };
 }
 
 /** ⛔ `SELECT … FOR UPDATE` — 읽고 판정하고 쓰는 사이 재확정이 끼는 것을 막는다. */
