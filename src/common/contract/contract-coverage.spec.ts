@@ -91,7 +91,8 @@ describe('계약 커버리지', () => {
     // 생산 창고 예정·부족 조회(omf-all-around#66) 1 오퍼레이션: 583 → 584.
     // 창고·품목별 쓸 수 있는 양(omf-all-around#232) 1 오퍼레이션: 584 → 585.
     // 창고 보충 관리 품목·실행 시각(omf-all-around#230) 6 오퍼레이션: 585 → 591.
-    expect(registry.size).toBe(591);
+    // 창고 보충 직접 요청·잔량 마감(omf-all-around#230) 2 오퍼레이션: 591 → 593.
+    expect(registry.size).toBe(593);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

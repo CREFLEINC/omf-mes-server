@@ -44,6 +44,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/replenishment-items': ['W-02-12'],
   'PUT /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
   'DELETE /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
+  'POST /logistics/replenishment-requests': ['W-02-12'],
+  'POST /logistics/material-issue-requests/{materialIssueRequestId}:close-remaining': ['W-02-12'],
   'GET /logistics/replenishment-settings': ['W-02-12'],
   'PUT /logistics/replenishment-settings/warehouses/{warehouseId}': ['W-02-12'],
   // 쓸 수 있는 양 — W-02-10 품목 줄의 남은 수량(omf-all-around#232).

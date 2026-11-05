@@ -4839,6 +4839,27 @@
        "format": "int64"
       },
       "description": "이 품목 줄이 있는 요청만. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     {
+      "name": "replenishmentStatus",
+      "in": "query",
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "enum": [
+         "DISPATCHED",
+         "IN_PROGRESS",
+         "COMPLETED",
+         "REMAINDER_CLOSED",
+         "CANCELLED"
+        ]
+       }
+      },
+      "style": "form",
+      "explode": false,
+      "description": "창고 보충 요청 상태로 거른다(여럿은 쉼표) — 보충 요청에만 걸린다. 서버에서 걸러 쪽 나눔이 맞다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      }
     ],
     "responses": {
@@ -11095,6 +11116,166 @@
      },
      "409": {
       "description": "저장 충돌(conflictCause — 다시 읽으면 풀림)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/replenishment-requests": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "창고 보충 직접 요청",
+    "description": "생산 창고가 자재 창고에 W/O 없이 자재를 요청한다(유형 REPLENISHMENT · 구분 DIRECT). 줄을 출고 자재 창고별로 묶어 창고마다 요청 한 장을 만들고 같은 트랜잭션에서 배포한다(피킹 지시·인계 알림, 담당자 없음). 도착 위치 = 생산 창고가 나뉘었으면 적치 대기, 아니면 창고 전체. (출고 자재 창고, 품목)의 쓸 수 있는 양(가용 − 예정)까지만 요청하고 넘는 양은 shortageQty, 0 인 줄은 만들지 않고 skippedLines 로 알린다. 모든 줄이 0 이면 409 PLANNED_STOCK_CONFLICT(overridable=false — 다른 요청의 예정분을 가져가는 길은 없다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReplenishmentRequestCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "만듦",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReplenishmentRequestCreated"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "REQUIRED · RANGE · INVALID(생산 창고·출고 자재 창고·품목·중복 줄)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-02-12(생산 창고 보충). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "PLANNED_STOCK_CONFLICT — 모든 줄의 쓸 수 있는 양이 0",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PlannedStockConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-issue-requests/{materialIssueRequestId}:close-remaining": {
+   "parameters": [
+    {
+     "name": "materialIssueRequestId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "창고 보충 요청 잔량 마감",
+    "description": "일부만 출고된 창고 보충 요청의 나머지를 더 내보내지 않는다 — 상태는 그대로, closedAt·closeReasonCode=REMAINDER_CLOSED·closeReasonDetailCode·closeRemark·closedBy 를 남기고 남은 피킹 줄을 닫는다. 출고 예정에서 빠진다. 이미 나간 출고 전표는 그대로 수령한다. 409 STATE_LOCKED: W/O 요청 · 끝났거나 닫힌 요청 · 진행 없음(요청 취소를 쓴다) · 집었지만 출고하지 않은 양이 있음(먼저 출고한다). versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaterialIssueCloseRemaining"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "닫은 요청",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialIssueRequest"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "REQUIRED · INVALID(사유 코드)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-02-12(생산 창고 보충). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 요청",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌(conflictCause) 또는 STATE_LOCKED",
       "content": {
        "application/json": {
         "schema": {
@@ -17790,6 +17971,109 @@
       "type": "number",
       "minimum": 0,
       "description": "줄에 배분된 동적 부족(예정 > 가용)의 합. 화면 「부족 N」 = shortageQtyTotal + 이 값. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "replenishmentStatus": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DISPATCHED",
+       "IN_PROGRESS",
+       "COMPLETED",
+       "REMAINDER_CLOSED",
+       "CANCELLED",
+       null
+      ],
+      "description": "창고 보충 요청의 상태 — DISPATCHED 배포(배포 실패로 남은 대기 포함) · IN_PROGRESS 진행 중 · COMPLETED 완료 · REMAINDER_CLOSED 잔량 마감 · CANCELLED 취소. W/O 요청은 null. displayStatus 는 003 그대로(완료·마감 둘 다 DONE). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "qtySummary": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "requestedQty",
+       "issuedQty",
+       "closedQty",
+       "uomCode"
+      ],
+      "properties": {
+       "requestedQty": {
+        "type": "number"
+       },
+       "issuedQty": {
+        "type": "number"
+       },
+       "closedQty": {
+        "type": "number",
+        "description": "잔량 마감한 요청의 요청 − 출고, 아니면 0"
+       },
+       "uomCode": {
+        "type": "string"
+       }
+      },
+      "description": "창고 보충 요청이 한 품목일 때만 수량 합 — 두 품목 이상이거나 W/O 요청이면 null(단위가 다른 줄을 더하지 않는다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "receiptSummary": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "issuedCount",
+       "receivedCount"
+      ],
+      "properties": {
+       "issuedCount": {
+        "type": "integer",
+        "description": "그 요청 피킹에서 나온 POSTED 출고 전표 수"
+       },
+       "receivedCount": {
+        "type": "integer",
+        "description": "그중 생산창고 입고(수령) 기록이 있는 수"
+       }
+      },
+      "description": "창고 보충 요청의 수령 요약(FR-023). W/O 요청은 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "goodsIssues": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "goodsIssueId",
+        "goodsIssueNo",
+        "issuedAt",
+        "received"
+       ],
+       "properties": {
+        "goodsIssueId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "goodsIssueNo": {
+         "type": "string"
+        },
+        "issuedAt": {
+         "type": "string",
+         "format": "date-time"
+        },
+        "received": {
+         "type": "boolean"
+        },
+        "shopfloorReceiptId": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64"
+        }
+       }
+      },
+      "description": "상세(GET …/{id}·수정·취소 응답)에만 — 창고 보충 요청의 출고 전표 목록(출고 시각 순). W/O 요청은 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      }
     }
    },
@@ -21739,6 +22023,139 @@
      "versionNo": {
       "type": "integer",
       "description": "GET 의 versionNo — 설정 행이 없으면 0"
+     }
+    },
+    "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+   },
+   "ReplenishmentRequestCreate": {
+    "type": "object",
+    "required": [
+     "productionWarehouseId",
+     "businessDate",
+     "lines"
+    ],
+    "description": "출고 자재 창고별로 요청을 나눠 만들고 바로 배포한다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "properties": {
+     "productionWarehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "보충받을 생산 창고(부서에 연결된 활성 창고) — 아니면 400 INVALID"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "채번 기간 축(클라이언트가 보낸다 — 공유계약 C-8). 출고 작업일은 서버가 공장 오늘로 정한다"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 1000
+     },
+     "lines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "object",
+       "required": [
+        "itemId",
+        "requestedQty"
+       ],
+       "properties": {
+        "itemId": {
+         "type": "integer",
+         "format": "int64",
+         "description": "사용 중인 품목"
+        },
+        "requestedQty": {
+         "type": "number",
+         "description": "0 보다 크다(품목 기본 단위)"
+        },
+        "sourceWarehouseId": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "description": "출고 자재 창고. 비우면 관리 품목의 값, 관리 품목이 아니면 400 REQUIRED. 같은 공장 활성·생산 창고 자신 아님·불량창고 아님(아니면 400 INVALID). 같은 품목·같은 출고 자재 창고 줄이 둘이면 400 INVALID"
+        }
+       }
+      }
+     }
+    }
+   },
+   "ReplenishmentSkippedLine": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "sourceWarehouseId",
+     "requestedQty",
+     "freeQty"
+    ],
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "sourceWarehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "requestedQty": {
+      "type": "number"
+     },
+     "freeQty": {
+      "type": "number",
+      "description": "그 출고 자재 창고의 쓸 수 있는 양(가용 − 예정) — 0"
+     }
+    },
+    "description": "쓸 수 있는 양이 0 이라 만들지 않은 줄. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+   },
+   "ReplenishmentRequestCreated": {
+    "type": "object",
+    "required": [
+     "requests",
+     "skippedLines"
+    ],
+    "properties": {
+     "requests": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaterialIssueRequest"
+      },
+      "description": "만든 요청(출고 자재 창고 순 · 목록과 같은 모양). 쓸 수 있는 양을 넘은 양은 줄의 shortageQty"
+     },
+     "skippedLines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ReplenishmentSkippedLine"
+      }
+     }
+    },
+    "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+   },
+   "MaterialIssueCloseRemaining": {
+    "type": "object",
+    "required": [
+     "versionNo",
+     "reasonCode"
+    ],
+    "properties": {
+     "versionNo": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "reasonCode": {
+      "type": "string",
+      "description": "잔량 마감 사유(공통코드 REPLENISHMENT_CLOSE_REASON 의 사용 중인 값 — 아니면 400 INVALID)"
+     },
+     "remark": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 500
      }
     },
     "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
