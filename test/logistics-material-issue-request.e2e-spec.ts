@@ -146,6 +146,19 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
       detailRequestId,
     ]);
 
+    // W-02-11 조건 칸은 「W/O 번호」다 — q 는 요청번호와 W/O 번호를 함께 찾는다(대소문자 무시 · omf-all-around#232 1).
+    const workOrderNo = (await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: ids.workOrder } })).work_order_no;
+    const byWorkOrderNo = await request(app.getHttpServer())
+      .get(`${BASE}?q=${encodeURIComponent(workOrderNo.toLowerCase())}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(byWorkOrderNo.body.items.map((row: RequestBody) => row.materialIssueRequestId)).toEqual(
+      expect.arrayContaining([detailRequestId, firstRequestId]),
+    );
+    for (const row of byWorkOrderNo.body.items as { workOrderNo: string }[]) {
+      expect(row.workOrderNo.toLowerCase()).toContain(workOrderNo.toLowerCase());
+    }
+
     const other = await request(app.getHttpServer())
       .get(`${BASE}?workOrderId=${Number(ids.workOrder) + 987654}`)
       .set('Cookie', cookie)
@@ -831,6 +844,68 @@ describe('추가 출고 요청 — 생산 창고 공장 (e2e)', () => {
       actorName: '출고요청시험',
       detail: { reason: 'URGENT_WO_RESPONSE', after: [{ itemId: Number(fx.items.X), requestedQty: 20 }] },
     });
+  });
+
+  it('#232 3 긴급 대응이라도 가져갈 예정분이 없으면 묻지 않고 가용까지만 담는다 — 부족은 그 요청에 · PLANNED_OVERRIDE 이력 없음', async () => {
+    const { lineId } = await setup({ A: [['X', 30]] });
+    const urgent = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+
+    const made = await post({ workOrderId: Number(urgent), reasonCode: 'URGENT_WO_RESPONSE', lines: [lineOf('X', 50)] }).expect(201);
+    expect(made.body.lines[0]).toMatchObject({ requestedQty: 30, shortageQty: 20 });
+    const history = await request(app.getHttpServer()).get(`/api/logistics/material-issue-requests/${made.body.materialIssueRequest.materialIssueRequestId}/history`).set('Cookie', fx.cookie).expect(200);
+    expect(history.body.items.map((i: { eventCode: string }) => i.eventCode)).toEqual(['RELEASED', 'CREATED']);
+  });
+
+  it('#232 3 가용이 0 이면 긴급 대응이라도 409 overridable=false · takeFromPlannedQty 0', async () => {
+    const { lineId, warehouses } = await setup({ A: [['Z', 10]] });
+    const urgent = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+    const refused = await post({
+      workOrderId: Number(urgent),
+      reasonCode: 'URGENT_WO_RESPONSE',
+      sourceWarehouseId: Number(warehouses.A),
+      acceptPlannedOverride: true,
+      lines: [lineOf('X', 5)],
+    }).expect(409);
+    expect(refused.body.plannedStockConflicts[0]).toMatchObject({ overridable: false, freeQty: 0, takeFromPlannedQty: 0 });
+  });
+
+  it('#232 2 free-stock 은 창고·품목별 쓸 수 있는 양 — 예정 없는 품목도 가용으로 · 가용도 예정도 없으면 뺀다 · 출고 예정 재고는 그대로', async () => {
+    const { lineId, warehouses } = await setup({ A: [['X', 100], ['Z', 40]], B: [['X', 30]] });
+    const holder = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+    await fx.release(holder).expect(200);
+    const [held] = await fx.requests(holder);
+    const heldAt = held.source_warehouse_id as bigint;
+    const otherAt = heldAt === warehouses.A ? warehouses.B : warehouses.A;
+    const freeStock = (query: string) =>
+      request(app.getHttpServer()).get(`/api/logistics/material-issue-requests/free-stock?${query}`).set('Cookie', fx.cookie);
+
+    // 계약대로 쉼표로 잇는다(explode=false).
+    const res = await freeStock(
+      `warehouseIds=${String(warehouses.A)},${String(warehouses.B)}&itemIds=${['X', 'Z', 'Y'].map((k) => String(fx.items[k as 'X'])).join(',')}`,
+    ).expect(200);
+    const rows = (res.body.items as { warehouseId: number; itemId: number; availableQty: number; plannedQty: number; freeQty: number }[])
+      .map((r) => [r.warehouseId, r.itemId, r.availableQty, r.plannedQty, r.freeQty])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const stockOf = (at: bigint) => (at === warehouses.A ? 100 : 30);
+    expect(rows).toEqual(
+      [
+        [Number(heldAt), Number(fx.items.X), stockOf(heldAt), 20, stockOf(heldAt) - 20],
+        [Number(otherAt), Number(fx.items.X), stockOf(otherAt), 0, stockOf(otherAt)],
+        [Number(warehouses.A), Number(fx.items.Z), 40, 0, 40],
+      ].sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+    );
+
+    // 출고 예정 재고 조회는 예정이 잡힌 쌍만 — 이 경로는 바꾸지 않았다.
+    const planned = await request(app.getHttpServer())
+      .get('/api/logistics/material-issue-requests/planned-stock')
+      .query({ plantId: Number(fx.ids.p1), sourceWarehouseId: Number(otherAt) })
+      .set('Cookie', fx.cookie)
+      .expect(200);
+    expect(planned.body.items).toEqual([]);
+
+    for (const bad of [`itemIds=${String(fx.items.X)}`, `warehouseIds=${String(warehouses.A)}`, `warehouseIds=abc&itemIds=${String(fx.items.X)}`]) {
+      await freeStock(bad).expect(400);
+    }
   });
 
   it('US4-8 다른 사유는 쓸 수 있는 양이 0 이면 409 overridable=false — 확인해도 못 만든다', async () => {
