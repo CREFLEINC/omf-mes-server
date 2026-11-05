@@ -5,31 +5,25 @@ import { ShiftWindow, localTimeOf, pickShift, resolveShiftId, timeOf } from './s
 /** `@db.Time(6)` 이 오는 모양 그대로 — 1970-01-01 UTC 의 `Date`. */
 const time = (hhmmss: string): Date => new Date(`1970-01-01T${hhmmss}.000Z`);
 
-const shift = (
-  shiftId: number,
-  start: string,
-  end: string,
-  crossesMidnight = false,
-): ShiftWindow => ({
+const shift = (shiftId: number, start: string, end: string): ShiftWindow => ({
   shift_id: BigInt(shiftId),
   start_time: time(start),
   end_time: time(end),
-  crosses_midnight: crossesMidnight,
 });
 
 /** 주간 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00(자정 건넘). */
 const DAY = shift(1, '06:00:00', '14:00:00');
 const SWING = shift(2, '14:00:00', '22:00:00');
-const NIGHT = shift(3, '22:00:00', '06:00:00', true);
+const NIGHT = shift(3, '22:00:00', '06:00:00');
 
 describe('shift-resolver', () => {
-  it('crosses_midnight 가 false 면 start 이상 end 미만이다', () => {
+  it('종료가 시작보다 늦으면 start 이상 end 미만이다', () => {
     expect(pickShift([DAY, SWING, NIGHT], '06:00:01')).toBe(1n);
     expect(pickShift([DAY, SWING, NIGHT], '13:59:59')).toBe(1n);
     expect(pickShift([DAY, SWING, NIGHT], '14:00:01')).toBe(2n);
   });
 
-  it('crosses_midnight 가 true 면 자정을 건너 판정한다', () => {
+  it('종료가 시작보다 이르면 자정을 건너 판정한다 — crosses_midnight 플래그는 보지 않는다', () => {
     expect(pickShift([DAY, SWING, NIGHT], '23:30:00')).toBe(3n);
     expect(pickShift([DAY, SWING, NIGHT], '00:00:00')).toBe(3n);
     expect(pickShift([DAY, SWING, NIGHT], '05:59:59')).toBe(3n);

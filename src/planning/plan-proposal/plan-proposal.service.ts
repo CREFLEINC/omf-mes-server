@@ -139,7 +139,7 @@ export class PlanProposalService {
     // 모든 계획의 수정을 먼저 반영하고 합계를 한 번 본 뒤 확정한다 — 계획마다 저장·확정을 번갈아 하면 확정의 합계 검사가
     // 아직 고치지 않은 계획을 옛 수량으로 세어, 본문 순서에 따라 같은 요청이 400 이 된다.
     const planNos = [...numbers.planNos];
-    const saved = [];
+    const saved: { plan: ResolvedPlan; productionPlanId: bigint; version: number }[] = [];
     for (const plan of checked.resolved) saved.push({ plan, ...(await this.savePlan(tx, checked.proposal, plan, planNos, appUserId)) });
     await assertWithinOrder(tx, orderId, new Prisma.Decimal(0), quantityDelta(checked.resolved).field);
 

@@ -1,3 +1,5 @@
+import { crossesMidnight } from '../../core/calendar/shift-crossing';
+
 /**
  * W/O 계획 창 — 계획일의 «근무일 하루».
  *
@@ -39,14 +41,13 @@ export interface ShiftTimes {
 }
 
 /**
- * 교대를 정한 W/O 의 창 — 계획일의 그 교대 시작부터 종료까지. 종료가 시작보다 이르거나 같으면 다음 날 끝난다.
- * ⛔ `crosses_midnight` 플래그를 믿지 않는다 — DB 가 시각과의 일치를 강제하지 않아, 어긋난 행에서 창이 거꾸로 서거나 24시간을 넘는다.
- * 시각으로 판정하면 창은 늘 0 초과 24시간 이하다.
+ * 교대를 정한 W/O 의 창 — 계획일의 그 교대 시작부터 종료까지. 자정을 넘는 교대(`crossesMidnight` — 시각 기준)는 다음 날 끝난다.
+ * ⛔ 화면 4M 배정(`assignment-model.ts` 의 `plannedWindowLocal`)과 같은 판정이어야 한다 — 갈리면 확정한 W/O 시각과 4M 화면이 다시 낸 시각이 다르다.
  */
 export function shiftWindow(planDate: string, shift: ShiftTimes, timezone: string): PlanWindow {
   return {
     plannedStartAt: zonedToUtc(planDate, shift.startTime, timezone),
-    plannedEndAt: zonedToUtc(shift.endTime <= shift.startTime ? addDays(planDate, 1) : planDate, shift.endTime, timezone),
+    plannedEndAt: zonedToUtc(crossesMidnight(shift.startTime, shift.endTime) ? addDays(planDate, 1) : planDate, shift.endTime, timezone),
   };
 }
 
