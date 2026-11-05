@@ -32,9 +32,11 @@ function stub(options: {
   components?: Row[];
   /** 배포 전제 — 라인의 공장(omf-all-around#36). `null` 이면 라인이 없는 W/O 다. */
   linePlant?: bigint | null;
-  /** 라우팅이 「검사 공정」이라 적었는가 — PQC 의뢰의 opt-in 축(omf-all-around#46). */
+  /** 라우팅 공정의 「검사 관리」 — PQC 대상을 정하지 않는다(사용자 결정 2026-11-05). */
   inspectionManaged?: boolean;
-  /** 이 공정에 유효한 PQC 기준 버전들. 비면 기준 없이 의뢰만 선다. */
+  /** 품목 전용 PQC 기준(사용 중)이 있는가 — PQC 대상은 품목이다(사용자 결정 2026-11-05). */
+  pqcTarget?: boolean;
+  /** 이 품목에 유효한 PQC 기준 버전들. 비면 기준 없이 의뢰만 선다. */
   pqcVersions?: Row[];
   /** 이미 살아 있는 PQC 의뢰가 있는가 — 있으면 또 만들지 않는다. */
   pqcExists?: boolean;
@@ -127,6 +129,7 @@ function stub(options: {
     item: { findMany: () => Promise.resolve([]) },
     // 생산 창고를 연결한 적 없는 공장 — 이 기능 전 경로(피처 003 FR-009a)를 탄다.
     department_production_warehouse: { findFirst: () => Promise.resolve(null) },
+    inspection_plan: { count: () => Promise.resolve(options.pqcTarget === true ? 1 : 0) },
     inspection_plan_version: { findMany: () => Promise.resolve(options.pqcVersions ?? []) },
     bom_component: {
       findMany: ({ where }: { where: Row }) => {
@@ -165,11 +168,11 @@ const release = (harness: ReturnType<typeof stub>, lotSize = 50) =>
 
 describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
   /*
-   * ⭐ PQC 의뢰는 **라우팅이 검사 공정이라 적은 공정**에만 선다(설계 REQ-OA-0003 opt-in).
-   *    그전까지 서버에 PQC 의뢰를 만드는 코드가 없어 P-02-13 이 열릴 대상이 없었다(#46).
+   * ⭐ PQC 의뢰는 **품목 전용 PQC 기준이 있는 품목**의 작업지시에 선다 — 라우팅 공정의 「검사 관리」는 보지 않는다
+   *    (사용자 결정 2026-11-05). 그전까지 서버에 PQC 의뢰를 만드는 코드가 없어 P-02-13 이 열릴 대상이 없었다(#46).
    */
-  it('PQC — 검사 공정이 아니면 의뢰를 만들지 않는다', async () => {
-    const harness = stub({});
+  it('PQC — 품목 전용 기준이 없으면 공정이 「검사 관리」여도 의뢰를 만들지 않는다', async () => {
+    const harness = stub({ inspectionManaged: true });
 
     await release(harness);
 
@@ -177,9 +180,9 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.calls).not.toContain('numbering:pqc');
   });
 
-  it('PQC — 검사 공정이면 작업지시 대상 의뢰 한 건을 만든다', async () => {
+  it('PQC — 대상 품목이면 공정과 무관하게 작업지시 대상 의뢰 한 건을 만든다', async () => {
     const harness = stub({
-      inspectionManaged: true,
+      pqcTarget: true,
       pqcVersions: [
         {
           inspection_plan_version_id: 501n,
@@ -211,7 +214,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
 
   /* ⛔ 채번은 트랜잭션 «밖»이다 — 안에서 부르면 한 요청이 커넥션을 둘 쥔다. */
   it('PQC — 의뢰 번호를 트랜잭션 밖에서 뽑는다', async () => {
-    const harness = stub({ inspectionManaged: true });
+    const harness = stub({ pqcTarget: true });
 
     await release(harness);
 
@@ -224,7 +227,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
    *    기준이 비는 것을 허용한다.
    */
   it('PQC — 기준을 못 고르면 비운 채로 의뢰를 만든다', async () => {
-    const harness = stub({ inspectionManaged: true, pqcVersions: [] });
+    const harness = stub({ pqcTarget: true, pqcVersions: [] });
 
     await release(harness);
 
@@ -235,7 +238,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
   /* 샘플이면 검사 수량만 줄인다 — 어느 LOT 을 검사할지는 이 자리에서 정하지 않는다(#46 후속). */
   it('PQC — 샘플 비율이면 올림한 수량으로 선다', async () => {
     const harness = stub({
-      inspectionManaged: true,
+      pqcTarget: true,
       pqcVersions: [
         {
           inspection_plan_version_id: 502n,
@@ -262,7 +265,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
    */
   it('PQC — 샘플 비율은 백분율이다 — 10 은 10% 이지 열 배가 아니다', async () => {
     const harness = stub({
-      inspectionManaged: true,
+      pqcTarget: true,
       pqcVersions: [
         {
           inspection_plan_version_id: 503n,
@@ -283,7 +286,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
   /* PQC 기준은 제품에 하나다 — 둘이 서 있으면(옛 공정 · 라우팅 값이 달라도) 고르지 않는다(사용자 결정 2026-11-04). */
   it('PQC — 제품 기준이 둘이면 기준 없는 의뢰다', async () => {
     const harness = stub({
-      inspectionManaged: true,
+      pqcTarget: true,
       pqcVersions: [
         {
           inspection_plan_version_id: 601n,
@@ -314,7 +317,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
   /* #119 · 장부 P-82 — 고른 기준이 「PQC 생략 허용」이면 의뢰를 생략(SKIPPED)으로 만든다(번호·기준은 남긴다). */
   it('PQC — 고른 기준이 기본 생략이면 의뢰를 SKIPPED(근거 DEFAULT)로 만든다', async () => {
     const harness = stub({
-      inspectionManaged: true,
+      pqcTarget: true,
       pqcVersions: [
         {
           inspection_plan_version_id: 701n,
@@ -337,7 +340,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
   });
 
   it('PQC — 기준을 못 고르면 생략하지 않는다(REQUESTED)', async () => {
-    const harness = stub({ inspectionManaged: true, pqcVersions: [] });
+    const harness = stub({ pqcTarget: true, pqcVersions: [] });
 
     await release(harness);
 
@@ -346,7 +349,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
 
   /* ⛔ 같은 W/O 에 살아 있는 의뢰가 있으면 또 만들지 않는다 — 물리 유니크가 없는 자리다. */
   it('PQC — 이미 살아 있는 의뢰가 있으면 만들지 않는다', async () => {
-    const harness = stub({ inspectionManaged: true, pqcExists: true });
+    const harness = stub({ pqcTarget: true, pqcExists: true });
 
     await release(harness);
 

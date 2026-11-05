@@ -28,8 +28,8 @@ describe('inspectionQty', () => {
   });
 });
 
-/** PQC 기준 고르기 — 제품에 붙은 기준, 없으면 「전 품목 공통」(사용자 결정 2026-11-04). */
-describe('preparePqcRequest — 제품 PQC 기준', () => {
+/** PQC 대상은 품목이다 — 품목 전용 PQC 기준이 있는 품목만, 「전 품목 공통」은 쓰지 않는다(사용자 결정 2026-11-05). */
+describe('preparePqcRequest — 품목 PQC 대상', () => {
   const row = (id: bigint) => ({
     inspection_plan_version_id: id,
     inspection_plan_id: id,
@@ -39,51 +39,51 @@ describe('preparePqcRequest — 제품 PQC 기준', () => {
     sampling_qty: null,
     inspection_plan: { default_skip: false },
   });
-  const run = async (byItem: Map<bigint | null, ReturnType<typeof row>[]>) => {
+  const run = async (targeted: number, versions: ReturnType<typeof row>[]) => {
     const asked: unknown[] = [];
+    const counted: unknown[] = [];
     const prisma = {
+      inspection_plan: {
+        count: async ({ where }: { where: unknown }) => {
+          counted.push(where);
+          return targeted;
+        },
+      },
       inspection_plan_version: {
-        findMany: async ({ where }: { where: { inspection_plan: { item_id: bigint | null } } }) => {
+        findMany: async ({ where }: { where: { inspection_plan: unknown } }) => {
           asked.push(where.inspection_plan);
-          return byItem.get(where.inspection_plan.item_id) ?? [];
+          return versions;
         },
       },
     } as unknown as PrismaService;
     const numbering = { next: jest.fn().mockResolvedValue('IR-1') } as unknown as NumberingService;
     const plan = await preparePqcRequest(prisma, numbering, {
-      inspectionManaged: true, itemId: 10n,
-      orderQty: new Prisma.Decimal(100), businessDate: '2026-11-04',
+      itemId: 10n, orderQty: new Prisma.Decimal(100), businessDate: '2026-11-04',
     });
-    return { plan, asked };
+    return { plan, asked, counted, numbering };
   };
 
-  it('⭐ 제품 기준을 공정 · 라우팅 조건 없이 찾는다 — 검사할 공정은 라우팅 「검사 관리」가 정한다', async () => {
-    const { plan, asked } = await run(new Map([[10n, [row(1n)]], [null, [row(2n)]]]));
+  it('⭐ 품목 전용 기준이 있으면 그 기준으로 의뢰를 만든다 — 공정 · 라우팅 · 공통 기준 조건 없이', async () => {
+    const { plan, asked, counted } = await run(1, [row(1n)]);
     expect(plan?.inspectionPlanVersionId).toBe(1n);
+    expect(counted).toEqual([{ inspection_type_code: 'PQC', is_active: true, item_id: 10n }]);
     expect(asked).toEqual([{ inspection_type_code: 'PQC', is_active: true, item_id: 10n }]);
   });
 
-  it('제품 기준이 없으면 공통 기준을 쓴다', async () => {
-    const { plan } = await run(new Map([[null, [row(2n)]]]));
-    expect(plan?.inspectionPlanVersionId).toBe(2n);
-  });
-
-  it('제품 기준이 둘이면 고르지 않는다 — 기준 없는 의뢰', async () => {
-    const { plan } = await run(new Map([[10n, [row(1n), row(3n)]]]));
-    expect(plan?.inspectionPlanVersionId).toBeNull();
-  });
-
-  it('둘 다 없으면 종전처럼 기준 없는 의뢰다', async () => {
-    const { plan } = await run(new Map());
-    expect(plan?.inspectionPlanVersionId).toBeNull();
-  });
-
-  it('검사 관리가 꺼진 공정은 의뢰를 만들지 않는다', async () => {
-    const prisma = {} as PrismaService;
-    const numbering = { next: jest.fn() } as unknown as NumberingService;
-    const plan = await preparePqcRequest(prisma, numbering, {
-      inspectionManaged: false, itemId: 10n, orderQty: new Prisma.Decimal(100), businessDate: '2026-11-04',
-    });
+  it('품목 전용 기준이 없으면 의뢰를 만들지 않는다 — 「전 품목 공통」 기준이 있어도', async () => {
+    const { plan, asked, numbering } = await run(0, [row(2n)]);
     expect(plan).toBeNull();
+    expect(asked).toEqual([]);
+    expect(numbering.next).not.toHaveBeenCalled();
+  });
+
+  it('제품 기준 버전이 둘이면 고르지 않는다 — 기준 없는 의뢰', async () => {
+    const { plan } = await run(1, [row(1n), row(3n)]);
+    expect(plan?.inspectionPlanVersionId).toBeNull();
+  });
+
+  it('기준에 유효한 확정 버전이 없으면 종전처럼 기준 없는 의뢰다', async () => {
+    const { plan } = await run(1, []);
+    expect(plan?.inspectionPlanVersionId).toBeNull();
   });
 });

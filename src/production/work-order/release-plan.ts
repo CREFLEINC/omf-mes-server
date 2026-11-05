@@ -31,8 +31,6 @@ const RELEASE_SELECT = {
     select: {
       standard_cycle_time_sec: true,
       standard_yield_rate: true,
-      /* PQC 는 라우팅이 「검사 공정」이라 명시한 공정에만 붙는다(설계 REQ-OA-0003 · opt-in). */
-      inspection_managed: true,
       process_id: true,
       routing_id: true,
     },
