@@ -6,6 +6,8 @@ import { NumberingModule } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RoutingOperationService } from './routing/routing-operation.service';
+import { PlanProposalController } from './plan-proposal/plan-proposal.controller';
+import { PlanProposalService } from './plan-proposal/plan-proposal.service';
 import { BomController } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
 import { AcknowledgeService } from './production-order/acknowledge.service';
@@ -27,7 +29,7 @@ import { RoutingService } from './routing/routing.service';
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, DocumentStateModule, NumberingModule, OutboxModule],
-  controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController],
+  controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController, PlanProposalController],
   providers: [
     RoutingService,
     RoutingOperationService,
@@ -40,6 +42,7 @@ import { RoutingService } from './routing/routing.service';
     AutoPlanService,
     AcknowledgeService,
     ResyncService,
+    PlanProposalService,
   ],
   exports: [AutoPlanService],
 })

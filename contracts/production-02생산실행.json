@@ -312,7 +312,7 @@
      "planning"
     ],
     "summary": "ERP W/O 계획 제안 조회",
-    "description": "고른 ERP W/O 마다 생산계획·공정별 W/O·4M 제안을 계산해 돌려준다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·상태·시도 기록을 바꾸지 않는다. 제안을 보고 닫으면 아무 일도 없던 것이다. 저장은 사람이 고른 ERP W/O 를 하나씩 POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 로 확정할 때만 한다. ERP W/O 수신과 수기 등록(POST /planning/production-orders)도 계획을 저장·확정하지 않는다.\n\n구분(kind)·상태(status)·사유(reasons)의 판정은 ProductionPlanProposal 설명에 있다. 기준정보와 저장된 계획이 그대로면 다시 불러도 같은 결과다(임시 식별자 proposalPlanKey 와 basis 도 같다) — 작업자 제안만 다른 W/O 의 배정에 따라 달라질 수 있다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 items 에 넣지 않고 notFoundProductionOrderIds 에 담는다. 둘을 가르지 않는다 — 존재를 드러내지 않는다(규칙은 목록 설명).",
+    "description": "고른 ERP W/O 마다 생산계획·공정별 W/O·4M 제안을 계산해 돌려준다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·상태·시도 기록을 바꾸지 않는다. 제안을 보고 닫으면 아무 일도 없던 것이다. 저장은 사람이 고른 ERP W/O 를 하나씩 POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 로 확정할 때만 한다. ERP W/O 수신과 수기 등록(POST /planning/production-orders)도 계획을 저장·확정하지 않는다.\n\n구분(kind)·상태(status)·사유(reasons)의 판정은 ProductionPlanProposal 설명에 있다. 기준정보와 저장된 계획이 그대로면 다시 불러도 같은 결과다(임시 식별자 proposalPlanKey 와 basis 도 같다) — 4M 점검 WARN 만 다른 W/O 의 배정에 따라 달라질 수 있다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 items 에 넣지 않고 notFoundProductionOrderIds 에 담는다. 둘을 가르지 않는다 — 존재를 드러내지 않는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderIds",
@@ -7000,7 +7000,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "4M 추천(GET /production/work-orders/{workOrderId}/resource-recommendations)의 작업자 순서에서 다른 W/O 책임자로 잡혀 있지 않은 첫 사람. 없으면 null — 필수 칸이 아니다"
+      "description": "제안하지 않는다(늘 null). 사람이 고르면 확정 본문에 싣는다 — 필수 칸이 아니다"
      },
      "plannedShiftId": {
       "type": [
@@ -7205,7 +7205,7 @@
    },
    "ProductionPlanProposalConfirmWorkOrder": {
     "type": "object",
-    "description": "공정 W/O 하나의 보완 4M. 생산 라인과 기본 위치 셋은 필수다 — 배포가 요구하므로 확정 때 막는다. 계획 시각은 싣지 않는다 — 서버가 계획일과 plannedShiftId 로 정한다(ProductionPlanProposalWorkOrder.plannedStartAt 의 규칙).",
+    "description": "공정 W/O 하나의 보완 4M. 생산 라인과 기본 위치 셋은 필수다 — 배포가 요구하므로 확정 때 막는다. 계획 시각은 싣지 않는다 — 서버가 계획일과 plannedShiftId 로 정한다(ProductionPlanProposalWorkOrder.plannedStartAt 의 규칙). 기본 위치 셋은 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치여야 한다 — 아니면 400 INVALID.",
     "required": [
      "routingOperationId",
      "productionLineId",
@@ -7223,7 +7223,7 @@
       "type": "integer",
       "format": "int64",
       "example": 1001,
-      "description": "ERP W/O 공장의 라인. 아니면 400 LINE_PLANT_MISMATCH"
+      "description": "ERP W/O 공장의 사용 중인 라인. 아니면 400 LINE_PLANT_MISMATCH"
      },
      "plannedEquipmentId": {
       "type": [
@@ -7232,7 +7232,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "생략·null = 비움. 가동 상태가 아니면 400 EQUIPMENT_NOT_IN_SERVICE"
+      "description": "생략·null = 비움. 이 공장의 설비가 아니면 400 INVALID, 가동 상태가 아니면 400 EQUIPMENT_NOT_IN_SERVICE, 다른 라인에 속한 설비면 400 INVALID(라인이 없는 설비는 된다)"
      },
      "plannedMoldId": {
       "type": [
@@ -7241,7 +7241,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "생략·null = 비움. 가동 상태가 아니면 400 MOLD_NOT_IN_SERVICE"
+      "description": "생략·null = 비움. 이 공장의 금형이 아니면 400 INVALID, 가동 상태가 아니면 400 MOLD_NOT_IN_SERVICE"
      },
      "responsibleWorkerId": {
       "type": [
@@ -7250,7 +7250,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "생략·null = 비움"
+      "description": "생략·null = 비움. 이 공장의 사용 중인 작업자가 아니면 400 INVALID"
      },
      "plannedShiftId": {
       "type": [
