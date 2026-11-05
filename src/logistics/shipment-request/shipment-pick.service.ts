@@ -7,7 +7,11 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import type { LogisticsWriteActor } from '../logistics-write-actor';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 이 PR 은 코어 파일을 안 고친다(`picking-pick.service.ts:8`).
-import { LockedBalanceRow, lockBalancesByItemLot } from '../../core/inventory-posting/balance-lock';
+import {
+  LockedBalanceRow,
+  lockBalancesByItemLot,
+  withoutEmptyBalances,
+} from '../../core/inventory-posting/balance-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
@@ -288,7 +292,9 @@ async function lockBalance(
   lotId: bigint,
   plantId: bigint,
 ): Promise<LockedBalanceRow> {
-  const rows = (await lockBalancesByItemLot(tx, itemId, lotId)).filter((row) => row.plantId === plantId);
+  const rows = withoutEmptyBalances(
+    (await lockBalancesByItemLot(tx, itemId, lotId)).filter((row) => row.plantId === plantId),
+  );
   if (rows.length === 0) throw conflict('그 LOT 의 재고가 없습니다.');
   if (rows.length > 1) {
     throw one(field('lotId', ERROR_CODE.INVALID, '재고 차원이 둘 이상이라 어느 것을 낼지 정할 수 없습니다.'));

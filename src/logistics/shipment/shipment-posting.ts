@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
-import { lockBalancesByItemLot } from '../../core/inventory-posting/balance-lock';
+import { lockBalancesByItemLot, withoutEmptyBalances } from '../../core/inventory-posting/balance-lock';
 import {
   GoodsIssueLineWriteInput,
   postIssue,
@@ -387,8 +387,10 @@ async function resolveSources(
       errors.push(field(path, ERROR_CODE.INVALID, '없는 LOT 입니다.'));
       continue;
     }
-    const rows = (await lockBalancesByItemLot(tx, lot.item_id, lot.lot_id)).filter(
-      (row) => row.warehouseId === BigInt(input.warehouseId),
+    const rows = withoutEmptyBalances(
+      (await lockBalancesByItemLot(tx, lot.item_id, lot.lot_id)).filter(
+        (row) => row.warehouseId === BigInt(input.warehouseId),
+      ),
     );
     if (rows.length === 0) {
       errors.push(field(path, ERROR_CODE.NEGATIVE_BALANCE, '이 창고에 그 LOT 의 재고가 없습니다.'));

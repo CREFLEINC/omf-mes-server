@@ -41,6 +41,8 @@ interface Overrides {
   availableQty?: Prisma.Decimal | null;
   reservations?: { reserved_qty: Prisma.Decimal; released_qty: Prisma.Decimal }[];
   balanceRows?: number;
+  /** 재고 이동이 남긴 보유 0 `IN_TRANSIT` 행을 앞에 세운다(#233). */
+  emptyTransitRow?: boolean;
 }
 
 const BALANCE = {
@@ -59,6 +61,7 @@ const BALANCE = {
   inventory_status_code: 'AVAILABLE',
   ownership_type_code: 'OWNED',
   owner_partner_id: null,
+  on_hand_qty: new Prisma.Decimal(100),
   available_qty: new Prisma.Decimal(100),
 };
 
@@ -91,7 +94,10 @@ function stub(overrides: Overrides = {}) {
         ];
       }
       recorded.order.push('lock-balance');
-      return Array.from({ length: overrides.balanceRows ?? 1 }, () => balance);
+      const rows = Array.from({ length: overrides.balanceRows ?? 1 }, () => balance);
+      if (overrides.emptyTransitRow !== true) return rows;
+      const empty = { inventory_status_code: 'IN_TRANSIT', on_hand_qty: new Prisma.Decimal(0), available_qty: new Prisma.Decimal(0) };
+      return [{ ...balance, ...empty }, ...rows];
     },
     lot: {
       findUnique: async () => {
@@ -295,6 +301,14 @@ describe('제품 LOT 피킹 — 트랜잭션 순서·잠금 대상 (§3-2)', () 
         field: 'pickedQty',
       },
     ]);
+  });
+
+  it('재고 이동이 남긴 보유 0 IN_TRANSIT 행은 빼고 AVAILABLE 행을 예약한다(#233)', async () => {
+    const harness = stub({ emptyTransitRow: true });
+
+    await run(harness);
+
+    expect(harness.recorded.reserved[0].dimension).toMatchObject({ inventoryStatusCode: 'AVAILABLE' });
   });
 
   it('⭐⭐ 누적이다 — 이미 집은 것이 있어도 Δ 는 본문 값 그대로다', async () => {

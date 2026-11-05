@@ -57,6 +57,8 @@ interface Recorded {
 interface Seed {
   /** LOT 별 잔액 행 수 — 0행·2행+ 판정을 흔든다. */
   balanceRows?: Record<number, number>;
+  /** 재고 이동이 남긴 보유 0 `IN_TRANSIT` 행을 LOT 마다 하나 더 세운다(#233). */
+  emptyTransitRow?: boolean;
   lotStatus?: Record<number, string>;
   missingLot?: number;
   /** LOT 별 그 창고의 피킹분 — 없으면 넉넉하다. */
@@ -202,11 +204,16 @@ function fake(seed: Seed = {}): {
         lotKey: BigInt(lotId), lotId: BigInt(lotId),
         quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE',
         ownership_type_code: 'OWNED', owner_partner_id: null,
+        on_hand_qty: new Prisma.Decimal(1000),
         available_qty: new Prisma.Decimal(1000),
       });
+      const empty = { inventory_status_code: 'IN_TRANSIT', on_hand_qty: new Prisma.Decimal(0), available_qty: new Prisma.Decimal(0) };
       return Promise.resolve(
         lots.flatMap((lotId) =>
-          Array.from({ length: seed.balanceRows?.[lotId] ?? 1 }, () => rowOf(lotId)),
+          [
+            ...(seed.emptyTransitRow === true ? [{ ...rowOf(lotId), ...empty }] : []),
+            ...Array.from({ length: seed.balanceRows?.[lotId] ?? 1 }, () => rowOf(lotId)),
+          ],
         ),
       );
     },
@@ -404,6 +411,14 @@ describe('postShipment — 출하·출고 전표·원장이 한 트랜잭션이�
       field: 'lines[0].allocations[0].lotId',
       code: 'INVALID',
     });
+  });
+
+  it('재고 이동이 남긴 보유 0 IN_TRANSIT 행은 빼고 AVAILABLE 행에서 낸다(#233)', async () => {
+    const { tx, posting, recorded } = fake({ emptyTransitRow: true });
+
+    await postShipment(tx, posting, write());
+
+    expect(recorded.posted[0].lines[0].from).toMatchObject({ inventoryStatusCode: 'AVAILABLE' });
   });
 
   it('⭐ 없는 LOT 은 400 INVALID 이고, 오류를 «전건» 모아 한 봉투로 던진다', async () => {
