@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -144,6 +145,19 @@ export class RoutingController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
       this.header(await this.revisions.obsolete(routingId, actorOf(request))),
     );
+  }
+
+  @Delete(':routingId')
+  @Contract('DELETE /planning/routings/{routingId}')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async discard(
+    @Req() request: Request,
+    @Param('routingId', ParseIntPipe) routingId: number,
+  ): Promise<void> {
+    await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
+      await this.revisions.discard(routingId, actorOf(request));
+      return undefined;
+    });
   }
 
   @Post(':routingId\\:new-revision')

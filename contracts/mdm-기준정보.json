@@ -2595,6 +2595,53 @@
      }
     },
     "x-internal-note": "공유계약 B-1(낙관적 잠금)"
+   },
+   "delete": {
+    "tags": [
+     "planning"
+    ],
+    "summary": "작성중 Rev 취소",
+    "description": "작성중 Rev 와 그 공정 라인 · 선후행을 지운다 — 잘못 발행한 신규 Rev 를 되돌리는 길이다(검사기준 작성중 버전 취소와 같은 판단). 작성중 Rev 는 생산에 쓰이지 않으므로 상태를 늘리지 않고 지운다. 첫 Rev 를 지우면 품목은 Routing 이 없는 상태로 돌아가 다시 등록할 수 있다. 상태≠작성중이면 400(code=STATE_LOCKED) — 확정 Rev 는 :obsolete 를 쓴다. 생산계획 · W/O · BOM · 검사기준이 이 Rev(또는 그 라인)를 가리키면 400(code=STATE_LOCKED). 변경 이력(audit ROUTING · DELETE)을 같은 트랜잭션에 남긴다. 근거: omf-all-around#231",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "취소됨(지워짐)"
+     },
+     "400": {
+      "description": "상태가 작성중이 아니거나, 생산계획 · W/O · BOM · 검사기준이 가리킴(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 Routing",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/planning/routings/{routingId}:new-revision": {
@@ -9170,6 +9217,22 @@
        "type": "boolean",
        "default": false
       }
+     },
+     {
+      "name": "isActive",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "사용 여부 — 주면 그 값만 준다(true=사용, false=미사용). includeInactive 의 기본(사용만)보다 앞선다. 근거: omf-all-around#231"
+     },
+     {
+      "name": "processTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공정 유형 코드(PROCESS_TYPE) — 주면 그 유형만 준다. 근거: omf-all-around#231"
      },
      {
       "name": "page",

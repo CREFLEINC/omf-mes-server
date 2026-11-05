@@ -133,6 +133,66 @@ export class RoutingRevisionService {
     });
   }
 
+  /**
+   * 작성중 Rev 취소(omf-all-around#231) — 작성중 Rev 와 그 공정 라인 · 선후행을 지운다. 잘못 발행한 신규 Rev 를
+   * 되돌리는 길이다(검사기준 작성중 버전 취소와 같은 판단). 작성중 Rev 는 생산에 쓰이지 않아 상태를 늘리지 않고 지운다.
+   * 첫 Rev 를 지우면 품목은 Routing 이 없는 상태로 돌아가 다시 등록할 수 있다 — 폐기는 그 길을 막는다.
+   * 생산계획 · W/O · BOM · 검사기준이 가리키고 있으면 지우지 않는다(400 STATE_LOCKED).
+   */
+  async discard(routingId: number, actorId?: number | null): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // ⛔ `FOR UPDATE` — 판정과 삭제 사이에 확정이 끼면 확정 Rev 가 지워진다.
+      const rows = await tx.$queryRaw<
+        { status_code: string; routing_version: number; routing_code: string }[]
+      >`
+        SELECT status_code, routing_version, routing_code
+          FROM planning.routing
+         WHERE routing_id = ${BigInt(routingId)}
+           FOR UPDATE`;
+      if (rows.length === 0) throw new NotFoundException('없는 Routing 입니다.');
+      if (rows[0].status_code !== REVISION_STATUS.DRAFT) {
+        throw discardLocked('작성중 Rev 만 취소할 수 있습니다. 확정 Rev 는 폐기를 쓰세요.');
+      }
+
+      const lineIds = (
+        await tx.routing_operation.findMany({
+          where: { routing_id: routingId },
+          select: { routing_operation_id: true },
+        })
+      ).map((line) => line.routing_operation_id);
+      const [plans, inspectionPlans, workOrders, components] = await Promise.all([
+        tx.production_plan.count({ where: { routing_id: routingId } }),
+        tx.inspection_plan.count({ where: { routing_id: routingId } }),
+        tx.work_order.count({ where: { routing_operation_id: { in: lineIds } } }),
+        tx.bom_component.count({ where: { routing_operation_id: { in: lineIds } } }),
+      ]);
+      if (plans + inspectionPlans + workOrders + components > 0) {
+        throw discardLocked('이 Rev 를 쓰는 생산계획 · 작업지시 · BOM · 검사기준이 있어 취소할 수 없습니다.');
+      }
+
+      await tx.routing_operation_dependency.deleteMany({
+        where: {
+          OR: [
+            { predecessor_operation_id: { in: lineIds } },
+            { successor_operation_id: { in: lineIds } },
+          ],
+        },
+      });
+      await tx.routing_operation.deleteMany({ where: { routing_id: routingId } });
+      await tx.routing.delete({ where: { routing_id: routingId } });
+      await recordRoutingAudit(tx, {
+        routingId,
+        eventTypeCode: 'DELETE',
+        actorId,
+        before: {
+          routingCode: rows[0].routing_code,
+          routingVersion: Number(rows[0].routing_version),
+          statusCode: rows[0].status_code,
+        },
+      });
+    });
+  }
+
   private async load(routingId: number): Promise<Prisma.routingGetPayload<object>> {
     const row = await this.prisma.routing.findUnique({ where: { routing_id: routingId } });
     if (!row) throw new NotFoundException('없는 Routing 입니다.');
@@ -215,4 +275,10 @@ function lineData(
     standard_cycle_time_sec: line.standard_cycle_time_sec,
     standard_yield_rate: line.standard_yield_rate,
   };
+}
+
+function discardLocked(message: string): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message },
+  ]);
 }

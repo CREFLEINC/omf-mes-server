@@ -16,10 +16,10 @@ import type { Request, Response } from 'express';
 
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
-import { ReferenceQuery, runIdempotent, runVersioned } from '../../common/master';
+import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
-import { ProcessService, ProcessWrite } from './process.service';
+import { ProcessQuery, ProcessService, ProcessWrite } from './process.service';
 
 /** 공정 마스터. 화면은 `W-06-01` 《공정 마스터》 탭 §4-D·§5-1 이다. */
 @Controller('mdm/processes')
@@ -31,7 +31,7 @@ export class ProcessController {
 
   @Get()
   @Contract('GET /mdm/processes')
-  list(@Query() query: ReferenceQuery): Promise<PagedResponse<unknown>> {
+  list(@Query() query: ProcessQuery): Promise<PagedResponse<unknown>> {
     return this.processes.list(query);
   }
 

@@ -237,6 +237,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /planning/routings/{routingId}:confirm': ['W-06-01'],
   'POST /planning/routings/{routingId}:obsolete': ['W-06-01'],
   'POST /planning/routings/{routingId}:new-revision': ['W-06-01'],
+  // 작성중 Rev 취소(omf-all-around#231) — 같은 Routing 화면의 쓰기라 W-06-01. 검사기준 작성중 버전 취소와 같은 짝.
+  'DELETE /planning/routings/{routingId}': ['W-06-01'],
 
   // `W-06-05` 수신본 확장속성 편집 — §3-6 이 「구성품 확장 열 편집」으로 이 경로를 적었는데
   // 요구서가 `.../components/{id}` 로, 계약이 `.../components/{bomComponentId}` 로 써서
