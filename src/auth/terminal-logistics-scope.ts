@@ -207,7 +207,8 @@ export async function assertTerminalLogisticsScope(
       await check(await prisma.shipment_request_line.findFirst({ where: { shipment_request_line_id: id(p.shipmentRequestLineId), shipment_request_id: id(p.shipmentRequestId) }, select: { shipment_request_line_id: true } }));
       await optional(lot, b.lotId); break;
     case 'POST /logistics/shopfloor-receipts':
-      await Promise.all([issue(b.goodsIssueId), workOrder(b.workOrderId)]); break;
+      // 창고 보충 출고 수령(피처 004)은 W/O 를 보내지 않는다.
+      await Promise.all([issue(b.goodsIssueId), optional(workOrder, b.workOrderId)]); break;
     case 'POST /logistics/stock-transfers':
       await Promise.all([warehouse(b.fromWarehouseId), warehouse(b.toWarehouseId)]); break;
     case 'POST /logistics/stock-transfers/{stockTransferId}:arrive':

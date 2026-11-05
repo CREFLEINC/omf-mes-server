@@ -111,6 +111,11 @@ describe('창고 보충 수령 적치 (e2e)', () => {
       allowedLocations: [expect.objectContaining({ locationId: Number(w.PROD.locationId) })],
     });
     expect(task.body.shopfloorReceiptLineId).toEqual(expect.any(Number));
+    // 모바일 「창고 보충 · 요청번호」 — 원천 문서 번호는 그 창고 보충 요청 번호다.
+    const issue = await prisma.goods_issue.findUniqueOrThrow({ where: { goods_issue_id: web } });
+    const picking = await prisma.picking_order.findUniqueOrThrow({ where: { picking_order_id: issue.source_document_id } });
+    const requestNo = (await prisma.material_issue_request.findUniqueOrThrow({ where: { material_issue_request_id: picking.source_document_id } })).issue_request_no;
+    expect(task.body.originDocumentNo).toBe(requestNo);
 
     await request(app.getHttpServer())
       .post('/api/logistics/shopfloor-receipts:bulk')

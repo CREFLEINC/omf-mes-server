@@ -19829,7 +19829,9 @@
      "allowedLocations",
      "warehouseId",
      "priorityNo",
-     "statusCode"
+     "statusCode",
+     "originCode",
+     "originDocumentNo"
     ],
     "description": "적치 지시. 근거: M-01-05 · M-01-07",
     "properties": {
@@ -19871,6 +19873,13 @@
        "REPLENISHMENT_RECEIPT"
       ],
       "description": "지시 원천 — 구매 입고 · 창고 보충 수령. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "originDocumentNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "원천 문서 번호 — 구매 입고 원천은 입고 번호, 창고 보충 수령 원천은 창고 보충 요청 번호(모바일 「창고 보충 · 요청번호」). 근거: 피처 004 생산 창고 보충 G2 보완 · omf-all-around#230"
      },
      "movedQty": {
       "type": "number",
@@ -20349,7 +20358,7 @@
       "type": "integer",
       "format": "int64",
       "example": 1001,
-      "description": "출고가 실은 도착 위치와 같아야 한다(아니면 400 INVALID). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+      "description": "창고 보충 출고(workOrderId 없음)는 출고가 실은 도착 위치와 같아야 한다(아니면 400 INVALID). W/O 출고는 대조하지 않는다(지금 동작 그대로). 근거: 피처 004 생산 창고 보충 G2 보완 · omf-all-around#230"
      },
      "receivedAt": {
       "x-source-column": "received_at",
@@ -22706,7 +22715,7 @@
      "occurredAt",
      "lines"
     ],
-    "description": "웹 개별 수령 본문 — 줄은 POST /shopfloor-receipts 의 줄과 같은 모양(전 라인 필수·0 ≤ 받은 ≤ 출고·차이면 사유). 도착 위치·W/O 는 받지 않고 서버가 채운다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "description": "웹 개별 수령 본문 — 줄은 POST /shopfloor-receipts 의 줄과 같은 모양(전 라인 필수·0 ≤ 받은 ≤ 출고·차이면 사유). 도착 위치·W/O 는 받지 않고 서버가 채운다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 본문에 다른 칸(goodsIssueId·workOrderId·destinationLocationId 등)을 실으면 400 — 출고는 경로, 도착 위치는 서버가 정한다. 근거: 피처 004 생산 창고 보충 G2 보완 · omf-all-around#230",
     "properties": {
      "businessDate": {
       "type": "string",
@@ -22726,7 +22735,8 @@
        "$ref": "#/components/schemas/ShopfloorReceiptLineCreate"
       }
      }
-    }
+    },
+    "additionalProperties": false
    },
    "ShopfloorReceiptBulkCreate": {
     "type": "object",

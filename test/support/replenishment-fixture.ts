@@ -235,6 +235,10 @@ export class ReplenishmentFixture extends MaterialIssueFixture {
     await db.replenishment_run.deleteMany({ where: warehouse });
     await db.replenishment_warehouse_setting.deleteMany({ where: warehouse });
     await db.replenishment_item.deleteMany({ where: warehouse });
+    // 단말 수령은 단말 작업자 감사 이벤트를 남긴다 — 단말보다 먼저 지운다.
+    await db.audit_event.deleteMany({ where: { terminal: { terminal_code: { startsWith: this.prefix } } } });
+    await db.terminal.deleteMany({ where: { terminal_code: { startsWith: this.prefix } } });
+    await db.worker.deleteMany({ where: { worker_no: { startsWith: this.prefix } } });
     await super.cleanup();
   }
 }

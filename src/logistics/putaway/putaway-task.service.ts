@@ -7,7 +7,7 @@ import { PagedResponse, pageRequest, pagedResponse } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalListScope } from '../terminal-list-scope';
 import { allowedKey, allowedLocationsOf } from './allowed-locations';
-import { PutawayTaskView, TASK_INCLUDE, TaskRow, taskView, taskWarehouseId } from './putaway-task-view';
+import { PutawayTaskView, TASK_INCLUDE, TaskRow, originDocumentNos, taskView, taskWarehouseId } from './putaway-task-view';
 
 /** 계약 검증 가드가 이미 int64/boolean 을 캐스트한다 — page·size·temporaryOnly 는 그 값을 믿는다. */
 export interface PutawayTaskQuery {
@@ -50,8 +50,8 @@ export class PutawayTaskService {
 
   private async views(rows: TaskRow[]): Promise<PutawayTaskView[]> {
     const pairs = rows.map((row) => ({ itemId: row.item_id, warehouseId: taskWarehouseId(row) }));
-    const allowed = await allowedLocationsOf(this.prisma, pairs);
-    return rows.map((row, index) => taskView(row, allowed.get(allowedKey(pairs[index])) ?? []));
+    const [allowed, originNos] = await Promise.all([allowedLocationsOf(this.prisma, pairs), originDocumentNos(this.prisma, rows)]);
+    return rows.map((row, index) => taskView(row, allowed.get(allowedKey(pairs[index])) ?? [], originNos.get(row.putaway_task_id) ?? null));
   }
 }
 
