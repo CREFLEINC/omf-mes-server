@@ -35,6 +35,7 @@ function erp(extra: Row = {}): RelayRow {
     SPEC: 'PC, LD7700, V-2, NATURAL',
     ITEM_ACCT_CD: '30',
     ITEM_GROUP_CD: 'ZZ400',
+    ITEM_GROUP_NM: 'Resin',
     BASIC_UNIT: 'GR',
     ...extra,
   };
@@ -48,6 +49,7 @@ const ITEM = {
   base_uom_id: 2n,
   erp_spec: 'PC, LD7700, V-2, NATURAL',
   erp_item_group_code: 'ZZ400',
+  erp_item_group_name: 'Resin',
   is_active: true,
 };
 
@@ -66,6 +68,7 @@ describe('itemTable', () => {
           item_type_code: 'RAW_MATERIAL',
           erp_spec: 'PC, LD7700, V-2, NATURAL',
           erp_item_group_code: 'ZZ400',
+          erp_item_group_name: 'Resin',
           name_vi: 'RESIN PC',
           base_uom_id: 2n,
           inspection_required: true,
@@ -118,10 +121,21 @@ describe('itemTable', () => {
           item_type_code: 'RAW_MATERIAL',
           erp_spec: null,
           erp_item_group_code: 'ZZ400',
+          erp_item_group_name: 'Resin',
           updated_by: null,
           version_no: { increment: 1 },
         },
       },
+    ]);
+  });
+
+  it('품목그룹 이름만 바뀌어도 고친다 — 이미 받은 품목을 이름으로 채우는 길이다', async () => {
+    const f = fake({ ...ITEM, erp_item_group_name: null });
+
+    await itemTable.apply(f.tx, erp());
+
+    expect(f.writes).toEqual([
+      { op: 'update', data: expect.objectContaining({ erp_item_group_name: 'Resin' }) },
     ]);
   });
 

@@ -8,8 +8,11 @@ import {
   checkEquipment,
   checkMoldLife,
   checkQualification,
+  rivalWindows,
+  rivalWindowsWhere,
   summarize,
 } from './validation';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * 규칙 여섯의 판정만 본다 — DB 목 없이 순수 함수에 행을 넣는다. 적재(`validateWorkOrder`)는
@@ -115,6 +118,35 @@ describe('4M 유효성 점검', () => {
     expect(checkDoubleBooked([5n], self, [{ ...rival, planned_end_at: null }])).toEqual([]);
     // 반열림 구간 — 맞닿기만 하면 겹침이 아니다.
     expect(checkDoubleBooked([5n], { planned_start_at: rival.planned_end_at, planned_end_at: new Date('2026-09-06T18:00:00.000Z') }, [rival])).toEqual([]);
+  });
+
+  it('점검 — 중복 배정 상대에서 취소·마감·완료 W/O 를 뺀다 (#219)', () => {
+    const where = rivalWindowsWhere(7, [5n]);
+
+    expect(where).toEqual({
+      work_order_id: { not: 7n },
+      planned_equipment_id: { in: [5n] },
+      planned_start_at: { not: null },
+      planned_end_at: { not: null },
+      status_code: { notIn: ['CANCELLED', 'CLOSED', 'COMPLETED'] },
+    });
+    // 진행 중인 상태는 그대로 상대가 된다.
+    const excluded = (where.status_code as { notIn: string[] }).notIn;
+    for (const status of ['PLANNED', 'CONFIRMED', 'RELEASED', 'IN_PROGRESS', 'SUSPENDED']) {
+      expect(excluded).not.toContain(status);
+    }
+  });
+
+  it('점검·추천 — `rivalWindows` 는 상태 조건을 실어 조회하고, 설비가 없으면 조회하지 않는다 (#219)', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = { work_order: { findMany } } as unknown as PrismaService;
+
+    await rivalWindows(prisma, 7, [5n, 6n]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: rivalWindowsWhere(7, [5n, 6n]) }));
+
+    findMany.mockClear();
+    expect(rivalWindows(prisma, 7, [])).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it('점검 — 자격은 `routing_operation.process_id` 로 맞춘다', () => {

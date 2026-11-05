@@ -3,6 +3,7 @@ import type { WorklistReason, WorklistState } from './production-order-worklist'
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import { toDateString } from '../../common/master';
+import { PlanQuantities } from '../production-plan/plan-quantity';
 import { AutoPlanView } from './auto-plan';
 import { ProductionOrderProgressStatus } from './production-order-progress';
 
@@ -50,6 +51,8 @@ export interface ProductionOrderExtras {
   worklistReasons?: WorklistReason[];
   releasePendingWorkOrderCount?: number;
   liveWorkOrderCount?: number;
+  quantities?: PlanQuantities;
+  itemGroup?: { code?: string; name?: string };
 }
 
 export type ProductionOrderView = ReturnType<typeof productionOrderView>;
@@ -90,6 +93,14 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     worklistReasons: extras.worklistReasons,
     releasePendingWorkOrderCount: extras.releasePendingWorkOrderCount,
     liveWorkOrderCount: extras.liveWorkOrderCount,
+    // 계획 수량(정의는 plan-quantity.ts) · 품목그룹.
+    confirmedPlanQty: extras.quantities?.confirmedQty.toNumber(),
+    draftPlanQty: extras.quantities?.draftQty.toNumber(),
+    remainingQty: extras.quantities?.remainingQty.toNumber(),
+    // 취소된 ERP W/O 는 계획할 일이 없다 — 상태를 내지 않는다(수량 칸은 그대로).
+    planStatusCode: row.status_code === 'CANCELLED' ? undefined : extras.quantities?.status,
+    itemGroupCode: extras.itemGroup?.code,
+    itemGroupName: extras.itemGroup?.name,
   });
 }
 

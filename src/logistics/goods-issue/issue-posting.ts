@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import type { ConsumeMove } from '../../core/inventory-posting';
+import { withoutEmptyBalances } from '../../core/inventory-posting/balance-lock';
 
 /**
  * 출고 «전기» — 잔액 선잠금 · 음수 손검사 · 원장 out · 되짚기. 입고 `receipt-posting.ts` 의
@@ -138,7 +139,7 @@ export async function postIssue(
   const errors: ErrorItem[] = [];
   const picked = new Map<string, BalanceRow>();
   for (const [id, { index }] of demanded) {
-    const rows = found.get(id) ?? [];
+    const rows = withoutEmptyBalances(found.get(id) ?? []);
     if (rows.length === 0) {
       errors.push(
         field(`lines[${index}].lotId`, ERROR_CODE.NEGATIVE_BALANCE, '이 위치에 그 LOT 의 재고가 없습니다.'),

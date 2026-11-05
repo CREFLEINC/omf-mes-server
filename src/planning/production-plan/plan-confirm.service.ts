@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { assertPlannableRouting } from '../routing/routing.service';
 import { PlanLine, PlanToExpand, dependencyRows, workOrderRows } from './expand';
 import { DEFAULT_DAY_START, PlanWindow, dayWindow, timeOfColumn } from './plan-window';
+import { assertWithinOrder } from './plan-quantity';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
 import { assignResources, readDefaultMaps } from './resource-assign';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
@@ -144,6 +145,9 @@ export class PlanConfirmService {
       assertPlanVersion(locked, version);
       // ⛔ 400 이다 — 409 는 If-Match 저장 충돌이 쓴다(계약 `statusCode` 설명).
       const transition = this.documentState.assertTransition(STATUS_COLUMN, 'plan-confirm', locked.status_code, HttpStatus.BAD_REQUEST);
+
+      // 작성 → 확정은 합계를 바꾸지 않는다 — 오더 수량이 줄어 이미 넘은 계획이 확정되는 것을 막는다.
+      await assertWithinOrder(tx, locked.production_order_id, new Prisma.Decimal(0));
 
       const created = await tx.work_order.createManyAndReturn({
         data: workOrderRows(plan, workOrderNos, appUserId),

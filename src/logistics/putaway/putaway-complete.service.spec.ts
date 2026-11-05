@@ -26,7 +26,14 @@ const ledgerEnd = {
   handling_unit_id: null,
 };
 
-function fake(over: Row = {}) {
+/** 잠금 조회가 내리는 출발 위치 잔액 행 — 기본은 가용 100 한 행. */
+const balance = (available: number, over: Row = {}): Row => ({
+  quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE',
+  ownership_type_code: 'OWNED', owner_partner_id: null,
+  available_qty: new Prisma.Decimal(available), ...over,
+});
+
+function fake(over: Row = {}, balances: Row[] = [balance(100)]) {
   const posts: PostingInput[] = [];
   const updates: Row[] = [];
   const task: Row = {
@@ -49,15 +56,10 @@ function fake(over: Row = {}) {
   const tx: Row = {
     $queryRaw: async (strings: TemplateStringsArray) =>
       strings.join('?').includes('inventory_balance')
-        ? [
-            {
-              legalEntityId: 1n, businessUnitId: 2n, plantId: 3n, warehouseId: WH,
-              locationId: task.from_location_id, itemId: 30n, lotKey: 40n, lotId: 40n,
-              quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE',
-              ownership_type_code: 'OWNED', owner_partner_id: null,
-              available_qty: new Prisma.Decimal(100),
-            },
-          ]
+        ? balances.map((row) => ({
+            legalEntityId: 1n, businessUnitId: 2n, plantId: 3n, warehouseId: WH,
+            locationId: task.from_location_id, itemId: 30n, lotKey: 40n, lotId: 40n, ...row,
+          }))
         : [task],
     // 사람이 나눈 위치도 「창고 전체」도 없는 창고 — 둬도 되는 위치가 비어 어디든 된다.
     location: {
@@ -212,5 +214,37 @@ describe('창고 보충 수령 원천 적치 완료 (피처 004 · US6)', () => 
 
     expect(view.movedQty).toBe(10);
     expect(posts[0].lines[0].qty).toBe(10);
+  });
+
+  it('US6-4 같은 LOT 이 여러 상태 행에 나뉘면 큰 행부터 지시 수량까지 행마다 한 줄로 옮긴다', async () => {
+    const hold = { quality_status_code: 'HOLD' };
+    const { service, posts } = fake(receiptOrigin, [balance(4), balance(7, hold), balance(5, { locationId: RACK })]);
+
+    const view = await service.complete(TASK, body(), context, 'NORMAL');
+
+    // 도착 위치(RACK)의 행은 출발 후보가 아니다 — 출발 7(HOLD) + 3(NORMAL) = 지시 10.
+    expect(view.movedQty).toBe(10);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].lines.map((line) => [line.qty, line.from?.qualityStatusCode, line.to?.qualityStatusCode]))
+      .toEqual([[7, 'HOLD', 'HOLD'], [3, 'NORMAL', 'NORMAL']]);
+  });
+
+  it('US6-4 여러 상태 행을 다 합쳐도 지시보다 적으면 합친 만큼 옮긴다', async () => {
+    const { service, posts } = fake(receiptOrigin, [balance(4), balance(2, { inventory_status_code: 'BLOCKED' }), balance(0)]);
+
+    const view = await service.complete(TASK, body(), context, 'NORMAL');
+
+    expect(view.movedQty).toBe(6);
+    expect(posts[0].lines.map((line) => line.qty)).toEqual([4, 2]);
+  });
+
+  it('US6-4 적치 대기에 남은 행이 0 이면 원장 없이 완료한다(FR-019)', async () => {
+    const { service, posts, updates } = fake(receiptOrigin, []);
+
+    const view = await service.complete(TASK, body(), context, 'NORMAL');
+
+    expect(view.movedQty).toBe(0);
+    expect(posts).toEqual([]);
+    expect(updates[0].data as Row).toMatchObject({ status_code: 'COMPLETED', inventory_transaction_line_id: null });
   });
 });

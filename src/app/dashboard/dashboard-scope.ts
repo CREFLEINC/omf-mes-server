@@ -130,7 +130,7 @@ export async function scopedPlantWhere(tx: Prisma.TransactionClient, actorUserId
   };
 }
 
-function plantDenied(): ContractException {
+export function plantDenied(): ContractException {
   return new ContractException(HttpStatus.FORBIDDEN, [
     field('plantId', ERROR_CODE.PERMISSION_DENIED, '이 공장에 대한 데이터 권한이 없습니다.'),
   ]);

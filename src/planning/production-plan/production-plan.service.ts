@@ -8,6 +8,7 @@ import { PagedResponse, pageRequest, pagedResponse } from '../../common/paginati
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertPlannableRouting } from '../routing/routing.service';
+import { assertWithinOrder } from './plan-quantity';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
 
 /** 조회 2 + CRUD 3(PR ①a·②) — `:confirm` 은 PR ③ 몫이다. */
@@ -64,6 +65,8 @@ const DUPLICATE_KEY = 'DUPLICATE_KEY';
 interface LockedPlan {
   status_code: string;
   version_no: number;
+  production_order_id: bigint;
+  planned_qty: Prisma.Decimal;
 }
 
 @Injectable()
@@ -105,8 +108,8 @@ export class ProductionPlanService {
   }
 
   /**
-   * POST — 201. 채번은 `$transaction` «밖»(I-24 §3-5 · §4-1). ⛔ 합계 검증·원본 수량
-   * 조정 없음 — `W-02-02` §5-2·§5-7 이 그 둘을 화면 책임으로 못 박았다.
+   * POST — 201. 채번은 `$transaction` «밖»(I-24 §3-5 · §4-1). 오더 수량 초과 검사는 ERP W/O 행을
+   * 잠근 트랜잭션 안에서 한다. ⛔ 원본 수량 조정은 없다.
    */
   async create(body: ProductionPlanCreate, appUserId: number | undefined): Promise<ProductionPlanView> {
     await assertCodeValues(this.prisma, [
@@ -132,23 +135,30 @@ export class ProductionPlanService {
     for (let attempt = 0; ; attempt += 1) {
       try {
         const planNo = await this.numbering.next(PRODUCTION_PLAN, order.plant_id, body.planDate);
-        const created = await this.prisma.production_plan.create({
-          data: {
-            production_order_id: BigInt(body.productionOrderId),
-            plan_no: planNo,
-            plan_date: new Date(`${body.planDate}T00:00:00.000Z`),
-            planned_qty: body.plannedQty,
-            uom_id: BigInt(body.uomId),
-            bom_id: BigInt(body.bomId),
-            routing_id: BigInt(body.routingId),
-            planned_line_id: idOf(body.plannedLineId),
-            status_code: DRAFT,
-            ...optional('split_of_plan_id', idOf(body.splitOfPlanId?.sourcePlanId)),
-            ...optional('split_reason_code', body.splitOfPlanId?.reasonCode),
-            remarks: body.remarks ?? null,
-            created_by: appUserId ?? null,
-            updated_by: appUserId ?? null,
-          },
+        const created = await this.prisma.$transaction(async (tx) => {
+          // 분할 원본 계획의 FK 검사가 그 행에 KEY SHARE 를 건다 — 수정·확정은 «계획 → ERP W/O» 순으로 잠그므로 여기서 먼저 잡아 순서를 맞춘다.
+          if (body.splitOfPlanId?.sourcePlanId !== undefined) {
+            await tx.$queryRaw`SELECT 1 FROM planning.production_plan WHERE production_plan_id = ${BigInt(body.splitOfPlanId.sourcePlanId)} FOR KEY SHARE`;
+          }
+          await assertWithinOrder(tx, BigInt(body.productionOrderId), new Prisma.Decimal(body.plannedQty), 'plannedQty');
+          return tx.production_plan.create({
+            data: {
+              production_order_id: BigInt(body.productionOrderId),
+              plan_no: planNo,
+              plan_date: new Date(`${body.planDate}T00:00:00.000Z`),
+              planned_qty: body.plannedQty,
+              uom_id: BigInt(body.uomId),
+              bom_id: BigInt(body.bomId),
+              routing_id: BigInt(body.routingId),
+              planned_line_id: idOf(body.plannedLineId),
+              status_code: DRAFT,
+              ...optional('split_of_plan_id', idOf(body.splitOfPlanId?.sourcePlanId)),
+              ...optional('split_reason_code', body.splitOfPlanId?.reasonCode),
+              remarks: body.remarks ?? null,
+              created_by: appUserId ?? null,
+              updated_by: appUserId ?? null,
+            },
+          });
         });
         return productionPlanView(created);
       } catch (error) {
@@ -179,6 +189,11 @@ export class ProductionPlanService {
       // 흘리면 DB CHECK 위반이 500 으로 나간다(POST 와 같은 그물 · 리뷰 #276 Major).
       if (body.plannedQty !== undefined && body.plannedQty <= 0) {
         throw one(field('plannedQty', ERROR_CODE.INVALID, '0보다 커야 합니다.'));
+      }
+      // 수량을 «늘릴 때만» 본다 — 오더 수량이 ERP 변경으로 줄어 이미 넘은 계획도 날짜·라인을 고치고 수량을 줄일 수 있다(아직 넘으면 확정이 막는다).
+      if (body.plannedQty !== undefined) {
+        const delta = new Prisma.Decimal(body.plannedQty).minus(locked.planned_qty);
+        if (delta.gt(0)) await assertWithinOrder(tx, locked.production_order_id, delta, 'plannedQty');
       }
       // Routing 을 «바꿀 때만» 본다 — 계획 뒤에 Rev 가 폐기돼도 수량·날짜는 고칠 수 있고, 확정이 막는다.
       if (body.routingId !== undefined) {
@@ -236,7 +251,7 @@ export class ProductionPlanService {
 /** ⛔ `SELECT … FOR UPDATE` — 읽고 판정하고 쓰는 사이 재확정이 끼는 것을 막는다. */
 export async function lockPlan(tx: Prisma.TransactionClient, productionPlanId: number): Promise<LockedPlan> {
   const rows = await tx.$queryRaw<LockedPlan[]>`
-    SELECT status_code, version_no
+    SELECT status_code, version_no, production_order_id, planned_qty
       FROM planning.production_plan
      WHERE production_plan_id = ${BigInt(productionPlanId)}
        FOR UPDATE`;

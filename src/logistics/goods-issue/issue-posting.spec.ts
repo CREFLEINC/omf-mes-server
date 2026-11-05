@@ -287,6 +287,32 @@ describe('출고 전기', () => {
     });
   });
 
+  it('전기 — 재고 이동이 남긴 보유 0 IN_TRANSIT 행은 빼고 AVAILABLE 행에서 낸다(#233)', async () => {
+    const { tx, posting, posted } = fake({
+      balances: [
+        balance({ inventory_status_code: 'IN_TRANSIT', on_hand_qty: new Prisma.Decimal(0), available_qty: new Prisma.Decimal(0) }),
+        balance(),
+      ],
+    });
+
+    await postIssue(tx, posting, input(), 1);
+
+    expect(posted[0].lines[0].from).toMatchObject({ inventoryStatusCode: 'AVAILABLE' });
+  });
+
+  it('전기 — 보유 0 행이 둘이면 지금처럼 400 INVALID 다', async () => {
+    const empty = { on_hand_qty: new Prisma.Decimal(0), available_qty: new Prisma.Decimal(0) };
+    const { tx, posting } = fake({
+      balances: [balance(empty), balance({ ...empty, inventory_status_code: 'IN_TRANSIT' })],
+    });
+
+    const error = await thrown(() => postIssue(tx, posting, input(), 1));
+
+    expect(error.getResponse()).toMatchObject({
+      errors: [{ field: 'lines[0].lotId', code: ERROR_CODE.INVALID }],
+    });
+  });
+
   it('전기 — item.negative_stock_allowed 가 참이어도 막는다', async () => {
     const { tx, posting, touched } = fake({
       balances: [balance({ available_qty: new Prisma.Decimal(1) })],

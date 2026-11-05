@@ -6,12 +6,12 @@ import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어를 한 줄도 안 고친다(피킹 선례).
-import { lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
+import { LockedBalanceRow, lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { AllowedLocation, allowedKey, allowedLocationsOf } from './allowed-locations';
-import { PutawayOrigin, postPutaway } from './putaway-posting';
+import { PutawayOrigin, PutawayPart, postPutaway } from './putaway-posting';
 import { PutawayTaskView, TASK_INCLUDE, originDocumentNos, taskView } from './putaway-task-view';
 
 type Tx = Prisma.TransactionClient;
@@ -96,18 +96,22 @@ export class PutawayCompleteService {
     const allowed = (await allowedLocationsOf(tx, [pair])).get(allowedKey(pair)) ?? [];
     if (mode === 'NORMAL') assertAllowed(allowed, body.actualLocationId);
     // 창고 보충 수령 원천은 적치 대기에 «남은» 만큼만 옮긴다 — 그사이 피킹이 집어 갔을 수 있다(R-8 · US6-4·6-5).
-    const receiptOrigin = task.goods_receipt_line_id === null;
-    const remaining = receiptOrigin ? await remainingAtOrigin(tx, task) : null;
-    const origin = remaining === null ? originOf(task) : remaining?.origin;
-    const qty = remaining === null ? task.task_qty : remaining.qty;
+    let parts: PutawayPart[];
+    if (task.goods_receipt_line_id === null) {
+      parts = await remainingAtOrigin(tx, task, body.actualLocationId);
+    } else {
+      const origin = originOf(task);
+      await assertBalance(tx, task, origin, body.actualLocationId);
+      parts = [{ origin, qty: task.task_qty }];
+    }
+    const qty = parts.reduce((sum, part) => sum.plus(part.qty), new Prisma.Decimal(0));
     let lineId: bigint | null = null;
-    if (origin !== undefined && qty.gt(0)) {
-      await assertBalance(tx, task, origin, body.actualLocationId, qty);
+    if (parts.length > 0) {
       lineId = await postPutaway(tx, this.posting, {
         businessDate: body.businessDate, occurredAt: new Date(body.occurredAt),
         plantId: Number(task.plant_id), putawayTaskId, putawayTaskNo: task.putaway_task_no,
         itemId: Number(task.item_id), lotId: Number(task.lot_id),
-        qty, uomId: Number(task.uom_id), origin,
+        uomId: Number(task.uom_id), parts,
         toWarehouseId: Number(task.warehouse_id), toLocationId: body.actualLocationId,
         createdBy: context.actor?.appUserId ?? context.appUserId,
       });
@@ -209,30 +213,49 @@ function originOf(task: LockedTask): PutawayOrigin {
 const id = (value: bigint | null): number | null => (value === null ? null : Number(value));
 
 /**
- * 창고 보충 수령 원천의 출발 끝점과 옮길 양 — 적치 대기에 남은 그 LOT 의 가용(여러 상태 행이면 가장 큰 것)과 지시 수량 중
- * 작은 양. 남은 것이 없으면 끝점 없이 0 — 원장 없이 완료한다.
+ * 창고 보충 수령 원천의 출발 끝점과 옮길 양 — 적치 대기의 그 LOT 잔액 행을 «잠근 뒤» 가용이 있는 상태 행을 모두 보고,
+ * 큰 행부터 지시 수량까지 채운다(FR-019 · US6-4). 잠금은 입고 원천의 `assertBalance` 와 같은 한 문장(출발·도착)이라
+ * 읽은 뒤 피킹이 끼어 400 이 나는 창이 없다. 남은 것이 없으면 빈 목록 — 원장 없이 완료한다.
  */
-async function remainingAtOrigin(tx: Tx, task: LockedTask): Promise<{ origin?: PutawayOrigin; qty: Prisma.Decimal }> {
-  const [row] = await tx.$queryRaw<{
-    quality_status_code: string; inventory_status_code: string; ownership_type_code: string;
-    owner_partner_id: bigint | null; available_qty: Prisma.Decimal | null;
-  }[]>`
-    SELECT quality_status_code, inventory_status_code, ownership_type_code, owner_partner_id, available_qty
-      FROM inventory.inventory_balance
-     WHERE location_id = ${task.from_location_id} AND item_id = ${task.item_id} AND lot_id = ${task.lot_id}
-       AND available_qty > 0
-     ORDER BY available_qty DESC
-     LIMIT 1`;
-  const available = row?.available_qty ?? new Prisma.Decimal(0);
-  if (row === undefined || available.lte(0)) return { qty: new Prisma.Decimal(0) };
-  return {
-    origin: {
-      warehouseId: Number(task.warehouse_id), locationId: Number(task.from_location_id),
-      qualityStatusCode: row.quality_status_code, inventoryStatusCode: row.inventory_status_code,
-      ownershipTypeCode: row.ownership_type_code, ownerPartnerId: id(row.owner_partner_id), handlingUnitId: null,
-    },
-    qty: Prisma.Decimal.min(available, task.task_qty),
+async function remainingAtOrigin(tx: Tx, task: LockedTask, actualLocationId: number): Promise<PutawayPart[]> {
+  const rows = await lockBalances(tx, task, task.warehouse_id, task.from_location_id, actualLocationId);
+  const candidates = rows
+    .filter((row) => row.locationId === task.from_location_id && (row.available_qty?.gt(0) ?? false))
+    .sort((a, b) => (b.available_qty as Prisma.Decimal).comparedTo(a.available_qty as Prisma.Decimal));
+  const parts: PutawayPart[] = [];
+  let left = task.task_qty;
+  for (const row of candidates) {
+    if (left.lte(0)) break;
+    const qty = Prisma.Decimal.min(row.available_qty as Prisma.Decimal, left);
+    parts.push({
+      origin: {
+        warehouseId: Number(task.warehouse_id), locationId: Number(task.from_location_id),
+        qualityStatusCode: row.quality_status_code, inventoryStatusCode: row.inventory_status_code,
+        ownershipTypeCode: row.ownership_type_code, ownerPartnerId: id(row.owner_partner_id), handlingUnitId: null,
+      },
+      qty,
+    });
+    left = left.minus(qty);
+  }
+  return parts;
+}
+
+/** 출발·도착 위치의 그 LOT 잔액 행을 «한 문장에» 잠근다(교착 방지 · `lockBalancesInOrder`). */
+async function lockBalances(
+  tx: Tx, task: LockedTask, warehouseId: bigint, fromLocationId: bigint, actualLocationId: number,
+): Promise<LockedBalanceRow[]> {
+  const warehouse = await tx.warehouse.findUniqueOrThrow({
+    where: { warehouse_id: warehouseId },
+    select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } },
+  });
+  const axis = {
+    legalEntityId: warehouse.plant.legal_entity_id, businessUnitId: warehouse.business_unit_id,
+    plantId: warehouse.plant_id, warehouseId, itemId: task.item_id, lotKey: task.lot_id,
   };
+  return lockBalancesInOrder(tx, [
+    { ...axis, locationId: fromLocationId },
+    { ...axis, locationId: BigInt(actualLocationId) },
+  ]);
 }
 
 /**
@@ -241,21 +264,11 @@ async function remainingAtOrigin(tx: Tx, task: LockedTask): Promise<{ origin?: P
  * 「on_hand < reserved+picked+blocked」도 막는다. 출발·도착을 **한 문장에** 잠근다(교착 방지).
  */
 async function assertBalance(
-  tx: Tx, task: LockedTask, origin: PutawayOrigin, actualLocationId: number, qty: Prisma.Decimal = task.task_qty,
+  tx: Tx, task: LockedTask, origin: PutawayOrigin, actualLocationId: number,
 ): Promise<void> {
-  const warehouse = await tx.warehouse.findUniqueOrThrow({
-    where: { warehouse_id: BigInt(origin.warehouseId) },
-    select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } },
-  });
-  const axis = {
-    legalEntityId: warehouse.plant.legal_entity_id, businessUnitId: warehouse.business_unit_id,
-    plantId: warehouse.plant_id, warehouseId: BigInt(origin.warehouseId), itemId: task.item_id,
-    lotKey: task.lot_id,
-  };
-  const rows = await lockBalancesInOrder(tx, [
-    { ...axis, locationId: BigInt(origin.locationId) },
-    { ...axis, locationId: BigInt(actualLocationId) },
-  ]);
+  const rows = await lockBalances(
+    tx, task, BigInt(origin.warehouseId), BigInt(origin.locationId), actualLocationId,
+  );
   // 유일 인덱스 11칸 중 나머지 넷으로 좁힌다 — 같은 위치에 품질·소유가 다른 행이 설 수 있다.
   const from = rows.find(
     (row) =>
@@ -271,7 +284,7 @@ async function assertBalance(
       { scope: 'screen', code: ERROR_CODE.NEGATIVE_BALANCE, message },
     ]);
   if (from === undefined) throw short('이 위치에 그 LOT 의 재고가 없습니다.');
-  if ((from.available_qty ?? new Prisma.Decimal(0)).lessThan(qty)) {
+  if ((from.available_qty ?? new Prisma.Decimal(0)).lessThan(task.task_qty)) {
     throw short('보유 수량보다 많이 옮길 수 없습니다.');
   }
 }

@@ -371,7 +371,7 @@ describe('lockBalancesByItemLot', () => {
       sql.split('FROM inventory.inventory_balance')[0].replace(/\s+/g, ' ').trim();
     expect(projection(statements[0].sql)).toBe(projection(statements[1].sql));
     // 잠근 행을 그대로 `reserve()`·`pick()` 에 넘기므로 하한 판정 칸이 실려 있어야 한다.
-    expect(projection(statements[0].sql)).toContain('owner_partner_id, available_qty');
+    expect(projection(statements[0].sql)).toContain('owner_partner_id, on_hand_qty, available_qty');
   });
 
   it('없으면 빈 배열이다 (행을 만들지 않는다)', async () => {

@@ -31,6 +31,7 @@ const balanceRow = (over: Row = {}): Row => ({
   inventory_status_code: 'AVAILABLE',
   ownership_type_code: 'OWNED',
   owner_partner_id: null,
+  on_hand_qty: new Prisma.Decimal(100),
   available_qty: new Prisma.Decimal(100),
   ...over,
 });
@@ -276,6 +277,16 @@ describe('라인 피킹 :pick', () => {
     }
     // ⛔ 조회조차 하지 않는다 — 저장하지 않는 값이다(§6-7).
     expect(picks).toEqual([]);
+  });
+
+  it('재고 이동이 남긴 보유 0 IN_TRANSIT 행은 빼고 AVAILABLE 행에서 피킹한다(#233)', async () => {
+    const empty = { inventory_status_code: 'IN_TRANSIT', on_hand_qty: new Prisma.Decimal(0), available_qty: new Prisma.Decimal(0) };
+    const { service, picks } = fake({ balances: [balanceRow(empty), balanceRow()] });
+
+    await service.pick(ORDER, LINE, body(), context);
+
+    expect(picks).toHaveLength(1);
+    expect(picks[0][0].dimension.inventoryStatusCode).toBe('AVAILABLE');
   });
 
   it('잔액 차원이 2행이면 400 INVALID', async () => {

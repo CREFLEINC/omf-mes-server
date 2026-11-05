@@ -68,6 +68,7 @@ describeRelay('ERP 품목 받기 (e2e · 중계 DB)', () => {
       ITEM_ACCT_CD: '30',
       ITEM_ACCT_NM: 'Raw Material',
       ITEM_GROUP_CD: 'ZZ400',
+      ITEM_GROUP_NM: 'Resin',
       BASIC_UNIT: 'GR',
       MES_APPLY_FLAG: 'N',
       INSRT_USER_ID: 'ERP',
@@ -105,6 +106,7 @@ describeRelay('ERP 품목 받기 (e2e · 중계 DB)', () => {
       item_type_code: 'RAW_MATERIAL',
       erp_spec: 'PC, ER1006FH, 5VA, WHITE',
       erp_item_group_code: 'ZZ400',
+      erp_item_group_name: 'Resin',
       inspection_required: true,
     });
     expect(items[0].uom.uom_code).toBe('GR');

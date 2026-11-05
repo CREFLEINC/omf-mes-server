@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
+import { CONFIRMED_PLAN_QTY_SQL } from '../production-plan/plan-quantity';
 
 /**
  * 「작업지시 목록」(W-02-01) 칩의 판정 — 조회 때 W/O 상태로 계산한다(장부 P-142).
@@ -11,11 +12,10 @@ export const WORKLIST_STATES = ['BEFORE_PLAN', 'ACTION_REQUIRED', 'RELEASE_PENDI
 export type WorklistState = (typeof WORKLIST_STATES)[number];
 
 /**
- * 자동 계획 DONE — 확정 계획 수량 합이 오더 수량 이상. 오더 별칭 `o`. 목록 필터 `autoPlanStatus` 도 이 식을 쓴다.
- * ⛔ TS 판정 `autoPlanView` 와 같이 고친다 — 갈리면 `autoPlanStatus` 필터와 응답 `autoPlan.status` 가 다르다.
+ * 자동 계획 DONE — 확정 계획량(W/O 가 취소되지 않은 확정 계획 수량 합)이 오더 수량 이상. 오더 별칭 `o`. 목록 필터 `autoPlanStatus` 도 이 식을 쓴다.
+ * ⛔ TS 판정 `autoPlanView` 와 같이 고친다 — 갈리면 `autoPlanStatus` 필터와 응답 `autoPlan.status` 가 다르다. 수량 정의는 `plan-quantity.ts` 한 곳이다.
  */
-export const AUTO_PLAN_DONE_SQL = Prisma.sql`COALESCE((SELECT sum(p.planned_qty) FROM planning.production_plan p
-   WHERE p.production_order_id = o.production_order_id AND p.status_code = 'CONFIRMED'), 0) >= o.order_qty`;
+export const AUTO_PLAN_DONE_SQL = Prisma.sql`${CONFIRMED_PLAN_QTY_SQL} >= o.order_qty`;
 
 /** 자동 계획 상태가 없는(`autoPlan` null) 미완료 오더 — 시도도 계획도 없다. 취소는 따로 본다. */
 export const AUTO_PLAN_UNTOUCHED_SQL = Prisma.sql`(o.auto_plan_attempted_at IS NULL
@@ -42,7 +42,7 @@ const BLOCKED = Prisma.sql`(${LINE_MISSING} OR ${LOCATION_MISSING} OR ${LINE_PLA
 
 /**
  * 오더 별칭 `o` 의 판정 식. 목록 필터(`WHERE … = 값`)와 응답 칸이 같은 식을 쓴다 — 두 벌이면 칩 건수와 행 표시가 갈린다.
- * ⚠ DONE 인데 살아 있는 W/O 가 없으면(전개 전·전부 취소) 조치 필요다 — W/O 를 전개해야 배포할 수 있다.
+ * ⚠ DONE 인데 살아 있는 W/O 가 없으면(W/O 를 전개하지 않은 확정 계획) 조치 필요다 — W/O 를 전개해야 배포할 수 있다.
  */
 export function worklistStateSql(): Prisma.Sql {
   return Prisma.sql`CASE

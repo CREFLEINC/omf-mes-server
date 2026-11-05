@@ -6,6 +6,7 @@ import { toDateString } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { localDate } from '../production-plan/plan-window';
 import { PlanConfirmService } from '../production-plan/plan-confirm.service';
+import { isPlanCancelled, sumPlanQty } from '../production-plan/plan-quantity';
 import { ProductionPlanService } from '../production-plan/production-plan.service';
 import { DefaultMap, OperationNeed, pairKey, readDefaultMapsOf } from '../production-plan/resource-assign';
 import { usableWhere as usableRoutingWhere } from '../routing/routing.service';
@@ -179,9 +180,8 @@ export class AutoPlanService {
   ): Promise<Pick<AutoPlanResult, 'outcome' | 'productionPlanId'>> {
     if (facts.plans.length === 0) return this.planFresh(order, facts, appUserId);
 
-    const confirmed = facts.plans.filter((plan) => plan.confirmed);
-    const confirmedQty = confirmed.reduce((sum, plan) => sum.plus(plan.planned_qty), new Prisma.Decimal(0));
-    if (confirmedQty.gte(order.order_qty)) {
+    const confirmed = facts.plans.filter((plan) => plan.confirmed && !plan.cancelled);
+    if (sumPlanQty(facts.plans).confirmedQty.gte(order.order_qty)) {
       return { outcome: 'CONFIRMED', productionPlanId: Number(confirmed[confirmed.length - 1].production_plan_id) };
     }
     const draft = facts.plans.find((plan) => !plan.confirmed);
@@ -229,6 +229,7 @@ export class AutoPlanService {
       select: {
         production_plan_id: true, production_order_id: true, status_code: true, planned_qty: true,
         routing_id: true, planned_line_id: true, version_no: true,
+        work_order: { select: { status_code: true } },
       },
     });
     const plansOf = groupBy(planRows, (plan) => plan.production_order_id);
@@ -304,6 +305,7 @@ export class AutoPlanService {
       const plans = (plansOf.get(id) ?? []).map((plan) => ({
         ...plan,
         confirmed: plan.status_code === CONFIRMED,
+        cancelled: isPlanCancelled(plan.work_order.map((workOrder) => workOrder.status_code)),
         plannedQty: plan.planned_qty,
         lineKnown: plan.status_code === CONFIRMED || lineKnown(order, plan.planned_line_id, plan.routing_id),
       }));
