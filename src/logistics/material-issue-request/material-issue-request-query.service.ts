@@ -106,7 +106,6 @@ export class MaterialIssueRequestQueryService {
       // ⛔ 4값 대조를 걸지 않는다 — 필터에 값 목록을 걸면 값이 늘 때 조회가 400 을 낸다(§8-2).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...requiredAtWhere(query.requiredAtFrom, query.requiredAtTo),
-
       ...(sourceWarehouseId === undefined ? {} : { source_warehouse_id: sourceWarehouseId }),
       ...dateRange('issue_work_date', query.issueWorkDateFrom, query.issueWorkDateTo),
       ...(Object.keys(workOrder).length === 0 ? {} : { work_order: workOrder }),
