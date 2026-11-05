@@ -60,8 +60,10 @@ export class MaterialIssueRequestEditController {
 
   @Get(':materialIssueRequestId/history')
   @Contract('GET /logistics/material-issue-requests/{materialIssueRequestId}/history')
-  history(@Param('materialIssueRequestId', ParseIntPipe) id: number): Promise<{ items: HistoryItem[] }> {
-    return this.edits.history(id);
+  history(@Req() request: Request, @Param('materialIssueRequestId', ParseIntPipe) id: number): Promise<{ items: HistoryItem[] }> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    return this.edits.history(id, session.permissions);
   }
 }
 

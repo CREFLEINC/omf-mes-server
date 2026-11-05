@@ -9,6 +9,7 @@ import addFormats from 'ajv-formats';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
@@ -71,7 +72,7 @@ describe('창고 보충 직접 요청 (e2e)', () => {
     await app.close();
   });
 
-  const request = (id: number) => prisma.material_issue_request.findUniqueOrThrow({ where: { material_issue_request_id: id }, include: { material_issue_request_line: { orderBy: { line_no: 'asc' } } } });
+  const reload = (id: number) => prisma.material_issue_request.findUniqueOrThrow({ where: { material_issue_request_id: id }, include: { material_issue_request_line: { orderBy: { line_no: 'asc' } } } });
 
   it('US1-1 FR-037 W-02-12 만으로 직접 요청 — W/O 없는 보충 요청이 바로 배포되고 피킹 지시·인계 알림이 생긴다', async () => {
     const res = await fx.create({ productionWarehouseId: w.PROD.warehouseId, lines: [{ item: 'X', qty: 100, source: w.MAT.warehouseId }], remarks: '라인 증설' }).expect(201);
@@ -108,7 +109,7 @@ describe('창고 보충 직접 요청 (e2e)', () => {
     expect(issued.body.goodsIssue).toMatchObject({ statusCode: 'POSTED', destinationTypeCode: 'LOCATION', destinationId: Number(staging) });
     const balance = await prisma.inventory_balance.aggregate({ where: { warehouse_id: w.PROD.warehouseId, item_id: fx.items.X }, _sum: { available_qty: true } });
     expect(balance._sum.available_qty?.toNumber()).toBe(100);
-    const after = await request(Number(row.material_issue_request_id));
+    const after = await reload(Number(row.material_issue_request_id));
     expect(after.status_code).toBe('POSTED');
     expect(after.material_issue_request_line[0].issued_qty.toNumber()).toBe(100);
     const listed = await fx.list({ requestTypeCode: 'REPLENISHMENT', destinationWarehouseId: Number(w.PROD.warehouseId), itemId: Number(fx.items.X) });
@@ -133,7 +134,7 @@ describe('창고 보충 직접 요청 (e2e)', () => {
     const other = await fx.create({ productionWarehouseId: flat, lines: [{ item: 'W', qty: 60, source: w.MAT.warehouseId }] }).expect(201);
     expect(other.body.requests[0].destinationLocationId).toBe(Number(await fx.systemLocation(flat, 'WAREHOUSE_WHOLE')));
     const res = await fx.create({ productionWarehouseId: w.PROD.warehouseId, lines: [{ item: 'W', qty: 100, source: w.MAT.warehouseId }] }).expect(201);
-    const row = await request(res.body.requests[0].materialIssueRequestId);
+    const row = await reload(res.body.requests[0].materialIssueRequestId);
     expect(row.material_issue_request_line.map((l) => [l.requested_qty.toNumber(), l.shortage_qty.toNumber()])).toEqual([[40, 60]]);
     expect(row.destination_location_id).toBe(await fx.systemLocation(w.PROD.warehouseId, 'PUTAWAY_STAGING'));
   });
@@ -178,5 +179,21 @@ describe('창고 보충 직접 요청 (e2e)', () => {
 
   it('W-02-12 가 없으면 403', async () => {
     await fx.create({ productionWarehouseId: w.PROD.warehouseId, lines: [{ item: 'V', qty: 1, source: w.MAT.warehouseId }] }, fx.cookie).expect(403);
+  });
+  it('US1-6 US1-7 출고 예정 조회 includeUnplanned — 예정이 없는 자재 창고도 가용 행(남은 수량), 좁히지 않으면 400', async () => {
+    const fresh = await fx.warehouse(fx.ids.p1, 'MAT3');
+    await fx.stock(fresh, 'V', 70);
+    const planned = (query: object) =>
+      request(app.getHttpServer()).get('/api/logistics/material-issue-requests/planned-stock').query({ plantId: Number(fx.ids.p1), ...query }).set('Cookie', fx.replenishmentCookie);
+    expect((await planned({ sourceWarehouseId: Number(fresh.warehouseId) }).expect(200)).body.items).toEqual([]);
+    const res = await planned({ sourceWarehouseId: Number(fresh.warehouseId), includeUnplanned: true }).expect(200);
+    expect(res.body.items).toEqual([
+      expect.objectContaining({ sourceWarehouseId: Number(fresh.warehouseId), itemId: Number(fx.items.V), availableQty: 70, plannedQty: 0, freeQty: 70, shortageQty: 0, requests: [] }),
+    ]);
+    // 품목으로만 좁혀도 된다 — 예정이 있는 쌍(MAT)과 없는 쌍(MAT3)이 함께 나온다.
+    const byItem = await planned({ itemId: Number(fx.items.V), includeUnplanned: true }).expect(200);
+    expect(byItem.body.items.map((i: { sourceWarehouseId: number }) => i.sourceWarehouseId)).toEqual(expect.arrayContaining([Number(w.MAT.warehouseId), Number(fresh.warehouseId)]));
+    const bad = await planned({ includeUnplanned: true }).expect(400);
+    expect(bad.body.errors).toContainEqual(expect.objectContaining({ code: 'REQUIRED' }));
   });
 });

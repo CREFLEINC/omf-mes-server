@@ -109,10 +109,7 @@ export class MaterialIssueRequestEditService {
 
   async cancel(id: number, body: MaterialIssueRequestCancel, appUserId: number, permissions: readonly string[]): Promise<MaterialIssueRequestDetail> {
     const head = await this.head(id);
-    // 경로 권한은 W-02-11·W-02-12 어느 하나다 — 요청 유형이 어느 화면 몫인지 가른다(피처 004 contracts §1).
-    if (!permissions.includes(head.requestTypeCode === REPLENISHMENT ? 'W-02-12' : 'W-02-11')) {
-      throw new ContractException(HttpStatus.FORBIDDEN, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 기능을 쓸 권한이 없습니다.' }]);
-    }
+    assertScreenOf(head.requestTypeCode, permissions);
     await this.prisma.$transaction(async (tx) => {
       const request = await this.lock(tx, id, body.versionNo);
       if ((await requestProgress(tx, request.material_issue_request_id)).started) {
@@ -170,9 +167,10 @@ export class MaterialIssueRequestEditService {
     return (await this.queries.get(id)).materialIssueRequest;
   }
 
-  async history(id: number): Promise<{ items: HistoryItem[] }> {
-    const exists = await this.prisma.material_issue_request.count({ where: { material_issue_request_id: id } });
-    if (exists === 0) throw new NotFoundException('없는 출고 요청입니다.');
+  async history(id: number, permissions: readonly string[]): Promise<{ items: HistoryItem[] }> {
+    const request = await this.prisma.material_issue_request.findUnique({ where: { material_issue_request_id: id }, select: { request_type_code: true } });
+    if (request === null) throw new NotFoundException('없는 출고 요청입니다.');
+    assertScreenOf(request.request_type_code, permissions);
     const rows = await this.prisma.audit_event.findMany({
       where: { target_type_code: REQUEST_AUDIT_TARGET, target_id: BigInt(id) },
       orderBy: [{ occurred_at: 'desc' }, { audit_event_id: 'desc' }],
@@ -426,6 +424,13 @@ export class MaterialIssueRequestEditService {
       where: { material_issue_request_id: request.material_issue_request_id },
       data: { ...data, updated_at: new Date(), updated_by: appUserId, version_no: { increment: 1 } },
     });
+  }
+}
+
+/** 경로 권한은 W-02-11·W-02-12 어느 하나다 — 요청 유형이 어느 화면 몫인지 가른다(피처 004 contracts §1, 취소·이력). */
+function assertScreenOf(requestTypeCode: string, permissions: readonly string[]): void {
+  if (!permissions.includes(requestTypeCode === REPLENISHMENT ? 'W-02-12' : 'W-02-11')) {
+    throw new ContractException(HttpStatus.FORBIDDEN, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 기능을 쓸 권한이 없습니다.' }]);
   }
 }
 

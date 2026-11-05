@@ -35,7 +35,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/material-issue-requests/{materialIssueRequestId}': ['W-02-11'],
   // 창고 보충 요청(W-02-12 · 피처 004)도 같은 경로로 취소한다 — 어느 화면 몫인지는 서비스가 요청 유형으로 가른다.
   'POST /logistics/material-issue-requests/{materialIssueRequestId}:cancel': ['W-02-11', 'W-02-12'],
-  'GET /logistics/material-issue-requests/{materialIssueRequestId}/history': ['W-02-11'],
+  // 이력도 취소처럼 W-02-12(창고 보충 요청 상세의 이력·닫은 사람 — FR-037)가 함께 들어오고 서비스가 유형으로 가른다.
+  'GET /logistics/material-issue-requests/{materialIssueRequestId}/history': ['W-02-11', 'W-02-12'],
   // 생산 창고 예정·부족 — 부족 탭(W-02-11)과 보충 요청(W-02-10)이 같은 값을 본다. 생산 창고 보충(W-02-12 · 피처 004)의
   // 「생산 창고 쓸 수 있는 양」·「자재 창고 남은 수량」도 이 값이다(FR-037).
   'GET /logistics/material-issue-requests/planned-stock': ['W-02-10', 'W-02-11', 'W-02-12'],

@@ -4808,7 +4808,7 @@
        ],
        "default": "WORK_ORDER"
       },
-      "description": "요청 유형. 주지 않으면 WORK_ORDER — W-02-11 은 지금과 같은 목록이고 창고 보충 요청은 W-02-12 에서 REPLENISHMENT 로 본다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+      "description": "요청 유형. 주지 않으면 WORK_ORDER — W-02-11 은 지금과 같은 목록이고 창고 보충 요청은 W-02-12 에서 REPLENISHMENT 로 본다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 단 replenishmentStatus 만 주면 REPLENISHMENT 로 본다."
      },
      {
       "name": "replenishmentOriginCode",
@@ -4859,7 +4859,7 @@
       },
       "style": "form",
       "explode": false,
-      "description": "창고 보충 요청 상태로 거른다(여럿은 쉼표) — 보충 요청에만 걸린다. 서버에서 걸러 쪽 나눔이 맞다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+      "description": "창고 보충 요청 상태로 거른다(여럿은 쉼표) — 보충 요청에만 걸린다. 서버에서 걸러 쪽 나눔이 맞다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 requestTypeCode 를 비우고 이 조건을 주면 서버는 REPLENISHMENT 로 본다."
      }
     ],
     "responses": {
@@ -5053,6 +5053,27 @@
        "default": false
       },
       "description": "부족 행만 + 미배정 자재 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "includeUnplanned",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "참이면 예정 줄이 없어도 가용 잔액이 있는 (창고, 품목) 쌍을 행으로 싣는다(plannedQty 0 · requests 빈 배열). sourceWarehouseId·itemId 중 하나 이상이 있어야 한다(없으면 400 REQUIRED). 이때 행이 없는 쌍은 가용 0·예정 0 이다. W-02-12 요청 보기가 쓴다. 근거: 피처 004 생산 창고 보충 G1 보완 · omf-all-around#230"
+     },
+     {
+      "name": "requestTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "WORK_ORDER",
+        "REPLENISHMENT"
+       ]
+      },
+      "description": "주면 그 유형의 요청만 requests[] 에 싣고 그런 요청이 없는 행은 뺀다. 예정·부족 계산은 모든 유형 그대로다. W-02-11 부족 탭은 WORK_ORDER 를 보낸다. 근거: 피처 004 생산 창고 보충 G1 보완 · omf-all-around#230"
      }
     ],
     "responses": {
@@ -5067,7 +5088,7 @@
       }
      },
      "400": {
-      "description": "검증 실패",
+      "description": "검증 실패 — includeUnplanned 를 sourceWarehouseId·itemId 없이 주면 REQUIRED",
       "content": {
        "application/json": {
         "schema": {
@@ -5077,7 +5098,7 @@
       }
      },
      "403": {
-      "description": "권한 없음. 근거: W-02-11 · W-02-10",
+      "description": "권한 없음. 근거: W-02-10 · W-02-11 · W-02-12(생산 창고 보충 — 피처 004 · omf-all-around#230)",
       "content": {
        "application/json": {
         "schema": {
@@ -5323,7 +5344,7 @@
      "logistics"
     ],
     "summary": "출고 요청 이력",
-    "description": "만듦·수정·취소·출고 작업일 변경·출발지·입고지 변경·배포·배포 실패·미룸·닫힘(W/O 취소·마감)·예정 가져감. 최근 것부터. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "description": "만듦·수정·취소·출고 작업일 변경·출발지·입고지 변경·배포·배포 실패·미룸·닫힘(W/O 취소·마감)·예정 가져감. 최근 것부터. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청 이력은 W-02-12, W/O 요청 이력은 W-02-11 로 읽는다(취소와 같은 유형 대칭 — 맞지 않으면 403). 근거: 피처 004 생산 창고 보충 G1 보완 · omf-all-around#230",
     "responses": {
      "200": {
       "description": "이력",
@@ -5336,7 +5357,7 @@
       }
      },
      "403": {
-      "description": "권한 없음. 근거: W-02-11",
+      "description": "권한 없음 — W/O 요청은 W-02-11, 창고 보충 요청은 W-02-12(피처 004 · omf-all-around#230)",
       "content": {
        "application/json": {
         "schema": {

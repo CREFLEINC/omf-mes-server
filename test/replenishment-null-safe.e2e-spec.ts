@@ -287,4 +287,28 @@ describe('창고 보충 요청 W/O null 대응 (e2e)', () => {
       .expect(200);
     expect(preview.body.removed).toEqual([{ warehouseId: Number(target.warehouseId), activeRequestCount: 1 }]);
   });
+  it('R2-1 출고 예정 조회 requestTypeCode — 그 유형 요청만 싣고 없는 행은 빼며, 부족 계산은 전 유형(W-02-11 부족 탭)', async () => {
+    // 생산 창고 X 100 에 W/O 예정 20 + 보충(출발 = 생산 창고) 예정 200 → 부족 120.
+    await replenishment({ source: production, destination: material, qty: 200 });
+    const planned = (query: object) =>
+      get(`${BASE}/planned-stock`, { plantId: Number(fx.ids.p1), sourceWarehouseId: Number(production.warehouseId), onlyShortage: true, ...query }).expect(200);
+    const all = await planned({});
+    expect(all.body.items[0].requests.map((r: { requestTypeCode: string }) => r.requestTypeCode).sort()).toEqual(['REPLENISHMENT', 'WORK_ORDER']);
+    const wo = await planned({ requestTypeCode: 'WORK_ORDER' });
+    expect(wo.body.items).toHaveLength(1);
+    expect(wo.body.items[0]).toMatchObject({ plannedQty: 220, shortageQty: all.body.items[0].shortageQty });
+    expect(wo.body.items[0].requests).toEqual([expect.objectContaining({ materialIssueRequestId: Number(workOrderRequestId), requestTypeCode: 'WORK_ORDER' })]);
+    // 자재 창고는 보충 요청만 잡고 있다 — W/O 로 거르면 행이 없다.
+    const onlyReplenishment = await get(`${BASE}/planned-stock`, { plantId: Number(fx.ids.p1), sourceWarehouseId: Number(material.warehouseId), requestTypeCode: 'WORK_ORDER' }).expect(200);
+    expect(onlyReplenishment.body.items).toEqual([]);
+  });
+
+  it('FR-037 이력 — W-02-12 만 가진 역할은 보충 요청 이력 200·W/O 요청 이력 403, W-02-11 만이면 보충 요청 이력 403', async () => {
+    const row = await replenishment();
+    const history = (id: bigint, cookie: string) => get(`${BASE}/${id}/history`, {}, cookie);
+    await history(row.material_issue_request_id, replenishmentCookie).expect(200);
+    await history(workOrderRequestId, replenishmentCookie).expect(403);
+    await history(row.material_issue_request_id, fx.cookie).expect(403);
+    await history(workOrderRequestId, fx.cookie).expect(200);
+  });
 });
