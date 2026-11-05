@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { toDateString } from '../../common/master';
-import { checkCalibration, checkDoubleBooked, checkMoldLife, utcToday } from '../../production/work-order/validation';
+import { checkCalibration, checkDoubleBooked, checkMoldLife, localToday } from '../../production/work-order/validation';
 import { defaultBomOf } from '../production-plan/master-choice';
 import { PlanWindow, dayStartOf, dayWindow, localDate, timeOfColumn } from '../production-plan/plan-window';
 import { PlanQuantities, isPlanCancelled, planQuantities, sumPlanQty } from '../production-plan/plan-quantity';
@@ -170,7 +170,7 @@ function workOrdersOf(
   const activeStarts = (facts.shifts.get(order.plant_id) ?? []).filter((shift) => shift.is_active).map((shift) => timeOfColumn(shift.start_time));
   const window = dayWindow(planDate, dayStartOf(activeStarts), order.plant.timezone_code);
   const dependencies = facts.dependencies.get(routingId) ?? [];
-  const today = utcToday(now);
+  const today = localToday(now, order.plant.timezone_code);
 
   return operations.map((operation) => {
     const resource = resources.get(operation.routing_operation_id);
