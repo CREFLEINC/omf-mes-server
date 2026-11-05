@@ -211,11 +211,12 @@ export class ShopfloorReceiptService {
       // 없는 출고면 라인 검증은 건너뛴다 — 대조 대상이 없다(R-9 표).
       assertIssueStatus(issue.status_code, errors);
       assertLinesAgainstIssue(input, issue.goods_issue_line, errors);
-      // 도착 위치는 출고가 실은 도착지여야 한다(피처 004 · research R-6). 도착지를 싣지 않은 출고(서버가 풀기 전 전표)는 대조할 값이 없다.
-      if (issue.destination_type_code === 'LOCATION' && issue.destination_id !== BigInt(input.destinationLocationId)) {
+      const replenishment = await this.isReplenishmentIssue(issue);
+      // 창고 보충 출고는 출고가 실은 도착지로만 받는다(피처 004 · research R-6). W/O 출고는 지금 동작 그대로 — 대조하지 않는다(SC-007).
+      if (replenishment && issue.destination_type_code === 'LOCATION' && issue.destination_id !== BigInt(input.destinationLocationId)) {
         errors.push(field('destinationLocationId', ERROR_CODE.INVALID, '출고의 도착 위치가 아닙니다.'));
       }
-      if (input.workOrderId == null && !(await this.isReplenishmentIssue(issue))) {
+      if (input.workOrderId == null && !replenishment) {
         errors.push(field('workOrderId', ERROR_CODE.INVALID, '창고 보충 출고가 아니면 W/O 를 보내야 합니다.'));
       }
     }

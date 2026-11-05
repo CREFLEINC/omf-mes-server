@@ -3,6 +3,7 @@
  * 요청은 직접 요청 경로로, 피킹은 표에 옮기고, 출고는 실제 경로로 전기한다.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
@@ -251,5 +252,48 @@ describe('창고 보충 출고 수령 (e2e)', () => {
     await request(app.getHttpServer()).get(ARRIVALS).query({ plantId: Number(fx.ids.p1) }).set('Cookie', fx.mobileCookie).expect(403);
     await bulk([shipped], fx.mobileCookie).expect(403);
     expect((await webReceive(shipped, undefined, fx.mobileCookie)).status).toBe(403);
+  });
+
+  it('FR-037 웹 개별 수령 본문에 다른 출고·W/O·도착 위치를 실으면 400 — 경로의 보충 출고로만 받는다', async () => {
+    const id = await create('Y', 4);
+    const shipped = await ship(id, 4);
+    const res = await request(app.getHttpServer())
+      .post(`${ARRIVALS}/${shipped}:receive`)
+      .set('Cookie', fx.replenishmentCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        businessDate: '2026-11-05', receivedAt: now(), occurredAt: now(), lines: await linesOf(shipped),
+        goodsIssueId: woIssue, workOrderId: 1, destinationLocationId: Number(w.PROD.locationId),
+      });
+    expect(res.status).toBe(400);
+    expect(await prisma.shopfloor_receipt.count({ where: { goods_issue_id: { in: [BigInt(shipped), BigInt(woIssue)] } } })).toBe(0);
+  });
+
+  it('US2-6 모바일 단말 세션(토큰·사번, 쿠키 없음)으로 W/O 없이 보충 출고 수령', async () => {
+    const terminal = await prisma.terminal.create({ data: { terminal_code: `${PREFIX}-T`, plant_id: fx.ids.p1, terminal_type_code: 'MOBILE', status_code: 'RUNNING' } });
+    await prisma.worker.create({ data: { worker_no: `${PREFIX}-WK`, worker_name: '수령', business_unit_id: fx.ids.unit, plant_id: fx.ids.p1, status_code: 'EMPLOYED' } });
+    const token = app.get(JwtService).sign({ sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId: Number(fx.ids.p1) });
+    const id = await create('Y', 3);
+    const shipped = await ship(id, 3);
+    const res = await request(app.getHttpServer())
+      .post('/api/logistics/shopfloor-receipts')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', `${PREFIX}-WK`)
+      .send({
+        goodsIssueId: shipped,
+        destinationLocationId: Number(await fx.systemLocation(w.PROD.warehouseId, 'PUTAWAY_STAGING')),
+        receivedAt: now(), businessDate: '2026-11-05', occurredAt: now(), lines: await linesOf(shipped),
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.shopfloorReceipt.workOrderId).toBeNull();
+  });
+
+  it('SC-007 W/O 출고는 도착 위치를 대조하지 않는다 — 지금 동작 그대로', async () => {
+    const wo = await prisma.goods_issue.findUniqueOrThrow({ where: { goods_issue_id: woIssue } });
+    const request_ = await prisma.picking_order.findUniqueOrThrow({ where: { picking_order_id: wo.source_document_id } });
+    const workOrderId = (await prisma.material_issue_request.findUniqueOrThrow({ where: { material_issue_request_id: request_.source_document_id } })).work_order_id;
+    const res = await mobileReceive(woIssue, { workOrderId: Number(workOrderId), destinationLocationId: Number(w.PROD.locationId) });
+    expect(res.status).toBe(201);
   });
 });

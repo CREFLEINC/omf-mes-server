@@ -12,7 +12,7 @@ import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { AllowedLocation, allowedKey, allowedLocationsOf } from './allowed-locations';
 import { PutawayOrigin, postPutaway } from './putaway-posting';
-import { PutawayTaskView, TASK_INCLUDE, taskView } from './putaway-task-view';
+import { PutawayTaskView, TASK_INCLUDE, originDocumentNos, taskView } from './putaway-task-view';
 
 type Tx = Prisma.TransactionClient;
 
@@ -132,7 +132,8 @@ export class PutawayCompleteService {
       targetId: task.putaway_task_id, eventTypeCode: mode === 'TEMPORARY' ? 'COMPLETE_TEMPORARY' : 'COMPLETE',
     });
     // ⛔ `setEtag` 를 부르지 않는다 — 계약이 두 200 에 응답 헤더를 선언하지 않았다.
-    return { ...taskView(row, allowed), movedQty: lineId === null ? 0 : qty.toNumber() };
+    const originNo = (await originDocumentNos(tx, [row])).get(row.putaway_task_id) ?? null;
+    return { ...taskView(row, allowed, originNo), movedQty: lineId === null ? 0 : qty.toNumber() };
   }
 }
 

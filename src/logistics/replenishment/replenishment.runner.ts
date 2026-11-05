@@ -287,8 +287,12 @@ function dateOf(day: string): Date {
   return new Date(`${day}T00:00:00.000Z`);
 }
 
+/** 실행 기록 UNIQUE(창고, 날짜) 위반만 — 다른 유일 위반(번호 등)은 실패로 남긴다. */
 function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
+  const target = (error.meta as { target?: unknown } | undefined)?.target;
+  const columns = Array.isArray(target) ? target.map(String) : typeof target === 'string' ? [target] : [];
+  return columns.includes('run_date') || columns.some((c) => c.includes('uq_replenishment_run_warehouse_date'));
 }
 
 function messageOf(error: unknown): string {

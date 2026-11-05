@@ -140,7 +140,16 @@ export class ReplenishmentArrivalService {
     }
     try {
       return await this.receipts.receive(
-        { goodsIssueId, workOrderId: null, destinationLocationId: Number(destinationLocationId), ...body },
+        // 본문에서는 날짜·줄만 받는다 — 출고·W/O·도착 위치는 경로와 서버가 정한다(본문 칸이 덮지 못하게).
+        {
+          goodsIssueId,
+          workOrderId: null,
+          destinationLocationId: Number(destinationLocationId),
+          businessDate: body.businessDate,
+          receivedAt: body.receivedAt,
+          occurredAt: body.occurredAt,
+          lines: body.lines,
+        },
         { appUserId },
         { alreadyReceivedAsError: true },
       );
