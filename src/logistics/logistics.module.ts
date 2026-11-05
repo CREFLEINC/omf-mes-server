@@ -61,6 +61,8 @@ import { MaterialIssueShortageService } from './material-issue-request/shortage.
 import { PickingController } from './picking/picking.controller';
 import { ReplenishmentItemController } from './replenishment/replenishment-item.controller';
 import { ReplenishmentItemService } from './replenishment/replenishment-item.service';
+import { ReplenishmentSettingController } from './replenishment/replenishment-setting.controller';
+import { ReplenishmentSettingService } from './replenishment/replenishment-setting.service';
 import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayCompleteService } from './putaway/putaway-complete.service';
@@ -133,6 +135,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   controllers: [
     GoodsIssueController,
     ReplenishmentItemController,
+    ReplenishmentSettingController,
     GoodsReceiptController,
     ReceiptDefaultsController,
     GoodsReceiptLineListController,
@@ -231,6 +234,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     FreeStockService,
     PlannedManualRequestCreator,
     ReplenishmentItemService,
+    ReplenishmentSettingService,
     MaterialIssueShortageService,
     MaterialIssueRequestService,
     RecycleEntryService,
