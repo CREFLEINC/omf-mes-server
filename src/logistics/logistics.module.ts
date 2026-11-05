@@ -59,6 +59,8 @@ import { MaterialIssueRequestQueryService } from './material-issue-request/mater
 import { MaterialIssueRequestService } from './material-issue-request/material-issue-request.service';
 import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
 import { PickingController } from './picking/picking.controller';
+import { ReplenishmentArrivalController } from './replenishment/replenishment-arrival.controller';
+import { ReplenishmentArrivalService } from './replenishment/replenishment-arrival.service';
 import { ReplenishmentItemController } from './replenishment/replenishment-item.controller';
 import { ReplenishmentItemService } from './replenishment/replenishment-item.service';
 import { ReplenishmentRequestController } from './replenishment/replenishment-request.controller';
@@ -137,6 +139,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   controllers: [
     GoodsIssueController,
     ReplenishmentItemController,
+    ReplenishmentArrivalController,
     ReplenishmentSettingController,
     ReplenishmentRequestController,
     GoodsReceiptController,
@@ -237,6 +240,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     FreeStockService,
     PlannedManualRequestCreator,
     ReplenishmentItemService,
+    ReplenishmentArrivalService,
     ReplenishmentSettingService,
     ReplenishmentRequestService,
     MaterialIssueShortageService,
