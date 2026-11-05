@@ -148,7 +148,11 @@ export class MaterialIssueRequestService {
       },
       appUserId,
     );
-    await this.pickingNotices.notify(tx, pickings, { workOrderId: header.work_order_id, requiredAt: header.required_at });
+    await this.pickingNotices.notify(tx, pickings, {
+      workOrderId: header.work_order_id,
+      issueRequest: { id: header.material_issue_request_id, no: header.issue_request_no },
+      requiredAt: header.required_at,
+    });
     return {
       materialIssueRequest: materialIssueRequestView(header),
       lines: lines.map((line) => materialIssueRequestLineView(line)),

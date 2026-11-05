@@ -37,12 +37,21 @@ export function taskView(row: TaskRow, allowedLocations: AllowedLocation[]): Put
     taskQty: Number(row.task_qty), uomId: Number(row.uom_id),
     fromLocationId: Number(row.from_location_id),
     allowedLocations, actualLocationId: id(row.actual_location_id),
-    warehouseId: Number(row.goods_receipt_line.goods_receipt.warehouse_id),
+    warehouseId: Number(taskWarehouseId(row)),
     priorityNo: row.priority_no, assignedWorkerId: id(row.assigned_worker_id),
     statusCode: row.status_code,
     completedAt: row.completed_at === null ? null : row.completed_at.toISOString(),
     remarks: row.remarks,
   };
+}
+
+/**
+ * 적치 창고 = 원천 입고의 창고. 칸은 NULL 을 허용하지만(피처 004 보충 수령 원천) 그 지시를 만드는 경로가
+ * 아직 없다 — 입고 줄 없는 지시를 만나면 조용히 틀린 창고를 내지 않고 멈춘다.
+ */
+export function taskWarehouseId(row: TaskRow): bigint {
+  if (row.goods_receipt_line === null) throw new Error(`입고 줄이 없는 적치 지시다: ${row.putaway_task_id}`);
+  return row.goods_receipt_line.goods_receipt.warehouse_id;
 }
 
 function id(value: bigint | null): number | null {

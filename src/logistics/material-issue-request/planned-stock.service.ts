@@ -43,7 +43,13 @@ export class PlannedStockService {
       }),
       this.prisma.material_issue_request.findMany({
         where: { material_issue_request_id: { in: [...new Set(lines.map((l) => l.requestId))] } },
-        select: { material_issue_request_id: true, issue_request_no: true, work_order_id: true, work_order: { select: { work_order_no: true } } },
+        select: {
+          material_issue_request_id: true,
+          issue_request_no: true,
+          request_type_code: true,
+          work_order_id: true,
+          work_order: { select: { work_order_no: true } },
+        },
       }),
       this.prisma.warehouse.findMany({ where: { warehouse_id: { in: [...new Set(lines.map((l) => l.warehouseId))] } }, select: { warehouse_id: true, warehouse_name: true } }),
       this.prisma.item.findMany({ where: { item_id: { in: [...new Set(lines.map((l) => l.itemId))] } }, select: { item_id: true, item_code: true, item_name: true } }),
@@ -88,8 +94,10 @@ export class PlannedStockService {
             return {
               materialIssueRequestId: Number(requestId),
               issueRequestNo: request?.issue_request_no ?? '',
-              workOrderId: Number(request?.work_order_id ?? 0),
-              workOrderNo: request?.work_order.work_order_no ?? '',
+              requestTypeCode: request?.request_type_code ?? 'WORK_ORDER',
+              // 창고 보충 요청(피처 004)은 W/O 가 없다 — null.
+              workOrderId: request?.work_order_id == null ? null : Number(request.work_order_id),
+              workOrderNo: request?.work_order?.work_order_no ?? null,
               issueWorkDate: r.issueWorkDate?.toISOString().slice(0, 10) ?? null,
               plannedQty: r.planned.toNumber(),
               shortageQty: r.shortage.toNumber(),

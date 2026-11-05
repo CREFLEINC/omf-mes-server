@@ -1102,7 +1102,7 @@ model inbound_variance {
 model material_issue_request {
   material_issue_request_id   BigInt                        @id @default(autoincrement())
   issue_request_no            String                        @unique @db.VarChar(100)
-  work_order_id               BigInt
+  work_order_id               BigInt?
   destination_location_id     BigInt
   required_at                 DateTime?                     @db.Timestamptz(6)
   status_code                 String                        @db.VarChar(50)
@@ -1131,7 +1131,7 @@ model material_issue_request {
   close_reason_detail_code    String?                       @db.VarChar(50)
   location                    location                      @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   app_user                    app_user?                     @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order                  work_order                    @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order                  work_order?                   @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   source_warehouse            warehouse?                    @relation(fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   replenishment_run           replenishment_run?            @relation(fields: [replenishment_run_id], references: [replenishment_run_id], onDelete: NoAction, onUpdate: NoAction)
   material_issue_request_line material_issue_request_line[]
@@ -1338,7 +1338,7 @@ model putaway_rule {
 model putaway_task {
   putaway_task_id                                         BigInt                      @id @default(autoincrement())
   putaway_task_no                                         String                      @unique @db.VarChar(100)
-  goods_receipt_line_id                                   BigInt
+  goods_receipt_line_id                                   BigInt?
   item_id                                                 BigInt
   lot_id                                                  BigInt
   task_qty                                                Decimal                     @db.Decimal(20, 6)
@@ -1364,7 +1364,7 @@ model putaway_task {
   putaway_rule                                            putaway_rule?               @relation(fields: [applied_putaway_rule_id], references: [putaway_rule_id], onDelete: NoAction, onUpdate: NoAction)
   worker                                                  worker?                     @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   location_putaway_task_from_location_idTolocation        location                    @relation("putaway_task_from_location_idTolocation", fields: [from_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  goods_receipt_line                                      goods_receipt_line          @relation(fields: [goods_receipt_line_id], references: [goods_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
+  goods_receipt_line                                      goods_receipt_line?         @relation(fields: [goods_receipt_line_id], references: [goods_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_transaction_line                              inventory_transaction_line? @relation(fields: [inventory_transaction_line_id], references: [inventory_transaction_line_id], onDelete: NoAction, onUpdate: NoAction)
   item                                                    item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   lot                                                     lot                         @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1622,7 +1622,7 @@ model shopfloor_receipt {
   shopfloor_receipt_id    BigInt                   @id @default(autoincrement())
   shopfloor_receipt_no    String                   @unique @db.VarChar(100)
   goods_issue_id          BigInt
-  work_order_id           BigInt
+  work_order_id           BigInt?
   destination_location_id BigInt
   received_at             DateTime                 @db.Timestamptz(6)
   received_by             BigInt?
@@ -1635,7 +1635,7 @@ model shopfloor_receipt {
   app_user                app_user?                @relation(fields: [received_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_shopfloor_receipt_received_by")
   location                location                 @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   goods_issue             goods_issue              @relation(fields: [goods_issue_id], references: [goods_issue_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order              work_order               @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order              work_order?              @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   shopfloor_receipt_line  shopfloor_receipt_line[]
 
   @@index([destination_location_id], map: "ix_shopfloor_receipt_destination_location")

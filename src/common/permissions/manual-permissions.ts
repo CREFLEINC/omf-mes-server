@@ -32,10 +32,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /app/operation-policies/{operationPolicyId}': ['W-CO-15'],
   // 출고 요청 현황(W-02-11 · 피처 003 · omf-all-around#66) — 이 화면이 요청을 고치고 취소하고 이력을 본다.
   'PUT /logistics/material-issue-requests/{materialIssueRequestId}': ['W-02-11'],
-  'POST /logistics/material-issue-requests/{materialIssueRequestId}:cancel': ['W-02-11'],
+  // 창고 보충 요청(W-02-12 · 피처 004)도 같은 경로로 취소한다 — 어느 화면 몫인지는 서비스가 요청 유형으로 가른다.
+  'POST /logistics/material-issue-requests/{materialIssueRequestId}:cancel': ['W-02-11', 'W-02-12'],
   'GET /logistics/material-issue-requests/{materialIssueRequestId}/history': ['W-02-11'],
-  // 생산 창고 예정·부족 — 부족 탭(W-02-11)과 보충 요청(W-02-10)이 같은 값을 본다.
-  'GET /logistics/material-issue-requests/planned-stock': ['W-02-10', 'W-02-11'],
+  // 생산 창고 예정·부족 — 부족 탭(W-02-11)과 보충 요청(W-02-10)이 같은 값을 본다. 생산 창고 보충(W-02-12 · 피처 004)의
+  // 「생산 창고 쓸 수 있는 양」·「자재 창고 남은 수량」도 이 값이다(FR-037).
+  'GET /logistics/material-issue-requests/planned-stock': ['W-02-10', 'W-02-11', 'W-02-12'],
   // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
   'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
   'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],

@@ -143,7 +143,11 @@ export async function assertTerminalLogisticsScope(
     case 'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': await inboundLine(p.inboundReceiptLineId); break;
     case 'GET /logistics/inbound-receipts/{inboundReceiptId}/lines': await inbound(p.inboundReceiptId); break;
     case 'GET /logistics/material-issue-requests/{materialIssueRequestId}':
-      await check(await prisma.material_issue_request.findFirst({ where: { material_issue_request_id: id(p.materialIssueRequestId), work_order: { production_line: { plant_id: plant } } }, select: { material_issue_request_id: true } })); break;
+      // 창고 보충 요청(피처 004)은 W/O 가 없다 — 출발 창고의 공장으로 본다.
+      await check(await prisma.material_issue_request.findFirst({ where: { material_issue_request_id: id(p.materialIssueRequestId), OR: [
+        { work_order: { production_line: { plant_id: plant } } },
+        { work_order_id: null, source_warehouse: { plant_id: plant } },
+      ] }, select: { material_issue_request_id: true } })); break;
     case 'GET /logistics/picking-orders/{pickingOrderId}': await pickOrder(p.pickingOrderId); break;
     case 'GET /logistics/purchase-orders/{purchaseOrderId}':
       await check(await prisma.purchase_order.findFirst({ where: { purchase_order_id: id(p.purchaseOrderId), plant_id: plant }, select: { purchase_order_id: true } })); break;
@@ -167,7 +171,11 @@ export async function assertTerminalLogisticsScope(
         handling_unit_id: id(p.handlingUnitId), shipping_unit_id: id(p.shippingUnitId),
       }, select: { handling_unit_id: true } })); break;
     case 'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}':
-      await check(await prisma.shopfloor_receipt.findFirst({ where: { shopfloor_receipt_id: id(p.shopfloorReceiptId), work_order: { production_line: { plant_id: plant } } }, select: { shopfloor_receipt_id: true } })); break;
+      // 창고 보충 출고 수령(피처 004)은 W/O 가 없다 — 도착 위치 창고의 공장으로 본다.
+      await check(await prisma.shopfloor_receipt.findFirst({ where: { shopfloor_receipt_id: id(p.shopfloorReceiptId), OR: [
+        { work_order: { production_line: { plant_id: plant } } },
+        { work_order_id: null, location: { warehouse: { plant_id: plant } } },
+      ] }, select: { shopfloor_receipt_id: true } })); break;
     case 'GET /logistics/stock-transfers/{stockTransferId}/lines': await transfer(p.stockTransferId); break;
     case 'POST /logistics/goods-issues':
       if (b.sourceDocumentTypeCode !== 'PICKING_ORDER') throw denied();

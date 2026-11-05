@@ -78,7 +78,8 @@ export class MaterialIssueReleaser {
       {
         ...allocation,
         orderNos: allocation.orders.length === 0 ? [] : [pickingOrderNo],
-        assignedWorkerId: request.work_order.responsible_worker_id,
+        // 창고 보충 요청은 W/O 책임 작업자가 없다 — 담당 없이 낸다.
+        assignedWorkerId: request.work_order?.responsible_worker_id ?? null,
       },
       {
         materialIssueRequestId: requestId,
@@ -89,6 +90,7 @@ export class MaterialIssueReleaser {
     );
     await this.pickingNotices.notify(tx, pickings, {
       workOrderId: request.work_order_id,
+      issueRequest: { id: requestId, no: request.issue_request_no },
       requiredAt: null,
       ...(options.zaloNotBefore === undefined ? {} : { zaloNotBefore: options.zaloNotBefore }),
     });

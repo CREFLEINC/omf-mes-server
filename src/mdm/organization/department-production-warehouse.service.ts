@@ -100,6 +100,20 @@ export class DepartmentProductionWarehouseService {
       _count: { _all: true },
     });
     const byWarehouse = new Map(counts.map((row) => [String(row.source_warehouse_id), row._count._all]));
+    // 그 창고로 «들어오는» 창고 보충 요청(피처 004)도 센다 — 창고를 떼어도 요청은 그대로 진행된다(해제는 막지 않는다).
+    const incoming = await this.prisma.material_issue_request.findMany({
+      where: {
+        request_type_code: 'REPLENISHMENT',
+        status_code: { in: ACTIVE_REQUEST_STATUSES },
+        closed_at: null,
+        location: { warehouse_id: { in: warehouseIds } },
+      },
+      select: { location: { select: { warehouse_id: true } } },
+    });
+    for (const row of incoming) {
+      const key = String(row.location.warehouse_id);
+      byWarehouse.set(key, (byWarehouse.get(key) ?? 0) + 1);
+    }
     return warehouseIds
       .map((id) => ({ warehouseId: Number(id), activeRequestCount: byWarehouse.get(String(id)) ?? 0 }))
       .sort((a, b) => a.warehouseId - b.warehouseId);

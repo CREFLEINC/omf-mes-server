@@ -62,7 +62,7 @@ describe('출고 요청 현황 조회 (e2e)', () => {
     const { a, lineId } = await line([['X', 100]]);
     const monday = fx.nextWeekday('P1', 1);
     const { row } = await made(lineId, 'X20', monday);
-    const wo = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: row.work_order_id } });
+    const wo = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: row.work_order_id as bigint } });
 
     const found = await list({ productionDateFrom: monday, productionDateTo: monday, productionPlanId: Number(wo.production_plan_id) });
     expect(idsOf(found.body)).toContain(Number(row.material_issue_request_id));

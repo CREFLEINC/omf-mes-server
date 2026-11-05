@@ -15,12 +15,19 @@ export class PickingHandoverNotifier {
   async notify(
     tx: Prisma.TransactionClient,
     pickings: readonly WrittenPicking[],
-    source: { workOrderId: bigint; requiredAt: Date | null; zaloNotBefore?: Date },
+    source: { workOrderId: bigint | null; issueRequest?: { id: bigint; no: string }; requiredAt: Date | null; zaloNotBefore?: Date },
   ): Promise<void> {
-    await this.emitter.guarded(tx, `MATERIAL_PICKING_REQUESTED ${source.workOrderId}`, async () => {
+    // 창고 보충 요청(피처 004)은 W/O 가 없다 — 요청 축으로 한 번 알리고 W/O 자리에 요청 번호를 싣는다(research R-4).
+    // 알림 유형은 그대로라 Zalo 템플릿 `wo_no` 칸에 요청 번호가 들어간다.
+    const workOrderId = source.workOrderId;
+    const guardKey =
+      workOrderId !== null ? `MATERIAL_PICKING_REQUESTED ${workOrderId}` : `MATERIAL_PICKING_REQUESTED REQUEST ${source.issueRequest?.id}`;
+    await this.emitter.guarded(tx, guardKey, async () => {
       if (pickings.length === 0) return;
       const [workOrder, warehouses, orders] = await Promise.all([
-        tx.work_order.findUnique({ where: { work_order_id: source.workOrderId }, select: { work_order_no: true } }),
+        workOrderId === null
+          ? Promise.resolve({ work_order_no: source.issueRequest?.no })
+          : tx.work_order.findUnique({ where: { work_order_id: workOrderId }, select: { work_order_no: true } }),
         tx.warehouse.findMany({
           where: { warehouse_id: { in: pickings.map((p) => p.warehouseId) } },
           select: { warehouse_id: true, warehouse_name: true, plant_id: true },
