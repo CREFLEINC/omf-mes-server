@@ -13,6 +13,7 @@ import {
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REVISION_STATUS } from '../revision-status';
+import { recordRoutingAudit, recordRoutingChange } from './routing-audit';
 
 /**
  * `planning.routing` 을 FK 로 가리키는 자리 전부. 실측(`pg_constraint`)이고 e2e 가 대조한다.
@@ -39,6 +40,7 @@ interface RoutingView {
   effectiveFrom?: string;
   effectiveTo: string | null;
   isDefault: boolean;
+  confirmedAt: string | null;
 }
 
 export interface RoutingCreate {
@@ -100,7 +102,7 @@ export class RoutingService {
    * 「품목에 아직 Routing 이 하나도 없을 때만 쓴다 — routingVersion 을 항상 1로,
    * statusCode 를 항상 작성중으로 채운다」(계약). 두 번째 이후 Rev 는 `:new-revision` 이다.
    */
-  async create(input: RoutingCreate): Promise<RoutingView> {
+  async create(input: RoutingCreate, actorId?: number | null): Promise<RoutingView> {
     assertNotBlank([['routingCode', input.routingCode]]);
     assertDates(input.effectiveFrom, input.effectiveTo);
     await this.assertItem(input.itemId);
@@ -122,34 +124,62 @@ export class RoutingService {
     }
 
     return view(
-      await this.prisma.routing.create({
-        data: {
-          item_id: input.itemId,
-          routing_code: input.routingCode,
-          routing_version: 1,
-          status_code: REVISION_STATUS.DRAFT,
-          ...optionalDate('effective_from', input.effectiveFrom),
-          ...optionalDate('effective_to', input.effectiveTo),
-        },
+      await this.prisma.$transaction(async (tx) => {
+        const created = await tx.routing.create({
+          data: {
+            item_id: input.itemId,
+            routing_code: input.routingCode,
+            routing_version: 1,
+            status_code: REVISION_STATUS.DRAFT,
+            ...optionalDate('effective_from', input.effectiveFrom),
+            ...optionalDate('effective_to', input.effectiveTo),
+          },
+        });
+        await recordRoutingAudit(tx, {
+          routingId: created.routing_id,
+          eventTypeCode: 'CREATE',
+          actorId,
+          after: {
+            routingCode: created.routing_code,
+            routingVersion: created.routing_version,
+            statusCode: created.status_code,
+          },
+        });
+        return created;
       }),
     );
   }
 
   /** 「상태=작성중일 때만 허용한다 — 확정 Rev 는 in-place 수정을 금지한다」(결정 07). */
-  async update(routingId: number, version: number, input: RoutingUpdate): Promise<RoutingResult> {
+  async update(
+    routingId: number,
+    version: number,
+    input: RoutingUpdate,
+    actorId?: number | null,
+  ): Promise<RoutingResult> {
     assertNotBlank([['routingCode', input.routingCode]]);
     assertDates(input.effectiveFrom, input.effectiveTo);
     await this.assertDraft(routingId, '수정');
 
-    const updated = await this.prisma.routing.updateMany({
-      // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
-      where: { routing_id: routingId, version_no: version },
-      data: {
-        routing_code: input.routingCode,
-        ...optionalDate('effective_from', input.effectiveFrom),
-        ...optionalDate('effective_to', input.effectiveTo),
-        version_no: { increment: 1 },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.routing.findUnique({ where: { routing_id: routingId } });
+      const result = await tx.routing.updateMany({
+        // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
+        where: { routing_id: routingId, version_no: version },
+        data: {
+          routing_code: input.routingCode,
+          ...optionalDate('effective_from', input.effectiveFrom),
+          ...optionalDate('effective_to', input.effectiveTo),
+          version_no: { increment: 1 },
+        },
+      });
+      if (result.count > 0 && before) {
+        const after = await tx.routing.findUnique({ where: { routing_id: routingId } });
+        if (after) {
+          await recordRoutingChange(tx, routingId, actorId, headerFields(before), headerFields(after));
+        }
+      }
+      return result;
     });
     await this.assertExists(routingId, updated.count);
     return this.get(routingId);
@@ -161,14 +191,18 @@ export class RoutingService {
    * ⛔ 한 트랜잭션에서 같은 품목의 기존 기본을 내리고 이것을 올린다. 순서를 뒤집으면
    * `uq_routing_default(item_id) WHERE is_default` 가 중간 상태에서 깨진다.
    */
-  async setDefault(routingId: number): Promise<RoutingResult> {
+  async setDefault(routingId: number, actorId?: number | null): Promise<RoutingResult> {
     const row = await this.prisma.routing.findUnique({
       where: { routing_id: routingId },
-      select: { item_id: true },
+      select: { item_id: true, is_default: true },
     });
     if (!row) throw new NotFoundException('없는 Routing 입니다.');
 
     await this.prisma.$transaction(async (tx) => {
+      const previous = await tx.routing.findMany({
+        where: { item_id: row.item_id, is_default: true, routing_id: { not: routingId } },
+        select: { routing_id: true },
+      });
       await tx.routing.updateMany({
         where: { item_id: row.item_id, is_default: true, routing_id: { not: routingId } },
         data: { is_default: false, version_no: { increment: 1 } },
@@ -177,6 +211,11 @@ export class RoutingService {
         where: { routing_id: routingId },
         data: { is_default: true, version_no: { increment: 1 } },
       });
+      // 해제된 이전 기본도 이력에 남긴다 — 사용자가 고르지 않은 줄이 함께 바뀐다.
+      for (const prior of previous) {
+        await recordRoutingChange(tx, prior.routing_id, actorId, { isDefault: true }, { isDefault: false });
+      }
+      await recordRoutingChange(tx, routingId, actorId, { isDefault: row.is_default }, { isDefault: true });
     });
 
     return this.get(routingId);
@@ -276,6 +315,15 @@ function assertDates(from: string | undefined, to: string | null | undefined): v
   ]);
 }
 
+/** 헤더 수정 이력이 견주는 칸 — 계약 이름. */
+function headerFields(row: RoutingRow): Record<string, unknown> {
+  return {
+    routingCode: row.routing_code,
+    effectiveFrom: toDateString(row.effective_from),
+    effectiveTo: toDateString(row.effective_to),
+  };
+}
+
 function view(row: RoutingRow): RoutingView {
   return {
     routingId: Number(row.routing_id),
@@ -286,5 +334,6 @@ function view(row: RoutingRow): RoutingView {
     ...(row.effective_from === null ? {} : { effectiveFrom: toDateString(row.effective_from) ?? '' }),
     effectiveTo: toDateString(row.effective_to),
     isDefault: row.is_default,
+    confirmedAt: row.confirmed_at === null ? null : row.confirmed_at.toISOString(),
   };
 }

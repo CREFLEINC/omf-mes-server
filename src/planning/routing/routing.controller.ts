@@ -63,7 +63,7 @@ export class RoutingController {
   @Contract('POST /planning/routings')
   create(@Req() request: Request, @Body() body: RoutingCreate): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.routings.create(body),
+      this.routings.create(body, actorOf(request)),
     );
   }
 
@@ -76,7 +76,7 @@ export class RoutingController {
     @Body() body: RoutingUpdate,
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'routing', (version) =>
-      this.routings.update(routingId, version, body),
+      this.routings.update(routingId, version, body, actorOf(request)),
     );
   }
 
@@ -95,7 +95,7 @@ export class RoutingController {
   ): Promise<unknown> {
     // ⚠ 「컬렉션 전체 치환이라 IfMatchVersion 을 쓰지 않는다 — 409 는 없다」(계약).
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => ({
-      items: await this.operations.replace(routingId, body.operations),
+      items: await this.operations.replace(routingId, body.operations, actorOf(request)),
     }));
   }
 
@@ -130,7 +130,7 @@ export class RoutingController {
   ): Promise<unknown> {
     // ⚠ 계약이 이 자리에 If-Match 를 선언하지 않았다 — 상태 전이가 판정을 대신한다.
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
-      this.header(await this.revisions.confirm(routingId)),
+      this.header(await this.revisions.confirm(routingId, actorOf(request))),
     );
   }
 
@@ -142,7 +142,7 @@ export class RoutingController {
     @Param('routingId', ParseIntPipe) routingId: number,
   ): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
-      this.header(await this.revisions.obsolete(routingId)),
+      this.header(await this.revisions.obsolete(routingId, actorOf(request))),
     );
   }
 
@@ -155,7 +155,7 @@ export class RoutingController {
   ): Promise<unknown> {
     // ⛔ 201 이다 — 새 Rev 가 «생긴다». 멱등 재전송이 같은 Rev 를 돌려줘야 한다.
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () =>
-      this.header(await this.revisions.newRevision(routingId)),
+      this.header(await this.revisions.newRevision(routingId, actorOf(request))),
     );
   }
 
@@ -169,7 +169,7 @@ export class RoutingController {
     // ⚠ 계약이 이 자리에 If-Match 를 선언하지 않았다 — 기본 Rev 지정은 같은 품목의 «두»
     // 행을 함께 움직이므로 한 행의 버전으로 가릴 수 있는 저장이 아니다.
     const { routing } = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.routings.setDefault(routingId),
+      this.routings.setDefault(routingId, actorOf(request)),
     );
     return routing;
   }
@@ -179,4 +179,9 @@ export class RoutingController {
     const { routing } = await this.routings.get(routingId);
     return routing;
   }
+}
+
+/** 변경 이력의 작업자 — 세션 사용자. 세션이 없으면 null(omf-all-around#231). */
+function actorOf(request: Request): number | null {
+  return currentSession(request)?.userId ?? null;
 }

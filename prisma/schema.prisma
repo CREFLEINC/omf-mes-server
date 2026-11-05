@@ -2889,6 +2889,7 @@ model routing {
   updated_by        BigInt?
   version_no        Int                 @default(1)
   is_default        Boolean             @default(false)
+  confirmed_at      DateTime?           @db.Timestamptz(6)
   production_plan   production_plan[]
   item              item                @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   routing_operation routing_operation[]
