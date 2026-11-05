@@ -47,6 +47,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
   'POST /logistics/replenishment-requests': ['W-02-12'],
   'GET /logistics/replenishment-requests/arrivals': ['W-02-12'],
+  'GET /logistics/replenishment-runs': ['W-02-12'],
   'POST /logistics/replenishment-requests/arrivals/{goodsIssueId}:receive': ['W-02-12'],
   'POST /logistics/shopfloor-receipts:bulk': ['W-02-12'],
   'POST /logistics/material-issue-requests/{materialIssueRequestId}:close-remaining': ['W-02-12'],

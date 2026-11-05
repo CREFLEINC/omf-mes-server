@@ -11568,6 +11568,115 @@
      }
     }
    }
+  },
+  "/logistics/replenishment-runs": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자동 보충 실행 기록",
+    "description": "정렬 = 실행 날짜 역순 → 창고 코드. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "productionWarehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "runDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "공장 현지 날짜"
+     },
+     {
+      "name": "runDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "공장 현지 날짜(포함)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ReplenishmentRun"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-02-12(생산 창고 보충). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -22288,7 +22397,7 @@
         "type": "integer"
        }
       },
-      "description": "마지막 자동 보충 실행"
+      "description": "마지막 자동 보충 실행(가장 최근 날짜). 실행 기록이 없으면 null."
      }
     },
     "description": "생산 창고별 자동 보충 실행 시각. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
@@ -22686,6 +22795,132 @@
      }
     },
     "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+   },
+   "ReplenishmentRun": {
+    "type": "object",
+    "description": "생산 창고의 하루 한 번 자동 보충 실행 기록. 보충 시점 이상 품목은 줄이 없고 checkedItemCount 로만 센다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "required": [
+     "replenishmentRunId",
+     "productionWarehouseId",
+     "productionWarehouseCode",
+     "productionWarehouseName",
+     "runDate",
+     "status",
+     "startedAt",
+     "finishedAt",
+     "checkedItemCount",
+     "createdRequestCount",
+     "errorText",
+     "lines"
+    ],
+    "properties": {
+     "replenishmentRunId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "productionWarehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "productionWarehouseCode": {
+      "type": "string"
+     },
+     "productionWarehouseName": {
+      "type": "string"
+     },
+     "runDate": {
+      "type": "string",
+      "format": "date",
+      "description": "공장 현지 날짜"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "DONE",
+       "FAILED"
+      ]
+     },
+     "startedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "finishedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "checkedItemCount": {
+      "type": "integer",
+      "description": "살펴본 관리 품목 수"
+     },
+     "createdRequestCount": {
+      "type": "integer"
+     },
+     "errorText": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "FAILED 일 때 원인 — 그 창고는 그날 다시 돌지 않는다"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "itemId",
+        "itemCode",
+        "itemName",
+        "resultCode",
+        "usableQty",
+        "requestedQty",
+        "shortageQty",
+        "issueRequestNo"
+       ],
+       "properties": {
+        "itemId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "itemCode": {
+         "type": "string"
+        },
+        "itemName": {
+         "type": "string"
+        },
+        "resultCode": {
+         "type": "string",
+         "enum": [
+          "CREATED",
+          "SHORTAGE",
+          "IN_PROGRESS",
+          "NO_SOURCE_STOCK",
+          "SOURCE_INACTIVE"
+         ],
+         "description": "CREATED 요청함 · SHORTAGE 일부만(쓸 수 있는 양까지) · IN_PROGRESS 진행 중 보충 있음 · NO_SOURCE_STOCK 자재 창고 남은 수량 0 · SOURCE_INACTIVE 출고 자재 창고 사용 중지"
+        },
+        "usableQty": {
+         "type": "number",
+         "description": "계산 당시 생산 창고 쓸 수 있는 양"
+        },
+        "requestedQty": {
+         "type": "number"
+        },
+        "shortageQty": {
+         "type": "number"
+        },
+        "issueRequestNo": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     }
+    }
    }
   }
  },
