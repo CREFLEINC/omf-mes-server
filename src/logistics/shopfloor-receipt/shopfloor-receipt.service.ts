@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
-import { assertCodeValues, assertWorkerNoPresent } from '../../common/master';
+import { PUTAWAY_STAGING, assertCodeValues, assertWorkerNoPresent } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
@@ -47,6 +47,7 @@ interface IssueLineRow {
 
 /** `CD-LOGISTICS-DOCUMENT-STATUS` 중 취소 계열 둘 — R-9 400 갈래표(I-9.md §3-2 ⓐ). */
 const ISSUE_CANCELLED = new Set(['CANCEL_REQUESTED', 'CANCELLED']);
+const PUTAWAY_PENDING = 'PENDING';
 
 /** 웹 개별·일괄 수령이 「이미 수령」을 자기 응답(409 · 결과 값)으로 바꾸려고 고른다. 모바일 경로는 지금 그대로 400. */
 export class AlreadyReceivedError extends Error {}
@@ -84,11 +85,24 @@ export class ShopfloorReceiptService {
    */
   async receive(input: ShopfloorReceiptCreate, actor: LogisticsWriteActor, options: ReceiveOptions = {}): Promise<ShopfloorReceiptDetail> {
     const plantId = await this.assertCreatable(input);
+    const putawayNos = await this.putawayNumbers(input, plantId);
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을
     //    둘 쥐어 풀 고갈 시 `P2024` 로 죽는다(I-2 R-2 · `material-issue-request.service.ts:62`
     //    그대로). 결번은 허용한다. 기간 축은 클라이언트가 준 `businessDate` 그대로다(C-8).
     const no = await this.numbering.next('SHOPFLOOR_RECEIPT', plantId, input.businessDate);
-    return this.prisma.$transaction((tx) => this.write(tx, input, no, actor, options));
+    return this.prisma.$transaction((tx) => this.write(tx, input, no, actor, options, putawayNos));
+  }
+
+  /**
+   * 창고 보충 수령(W/O 없음)이 나뉜 생산 창고의 적치 대기로 들어오면 받은 줄마다 적치 지시를 만든다(피처 004 · R-8).
+   * 번호는 트랜잭션 밖에서 받은 수량 > 0 인 줄 수만큼 — 쓰지 않으면 결번이다.
+   */
+  private async putawayNumbers(input: ShopfloorReceiptCreate, plantId: bigint): Promise<string[]> {
+    if (input.workOrderId != null) return [];
+    const location = await this.prisma.location.findUnique({ where: { location_id: input.destinationLocationId }, select: { system_role_code: true } });
+    if (location?.system_role_code !== PUTAWAY_STAGING) return [];
+    const count = input.lines.filter((line) => line.receivedQty > 0).length;
+    return count === 0 ? [] : this.numbering.nextMany('PUTAWAY_TASK', plantId, input.businessDate, count);
   }
 
   /** §3-8 잠금 → INSERT → createMany → 같은 tx 되읽기(§3-1 ⑥~⑩). */
@@ -98,6 +112,7 @@ export class ShopfloorReceiptService {
     shopfloorReceiptNo: string,
     actor: LogisticsWriteActor,
     options: ReceiveOptions,
+    putawayNos: string[],
   ): Promise<ShopfloorReceiptDetail> {
     // 목적은 재고가 아니라 «중복 수령»이다 — UNIQUE(goods_issue_id) 가 없어 행 잠금으로 레이스를 막는다(I-9 §3-8).
     await tx.$queryRaw`SELECT status_code FROM logistics.goods_issue WHERE goods_issue_id = ${input.goodsIssueId} FOR UPDATE`;
@@ -135,6 +150,8 @@ export class ShopfloorReceiptService {
       })),
     });
 
+    const putawayTaskIds = putawayNos.length === 0 ? [] : await createPutawayTasks(tx, header.shopfloor_receipt_id, input, putawayNos, actor.appUserId);
+
     if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
       actor: actor.terminalAudit, targetTypeCode: 'SHOPFLOOR_RECEIPT',
       targetId: header.shopfloor_receipt_id, eventTypeCode: 'CREATE',
@@ -145,8 +162,8 @@ export class ShopfloorReceiptService {
       include: SHOPFLOOR_RECEIPT_INCLUDE,
     });
     const view = shopfloorReceiptView(row);
-    // 상세와 같은 모양(§4-3) — 바깥과 `shopfloorReceipt.lines` 둘 다 같은 배열을 싣는다.
-    return { shopfloorReceipt: view, lines: view.lines };
+    // 상세와 같은 모양(§4-3) — 바깥과 `shopfloorReceipt.lines` 둘 다 같은 배열을 싣는다. 만든 적치 지시는 확정 응답에만 싣는다.
+    return { shopfloorReceipt: { ...view, putawayTaskIds: putawayTaskIds.map(Number) }, lines: view.lines };
   }
 
   /**
@@ -238,6 +255,42 @@ export class ShopfloorReceiptService {
     });
     return request?.request_type_code === 'REPLENISHMENT';
   }
+}
+
+/**
+ * 받은 줄마다 적치 지시 하나 — 출발 = 적치 대기(도착 위치), 수량 = 받은 수량(차이는 재고 조정 몫), 둘 곳은 읽을 때
+ * 보관 품목으로 계산한다(구매 입고 지시와 같다 — `receipt-posting.ts` `createPutawayTask`). 담당자는 두지 않는다.
+ */
+async function createPutawayTasks(
+  tx: Prisma.TransactionClient,
+  shopfloorReceiptId: bigint,
+  input: ShopfloorReceiptCreate,
+  putawayNos: string[],
+  appUserId: number | undefined,
+): Promise<bigint[]> {
+  const lines = await tx.shopfloor_receipt_line.findMany({
+    where: { shopfloor_receipt_id: shopfloorReceiptId, received_qty: { gt: 0 } },
+    orderBy: { shopfloor_receipt_line_id: 'asc' },
+  });
+  const ids: bigint[] = [];
+  for (const [index, line] of lines.entries()) {
+    const task = await tx.putaway_task.create({
+      data: {
+        putaway_task_no: putawayNos[index],
+        shopfloor_receipt_line_id: line.shopfloor_receipt_line_id,
+        item_id: line.item_id,
+        lot_id: line.lot_id,
+        task_qty: line.received_qty,
+        uom_id: line.uom_id,
+        from_location_id: BigInt(input.destinationLocationId),
+        status_code: PUTAWAY_PENDING,
+        created_by: appUserId == null ? null : BigInt(appUserId),
+      },
+      select: { putaway_task_id: true },
+    });
+    ids.push(task.putaway_task_id);
+  }
+  return ids;
 }
 
 /**

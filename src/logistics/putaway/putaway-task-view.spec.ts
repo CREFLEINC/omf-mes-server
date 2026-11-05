@@ -45,3 +45,25 @@ describe('taskView', () => {
     expect(view).not.toHaveProperty('versionNo');
   });
 });
+
+describe('taskView — 창고 보충 수령 원천(피처 004)', () => {
+  it('입고 줄이 없으면 창고 = 출발 위치의 창고, originCode = REPLENISHMENT_RECEIPT, 수령 줄 id 를 싣는다', () => {
+    const view = taskView(
+      row({
+        goods_receipt_line_id: null,
+        goods_receipt_line: null,
+        shopfloor_receipt_line_id: 71n,
+        location_putaway_task_from_location_idTolocation: { warehouse_id: 81n },
+      }),
+      [],
+    );
+
+    expect(view).toMatchObject({ warehouseId: 81, goodsReceiptLineId: null, shopfloorReceiptLineId: 71, originCode: 'REPLENISHMENT_RECEIPT' });
+  });
+
+  it('입고 원천은 originCode = GOODS_RECEIPT 이고 창고는 그대로 입고 전표의 창고', () => {
+    const view = taskView(row({ shopfloor_receipt_line_id: null, location_putaway_task_from_location_idTolocation: { warehouse_id: 999n } }), []);
+
+    expect(view).toMatchObject({ warehouseId: 61, goodsReceiptLineId: 11, shopfloorReceiptLineId: null, originCode: 'GOODS_RECEIPT' });
+  });
+});
