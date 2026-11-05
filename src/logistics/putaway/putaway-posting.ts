@@ -27,20 +27,23 @@ export interface PutawayOrigin {
   ownershipTypeCode: string; ownerPartnerId: number | null; handlingUnitId: number | null;
 }
 
+/** 출발 끝점 하나와 그 끝점에서 옮길 양 — 원장 한 줄이 된다. */
+export interface PutawayPart { origin: PutawayOrigin; qty: Prisma.Decimal }
+
 export interface PutawayMove {
   businessDate: string; occurredAt: Date; plantId: number;
   putawayTaskId: number; putawayTaskNo: string;
-  itemId: number; lotId: number; qty: Prisma.Decimal; uomId: number;
-  origin: PutawayOrigin; toWarehouseId: number; toLocationId: number; createdBy: number | undefined;
+  itemId: number; lotId: number; uomId: number;
+  /** 입고 원천은 한 줄. 창고 보충 수령 원천은 같은 LOT 이 여러 상태 행에 나뉘면 행마다 한 줄(피처 004 · US6-4). */
+  parts: PutawayPart[]; toWarehouseId: number; toLocationId: number; createdBy: number | undefined;
 }
 
-/** 돌려주는 것은 지시가 되짚을 원장 **라인** id 다. */
+/** 돌려주는 것은 지시가 되짚을 원장 **첫 라인** id 다. */
 export async function postPutaway(
   tx: Prisma.TransactionClient,
   posting: InventoryPostingService,
   move: PutawayMove,
 ): Promise<bigint> {
-  const { origin } = move;
   const posted = await posting.post(tx, {
     businessDate: move.businessDate,
     occurredAt: move.occurredAt,
@@ -56,8 +59,8 @@ export async function postPutaway(
     createdBy: move.createdBy,
     // ⭐ 품질·재고 상태를 **바꾸지 않는다** — 적치는 옮길 뿐 판정하지 않는다. 바꾸면 잔액이
     //    다른 차원으로 넘어가 「적치했더니 검사 대기가 정상이 됐다」가 된다.
-    lines: [{
-      itemId: move.itemId, lotId: move.lotId, qty: Number(move.qty), uomId: move.uomId,
+    lines: move.parts.map(({ origin, qty }) => ({
+      itemId: move.itemId, lotId: move.lotId, qty: Number(qty), uomId: move.uomId,
       from: {
         warehouseId: origin.warehouseId, locationId: origin.locationId,
         qualityStatusCode: origin.qualityStatusCode, inventoryStatusCode: origin.inventoryStatusCode,
@@ -69,7 +72,7 @@ export async function postPutaway(
       ownershipTypeCode: origin.ownershipTypeCode,
       ...(origin.ownerPartnerId === null ? {} : { ownerPartnerId: origin.ownerPartnerId }),
       ...(origin.handlingUnitId === null ? {} : { handlingUnitId: origin.handlingUnitId }),
-    }],
+    })),
   });
   // 흡수가 오면 잔액은 안 옮겨졌는데 되짚기와 전이는 돈다 — 상태 자물쇠를 지나쳤다는 뜻이다.
   if (posted.alreadyPosted) throw new Error(`원장이 이미 있다: ${move.putawayTaskNo}`);
