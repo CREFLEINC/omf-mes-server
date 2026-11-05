@@ -86,7 +86,15 @@ describe('계약 커버리지', () => {
     // ERP 받기 표별 상태·지금 읽기(장부 P-81) · ERP 창고(장부 P-147) 3 오퍼레이션: 571 → 574.
     // 입고 기본값(장부 P-150) 1 오퍼레이션: 574 → 575.
     // 검사기준 버전 도면 추가·바꾸기·빼기(omf-all-around#227) 3 오퍼레이션: 575 → 578.
-    expect(registry.size).toBe(578);
+    // 부서 생산 창고 조회·바꾸기(omf-all-around#66) 2 오퍼레이션: 578 → 580.
+    // 출고 요청 수정·취소·이력(omf-all-around#66) 3 오퍼레이션: 580 → 583.
+    // 생산 창고 예정·부족 조회(omf-all-around#66) 1 오퍼레이션: 583 → 584.
+    // 창고·품목별 쓸 수 있는 양(omf-all-around#232) 1 오퍼레이션: 584 → 585.
+    // 창고 보충 관리 품목·실행 시각(omf-all-around#230) 6 오퍼레이션: 585 → 591.
+    // 창고 보충 직접 요청·잔량 마감(omf-all-around#230) 2 오퍼레이션: 591 → 593.
+    // 창고 보충 도착 대기·개별·일괄 수령(omf-all-around#230) 3 오퍼레이션: 593 → 596.
+    // 창고 보충 자동 보충 실행 기록(omf-all-around#230) 1 오퍼레이션: 596 → 597.
+    expect(registry.size).toBe(597);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

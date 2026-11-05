@@ -36,12 +36,15 @@ export interface ShopfloorReceiptView {
   shopfloorReceiptId: number;
   shopfloorReceiptNo: string;
   goodsIssueId: number;
-  workOrderId: number;
+  /** 창고 보충 출고 수령(피처 004)은 W/O 가 없다 — null. */
+  workOrderId: number | null;
   destinationLocationId: number;
   receivedAt: string;
   receivedBy: number | null;
   statusCode: string;
   lines: ShopfloorReceiptLineView[];
+  /** 확정 응답에만 — 창고 보충 수령이 나뉜 생산 창고로 들어와 만든 적치 지시(피처 004). */
+  putawayTaskIds?: number[];
 }
 
 export interface ShopfloorReceiptLineView {
@@ -71,7 +74,7 @@ export function shopfloorReceiptView(row: ShopfloorReceiptRow): ShopfloorReceipt
     shopfloorReceiptId: Number(row.shopfloor_receipt_id),
     shopfloorReceiptNo: row.shopfloor_receipt_no,
     goodsIssueId: Number(row.goods_issue_id),
-    workOrderId: Number(row.work_order_id),
+    workOrderId: row.work_order_id === null ? null : Number(row.work_order_id),
     destinationLocationId: Number(row.destination_location_id),
     receivedAt: row.received_at.toISOString(),
     receivedBy: row.received_by === null ? null : Number(row.received_by),

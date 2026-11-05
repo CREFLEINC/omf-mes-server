@@ -13,12 +13,13 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
-import { EffectiveView } from './operation-policy-rules';
+import { EffectiveView, PolicyCode, assertWritable } from './operation-policy-rules';
 import {
   EffectiveQuery,
   OperationPolicyService,
@@ -27,7 +28,10 @@ import {
   PolicyUpdate,
 } from './operation-policy.service';
 
-/** 운영 정책. 화면은 `W-05-01` 이 소유하고, 실행 화면들이 `effective` 로 값을 묻는다. */
+/**
+ * 운영 정책. 화면은 `W-05-01` 이 소유하고, 실행 화면들이 `effective` 로 값을 묻는다.
+ * 공장 근무일(`WEEKLY_WORKING_DAYS`)만은 `W-CO-15` 도 읽고 쓴다(피처 003).
+ */
 @Controller('app/operation-policies')
 export class OperationPolicyController {
   constructor(
@@ -37,8 +41,8 @@ export class OperationPolicyController {
 
   @Get()
   @Contract('GET /app/operation-policies')
-  list(@Query() query: PolicyQuery): Promise<PagedResponse<unknown>> {
-    return this.policies.list(query);
+  list(@Req() request: Request, @Query() query: PolicyQuery): Promise<PagedResponse<unknown>> {
+    return this.policies.list(query, currentSession(request)?.permissions ?? []);
   }
 
   /**
@@ -54,10 +58,13 @@ export class OperationPolicyController {
   @Get(':operationPolicyId')
   @Contract('GET /app/operation-policies/{operationPolicyId}')
   async get(
+    @Req() request: Request,
     @Param('operationPolicyId', ParseIntPipe) operationPolicyId: number,
     @Res({ passthrough: true }) response: Response,
   ): Promise<unknown> {
     const { policy, versionNo } = await this.policies.get(operationPolicyId);
+    // W-CO-15 는 공장 근무일 행만 읽는다(피처 003 · 계약 §4).
+    assertWritable(policy.policyCode as PolicyCode, currentSession(request)?.permissions ?? []);
     setEtag(response, versionNo);
     return policy;
   }
@@ -66,7 +73,7 @@ export class OperationPolicyController {
   @Contract('POST /app/operation-policies')
   create(@Req() request: Request, @Body() body: PolicyCreate): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.policies.create(body),
+      this.policies.create(body, currentSession(request)?.permissions ?? []),
     );
   }
 
@@ -79,7 +86,7 @@ export class OperationPolicyController {
     @Body() body: PolicyUpdate,
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'policy', (version) =>
-      this.policies.update(operationPolicyId, version, body),
+      this.policies.update(operationPolicyId, version, body, currentSession(request)?.permissions ?? []),
     );
   }
 }

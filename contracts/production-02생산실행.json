@@ -3534,13 +3534,13 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/WorkOrder"
+         "$ref": "#/components/schemas/WorkOrderReleaseResult"
         }
        }
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
+      "description": "검증 실패. 고쳐야 풀린다. 생산 창고를 쓰는 공장(피처 003)은 빠진 기준정보를 errors 에 모아 낸다 — LINE_DEPARTMENT_MISSING(productionLineId · 라인에 담당 부서 없음) · PRODUCTION_WAREHOUSE_MISSING(departmentId · 부서에 이 공장의 활성 생산 창고 없음) · PRODUCTION_FLOOR_LOCATION_MISSING(productionLineId · 라인에 생산 현장 위치 없음). 재고 부족은 배포를 막지 않는다. 근거: omf-all-around#66",
       "content": {
        "application/json": {
         "schema": {
@@ -7475,9 +7475,119 @@
      "warnCount"
     ]
    },
+   "WorkOrderReleaseResult": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/WorkOrder"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "materialIssueRequests": {
+        "type": "array",
+        "description": "생산 창고를 쓰는 공장에서만 싣는다 — 출발 창고별로 만든 출고 요청 요약(창고 id 순). 출고 작업일이 공장 오늘 이하면 이미 배포(REGISTERED)됐다. 생산 창고를 연결하지 않은 공장은 칸이 없다(지금 방식). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+        "items": {
+         "type": "object",
+         "required": [
+          "materialIssueRequestId",
+          "issueRequestNo",
+          "sourceWarehouseId",
+          "statusCode",
+          "issueWorkDate"
+         ],
+         "properties": {
+          "materialIssueRequestId": {
+           "type": "integer",
+           "format": "int64"
+          },
+          "issueRequestNo": {
+           "type": "string"
+          },
+          "sourceWarehouseId": {
+           "type": "integer",
+           "format": "int64"
+          },
+          "statusCode": {
+           "type": "string",
+           "example": "WAITING"
+          },
+          "issueWorkDate": {
+           "type": "string",
+           "format": "date",
+           "example": "2026-11-13"
+          }
+         }
+        }
+       },
+       "unsourcedShortages": {
+        "type": "array",
+        "description": "부서 생산 창고 어디에도 가용 재고가 없어 요청에 넣지 못한 자재(FR-007a) — 배포는 성공이다. W-02-11 부족 목록에도 남는다. 생산 창고를 쓰는 공장에서만 싣는다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+        "items": {
+         "type": "object",
+         "required": [
+          "itemId",
+          "itemCode",
+          "itemName",
+          "shortageQty",
+          "uomCode"
+         ],
+         "properties": {
+          "itemId": {
+           "type": "integer",
+           "format": "int64"
+          },
+          "itemCode": {
+           "type": "string"
+          },
+          "itemName": {
+           "type": "string"
+          },
+          "shortageQty": {
+           "type": "number",
+           "exclusiveMinimum": 0
+          },
+          "uomCode": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     }
+    ],
+    "description": "배포된 W/O 와, 생산 창고 공장이면 만든 출고 요청·미배정 자재. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+   },
    "WorkOrder": {
     "type": "object",
     "properties": {
+     "productionWarehouseMode": {
+      "type": "boolean",
+      "description": "상세(GET /production/work-orders/{id})에만 — 이 W/O 공장이 생산 창고 규칙(FR-009a 공장 모드 · 공장 기준)인가. W-02-10 출발 창고 칸이 쓴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "productionWarehouses": {
+      "type": "array",
+      "description": "상세에만 — 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(코드순). 지금 방식 공장이거나 부서·연결이 없으면 빈 배열. productionWarehouseMode 가 참인데 비면 추가 출고 요청은 400 PRODUCTION_WAREHOUSE_MISSING. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouseId",
+        "warehouseCode",
+        "warehouseName"
+       ],
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "warehouseCode": {
+         "type": "string"
+        },
+        "warehouseName": {
+         "type": "string"
+        }
+       }
+      }
+     },
      "workOrderId": {
       "type": "integer",
       "format": "int64",

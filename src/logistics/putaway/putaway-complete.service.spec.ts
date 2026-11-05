@@ -174,3 +174,43 @@ describe('적치 완료 :complete · :complete-temporary', () => {
     expect(line.from?.locationId).toBe(line.to?.locationId);
   });
 });
+
+describe('창고 보충 수령 원천 적치 완료 (피처 004 · US6)', () => {
+  // 입고 줄이 없다 — 입고 원장 끝점도 없고, 출발 끝점은 적치 대기에 남은 잔액에서 푼다(가짜 잔액 가용 100).
+  const receiptOrigin = {
+    goods_receipt_line_id: null, receipt_status_code: null,
+    to_warehouse_id: null, to_location_id: null, to_quality_status_code: null,
+    to_inventory_status_code: null, ownership_type_code: null,
+  };
+
+  it('남은 가용이 지시 수량 이상이면 지시 수량만큼 옮긴다 — 출발 끝점은 적치 대기 잔액의 상태', async () => {
+    const { service, posts } = fake(receiptOrigin);
+
+    const view = await service.complete(TASK, body(), context, 'NORMAL');
+
+    expect(view.movedQty).toBe(10);
+    expect(posts[0].lines[0]).toMatchObject({
+      qty: 10,
+      from: { warehouseId: Number(WH), locationId: Number(DOCK), qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE' },
+    });
+  });
+
+  it('남은 가용이 지시 수량보다 적으면 남은 만큼만 옮기고 끝낸다(min)', async () => {
+    const { service, posts, updates } = fake({ ...receiptOrigin, task_qty: new Prisma.Decimal(150) });
+
+    const view = await service.complete(TASK, body(), context, 'NORMAL');
+
+    expect(view.movedQty).toBe(100);
+    expect(posts[0].lines[0].qty).toBe(100);
+    expect((updates[0].data as Row).status_code).toBe('COMPLETED');
+  });
+
+  it('입고 원천은 지금과 같다 — 지시 수량 전부를 옮기고 movedQty 도 그 수량', async () => {
+    const { service, posts } = fake();
+
+    const view = await service.complete(TASK, body(), context, 'NORMAL');
+
+    expect(view.movedQty).toBe(10);
+    expect(posts[0].lines[0].qty).toBe(10);
+  });
+});

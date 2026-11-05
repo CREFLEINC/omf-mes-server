@@ -1102,7 +1102,7 @@ model inbound_variance {
 model material_issue_request {
   material_issue_request_id   BigInt                        @id @default(autoincrement())
   issue_request_no            String                        @unique @db.VarChar(100)
-  work_order_id               BigInt
+  work_order_id               BigInt?
   destination_location_id     BigInt
   required_at                 DateTime?                     @db.Timestamptz(6)
   status_code                 String                        @db.VarChar(50)
@@ -1114,12 +1114,34 @@ model material_issue_request {
   updated_by                  BigInt?
   version_no                  Int                           @default(1)
   reason_code                 String?                       @db.VarChar(50)
+  source_warehouse_id         BigInt?
+  issue_work_date             DateTime?                     @db.Date
+  released_at                 DateTime?                     @db.Timestamptz(6)
+  release_attempted_at        DateTime?                     @db.Timestamptz(6)
+  release_error_text          String?                       @db.VarChar(1000)
+  closed_at                   DateTime?                     @db.Timestamptz(6)
+  close_reason_code           String?                       @db.VarChar(50)
+  cancelled_at                DateTime?                     @db.Timestamptz(6)
+  cancelled_by                BigInt?
+  request_type_code           String                        @default("WORK_ORDER") @db.VarChar(30)
+  replenishment_origin_code   String?                       @db.VarChar(10)
+  replenishment_run_id        BigInt?
+  close_remark                String?                       @db.VarChar(500)
+  closed_by                   BigInt?
+  close_reason_detail_code    String?                       @db.VarChar(50)
   location                    location                      @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   app_user                    app_user?                     @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order                  work_order                    @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order                  work_order?                   @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  source_warehouse            warehouse?                    @relation(fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  replenishment_run           replenishment_run?            @relation(fields: [replenishment_run_id], references: [replenishment_run_id], onDelete: NoAction, onUpdate: NoAction)
   material_issue_request_line material_issue_request_line[]
+  material_issue_unsourced_shortage material_issue_unsourced_shortage[]
+  replenishment_run_line      replenishment_run_line[]
 
   @@index([destination_location_id], map: "ix_material_issue_request_destination_location")
+  @@index([status_code, issue_work_date], map: "ix_material_issue_request_status_work_date")
+  @@index([source_warehouse_id, status_code], map: "ix_material_issue_request_source_status")
+  @@index([request_type_code, status_code], map: "ix_material_issue_request_type_status")
   @@schema("logistics")
 }
 
@@ -1132,6 +1154,7 @@ model material_issue_request_line {
   item_id                        BigInt
   requested_qty                  Decimal                @db.Decimal(20, 6)
   issued_qty                     Decimal                @default(0) @db.Decimal(20, 6)
+  shortage_qty                   Decimal                @default(0) @db.Decimal(20, 6)
   uom_id                         BigInt
   created_at                     DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                     BigInt?
@@ -1142,6 +1165,24 @@ model material_issue_request_line {
   picking_line                   picking_line[]
 
   @@unique([material_issue_request_id, line_no], map: "uq_material_issue_request_line")
+  @@schema("logistics")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model material_issue_unsourced_shortage {
+  material_issue_unsourced_shortage_id BigInt                  @id @default(autoincrement())
+  work_order_id                        BigInt
+  item_id                              BigInt
+  uom_id                               BigInt
+  shortage_qty                         Decimal                 @db.Decimal(20, 6)
+  resolved_request_id                  BigInt?
+  created_at                           DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  work_order                           work_order              @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  item                                 item                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                  uom                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  resolved_request                     material_issue_request? @relation(fields: [resolved_request_id], references: [material_issue_request_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([work_order_id, item_id], map: "uq_material_issue_unsourced_shortage")
   @@schema("logistics")
 }
 
@@ -1297,7 +1338,7 @@ model putaway_rule {
 model putaway_task {
   putaway_task_id                                         BigInt                      @id @default(autoincrement())
   putaway_task_no                                         String                      @unique @db.VarChar(100)
-  goods_receipt_line_id                                   BigInt
+  goods_receipt_line_id                                   BigInt?
   item_id                                                 BigInt
   lot_id                                                  BigInt
   task_qty                                                Decimal                     @db.Decimal(20, 6)
@@ -1318,18 +1359,22 @@ model putaway_task {
   updated_by                                              BigInt?
   version_no                                              Int                         @default(1)
   reason_code                                             String?                     @db.VarChar(50)
+  shopfloor_receipt_line_id                               BigInt?
   location_putaway_task_actual_location_idTolocation      location?                   @relation("putaway_task_actual_location_idTolocation", fields: [actual_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   putaway_rule                                            putaway_rule?               @relation(fields: [applied_putaway_rule_id], references: [putaway_rule_id], onDelete: NoAction, onUpdate: NoAction)
   worker                                                  worker?                     @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   location_putaway_task_from_location_idTolocation        location                    @relation("putaway_task_from_location_idTolocation", fields: [from_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  goods_receipt_line                                      goods_receipt_line          @relation(fields: [goods_receipt_line_id], references: [goods_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
+  goods_receipt_line                                      goods_receipt_line?         @relation(fields: [goods_receipt_line_id], references: [goods_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_transaction_line                              inventory_transaction_line? @relation(fields: [inventory_transaction_line_id], references: [inventory_transaction_line_id], onDelete: NoAction, onUpdate: NoAction)
   item                                                    item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   lot                                                     lot                         @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   location_putaway_task_recommended_location_idTolocation location?                   @relation("putaway_task_recommended_location_idTolocation", fields: [recommended_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   uom                                                     uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
+  shopfloor_receipt_line                                  shopfloor_receipt_line?     @relation(fields: [shopfloor_receipt_line_id], references: [shopfloor_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
+
   @@index([goods_receipt_line_id], map: "ix_putaway_receipt_line")
+  @@index([shopfloor_receipt_line_id], map: "ix_putaway_task_shopfloor_receipt_line")
   @@index([actual_location_id], map: "ix_putaway_task_actual_location")
   @@index([from_location_id], map: "ix_putaway_task_from_location")
   @@index([recommended_location_id], map: "ix_putaway_task_recommended_location")
@@ -1577,7 +1622,7 @@ model shopfloor_receipt {
   shopfloor_receipt_id    BigInt                   @id @default(autoincrement())
   shopfloor_receipt_no    String                   @unique @db.VarChar(100)
   goods_issue_id          BigInt
-  work_order_id           BigInt
+  work_order_id           BigInt?
   destination_location_id BigInt
   received_at             DateTime                 @db.Timestamptz(6)
   received_by             BigInt?
@@ -1590,7 +1635,7 @@ model shopfloor_receipt {
   app_user                app_user?                @relation(fields: [received_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_shopfloor_receipt_received_by")
   location                location                 @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   goods_issue             goods_issue              @relation(fields: [goods_issue_id], references: [goods_issue_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order              work_order               @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order              work_order?              @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   shopfloor_receipt_line  shopfloor_receipt_line[]
 
   @@index([destination_location_id], map: "ix_shopfloor_receipt_destination_location")
@@ -1617,6 +1662,7 @@ model shopfloor_receipt_line {
   shopfloor_receipt         shopfloor_receipt      @relation(fields: [shopfloor_receipt_id], references: [shopfloor_receipt_id], onDelete: NoAction, onUpdate: NoAction)
   uom                       uom                    @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   material_consumption      material_consumption[]
+  putaway_task              putaway_task[]
 
   @@schema("logistics")
 }
@@ -1883,6 +1929,7 @@ model department {
   production_line      production_line[]
   notification_event   notification_event[]
   notification_department_setting notification_department_setting[]
+  department_production_warehouse department_production_warehouse[]
 
   @@index([parent_department_id], map: "ix_department_parent")
   @@schema("mdm")
@@ -2023,6 +2070,7 @@ model item {
   goods_receipt_line                                   goods_receipt_line[]
   inbound_receipt_line                                 inbound_receipt_line[]
   material_issue_request_line                          material_issue_request_line[]
+  material_issue_unsourced_shortage                    material_issue_unsourced_shortage[]
   picking_line                                         picking_line[]
   purchase_order_line                                  purchase_order_line[]
   putaway_rule                                         putaway_rule[]
@@ -2063,6 +2111,8 @@ model item {
   inspection_sheet_item_idToitem inspection_sheet[] @relation("inspection_sheet_item_idToitem")
 
   location_item                                        location_item[]
+  replenishment_item                                   replenishment_item[]
+  replenishment_run_line                               replenishment_run_line[]
 
   @@index([item_type_code, is_active], map: "ix_item_type")
   @@schema("mdm")
@@ -2207,6 +2257,19 @@ model location {
 
   @@unique([warehouse_id, location_code], map: "uq_location")
   @@index([parent_location_id], map: "ix_location_parent")
+  @@schema("mdm")
+}
+
+model department_production_warehouse {
+  department_id BigInt
+  warehouse_id  BigInt
+  created_at    DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by    BigInt?
+  department    department @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse     warehouse  @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([department_id, warehouse_id], map: "pk_department_production_warehouse")
+  @@index([warehouse_id], map: "ix_department_production_warehouse_warehouse")
   @@schema("mdm")
 }
 
@@ -2538,6 +2601,7 @@ model uom {
   inbound_receipt_line                                          inbound_receipt_line[]
   inbound_variance                                              inbound_variance[]
   material_issue_request_line                                   material_issue_request_line[]
+  material_issue_unsourced_shortage                             material_issue_unsourced_shortage[]
   picking_line                                                  picking_line[]
   purchase_order_line                                           purchase_order_line[]
   putaway_rule                                                  putaway_rule[]
@@ -2628,6 +2692,12 @@ model warehouse {
   material_return                                                                    material_return[]
   recycle_entry                                                                      recycle_entry[]
   terminal                                                                           terminal[]
+  material_issue_request          material_issue_request[]
+  department_production_warehouse department_production_warehouse[]
+  replenishment_item              replenishment_item[]             @relation("replenishment_item_warehouse")
+  replenishment_item_source       replenishment_item[]             @relation("replenishment_item_source_warehouse")
+  replenishment_warehouse_setting replenishment_warehouse_setting?
+  replenishment_run               replenishment_run[]
 
   @@unique([plant_id, warehouse_code], map: "uq_warehouse")
   @@schema("mdm")
@@ -3285,6 +3355,7 @@ model work_order {
   close_judgment_code                                                               String?                          @db.VarChar(10)
   notice                                                                            notice[]
   material_issue_request                                                            material_issue_request[]
+  material_issue_unsourced_shortage                                                 material_issue_unsourced_shortage[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
   subcontract_order                                                                 subcontract_order[]
   tool_usage                                                                        tool_usage[]
@@ -5889,4 +5960,79 @@ model oqc_serial_result {
 
   @@index([inspection_result_id], map: "ix_oqc_serial_result_inspection_result")
   @@schema("quality")
+}
+
+/// 생산 창고 관리 품목(피처 004). 쓸 수 있는 양이 보충 시점 미만이면 유지량까지 자재 창고에 요청한다.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model replenishment_item {
+  replenishment_item_id BigInt    @id @default(autoincrement())
+  warehouse_id          BigInt
+  item_id               BigInt
+  reorder_point_qty     Decimal   @db.Decimal(20, 6)
+  target_qty            Decimal   @db.Decimal(20, 6)
+  source_warehouse_id   BigInt
+  created_at            DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  updated_at            DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by            BigInt?
+  version_no            Int       @default(1)
+  item                  item      @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse             warehouse @relation("replenishment_item_warehouse", fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  source_warehouse      warehouse @relation("replenishment_item_source_warehouse", fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([warehouse_id, item_id], map: "uq_replenishment_item")
+  @@index([item_id], map: "ix_replenishment_item_item")
+  @@schema("logistics")
+}
+
+/// 생산 창고별 자동 보충 실행 시각(피처 004). run_time NULL = 공장 정책, 그것도 없으면 01:00.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model replenishment_warehouse_setting {
+  warehouse_id BigInt    @id
+  run_time     String?   @db.VarChar(5)
+  updated_at   DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by   BigInt?
+  version_no   Int       @default(1)
+  warehouse    warehouse @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("logistics")
+}
+
+/// 자동 보충 실행 기록(피처 004). (창고, 공장 현지 날짜) 하루 한 번.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model replenishment_run {
+  replenishment_run_id   BigInt                   @id @default(autoincrement())
+  warehouse_id           BigInt
+  run_date               DateTime                 @db.Date
+  started_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  finished_at            DateTime?                @db.Timestamptz(6)
+  status_code            String                   @db.VarChar(20)
+  checked_item_count     Int                      @default(0)
+  created_request_count  Int                      @default(0)
+  error_text             String?                  @db.VarChar(1000)
+  warehouse              warehouse                @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  material_issue_request material_issue_request[]
+  replenishment_run_line replenishment_run_line[]
+
+  @@unique([warehouse_id, run_date], map: "uq_replenishment_run_warehouse_date")
+  @@schema("logistics")
+}
+
+/// 자동 보충 실행의 품목별 결과(피처 004). 보충 시점 이상인 품목은 행을 남기지 않는다.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model replenishment_run_line {
+  replenishment_run_line_id BigInt                  @id @default(autoincrement())
+  replenishment_run_id      BigInt
+  item_id                   BigInt
+  result_code               String                  @db.VarChar(30)
+  usable_qty                Decimal                 @db.Decimal(20, 6)
+  requested_qty             Decimal                 @default(0) @db.Decimal(20, 6)
+  shortage_qty              Decimal                 @default(0) @db.Decimal(20, 6)
+  material_issue_request_id BigInt?
+  replenishment_run         replenishment_run       @relation(fields: [replenishment_run_id], references: [replenishment_run_id], onDelete: NoAction, onUpdate: NoAction)
+  item                      item                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  material_issue_request    material_issue_request? @relation(fields: [material_issue_request_id], references: [material_issue_request_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([replenishment_run_id], map: "ix_replenishment_run_line_run")
+  @@schema("logistics")
 }

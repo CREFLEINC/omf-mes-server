@@ -16,6 +16,8 @@ export const POLICY_CODES = [
   'MINOR_STOP_THRESHOLD_MINUTES',
   'PRECHECK_CONTROL_LEVEL',
   'FIFO_ENFORCEMENT_LEVEL',
+  'WEEKLY_WORKING_DAYS',
+  'REPLENISHMENT_RUN_TIME',
 ] as const;
 export type PolicyCode = (typeof POLICY_CODES)[number];
 
@@ -29,11 +31,30 @@ const VALUE_SLOT: Record<PolicyCode, 'boolean' | 'numeric' | 'text'> = {
   MINOR_STOP_THRESHOLD_MINUTES: 'numeric',
   PRECHECK_CONTROL_LEVEL: 'text',
   FIFO_ENFORCEMENT_LEVEL: 'text',
+  WEEKLY_WORKING_DAYS: 'numeric',
+  REPLENISHMENT_RUN_TIME: 'text',
 };
 
 /** 통제 수준 두 코드가 함께 쓰는 값 — 계약이 셋으로 닫았다. */
 const CONTROL_LEVELS = ['BLOCK', 'WARN', 'OFF'];
 const CONTROL_LEVEL_CODES: PolicyCode[] = ['PRECHECK_CONTROL_LEVEL', 'FIFO_ENFORCEMENT_LEVEL'];
+
+/** 주간 근무일 — 5 = 월~금, 6 = 월~토(피처 003). */
+export const WEEKLY_WORKING_DAYS = [5, 6] as const;
+export type WeeklyWorkingDays = (typeof WEEKLY_WORKING_DAYS)[number];
+
+/** 자동 보충 실행 시각 — 공장 현지 `HH:MM`(00:00~23:59 · 피처 004). */
+export const RUN_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** 범위를 공장으로 못 박은 코드 — 다른 축으로 걸면 「어느 공장의 근무일인가」가 흐려진다. */
+const PLANT_ONLY_CODES: PolicyCode[] = ['WEEKLY_WORKING_DAYS', 'REPLENISHMENT_RUN_TIME'];
+
+/**
+ * `W-05-01`(운영 정책) 밖에서 그 코드 «하나만» 읽고 쓰는 화면. 그 화면 권한으로는 다른 코드를 못 쓴다 —
+ * 게이트는 오퍼레이션 단위라 코드까지는 못 가른다.
+ */
+const CODE_SCREENS: Partial<Record<PolicyCode, string>> = { WEEKLY_WORKING_DAYS: 'W-CO-15', REPLENISHMENT_RUN_TIME: 'W-02-12' };
+const POLICY_SCREEN = 'W-05-01';
 
 /**
  * 좁은 범위가 이긴다. ⛔ 이 «순서»가 곧 정책 우선순위다 — 계약이 값을 닫아 두었고,
@@ -173,6 +194,21 @@ export function assertValues(code: PolicyCode, input: PolicyValues): void {
     });
   }
   if (
+    code === 'WEEKLY_WORKING_DAYS' &&
+    filled.numeric !== null &&
+    !(WEEKLY_WORKING_DAYS as readonly number[]).includes(filled.numeric)
+  ) {
+    errors.push({
+      scope: 'field',
+      field: 'valueNumeric',
+      code: ERROR_CODE.RANGE,
+      message: `주간 근무일은 ${WEEKLY_WORKING_DAYS.join(' · ')} 중 하나입니다.`,
+    });
+  }
+  if (code === 'REPLENISHMENT_RUN_TIME' && filled.text !== null && !RUN_TIME_PATTERN.test(filled.text)) {
+    errors.push({ scope: 'field', field: 'valueText', code: ERROR_CODE.RANGE, message: '실행 시각은 HH:MM(00:00~23:59)입니다.' });
+  }
+  if (
     CONTROL_LEVEL_CODES.includes(code) &&
     filled.text !== null &&
     !CONTROL_LEVELS.includes(filled.text)
@@ -185,6 +221,55 @@ export function assertValues(code: PolicyCode, input: PolicyValues): void {
     });
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
+
+/** 공장 전용 코드는 공장을 주고 품목·공정을 비운다. 사업부는 공장에 딸려 오므로 함께 있어도 공장 범위다. */
+export function assertScope(code: PolicyCode, scope: PolicyScope): void {
+  if (!PLANT_ONLY_CODES.includes(code)) return;
+  const errors: ErrorItem[] = [];
+  if (scope.plantId == null) {
+    errors.push({ scope: 'field', field: 'plantId', code: ERROR_CODE.REQUIRED, message: `${code} 는 공장마다 정합니다.` });
+  }
+  for (const axis of ['itemId', 'processId'] as const) {
+    if (scope[axis] != null) {
+      errors.push({ scope: 'field', field: axis, code: ERROR_CODE.INVALID, message: `${code} 는 공장 범위만 받습니다.` });
+    }
+  }
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
+
+/** 운영 정책 화면 권한이 없으면 그 코드 전용 화면 권한이 있어야 읽고 쓴다. */
+export function assertWritable(code: PolicyCode, permissions: readonly string[]): void {
+  const screen = CODE_SCREENS[code];
+  if (permissions.includes(POLICY_SCREEN) || (screen !== undefined && permissions.includes(screen))) return;
+  throw new ContractException(HttpStatus.FORBIDDEN, [
+    { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 정책 코드를 볼 권한이 없습니다.' },
+  ]);
+}
+
+/**
+ * 목록에서 볼 수 있는 코드. `W-05-01` 이 있거나 코드 전용 화면 권한이 하나도 없으면 거르지 않는다(지금과 같다 —
+ * 목록은 권한을 보지 않는 경로다). 코드 전용 화면 권한만 있으면 그 코드들만 본다.
+ */
+export function readableCodes(permissions: readonly string[]): PolicyCode[] | null {
+  if (permissions.includes(POLICY_SCREEN)) return null;
+  const codes = (Object.entries(CODE_SCREENS) as [PolicyCode, string][])
+    .filter(([, screen]) => permissions.includes(screen))
+    .map(([code]) => code);
+  return codes.length === 0 ? null : codes;
+}
+
+/**
+ * 맞는 정책 가운데 이기는 하나. 좁은 축이 이기고, 같으면 늦게 시작한 것 → 나중에 만든 것 순이다.
+ * 겹치는 정책을 물리가 막지 않으므로 «결정적으로» 고르는 것이 서버 몫이다.
+ */
+export function winnerOf(rows: PolicyRow[]): PolicyRow | undefined {
+  return [...rows].sort(
+    (a, b) =>
+      scopeRank(a) - scopeRank(b) ||
+      b.effective_from.getTime() - a.effective_from.getTime() ||
+      Number(b.operation_policy_id - a.operation_policy_id),
+  )[0];
 }
 
 function fieldOf(slot: 'text' | 'numeric' | 'boolean'): string {

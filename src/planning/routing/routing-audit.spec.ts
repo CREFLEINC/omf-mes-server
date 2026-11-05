@@ -197,7 +197,10 @@ describe('Routing 변경 이력 (omf-all-around#231)', () => {
   it('신규 Rev 발행은 새 줄을 CREATE 로 적고 어느 개정에서 복사했는지 남긴다', async () => {
     const { prisma, auditCreate } = prismaMock({
       routing: {
-        findUnique: jest.fn().mockResolvedValue(routingRow({ status_code: 'CONFIRMED' })),
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(routingRow({ status_code: 'CONFIRMED' })) // 원본
+          .mockResolvedValueOnce(routingRow({ routing_id: 8n, routing_version: 2 })), // 새로 만든 개정
         aggregate: jest.fn().mockResolvedValue({ _max: { routing_version: 1 } }),
         create: jest
           .fn()

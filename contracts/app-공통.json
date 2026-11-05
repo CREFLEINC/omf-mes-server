@@ -2836,7 +2836,9 @@
         "SHOT_CONVERSION_RATIO",
         "MINOR_STOP_THRESHOLD_MINUTES",
         "PRECHECK_CONTROL_LEVEL",
-        "FIFO_ENFORCEMENT_LEVEL"
+        "FIFO_ENFORCEMENT_LEVEL",
+        "WEEKLY_WORKING_DAYS",
+        "REPLENISHMENT_RUN_TIME"
        ]
       },
       "x-code-key": "CD-POLICY"
@@ -3001,7 +3003,9 @@
         "SHOT_CONVERSION_RATIO",
         "MINOR_STOP_THRESHOLD_MINUTES",
         "PRECHECK_CONTROL_LEVEL",
-        "FIFO_ENFORCEMENT_LEVEL"
+        "FIFO_ENFORCEMENT_LEVEL",
+        "WEEKLY_WORKING_DAYS",
+        "REPLENISHMENT_RUN_TIME"
        ]
       },
       "x-code-key": "CD-POLICY"
@@ -3097,6 +3101,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 비노출은 공유계약 A-4, 전송 자체는 B-1 구현에 필요하다."
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-05-01 · W-CO-15(공장 근무일 설정)는 policyCode=WEEKLY_WORKING_DAYS 인 행만 읽는다 — 피처 003 · omf-all-around#66 · W-02-12(생산 창고 보충)는 policyCode=REPLENISHMENT_RUN_TIME 인 행만 — 피처 004 · omf-all-around#230",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -7662,9 +7676,11 @@
        "SHOT_CONVERSION_RATIO",
        "MINOR_STOP_THRESHOLD_MINUTES",
        "PRECHECK_CONTROL_LEVEL",
-       "FIFO_ENFORCEMENT_LEVEL"
+       "FIFO_ENFORCEMENT_LEVEL",
+       "WEEKLY_WORKING_DAYS",
+       "REPLENISHMENT_RUN_TIME"
       ],
-      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다.",
+      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다. WEEKLY_WORKING_DAYS = 공장의 주간 근무일(valueNumeric · 5 = 월~금 | 6 = 월~토). 범위는 공장만 받는다 — plantId 를 주고 itemId·processId 는 비운다(아니면 400). ⭐ 이 코드만 예외로, 맞는 정책이 없으면 서버가 5 로 계산한다(출고 요청의 출고 작업일 = 생산일의 직전 근무일). effective 는 그대로 resolved=false 를 낸다. 설정 화면은 W-CO-15(공장 근무일 설정). 근거: 피처 003 · omf-all-around#66 REPLENISHMENT_RUN_TIME = 자동 보충 실행 시각(valueText · 공장 현지 HH:MM, 00:00~23:59 — 아니면 400 RANGE). 범위는 공장만 받는다. 맞는 정책이 없으면 서버가 01:00 으로 돈다(effective 는 그대로 resolved=false). 설정 화면은 W-02-12(생산 창고 보충) — W-02-12 권한은 이 코드 행만 읽고 쓴다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
       "x-source-column": "policy_code",
       "x-code-key": "CD-POLICY"
      },
@@ -7764,9 +7780,11 @@
        "SHOT_CONVERSION_RATIO",
        "MINOR_STOP_THRESHOLD_MINUTES",
        "PRECHECK_CONTROL_LEVEL",
-       "FIFO_ENFORCEMENT_LEVEL"
+       "FIFO_ENFORCEMENT_LEVEL",
+       "WEEKLY_WORKING_DAYS",
+       "REPLENISHMENT_RUN_TIME"
       ],
-      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다.",
+      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다. WEEKLY_WORKING_DAYS = 공장의 주간 근무일(valueNumeric · 5 = 월~금 | 6 = 월~토). 범위는 공장만 받는다 — plantId 를 주고 itemId·processId 는 비운다(아니면 400). ⭐ 이 코드만 예외로, 맞는 정책이 없으면 서버가 5 로 계산한다(출고 요청의 출고 작업일 = 생산일의 직전 근무일). effective 는 그대로 resolved=false 를 낸다. 설정 화면은 W-CO-15(공장 근무일 설정). 근거: 피처 003 · omf-all-around#66 REPLENISHMENT_RUN_TIME = 자동 보충 실행 시각(valueText · 공장 현지 HH:MM, 00:00~23:59 — 아니면 400 RANGE). 범위는 공장만 받는다. 맞는 정책이 없으면 서버가 01:00 으로 돈다(effective 는 그대로 resolved=false). 설정 화면은 W-02-12(생산 창고 보충) — W-02-12 권한은 이 코드 행만 읽고 쓴다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
       "x-code-key": "CD-POLICY"
      },
      "businessUnitId": {
@@ -7915,7 +7933,9 @@
        "SHOT_CONVERSION_RATIO",
        "MINOR_STOP_THRESHOLD_MINUTES",
        "PRECHECK_CONTROL_LEVEL",
-       "FIFO_ENFORCEMENT_LEVEL"
+       "FIFO_ENFORCEMENT_LEVEL",
+       "WEEKLY_WORKING_DAYS",
+       "REPLENISHMENT_RUN_TIME"
       ],
       "x-code-key": "CD-POLICY"
      },

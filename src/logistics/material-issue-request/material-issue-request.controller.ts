@@ -20,6 +20,8 @@ import { PagedResponse } from '../../common/pagination';
 import { MaterialIssueRequestQuery, MaterialIssueRequestQueryService } from './material-issue-request-query.service';
 import { MaterialIssueRequestDetail, MaterialIssueRequestView } from './material-issue-request-view';
 import { MaterialIssueRequestCreate, MaterialIssueRequestService } from './material-issue-request.service';
+import { FreeStockQuery, FreeStockRow, FreeStockService } from './free-stock.service';
+import { PlannedStockQuery, PlannedStockService } from './planned-stock.service';
 import { MaterialIssueShortageLine, MaterialIssueShortageService } from './shortage.service';
 
 /**
@@ -34,6 +36,8 @@ export class MaterialIssueRequestController {
     private readonly shortages: MaterialIssueShortageService,
     private readonly requests: MaterialIssueRequestService,
     private readonly idempotency: IdempotencyService,
+    private readonly plannedStock: PlannedStockService,
+    private readonly freeStock: FreeStockService,
   ) {}
 
   @Get()
@@ -50,6 +54,20 @@ export class MaterialIssueRequestController {
     @Query() query: { workOrderId?: unknown },
   ): Promise<{ items: MaterialIssueShortageLine[] }> {
     return this.shortages.shortage(query);
+  }
+
+  /** 생산 창고 예정·부족(피처 003) — 역시 `:materialIssueRequestId` 앞이다. */
+  @Get('planned-stock')
+  @Contract('GET /logistics/material-issue-requests/planned-stock')
+  plannedStockRows(@Query() query: PlannedStockQuery): Promise<unknown> {
+    return this.plannedStock.query(query);
+  }
+
+  /** 창고·품목별 쓸 수 있는 양(W-02-10 남은 수량 · omf-all-around#232) — 역시 `:materialIssueRequestId` 앞이다. */
+  @Get('free-stock')
+  @Contract('GET /logistics/material-issue-requests/free-stock')
+  freeStockRows(@Query() query: FreeStockQuery): Promise<{ items: FreeStockRow[] }> {
+    return this.freeStock.query(query);
   }
 
   @Get(':materialIssueRequestId')
@@ -70,11 +88,14 @@ export class MaterialIssueRequestController {
   create(
     @Req() request: Request,
     @Body() body: MaterialIssueRequestCreate,
-  ): Promise<MaterialIssueRequestDetail> {
+  ): Promise<unknown> {
     const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.requests.create(body, appUserId),
-    );
+    // 응답은 조회와 같은 모양(이름·화면 값)이다 — 만든 뒤 조회 서비스로 다시 읽는다(피처 003 · W-02-10).
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
+      const created = await this.requests.create(body, appUserId);
+      const ids = created.requests.map((row) => row.materialIssueRequestId);
+      return { ...(await this.queries.get(ids[0])), requests: await this.queries.headers(ids) };
+    });
   }
 }
 

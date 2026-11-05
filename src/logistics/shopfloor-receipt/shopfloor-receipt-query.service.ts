@@ -34,7 +34,15 @@ export class ShopfloorReceiptQueryService {
     const where: Prisma.shopfloor_receiptWhereInput = {
       ...filter('work_order_id', numeric('workOrderId', query.workOrderId)),
       ...filter('goods_issue_id', numeric('goodsIssueId', query.goodsIssueId)),
-      ...(terminalPlantId === undefined ? {} : { work_order: { production_line: { plant_id: terminalPlantId } } }),
+      // 창고 보충 출고 수령(피처 004)은 W/O 가 없다 — 단말 공장 범위는 도착 위치 창고의 공장.
+      ...(terminalPlantId === undefined
+        ? {}
+        : {
+            OR: [
+              { work_order: { production_line: { plant_id: terminalPlantId } } },
+              { work_order_id: null, location: { warehouse: { plant_id: terminalPlantId } } },
+            ],
+          }),
       // 문자 그대로 건다 — 4값 대조를 걸면 값이 늘 때 목록이 400 을 낸다(피킹·출고 목록 선례).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
     };

@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ensureItemIqcPlan } from '../../quality/inspection-plan/item-iqc-plan-sync';
 import { Editability, ReferenceQuery, assertCodeValues, optional, referencePage, referenceWhere } from '../../common/master';
 
 /** 계약 `Item` 과 동형. 위(ERP 원본)와 아래(MES 확장)를 화면이 나눠 그린다. */
@@ -151,6 +152,10 @@ export class ItemService {
     await this.assertWritable(input);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.item.findUnique({
+        where: { item_id: itemId },
+        select: { item_id: true, item_code: true, item_name: true, inspection_required: true },
+      });
       const result = await tx.item.updateMany({
         // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
         where: { item_id: itemId, version_no: version },
@@ -180,6 +185,10 @@ export class ItemService {
           where: { item_id: itemId, inspection_type_code: 'IQC', is_active: true, default_skip: !skip },
           data: { default_skip: skip, pqc_skip_allowed: skip, version_no: { increment: 1 } },
         });
+        // 전용 기준이 없는 품목에서 바꿨으면 전용 기준을 만들어 이 설정을 고정한다 — 공통 기준 저장이 덮지 않게(사용자 결정 2026-11-04).
+        if (before !== null && before.inspection_required !== input.inspectionRequired) {
+          await ensureItemIqcPlan(tx, before, skip);
+        }
       }
       return result;
     });

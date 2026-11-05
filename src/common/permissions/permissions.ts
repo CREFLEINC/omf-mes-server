@@ -84,7 +84,11 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-02-08', name: 'W/O 진행현황 조회(생산 실적 집계 포함)', groupCode: '02' },
   // 설계 밖 화면 — 생산 관리 > W/O 진행현황 조회 아래(장부 P-119).
   { code: 'W-02-09', name: 'LOT 생산 이력 조회', groupCode: '02' },
-  { code: 'W-02-10', name: '추가 자재 출고 요청(수동)', groupCode: '02' },
+  { code: 'W-02-10', name: '추가 출고 요청(수동)', groupCode: '02' },
+  // 설계 저장소 생성본에 없는 화면 — 피처 003 계획 기반 출고 요청(omf-all-around#66). 시드가 관리자에게 준다.
+  { code: 'W-02-11', name: '출고 요청 현황', groupCode: '02' },
+  // 설계 저장소 생성본에 없는 화면 — 피처 004 생산 창고 보충(omf-all-around#230). 시드가 관리자에게 준다.
+  { code: 'W-02-12', name: '생산 창고 보충', groupCode: '02' },
   // 03 품질
   { code: 'W-03-01', name: 'Lot Status 현황·변경이력 조회', groupCode: '03' },
   { code: 'W-03-02', name: 'Lot Status 판정·전이 처리', groupCode: '03' },
@@ -185,6 +189,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-CO-13', name: '알림 발송 이력', groupCode: 'CO' },
   // 설계 저장소 생성본에 없는 화면 — 피처 002 인계 작업 알림(omf-all-around#190 · 장부 P-134). 시드가 관리자에게 준다.
   { code: 'W-CO-14', name: '인계작업 알림 설정', groupCode: 'CO' },
+  // 설계 저장소 생성본에 없는 화면 — 피처 003 공장 주간 근무일(omf-all-around#66). 시드가 관리자에게 준다.
+  { code: 'W-CO-15', name: '공장 근무일 설정', groupCode: 'CO' },
 ];
 
 /** 권한 부여 요청이 「없는 코드」를 담았는지 가르는 자리. 계약이 그 검사를 요구한다. */

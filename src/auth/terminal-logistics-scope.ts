@@ -92,7 +92,11 @@ export async function assertTerminalLogisticsScope(
   const inbound = async (v: unknown) => check(await prisma.inbound_receipt.findFirst({ where: { inbound_receipt_id: id(v), plant_id: plant }, select: { inbound_receipt_id: true } }));
   const inboundLine = async (v: unknown) => check(await prisma.inbound_receipt_line.findFirst({ where: { inbound_receipt_line_id: id(v), inbound_receipt: { plant_id: plant } }, select: { inbound_receipt_line_id: true } }));
   const pickOrder = async (v: unknown) => check(await prisma.picking_order.findFirst({ where: { picking_order_id: id(v), warehouse: { plant_id: plant } }, select: { picking_order_id: true } }));
-  const putaway = async (v: unknown) => check(await prisma.putaway_task.findFirst({ where: { putaway_task_id: id(v), goods_receipt_line: { goods_receipt: { plant_id: plant } } }, select: { putaway_task_id: true } }));
+  // 창고 보충 수령 원천(피처 004)은 입고 전표가 없다 — 출발 위치 창고의 공장으로 본다.
+  const putaway = async (v: unknown) => check(await prisma.putaway_task.findFirst({ where: { putaway_task_id: id(v), OR: [
+    { goods_receipt_line: { goods_receipt: { plant_id: plant } } },
+    { goods_receipt_line_id: null, location_putaway_task_from_location_idTolocation: { warehouse: { plant_id: plant } } },
+  ] }, select: { putaway_task_id: true } }));
   const shipment = async (v: unknown) => check(await prisma.shipment.findFirst({ where: { shipment_id: id(v), warehouse: { plant_id: plant } }, select: { shipment_id: true } }));
   // 미배정 요청은 터미널에서 피킹할 수 없고, 출하가 생기기 전에도 이행 공장으로 소유를 판정한다.
   const shipmentRequest = async (v: unknown) => check(await prisma.shipment_request.findFirst({ where: { shipment_request_id: id(v), fulfillment_plant_id: plant }, select: { shipment_request_id: true } }));
@@ -143,7 +147,11 @@ export async function assertTerminalLogisticsScope(
     case 'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': await inboundLine(p.inboundReceiptLineId); break;
     case 'GET /logistics/inbound-receipts/{inboundReceiptId}/lines': await inbound(p.inboundReceiptId); break;
     case 'GET /logistics/material-issue-requests/{materialIssueRequestId}':
-      await check(await prisma.material_issue_request.findFirst({ where: { material_issue_request_id: id(p.materialIssueRequestId), work_order: { production_line: { plant_id: plant } } }, select: { material_issue_request_id: true } })); break;
+      // 창고 보충 요청(피처 004)은 W/O 가 없다 — 출발 창고의 공장으로 본다.
+      await check(await prisma.material_issue_request.findFirst({ where: { material_issue_request_id: id(p.materialIssueRequestId), OR: [
+        { work_order: { production_line: { plant_id: plant } } },
+        { work_order_id: null, source_warehouse: { plant_id: plant } },
+      ] }, select: { material_issue_request_id: true } })); break;
     case 'GET /logistics/picking-orders/{pickingOrderId}': await pickOrder(p.pickingOrderId); break;
     case 'GET /logistics/purchase-orders/{purchaseOrderId}':
       await check(await prisma.purchase_order.findFirst({ where: { purchase_order_id: id(p.purchaseOrderId), plant_id: plant }, select: { purchase_order_id: true } })); break;
@@ -167,7 +175,11 @@ export async function assertTerminalLogisticsScope(
         handling_unit_id: id(p.handlingUnitId), shipping_unit_id: id(p.shippingUnitId),
       }, select: { handling_unit_id: true } })); break;
     case 'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}':
-      await check(await prisma.shopfloor_receipt.findFirst({ where: { shopfloor_receipt_id: id(p.shopfloorReceiptId), work_order: { production_line: { plant_id: plant } } }, select: { shopfloor_receipt_id: true } })); break;
+      // 창고 보충 출고 수령(피처 004)은 W/O 가 없다 — 도착 위치 창고의 공장으로 본다.
+      await check(await prisma.shopfloor_receipt.findFirst({ where: { shopfloor_receipt_id: id(p.shopfloorReceiptId), OR: [
+        { work_order: { production_line: { plant_id: plant } } },
+        { work_order_id: null, location: { warehouse: { plant_id: plant } } },
+      ] }, select: { shopfloor_receipt_id: true } })); break;
     case 'GET /logistics/stock-transfers/{stockTransferId}/lines': await transfer(p.stockTransferId); break;
     case 'POST /logistics/goods-issues':
       if (b.sourceDocumentTypeCode !== 'PICKING_ORDER') throw denied();
@@ -195,7 +207,8 @@ export async function assertTerminalLogisticsScope(
       await check(await prisma.shipment_request_line.findFirst({ where: { shipment_request_line_id: id(p.shipmentRequestLineId), shipment_request_id: id(p.shipmentRequestId) }, select: { shipment_request_line_id: true } }));
       await optional(lot, b.lotId); break;
     case 'POST /logistics/shopfloor-receipts':
-      await Promise.all([issue(b.goodsIssueId), workOrder(b.workOrderId)]); break;
+      // 창고 보충 출고 수령(피처 004)은 W/O 를 보내지 않는다.
+      await Promise.all([issue(b.goodsIssueId), optional(workOrder, b.workOrderId)]); break;
     case 'POST /logistics/stock-transfers':
       await Promise.all([warehouse(b.fromWarehouseId), warehouse(b.toWarehouseId)]); break;
     case 'POST /logistics/stock-transfers/{stockTransferId}:arrive':

@@ -19,6 +19,7 @@ import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
+import { syncItemsToCommonIqcPlan } from './item-iqc-plan-sync';
 
 /** `quality.inspection_plan` 을 FK 로 가리키는 자리 전부. 실측이고 e2e 가 대조한다. */
 export const INSPECTION_PLAN_REFERRERS: readonly Referrer[] = [
@@ -139,12 +140,13 @@ export class InspectionPlanService {
             ...optional('name_ko', input.nameKo),
             ...optional('name_vi', input.nameVi),
             ...optional('item_id', input.itemId),
-            ...optional('process_id', input.processId),
+            ...processData(input),
             ...optional('routing_id', input.routingId),
             ...defaultSkipData(input),
           },
         });
         await syncItemInspectionRequired(tx, input);
+        if (isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
         return row;
       }),
     );
@@ -158,6 +160,7 @@ export class InspectionPlanService {
     await this.assertWritable(input, inspectionPlanId);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.inspection_plan.findUnique({ where: { inspection_plan_id: inspectionPlanId } });
       const result = await tx.inspection_plan.updateMany({
         // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
         where: { inspection_plan_id: inspectionPlanId, version_no: version },
@@ -168,13 +171,20 @@ export class InspectionPlanService {
           ...optional('name_ko', input.nameKo),
           ...optional('name_vi', input.nameVi),
           ...optional('item_id', input.itemId),
-          ...optional('process_id', input.processId),
+          ...processData(input),
           ...optional('routing_id', input.routingId),
           ...defaultSkipData(input),
           version_no: { increment: 1 },
         },
       });
-      if (result.count > 0) await syncItemInspectionRequired(tx, input);
+      if (result.count > 0) {
+        await syncItemInspectionRequired(tx, input);
+        // 공통 IQC 기준은 「기본 생략」이 바뀌었거나 이번 저장으로 공통 IQC 가 됐을 때만 품목에 반영한다 — 이름만 고친 저장이 품목을 덮지 않게.
+        const after = await tx.inspection_plan.findUnique({ where: { inspection_plan_id: inspectionPlanId } });
+        if (after !== null && isCommonIqc(after) && !(before !== null && isCommonIqc(before) && before.default_skip === after.default_skip)) {
+          await syncItemsToCommonIqcPlan(tx, after.default_skip);
+        }
+      }
       return result;
     });
     await this.assertExists(inspectionPlanId, updated.count);
@@ -186,17 +196,26 @@ export class InspectionPlanService {
     version: number,
     isActive: boolean,
   ): Promise<InspectionPlanResult> {
+    if (isActive) {
+      const row = await this.prisma.inspection_plan.findUnique({
+        where: { inspection_plan_id: inspectionPlanId },
+        select: { inspection_type_code: true, item_id: true },
+      });
+      if (row !== null) await this.assertSinglePqc(row, inspectionPlanId);
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.inspection_plan.updateMany({
         where: { inspection_plan_id: inspectionPlanId, version_no: version },
         data: { is_active: isActive, version_no: { increment: 1 } },
       });
-      // 다시 사용하는 품목 전용 IQC 기준은 품목 「IQC 대상」을 그 기준에 맞춘다 — 사용 중지 동안 품목만 바뀌었을 수 있다(#215).
+      // 다시 사용하는 IQC 기준은 품목 「IQC 대상」을 그 기준에 맞춘다 — 사용 중지 동안 품목만 바뀌었을 수 있다(#215).
+      // 공통 기준은 전용 기준이 없는 품목에 맞춘다(사용자 결정 2026-11-04).
       if (result.count > 0 && isActive) {
         const row = await tx.inspection_plan.findUnique({
           where: { inspection_plan_id: inspectionPlanId },
-          select: { inspection_type_code: true, item_id: true, default_skip: true },
+          select: { inspection_type_code: true, item_id: true, default_skip: true, is_active: true },
         });
+        if (row !== null && isCommonIqc(row)) await syncItemsToCommonIqcPlan(tx, row.default_skip);
         if (row !== null) {
           await syncItemInspectionRequired(tx, {
             inspectionTypeCode: row.inspection_type_code,
@@ -277,7 +296,42 @@ export class InspectionPlanService {
       },
     ]);
     await this.assertCodeFree(input.inspectionPlanCode, self);
+    await this.assertSinglePqc({ inspection_type_code: input.inspectionTypeCode, item_id: input.itemId }, self);
     await this.assertTargets(input);
+  }
+
+  /**
+   * PQC 기준은 제품(품목)에 하나만 사용한다(사용자 결정 2026-11-04) — 의뢰는 품목으로 기준을 고르고, 둘이면 고르지 못해
+   * 검사 항목 없는 의뢰가 된다. 「전 품목 공통」(품목 없음)도 하나다. 수정 본문에 품목이 없으면(보내지 않음) 저장된 값을 본다.
+   */
+  private async assertSinglePqc(
+    target: { inspection_type_code: string; item_id: bigint | number | null | undefined },
+    self: number | null,
+  ): Promise<void> {
+    if (target.inspection_type_code !== 'PQC') return;
+    const itemId =
+      target.item_id !== undefined || self === null
+        ? (target.item_id ?? null)
+        : ((await this.prisma.inspection_plan.findUnique({ where: { inspection_plan_id: self }, select: { item_id: true } }))?.item_id ?? null);
+    const other = await this.prisma.inspection_plan.findFirst({
+      where: {
+        inspection_type_code: 'PQC',
+        is_active: true,
+        item_id: itemId,
+        ...(self === null ? {} : { inspection_plan_id: { not: self } }),
+      },
+      select: { inspection_plan_code: true },
+    });
+    if (other === null) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'itemId',
+        code: ERROR_CODE.UNIQUE_VIOLATION,
+        uniqueScope: ['inspectionTypeCode', 'itemId'],
+        message: `이 품목에는 사용 중인 공정검사(PQC) 기준이 이미 있습니다(${other.inspection_plan_code}).`,
+      },
+    ]);
   }
 
   /**
@@ -353,7 +407,7 @@ function view(row: PlanRow): InspectionPlanView {
 
 /**
  * 품목 전용 IQC 기준의 「기본 생략」에 품목 「수입검사 대상」을 반대로 맞춘다 — 두 설정은 같은 뜻이다(omf-all-around#215).
- * 공통 기준(품목 없음)·PQC·OQC 는 맞추지 않는다. 이미 맞으면 품목 행을 건드리지 않는다(품목 화면의 저장 토큰을 지킨다).
+ * 공통 기준(품목 없음)은 `syncItemsToCommonIqcPlan` 이 맡는다. PQC·OQC 는 맞추지 않는다. 이미 맞으면 품목 행을 건드리지 않는다(품목 화면의 저장 토큰을 지킨다).
  */
 async function syncItemInspectionRequired(
   tx: Prisma.TransactionClient,
@@ -367,6 +421,16 @@ async function syncItemInspectionRequired(
     where: { item_id: input.itemId, inspection_required: skip },
     data: { inspection_required: !skip, version_no: { increment: 1 } },
   });
+}
+
+/** PQC 기준은 공정에 붙지 않는다 — 제품에 붙고, 검사할 공정은 라우팅 「검사 관리」가 정한다(사용자 결정 2026-11-04). 옛 공정 값도 저장 때 비운다. */
+function processData(input: Pick<InspectionPlanWrite, 'inspectionTypeCode' | 'processId'>): { process_id?: number | null } {
+  return input.inspectionTypeCode === 'PQC' ? { process_id: null } : optional('process_id', input.processId);
+}
+
+/** 사용 중인 「전 품목 공통」 IQC 기준인가 — 품목 칸이 비었다. */
+function isCommonIqc(row: Pick<PlanRow, 'inspection_type_code' | 'item_id' | 'is_active'>): boolean {
+  return row.inspection_type_code === 'IQC' && row.item_id === null && row.is_active;
 }
 
 /**
