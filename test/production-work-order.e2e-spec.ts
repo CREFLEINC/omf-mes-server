@@ -265,6 +265,38 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         .set('Cookie', noPermCookie)
         .expect(403);
     });
+
+    it('유효성 — 중복 배정 상대에서 취소·마감·완료 W/O 를 뺀다 (omf-all-around#219)', async () => {
+      const window = { planned_start_at: new Date('2026-09-06T00:00:00.000Z'), planned_end_at: new Date('2026-09-06T12:00:00.000Z') };
+      const self = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      const rival = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(secondWorkOrderId) } });
+      const doubleBooked = async (): Promise<boolean> => {
+        const report = await request(app.getHttpServer())
+          .get(`/api/production/work-orders/${workOrderId}/validation`)
+          .set('Cookie', cookie)
+          .expect(200);
+        return (report.body.findings as { code: string }[]).some((item) => item.code === 'EQUIPMENT_DOUBLE_BOOKED');
+      };
+      try {
+        await prisma.work_order.update({ where: { work_order_id: self.work_order_id }, data: { planned_equipment_id: twinId, ...window } });
+        await prisma.work_order.update({ where: { work_order_id: rival.work_order_id }, data: { planned_equipment_id: twinId, ...window, status_code: 'CONFIRMED' } });
+        expect(await doubleBooked()).toBe(true);
+
+        for (const status of ['CANCELLED', 'CLOSED', 'COMPLETED']) {
+          await prisma.work_order.update({ where: { work_order_id: rival.work_order_id }, data: { status_code: status } });
+          expect({ status, doubleBooked: await doubleBooked() }).toEqual({ status, doubleBooked: false });
+        }
+      } finally {
+        await prisma.work_order.update({
+          where: { work_order_id: self.work_order_id },
+          data: { planned_equipment_id: self.planned_equipment_id, planned_start_at: self.planned_start_at, planned_end_at: self.planned_end_at },
+        });
+        await prisma.work_order.update({
+          where: { work_order_id: rival.work_order_id },
+          data: { planned_equipment_id: rival.planned_equipment_id, planned_start_at: rival.planned_start_at, planned_end_at: rival.planned_end_at, status_code: rival.status_code },
+        });
+      }
+    });
   });
 
   describe('목록 GET (PR ②)', () => {
