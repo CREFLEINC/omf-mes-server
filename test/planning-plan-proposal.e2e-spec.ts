@@ -82,6 +82,9 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
   const planStart = shiftDays(localToday(), 3);
   /** 동시성 라운드가 쓰는 작성중 계획 하나짜리 오더(수량 100 · 계획 50). */
   let draftOrder: (key: string) => Promise<{ orderId: bigint; planId: bigint }>;
+  /** 작성중 계획 50 + 60 이 오더 100 을 넘는 오더. */
+  let overOrder: (key: string) => Promise<{ orderId: bigint }>;
+  let overRound = 0;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -322,6 +325,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       ['계획 집합이 제안과 다르면 plans', (body: ReturnType<typeof bodyOf>) => { body.plans[0].proposalPlanKey = 'new-2'; }, 'plans', 'INVALID'],
       ['제안에 없는 계획을 더하면 plans — 본문으로 새 계획을 만들 수 없다', (body: ReturnType<typeof bodyOf>) => { body.plans.push({ ...body.plans[0], proposalPlanKey: 'new-2' }); }, 'plans', 'INVALID'],
       ['수량이 ERP W/O 를 넘으면 plans[0].plannedQty', (body: ReturnType<typeof bodyOf>) => { body.plans[0].plannedQty = 101; }, 'plans[0].plannedQty', 'PLAN_QTY_EXCEEDS_ORDER'],
+      ['계획일이 공장 현지 오늘보다 앞이면 plans[0].planDate', (body: ReturnType<typeof bodyOf>) => { body.plans[0].planDate = shiftDays(localToday(), -1); }, 'plans[0].planDate', 'RANGE'],
       ['필수 4M 이 없으면 계약 검사가 막는다', (body: ReturnType<typeof bodyOf>) => { delete (body.plans[0].workOrders[0] as { productionLineId?: number }).productionLineId; }, 'plans[0].workOrders[0].productionLineId', 'REQUIRED'],
     ])('%s 400', async (_, mutate, field, code) => {
       const body = bodyOf(await proposalOf(order.J));
@@ -450,6 +454,44 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
         expect(workOrders).toBe(plan.status_code === 'CONFIRMED' ? 2 : 0);
       }
     }, 60_000);
+
+    it.each([
+      ['제안 순서대로', (body: ReturnType<typeof bodyOf>) => body],
+      ['본문 순서를 바꿔도', (body: ReturnType<typeof bodyOf>) => ({ ...body, plans: [...body.plans].reverse() })],
+    ])('작성중 계획 합이 넘을 때 하나를 줄여 확정하면 %s 200 이다 — 모든 계획을 반영한 합계로 한 번 본다', async (_, arrange) => {
+      overRound += 1;
+      const { orderId } = await overOrder(`OVER${overRound}`);
+      const proposal = await proposalOf(orderId);
+      expect(proposal).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'NEEDS_INPUT', reasons: [{ code: 'PLAN_QTY_EXCEEDS_ORDER', category: 'INPUT' }], remainingQty: -10 });
+      const body = bodyOf(proposal);
+      body.plans[1].plannedQty = 50;
+
+      const response = await confirm(orderId, arrange(body)).expect(200);
+      expect(response.body.plans.map((plan: { statusCode: string }) => plan.statusCode)).toEqual(['CONFIRMED', 'CONFIRMED']);
+      const quantities = await prisma.production_plan.findMany({ where: { production_order_id: orderId }, orderBy: { production_plan_id: 'asc' } });
+      expect(quantities.map((plan) => Number(plan.planned_qty))).toEqual([50, 50]);
+    });
+
+    it('작성중 계획 합이 그대로 넘으면 field 400 이고 저장하지 않는다', async () => {
+      const { orderId } = await overOrder('OVER9');
+      const response = await confirm(orderId, bodyOf(await proposalOf(orderId))).expect(400);
+      expect(response.body.errors).toEqual([expect.objectContaining({ scope: 'field', field: 'plans[0].plannedQty', code: 'PLAN_QTY_EXCEEDS_ORDER' })]);
+      expect(await prisma.production_plan.count({ where: { production_order_id: orderId, status_code: 'CONFIRMED' } })).toBe(0);
+    });
+
+    it('확정분이 수량을 채웠는데 작성중 계획이 남으면 보완 필요(BLOCKED DRAFT_PLAN_EXCEEDS_ORDER)다 — 목록은 조치 필요', async () => {
+      expect(await proposalOf(order.U)).toMatchObject({
+        kind: 'KEEP_CONFIRMED', status: 'NEEDS_INPUT', plans: [], reasons: [{ code: 'DRAFT_PLAN_EXCEEDS_ORDER', category: 'BLOCKED' }],
+      });
+      const detail = await request(app.getHttpServer()).get(`/api/planning/production-orders/${order.U}`).set('Cookie', cookie).expect(200);
+      expect(detail.body).toMatchObject({ worklistState: 'ACTION_REQUIRED', worklistReasons: expect.arrayContaining([{ code: 'DRAFT_PLAN_PENDING', workOrderCount: 0 }]) });
+    });
+
+    it('계획일이 지난 작성중 계획은 오늘로 제안한다 — 저장값은 saved 에 남고 제안 값 그대로 확정된다', async () => {
+      const proposal = await proposalOf(order.Q);
+      expect(proposal.plans[0]).toMatchObject({ planDate: localToday(), saved: expect.objectContaining({ planDate: shiftDays(localToday(), -2) }) });
+      await confirm(order.Q, bodyOf(proposal)).expect(200);
+    });
 
     it('취소된 ERP W/O 는 400 STATE_LOCKED, 범위 밖·없는 ERP W/O 는 404', async () => {
       const response = await confirm(order.G, bodyOf(await proposalOf(order.J))).expect(400);
@@ -607,11 +649,22 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     id.routingChg = (await routing(id.itemChg, [{ process: process20.process_id, equipment: false, mold: false }])).routingId;
     await makeOrder('R', id.itemChg);
     await makeOrder('OUT', id.itemOk, { plantId: id.otherPlant });
-    const plan = (orderId: bigint, key: string, qty: number, status: string, lineId: bigint | null = null) => prisma.production_plan.create({ data: {
-      production_order_id: orderId, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date(`${planStart}T00:00:00.000Z`), planned_qty: qty,
+    const plan = (orderId: bigint, key: string, qty: number, status: string, lineId: bigint | null = null, planDate = planStart) => prisma.production_plan.create({ data: {
+      production_order_id: orderId, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date(`${planDate}T00:00:00.000Z`), planned_qty: qty,
       uom_id: id.uom, bom_id: id.bomOk, routing_id: id.routingOk, status_code: status, confirmed_at: status === 'CONFIRMED' ? new Date() : null,
       planned_line_id: lineId,
     } });
+    overOrder = async (key: string) => {
+      await makeOrder(key, id.itemOk);
+      await plan(order[key], `${key}-1`, 50, 'DRAFT');
+      await plan(order[key], `${key}-2`, 60, 'DRAFT');
+      return { orderId: order[key] };
+    };
+    await makeOrder('U', id.itemOk);
+    await plan(order.U, 'U1', 100, 'CONFIRMED');
+    await plan(order.U, 'U2', 50, 'DRAFT');
+    await makeOrder('Q', id.itemOk);
+    await plan(order.Q, 'Q', 100, 'DRAFT', null, shiftDays(localToday(), -2));
     draftOrder = async (key: string) => {
       await makeOrder(key, id.itemOk);
       return { orderId: order[key], planId: (await plan(order[key], key, 50, 'DRAFT')).production_plan_id };

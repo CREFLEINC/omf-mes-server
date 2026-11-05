@@ -99,7 +99,13 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   if (order.status_code === CANCELLED) {
     return result('NOT_PROPOSABLE', [], [blockIssue('ORDER_CANCELLED', '취소된 ERP W/O 는 계획하지 않습니다.')]);
   }
-  if (confirmedQty.gte(order.order_qty)) return result('KEEP_CONFIRMED', [], []);
+  if (confirmedQty.gte(order.order_qty)) {
+    // 확정분으로 이미 채웠는데 작성중 계획이 남았다 — 확정하면 넘친다. 이 화면에서는 풀 수 없고 계획 화면에서 줄이거나 지운다.
+    const leftover = qtyFacts.some((fact) => !fact.confirmed)
+      ? [blockIssue('DRAFT_PLAN_EXCEEDS_ORDER', `확정 계획이 이미 ERP W/O 수량을 채웠는데 작성중 계획(${draftQty.toString()})이 남아 있습니다. 계획 화면에서 작성중 계획을 줄이거나 삭제하세요.`)]
+      : [];
+    return result('KEEP_CONFIRMED', [], leftover);
+  }
 
   const choice = plansToPropose(qtyFacts.filter((fact) => !fact.confirmed).map((fact) => fact.plan), order.order_qty, confirmedQty);
   const bomRows = facts.boms.get(order.item_id) ?? [];
@@ -108,7 +114,8 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   const today = localDate(now, order.plant.timezone_code);
   const targets = choice.kind === 'NEW_PLAN'
     ? [{ key: newPlanKey(0), saved: undefined, planDate: proposedPlanDate(toDateString(order.planned_start_date), today), qty: choice.qty, lineId: null }]
-    : choice.drafts.map((plan) => ({ key: draftPlanKey(plan.production_plan_id), saved: plan, planDate: toDateString(plan.plan_date) as string, qty: plan.planned_qty, lineId: plan.planned_line_id }));
+    // 작성중 계획의 계획일이 지났으면 오늘로 낸다 — 확정은 지난 계획일을 받지 않는다(저장값은 saved 에 남는다).
+    : choice.drafts.map((plan) => ({ key: draftPlanKey(plan.production_plan_id), saved: plan, planDate: laterOf(toDateString(plan.plan_date) as string, today), qty: plan.planned_qty, lineId: plan.planned_line_id }));
 
   const routed = targets.map((target) => ({ target, routing: routingFor(facts, order.item_id, target.saved?.routing_id ?? null) }));
   for (const { routing } of routed) {
@@ -256,3 +263,6 @@ function dedupe(issues: readonly ProposalIssue[]): ProposalIssue[] {
 }
 
 const compare = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** `YYYY-MM-DD` 라 문자열 비교가 날짜 비교다. */
+const laterOf = (date: string, today: string): string => (date < today ? today : date);

@@ -33,6 +33,8 @@ const DRAFT = 'DRAFT';
 const CANCELLED = 'CANCELLED';
 const PRODUCTION_PLAN = 'PRODUCTION_PLAN';
 const WORK_ORDER = 'WORK_ORDER';
+/** 계획 여럿의 확정 전개를 한 트랜잭션에 담는다 — 기본 5초로는 공정이 많은 묶음이 넘칠 수 있다(입고·출고 서비스와 같은 값). */
+const TRANSACTION_OPTIONS = { timeout: 15_000, maxWait: 5_000 };
 /** 계획번호·W/O 번호 채번 재시도 상한(`plan-confirm.service.ts` 와 같다). */
 const NUMBER_RETRY = 3;
 const BASIS_LABEL: Record<keyof ProposalBasis, string> = {
@@ -102,7 +104,7 @@ export class PlanProposalService {
       }
       const numbers = precheck.already ? { planNos: [], workOrderNos: [] } : await this.drawNumbers(precheck.proposal, precheck.resolved);
       try {
-        const outcome = await this.idempotency.run(context, (tx) => this.confirmLocked(tx, orderId, body, numbers, appUserId));
+        const outcome = await this.idempotency.run(context, (tx) => this.confirmLocked(tx, orderId, body, numbers, appUserId), TRANSACTION_OPTIONS);
         return outcome.body;
       } catch (error) {
         if (!isDuplicateNo(error)) throw error;
@@ -134,14 +136,16 @@ export class PlanProposalService {
       throw new ConflictException('user', '확정하는 사이 계획이 바뀌었습니다. 다시 시도해 주세요.', { code: 'INVALID_STATE' });
     }
 
-    const { delta, field } = quantityDelta(checked.resolved);
-    await assertWithinOrder(tx, orderId, delta, field);
-
+    // 모든 계획의 수정을 먼저 반영하고 합계를 한 번 본 뒤 확정한다 — 계획마다 저장·확정을 번갈아 하면 확정의 합계 검사가
+    // 아직 고치지 않은 계획을 옛 수량으로 세어, 본문 순서에 따라 같은 요청이 400 이 된다.
     const planNos = [...numbers.planNos];
+    const saved = [];
+    for (const plan of checked.resolved) saved.push({ plan, ...(await this.savePlan(tx, checked.proposal, plan, planNos, appUserId)) });
+    await assertWithinOrder(tx, orderId, new Prisma.Decimal(0), quantityDelta(checked.resolved).field);
+
     const workOrderNos = [...numbers.workOrderNos];
     const plans: ProposalConfirmResult['plans'] = [];
-    for (const plan of checked.resolved) {
-      const { productionPlanId, version } = await this.savePlan(tx, checked.proposal, plan, planNos, appUserId);
+    for (const { plan, productionPlanId, version } of saved) {
       const materials = await this.confirms.materials(tx, Number(productionPlanId));
       const confirmed = await this.confirms.confirmIn(tx, materials, version, workOrderNos.splice(0, plan.operationCount), appUserId, plan.supplements);
       plans.push({ proposalPlanKey: plan.body.proposalPlanKey, ...(await planResult(tx, productionPlanId, confirmed.versionNo)) });

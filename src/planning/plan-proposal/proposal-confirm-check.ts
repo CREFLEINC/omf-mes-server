@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { WorkOrderSupplement } from '../production-plan/expand';
-import { PlanWindow, dayStartOf, dayWindow, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
+import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
 import { assertWholeOrder } from './proposal-policy';
 import { ProposalFacts } from './proposal-reader';
@@ -63,6 +63,7 @@ export async function resolveConfirm(
   const usable = new Set((facts.usableRoutings.get(order.item_id) ?? []).map((row) => row.routing_id));
   const shifts = facts.shifts.get(order.plant_id) ?? [];
   const dayStart = dayStartOf(shifts.filter((shift) => shift.is_active).map((shift) => timeOfColumn(shift.start_time)));
+  const today = localDate(new Date(), order.plant.timezone_code);
   const errors: ErrorItem[] = [];
   const error = (field: string, code: string, message: string): void => {
     errors.push({ scope: 'field', field, code, message });
@@ -71,6 +72,8 @@ export async function resolveConfirm(
   const resolved = body.plans.map((plan, index): ResolvedPlan => {
     const path = `plans[${index}]`;
     const proposed = proposal.plans.find((candidate) => candidate.key === plan.proposalPlanKey) as ProposalPlan;
+    // 자정을 넘겨 확정하면 검토 때의 계획일이 지났을 수 있다 — 지난 날로 W/O 를 만들지 않는다. 제안은 늘 오늘 이후로 낸다.
+    if (plan.planDate < today) error(`${path}.planDate`, ERROR_CODE.RANGE, `계획일이 지났습니다 — 공장 현지 오늘(${today}) 이후로 고르세요.`);
     if (BigInt(plan.bomId) !== proposed.bom.id) {
       error(`${path}.bomId`, ERROR_CODE.BOM_NOT_DEFAULT, `품목의 ERP 기본 BOM 이 아닙니다 — 지금 기본은 ${proposed.bom.code} Rev ${proposed.bom.version} 입니다.`);
     }

@@ -47,6 +47,8 @@ describe('reasonsOf · statusOf — 사유 분류와 상태', () => {
     expect(statusOf('REVIEW_DRAFT', false, [{ code: 'PLAN_QTY_EXCEEDS_ORDER', category: 'INPUT' }])).toBe('NEEDS_INPUT');
     expect(statusOf('NOT_PROPOSABLE', false, [{ code: 'ROUTING_REQUIRED', category: 'BLOCKED' }])).toBe('NEEDS_INPUT');
     expect(statusOf('KEEP_CONFIRMED', false, [])).toBe('NO_CHANGE');
+    // 확정분이 채웠어도 작성중 계획이 남으면 사람이 치워야 한다.
+    expect(statusOf('KEEP_CONFIRMED', false, [{ code: 'DRAFT_PLAN_EXCEEDS_ORDER', category: 'BLOCKED' }])).toBe('NEEDS_INPUT');
     expect(statusOf('NOT_PROPOSABLE', true, [{ code: 'ORDER_CANCELLED', category: 'BLOCKED' }])).toBe('NO_CHANGE');
   });
 });

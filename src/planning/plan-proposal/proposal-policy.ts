@@ -19,6 +19,7 @@ export const PROPOSAL_REASONS = [
   'ROUTING_REQUIRED',
   'ROUTING_DEFAULT_REQUIRED',
   'ROUTING_OPERATION_REQUIRED',
+  'DRAFT_PLAN_EXCEEDS_ORDER',
   ...RESOURCE_CODES,
   'PLAN_QTY_EXCEEDS_ORDER',
 ] as const;
@@ -31,6 +32,7 @@ const BLOCKED_REASONS: ReadonlySet<ProposalReasonCode> = new Set([
   'ROUTING_REQUIRED',
   'ROUTING_DEFAULT_REQUIRED',
   'ROUTING_OPERATION_REQUIRED',
+  'DRAFT_PLAN_EXCEEDS_ORDER',
 ]);
 
 export type ProposalCategory = 'INPUT' | 'BLOCKED';
@@ -88,9 +90,11 @@ export function reasonsOf(issues: readonly ProposalIssue[]): ProposalReason[] {
   return PROPOSAL_REASONS.filter((code) => codes.has(code)).map((code) => ({ code, category: categoryOf(code) }));
 }
 
+/** 확정 계획이 수량을 채웠어도 남은 작성중 계획이 있으면 사람이 치워야 한다 — 변경 없음이 아니라 보완 필요다. */
 export function statusOf(kind: ProposalKind, cancelled: boolean, reasons: readonly ProposalReason[]): ProposalStatus {
-  if (kind === 'KEEP_CONFIRMED' || cancelled) return 'NO_CHANGE';
-  return reasons.length > 0 ? 'NEEDS_INPUT' : 'CONFIRMABLE';
+  if (cancelled) return 'NO_CHANGE';
+  if (reasons.length > 0) return 'NEEDS_INPUT';
+  return kind === 'KEEP_CONFIRMED' ? 'NO_CHANGE' : 'CONFIRMABLE';
 }
 
 /** 계획일 — ERP 계획 시작일이 공장 현지 오늘 이후면 그날, 없거나 지났으면 오늘. `YYYY-MM-DD` 라 문자열 비교가 날짜 비교다. */
