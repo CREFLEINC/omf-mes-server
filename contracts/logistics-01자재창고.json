@@ -6976,7 +6976,7 @@
      "logistics"
     ],
     "summary": "생산창고 입고 목록",
-    "description": "근거: M-01-09 §3",
+    "description": "근거: M-01-09 §3 W/O 없는 행(창고 보충 수령)의 단말 공장 범위는 도착 위치 창고의 공장이다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "name": "workOrderId",
@@ -7053,7 +7053,7 @@
      "logistics"
     ],
     "summary": "생산창고 입고 확정",
-    "description": "화면이 「입고 확정」 한 버튼이므로 등록이 곧 확정이다. 근거: M-01-09 §5-6",
+    "description": "화면이 「입고 확정」 한 버튼이므로 등록이 곧 확정이다. 근거: M-01-09 §5-6 workOrderId 는 선택 — 비우면 창고 보충 출고만 받는다(공장은 출고의 출발 창고). destinationLocationId 는 출고 도착 위치와 같아야 한다. 권한은 그대로 M-01-09(웹 W-02-12 는 …/arrivals/{goodsIssueId}:receive). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -11229,6 +11229,259 @@
            "$ref": "#/components/schemas/ErrorResponse"
           }
          ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/replenishment-requests/arrivals": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "창고 보충 도착 대기",
+    "description": "창고 보충 요청 피킹에서 나온 POSTED 출고 가운데 생산창고 입고(수령) 기록이 없는 것. 정렬 = 출고 시각 → 출고 id. W/O 출고는 나오지 않는다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "보충받는 생산 창고의 공장"
+     },
+     {
+      "name": "productionWarehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "goodsIssuedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "출고 날짜(공장 현지) 시작"
+     },
+     {
+      "name": "goodsIssuedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "출고 날짜(공장 현지) 끝(포함)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ReplenishmentArrival"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-02-12(생산 창고 보충). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 공장",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/replenishment-requests/arrivals/{goodsIssueId}:receive": {
+   "parameters": [
+    {
+     "name": "goodsIssueId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "창고 보충 출고 웹 개별 수령",
+    "description": "W-02-12 도착 대기의 「하나씩 받기」. 생산창고 입고(POST /shopfloor-receipts)와 같은 서비스 함수로 확정한다 — 출고당 한 번, 전 라인 필수, 0 ≤ 받은 ≤ 출고, 차이면 사유. 도착 위치는 출고 도착 위치를 서버가 채운다. 창고 보충 출고가 아니면 400 INVALID, 이미 수령이면 409 ALREADY_RECEIVED. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReplenishmentArrivalReceive"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "확정됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShopfloorReceiptDetailResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — INVALID(창고 보충 출고 아님·라인 대조) · RANGE · REQUIRED · LINE_REQUIRED",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-02-12(생산 창고 보충). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "ALREADY_RECEIVED — 이미 수령한 출고",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/shopfloor-receipts:bulk": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "창고 보충 출고 일괄 수령",
+    "description": "창고 보충 출고만. 건마다 따로 확정한다(한 건이 실패해도 나머지는 확정). 줄마다 받은 수량 = 출고 수량. 결과: RECEIVED · ALREADY_RECEIVED(먼저 수령됨) · FAILED(message — 창고 보충 출고가 아님 등). 상한 100건. 권한 W-02-12. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShopfloorReceiptBulkCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "건별 결과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShopfloorReceiptBulkResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "RANGE — 100건 초과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-02-12(생산 창고 보충). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -19792,9 +20045,13 @@
      },
      "workOrderId": {
       "x-source-column": "work_order_id",
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "창고 보충 출고 수령이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "destinationLocationId": {
       "x-source-column": "destination_location_id",
@@ -19841,7 +20098,6 @@
     "type": "object",
     "required": [
      "goodsIssueId",
-     "workOrderId",
      "destinationLocationId",
      "receivedAt",
      "businessDate",
@@ -19858,15 +20114,20 @@
      },
      "workOrderId": {
       "x-source-column": "work_order_id",
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "W/O 출고 수령이면 그 W/O. 비우면 그 출고가 창고 보충 요청 피킹에서 나온 것이어야 한다(아니면 400 INVALID). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "destinationLocationId": {
       "x-source-column": "destination_location_id",
       "type": "integer",
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "출고가 실은 도착 위치와 같아야 한다(아니면 400 INVALID). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "receivedAt": {
       "x-source-column": "received_at",
@@ -22052,6 +22313,217 @@
        "null"
       ],
       "maxLength": 500
+     }
+    },
+    "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+   },
+   "ReplenishmentArrival": {
+    "type": "object",
+    "description": "수령 기록이 없는 창고 보충 출고 전표(도착 대기). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "required": [
+     "goodsIssueId",
+     "goodsIssueNo",
+     "issuedAt",
+     "elapsedDays",
+     "materialIssueRequestId",
+     "issueRequestNo",
+     "replenishmentOriginCode",
+     "productionWarehouseId",
+     "productionWarehouseName",
+     "destinationLocationId",
+     "destinationLocationCode",
+     "lines"
+    ],
+    "properties": {
+     "goodsIssueId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "goodsIssueNo": {
+      "type": "string"
+     },
+     "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "elapsedDays": {
+      "type": "integer",
+      "description": "공장 현지 날짜로 센 출고 뒤 경과 일수"
+     },
+     "materialIssueRequestId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "issueRequestNo": {
+      "type": "string"
+     },
+     "replenishmentOriginCode": {
+      "type": "string",
+      "enum": [
+       "DIRECT",
+       "AUTO"
+      ]
+     },
+     "productionWarehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "productionWarehouseName": {
+      "type": "string"
+     },
+     "destinationLocationId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "destinationLocationCode": {
+      "type": "string"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "goodsIssueLineId",
+        "itemId",
+        "itemCode",
+        "itemName",
+        "lotId",
+        "lotNo",
+        "issueQty",
+        "uomId",
+        "uomCode"
+       ],
+       "properties": {
+        "goodsIssueLineId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "itemId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "itemCode": {
+         "type": "string"
+        },
+        "itemName": {
+         "type": "string"
+        },
+        "lotId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "lotNo": {
+         "type": "string"
+        },
+        "issueQty": {
+         "type": "number"
+        },
+        "uomId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "uomCode": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   },
+   "ReplenishmentArrivalReceive": {
+    "type": "object",
+    "required": [
+     "businessDate",
+     "receivedAt",
+     "occurredAt",
+     "lines"
+    ],
+    "description": "웹 개별 수령 본문 — 줄은 POST /shopfloor-receipts 의 줄과 같은 모양(전 라인 필수·0 ≤ 받은 ≤ 출고·차이면 사유). 도착 위치·W/O 는 받지 않고 서버가 채운다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "properties": {
+     "businessDate": {
+      "type": "string",
+      "format": "date"
+     },
+     "receivedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShopfloorReceiptLineCreate"
+      }
+     }
+    }
+   },
+   "ShopfloorReceiptBulkCreate": {
+    "type": "object",
+    "required": [
+     "businessDate",
+     "receivedAt",
+     "goodsIssueIds"
+    ],
+    "description": "창고 보충 출고 일괄 수령 — 줄마다 받은 수량 = 출고 수량. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "properties": {
+     "businessDate": {
+      "type": "string",
+      "format": "date"
+     },
+     "receivedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "goodsIssueIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "최대 100건(넘으면 400 RANGE)"
+     }
+    }
+   },
+   "ShopfloorReceiptBulkResult": {
+    "type": "object",
+    "required": [
+     "results"
+    ],
+    "properties": {
+     "results": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "goodsIssueId",
+        "outcome"
+       ],
+       "properties": {
+        "goodsIssueId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "outcome": {
+         "type": "string",
+         "enum": [
+          "RECEIVED",
+          "ALREADY_RECEIVED",
+          "FAILED"
+         ]
+        },
+        "shopfloorReceiptId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "message": {
+         "type": "string"
+        }
+       }
+      }
      }
     },
     "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
