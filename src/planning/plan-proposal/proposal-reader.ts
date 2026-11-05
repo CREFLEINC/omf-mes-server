@@ -106,7 +106,15 @@ export interface ProposalFacts {
   shifts: Map<bigint, ShiftRow[]>;
   equipments: Map<bigint, EquipmentFacts & { plant_id: bigint; production_line_id: bigint | null; version_no: number }>;
   molds: Map<bigint, MoldFacts & { plant_id: bigint; version_no: number }>;
+  /** 라인 기본 위치 — 확정과 같은 위치 판정(`resource-rules.ts`)에 쓴다. */
+  locations: Map<bigint, LocationRow>;
   rivals: RivalWindow[];
+}
+
+export interface LocationRow {
+  location_id: bigint;
+  is_active: boolean;
+  warehouse: { plant_id: bigint; warehouse_type_code: string; is_active: boolean };
 }
 
 const CONFIRMED = 'CONFIRMED';
@@ -212,6 +220,13 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     }),
   ]);
 
+  const locationIds = unique(lineRows.flatMap((line) => [line.default_wip_location_id, line.default_fg_location_id, line.default_scrap_location_id]));
+  const locationRows = locationIds.length === 0 ? [] : await client.location.findMany({
+    where: { location_id: { in: locationIds } },
+    orderBy: { location_id: 'asc' },
+    select: { location_id: true, is_active: true, warehouse: { select: { plant_id: true, warehouse_type_code: true, is_active: true } } },
+  });
+
   return {
     orders,
     plans,
@@ -225,6 +240,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     shifts: group(shiftRows, (row) => row.plant_id),
     equipments: new Map(equipments.map((row) => [row.equipment_id, row])),
     molds: new Map(molds.map((row) => [row.mold_id, row])),
+    locations: new Map(locationRows.map((row) => [row.location_id, row])),
     rivals,
   };
 }

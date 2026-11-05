@@ -8,7 +8,7 @@ import { usableWhere as usableRoutingWhere } from '../routing/routing.service';
  * 화면 W-02-02 가 계획 행에 미리 채우는 값(`master-check-pane.tsx` 의 `automaticBomId`·`automaticRoutingId`)과 같아야 한다 —
  * 갈리면 사람이 고른 값과 제안이 고른 값이 다르다.
  */
-export const MASTER_REASONS = ['BOM_DEFAULT_REQUIRED', 'ROUTING_REQUIRED', 'ROUTING_DEFAULT_REQUIRED'] as const;
+export const MASTER_REASONS = ['BOM_DEFAULT_REQUIRED', 'ROUTING_REQUIRED', 'ROUTING_DEFAULT_REQUIRED', 'ROUTING_OPERATION_REQUIRED'] as const;
 export type MasterReason = (typeof MASTER_REASONS)[number];
 
 export interface RoutingCandidate {
@@ -22,19 +22,24 @@ export function defaultBomOf(defaultBomIds: readonly bigint[]): bigint | null {
 }
 
 /** 쓸 수 있는(확정·유효 기간 안) Routing 이 하나면 그것, 여럿이면 그중 기본 하나. */
-export function chooseRouting(usable: readonly RoutingCandidate[]): { routingId: bigint | null; reason?: MasterReason } {
+export function chooseRouting(usable: readonly RoutingCandidate[]): { routingId: bigint | null; reason?: 'ROUTING_REQUIRED' | 'ROUTING_DEFAULT_REQUIRED' } {
   if (usable.length === 0) return { routingId: null, reason: 'ROUTING_REQUIRED' };
   if (usable.length === 1) return { routingId: usable[0].routingId };
   const defaults = usable.filter((routing) => routing.isDefault);
   return defaults.length === 1 ? { routingId: defaults[0].routingId } : { routingId: null, reason: 'ROUTING_DEFAULT_REQUIRED' };
 }
 
-/** 계획을 세우지 못하게 막는 기준정보 — `MASTER_REASONS` 순서. */
-export function masterReasonsOf(defaultBomIds: readonly bigint[], usable: readonly RoutingCandidate[]): MasterReason[] {
+/** 계획을 세우지 못하게 막는 기준정보 — `MASTER_REASONS` 순서. 고른 Routing 에 공정이 없어도 막는다(확정 전개가 W/O 를 못 만든다). */
+export function masterReasonsOf(
+  defaultBomIds: readonly bigint[],
+  usable: readonly RoutingCandidate[],
+  operationCounts: ReadonlyMap<bigint, number>,
+): MasterReason[] {
   const reasons: MasterReason[] = [];
   if (defaultBomOf(defaultBomIds) === null) reasons.push('BOM_DEFAULT_REQUIRED');
   const routing = chooseRouting(usable);
   if (routing.reason !== undefined) reasons.push(routing.reason);
+  else if ((operationCounts.get(routing.routingId as bigint) ?? 0) === 0) reasons.push('ROUTING_OPERATION_REQUIRED');
   return reasons;
 }
 
@@ -86,12 +91,16 @@ export async function readMastersOf(
 /** 품목 여럿의 기준정보 사유 — 목록이 계획 전 오더에 싣는다. */
 export async function masterReasonsByItem(client: Prisma.TransactionClient, itemIds: readonly bigint[]): Promise<Map<bigint, MasterReason[]>> {
   const { boms, routings } = await readMastersOf(client, itemIds);
+  const routingIds = [...routings.values()].flat().map((routing) => routing.routing_id);
+  const counted = routingIds.length === 0 ? [] : await client.routing_operation.groupBy({ by: ['routing_id'], where: { routing_id: { in: routingIds } }, _count: { _all: true } });
+  const operationCounts = new Map(counted.map((row) => [row.routing_id, row._count._all]));
   return new Map(
     [...new Set(itemIds)].map((itemId) => [
       itemId,
       masterReasonsOf(
         (boms.get(itemId) ?? []).map((bom) => bom.bom_id),
         (routings.get(itemId) ?? []).map((routing) => ({ routingId: routing.routing_id, isDefault: routing.is_default })),
+        operationCounts,
       ),
     ]),
   );

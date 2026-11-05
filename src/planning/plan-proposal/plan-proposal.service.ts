@@ -120,6 +120,10 @@ export class PlanProposalService {
     numbers: Numbers,
     appUserId: number | undefined,
   ): Promise<ProposalConfirmResult> {
+    // ⛔ 잠금 순서는 «계획 → ERP W/O» 다 — 수정·확정(`lockPlan` → `assertWithinOrder`)과 같아야 교착하지 않는다.
+    // 작성중 계획을 id 순으로 먼저 잠그고 ERP W/O 를 잠근다. 그 사이 새로 생긴 계획은 basis.plans 가 409 로 잡는다.
+    await tx.$queryRaw`SELECT 1 FROM planning.production_plan
+      WHERE production_order_id = ${orderId} AND status_code <> 'CONFIRMED' ORDER BY production_plan_id FOR UPDATE`;
     await tx.$queryRaw`SELECT 1 FROM planning.production_order WHERE production_order_id = ${orderId} FOR UPDATE`;
     const checked = await this.check(tx, orderId, body);
     if (checked.already) return alreadyProcessed(tx, orderId);

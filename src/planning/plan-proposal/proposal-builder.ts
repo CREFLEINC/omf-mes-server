@@ -22,7 +22,8 @@ import {
   statusOf,
   warnIssue,
 } from './proposal-policy';
-import { LineRow, OperationRow, OrderRow, PlanRow, ProposalFacts, routingFor } from './proposal-reader';
+import { OperationRow, OrderRow, PlanRow, ProposalFacts, routingFor } from './proposal-reader';
+import { resourceFindings } from './resource-rules';
 
 export interface ProposalWorkOrder {
   operation: OperationRow;
@@ -112,9 +113,7 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   const routed = targets.map((target) => ({ target, routing: routingFor(facts, order.item_id, target.saved?.routing_id ?? null) }));
   for (const { routing } of routed) {
     if (routing.reason !== undefined) masterIssues.push(masterIssue(routing.reason));
-    else if ((facts.operations.get(routing.routingId as bigint) ?? []).length === 0) {
-      masterIssues.push(blockIssue('ROUTING_OPERATION_REQUIRED', '고른 Routing 에 공정이 한 줄도 없습니다. 기준정보에서 공정을 등록하세요.'));
-    }
+    else if ((facts.operations.get(routing.routingId as bigint) ?? []).length === 0) masterIssues.push(masterIssue('ROUTING_OPERATION_REQUIRED'));
   }
   if (masterIssues.length > 0) return result('NOT_PROPOSABLE', [], dedupe(masterIssues));
 
@@ -170,6 +169,14 @@ function workOrdersOf(
     const resource = resources.get(operation.routing_operation_id);
     const lineId = planLineId ?? resource?.equipmentLineId ?? null;
     const line = lineId === null ? undefined : facts.lines.get(lineId);
+    const values = {
+      productionLineId: lineId,
+      equipmentId: resource?.equipmentId ?? null,
+      moldId: resource?.moldId ?? null,
+      defaultWipLocationId: line?.default_wip_location_id ?? null,
+      defaultFgLocationId: line?.default_fg_location_id ?? null,
+      defaultScrapLocationId: line?.default_scrap_location_id ?? null,
+    };
     const equipmentIds = resource?.equipmentId == null ? [] : [resource.equipmentId];
     const moldIds = resource?.moldId == null ? [] : [resource.moldId];
     const findings = [
@@ -184,35 +191,13 @@ function workOrdersOf(
         .map((dependency) => ({ routingOperationId: dependency.predecessor_operation_id, dependencyTypeCode: dependency.dependency_type_code })),
       proposedQty: qty,
       window,
-      productionLineId: lineId,
-      equipmentId: resource?.equipmentId ?? null,
-      moldId: resource?.moldId ?? null,
-      defaultWipLocationId: line?.default_wip_location_id ?? null,
-      defaultFgLocationId: line?.default_fg_location_id ?? null,
-      defaultScrapLocationId: line?.default_scrap_location_id ?? null,
-      issues: [...lineIssues(order, lineId, line), ...findings.map((finding) => warnIssue(finding.code, finding.message, finding.field))],
+      ...values,
+      issues: [
+        ...resourceFindings(order.plant_id, values, facts).map((finding) => blockIssue(finding.code, finding.message, finding.field)),
+        ...findings.map((finding) => warnIssue(finding.code, finding.message, finding.field)),
+      ],
     };
   });
-}
-
-/** 배포 전제 검사(`release-plan.ts`)와 목록 판정이 막는 것과 같다 — 라인 없음 · 다른 공장 라인 · 기본 위치 빔. */
-function lineIssues(order: OrderRow, lineId: bigint | null, line: LineRow | undefined): ProposalIssue[] {
-  if (lineId === null || line === undefined) {
-    return [blockIssue('WORK_ORDER_LINE_REQUIRED', '생산 라인이 정해지지 않습니다. 라인을 고르세요.', 'productionLineId')];
-  }
-  const issues: ProposalIssue[] = [];
-  if (line.plant_id !== order.plant_id || !line.is_active) {
-    issues.push(blockIssue('LINE_PLANT_MISMATCH', '이 ERP W/O 공장의 사용 중인 라인이 아닙니다. 라인을 다시 고르세요.', 'productionLineId'));
-  }
-  const locations: [string, bigint | null][] = [
-    ['defaultWipLocationId', line.default_wip_location_id],
-    ['defaultFgLocationId', line.default_fg_location_id],
-    ['defaultScrapLocationId', line.default_scrap_location_id],
-  ];
-  for (const [field, value] of locations) {
-    if (value === null) issues.push(blockIssue('WORK_ORDER_LOCATION_REQUIRED', '라인에 기본 위치가 없습니다. 위치를 고르세요.', field));
-  }
-  return issues;
 }
 
 /**
@@ -228,9 +213,14 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
     ...saved.filter((plan) => plan.status_code !== CONFIRMED).map((plan) => plan.planned_line_id),
     ...maps.map((row) => row.map.equipmentLineId),
   ].filter((id) => id !== null));
+  const locationIds = new Set([...lineIds].flatMap((id) => {
+    const line = facts.lines.get(id);
+    return line === undefined ? [] : [line.default_wip_location_id, line.default_fg_location_id, line.default_scrap_location_id];
+  }).filter((id) => id !== null));
   return {
     productionOrder: basisHash([order.version_no, order.order_qty, order.status_code, order.plant_id, order.item_id, order.uom_id, order.planned_start_date]),
-    plans: basisHash(saved.map((plan) => [plan.production_plan_id, plan.version_no, plan.status_code, plan.work_order.map((workOrder) => workOrder.status_code)])),
+    // 확정 계획의 W/O 는 「모두 취소됐는가」만 수량에 든다 — 진행 중 상태 변화로 409 가 나지 않게.
+    plans: basisHash(saved.map((plan) => [plan.production_plan_id, plan.version_no, plan.status_code, isPlanCancelled(plan.work_order.map((workOrder) => workOrder.status_code))])),
     bom: basisHash((facts.boms.get(order.item_id) ?? []).map((bom) => [bom.bom_id, bom.bom_version, bom.version_no])),
     routing: basisHash([
       routings.map((row) => [row.routing_id, row.is_default, row.status_code, row.effective_from, row.effective_to, row.version_no]),
@@ -243,9 +233,17 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
     resources: basisHash([
       order.plant.timezone_code,
       maps.map((row) => [row.item_resource_map_id, row.version_no, row.map]),
-      [...equipmentIds].sort(compare).map((id) => facts.equipments.get(id)),
-      maps.map((row) => row.map.moldId).filter((id) => id !== null).sort(compare).map((id) => facts.molds.get(id)),
+      // 설비·금형은 판정에 드는 칸만 — 교정 기한·타수와 그것이 올리는 판은 WARN 에만 쓰고 넣지 않는다(수시로 바뀐다).
+      [...equipmentIds].sort(compare).map((id) => {
+        const row = facts.equipments.get(id);
+        return row === undefined ? null : [id, row.plant_id, row.status_code, row.is_active, row.production_line_id];
+      }),
+      maps.map((row) => row.map.moldId).filter((id) => id !== null).sort(compare).map((id) => {
+        const row = facts.molds.get(id);
+        return row === undefined ? null : [id, row.plant_id, row.status_code, row.is_active];
+      }),
       [...lineIds].sort(compare).map((id) => facts.lines.get(id)),
+      [...facts.locations.values()].filter((row) => locationIds.has(row.location_id)),
       facts.shifts.get(order.plant_id) ?? [],
     ]),
   };

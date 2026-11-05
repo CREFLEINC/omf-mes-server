@@ -4,9 +4,10 @@ import { createHash } from 'node:crypto';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import type { MasterReason } from '../production-plan/master-choice';
+import { RESOURCE_CODES } from './resource-rules';
 
 /**
- * 계획 제안의 판정 — 구분·상태·사유 분류. 계산(`proposal-builder.ts`)과 확정(`proposal-confirm.service.ts`)이 이 한 벌을 쓴다.
+ * 계획 제안의 판정 — 구분·상태·사유 분류. 계산(`proposal-builder.ts`)과 확정(`plan-proposal.service.ts`)이 이 한 벌을 쓴다.
  * 업무 결정이 바뀔 수 있는 자리는 함수 하나씩으로 모아 둔다: `plansToPropose`(작성중 계획이 있으면 남은 수량을 제안하는가),
  * `assertWholeOrder`(한 ERP W/O 안에서 일부 계획만 확정하는가).
  */
@@ -18,9 +19,7 @@ export const PROPOSAL_REASONS = [
   'ROUTING_REQUIRED',
   'ROUTING_DEFAULT_REQUIRED',
   'ROUTING_OPERATION_REQUIRED',
-  'WORK_ORDER_LINE_REQUIRED',
-  'WORK_ORDER_LOCATION_REQUIRED',
-  'LINE_PLANT_MISMATCH',
+  ...RESOURCE_CODES,
   'PLAN_QTY_EXCEEDS_ORDER',
 ] as const;
 export type ProposalReasonCode = (typeof PROPOSAL_REASONS)[number];
@@ -66,6 +65,7 @@ const MASTER_MESSAGE: Record<MasterReason, string> = {
   BOM_DEFAULT_REQUIRED: '품목에 ERP 기본 BOM 이 하나로 정해져 있지 않습니다. 기준정보에서 기본 BOM 을 정하세요.',
   ROUTING_REQUIRED: '쓸 수 있는(확정·유효 기간 안) Routing 이 없습니다. 기준정보에서 공정을 등록하세요.',
   ROUTING_DEFAULT_REQUIRED: '쓸 수 있는 Routing 이 여럿인데 기본이 하나로 정해져 있지 않습니다. 기준정보에서 기본 공정을 정하세요.',
+  ROUTING_OPERATION_REQUIRED: '고른 Routing 에 공정이 한 줄도 없습니다. 기준정보에서 공정을 등록하세요.',
 };
 export const masterIssue = (reason: MasterReason): ProposalIssue => blockIssue(reason, MASTER_MESSAGE[reason]);
 

@@ -2,12 +2,12 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { unusable } from '../../core/work-order';
 import { WorkOrderSupplement } from '../production-plan/expand';
 import { PlanWindow, dayStartOf, dayWindow, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
 import { assertWholeOrder } from './proposal-policy';
 import { ProposalFacts } from './proposal-reader';
+import { resourceFindings } from './resource-rules';
 
 /** 계약 `ProductionPlanProposalConfirm` — 형식·필수·양수는 계약 가드가 이미 막았다. */
 export interface ProposalConfirmBody {
@@ -46,9 +46,6 @@ export interface ResolvedPlan {
   operationCount: number;
   supplements: Map<bigint, WorkOrderSupplement>;
 }
-
-/** 자재창고 위치는 W/O 기본 위치로 두지 않는다 — 라인 기본 위치와 같은 규칙(`equipment-group.service.ts`). */
-const MATERIAL_WAREHOUSE = 'MATERIAL';
 
 /**
  * 확정 본문을 수기 등록·확정과 같은 규칙으로 검증한다 — 오류는 모아 한 번에 400(field 는 본문 경로).
@@ -91,21 +88,16 @@ export async function resolveConfirm(
     const supplements = new Map<bigint, WorkOrderSupplement>();
     plan.workOrders.forEach((workOrder, at) => {
       const field = (name: string): string => `${path}.workOrders[${at}].${name}`;
-      const lineId = BigInt(workOrder.productionLineId);
-      if (!lineUsable(refs.lines.get(lineId), order.plant_id)) error(field('productionLineId'), 'LINE_PLANT_MISMATCH', '이 ERP W/O 공장의 사용 중인 라인이 아닙니다.');
-      const equipmentId = idOf(workOrder.plannedEquipmentId);
-      if (equipmentId !== null) {
-        const equipment = refs.equipments.get(equipmentId);
-        if (equipment === undefined || equipment.plant_id !== order.plant_id) error(field('plannedEquipmentId'), ERROR_CODE.INVALID, '이 공장의 설비가 아닙니다.');
-        else if (unusable(equipment)) error(field('plannedEquipmentId'), 'EQUIPMENT_NOT_IN_SERVICE', '가동 상태가 아닌 설비입니다.');
-        else if (equipment.production_line_id !== null && equipment.production_line_id !== lineId) error(field('plannedEquipmentId'), ERROR_CODE.INVALID, '고른 라인에 속한 설비가 아닙니다.');
-      }
-      const moldId = idOf(workOrder.plannedMoldId);
-      if (moldId !== null) {
-        const mold = refs.molds.get(moldId);
-        if (mold === undefined || mold.plant_id !== order.plant_id) error(field('plannedMoldId'), ERROR_CODE.INVALID, '이 공장의 금형이 아닙니다.');
-        else if (unusable(mold)) error(field('plannedMoldId'), 'MOLD_NOT_IN_SERVICE', '가동 상태가 아닌 금형입니다.');
-      }
+      const resources = {
+        productionLineId: BigInt(workOrder.productionLineId),
+        equipmentId: idOf(workOrder.plannedEquipmentId),
+        moldId: idOf(workOrder.plannedMoldId),
+        defaultWipLocationId: BigInt(workOrder.defaultWipLocationId),
+        defaultFgLocationId: BigInt(workOrder.defaultFgLocationId),
+        defaultScrapLocationId: BigInt(workOrder.defaultScrapLocationId),
+      };
+      // 제안이 사유를 내는 판정과 같은 것 — 「확정 가능」 제안을 그대로 보내면 여기서 막히지 않는다.
+      for (const finding of resourceFindings(order.plant_id, resources, refs)) error(field(finding.field), finding.code, finding.message);
       const workerId = idOf(workOrder.responsibleWorkerId);
       if (workerId !== null) {
         const worker = refs.workers.get(workerId);
@@ -114,25 +106,14 @@ export async function resolveConfirm(
       const shiftId = idOf(workOrder.plannedShiftId);
       const shift = shiftId === null ? undefined : shifts.find((candidate) => candidate.shift_id === shiftId && candidate.is_active);
       if (shiftId !== null && shift === undefined) error(field('plannedShiftId'), ERROR_CODE.INVALID, '이 공장의 사용 중인 교대가 아닙니다.');
-      for (const name of ['defaultWipLocationId', 'defaultFgLocationId', 'defaultScrapLocationId'] as const) {
-        const location = refs.locations.get(BigInt(workOrder[name]));
-        if (location === undefined || location.warehouse.plant_id !== order.plant_id || location.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE || !location.is_active || !location.warehouse.is_active) {
-          error(field(name), ERROR_CODE.INVALID, '이 공장의, 자재창고가 아닌 사용 중인 위치여야 합니다.');
-        }
-      }
       const window: PlanWindow = shift === undefined
         ? dayWindow(plan.planDate, dayStart, order.plant.timezone_code)
         : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time), crossesMidnight: shift.crosses_midnight }, order.plant.timezone_code);
       if (window.plannedEndAt < window.plannedStartAt) error(field('plannedShiftId'), ERROR_CODE.INVALID, '교대 종료가 시작보다 앞섭니다. 교대 기준정보를 확인하세요.');
       supplements.set(BigInt(workOrder.routingOperationId), {
-        productionLineId: lineId,
-        equipmentId,
-        moldId,
+        ...resources,
         workerId,
         shiftId,
-        defaultWipLocationId: BigInt(workOrder.defaultWipLocationId),
-        defaultFgLocationId: BigInt(workOrder.defaultFgLocationId),
-        defaultScrapLocationId: BigInt(workOrder.defaultScrapLocationId),
         window,
       });
     });

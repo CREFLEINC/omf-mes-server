@@ -80,6 +80,8 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
   const id: Record<string, bigint> = {};
   const order: Record<string, bigint> = {};
   const planStart = shiftDays(localToday(), 3);
+  /** 동시성 라운드가 쓰는 작성중 계획 하나짜리 오더(수량 100 · 계획 50). */
+  let draftOrder: (key: string) => Promise<{ orderId: bigint; planId: bigint }>;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -172,12 +174,17 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(summary).toEqual([
         ['NOT_PROPOSABLE', 'NEEDS_INPUT', [{ code: 'BOM_DEFAULT_REQUIRED', category: 'BLOCKED' }], 0],
         ['NOT_PROPOSABLE', 'NEEDS_INPUT', [{ code: 'ROUTING_REQUIRED', category: 'BLOCKED' }], 0],
-        ['NEW_PLAN', 'NEEDS_INPUT', [{ code: 'WORK_ORDER_LINE_REQUIRED', category: 'INPUT' }], 1],
+        ['NEW_PLAN', 'NEEDS_INPUT', [{ code: 'WORK_ORDER_LINE_REQUIRED', category: 'INPUT' }, { code: 'WORK_ORDER_LOCATION_REQUIRED', category: 'INPUT' }], 1],
         ['KEEP_CONFIRMED', 'NO_CHANGE', [], 0],
         ['NOT_PROPOSABLE', 'NO_CHANGE', [{ code: 'ORDER_CANCELLED', category: 'BLOCKED' }], 0],
       ]);
       const lineless = (response.body.items as Proposal[])[2].plans[0].workOrders[0];
-      expect(lineless.issues).toEqual([expect.objectContaining({ severity: 'BLOCK', code: 'WORK_ORDER_LINE_REQUIRED', field: 'productionLineId' })]);
+      expect(lineless.issues.map((issue) => [issue.severity, issue.code, issue.field])).toEqual([
+        ['BLOCK', 'WORK_ORDER_LINE_REQUIRED', 'productionLineId'],
+        ['BLOCK', 'WORK_ORDER_LOCATION_REQUIRED', 'defaultWipLocationId'],
+        ['BLOCK', 'WORK_ORDER_LOCATION_REQUIRED', 'defaultFgLocationId'],
+        ['BLOCK', 'WORK_ORDER_LOCATION_REQUIRED', 'defaultScrapLocationId'],
+      ]);
     });
 
     it('작성중 계획이 있으면 그 계획을 검토한다 — 임시 키는 저장된 id 로, 저장값을 함께 싣고 남은 수량은 제안하지 않는다', async () => {
@@ -304,7 +311,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(response.body.errors).toEqual(expect.arrayContaining([
         expect.objectContaining({ field: 'plans[0].bomId', code: 'BOM_NOT_DEFAULT' }),
         expect.objectContaining({ field: 'plans[0].workOrders[0].productionLineId', code: 'LINE_PLANT_MISMATCH' }),
-        expect.objectContaining({ field: 'plans[0].workOrders[0].defaultWipLocationId', code: 'INVALID' }),
+        expect.objectContaining({ field: 'plans[0].workOrders[0].defaultWipLocationId', code: 'LOCATION_INVALID' }),
         expect.objectContaining({ field: 'plans[0].workOrders[0].plannedEquipmentId', code: 'EQUIPMENT_NOT_IN_SERVICE' }),
       ]));
       expect(await snapshot()).toEqual(before);
@@ -353,6 +360,96 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(responses.map((response) => response.body.outcome as string).sort()).toEqual(['ALREADY_PROCESSED', 'CONFIRMED']);
       expect(await prisma.production_plan.count({ where: { production_order_id: order.H } })).toBe(1);
     });
+
+    it('계획 라인과 다른 라인의 설비는 제안이 EQUIPMENT_LINE_MISMATCH(보완 필요)로 내고, 그대로 확정하면 같은 판정·같은 칸으로 400 이다', async () => {
+      const proposal = await proposalOf(order.N);
+      expect(proposal).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'NEEDS_INPUT', reasons: [{ code: 'EQUIPMENT_LINE_MISMATCH', category: 'INPUT' }] });
+      expect(proposal.plans[0].workOrders.map((workOrder) => workOrder.issues.filter((issue) => issue.severity === 'BLOCK').map((issue) => [issue.code, issue.field])))
+        .toEqual([[['EQUIPMENT_LINE_MISMATCH', 'plannedEquipmentId']], [['EQUIPMENT_LINE_MISMATCH', 'plannedEquipmentId']]]);
+
+      const rejected = await confirm(order.N, bodyOf(proposal)).expect(400);
+      expect(rejected.body.errors.map((error: { field: string; code: string }) => [error.field, error.code])).toEqual([
+        ['plans[0].workOrders[0].plannedEquipmentId', 'EQUIPMENT_LINE_MISMATCH'],
+        ['plans[0].workOrders[1].plannedEquipmentId', 'EQUIPMENT_LINE_MISMATCH'],
+      ]);
+
+      // 화면에서 설비를 비우면(보완) 확정된다.
+      const fixed = bodyOf(proposal);
+      fixed.plans[0].workOrders.forEach((workOrder) => { workOrder.plannedEquipmentId = null; });
+      await confirm(order.N, fixed).expect(200);
+    });
+
+    it('라인 기본 위치가 자재창고면 제안이 LOCATION_INVALID 를 내고 확정도 같다 — 기준정보를 고치면 CONFIRMABLE 이고 제안 값 그대로 확정된다', async () => {
+      const proposal = await proposalOf(order.P);
+      expect(proposal).toMatchObject({ status: 'NEEDS_INPUT', reasons: [{ code: 'LOCATION_INVALID', category: 'INPUT' }] });
+      const rejected = await confirm(order.P, bodyOf(proposal)).expect(400);
+      expect(rejected.body.errors.map((error: { field: string; code: string }) => [error.field, error.code]))
+        .toEqual([['plans[0].workOrders[0].defaultWipLocationId', 'LOCATION_INVALID']]);
+
+      await prisma.production_line.update({ where: { production_line_id: id.line3 }, data: { default_wip_location_id: id.loc1, version_no: { increment: 1 } } });
+      const fixed = await proposalOf(order.P);
+      expect(fixed).toMatchObject({ status: 'CONFIRMABLE', reasons: [] });
+      await confirm(order.P, bodyOf(fixed)).expect(200);
+    });
+
+    it.each([
+      ['bom', '기본 BOM 판이 바뀌면', async () => {
+        await prisma.bom.update({ where: { bom_id: id.bomChg }, data: { is_default: false } });
+        await prisma.bom.create({ data: {
+          parent_item_id: id.itemChg, bom_code: `${PREFIX}-BOM-${id.itemChg}`, bom_version: 2, status_code: 'CONFIRMED', is_default: true,
+          effective_from: new Date('2026-01-01T00:00:00.000Z'), base_qty: 1, base_uom_id: id.uom,
+        } });
+      }],
+      ['routing', '공정의 설비 필요 여부가 바뀌면(판을 올리지 않아도)', async () => {
+        await prisma.routing_operation.updateMany({ where: { routing_id: id.routingChg }, data: { equipment_required: true } });
+      }],
+      ['resources', '기본 매핑이 생기면', async () => {
+        await prisma.item_resource_map.create({ data: { plant_id: id.plant, item_id: id.itemChg, equipment_id: id.eq1, is_default: true } });
+      }],
+    ])('검토한 뒤 %s 기준이 바뀌면 409 — %s', async (basis, _, change) => {
+      const body = bodyOf(await proposalOf(order.R), { productionLineId: Number(id.line), defaultWipLocationId: Number(id.loc1), defaultFgLocationId: Number(id.loc2), defaultScrapLocationId: Number(id.loc3) });
+      await change();
+      const response = await confirm(order.R, body).expect(409);
+      expect(response.body.proposalChanges.map((item: { basis: string }) => item.basis)).toEqual([basis]);
+      expect(await prisma.production_plan.count({ where: { production_order_id: order.R } })).toBe(0);
+    });
+
+    it('수시로 바뀌는 칸은 409 를 내지 않는다 — 금형 타수·설비 교정 기한과 그 판, 확정 계획 W/O 의 진행 상태', async () => {
+      const body = bodyOf(await proposalOf(order.K));
+      await prisma.mold.update({ where: { mold_id: id.mold }, data: { current_shot_count: { increment: 500 }, version_no: { increment: 1 } } });
+      await prisma.equipment.update({ where: { equipment_id: id.eq1 }, data: { calibration_due_date: new Date('2030-01-01T00:00:00.000Z'), version_no: { increment: 1 } } });
+      await prisma.work_order.update({ where: { work_order_id: id.workOrderK1 }, data: { status_code: 'RELEASED', released_at: new Date() } });
+
+      await confirm(order.K, body).expect(200);
+    });
+
+    it('제안 확정과 계획 수정·확정이 동시에 와도 5xx 가 없고 결과가 한쪽으로 맞는다 — 여러 라운드', async () => {
+      for (let round = 0; round < 6; round += 1) {
+        const { orderId, planId } = await draftOrder(`RACE${round}`);
+        const body = bodyOf(await proposalOf(orderId));
+        const rival = round % 2 === 0
+          ? request(app.getHttpServer()).put(`/api/planning/production-plans/${planId}`).set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('If-Match', '1').send({ plannedQty: 40 })
+          : request(app.getHttpServer()).post(`/api/planning/production-plans/${planId}:confirm`).set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('If-Match', '1').send({});
+        const [proposed, other] = await Promise.all([confirm(orderId, body), rival]);
+
+        expect([proposed.status, other.status].every((status) => status < 500)).toBe(true);
+        const plan = await prisma.production_plan.findUniqueOrThrow({ where: { production_plan_id: planId } });
+        const workOrders = await prisma.work_order.count({ where: { production_plan_id: planId } });
+        if (proposed.status === 200) {
+          // 제안 확정이 이겼다 — 상대는 낡은 판(409)이거나 이미 확정됨(400)이다.
+          expect([400, 409]).toContain(other.status);
+          expect(plan).toMatchObject({ status_code: 'CONFIRMED' });
+          expect(Number(plan.planned_qty)).toBe(50);
+        } else {
+          // 상대가 이겼다 — 제안 확정은 바뀐 계획을 409(PROPOSAL_CHANGED) 로 받는다.
+          expect(proposed.status).toBe(409);
+          expect(other.status).toBe(200);
+          expect(plan.status_code).toBe(round % 2 === 0 ? 'DRAFT' : 'CONFIRMED');
+        }
+        // 전개는 한 번뿐이다.
+        expect(workOrders).toBe(plan.status_code === 'CONFIRMED' ? 2 : 0);
+      }
+    }, 60_000);
 
     it('취소된 ERP W/O 는 400 STATE_LOCKED, 범위 밖·없는 ERP W/O 는 404', async () => {
       const response = await confirm(order.G, bodyOf(await proposalOf(order.J))).expect(400);
@@ -420,12 +517,24 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       default_wip_location_id: id.loc1, default_fg_location_id: id.loc2, default_scrap_location_id: id.loc3,
     } })).production_line_id;
     id.foreignLine = (await prisma.production_line.create({ data: { plant_id: id.otherPlant, line_code: `${PREFIX}-LNF`, line_name: PREFIX } })).production_line_id;
+    id.line2 = (await prisma.production_line.create({ data: {
+      plant_id: id.plant, line_code: `${PREFIX}-LN2`, line_name: PREFIX,
+      default_wip_location_id: id.loc1, default_fg_location_id: id.loc2, default_scrap_location_id: id.loc3,
+    } })).production_line_id;
+    // 기본 WIP 위치가 자재창고인 라인 — 위치 판정이 제안과 확정에서 같은지 본다.
+    id.line3 = (await prisma.production_line.create({ data: {
+      plant_id: id.plant, line_code: `${PREFIX}-LN3`, line_name: PREFIX,
+      default_wip_location_id: id.materialLoc, default_fg_location_id: id.loc2, default_scrap_location_id: id.loc3,
+    } })).production_line_id;
     const equipment = async (code: string, status: string) => (await prisma.equipment.create({ data: {
       plant_id: id.plant, equipment_code: `${PREFIX}-${code}`, equipment_name: PREFIX, equipment_type_code: 'PRESS', status_code: status, production_line_id: id.line,
     } })).equipment_id;
     id.eq1 = await equipment('EQ1', 'IN_SERVICE');
     id.eq2 = await equipment('EQ2', 'IN_SERVICE');
     id.eqDown = await equipment('EQX', 'DISPOSED');
+    id.eq3 = (await prisma.equipment.create({ data: {
+      plant_id: id.plant, equipment_code: `${PREFIX}-EQ3`, equipment_name: PREFIX, equipment_type_code: 'PRESS', status_code: 'IN_SERVICE', production_line_id: id.line3,
+    } })).equipment_id;
     id.mold = (await prisma.mold.create({ data: { plant_id: id.plant, mold_code: `${PREFIX}-MOLD`, mold_name: PREFIX, status_code: 'IN_SERVICE', tool_type_code: 'MOLD' } })).mold_id;
     id.worker = (await prisma.worker.create({ data: {
       worker_no: `${PREFIX}-W1`, worker_name: PREFIX, business_unit_id: unit.business_unit_id, plant_id: id.plant, status_code: 'EMPLOYED',
@@ -487,16 +596,36 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     await makeOrder('K', id.itemOk);
     await makeOrder('L', id.itemOk);
     await makeOrder('M', id.itemOk);
+    await makeOrder('N', id.itemOk);
+    id.itemL3 = await item('IT-L3');
+    await bom(id.itemL3, 1, true);
+    await routing(id.itemL3, [{ process: process20.process_id, equipment: true, mold: false }]);
+    await prisma.item_resource_map.create({ data: { plant_id: id.plant, item_id: id.itemL3, equipment_id: id.eq3, is_default: true } });
+    await makeOrder('P', id.itemL3);
+    id.itemChg = await item('IT-CHG');
+    id.bomChg = await bom(id.itemChg, 1, true);
+    id.routingChg = (await routing(id.itemChg, [{ process: process20.process_id, equipment: false, mold: false }])).routingId;
+    await makeOrder('R', id.itemChg);
     await makeOrder('OUT', id.itemOk, { plantId: id.otherPlant });
-    const plan = (orderId: bigint, key: string, qty: number, status: string) => prisma.production_plan.create({ data: {
+    const plan = (orderId: bigint, key: string, qty: number, status: string, lineId: bigint | null = null) => prisma.production_plan.create({ data: {
       production_order_id: orderId, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date(`${planStart}T00:00:00.000Z`), planned_qty: qty,
       uom_id: id.uom, bom_id: id.bomOk, routing_id: id.routingOk, status_code: status, confirmed_at: status === 'CONFIRMED' ? new Date() : null,
+      planned_line_id: lineId,
     } });
+    draftOrder = async (key: string) => {
+      await makeOrder(key, id.itemOk);
+      return { orderId: order[key], planId: (await plan(order[key], key, 50, 'DRAFT')).production_plan_id };
+    };
     id.draftE = (await plan(order.E, 'E', 60, 'DRAFT')).production_plan_id;
     await plan(order.F, 'F', 100, 'CONFIRMED');
-    await plan(order.K, 'K1', 30, 'CONFIRMED');
+    const k1 = await plan(order.K, 'K1', 30, 'CONFIRMED');
+    id.workOrderK1 = (await prisma.work_order.create({ data: {
+      work_order_no: `${PREFIX}-WO-K1`, production_plan_id: k1.production_plan_id, routing_operation_id: id.op10, item_id: id.itemOk,
+      order_qty: 30, uom_id: id.uom, status_code: 'PLANNED',
+    } })).work_order_id;
     await plan(order.K, 'K2', 50, 'DRAFT');
     await plan(order.M, 'M', 100, 'DRAFT');
+    await plan(order.N, 'N', 100, 'DRAFT', id.line2);
   }
 
   async function cleanup(): Promise<void> {
