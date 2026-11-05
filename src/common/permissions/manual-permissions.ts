@@ -44,6 +44,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/replenishment-items': ['W-02-12'],
   'PUT /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
   'DELETE /logistics/replenishment-items/{replenishmentItemId}': ['W-02-12'],
+  'POST /logistics/replenishment-requests': ['W-02-12'],
+  'POST /logistics/material-issue-requests/{materialIssueRequestId}:close-remaining': ['W-02-12'],
   'GET /logistics/replenishment-settings': ['W-02-12'],
   'PUT /logistics/replenishment-settings/warehouses/{warehouseId}': ['W-02-12'],
   // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
