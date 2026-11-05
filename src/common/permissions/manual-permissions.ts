@@ -36,6 +36,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /logistics/material-issue-requests/{materialIssueRequestId}/history': ['W-02-11'],
   // 생산 창고 예정·부족 — 부족 탭(W-02-11)과 보충 요청(W-02-10)이 같은 값을 본다.
   'GET /logistics/material-issue-requests/planned-stock': ['W-02-10', 'W-02-11'],
+  // 쓸 수 있는 양 — W-02-10 품목 줄의 남은 수량(omf-all-around#232).
+  'GET /logistics/material-issue-requests/free-stock': ['W-02-10'],
   // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
   'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
   'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
