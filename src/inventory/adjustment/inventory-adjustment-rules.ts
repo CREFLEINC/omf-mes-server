@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
+import { withoutEmptyBalances } from '../../core/inventory-posting/balance-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -284,7 +285,7 @@ export async function resolveLineDimensions(
   const errors: ErrorItem[] = [];
   // 못 푼 라인도 자리를 지켜 둔다 — 뒤 라인의 오류가 제 첨자를 짚어야 한다.
   const dimensions = keys.map((key, index) => {
-    const found = byKey.get(balanceKey(key)) ?? [];
+    const found = withoutEmptyBalances(byKey.get(balanceKey(key)) ?? []);
     const at = `${array}[${index}].locationId`;
     if (found.length === 1) {
       return {

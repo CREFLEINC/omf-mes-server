@@ -338,6 +338,15 @@ describe('postAdjustment — 음수재고 손검사 세 갈래', () => {
     });
   });
 
+  it('재고 이동이 남긴 보유 0 IN_TRANSIT 행은 빼고 남은 행의 소유 축으로 전기한다(#234)', async () => {
+    const empty = balance({ on_hand_qty: new Prisma.Decimal(0), ownership_type_code: 'OWNED', owner_partner_id: null });
+    const { tx, posting, recorded } = fake({ balances: [empty, balance()] });
+
+    await postAdjustment(tx, posting, input([line()]), 1);
+
+    expect(recorded.posted[0].lines[0].ownershipTypeCode).toBe('CONSIGNMENT');
+  });
+
   it('⭐ 같은 (위치·품목·LOT) 라인 둘은 «합»으로 본다 — 라인별로 보면 둘 다 통과하고 UPDATE 가 500 이다', async () => {
     const { tx, posting } = fake();
 
