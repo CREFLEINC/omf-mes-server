@@ -11,6 +11,7 @@ import { MaterialIssueReleaser } from '../../core/material-issue/release-request
 import {
   REQUEST_AUDIT_TARGET,
   closePickings,
+  closeRemaining,
   RequestAction,
   RequestEventDetail,
   recordRequestAudit,
@@ -32,6 +33,13 @@ export interface MaterialIssueRequestUpdate {
   destinationLocationId?: number;
   lines?: { materialIssueRequestLineId: number; requestedQty: number }[];
   acknowledgeHoliday?: boolean;
+}
+
+/** 계약 `MaterialIssueCloseRemaining`(피처 004). */
+export interface MaterialIssueCloseRemaining {
+  versionNo: number;
+  reasonCode: string;
+  remark?: string | null;
 }
 
 export interface MaterialIssueRequestCancel {
@@ -107,7 +115,12 @@ export class MaterialIssueRequestEditService {
     await this.prisma.$transaction(async (tx) => {
       const request = await this.lock(tx, id, body.versionNo);
       if ((await requestProgress(tx, request.material_issue_request_id)).started) {
-        throw locked('피킹·출고가 시작된 요청은 취소할 수 없습니다.');
+        // 창고 보충 요청은 나머지를 잔량 마감으로 닫는다(피처 004 · US3-3).
+        throw locked(
+          head.requestTypeCode === REPLENISHMENT
+            ? '피킹·출고가 시작된 요청은 취소할 수 없습니다. 잔량 마감을 쓰세요.'
+            : '피킹·출고가 시작된 요청은 취소할 수 없습니다.',
+        );
       }
       await closePickings(tx, this.documentState, request.material_issue_request_id, appUserId);
       const now = new Date();
@@ -131,6 +144,29 @@ export class MaterialIssueRequestEditService {
       });
     });
     return this.queries.get(id);
+  }
+
+  /** 창고 보충 요청 잔량 마감(W-02-12 · 피처 004 · research R-5). 응답은 요청 하나(계약 `MaterialIssueRequest`). */
+  async closeRemaining(id: number, body: MaterialIssueCloseRemaining, appUserId: number): Promise<MaterialIssueRequestDetail['materialIssueRequest']> {
+    const head = await this.head(id);
+    if (head.requestTypeCode !== REPLENISHMENT) throw locked('잔량 마감은 창고 보충 요청만 합니다.');
+    const reason = await this.prisma.code_value.findFirst({
+      where: { code: body.reasonCode, is_active: true, code_group: { group_code: 'REPLENISHMENT_CLOSE_REASON' } },
+      select: { code: true },
+    });
+    if (reason === null) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('reasonCode', ERROR_CODE.INVALID, '잔량 마감 사유 코드가 아닙니다.')]);
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const request = await this.lock(tx, id, body.versionNo);
+      await closeRemaining(tx, this.documentState, {
+        requestId: request.material_issue_request_id,
+        reasonCode: body.reasonCode,
+        remark: body.remark?.trim() || null,
+        appUserId,
+      });
+    });
+    return (await this.queries.get(id)).materialIssueRequest;
   }
 
   async history(id: number): Promise<{ items: HistoryItem[] }> {

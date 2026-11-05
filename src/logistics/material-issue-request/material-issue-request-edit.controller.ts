@@ -7,6 +7,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import {
   HistoryItem,
+  MaterialIssueCloseRemaining,
   MaterialIssueRequestCancel,
   MaterialIssueRequestEditService,
   MaterialIssueRequestUpdate,
@@ -43,6 +44,18 @@ export class MaterialIssueRequestEditController {
     const session = currentSession(request);
     if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.edits.cancel(id, body, session.userId, session.permissions));
+  }
+
+  @Post(':materialIssueRequestId\\:close-remaining')
+  @Contract('POST /logistics/material-issue-requests/{materialIssueRequestId}:close-remaining')
+  @HttpCode(HttpStatus.OK)
+  closeRemaining(
+    @Req() request: Request,
+    @Param('materialIssueRequestId', ParseIntPipe) id: number,
+    @Body() body: MaterialIssueCloseRemaining,
+  ) {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.edits.closeRemaining(id, body, appUserId));
   }
 
   @Get(':materialIssueRequestId/history')

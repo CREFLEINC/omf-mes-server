@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   DERIVED_INCLUDE,
   DISPLAY_STATUSES,
+  DerivedRow,
   DisplayStatus,
   derive,
   displayStatusWhere,
@@ -20,6 +21,7 @@ import {
   materialIssueRequestLineView,
   materialIssueRequestView,
 } from './material-issue-request-view';
+import { replenishmentFields, replenishmentGoodsIssues, replenishmentStatusWhere } from './replenishment-view';
 
 export interface MaterialIssueRequestQuery {
   workOrderId?: unknown;
@@ -45,6 +47,7 @@ export interface MaterialIssueRequestQuery {
   replenishmentOriginCode?: string;
   destinationWarehouseId?: unknown;
   itemId?: unknown;
+  replenishmentStatus?: unknown;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -74,8 +77,17 @@ export class MaterialIssueRequestQueryService {
       }),
       this.prisma.material_issue_request.count({ where }),
     ]);
+    return pagedResponse(await this.views(rows), total, page);
+  }
+
+  /** 행마다 파생 값과 창고 보충 칸(피처 004) — 동적 부족·출고 전표는 한 쪽을 한 번에 읽는다. */
+  private async views(rows: DerivedRow[]): Promise<MaterialIssueRequestView[]> {
     const dynamic = await lineDynamicShortages(this.prisma, rows);
-    return pagedResponse(rows.map((row) => materialIssueRequestView(row, derive(row, dynamic))), total, page);
+    const issues = await replenishmentGoodsIssues(this.prisma, replenishmentIds(rows));
+    return rows.map((row) => ({
+      ...materialIssueRequestView(row, derive(row, dynamic)),
+      ...replenishmentFields(row, issues.get(row.material_issue_request_id), false),
+    }));
   }
 
   private async where(query: MaterialIssueRequestQuery): Promise<Prisma.material_issue_requestWhereInput> {
@@ -86,6 +98,8 @@ export class MaterialIssueRequestQueryService {
     const destinationWarehouseId = int(query.destinationWarehouseId);
     const itemId = int(query.itemId);
     const and: Prisma.material_issue_requestWhereInput[] = [];
+    const replenishmentStatus = replenishmentStatusWhere(query.replenishmentStatus);
+    if (replenishmentStatus !== undefined) and.push(replenishmentStatus);
     // 공장 = 출발 창고의 공장. 출발 창고가 없는 옛 요청만 W/O 공장으로 거른다(피처 004 research R-2).
     if (plantId !== undefined) {
       and.push({
@@ -147,8 +161,7 @@ export class MaterialIssueRequestQueryService {
       include: DERIVED_INCLUDE,
       orderBy: { material_issue_request_id: 'asc' },
     });
-    const dynamic = await lineDynamicShortages(this.prisma, rows);
-    return rows.map((row) => materialIssueRequestView(row, derive(row, dynamic)));
+    return this.views(rows);
   }
 
   /** 없으면 404 다(계약 선언 · 출고 상세 선례). */
@@ -163,8 +176,9 @@ export class MaterialIssueRequestQueryService {
       orderBy: { line_no: 'asc' },
     });
     const derived = derive(row, await lineDynamicShortages(this.prisma, [row]));
+    const issues = await replenishmentGoodsIssues(this.prisma, replenishmentIds([row]));
     return {
-      materialIssueRequest: materialIssueRequestView(row, derived),
+      materialIssueRequest: { ...materialIssueRequestView(row, derived), ...replenishmentFields(row, issues.get(row.material_issue_request_id), true) },
       lines: lines.map((line) => materialIssueRequestLineView(line, derived.lines.get(line.material_issue_request_line_id))),
     };
   }
@@ -204,6 +218,10 @@ function displayStatuses(value: unknown): DisplayStatus[] {
     throw new ContractException(HttpStatus.BAD_REQUEST, [field('displayStatus', ERROR_CODE.INVALID, `표시 상태는 ${DISPLAY_STATUSES.join(' · ')} 중에서 고릅니다.`)]);
   }
   return raw as DisplayStatus[];
+}
+
+function replenishmentIds(rows: readonly DerivedRow[]): bigint[] {
+  return rows.filter((row) => row.request_type_code === 'REPLENISHMENT').map((row) => row.material_issue_request_id);
 }
 
 function bool(value: unknown): boolean {
