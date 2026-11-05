@@ -189,6 +189,20 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       })]);
     });
 
+    it('확정 계획이 일부 있고 작성중 계획도 있으면 작성중만 제안한다 — 남는 수량(오더량 − 확정 − 작성)은 remainingQty 로만 싣는다', async () => {
+      const proposal = await proposalOf(order.K);
+
+      expect(proposal).toMatchObject({ kind: 'REVIEW_DRAFT', remainingQty: 20 });
+      expect(proposal.plans.map((plan) => [plan.planSource, plan.proposedQty])).toEqual([['EXISTING_DRAFT', 50]]);
+    });
+
+    it('계획 상태 PLANNED 는 배정 완료다 — 작성중만으로 채운 오더도 PLANNED 이고 목록 판정은 조치 필요다', async () => {
+      const detail = await request(app.getHttpServer()).get(`/api/planning/production-orders/${order.M}`).set('Cookie', cookie).expect(200);
+
+      expect(detail.body).toMatchObject({ planStatusCode: 'PLANNED', confirmedPlanQty: 0, draftPlanQty: 100, remainingQty: 0, worklistState: 'ACTION_REQUIRED' });
+      expect(await proposalOf(order.M)).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'CONFIRMABLE', remainingQty: 0 });
+    });
+
     it('부작용이 없다 — 계획·W/O·번호·멱등 기록·ERP W/O 판과 시도 기록이 그대로다', async () => {
       const before = await snapshot();
       await propose(order.A, order.B, order.C, order.D, order.E, order.F, order.G).expect(200);
@@ -299,6 +313,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     it.each([
       ['공정이 빠지면 plans[0].workOrders', (body: ReturnType<typeof bodyOf>) => { body.plans[0].workOrders.pop(); }, 'plans[0].workOrders', 'INVALID'],
       ['계획 집합이 제안과 다르면 plans', (body: ReturnType<typeof bodyOf>) => { body.plans[0].proposalPlanKey = 'new-2'; }, 'plans', 'INVALID'],
+      ['제안에 없는 계획을 더하면 plans — 본문으로 새 계획을 만들 수 없다', (body: ReturnType<typeof bodyOf>) => { body.plans.push({ ...body.plans[0], proposalPlanKey: 'new-2' }); }, 'plans', 'INVALID'],
       ['수량이 ERP W/O 를 넘으면 plans[0].plannedQty', (body: ReturnType<typeof bodyOf>) => { body.plans[0].plannedQty = 101; }, 'plans[0].plannedQty', 'PLAN_QTY_EXCEEDS_ORDER'],
       ['필수 4M 이 없으면 계약 검사가 막는다', (body: ReturnType<typeof bodyOf>) => { delete (body.plans[0].workOrders[0] as { productionLineId?: number }).productionLineId; }, 'plans[0].workOrders[0].productionLineId', 'REQUIRED'],
     ])('%s 400', async (_, mutate, field, code) => {
@@ -316,6 +331,18 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(response.body).toMatchObject({ outcome: 'CONFIRMED' });
       const [workOrder] = await prisma.work_order.findMany({ where: { production_plan: { production_order_id: order.D } } });
       expect(workOrder).toMatchObject({ production_line_id: id.line, default_wip_location_id: id.loc1, planned_equipment_id: null });
+    });
+
+    it('수량을 줄여 확정하면 나머지는 잔량으로 남고, 다음 제안이 그 잔량으로 새 계획을 낸다', async () => {
+      const body = bodyOf(await proposalOf(order.L));
+      body.plans[0].plannedQty = 70;
+      await confirm(order.L, body).expect(200);
+
+      const next = await proposalOf(order.L);
+      expect(next).toMatchObject({ kind: 'NEW_PLAN', remainingQty: 30 });
+      expect(next.plans.map((plan) => [plan.proposalPlanKey, plan.proposedQty])).toEqual([['new-1', 30]]);
+      const detail = await request(app.getHttpServer()).get(`/api/planning/production-orders/${order.L}`).set('Cookie', cookie).expect(200);
+      expect(detail.body).toMatchObject({ planStatusCode: 'PARTIAL', confirmedPlanQty: 70, remainingQty: 30 });
     });
 
     it('다른 키로 동시에 두 번 눌러도 계획은 하나다 — 늦은 쪽은 ALREADY_PROCESSED', async () => {
@@ -457,6 +484,9 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     await makeOrder('G', id.itemOk, { status: 'CANCELLED' });
     await makeOrder('H', id.itemOk);
     await makeOrder('J', id.itemOk);
+    await makeOrder('K', id.itemOk);
+    await makeOrder('L', id.itemOk);
+    await makeOrder('M', id.itemOk);
     await makeOrder('OUT', id.itemOk, { plantId: id.otherPlant });
     const plan = (orderId: bigint, key: string, qty: number, status: string) => prisma.production_plan.create({ data: {
       production_order_id: orderId, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date(`${planStart}T00:00:00.000Z`), planned_qty: qty,
@@ -464,6 +494,9 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     } });
     id.draftE = (await plan(order.E, 'E', 60, 'DRAFT')).production_plan_id;
     await plan(order.F, 'F', 100, 'CONFIRMED');
+    await plan(order.K, 'K1', 30, 'CONFIRMED');
+    await plan(order.K, 'K2', 50, 'DRAFT');
+    await plan(order.M, 'M', 100, 'DRAFT');
   }
 
   async function cleanup(): Promise<void> {

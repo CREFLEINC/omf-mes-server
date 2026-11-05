@@ -15,7 +15,7 @@ import {
 const D = (value: number): Prisma.Decimal => new Prisma.Decimal(value);
 
 describe('plansToPropose — 무엇을 제안하는가', () => {
-  it('작성중 계획이 있으면 그것만 검토한다 — 남은 수량을 더 제안하지 않는다', () => {
+  it('작성중 계획이 있으면 그것만 검토한다 — 남은 수량이 있어도 새 계획을 더 제안하지 않는다', () => {
     expect(plansToPropose(['draft'], D(100), D(20))).toEqual({ kind: 'REVIEW_DRAFT', drafts: ['draft'] });
   });
 
@@ -60,6 +60,7 @@ describe('assertWholeOrder — 한 ERP W/O 는 전부 아니면 하나도', () =
     ['일부만', ['plan-1']],
     ['겹쳐서', ['plan-1', 'plan-1']],
     ['다른 키', ['plan-1', 'new-1']],
+    ['제안에 없는 계획을 더해', ['plan-1', 'plan-2', 'new-1']],
   ])('%s 실으면 400 field plans', (_, sent) => {
     let error: unknown;
     try {

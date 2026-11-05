@@ -163,7 +163,7 @@
         "PLANNED"
        ]
       },
-      "description": "계획 상태로 거른다 — 응답 planStatusCode 와 같은 식이다. UNPLANNED 미계획(확정 계획량 + 작성 수량 = 0) · PARTIAL 부분계획(잔량이 남음) · PLANNED 계획완료(잔량 0 이하 — 작성중만으로 채워도 포함). 확정 계획량은 W/O 가 모두 취소된 확정 계획을 뺀다. 취소된 ERP W/O 는 어느 값에도 걸리지 않는다."
+      "description": "계획 상태로 거른다 — 응답 planStatusCode 와 같은 식이다. UNPLANNED 미계획(확정 계획량 + 작성 수량 = 0) · PARTIAL 부분계획(잔량이 남음) · PLANNED 계획완료(잔량 0 이하 — 작성중만으로 채워도 포함). ⚠ 계획완료는 «배정 완료»다 — 확정 완료가 아니다. 확정됐는지는 confirmedPlanQty·draftPlanQty 와 worklistState 로 본다. 확정 계획량은 W/O 가 모두 취소된 확정 계획을 뺀다. 취소된 ERP W/O 는 어느 값에도 걸리지 않는다."
      },
      {
       "name": "itemGroupCode",
@@ -6342,7 +6342,7 @@
        "PLANNED"
       ],
       "example": "PARTIAL",
-      "description": "파생 — 서버가 계산한다. UNPLANNED 미계획(확정+작성 0) · PARTIAL 부분계획(잔량이 남음) · PLANNED 계획완료(잔량 0 이하). 목록 조건 planStatusCode 와 같은 식이다. 취소된 ERP W/O(statusCode CANCELLED)는 계획할 일이 없어 키가 없다."
+      "description": "파생 — 서버가 계산한다. UNPLANNED 미계획(확정+작성 0) · PARTIAL 부분계획(잔량이 남음) · PLANNED 계획완료(잔량 0 이하 — 작성중만으로 채워도 포함). ⚠ 계획완료는 «배정 완료»다 — 확정 완료가 아니다. 확정됐는지는 confirmedPlanQty·draftPlanQty 와 worklistState 로 본다. 목록 조건 planStatusCode 와 같은 식이다. 취소된 ERP W/O(statusCode CANCELLED)는 계획할 일이 없어 키가 없다."
      },
      "itemGroupCode": {
       "type": "string",
@@ -6561,11 +6561,11 @@
       "type": "number",
       "format": "double",
       "example": 10.0,
-      "description": "저장값 기준 잔량 — ProductionOrder.remainingQty 와 같은 식. 제안을 확정한 뒤의 잔량이 아니다"
+      "description": "저장값 기준 잔량(orderQty − confirmedPlanQty − draftPlanQty) — ProductionOrder.remainingQty 와 같은 식. NEW_PLAN 은 새 계획의 proposedQty 와 같고 그 제안을 확정하면 0 이 된다. REVIEW_DRAFT 는 작성중 계획을 그대로 확정해도 남는 수량이다 — 남은 수량은 새로 제안하지 않으므로 화면이 「작성중 계획을 확정해도 N 남음」을 이 값으로 보인다. 음수면 작성중 계획이 ERP W/O 수량을 넘는다(PLAN_QTY_EXCEEDS_ORDER)"
      },
      "plans": {
       "type": "array",
-      "description": "확정하면 저장될 계획. NEW_PLAN 은 새 계획 하나, REVIEW_DRAFT 는 작성중 계획마다 하나(새 계획을 더하지 않는다). KEEP_CONFIRMED·NOT_PROPOSABLE 은 빈 배열",
+      "description": "확정하면 저장될 계획. NEW_PLAN 은 새 계획 하나, REVIEW_DRAFT 는 작성중 계획마다 하나(새 계획을 더하지 않는다 — 남는 수량은 remainingQty). KEEP_CONFIRMED·NOT_PROPOSABLE 은 빈 배열",
       "items": {
        "$ref": "#/components/schemas/ProductionPlanProposalPlan"
       }
@@ -7131,7 +7131,7 @@
      "plans": {
       "type": "array",
       "minItems": 1,
-      "description": "제안의 plans 전부를 싣는다 — proposalPlanKey 집합이 다시 계산한 제안과 같아야 한다. 빠지거나 더하면 400 field plans INVALID(한 ERP W/O 는 전부 확정하거나 아무것도 하지 않는다)",
+      "description": "제안의 plans 전부를 싣는다 — proposalPlanKey 집합이 다시 계산한 제안과 같아야 한다. 빠지거나, 제안에 없는 키로 계획을 더하면 400 field plans INVALID(한 ERP W/O 는 전부 확정하거나 아무것도 하지 않는다 · 본문으로 새 계획을 만들 수 없다). 수량은 줄일 수 있다 — plannedQty 를 줄여 확정하면 나머지는 잔량으로 남는다",
       "items": {
        "$ref": "#/components/schemas/ProductionPlanProposalConfirmPlan"
       }
