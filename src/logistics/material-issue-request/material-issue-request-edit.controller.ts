@@ -13,7 +13,7 @@ import {
 } from './material-issue-request-edit.service';
 import { MaterialIssueRequestDetail } from './material-issue-request-view';
 
-/** 출고 요청 수정·취소·이력 — 화면 `W-02-11`(피처 003). 저장 충돌은 본문 `versionNo` 로 가른다(계약). */
+/** 출고 요청 수정·취소·이력 — 화면 `W-02-11`(피처 003). 창고 보충 요청 취소는 `W-02-12`(피처 004). 저장 충돌은 본문 `versionNo` 로 가른다(계약). */
 @Controller('logistics/material-issue-requests')
 export class MaterialIssueRequestEditController {
   constructor(
@@ -40,8 +40,9 @@ export class MaterialIssueRequestEditController {
     @Param('materialIssueRequestId', ParseIntPipe) id: number,
     @Body() body: MaterialIssueRequestCancel,
   ): Promise<MaterialIssueRequestDetail> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.edits.cancel(id, body, appUserId));
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.edits.cancel(id, body, session.userId, session.permissions));
   }
 
   @Get(':materialIssueRequestId/history')

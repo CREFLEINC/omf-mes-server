@@ -40,6 +40,11 @@ export interface MaterialIssueRequestQuery {
   productionPlanId?: unknown;
   hasShortage?: unknown;
   releaseFailed?: unknown;
+  // 피처 004 — 창고 보충 요청은 W-02-12 에서만 본다. 유형을 주지 않으면 W/O 요청만(W-02-11 은 지금과 같은 목록).
+  requestTypeCode?: string;
+  replenishmentOriginCode?: string;
+  destinationWarehouseId?: unknown;
+  itemId?: unknown;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -78,7 +83,18 @@ export class MaterialIssueRequestQueryService {
     const plantId = int(query.plantId);
     const sourceWarehouseId = int(query.sourceWarehouseId);
     const productionPlanId = int(query.productionPlanId);
+    const destinationWarehouseId = int(query.destinationWarehouseId);
+    const itemId = int(query.itemId);
     const and: Prisma.material_issue_requestWhereInput[] = [];
+    // 공장 = 출발 창고의 공장. 출발 창고가 없는 옛 요청만 W/O 공장으로 거른다(피처 004 research R-2).
+    if (plantId !== undefined) {
+      and.push({
+        OR: [
+          { source_warehouse: { plant_id: plantId } },
+          { source_warehouse_id: null, work_order: { production_plan: { production_order: { plant_id: plantId } } } },
+        ],
+      });
+    }
     const statuses = displayStatuses(query.displayStatus);
     if (statuses.length > 0) and.push(displayStatusWhere(statuses));
     if (query.q !== undefined) {
@@ -97,11 +113,14 @@ export class MaterialIssueRequestQueryService {
       and.push({ OR: [{ material_issue_request_line: { some: { shortage_qty: { gt: 0 } } } }, { material_issue_request_id: { in: ids } }] });
     }
     const workOrder: Prisma.work_orderWhereInput = {
-      ...(plantId === undefined ? {} : { production_plan: { production_order: { plant_id: plantId } } }),
       ...(productionPlanId === undefined ? {} : { production_plan_id: productionPlanId }),
       ...(await this.productionDateWhere(query, plantId)),
     };
     return {
+      request_type_code: query.requestTypeCode ?? 'WORK_ORDER',
+      ...(query.replenishmentOriginCode === undefined ? {} : { replenishment_origin_code: query.replenishmentOriginCode }),
+      ...(destinationWarehouseId === undefined ? {} : { location: { warehouse_id: destinationWarehouseId } }),
+      ...(itemId === undefined ? {} : { material_issue_request_line: { some: { item_id: itemId } } }),
       ...(workOrderId === undefined ? {} : { work_order_id: workOrderId }),
       // ⛔ 4값 대조를 걸지 않는다 — 필터에 값 목록을 걸면 값이 늘 때 조회가 400 을 낸다(§8-2).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),

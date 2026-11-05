@@ -50,6 +50,7 @@ export interface HistoryItem {
 type Event = { action: RequestAction; detail: RequestEventDetail };
 
 const OPEN = ['WAITING', 'REGISTERED'];
+const REPLENISHMENT = 'REPLENISHMENT';
 const ZERO = new Prisma.Decimal(0);
 
 type Locked = Prisma.material_issue_requestGetPayload<{
@@ -81,6 +82,8 @@ export class MaterialIssueRequestEditService {
 
   async update(id: number, body: MaterialIssueRequestUpdate, appUserId: number): Promise<MaterialIssueRequestDetail> {
     const head = await this.head(id);
+    // 창고 보충 요청(피처 004)은 수정이 없다 — 취소하고 다시 요청한다(research R-5).
+    if (head.requestTypeCode === REPLENISHMENT) throw locked('창고 보충 요청은 고칠 수 없습니다. 취소하고 다시 요청하세요.');
     // 다시 배포·다시 배정할 수 있으니 피킹 번호를 tx 밖에서 하나 받아 둔다 — 안 쓰면 결번이다.
     const pickingOrderNo = await this.numbering.next('PICKING_ORDER', head.plantId, head.today);
     await this.prisma.$transaction(async (tx) => {
@@ -95,8 +98,12 @@ export class MaterialIssueRequestEditService {
     return this.queries.get(id);
   }
 
-  async cancel(id: number, body: MaterialIssueRequestCancel, appUserId: number): Promise<MaterialIssueRequestDetail> {
-    await this.head(id);
+  async cancel(id: number, body: MaterialIssueRequestCancel, appUserId: number, permissions: readonly string[]): Promise<MaterialIssueRequestDetail> {
+    const head = await this.head(id);
+    // 경로 권한은 W-02-11·W-02-12 어느 하나다 — 요청 유형이 어느 화면 몫인지 가른다(피처 004 contracts §1).
+    if (!permissions.includes(head.requestTypeCode === REPLENISHMENT ? 'W-02-12' : 'W-02-11')) {
+      throw new ContractException(HttpStatus.FORBIDDEN, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 기능을 쓸 권한이 없습니다.' }]);
+    }
     await this.prisma.$transaction(async (tx) => {
       const request = await this.lock(tx, id, body.versionNo);
       if ((await requestProgress(tx, request.material_issue_request_id)).started) {
@@ -151,15 +158,15 @@ export class MaterialIssueRequestEditService {
   }
 
   /** 404 · 지금 방식 요청 409 · 공장 오늘. 트랜잭션 밖이다. */
-  private async head(id: number): Promise<{ plantId: bigint; timezone: string; today: string }> {
+  private async head(id: number): Promise<{ plantId: bigint; timezone: string; today: string; requestTypeCode: string }> {
     const row = await this.prisma.material_issue_request.findUnique({
       where: { material_issue_request_id: id },
-      select: { source_warehouse: { select: { plant: { select: { plant_id: true, timezone_code: true } } } } },
+      select: { request_type_code: true, source_warehouse: { select: { plant: { select: { plant_id: true, timezone_code: true } } } } },
     });
     if (row === null) throw new NotFoundException('없는 출고 요청입니다.');
     if (row.source_warehouse === null) throw locked('생산 창고 규칙으로 만든 요청만 고치거나 취소할 수 있습니다.');
     const { plant_id: plantId, timezone_code: timezone } = row.source_warehouse.plant;
-    return { plantId, timezone, today: localDate(new Date(), timezone) };
+    return { plantId, timezone, today: localDate(new Date(), timezone), requestTypeCode: row.request_type_code };
   }
 
   private async lock(tx: Prisma.TransactionClient, id: number, versionNo: number): Promise<Locked> {
@@ -228,7 +235,11 @@ export class MaterialIssueRequestEditService {
         },
         appUserId,
       );
-      await this.pickingNotices.notify(tx, pickings, { workOrderId: request.work_order_id, requiredAt: null });
+      await this.pickingNotices.notify(tx, pickings, {
+        workOrderId: request.work_order_id,
+        issueRequest: { id: request.material_issue_request_id, no: request.issue_request_no },
+        requiredAt: null,
+      });
     }
     // 미출고가 모두 0 이면 더 나갈 것이 없다 — 출고 전기와 같은 완료(POSTED)로 옮기고 집은 만큼으로 줄인 피킹도 닫는다(FR-025).
     const done = lines.every((line) => line.requested_qty.lte(line.issued_qty));
@@ -377,7 +388,8 @@ export class MaterialIssueRequestEditService {
 
   /** 새 출발 창고는 W/O 라인 담당 부서의 이 공장 활성 생산 창고여야 한다(FR-010 「출발 생산 창고」). */
   private async assertWarehouse(tx: Prisma.TransactionClient, request: Locked, warehouseId: bigint, plantId: bigint): Promise<void> {
-    const workOrder = await tx.work_order.findUniqueOrThrow({ where: { work_order_id: request.work_order_id }, select: { production_line_id: true } });
+    // 수정은 W/O 요청만 온다(창고 보충 요청은 update 입구에서 409).
+    const workOrder = await tx.work_order.findUniqueOrThrow({ where: { work_order_id: request.work_order_id as bigint }, select: { production_line_id: true } });
     const scope = workOrder.production_line_id === null ? null : await resolveCandidates(tx, { plantId, productionLineId: workOrder.production_line_id });
     if (scope === null || !scope.warehouseIds.includes(warehouseId)) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '라인 담당 부서의 생산 창고가 아닙니다.')]);

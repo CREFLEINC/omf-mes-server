@@ -4761,7 +4761,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "공장 — W/O 계획의 공장 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+      "description": "공장 — W/O 계획의 공장 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 공장 = 출발 창고의 공장(출발 창고 없는 옛 요청은 W/O 공장). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      {
       "name": "sourceWarehouseId",
@@ -4796,6 +4796,49 @@
        "type": "boolean"
       },
       "description": "참이면 배포 실패 원인이 남은 대기 요청만 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     {
+      "name": "requestTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "WORK_ORDER",
+        "REPLENISHMENT"
+       ],
+       "default": "WORK_ORDER"
+      },
+      "description": "요청 유형. 주지 않으면 WORK_ORDER — W-02-11 은 지금과 같은 목록이고 창고 보충 요청은 W-02-12 에서 REPLENISHMENT 로 본다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     {
+      "name": "replenishmentOriginCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "DIRECT",
+        "AUTO"
+       ]
+      },
+      "description": "창고 보충 요청의 구분. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     {
+      "name": "destinationWarehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입고지(도착 위치)의 창고 — 보충받는 생산 창고. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "이 품목 줄이 있는 요청만. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      }
     ],
     "responses": {
@@ -4951,7 +4994,7 @@
      "logistics"
     ],
     "summary": "생산 창고 출고 예정 재고·부족",
-    "description": "생산 창고의 출고 예정 재고(FR-015)와 부족(FR-016). 행 = (출발 창고, 품목) — 가용 · 예정 · 여유(가용 − 예정, 0 미만은 0) · 부족(예정 − 가용, 0 미만은 0) · 그 쌍을 잡은 요청 배분(부족은 출고 작업일이 늦은 요청부터). onlyShortage=true 면 부족 > 0 인 행만, 그리고 unsourced(재고 있는 생산 창고가 없어 요청에 넣지 못한 자재 — W/O 가 취소·마감이 아닌 것)를 함께 싣는다. 기존 …/shortage(W/O BOM 대비 부족)와 다르다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "description": "생산 창고의 출고 예정 재고(FR-015)와 부족(FR-016). 행 = (출발 창고, 품목) — 가용 · 예정 · 여유(가용 − 예정, 0 미만은 0) · 부족(예정 − 가용, 0 미만은 0) · 그 쌍을 잡은 요청 배분(부족은 출고 작업일이 늦은 요청부터). onlyShortage=true 면 부족 > 0 인 행만, 그리고 unsourced(재고 있는 생산 창고가 없어 요청에 넣지 못한 자재 — W/O 가 취소·마감이 아닌 것)를 함께 싣는다. 기존 …/shortage(W/O BOM 대비 부족)와 다르다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청도 출발 창고의 예정에 든다(requests[].requestTypeCode). 권한: W-02-10·W-02-11·W-02-12. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "name": "plantId",
@@ -5150,7 +5193,7 @@
      "logistics"
     ],
     "summary": "출고 요청 수정",
-    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고(W/O 라인 담당 부서의 이 공장 활성 생산 창고만 — 아니면 400 sourceWarehouseId INVALID)·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 RANGE), 늘리면 같은 상한을 건다(넘는 양은 부족), 미출고가 모두 0 이 되면 완료(POSTED · displayStatus DONE)로 옮기고 남은 피킹을 닫는다, 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고(W/O 라인 담당 부서의 이 공장 활성 생산 창고만 — 아니면 400 sourceWarehouseId INVALID)·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 RANGE), 늘리면 같은 상한을 건다(넘는 양은 부족), 미출고가 모두 0 이 되면 완료(POSTED · displayStatus DONE)로 옮기고 남은 피킹을 닫는다, 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청(requestTypeCode=REPLENISHMENT)은 고칠 수 없다 — 409 STATE_LOCKED(취소하고 다시 요청한다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5208,7 +5251,7 @@
       }
      },
      "409": {
-      "description": "저장 충돌(conflictCause — 다시 읽으면 풀림) 또는 상태 잠김(errors[].code=STATE_LOCKED — 진행 있음·진행 중 피킹·지금 방식 요청)",
+      "description": "저장 충돌(conflictCause — 다시 읽으면 풀림) 또는 상태 잠김(errors[].code=STATE_LOCKED — 진행 있음·진행 중 피킹·지금 방식 요청·창고 보충 요청)",
       "content": {
        "application/json": {
         "schema": {
@@ -5254,7 +5297,7 @@
      "logistics"
     ],
     "summary": "출고 요청 취소",
-    "description": "진행(줄 집은 양 또는 기출고 > 0) 없는 생산 창고 규칙 요청만 취소한다 — 피킹 지시도 닫고 출고 예정이 풀린다. 진행 있음·지금 방식 요청·이미 끝난 요청은 409 STATE_LOCKED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "description": "진행(줄 집은 양 또는 기출고 > 0) 없는 생산 창고 규칙 요청만 취소한다 — 피킹 지시도 닫고 출고 예정이 풀린다. 진행 있음·지금 방식 요청·이미 끝난 요청은 409 STATE_LOCKED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청도 같은 규칙으로 취소한다. 권한: W/O 요청은 W-02-11, 창고 보충 요청은 W-02-12 — 경로는 둘 중 하나로 들어오고 요청 유형이 맞지 않으면 403. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5282,7 +5325,7 @@
       }
      },
      "403": {
-      "description": "권한 없음. 근거: W-02-11",
+      "description": "권한 없음. 근거: W-02-11 — W/O 요청에 W-02-11, 창고 보충 요청에 W-02-12 가 없음",
       "content": {
        "application/json": {
         "schema": {
@@ -17033,9 +17076,13 @@
      },
      "workOrderId": {
       "x-source-column": "work_order_id",
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "창고 보충 요청(requestTypeCode=REPLENISHMENT)이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "destinationLocationId": {
       "x-source-column": "destination_location_id",
@@ -17144,9 +17191,58 @@
       "enum": [
        "WO_CANCELLED",
        "WO_CLOSED",
+       "REMAINDER_CLOSED",
        null
       ],
-      "description": "닫힌 사유. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+      "description": "닫힌 사유. REMAINDER_CLOSED = 창고 보충 요청 잔량 마감(피처 004). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 · 피처 004 · omf-all-around#230"
+     },
+     "requestTypeCode": {
+      "x-source-column": "request_type_code",
+      "type": "string",
+      "enum": [
+       "WORK_ORDER",
+       "REPLENISHMENT"
+      ],
+      "description": "요청 유형. WORK_ORDER = W/O 자재 출고 요청, REPLENISHMENT = 창고 보충 요청(W/O 없음 · 생산 창고가 자재 창고에 요청). 시스템 소유 값. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "replenishmentOriginCode": {
+      "x-source-column": "replenishment_origin_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DIRECT",
+       "AUTO",
+       null
+      ],
+      "description": "창고 보충 요청의 구분 — DIRECT(직접) · AUTO(자동). W/O 요청은 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "closeReasonDetailCode": {
+      "x-source-column": "close_reason_detail_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "잔량 마감 사유(공통코드 REPLENISHMENT_CLOSE_REASON). closeReasonCode=REMAINDER_CLOSED 일 때만. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "closeRemark": {
+      "x-source-column": "close_remark",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 500,
+      "description": "잔량 마감 메모. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "closedBy": {
+      "x-source-column": "closed_by",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "잔량 마감한 사용자. W/O 취소·마감으로 닫힌 요청은 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "versionNo": {
       "x-source-column": "version_no",
@@ -17173,8 +17269,11 @@
       "description": "출발 생산 창고 이름(목록·상세 표기용). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      },
      "workOrderNo": {
-      "type": "string",
-      "description": "W/O 번호(목록 표기용). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "W/O 번호(목록 표기용). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "productionDate": {
       "type": [
@@ -17182,7 +17281,7 @@
        "null"
       ],
       "format": "date",
-      "description": "생산일 — W/O 계획 시작의 공장 현지 날짜. 계획 시작이 없으면 null. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+      "description": "생산일 — W/O 계획 시작의 공장 현지 날짜. 계획 시작이 없으면 null. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "productionPlanId": {
       "type": [
@@ -17190,18 +17289,27 @@
        "null"
       ],
       "format": "int64",
-      "description": "W/O 의 생산계획. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+      "description": "W/O 의 생산계획. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "productionPlanNo": {
       "type": [
        "string",
        "null"
       ],
-      "description": "생산계획 번호(없으면 null). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+      "description": "생산계획 번호(없으면 null). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "destinationLocationName": {
       "type": "string",
       "description": "입고지 이름. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
+     },
+     "destinationWarehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "입고지(도착 위치)의 창고 — 창고 보충 요청에서는 보충받는 생산 창고(목록·상세 표기용 · 파생). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+     },
+     "destinationWarehouseName": {
+      "type": "string",
+      "description": "입고지 창고 이름(목록·상세 표기용 · 파생). 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
      },
      "lineCount": {
       "type": "integer",
@@ -20593,6 +20701,7 @@
        "required": [
         "materialIssueRequestId",
         "issueRequestNo",
+        "requestTypeCode",
         "workOrderId",
         "workOrderNo",
         "issueWorkDate",
@@ -20607,12 +20716,28 @@
         "issueRequestNo": {
          "type": "string"
         },
+        "requestTypeCode": {
+         "type": "string",
+         "enum": [
+          "WORK_ORDER",
+          "REPLENISHMENT"
+         ],
+         "description": "요청 유형 — 출고 예정 조회는 유형을 가리지 않는다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+        },
         "workOrderId": {
-         "type": "integer",
-         "format": "int64"
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "description": "창고 보충 요청이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
         },
         "workOrderNo": {
-         "type": "string"
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "창고 보충 요청이면 null — issueRequestNo 로 표기한다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
         },
         "issueWorkDate": {
          "type": [
@@ -20823,8 +20948,20 @@
            "issueRequestNo": {
             "type": "string"
            },
+           "requestTypeCode": {
+            "type": "string",
+            "enum": [
+             "WORK_ORDER",
+             "REPLENISHMENT"
+            ],
+            "description": "요청 유형. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+           },
            "workOrderNo": {
-            "type": "string"
+            "type": [
+             "string",
+             "null"
+            ],
+            "description": "창고 보충 요청이면 null. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
            },
            "issueWorkDate": {
             "type": [

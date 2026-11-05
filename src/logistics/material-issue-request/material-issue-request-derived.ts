@@ -40,7 +40,7 @@ export function displayStatusWhere(codes: readonly DisplayStatus[]): Prisma.mate
 /** 이름 칸까지 한 질의로 — 목록이 줄마다·행마다 다시 읽지 않는다. */
 export const DERIVED_INCLUDE = {
   source_warehouse: { select: { warehouse_name: true } },
-  location: { select: { location_name: true } },
+  location: { select: { location_name: true, warehouse_id: true, warehouse: { select: { warehouse_name: true } } } },
   work_order: {
     select: {
       work_order_no: true,
@@ -76,11 +76,14 @@ export interface LineDerived {
 export interface RequestDerived {
   displayStatus: DisplayStatus;
   sourceWarehouseName: string | null;
-  workOrderNo: string;
+  /** 창고 보충 요청(피처 004)은 W/O 가 없어 W/O·계획·생산일 칸이 null 이다. */
+  workOrderNo: string | null;
   productionDate: string | null;
   productionPlanId: number | null;
   productionPlanNo: string | null;
   destinationLocationName: string;
+  destinationWarehouseId: number;
+  destinationWarehouseName: string;
   lineCount: number;
   /** 줄 저장 부족(만들 때 줄인 양)의 합. */
   shortageQtyTotal: number;
@@ -121,15 +124,19 @@ export function derive(row: DerivedRow, dynamic: ReadonlyMap<bigint, Prisma.Deci
       dynamicShortageQty: dyn.toNumber(),
     });
   }
-  const timezone = row.work_order.production_plan?.production_order.plant.timezone_code ?? null;
+  const workOrder = row.work_order;
+  const timezone = workOrder?.production_plan?.production_order.plant.timezone_code ?? null;
+  const plannedStart = workOrder?.planned_start_at ?? null;
   return {
     displayStatus: statusOf(row, started),
     sourceWarehouseName: row.source_warehouse?.warehouse_name ?? null,
-    workOrderNo: row.work_order.work_order_no,
-    productionDate: row.work_order.planned_start_at === null || timezone === null ? null : localDate(row.work_order.planned_start_at, timezone),
-    productionPlanId: row.work_order.production_plan_id === null ? null : Number(row.work_order.production_plan_id),
-    productionPlanNo: row.work_order.production_plan?.plan_no ?? null,
+    workOrderNo: workOrder?.work_order_no ?? null,
+    productionDate: plannedStart === null || timezone === null ? null : localDate(plannedStart, timezone),
+    productionPlanId: workOrder?.production_plan_id == null ? null : Number(workOrder.production_plan_id),
+    productionPlanNo: workOrder?.production_plan?.plan_no ?? null,
     destinationLocationName: row.location.location_name,
+    destinationWarehouseId: Number(row.location.warehouse_id),
+    destinationWarehouseName: row.location.warehouse.warehouse_name,
     lineCount: row.material_issue_request_line.length,
     shortageQtyTotal: stored.toNumber(),
     dynamicShortageQtyTotal: dynamicTotal.toNumber(),

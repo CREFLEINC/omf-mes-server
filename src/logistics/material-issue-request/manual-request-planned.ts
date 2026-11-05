@@ -26,7 +26,7 @@ interface Conflict {
   takeFromPlannedQty: number;
   overridable: boolean;
   noStockedWarehouse?: boolean;
-  affectedRequests: { issueRequestNo: string; workOrderNo: string; issueWorkDate: string | null }[];
+  affectedRequests: { issueRequestNo: string; requestTypeCode: string; workOrderNo: string | null; issueWorkDate: string | null }[];
 }
 
 export interface PlannedCreateResult {
@@ -244,9 +244,14 @@ export class PlannedManualRequestCreator {
     const ids = [...new Set(lines.map((l) => l.requestId))];
     const rows = await tx.material_issue_request.findMany({
       where: { material_issue_request_id: { in: ids } },
-      select: { issue_request_no: true, issue_work_date: true, work_order: { select: { work_order_no: true } } },
+      select: { issue_request_no: true, request_type_code: true, issue_work_date: true, work_order: { select: { work_order_no: true } } },
       orderBy: [{ issue_work_date: 'desc' }, { material_issue_request_id: 'desc' }],
     });
-    return rows.map((row) => ({ issueRequestNo: row.issue_request_no, workOrderNo: row.work_order.work_order_no, issueWorkDate: row.issue_work_date?.toISOString().slice(0, 10) ?? null }));
+    return rows.map((row) => ({
+      issueRequestNo: row.issue_request_no,
+      requestTypeCode: row.request_type_code,
+      workOrderNo: row.work_order?.work_order_no ?? null,
+      issueWorkDate: row.issue_work_date?.toISOString().slice(0, 10) ?? null,
+    }));
   }
 }

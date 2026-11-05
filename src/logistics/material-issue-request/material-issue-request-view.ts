@@ -22,7 +22,8 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
   return {
     materialIssueRequestId: Number(row.material_issue_request_id),
     issueRequestNo: row.issue_request_no,
-    workOrderId: Number(row.work_order_id),
+    // 창고 보충 요청(피처 004)은 W/O 가 없다 — null.
+    workOrderId: id(row.work_order_id),
     destinationLocationId: Number(row.destination_location_id),
     requiredAt: row.required_at === null ? null : row.required_at.toISOString(),
     statusCode: row.status_code,
@@ -36,6 +37,12 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
     releaseErrorText: row.release_error_text ?? null,
     closedAt: row.closed_at?.toISOString() ?? null,
     closeReasonCode: row.close_reason_code ?? null,
+    // 창고 보충(피처 004) — W/O 요청은 requestTypeCode 만 WORK_ORDER 이고 나머지는 null 이다.
+    requestTypeCode: row.request_type_code,
+    replenishmentOriginCode: row.replenishment_origin_code ?? null,
+    closeReasonDetailCode: row.close_reason_detail_code ?? null,
+    closeRemark: row.close_remark ?? null,
+    closedBy: id(row.closed_by ?? null),
     // 수정·취소의 저장 충돌 보호 — 본문 versionNo 로 되돌려 보낸다(W-02-11).
     versionNo: row.version_no,
     // 화면 값(파생 · W-02-11) — 목록·상세·발행·수정·취소 응답이 싣는다(조회 서비스를 거친다).
@@ -49,6 +56,8 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
           productionPlanId: derived.productionPlanId,
           productionPlanNo: derived.productionPlanNo,
           destinationLocationName: derived.destinationLocationName,
+          destinationWarehouseId: derived.destinationWarehouseId,
+          destinationWarehouseName: derived.destinationWarehouseName,
           lineCount: derived.lineCount,
           shortageQtyTotal: derived.shortageQtyTotal,
           dynamicShortageQtyTotal: derived.dynamicShortageQtyTotal,
