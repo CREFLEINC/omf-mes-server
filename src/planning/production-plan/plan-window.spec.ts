@@ -45,6 +45,16 @@ describe('plan-window — 교대 창', () => {
     expect([local(window.plannedStartAt), local(window.plannedEndAt)]).toEqual(['2026-10-20T19:00', '2026-10-21T07:00']);
   });
 
+  it('자정 넘김은 시각으로 판정한다 — 플래그가 «넘김»인데 종료가 시작보다 늦으면 그날 끝난다(24시간을 넘지 않는다)', () => {
+    const window = shiftWindow('2026-10-20', { startTime: '07:00:00', endTime: '19:00:00' }, HCM);
+    expect([local(window.plannedStartAt), local(window.plannedEndAt)]).toEqual(['2026-10-20T07:00', '2026-10-20T19:00']);
+  });
+
+  it('플래그가 «안 넘김»인데 종료가 시작보다 이르면 다음 날 끝난다(창이 거꾸로 서지 않는다)', () => {
+    const window = shiftWindow('2026-10-20', { startTime: '22:00:00', endTime: '06:00:00' }, HCM);
+    expect([local(window.plannedStartAt), local(window.plannedEndAt)]).toEqual(['2026-10-20T22:00', '2026-10-21T06:00']);
+  });
+
   it('교대를 비우면 근무일 하루 — 가장 이른 «활성» 교대 시작부터 24시간이다', () => {
     const window = dayWindow('2026-10-31', dayStartOf(activeStarts), HCM);
     expect([local(window.plannedStartAt), local(window.plannedEndAt)]).toEqual(['2026-10-31T07:00', '2026-11-01T07:00']);

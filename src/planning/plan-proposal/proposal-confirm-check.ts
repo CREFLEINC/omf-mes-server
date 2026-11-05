@@ -111,8 +111,7 @@ export async function resolveConfirm(
       if (shiftId !== null && shift === undefined) error(field('plannedShiftId'), ERROR_CODE.INVALID, '이 공장의 사용 중인 교대가 아닙니다.');
       const window: PlanWindow = shift === undefined
         ? dayWindow(plan.planDate, dayStart, order.plant.timezone_code)
-        : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time), crossesMidnight: shift.crosses_midnight }, order.plant.timezone_code);
-      if (window.plannedEndAt < window.plannedStartAt) error(field('plannedShiftId'), ERROR_CODE.INVALID, '교대 종료가 시작보다 앞섭니다. 교대 기준정보를 확인하세요.');
+        : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time) }, order.plant.timezone_code);
       supplements.set(BigInt(workOrder.routingOperationId), {
         ...resources,
         workerId,
