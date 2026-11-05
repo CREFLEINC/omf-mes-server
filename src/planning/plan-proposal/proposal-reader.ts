@@ -97,7 +97,8 @@ export interface ProposalFacts {
   orders: OrderRow[];
   plans: Map<bigint, PlanRow[]>;
   boms: Map<bigint, DefaultBomRow[]>;
-  usableRoutings: Map<bigint, UsableRoutingRow[]>;
+  /** 키는 `pairKey(공장, 품목)` — 공장 현지 날짜로 판정했다. */
+  usableRoutings: Map<string, UsableRoutingRow[]>;
   routings: Map<bigint, RoutingRow>;
   operations: Map<bigint, OperationRow[]>;
   dependencies: Map<bigint, DependencyRow[]>;
@@ -119,7 +120,7 @@ export interface LocationRow {
 
 const CONFIRMED = 'CONFIRMED';
 
-export async function readProposalFacts(client: Prisma.TransactionClient, orderIds: readonly bigint[]): Promise<ProposalFacts> {
+export async function readProposalFacts(client: Prisma.TransactionClient, orderIds: readonly bigint[], now: Date = new Date()): Promise<ProposalFacts> {
   const orders = await client.production_order.findMany({
     where: { production_order_id: { in: [...orderIds] } },
     select: {
@@ -137,7 +138,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     },
   });
   const plans = group(planRows, (plan) => plan.production_order_id);
-  const { boms, routings: usableRoutings } = await readMastersOf(client, orders.map((order) => order.item_id));
+  const { boms, routings: usableRoutings } = await readMastersOf(client, orders.map((order) => ({ plantId: order.plant_id, itemId: order.item_id })), now);
 
   // 제안이 쓸 수 있는 Routing — 품목의 쓸 수 있는 Rev 전부와 작성중 계획에 저장된 Rev. 확정 계획의 Routing 은 보지 않는다.
   const routingIds = new Set<bigint>();
@@ -246,8 +247,8 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
 }
 
 /** 품목의 Routing 선택 — 작성중 계획은 저장된 Rev 가 아직 쓸 수 있으면 그것, 아니면 새 계획과 같은 규칙. */
-export function routingFor(facts: ProposalFacts, itemId: bigint, savedRoutingId: bigint | null): ReturnType<typeof chooseRouting> {
-  const usable = facts.usableRoutings.get(itemId) ?? [];
+export function routingFor(facts: ProposalFacts, order: OrderRow, savedRoutingId: bigint | null): ReturnType<typeof chooseRouting> {
+  const usable = facts.usableRoutings.get(pairKey(order.plant_id, order.item_id)) ?? [];
   if (savedRoutingId !== null && usable.some((row) => row.routing_id === savedRoutingId)) return { routingId: savedRoutingId };
   return chooseRouting(usable.map((row) => ({ routingId: row.routing_id, isDefault: row.is_default })));
 }

@@ -219,6 +219,19 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(await snapshot()).toEqual(before);
     });
 
+    it('쓸 수 있는 Routing 은 각 ERP W/O 공장의 현지 날짜로 판정한다 — 확정과 같은 기준이다(제안·목록 모두)', async () => {
+      // 두 공장의 현지 날짜는 늘 다르다(UTC+14 와 UTC-12). Routing 은 동쪽 공장의 오늘부터 유효하다.
+      const response = await propose(order.TZE, order.TZW).expect(200);
+      expect((response.body.items as Proposal[]).map((item) => [item.kind, item.reasons.map((reason) => reason.code)])).toEqual([
+        ['NEW_PLAN', ['WORK_ORDER_LINE_REQUIRED', 'WORK_ORDER_LOCATION_REQUIRED']],
+        ['NOT_PROPOSABLE', ['ROUTING_REQUIRED']],
+      ]);
+      const masters = async (orderId: bigint) =>
+        (await request(app.getHttpServer()).get(`/api/planning/production-orders/${orderId}`).set('Cookie', cookie).expect(200)).body.masterDataReasons as unknown;
+      expect(await masters(order.TZE)).toBeUndefined();
+      expect(await masters(order.TZW)).toEqual(['ROUTING_REQUIRED']);
+    });
+
     it('권한이 없으면 403', async () => {
       await request(app.getHttpServer()).get(PROPOSALS).query({ productionOrderIds: String(order.A) }).set('Cookie', strangerCookie).expect(403);
     });
@@ -648,6 +661,22 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     id.bomChg = await bom(id.itemChg, 1, true);
     id.routingChg = (await routing(id.itemChg, [{ process: process20.process_id, equipment: false, mold: false }])).routingId;
     await makeOrder('R', id.itemChg);
+    const zonePlant = async (code: string, timezone: string) => {
+      const created = await prisma.plant.create({ data: {
+        legal_entity_id: entity.legal_entity_id, business_unit_id: unit.business_unit_id, plant_code: `${PREFIX}-${code}`, plant_name: PREFIX, timezone_code: timezone,
+      } });
+      await prisma.user_data_scope.create({ data: { app_user_id: user.app_user_id, plant_id: created.plant_id } });
+      return created.plant_id;
+    };
+    const eastPlant = await zonePlant('PE', 'Pacific/Kiritimati');
+    const westPlant = await zonePlant('PW', 'Etc/GMT+12');
+    const itemZone = await item('IT-TZ');
+    await bom(itemZone, 1, true);
+    const zoneRouting = await routing(itemZone, [{ process: process20.process_id, equipment: false, mold: false }]);
+    const eastToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Kiritimati', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    await prisma.routing.update({ where: { routing_id: zoneRouting.routingId }, data: { effective_from: new Date(`${eastToday}T00:00:00.000Z`) } });
+    await makeOrder('TZE', itemZone, { plantId: eastPlant });
+    await makeOrder('TZW', itemZone, { plantId: westPlant });
     await makeOrder('OUT', id.itemOk, { plantId: id.otherPlant });
     const plan = (orderId: bigint, key: string, qty: number, status: string, lineId: bigint | null = null, planDate = planStart) => prisma.production_plan.create({ data: {
       production_order_id: orderId, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date(`${planDate}T00:00:00.000Z`), planned_qty: qty,

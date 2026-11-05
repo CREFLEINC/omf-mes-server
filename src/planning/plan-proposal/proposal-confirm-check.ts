@@ -8,6 +8,7 @@ import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
 import { assertWholeOrder } from './proposal-policy';
 import { ProposalFacts } from './proposal-reader';
 import { resourceFindings } from './resource-rules';
+import { pairKey } from '../production-plan/resource-assign';
 
 /** 계약 `ProductionPlanProposalConfirm` — 형식·필수·양수는 계약 가드가 이미 막았다. */
 export interface ProposalConfirmBody {
@@ -60,7 +61,7 @@ export async function resolveConfirm(
   assertWholeOrder(proposal.plans.map((plan) => plan.key), body.plans.map((plan) => plan.proposalPlanKey));
   const { order } = proposal;
   const refs = await readReferences(client, body);
-  const usable = new Set((facts.usableRoutings.get(order.item_id) ?? []).map((row) => row.routing_id));
+  const usable = new Set((facts.usableRoutings.get(pairKey(order.plant_id, order.item_id)) ?? []).map((row) => row.routing_id));
   const shifts = facts.shifts.get(order.plant_id) ?? [];
   const dayStart = dayStartOf(shifts.filter((shift) => shift.is_active).map((shift) => timeOfColumn(shift.start_time)));
   const today = localDate(new Date(), order.plant.timezone_code);

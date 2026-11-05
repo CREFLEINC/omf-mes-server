@@ -22,7 +22,8 @@ import {
   worklistStateOf,
   worklistStateSql,
 } from './production-order-worklist';
-import { MasterReason, masterReasonsByItem } from '../production-plan/master-choice';
+import { MasterReason, masterReasonsByTarget } from '../production-plan/master-choice';
+import { pairKey } from '../production-plan/resource-assign';
 import {
   ProductionOrderChangeFieldRow,
   ProductionOrderLastChange,
@@ -329,12 +330,19 @@ export class ProductionOrderService {
       SELECT o.production_order_id, ${worklistReasonCountsSql()}
         FROM planning.production_order o WHERE o.production_order_id IN (${Prisma.join(rows.map((row) => row.production_order_id))})`);
     const states = new Map(counted.map((row) => [row.production_order_id, worklistStateOf(row)]));
-    const itemOf = new Map(rows.map((row) => [row.production_order_id, row.item_id]));
-    const beforePlanItems = counted.filter((row) => states.get(row.production_order_id) === 'BEFORE_PLAN').map((row) => itemOf.get(row.production_order_id) as bigint);
-    const masters = await masterReasonsByItem(this.prisma, beforePlanItems);
+    const rowOf = new Map(rows.map((row) => [row.production_order_id, row]));
+    const targetOf = (orderId: bigint) => {
+      const row = rowOf.get(orderId) as ProductionOrderRow;
+      return { plantId: row.plant_id, itemId: row.item_id };
+    };
+    const masters = await masterReasonsByTarget(
+      this.prisma,
+      counted.filter((row) => states.get(row.production_order_id) === 'BEFORE_PLAN').map((row) => targetOf(row.production_order_id)),
+    );
     return new Map(counted.map((row) => {
       const state = states.get(row.production_order_id) as WorklistState;
-      const blocking = state === 'BEFORE_PLAN' ? masters.get(itemOf.get(row.production_order_id) as bigint) : undefined;
+      const target = targetOf(row.production_order_id);
+      const blocking = state === 'BEFORE_PLAN' ? masters.get(pairKey(target.plantId, target.itemId)) : undefined;
       return [row.production_order_id, {
         state,
         reasons: worklistReasonsOf(state, row),

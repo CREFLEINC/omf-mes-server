@@ -489,20 +489,23 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
 
     it('16. 「오늘부터 유효」한 Rev 로 계획을 세운다 — UTC 날짜는 아직 어제다', async () => {
       expect(new Date().toISOString().slice(0, 10)).toBe(shiftDays(today, -1));
-      const response = await postOrder('FROMTODAY', fromToday.item, 10).expect(201);
+      const created = await postOrder('FROMTODAY', fromToday.item, 10).expect(201);
+      // 등록은 계획을 세우지 않는다 — :auto-plan 이 세운다.
+      const response = await autoPlan(created.body.productionOrderId as number).expect(200);
 
-      expect(response.body.autoPlan.reasons).not.toContain('ROUTING_MISSING');
-      const plans = await plansOf(response.body.productionOrderId as number);
+      expect(response.body.reasons).not.toContain('ROUTING_MISSING');
+      const plans = await plansOf(created.body.productionOrderId as number);
       expect(plans).toHaveLength(1);
       expect(plans[0]).toMatchObject({ routing_id: fromToday.routing });
       expect(plans[0].plan_date.toISOString().slice(0, 10)).toBe(today);
     });
 
     it('17. 「어제까지 유효」한 Rev 는 현지 00:00 부터 고르지 않는다', async () => {
-      const response = await postOrder('UNTILYDAY', untilYesterday.item, 10).expect(201);
+      const created = await postOrder('UNTILYDAY', untilYesterday.item, 10).expect(201);
+      const response = await autoPlan(created.body.productionOrderId as number).expect(200);
 
-      expect(response.body.autoPlan).toEqual({ status: 'NEEDS_REVIEW', reasons: ['ROUTING_MISSING'] });
-      expect(await plansOf(response.body.productionOrderId as number)).toEqual([]);
+      expect(response.body).toMatchObject({ outcome: 'NOT_PLANNED', reasons: ['ROUTING_MISSING'] });
+      expect(await plansOf(created.body.productionOrderId as number)).toEqual([]);
     });
   });
 

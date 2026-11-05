@@ -117,7 +117,7 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
     // 작성중 계획의 계획일이 지났으면 오늘로 낸다 — 확정은 지난 계획일을 받지 않는다(저장값은 saved 에 남는다).
     : choice.drafts.map((plan) => ({ key: draftPlanKey(plan.production_plan_id), saved: plan, planDate: laterOf(toDateString(plan.plan_date) as string, today), qty: plan.planned_qty, lineId: plan.planned_line_id }));
 
-  const routed = targets.map((target) => ({ target, routing: routingFor(facts, order.item_id, target.saved?.routing_id ?? null) }));
+  const routed = targets.map((target) => ({ target, routing: routingFor(facts, order, target.saved?.routing_id ?? null) }));
   for (const { routing } of routed) {
     if (routing.reason !== undefined) masterIssues.push(masterIssue(routing.reason));
     else if ((facts.operations.get(routing.routingId as bigint) ?? []).length === 0) masterIssues.push(masterIssue('ROUTING_OPERATION_REQUIRED'));
@@ -212,7 +212,7 @@ function workOrdersOf(
  * ⛔ 작성중 계획의 판은 반드시 넣는다 — 확정이 If-Match 없이 이 값으로 저장 충돌을 막는다.
  */
 function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[]): ProposalBasis {
-  const routings = facts.usableRoutings.get(order.item_id) ?? [];
+  const routings = facts.usableRoutings.get(pairKey(order.plant_id, order.item_id)) ?? [];
   const routingIds = new Set([...routings.map((row) => row.routing_id), ...saved.filter((plan) => plan.status_code !== CONFIRMED).map((plan) => plan.routing_id)]);
   const maps = facts.maps.get(pairKey(order.plant_id, order.item_id)) ?? [];
   const equipmentIds = new Set(maps.map((row) => row.map.equipmentId).filter((id) => id !== null));

@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { usableWhere as usableRoutingWhere } from '../routing/routing.service';
+import { localDate } from './plan-window';
+import { pairKey } from './resource-assign';
 
 /**
  * 계획이 쓸 BOM·Routing 을 고르는 규칙 — 계획 제안·목록의 기준정보 사유·수기 계획 검증이 이 한 벌을 쓴다.
@@ -63,43 +65,70 @@ export interface UsableRoutingRow {
   version_no: number;
 }
 
-/** 품목 여럿의 기본 BOM 과 쓸 수 있는 Routing — 페이지·묶음 단위로 두 질의. */
+/** (공장, 품목) 하나 — 쓸 수 있는 Routing 은 공장 현지 날짜로 판정해 이 쌍으로 묶는다(`pairKey`). */
+export interface MasterTarget {
+  plantId: bigint;
+  itemId: bigint;
+}
+
+/**
+ * 품목 여럿의 기본 BOM 과 쓸 수 있는 Routing. Routing 의 「오늘」은 각 공장의 현지 날짜다 — 확정(`assertPlannableRouting`)이
+ * `plantToday` 로 보므로 제안·목록도 같은 날짜로 봐야 「쓸 수 있다」가 갈리지 않는다. 날짜마다 한 질의.
+ */
 export async function readMastersOf(
   client: Prisma.TransactionClient,
-  itemIds: readonly bigint[],
-): Promise<{ boms: Map<bigint, DefaultBomRow[]>; routings: Map<bigint, UsableRoutingRow[]> }> {
-  const ids = [...new Set(itemIds)];
-  if (ids.length === 0) return { boms: new Map(), routings: new Map() };
-  const [boms, routings] = await Promise.all([
+  targets: readonly MasterTarget[],
+  now: Date = new Date(),
+): Promise<{ boms: Map<bigint, DefaultBomRow[]>; routings: Map<string, UsableRoutingRow[]> }> {
+  if (targets.length === 0) return { boms: new Map(), routings: new Map() };
+  const plants = await client.plant.findMany({
+    where: { plant_id: { in: [...new Set(targets.map((target) => target.plantId))] } },
+    select: { plant_id: true, timezone_code: true },
+  });
+  const todayOf = new Map(plants.map((plant) => [plant.plant_id, localDate(now, plant.timezone_code)]));
+  const itemsOfDay = new Map<string, Set<bigint>>();
+  for (const target of targets) {
+    const day = todayOf.get(target.plantId) as string;
+    itemsOfDay.set(day, (itemsOfDay.get(day) ?? new Set<bigint>()).add(target.itemId));
+  }
+  const [boms, routingsOfDay] = await Promise.all([
     client.bom.findMany({
-      where: { parent_item_id: { in: ids }, is_default: true },
+      where: { parent_item_id: { in: [...new Set(targets.map((target) => target.itemId))] }, is_default: true },
       orderBy: { bom_id: 'asc' },
       select: { bom_id: true, parent_item_id: true, bom_code: true, bom_version: true, version_no: true },
     }),
-    client.routing.findMany({
-      where: { item_id: { in: ids }, ...usableRoutingWhere() },
-      orderBy: { routing_id: 'asc' },
-      select: {
-        routing_id: true, item_id: true, routing_code: true, routing_version: true, is_default: true,
-        status_code: true, effective_from: true, effective_to: true, version_no: true,
-      },
-    }),
+    Promise.all([...itemsOfDay].map(async ([day, items]) => ({
+      day,
+      rows: await client.routing.findMany({
+        where: { item_id: { in: [...items] }, ...usableRoutingWhere(day) },
+        orderBy: { routing_id: 'asc' },
+        select: {
+          routing_id: true, item_id: true, routing_code: true, routing_version: true, is_default: true,
+          status_code: true, effective_from: true, effective_to: true, version_no: true,
+        },
+      }),
+    }))),
   ]);
-  return { boms: group(boms, (row) => row.parent_item_id), routings: group(routings, (row) => row.item_id) };
+  const byDayItem = new Map(routingsOfDay.flatMap(({ day, rows }) => [...group(rows, (row) => row.item_id)].map(([itemId, list]) => [`${day}:${String(itemId)}`, list] as const)));
+  const routings = new Map(targets.map((target) => [
+    pairKey(target.plantId, target.itemId),
+    byDayItem.get(`${todayOf.get(target.plantId) as string}:${String(target.itemId)}`) ?? [],
+  ]));
+  return { boms: group(boms, (row) => row.parent_item_id), routings };
 }
 
-/** 품목 여럿의 기준정보 사유 — 목록이 계획 전 오더에 싣는다. */
-export async function masterReasonsByItem(client: Prisma.TransactionClient, itemIds: readonly bigint[]): Promise<Map<bigint, MasterReason[]>> {
-  const { boms, routings } = await readMastersOf(client, itemIds);
+/** (공장, 품목) 여럿의 기준정보 사유 — 목록이 계획 전 오더에 싣는다. 키는 `pairKey`. */
+export async function masterReasonsByTarget(client: Prisma.TransactionClient, targets: readonly MasterTarget[]): Promise<Map<string, MasterReason[]>> {
+  const { boms, routings } = await readMastersOf(client, targets);
   const routingIds = [...routings.values()].flat().map((routing) => routing.routing_id);
   const counted = routingIds.length === 0 ? [] : await client.routing_operation.groupBy({ by: ['routing_id'], where: { routing_id: { in: routingIds } }, _count: { _all: true } });
   const operationCounts = new Map(counted.map((row) => [row.routing_id, row._count._all]));
   return new Map(
-    [...new Set(itemIds)].map((itemId) => [
-      itemId,
+    targets.map((target) => [
+      pairKey(target.plantId, target.itemId),
       masterReasonsOf(
-        (boms.get(itemId) ?? []).map((bom) => bom.bom_id),
-        (routings.get(itemId) ?? []).map((routing) => ({ routingId: routing.routing_id, isDefault: routing.is_default })),
+        (boms.get(target.itemId) ?? []).map((bom) => bom.bom_id),
+        (routings.get(pairKey(target.plantId, target.itemId)) ?? []).map((routing) => ({ routingId: routing.routing_id, isDefault: routing.is_default })),
         operationCounts,
       ),
     ]),
