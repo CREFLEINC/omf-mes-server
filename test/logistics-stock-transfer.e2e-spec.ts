@@ -24,7 +24,8 @@ const PASSWORD = 'ST-검사-비밀번호';
 const PREFIX = 'STE2E';
 const ROLE = 'E2E_ST';
 // `W-01-10` 은 잔액을 세우는 입고 등록용이다(이 스위트의 픽스처가 그 오퍼레이션을 부른다).
-const PERMISSIONS = ['M-01-10', 'W-01-10'];
+// `M-01-08` 은 도착한 위치에서 이어지는 피킹·출고용이다(omf-all-around#235).
+const PERMISSIONS = ['M-01-10', 'W-01-10', 'M-01-08'];
 const DAY = '2026-05-12';
 const AT = '2026-05-12T10:00:00.000Z';
 const WORKER_NO = 'STE2E01';
@@ -442,6 +443,50 @@ describe('재고 이동 조회 (e2e)', () => {
 
     expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(5);
     expect(await onHand(lot, location2Id, 'IN_TRANSIT')).toBe(0);
+  });
+
+  // ── 도착이 남긴 보유 0 IN_TRANSIT 행 (omf-all-around#233·#235) ──────────────
+  // 계획 위치 = 도착 위치면 같은 7칸에 `IN_TRANSIT`(0)과 `AVAILABLE` 이 나란히 선다.
+  // 그 위치에서 이어지는 피킹·출고·재반출이 「재고 차원이 둘 이상」으로 막히면 안 된다.
+
+  it('⭐ 도착한 위치에서 같은 LOT 을 피킹한다 — 보유 0 IN_TRANSIT 행을 차원으로 세지 않는다', async () => {
+    const lot = await arrived(4);
+    expect(await prisma.inventory_balance.count({ where: { lot_id: lot, location_id: location2Id } })).toBe(2);
+    const seeded = await insertPickingOrder(lot, 4);
+
+    await callPick(seeded, 4).expect(200);
+
+    const balance = await prisma.inventory_balance.findFirstOrThrow({
+      where: { lot_id: lot, location_id: location2Id, inventory_status_code: 'AVAILABLE' },
+    });
+    expect(balance.picked_qty.toNumber()).toBe(4);
+  });
+
+  it('⭐ 도착한 위치에서 같은 LOT 을 출고 확정한다', async () => {
+    const lot = await arrived(4);
+
+    await callIssue(lot, 4, await makeReceipt()).expect(201);
+
+    expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(0);
+  });
+
+  it('⭐ 도착한 위치에서 같은 LOT 을 다시 반출한다', async () => {
+    const lot = await arrived(4);
+
+    await created(onward(lot, 4));
+
+    expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(0);
+    expect(await onHand(lot, foreignLocationId, 'IN_TRANSIT')).toBe(4);
+  });
+
+  it('⛔ 보유가 있는 행이 둘이면(부분 도착 잔여) 지금처럼 400 INVALID 다 — 문의 031', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    await callArrive(transfer, arrival(transfer, 3)).expect(200);
+
+    const response = await callCreate(onward(lot, 1)).expect(400);
+
+    expect(response.body.errors[0]).toMatchObject({ field: 'lines[0].lotId', code: 'INVALID' });
   });
 
   it('receipt_transaction_line_id 가 되짚고 transactionNo 가 ST-…-A 다', async () => {
@@ -943,6 +988,100 @@ describe('재고 이동 조회 (e2e)', () => {
     };
   }
 
+  // ── 도착 뒤 이어지는 작업 헬퍼 (#235) ────────────────────────────────────────
+
+  /** 출발 위치에 10 을 세우고 `qty` 를 계획 위치로 전량 도착시킨다. */
+  async function arrived(qty: number): Promise<number> {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, qty));
+    await callArrive(transfer, arrival(transfer, qty)).expect(200);
+    return lot;
+  }
+
+  /** 도착한 위치에서 다른 창고로 다시 내보내는 반출 본문. */
+  function onward(forLotId: number, qty: number): Record<string, unknown> {
+    return {
+      ...draft(forLotId, qty),
+      fromWarehouseId: warehouse2Id,
+      toWarehouseId: warehouse3Id,
+      lines: [{ ...line(forLotId, qty), fromLocationId: location2Id, toLocationId: foreignLocationId }],
+    };
+  }
+
+  /** 피킹 지시는 직접 심는다 — 만드는 오퍼레이션(출고 요청 배포)은 이 스위트의 몫이 아니다. */
+  async function insertPickingOrder(
+    forLotId: number,
+    qty: number,
+  ): Promise<{ pickingOrderId: number; pickingLineId: number }> {
+    const order = await prisma.picking_order.create({
+      data: {
+        picking_order_no: `${PREFIX}-PK-${randomUUID().slice(0, 8)}`,
+        picking_type_code: 'MATERIAL',
+        source_document_type_code: 'MATERIAL_ISSUE_REQUEST',
+        source_document_id: 1,
+        warehouse_id: warehouse2Id,
+        status_code: 'REGISTERED',
+      },
+    });
+    const row = await prisma.picking_line.create({
+      data: {
+        picking_order_id: order.picking_order_id,
+        line_no: 1,
+        item_id: itemId,
+        lot_id: forLotId,
+        location_id: location2Id,
+        planned_qty: qty,
+        picked_qty: 0,
+        uom_id: uomId,
+        status_code: 'REGISTERED',
+      },
+    });
+    return { pickingOrderId: Number(order.picking_order_id), pickingLineId: Number(row.picking_line_id) };
+  }
+
+  function callPick(seeded: { pickingOrderId: number; pickingLineId: number }, pickedQty: number): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/logistics/picking-orders/${seeded.pickingOrderId}/lines/${seeded.pickingLineId}:pick`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', WORKER_NO)
+      .send({ pickedQty, businessDate: DAY, occurredAt: AT });
+  }
+
+  /** 출고 원천으로 쓸 입고 머리 — 원천이 있는지만 본다. */
+  async function makeReceipt(): Promise<number> {
+    const receipt = await prisma.goods_receipt.create({
+      data: {
+        goods_receipt_no: `${PREFIX}-GR-${randomUUID().slice(0, 8)}`,
+        receipt_type_code: 'MATERIAL',
+        plant_id: plantId,
+        warehouse_id: warehouse2Id,
+        receipt_datetime: new Date(AT),
+        status_code: 'POSTED',
+      },
+    });
+    return Number(receipt.goods_receipt_id);
+  }
+
+  /** 원천이 입고인 출고(공급사 반품)로 낸다 — 피킹 지시 없이 출고 전기 판정만 잰다. */
+  function callIssue(forLotId: number, issueQty: number, receiptId: number): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/logistics/goods-issues')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        issueTypeCode: 'SUPPLIER_RETURN',
+        sourceDocumentTypeCode: 'GOODS_RECEIPT',
+        sourceDocumentId: receiptId,
+        sourceWarehouseId: warehouse2Id,
+        issuedAt: AT,
+        postImmediately: true,
+        businessDate: DAY,
+        occurredAt: AT,
+        lines: [{ itemId, lotId: forLotId, issueQty, uomId, sourceLocationId: location2Id }],
+      });
+  }
+
   // ── 반출 등록 헬퍼 ───────────────────────────────────────────────────────────
 
   function callCreate(
@@ -1376,6 +1515,15 @@ describe('재고 이동 조회 (e2e)', () => {
              (SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%')
           OR to_warehouse_id IN
              (SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%')`);
+    const scope = `(SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%')`;
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.goods_issue_line
+       WHERE goods_issue_id IN (SELECT goods_issue_id FROM logistics.goods_issue WHERE source_warehouse_id IN ${scope})`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.goods_issue WHERE source_warehouse_id IN ${scope}`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.picking_line
+       WHERE picking_order_id IN (SELECT picking_order_id FROM logistics.picking_order WHERE warehouse_id IN ${scope})`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.picking_order WHERE warehouse_id IN ${scope}`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.goods_receipt
        WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`);
