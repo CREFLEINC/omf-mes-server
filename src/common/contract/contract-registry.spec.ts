@@ -24,8 +24,9 @@ describe('ContractRegistry', () => {
   // 부서 생산 창고 조회·바꾸기 2건(omf-all-around#66): 580.
   // 출고 요청 수정·취소·이력 3건(omf-all-around#66): 583.
   // 생산 창고 예정·부족 조회 1건(omf-all-around#66): 584.
-  it('계약 7파일에서 오퍼레이션 584건을 적재한다', () => {
-    expect(registry.size).toBe(584);
+  // 쓸 수 있는 양 1건(omf-all-around#232): 585.
+  it('계약 7파일에서 오퍼레이션 585건을 적재한다', () => {
+    expect(registry.size).toBe(585);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
