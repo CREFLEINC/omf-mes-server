@@ -127,6 +127,7 @@
      {
       "name": "autoPlanStatus",
       "in": "query",
+      "deprecated": true,
       "schema": {
        "type": "string",
        "enum": [
@@ -134,7 +135,7 @@
         "DONE"
        ]
       },
-      "description": "자동 계획 상태로 거른다 — 응답 autoPlan.status 와 같은 판정이다. NEEDS_REVIEW 면 「확인 필요」만 낸다. autoPlan 이 null 인 오더는 어느 값에도 걸리지 않는다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67)"
+      "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. 자동 계획 상태로 거른다 — 응답 autoPlan.status 와 같은 판정이다. NEEDS_REVIEW 면 「확인 필요」만 낸다. autoPlan 이 null 인 오더는 어느 값에도 걸리지 않는다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67)"
      },
      {
       "name": "worklistState",
@@ -305,6 +306,91 @@
     }
    }
   },
+  "/planning/production-orders:plan-proposals": {
+   "get": {
+    "tags": [
+     "planning"
+    ],
+    "summary": "ERP W/O 계획 제안 조회",
+    "description": "고른 ERP W/O 마다 생산계획·공정별 W/O·4M 제안을 계산해 돌려준다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·상태·시도 기록을 바꾸지 않는다. 제안을 보고 닫으면 아무 일도 없던 것이다. 저장은 사람이 고른 ERP W/O 를 하나씩 POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 로 확정할 때만 한다. ERP W/O 수신과 수기 등록(POST /planning/production-orders)도 계획을 저장·확정하지 않는다.\n\n구분(kind)·상태(status)·사유(reasons)의 판정은 ProductionPlanProposal 설명에 있다. 기준정보와 저장된 계획이 그대로면 다시 불러도 같은 결과다(임시 식별자 proposalPlanKey 와 basis 도 같다) — 작업자 제안만 다른 W/O 의 배정에 따라 달라질 수 있다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 items 에 넣지 않고 notFoundProductionOrderIds 에 담는다. 둘을 가르지 않는다 — 존재를 드러내지 않는다(규칙은 목록 설명).",
+    "parameters": [
+     {
+      "name": "productionOrderIds",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "maxItems": 100,
+       "items": {
+        "type": "integer",
+        "format": "int64",
+        "minimum": 1
+       }
+      },
+      "style": "form",
+      "explode": false,
+      "example": [
+       1001,
+       1002
+      ],
+      "description": "쉼표로 이은 ERP W/O id · 같은 id 는 한 번만 낸다 · 입력 순서대로"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ERP W/O 마다 제안 하나",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "notFoundProductionOrderIds"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ProductionPlanProposal"
+           }
+          },
+          "notFoundProductionOrderIds": {
+           "type": "array",
+           "description": "없거나 데이터 범위 밖이라 제안하지 않은 id — 입력 순서대로. 없으면 빈 배열",
+           "items": {
+            "type": "integer",
+            "format": "int64"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "productionOrderIds 가 없거나 틀리거나 100개를 넘는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다 — 선택 확정과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/planning/production-orders/{productionOrderId}": {
    "get": {
     "tags": [
@@ -461,7 +547,8 @@
      "planning"
     ],
     "summary": "ERP W/O 자동 계획 (재)시도",
-    "description": "⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67). ERP W/O 를 받으면(상태가 RECEIVED 이고 납기 — 없으면 계획 시작일 — 가 공장 현지 오늘 이후이거나 둘 다 없을 때) 서버가 계획 하나를 세우고 정할 수 있으면 확정·전개한다. 이 오퍼레이션은 그 조건 없이 그것을 다시 시도한다 — 계획이 없으면 세우고(BOM 은 품목의 기본 Rev, Routing 은 쓸 수 있는 Rev 가 하나면 그것·여럿이면 기본 Rev, 수량은 오더 수량, 계획일은 ERP 계획 시작일이 오늘 이후면 그날·아니면 공장 현지 오늘, 라인은 비움), 작성중 계획이 있고 이제 W/O 라인이 정해지면(계획 라인을 골랐거나 기본 매핑 설비가 라인에 속함) 확정한다. 확정 계획이 오더 수량을 채웠으면 바꾸지 않고 CONFIRMED 를 낸다. 확정에서 막히면 확정(POST /planning/production-plans/{productionPlanId}:confirm)의 400·409 를 그대로 낸다. 취소된 ERP W/O 는 400 STATE_LOCKED, 같은 ERP W/O 의 자동 계획이 이미 돌고 있으면 409 INVALID_STATE 다(다시 누르면 된다).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
+    "deprecated": true,
+    "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. ERP W/O 수신·수기 등록 뒤의 자동 계획은 멈춘다 — 아래 「받으면 계획을 세운다」는 멈추기 전 동작이고, 이제는 이 오퍼레이션을 부를 때만 같은 일을 한다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67). ERP W/O 를 받으면(상태가 RECEIVED 이고 납기 — 없으면 계획 시작일 — 가 공장 현지 오늘 이후이거나 둘 다 없을 때) 서버가 계획 하나를 세우고 정할 수 있으면 확정·전개한다. 이 오퍼레이션은 그 조건 없이 그것을 다시 시도한다 — 계획이 없으면 세우고(BOM 은 품목의 기본 Rev, Routing 은 쓸 수 있는 Rev 가 하나면 그것·여럿이면 기본 Rev, 수량은 오더 수량, 계획일은 ERP 계획 시작일이 오늘 이후면 그날·아니면 공장 현지 오늘, 라인은 비움), 작성중 계획이 있고 이제 W/O 라인이 정해지면(계획 라인을 골랐거나 기본 매핑 설비가 라인에 속함) 확정한다. 확정 계획이 오더 수량을 채웠으면 바꾸지 않고 CONFIRMED 를 낸다. 확정에서 막히면 확정(POST /planning/production-plans/{productionPlanId}:confirm)의 400·409 를 그대로 낸다. 취소된 ERP W/O 는 400 STATE_LOCKED, 같은 ERP W/O 의 자동 계획이 이미 돌고 있으면 409 INVALID_STATE 다(다시 누르면 된다).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -520,6 +607,92 @@
      },
      "409": {
       "description": "충돌 — 같은 ERP W/O 의 자동 계획이 진행 중(INVALID_STATE) · 확정의 저장 충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductionConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/planning/production-orders/{productionOrderId}:confirm-plan-proposal": {
+   "post": {
+    "tags": [
+     "planning"
+    ],
+    "summary": "ERP W/O 계획 제안 확정",
+    "description": "제안 조회(GET /planning/production-orders:plan-proposals)에서 사람이 고른 ERP W/O 하나를 확정한다 — 요청 하나 = ERP W/O 하나. 여러 건은 건마다 따로 부르고, 한 건의 실패가 다른 건을 되돌리지 않는다.\n\n한 트랜잭션 안에서 ⓐ 작성중 계획(planSource EXISTING_DRAFT)은 본문 값(계획일·수량·BOM·Routing·라인)으로 고친 뒤 확정하고, 새 계획(NEW)은 등록해 바로 확정한다 ⓑ 계획마다 Routing 공정별 W/O 와 공정 의존을 만든다 — 수량·유형·우선순위는 POST /planning/production-plans/{productionPlanId}:confirm 의 전개와 같다 ⓒ 본문의 보완 4M(라인·설비·금형·작업자·교대·기본 위치)과 그 교대로 정한 계획 시각을 W/O 에 저장한다. 하나라도 실패하면 전부 롤백된다 — 부분 성공은 없다.\n\n처리 순서 — ① 없거나 범위 밖인 ERP W/O 는 404 ② 같은 Idempotency-Key 재전송은 처음 응답을 그대로 낸다(새 계획·W/O·번호 없음) ③ ERP W/O 행을 잠그고 제안을 조회와 같은 식으로 다시 계산한다 ④ 취소된 ERP W/O 는 400 STATE_LOCKED ⑤ 확정 계획량이 이미 ERP W/O 수량을 채웠으면 저장하지 않고 200 outcome ALREADY_PROCESSED 와 지금의 확정 계획·W/O 를 낸다 — 다른 키로 다시 눌렀거나 다른 사람이 먼저 확정한 경우다 ⑥ 본문 basis 가 다시 계산한 basis 와 하나라도 다르면 저장하지 않고 409 PROPOSAL_CHANGED — proposalChanges 에 바뀐 기준, currentProposal 에 지금 제안을 싣는다 ⑦ 본문 검증 실패는 400 이고 오류 field 는 본문 경로다(예: plans[0].workOrders[1].productionLineId) ⑧ 저장하고 200 outcome CONFIRMED.\n\n⭐ 본문 값은 제안과 같지 않아도 된다(사람이 고칠 수 있다). 변경 감지는 값이 아니라 basis 로 하고, 값은 수기 등록·확정과 같은 규칙으로 검증한다 — 수량 합계(PLAN_QTY_EXCEEDS_ORDER) · ERP 기본 BOM(BOM_NOT_DEFAULT) · 확정·유효 기간 안의 이 품목 Routing(INVALID) · Routing 공정과 같은 W/O 집합(INVALID) · 라인이 ERP W/O 공장 것(LINE_PLANT_MISMATCH) · 설비·금형 가동 상태(EQUIPMENT_NOT_IN_SERVICE·MOLD_NOT_IN_SERVICE) · 교대가 그 공장의 활성 교대(INVALID).\n\n⭐ 번호 — 계획번호·MES W/O 번호는 트랜잭션을 열기 전에 뽑는다. 검증 실패·충돌·롤백이면 뽑은 번호는 쓰이지 않고 결번이 된다 — 번호가 건너뛰는 것은 오류가 아니다. 같은 키 재전송은 ②에서 끝나 번호를 뽑지 않는다.\n\n⭐ If-Match 를 받지 않는다 — 작성중 계획의 판은 basis.plans 가 대신 본다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
+    "parameters": [
+     {
+      "name": "productionOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductionPlanProposalConfirm"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "확정했다(CONFIRMED) · 이미 처리됐다(ALREADY_PROCESSED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductionPlanProposalConfirmResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 저장하지 않았다. 고쳐야 풀린다. 취소된 ERP W/O(STATE_LOCKED) · 수량 합계 초과(PLAN_QTY_EXCEEDS_ORDER) · ERP 기본 BOM 이 아님(BOM_NOT_DEFAULT) · 필수 4M 누락(REQUIRED) 등. field 는 본문 경로다.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다 · 데이터 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — 저장하지 않았다. 검토한 뒤 기준이 바뀌었다(PROPOSAL_CHANGED — 다시 검토하고 새 키로 보낸다) · 같은 키의 처리가 진행 중(INVALID_STATE) · 같은 키로 다른 본문 또는 번호 채번 실패(DUPLICATE_KEY)",
       "content": {
        "application/json": {
         "schema": {
@@ -676,7 +849,7 @@
      "planning"
     ],
     "summary": "생산 계획 추가",
-    "description": "근거: W-02-02 §5",
+    "description": "근거: W-02-02 §5\n\n⭐ BOM — 작성중 계획의 bomId 는 품목의 지금 ERP 기본 BOM(기본이 하나뿐인 개정)이어야 한다. 다르면 400 { scope: 'field', field: 'bomId', code: 'BOM_NOT_DEFAULT' } 이고 message 에 지금 기본 BOM 의 개정을 적는다. 서버가 대신 고르지 않는다 — bomId 는 호환을 위해 그대로 받고, 보낸 값과 저장값이 갈리지 않게 검증만 한다. 확정된 계획은 확정 당시 개정을 유지한다 — ERP 가 BOM 을 바꿔도 다시 검사하거나 고치지 않는다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -704,7 +877,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다. 생산 계획 수량이 확정 계획량 + 작성 수량 합계로 ERP W/O 수량을 넘으면 PLAN_QTY_EXCEEDS_ORDER 다(등록·수량 수정은 plannedQty 필드 오류, 확정은 화면 오류).",
+      "description": "검증 실패. 고쳐야 풀린다. 생산 계획 수량이 확정 계획량 + 작성 수량 합계로 ERP W/O 수량을 넘으면 PLAN_QTY_EXCEEDS_ORDER 다(등록·수량 수정은 plannedQty 필드 오류, 확정은 화면 오류). 작성중 계획의 BOM 이 지금 ERP 기본 BOM 이 아니면 BOM_NOT_DEFAULT(bomId 필드 오류).",
       "content": {
        "application/json": {
         "schema": {
@@ -792,7 +965,7 @@
      "planning"
     ],
     "summary": "생산 계획 수정",
-    "description": "확정 전에만 고칠 수 있다. 근거: W-02-02 §5",
+    "description": "확정 전에만 고칠 수 있다. 근거: W-02-02 §5\n\n⭐ BOM — 작성중 계획의 bomId 는 품목의 지금 ERP 기본 BOM(기본이 하나뿐인 개정)이어야 한다. 다르면 400 { scope: 'field', field: 'bomId', code: 'BOM_NOT_DEFAULT' } 이고 message 에 지금 기본 BOM 의 개정을 적는다. 서버가 대신 고르지 않는다 — bomId 는 호환을 위해 그대로 받고, 보낸 값과 저장값이 갈리지 않게 검증만 한다. 확정된 계획은 확정 당시 개정을 유지한다 — ERP 가 BOM 을 바꿔도 다시 검사하거나 고치지 않는다. 수정은 bomId 를 보낼 때만 본다 — 생략하면 저장값을 두고 확정이 본다.",
     "parameters": [
      {
       "name": "productionPlanId",
@@ -833,7 +1006,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다. 생산 계획 수량이 확정 계획량 + 작성 수량 합계로 ERP W/O 수량을 넘으면 PLAN_QTY_EXCEEDS_ORDER 다(등록·수량 수정은 plannedQty 필드 오류, 확정은 화면 오류).",
+      "description": "검증 실패. 고쳐야 풀린다. 생산 계획 수량이 확정 계획량 + 작성 수량 합계로 ERP W/O 수량을 넘으면 PLAN_QTY_EXCEEDS_ORDER 다(등록·수량 수정은 plannedQty 필드 오류, 확정은 화면 오류). 작성중 계획의 BOM 이 지금 ERP 기본 BOM 이 아니면 BOM_NOT_DEFAULT(bomId 필드 오류).",
       "content": {
        "application/json": {
         "schema": {
@@ -942,7 +1115,7 @@
      "planning"
     ],
     "summary": "전개 확정",
-    "description": "계획을 확정하고 «전개»까지 서버 한 트랜잭션으로 수행한다 — 확정된 계획의 Routing 공정별 W/O 생성과 공정 의존(work_order_dependency) 생성까지가 안이다(공유계약 B-8 규칙 1 — 업무 엔티티는 전부 안. 부분 성공을 만들지 않는다). 클라이언트는 전개를 위해 W/O 를 따로 POST 하지 않는다. 전개 결과는 GET /production/work-orders?productionPlanId= 로 본다. 생성 규칙 — 수량: 각 공정 W/O 의 orderQty = 계획 수량(planned_qty) · 유형: 기본 양산(개발품 판정 축은 품목 — omf-mes#215 진행 중 · 긴급은 이 경로가 아니라 W-02-07 직접 생성) · 기본 위치: 생성 후 W-02-03·W-02-04 의 PUT 으로 채운다. 재시도: 같은 Idempotency-Key 재전송은 새 전개를 만들지 않는다.\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-plans/{productionPlanId} 의 ETag 를 그대로 싣는다. 관리웹 온라인 전제의 되돌릴 수 없는 확정 전이라 W/O 전이(:release·:close)와 같은 정책이다. 근거: W-02-02 §5-1(3단 체인)·§5-7 · 공유계약 B-8 · omf-mes#199",
+    "description": "계획을 확정하고 «전개»까지 서버 한 트랜잭션으로 수행한다 — 확정된 계획의 Routing 공정별 W/O 생성과 공정 의존(work_order_dependency) 생성까지가 안이다(공유계약 B-8 규칙 1 — 업무 엔티티는 전부 안. 부분 성공을 만들지 않는다). 클라이언트는 전개를 위해 W/O 를 따로 POST 하지 않는다. 전개 결과는 GET /production/work-orders?productionPlanId= 로 본다. 생성 규칙 — 수량: 각 공정 W/O 의 orderQty = 계획 수량(planned_qty) · 유형: 기본 양산(개발품 판정 축은 품목 — omf-mes#215 진행 중 · 긴급은 이 경로가 아니라 W-02-07 직접 생성) · 기본 위치: 생성 후 W-02-03·W-02-04 의 PUT 으로 채운다. 재시도: 같은 Idempotency-Key 재전송은 새 전개를 만들지 않는다.\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-plans/{productionPlanId} 의 ETag 를 그대로 싣는다. 관리웹 온라인 전제의 되돌릴 수 없는 확정 전이라 W/O 전이(:release·:close)와 같은 정책이다. 근거: W-02-02 §5-1(3단 체인)·§5-7 · 공유계약 B-8 · omf-mes#199\n\n⭐ BOM — 작성중 계획의 bomId 가 지금 ERP 기본 BOM 과 다르면(저장한 뒤 ERP 가 BOM 을 바꿨다) 확정하지 않고 400 { scope: 'field', field: 'bomId', code: 'BOM_NOT_DEFAULT' } 이다. message 에 저장된 개정과 지금 기본 개정을 적는다 — PUT 으로 bomId 를 바꾼 뒤 다시 확정한다. 확정된 계획은 확정 당시 개정을 유지한다.",
     "parameters": [
      {
       "name": "productionPlanId",
@@ -973,7 +1146,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다. 생산 계획 수량이 확정 계획량 + 작성 수량 합계로 ERP W/O 수량을 넘으면 PLAN_QTY_EXCEEDS_ORDER 다(등록·수량 수정은 plannedQty 필드 오류, 확정은 화면 오류).",
+      "description": "검증 실패. 고쳐야 풀린다. 생산 계획 수량이 확정 계획량 + 작성 수량 합계로 ERP W/O 수량을 넘으면 PLAN_QTY_EXCEEDS_ORDER 다(등록·수량 수정은 plannedQty 필드 오류, 확정은 화면 오류). 작성중 계획의 BOM 이 지금 ERP 기본 BOM 이 아니면 BOM_NOT_DEFAULT(bomId 필드 오류).",
       "content": {
        "application/json": {
         "schema": {
@@ -6074,7 +6247,9 @@
       "example": 3
      },
      "autoPlan": {
-      "$ref": "#/components/schemas/ProductionOrderAutoPlan"
+      "$ref": "#/components/schemas/ProductionOrderAutoPlan",
+      "deprecated": true,
+      "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. 목록 상태·사유는 worklistState·worklistReasons·masterDataReasons 가 맡는다."
      },
      "worklistState": {
       "type": "string",
@@ -6085,12 +6260,12 @@
        "RELEASED",
        "CANCELLED"
       ],
-      "description": "작업지시 목록(W-02-01) 칩 판정 — 조회 때 계산한다. BEFORE_PLAN 계획 전(자동 계획 시도도 계획도 없음) · ACTION_REQUIRED 조치 필요(자동 계획 확인 필요, 또는 계획은 다 됐는데 W/O 가 없거나 배포 전 W/O 중 생산 라인·기본 위치(WIP·완제품·스크랩)가 비었거나 라인이 다른 공장 것) · RELEASE_PENDING 배포 대기(배포 전 W/O 가 있고 모두 배포 가능) · RELEASED 배포 완료(배포 전 W/O 없음) · CANCELLED 취소된 ERP W/O. 배포 전 W/O = 아직 배포되지 않은 PLANNED·CONFIRMED W/O. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
+      "description": "작업지시 목록(W-02-01) 칩 판정 — 조회 때 저장된 계획·W/O 와 기준정보로 계산한다(자동 계획 시도 기록에 기대지 않는다). BEFORE_PLAN 계획 전(저장된 계획이 없다 — 작성중·확정 모두 0건. 막는 기준정보는 masterDataReasons) · ACTION_REQUIRED 조치 필요(작성중 계획이 있거나, 확정 계획량이 ERP W/O 수량에 못 미치거나, 확정 계획량은 채웠는데 살아 있는 W/O 가 없거나 배포 전 W/O 중 생산 라인·기본 위치(WIP·완제품·스크랩)가 비었거나 라인이 다른 공장 것 — 까닭은 worklistReasons) · RELEASE_PENDING 배포 대기(배포 전 W/O 가 있고 모두 배포 가능) · RELEASED 배포 완료(배포 전 W/O 없음) · CANCELLED 취소된 ERP W/O. 배포 전 W/O = 아직 배포되지 않은 PLANNED·CONFIRMED W/O. 확정 계획량은 W/O 가 모두 취소된 확정 계획을 뺀다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
       "example": "RELEASE_PENDING"
      },
      "worklistReasons": {
       "type": "array",
-      "description": "조치 필요(worklistState ACTION_REQUIRED)인데 자동 계획은 끝난(autoPlan.status DONE) 까닭. 그 밖에는 키가 없다 — 자동 계획 확인 필요의 까닭은 autoPlan.reasons 다. 화면 문구는 코드로 정한다. NO_LIVE_WORK_ORDER 살아 있는 W/O 가 없음(workOrderCount 0 — W/O 를 전개하지 않은 확정 계획뿐. W/O 가 모두 취소된 확정 계획은 확정 계획량에서 빠져 자동 계획이 DONE 이 아니다) · WORK_ORDER_LINE_MISSING 배포 전 W/O 중 생산 라인이 빔 · WORK_ORDER_LOCATION_MISSING 배포 전 W/O 중 기본 위치(WIP·완제품·스크랩) 가운데 빈 것이 있음 · LINE_PLANT_MISMATCH 배포 전 W/O 의 라인 공장이 ERP W/O 공장과 다름. W/O 하나가 여러 까닭에 함께 세일 수 있다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
+      "description": "조치 필요(worklistState ACTION_REQUIRED)의 까닭. 그 밖에는 키가 없다. 화면 문구는 코드로 정한다. DRAFT_PLAN_PENDING 작성중 계획이 있다(workOrderCount 0) · PLAN_QTY_REMAINING 확정 계획량이 ERP W/O 수량에 못 미친다(workOrderCount 0 — W/O 가 모두 취소된 확정 계획은 확정 계획량에서 빠진다) · NO_LIVE_WORK_ORDER 확정 계획량은 채웠는데 살아 있는 W/O 가 없음(workOrderCount 0) · WORK_ORDER_LINE_MISSING 배포 전 W/O 중 생산 라인이 빔 · WORK_ORDER_LOCATION_MISSING 배포 전 W/O 중 기본 위치(WIP·완제품·스크랩) 가운데 빈 것이 있음 · LINE_PLANT_MISMATCH 배포 전 W/O 의 라인 공장이 ERP W/O 공장과 다름. 하나의 ERP W/O 에 여럿이 함께 올 수 있고, W/O 하나가 여러 까닭에 함께 세일 수 있다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-142)",
       "items": {
        "type": "object",
        "required": [
@@ -6101,6 +6276,8 @@
         "code": {
          "type": "string",
          "enum": [
+          "DRAFT_PLAN_PENDING",
+          "PLAN_QTY_REMAINING",
           "NO_LIVE_WORK_ORDER",
           "WORK_ORDER_LINE_MISSING",
           "WORK_ORDER_LOCATION_MISSING",
@@ -6114,6 +6291,19 @@
          "example": 1
         }
        }
+      }
+     },
+     "masterDataReasons": {
+      "type": "array",
+      "description": "계획 전(worklistState BEFORE_PLAN)인 ERP W/O 를 막는 기준정보. 그 밖이거나 막는 것이 없으면 키가 없다. BOM_DEFAULT_REQUIRED 기본 BOM 지정 필요 · ROUTING_REQUIRED 공정 등록 필요 · ROUTING_DEFAULT_REQUIRED 기본 공정 지정 필요 — 계획 제안(ProductionPlanProposalReasonCode)의 같은 코드와 같은 판정이다. 라인·4M 사유는 목록에 내지 않는다 — 제안(GET /planning/production-orders:plan-proposals)에서만 본다.",
+      "items": {
+       "type": "string",
+       "enum": [
+        "BOM_DEFAULT_REQUIRED",
+        "ROUTING_REQUIRED",
+        "ROUTING_DEFAULT_REQUIRED"
+       ],
+       "example": "BOM_DEFAULT_REQUIRED"
       }
      },
      "releasePendingWorkOrderCount": {
@@ -6208,7 +6398,8 @@
      "object",
      "null"
     ],
-    "description": "⚠ 개발팀 선행(P-67). 파생 — 서버가 읽을 때 계산한다. 확정 계획량(W/O 가 모두 취소된 확정 계획의 수량은 뺀다)이 오더 수량을 채우면 DONE, 아니면 NEEDS_REVIEW(「확인 필요」)와 그 사유다. 사유가 비어 있는 NEEDS_REVIEW 는 계획이 아직 없고 막는 것도 없다는 뜻이다 — :auto-plan 으로 세운다. ⭐ null = 자동 계획을 시도한 적이 없고 계획도 없다(이 기능 전에 받은 오더 · 받을 때 RECEIVED 가 아니었거나 납기·계획 시작일이 지난 오더) 또는 취소된 오더다 — 화면은 아무것도 보이지 않는다. :auto-plan 을 부르면 상태가 선다.",
+    "deprecated": true,
+    "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. ⚠ 개발팀 선행(P-67). 파생 — 서버가 읽을 때 계산한다. 확정 계획량(W/O 가 모두 취소된 확정 계획의 수량은 뺀다)이 오더 수량을 채우면 DONE, 아니면 NEEDS_REVIEW(「확인 필요」)와 그 사유다. 사유가 비어 있는 NEEDS_REVIEW 는 계획이 아직 없고 막는 것도 없다는 뜻이다 — :auto-plan 으로 세운다. ⭐ null = 자동 계획을 시도한 적이 없고 계획도 없다(이 기능 전에 받은 오더 · 받을 때 RECEIVED 가 아니었거나 납기·계획 시작일이 지난 오더) 또는 취소된 오더다 — 화면은 아무것도 보이지 않는다. :auto-plan 을 부르면 상태가 선다.",
     "properties": {
      "status": {
       "type": "string",
@@ -6231,7 +6422,8 @@
    },
    "ProductionOrderAutoPlanResult": {
     "type": "object",
-    "description": "⚠ 개발팀 선행(P-67). POST /planning/production-orders/{productionOrderId}:auto-plan 의 결과. reasons 는 처리 뒤 ProductionOrder.autoPlan.reasons 와 같다.",
+    "deprecated": true,
+    "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. ⚠ 개발팀 선행(P-67). POST /planning/production-orders/{productionOrderId}:auto-plan 의 결과. reasons 는 처리 뒤 ProductionOrder.autoPlan.reasons 와 같다.",
     "properties": {
      "productionOrderId": {
       "type": "integer",
@@ -6281,7 +6473,905 @@
      "QTY_REMAINING",
      "AUTO_PLAN_RERUN_NEEDED"
     ],
-    "description": "⚠ 개발팀 선행(P-67). BOM_MISSING = 품목의 기본 BOM 이 없다 · ROUTING_MISSING = 쓸 수 있는(확정·유효 기간 안) Routing 이 없다 · ROUTING_AMBIGUOUS = 쓸 수 있는 Routing 이 여럿인데 기본이 없다 · LINE_UNKNOWN = 계획 라인이 없고 기본 매핑 설비도 라인에 속하지 않아 W/O 라인이 정해지지 않는다 · PLAN_NOT_CONFIRMED = 작성중 계획이 있다 · QTY_REMAINING = 확정 계획이 오더 수량에 못 미친다 · AUTO_PLAN_RERUN_NEEDED = 계획이 없는데 막던 기준정보가 이제 갖춰졌거나, 기준정보는 갖춰졌는데 자동 계획 실행이 실패했다 — 자동 계획을 다시 실행한다(P-142). 확인 필요(NEEDS_REVIEW)는 이유가 늘 하나 이상이다"
+    "deprecated": true,
+    "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. ⚠ 개발팀 선행(P-67). BOM_MISSING = 품목의 기본 BOM 이 없다 · ROUTING_MISSING = 쓸 수 있는(확정·유효 기간 안) Routing 이 없다 · ROUTING_AMBIGUOUS = 쓸 수 있는 Routing 이 여럿인데 기본이 없다 · LINE_UNKNOWN = 계획 라인이 없고 기본 매핑 설비도 라인에 속하지 않아 W/O 라인이 정해지지 않는다 · PLAN_NOT_CONFIRMED = 작성중 계획이 있다 · QTY_REMAINING = 확정 계획이 오더 수량에 못 미친다 · AUTO_PLAN_RERUN_NEEDED = 계획이 없는데 막던 기준정보가 이제 갖춰졌거나, 기준정보는 갖춰졌는데 자동 계획 실행이 실패했다 — 자동 계획을 다시 실행한다(P-142). 확인 필요(NEEDS_REVIEW)는 이유가 늘 하나 이상이다"
+   },
+   "ProductionPlanProposal": {
+    "type": "object",
+    "description": "ERP W/O 하나의 계획 제안 — 서버가 조회 때 계산만 하고 저장하지 않는다. 판정 순서: 취소된 ERP W/O → NOT_PROPOSABLE·NO_CHANGE(ORDER_CANCELLED) · 확정 계획량 ≥ ERP W/O 수량 → KEEP_CONFIRMED·NO_CHANGE · 작성중 계획이 있으면 REVIEW_DRAFT · 없으면 NEW_PLAN. REVIEW_DRAFT·NEW_PLAN 인데 기준정보 사유(category BLOCKED)가 있으면 NOT_PROPOSABLE·NEEDS_INPUT 이고 plans 는 빈 배열이다. 그 밖에는 BLOCK 문제가 하나라도 있으면 NEEDS_INPUT, 없으면 CONFIRMABLE 이다.",
+    "required": [
+     "productionOrderId",
+     "productionOrderNo",
+     "plantId",
+     "itemId",
+     "uomId",
+     "kind",
+     "status",
+     "reasons",
+     "orderQty",
+     "confirmedPlanQty",
+     "draftPlanQty",
+     "remainingQty",
+     "plans",
+     "issues",
+     "basis"
+    ],
+    "properties": {
+     "productionOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "productionOrderNo": {
+      "type": "string",
+      "example": "값"
+     },
+     "erpOrderNo": {
+      "type": "string",
+      "description": "ERP 수신 원번호. 연계로 들어오지 않은 건은 키가 없다",
+      "x-no-example": "ERP 채번 규칙을 우리가 정하지 않는다 — 예시를 두면 그 형식이 계약인 것처럼 읽힌다"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "kind": {
+      "$ref": "#/components/schemas/ProductionPlanProposalKind"
+     },
+     "status": {
+      "$ref": "#/components/schemas/ProductionPlanProposalStatus"
+     },
+     "reasons": {
+      "type": "array",
+      "description": "BLOCK 문제의 코드를 ERP W/O·계획·공정 W/O 단위에서 모아 한 번씩 낸다(ProductionPlanProposalReasonCode 순서). 어디에 걸렸는지는 각 단위의 issues 다. CONFIRMABLE·KEEP_CONFIRMED 면 빈 배열",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalReason"
+      }
+     },
+     "orderQty": {
+      "type": "number",
+      "format": "double",
+      "example": 120.0,
+      "description": "ERP W/O 수량"
+     },
+     "confirmedPlanQty": {
+      "type": "number",
+      "format": "double",
+      "example": 60.0,
+      "description": "저장된 확정 계획량 — ProductionOrder.confirmedPlanQty 와 같은 식. 제안 수량을 더하지 않는다"
+     },
+     "draftPlanQty": {
+      "type": "number",
+      "format": "double",
+      "example": 30.0,
+      "description": "저장된 작성중 계획 수량 합 — ProductionOrder.draftPlanQty 와 같은 식"
+     },
+     "remainingQty": {
+      "type": "number",
+      "format": "double",
+      "example": 10.0,
+      "description": "저장값 기준 잔량 — ProductionOrder.remainingQty 와 같은 식. 제안을 확정한 뒤의 잔량이 아니다"
+     },
+     "plans": {
+      "type": "array",
+      "description": "확정하면 저장될 계획. NEW_PLAN 은 새 계획 하나, REVIEW_DRAFT 는 작성중 계획마다 하나(새 계획을 더하지 않는다). KEEP_CONFIRMED·NOT_PROPOSABLE 은 빈 배열",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalPlan"
+      }
+     },
+     "issues": {
+      "type": "array",
+      "description": "ERP W/O 단위 문제 — 취소·기준정보(BOM·Routing). 없으면 빈 배열",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalIssue"
+      }
+     },
+     "basis": {
+      "$ref": "#/components/schemas/ProductionPlanProposalBasis"
+     }
+    }
+   },
+   "ProductionPlanProposalKind": {
+    "type": "string",
+    "enum": [
+     "NEW_PLAN",
+     "REVIEW_DRAFT",
+     "KEEP_CONFIRMED",
+     "NOT_PROPOSABLE"
+    ],
+    "description": "제안 구분. NEW_PLAN 신규 제안(작성중 계획이 없고 확정 계획량이 모자라다 — 잔량으로 새 계획 하나) · REVIEW_DRAFT 기존 작성중 계획 검토(작성중 계획을 지금 기준으로 다시 맞춘 확정 제안) · KEEP_CONFIRMED 기존 확정 계획 유지(확정 계획량이 ERP W/O 수량을 채웠다 — 확정된 계획의 BOM·Routing 개정도 그대로 둔다) · NOT_PROPOSABLE 제안 불가(취소된 ERP W/O, 또는 기준정보 때문에 계획을 세울 수 없다 — reasons 의 BLOCKED 사유)"
+   },
+   "ProductionPlanProposalStatus": {
+    "type": "string",
+    "enum": [
+     "CONFIRMABLE",
+     "NEEDS_INPUT",
+     "NO_CHANGE"
+    ],
+    "description": "제안 상태. CONFIRMABLE 확정 가능(BLOCK 문제가 없다 — WARN 은 있을 수 있다) · NEEDS_INPUT 보완 필요(BLOCK 문제가 하나 이상 — reasons 의 category 가 INPUT 이면 화면에서 4M·수량을 채워 확정 본문에 실으면 풀리고, BLOCKED 면 기준정보를 고친 뒤 다시 조회해야 한다) · NO_CHANGE 변경 없음(KEEP_CONFIRMED, 또는 취소된 ERP W/O)"
+   },
+   "ProductionPlanProposalReasonCode": {
+    "type": "string",
+    "enum": [
+     "ORDER_CANCELLED",
+     "BOM_DEFAULT_REQUIRED",
+     "ROUTING_REQUIRED",
+     "ROUTING_DEFAULT_REQUIRED",
+     "ROUTING_OPERATION_REQUIRED",
+     "WORK_ORDER_LINE_REQUIRED",
+     "WORK_ORDER_LOCATION_REQUIRED",
+     "LINE_PLANT_MISMATCH",
+     "PLAN_QTY_EXCEEDS_ORDER"
+    ],
+    "description": "BLOCK 사유. 분류 BLOCKED(제안 불가 — 이 화면에서 풀 수 없다): ORDER_CANCELLED 취소된 ERP W/O · BOM_DEFAULT_REQUIRED 기본 BOM 지정 필요(품목의 ERP 기본 BOM 이 없거나 둘 이상) · ROUTING_REQUIRED 공정 등록 필요(확정·유효 기간 안 Routing 이 없다) · ROUTING_DEFAULT_REQUIRED 기본 공정 지정 필요(쓸 수 있는 Routing 이 여럿인데 기본이 하나로 정해지지 않는다) · ROUTING_OPERATION_REQUIRED 고른 Routing 에 공정이 한 줄도 없다. 분류 INPUT(보완 필요 — 화면에서 골라 확정 본문에 실으면 풀린다): WORK_ORDER_LINE_REQUIRED 공정 W/O 의 생산 라인이 정해지지 않는다(계획 라인도 없고 배정 설비도 라인에 속하지 않는다) · WORK_ORDER_LOCATION_REQUIRED 공정 W/O 의 기본 위치(WIP·완제품·스크랩) 가운데 빈 것이 있다 · LINE_PLANT_MISMATCH 라인이 ERP W/O 공장 것이 아니다 · PLAN_QTY_EXCEEDS_ORDER 작성중 계획 수량을 더하면 ERP W/O 수량을 넘는다(수량을 줄인다). 라인·위치 사유는 W-02-01 목록의 배포 전제 검사(worklistReasons)와 같은 판정이다."
+   },
+   "ProductionPlanProposalReason": {
+    "type": "object",
+    "required": [
+     "code",
+     "category"
+    ],
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/ProductionPlanProposalReasonCode"
+     },
+     "category": {
+      "type": "string",
+      "enum": [
+       "INPUT",
+       "BLOCKED"
+      ],
+      "description": "INPUT 보완 필요(화면에서 해결) · BLOCKED 제안 불가(기준정보·ERP W/O 상태 — 이 화면에서 해결 못 함). 코드마다 고정이다(ProductionPlanProposalReasonCode 설명)",
+      "example": "INPUT"
+     }
+    }
+   },
+   "ProductionPlanProposalIssue": {
+    "type": "object",
+    "description": "미지정·검증 문제 하나. 놓인 자리(ERP W/O·계획·공정 W/O)가 대상이고 field 가 그 칸이다. ⛔ 오류가 아니라 점검 결과다 — ValidationFinding 과 같은 등급 축을 쓴다.",
+    "required": [
+     "severity",
+     "category",
+     "code",
+     "message"
+    ],
+    "properties": {
+     "severity": {
+      "type": "string",
+      "enum": [
+       "BLOCK",
+       "WARN"
+      ],
+      "description": "BLOCK 은 풀어야 확정된다(status 가 NEEDS_INPUT). WARN 은 확정을 막지 않는다",
+      "example": "BLOCK"
+     },
+     "category": {
+      "type": "string",
+      "enum": [
+       "INPUT",
+       "BLOCKED"
+      ],
+      "description": "ProductionPlanProposalReason.category 와 같다. WARN 은 늘 INPUT 이다",
+      "example": "INPUT"
+     },
+     "code": {
+      "type": "string",
+      "enum": [
+       "ORDER_CANCELLED",
+       "BOM_DEFAULT_REQUIRED",
+       "ROUTING_REQUIRED",
+       "ROUTING_DEFAULT_REQUIRED",
+       "ROUTING_OPERATION_REQUIRED",
+       "WORK_ORDER_LINE_REQUIRED",
+       "WORK_ORDER_LOCATION_REQUIRED",
+       "LINE_PLANT_MISMATCH",
+       "PLAN_QTY_EXCEEDS_ORDER",
+       "EQUIPMENT_CALIBRATION_EXPIRED",
+       "WORKER_QUALIFICATION_EXPIRED",
+       "MOLD_LIFE_EXCEEDED",
+       "EQUIPMENT_DOUBLE_BOOKED"
+      ],
+      "description": "BLOCK 은 ProductionPlanProposalReasonCode 의 값. WARN 은 4M 점검(GET /production/work-orders/{workOrderId}/validation)의 WARN 코드와 같은 판정이다",
+      "example": "WORK_ORDER_LINE_REQUIRED"
+     },
+     "field": {
+      "type": "string",
+      "description": "대상 칸 — 확정 본문의 같은 단위·같은 이름 칸에 값을 채우면 풀린다. ERP W/O 단위 기준정보 문제처럼 칸이 없으면 키가 없다",
+      "example": "productionLineId"
+     },
+     "message": {
+      "type": "string",
+      "description": "화면이 그대로 보여도 되는 문장 — 어떻게 풀 것인가를 담는다",
+      "example": "값"
+     }
+    }
+   },
+   "ProductionPlanProposalPlan": {
+    "type": "object",
+    "description": "계획 하나의 제안. ⛔ 새 계획(NEW)은 아직 계획이 아니다 — productionPlanId·planNo 가 없고 proposalPlanKey 로만 가리킨다.",
+    "required": [
+     "proposalPlanKey",
+     "planSource",
+     "planDate",
+     "proposedQty",
+     "uomId",
+     "bomId",
+     "bomCode",
+     "bomVersion",
+     "routingId",
+     "routingCode",
+     "routingVersion",
+     "plannedLineId",
+     "workOrders",
+     "issues"
+    ],
+    "properties": {
+     "proposalPlanKey": {
+      "type": "string",
+      "pattern": "^(new|plan)-[1-9][0-9]*$",
+      "description": "임시 식별자 — 새 계획은 new-1·new-2…, 작성중 계획은 plan-{productionPlanId}. 계획번호(planNo)도 저장된 id 도 아니다. 확정 본문에 그대로 돌려 싣는다",
+      "example": "new-1"
+     },
+     "planSource": {
+      "type": "string",
+      "enum": [
+       "NEW",
+       "EXISTING_DRAFT"
+      ],
+      "description": "NEW 확정하면 새로 등록할 계획 · EXISTING_DRAFT 저장된 작성중 계획",
+      "example": "NEW"
+     },
+     "productionPlanId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "EXISTING_DRAFT 만 — 저장된 계획 id. NEW 는 키가 없다"
+     },
+     "planNo": {
+      "type": "string",
+      "description": "EXISTING_DRAFT 만 — 저장된 계획번호. NEW 는 번호를 뽑지 않아 키가 없다",
+      "example": "값"
+     },
+     "planDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-11",
+      "description": "NEW 는 ERP 계획 시작일이 공장 현지 오늘 이후면 그날, 없거나 지났으면 오늘. EXISTING_DRAFT 는 저장값"
+     },
+     "proposedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 120.0,
+      "description": "제안 수량 — 저장 전 값이다. NEW 는 ERP W/O 수량 − 확정 계획량, EXISTING_DRAFT 는 저장된 계획 수량. 확정 본문 plannedQty 로 싣는다(고칠 수 있다)"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "bomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "품목의 지금 ERP 기본 BOM(기본이 하나뿐일 때). EXISTING_DRAFT 도 저장된 BOM 이 아니라 지금 기본 BOM 이다 — 저장값은 saved.bomId"
+     },
+     "bomCode": {
+      "type": "string",
+      "example": "값"
+     },
+     "bomVersion": {
+      "type": "integer",
+      "description": "BOM 개정",
+      "example": 2
+     },
+     "routingId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "NEW 는 쓸 수 있는(확정·유효 기간 안) Routing 이 하나면 그것, 여럿이면 기본 Rev. EXISTING_DRAFT 는 저장된 Routing 이 아직 쓸 수 있으면 그대로, 아니면 같은 규칙으로 다시 고른다"
+     },
+     "routingCode": {
+      "type": "string",
+      "example": "값"
+     },
+     "routingVersion": {
+      "type": "integer",
+      "description": "Routing 개정",
+      "example": 1
+     },
+     "plannedLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "NEW 는 null — 라인은 공정 W/O 마다 정한다. EXISTING_DRAFT 는 저장값"
+     },
+     "saved": {
+      "$ref": "#/components/schemas/ProductionPlanProposalSaved"
+     },
+     "workOrders": {
+      "type": "array",
+      "description": "Routing 공정 순서(operationSeq)대로 공정마다 하나. 확정하면 공정마다 MES W/O 하나가 생긴다",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalWorkOrder"
+      }
+     },
+     "issues": {
+      "type": "array",
+      "description": "계획 단위 문제 — 예: PLAN_QTY_EXCEEDS_ORDER(field plannedQty). 없으면 빈 배열",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalIssue"
+      }
+     }
+    }
+   },
+   "ProductionPlanProposalSaved": {
+    "type": "object",
+    "description": "EXISTING_DRAFT 만 — 지금 저장된 작성중 계획의 값. 제안과 다른 칸을 화면이 보인다. NEW 는 키가 없다",
+    "required": [
+     "versionNo",
+     "planDate",
+     "plannedQty",
+     "bomId",
+     "routingId",
+     "plannedLineId"
+    ],
+    "properties": {
+     "versionNo": {
+      "type": "integer",
+      "example": 1
+     },
+     "planDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-11"
+     },
+     "plannedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 120.0
+     },
+     "bomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "routingId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "plannedLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   },
+   "ProductionPlanProposalWorkOrder": {
+    "type": "object",
+    "description": "공정 W/O 하나의 제안. ⛔ 아직 W/O 가 아니다 — workOrderId·workOrderNo 가 없고 계획 안에서 routingOperationId 로 가리킨다.",
+    "required": [
+     "routingOperationId",
+     "operationSeq",
+     "operationName",
+     "processId",
+     "proposedQty",
+     "predecessors",
+     "plannedStartAt",
+     "plannedEndAt",
+     "equipmentRequired",
+     "moldRequired",
+     "productionLineId",
+     "plannedEquipmentId",
+     "plannedMoldId",
+     "responsibleWorkerId",
+     "plannedShiftId",
+     "defaultWipLocationId",
+     "defaultFgLocationId",
+     "defaultScrapLocationId",
+     "issues"
+    ],
+    "properties": {
+     "routingOperationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "operationSeq": {
+      "type": "integer",
+      "example": 10
+     },
+     "operationName": {
+      "type": "string",
+      "example": "값"
+     },
+     "processId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "processCode": {
+      "type": "string",
+      "example": "값"
+     },
+     "processName": {
+      "type": "string",
+      "example": "값"
+     },
+     "proposedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 120.0,
+      "description": "제안 수량 — 저장 전 값. 계획 proposedQty 와 같다(공정 W/O 수량 = 계획 수량)"
+     },
+     "predecessors": {
+      "type": "array",
+      "description": "선행 공정 — Routing 공정 의존을 그대로 옮긴다. 확정하면 W/O 의존이 된다. 없으면 빈 배열",
+      "items": {
+       "type": "object",
+       "required": [
+        "routingOperationId",
+        "dependencyTypeCode"
+       ],
+       "properties": {
+        "routingOperationId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "dependencyTypeCode": {
+         "type": "string",
+         "description": "Routing 공정 의존의 유형 코드 그대로",
+         "example": "값"
+        }
+       }
+      }
+     },
+     "plannedStartAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-11T08:00:00+07:00",
+      "description": "계획 시각은 공장 시간대(plant.timezone_code)의 벽시계로 정해 오프셋을 붙인 순간이다. 교대를 지정하면 계획일의 그 교대 시작부터 종료까지(crossesMidnight 면 종료는 다음 날). 지정하지 않으면 계획일의 근무일 하루 — 공장의 가장 이른 활성 교대 시작부터 24시간, 활성 교대가 없는 공장은 08:00 부터 24시간이다."
+     },
+     "plannedEndAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-12T08:00:00+07:00",
+      "description": "plannedStartAt 과 같은 규칙"
+     },
+     "equipmentRequired": {
+      "type": "boolean",
+      "example": true,
+      "description": "Routing 공정의 설비 필요 여부"
+     },
+     "moldRequired": {
+      "type": "boolean",
+      "example": false,
+      "description": "Routing 공정의 금형 필요 여부"
+     },
+     "productionLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "계획 라인이 있으면 그것, 없으면 배정 설비의 라인. 정해지지 않으면 null 이고 WORK_ORDER_LINE_REQUIRED 다"
+     },
+     "plannedEquipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "품목의 기본 매핑으로 배정한 설비(확정 전개와 같은 배정). 가동 상태가 아닌 설비는 배정하지 않는다"
+     },
+     "plannedMoldId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "품목의 기본 매핑으로 배정한 금형. 가동 상태가 아닌 금형은 배정하지 않는다"
+     },
+     "responsibleWorkerId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "4M 추천(GET /production/work-orders/{workOrderId}/resource-recommendations)의 작업자 순서에서 다른 W/O 책임자로 잡혀 있지 않은 첫 사람. 없으면 null — 필수 칸이 아니다"
+     },
+     "plannedShiftId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "제안하지 않는다(늘 null — 계획 시각은 근무일 하루). 사람이 고르면 확정 본문에 싣고, 서버가 그 교대로 계획 시각을 정한다"
+     },
+     "defaultWipLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "W/O 라인의 기본 WIP 위치. 셋 중 하나라도 비면 WORK_ORDER_LOCATION_REQUIRED 다"
+     },
+     "defaultFgLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "W/O 라인의 기본 완제품 위치"
+     },
+     "defaultScrapLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "W/O 라인의 기본 스크랩 위치"
+     },
+     "issues": {
+      "type": "array",
+      "description": "이 공정 W/O 의 문제 — 미지정(라인·위치)과 4M 점검 WARN. 없으면 빈 배열",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalIssue"
+      }
+     }
+    }
+   },
+   "ProductionPlanProposalBasis": {
+    "type": "object",
+    "description": "변경 감지 값 — 제안을 계산할 때 본 기준의 판. 서버가 만드는 불투명 문자열이라 화면은 해석·비교하지 않고 확정 본문 basis 에 그대로 돌려 싣는다. 확정은 같은 식으로 다시 계산해 하나라도 다르면 저장하지 않고 409 PROPOSAL_CHANGED 다. ⛔ 다른 W/O 의 작업자 배정처럼 수시로 바뀌는 값은 넣지 않는다 — 기준정보·저장된 계획만 본다.",
+    "required": [
+     "productionOrder",
+     "plans",
+     "bom",
+     "routing",
+     "resources"
+    ],
+    "properties": {
+     "productionOrder": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "ERP W/O 의 판·수량·상태 — ERP 재수신·확인 처리로 바뀐다",
+      "example": "값"
+     },
+     "plans": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "이 ERP W/O 의 저장된 계획 전부(id·판·상태)와 그 W/O 의 취소 여부 — 다른 사람·다른 탭이 계획을 세우거나 고치거나 확정하면 바뀐다",
+      "example": "값"
+     },
+     "bom": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "품목의 ERP 기본 BOM(id·개정·판)",
+      "example": "값"
+     },
+     "routing": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "제안 계획들이 쓰는 Routing(id·개정·판·상태·유효 기간)과 그 공정·공정 의존",
+      "example": "값"
+     },
+     "resources": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "공장·품목의 기본 매핑과 제안이 고른 라인·설비·금형·위치, 공장의 활성 교대의 판",
+      "example": "값"
+     }
+    }
+   },
+   "ProductionPlanProposalChange": {
+    "type": "object",
+    "description": "409 PROPOSAL_CHANGED 에서 바뀐 기준 하나",
+    "required": [
+     "basis",
+     "message"
+    ],
+    "properties": {
+     "basis": {
+      "type": "string",
+      "enum": [
+       "productionOrder",
+       "plans",
+       "bom",
+       "routing",
+       "resources"
+      ],
+      "description": "ProductionPlanProposalBasis 의 칸 이름",
+      "example": "productionOrder"
+     },
+     "message": {
+      "type": "string",
+      "description": "무엇이 바뀌었나 — 화면이 그대로 보여도 되는 문장(예: ERP W/O 수량 100 → 80)",
+      "example": "값"
+     }
+    }
+   },
+   "ProductionPlanProposalConfirm": {
+    "type": "object",
+    "description": "한 ERP W/O 의 제안 확정 본문 — 제안의 plans 와 보완값, 검토한 basis.",
+    "required": [
+     "basis",
+     "plans"
+    ],
+    "properties": {
+     "basis": {
+      "$ref": "#/components/schemas/ProductionPlanProposalBasis"
+     },
+     "plans": {
+      "type": "array",
+      "minItems": 1,
+      "description": "제안의 plans 전부를 싣는다 — proposalPlanKey 집합이 다시 계산한 제안과 같아야 한다. 빠지거나 더하면 400 field plans INVALID(한 ERP W/O 는 전부 확정하거나 아무것도 하지 않는다)",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalConfirmPlan"
+      }
+     }
+    }
+   },
+   "ProductionPlanProposalConfirmPlan": {
+    "type": "object",
+    "required": [
+     "proposalPlanKey",
+     "planDate",
+     "plannedQty",
+     "bomId",
+     "routingId",
+     "plannedLineId",
+     "workOrders"
+    ],
+    "properties": {
+     "proposalPlanKey": {
+      "type": "string",
+      "pattern": "^(new|plan)-[1-9][0-9]*$",
+      "description": "제안의 값 그대로",
+      "example": "new-1"
+     },
+     "planDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-11"
+     },
+     "plannedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 120.0,
+      "exclusiveMinimum": 0,
+      "description": "저장할 계획 수량 — 제안 proposedQty 를 그대로 싣거나 고친다. 확정 계획량 + 작성 수량 합계가 ERP W/O 수량을 넘으면 400 PLAN_QTY_EXCEEDS_ORDER"
+     },
+     "bomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "지금 ERP 기본 BOM 이어야 한다. 다르면 400 BOM_NOT_DEFAULT"
+     },
+     "routingId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "확정·유효 기간 안의 이 품목 Routing. 아니면 400 INVALID"
+     },
+     "plannedLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "계획 라인. null 이면 라인을 공정 W/O 마다 정한다"
+     },
+     "remarks": {
+      "type": "string",
+      "example": "값"
+     },
+     "workOrders": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Routing 공정마다 하나 — routingOperationId 집합이 routingId 의 공정과 같아야 한다. 다르면 400 INVALID",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalConfirmWorkOrder"
+      }
+     }
+    }
+   },
+   "ProductionPlanProposalConfirmWorkOrder": {
+    "type": "object",
+    "description": "공정 W/O 하나의 보완 4M. 생산 라인과 기본 위치 셋은 필수다 — 배포가 요구하므로 확정 때 막는다. 계획 시각은 싣지 않는다 — 서버가 계획일과 plannedShiftId 로 정한다(ProductionPlanProposalWorkOrder.plannedStartAt 의 규칙).",
+    "required": [
+     "routingOperationId",
+     "productionLineId",
+     "defaultWipLocationId",
+     "defaultFgLocationId",
+     "defaultScrapLocationId"
+    ],
+    "properties": {
+     "routingOperationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "productionLineId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "ERP W/O 공장의 라인. 아니면 400 LINE_PLANT_MISMATCH"
+     },
+     "plannedEquipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "생략·null = 비움. 가동 상태가 아니면 400 EQUIPMENT_NOT_IN_SERVICE"
+     },
+     "plannedMoldId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "생략·null = 비움. 가동 상태가 아니면 400 MOLD_NOT_IN_SERVICE"
+     },
+     "responsibleWorkerId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "생략·null = 비움"
+     },
+     "plannedShiftId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "생략·null = 근무일 하루. 그 공장의 활성 교대가 아니면 400 INVALID"
+     },
+     "defaultWipLocationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "defaultFgLocationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "defaultScrapLocationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   },
+   "ProductionPlanProposalConfirmResult": {
+    "type": "object",
+    "description": "POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 의 200 결과. 같은 Idempotency-Key 재전송은 처음 결과 그대로다.",
+    "required": [
+     "productionOrderId",
+     "outcome",
+     "plans"
+    ],
+    "properties": {
+     "productionOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "outcome": {
+      "type": "string",
+      "enum": [
+       "CONFIRMED",
+       "ALREADY_PROCESSED"
+      ],
+      "description": "CONFIRMED 이번에 계획을 확정하고 W/O 를 만들었다 · ALREADY_PROCESSED 확정 계획량이 이미 ERP W/O 수량을 채워 아무것도 저장하지 않았다 — plans 는 지금의 확정 계획과 그 W/O 다",
+      "example": "CONFIRMED"
+     },
+     "plans": {
+      "type": "array",
+      "description": "CONFIRMED 는 이번에 확정한 계획(본문 순서), ALREADY_PROCESSED 는 W/O 가 모두 취소되지 않은 확정 계획 전부",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalConfirmedPlan"
+      }
+     }
+    }
+   },
+   "ProductionPlanProposalConfirmedPlan": {
+    "type": "object",
+    "required": [
+     "productionPlanId",
+     "planNo",
+     "statusCode",
+     "versionNo",
+     "workOrders"
+    ],
+    "properties": {
+     "proposalPlanKey": {
+      "type": "string",
+      "description": "CONFIRMED 만 — 본문의 임시 식별자. 화면이 제안 행과 실제 계획을 잇는다",
+      "example": "new-1"
+     },
+     "productionPlanId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "planNo": {
+      "type": "string",
+      "example": "값"
+     },
+     "statusCode": {
+      "type": "string",
+      "example": "CONFIRMED",
+      "x-code-key": "CD-PRODUCTION-PLAN-STATUS"
+     },
+     "versionNo": {
+      "type": "integer",
+      "example": 2
+     },
+     "workOrders": {
+      "type": "array",
+      "description": "이 계획의 MES W/O — 공정 순서대로",
+      "items": {
+       "type": "object",
+       "required": [
+        "workOrderId",
+        "workOrderNo",
+        "routingOperationId"
+       ],
+       "properties": {
+        "workOrderId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "workOrderNo": {
+         "type": "string",
+         "example": "값"
+        },
+        "routingOperationId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        }
+       }
+      }
+     }
+    }
    },
    "ProductionOrderCreate": {
     "type": "object",
@@ -6475,7 +7565,8 @@
      "bomId": {
       "type": "integer",
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "작성중 계획은 등록·수정(bomId 를 보낼 때) 때 품목의 ERP 기본 BOM 인지 보고 확정 직전에 다시 본다 — 그 사이 ERP 가 BOM 을 바꾸면 저장값이 옛 개정일 수 있다. 확정된 계획은 확정 당시 개정을 유지한다."
      },
      "routingId": {
       "type": "integer",
@@ -6552,7 +7643,8 @@
      "bomId": {
       "type": "integer",
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "품목의 지금 ERP 기본 BOM 이어야 한다 — 다르면 400 BOM_NOT_DEFAULT."
      },
      "routingId": {
       "type": "integer",
@@ -6615,7 +7707,8 @@
      "bomId": {
       "type": "integer",
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "보내면 품목의 지금 ERP 기본 BOM 이어야 한다 — 다르면 400 BOM_NOT_DEFAULT. 생략하면 저장값을 두고 확정이 본다."
      },
      "routingId": {
       "type": "integer",
@@ -8802,9 +9895,10 @@
        "DUPLICATE_KEY",
        "OPEN_SESSION_EXISTS",
        "BATCH_DEPENDENCY_FAILED",
-       "INVALID_STATE"
+       "INVALID_STATE",
+       "PROPOSAL_CHANGED"
       ],
-      "description": "OPEN_SESSION_EXISTS 는 열린 구간이 이미 있다는 뜻이다. BATCH_DEPENDENCY_FAILED 는 선행 요청이 아직 없다는 뜻이며 큐가 묶음을 멈춰야 한다. 근거: 공유계약 C-2 · C-10",
+      "description": "OPEN_SESSION_EXISTS 는 열린 구간이 이미 있다는 뜻이다. PROPOSAL_CHANGED 는 계획 제안을 검토한 뒤 기준(ERP W/O·계획·BOM·Routing·자원)이 바뀌어 확정하지 않았다는 뜻이다 — proposalChanges·currentProposal 을 함께 내린다. BATCH_DEPENDENCY_FAILED 는 선행 요청이 아직 없다는 뜻이며 큐가 묶음을 멈춰야 한다. 근거: 공유계약 C-2 · C-10",
       "example": "VERSION_CONFLICT"
      },
      "message": {
@@ -8827,6 +9921,17 @@
       "items": {
        "$ref": "#/components/schemas/OpenWorkSession"
       }
+     },
+     "proposalChanges": {
+      "type": "array",
+      "description": "PROPOSAL_CHANGED 일 때 바뀐 기준 — 하나 이상",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalChange"
+      }
+     },
+     "currentProposal": {
+      "$ref": "#/components/schemas/ProductionPlanProposal",
+      "description": "PROPOSAL_CHANGED 일 때 지금 기준으로 다시 계산한 그 ERP W/O 의 제안 — 화면이 다시 조회하지 않고 바로 보인다"
      },
      "conflictCause": {
       "type": "string",
