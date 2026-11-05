@@ -11,6 +11,8 @@ import { MaterialIssueReleaser } from '../../core/material-issue/release-request
 import {
   REQUEST_AUDIT_TARGET,
   closePickings,
+  closeRemaining,
+  finishPickings,
   RequestAction,
   RequestEventDetail,
   recordRequestAudit,
@@ -32,6 +34,13 @@ export interface MaterialIssueRequestUpdate {
   destinationLocationId?: number;
   lines?: { materialIssueRequestLineId: number; requestedQty: number }[];
   acknowledgeHoliday?: boolean;
+}
+
+/** 계약 `MaterialIssueCloseRemaining`(피처 004). */
+export interface MaterialIssueCloseRemaining {
+  versionNo: number;
+  reasonCode: string;
+  remark?: string | null;
 }
 
 export interface MaterialIssueRequestCancel {
@@ -107,7 +116,12 @@ export class MaterialIssueRequestEditService {
     await this.prisma.$transaction(async (tx) => {
       const request = await this.lock(tx, id, body.versionNo);
       if ((await requestProgress(tx, request.material_issue_request_id)).started) {
-        throw locked('피킹·출고가 시작된 요청은 취소할 수 없습니다.');
+        // 창고 보충 요청은 나머지를 잔량 마감으로 닫는다(피처 004 · US3-3).
+        throw locked(
+          head.requestTypeCode === REPLENISHMENT
+            ? '피킹·출고가 시작된 요청은 취소할 수 없습니다. 잔량 마감을 쓰세요.'
+            : '피킹·출고가 시작된 요청은 취소할 수 없습니다.',
+        );
       }
       await closePickings(tx, this.documentState, request.material_issue_request_id, appUserId);
       const now = new Date();
@@ -131,6 +145,29 @@ export class MaterialIssueRequestEditService {
       });
     });
     return this.queries.get(id);
+  }
+
+  /** 창고 보충 요청 잔량 마감(W-02-12 · 피처 004 · research R-5). 응답은 요청 하나(계약 `MaterialIssueRequest`). */
+  async closeRemaining(id: number, body: MaterialIssueCloseRemaining, appUserId: number): Promise<MaterialIssueRequestDetail['materialIssueRequest']> {
+    const head = await this.head(id);
+    if (head.requestTypeCode !== REPLENISHMENT) throw locked('잔량 마감은 창고 보충 요청만 합니다.');
+    const reason = await this.prisma.code_value.findFirst({
+      where: { code: body.reasonCode, is_active: true, code_group: { group_code: 'REPLENISHMENT_CLOSE_REASON' } },
+      select: { code: true },
+    });
+    if (reason === null) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('reasonCode', ERROR_CODE.INVALID, '잔량 마감 사유 코드가 아닙니다.')]);
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const request = await this.lock(tx, id, body.versionNo);
+      await closeRemaining(tx, this.documentState, {
+        requestId: request.material_issue_request_id,
+        reasonCode: body.reasonCode,
+        remark: body.remark?.trim() || null,
+        appUserId,
+      });
+    });
+    return (await this.queries.get(id)).materialIssueRequest;
   }
 
   async history(id: number): Promise<{ items: HistoryItem[] }> {
@@ -244,7 +281,7 @@ export class MaterialIssueRequestEditService {
     // 미출고가 모두 0 이면 더 나갈 것이 없다 — 출고 전기와 같은 완료(POSTED)로 옮기고 집은 만큼으로 줄인 피킹도 닫는다(FR-025).
     const done = lines.every((line) => line.requested_qty.lte(line.issued_qty));
     await this.touch(tx, request, done ? { status_code: requestTransition(this.documentState, 'material-issue-request-issue', request.status_code) } : {}, appUserId);
-    if (done) await this.finishPickings(tx, request.material_issue_request_id, appUserId);
+    if (done) await finishPickings(tx, this.documentState, request.material_issue_request_id, appUserId);
     await record(tx, request, events, appUserId);
   }
 
@@ -361,18 +398,6 @@ export class MaterialIssueRequestEditService {
         data: { requested_qty: requested, shortage_qty: shortage },
       });
       events.push(qtyChanged(line, requested, shortage));
-    }
-  }
-
-  /** 완료된 요청의 열린 피킹 — 집은 만큼으로 줄였으니 더 집을 것이 없다. 출고 전기가 닫는 것과 같은 전이다. */
-  private async finishPickings(tx: Prisma.TransactionClient, requestId: bigint, appUserId: number): Promise<void> {
-    const orders = await tx.picking_order.findMany({
-      where: { source_document_type_code: 'MATERIAL_ISSUE_REQUEST', source_document_id: requestId, status_code: 'REGISTERED' },
-      select: { picking_order_id: true, status_code: true },
-    });
-    for (const order of orders) {
-      const to = this.documentState.assertTransition('logistics.picking_order.status_code', 'picking-issue', order.status_code, HttpStatus.CONFLICT).to;
-      await tx.picking_order.update({ where: { picking_order_id: order.picking_order_id }, data: { status_code: to, updated_by: appUserId, version_no: { increment: 1 } } });
     }
   }
 

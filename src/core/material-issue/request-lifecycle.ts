@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { DocumentStateService } from '../document-state';
 
 /**
@@ -107,6 +108,23 @@ export async function closePickings(
   }
 }
 
+/** 열린 피킹 지시를 완료로 — 집은 만큼으로 줄였고 그만큼 출고됐을 때. 출고 전기가 닫는 것과 같은 전이다. */
+export async function finishPickings(
+  tx: Prisma.TransactionClient,
+  documentState: DocumentStateService,
+  requestId: bigint,
+  appUserId: number | null,
+): Promise<void> {
+  const orders = await tx.picking_order.findMany({
+    where: { source_document_type_code: SOURCE_MATERIAL_ISSUE_REQUEST, source_document_id: requestId, status_code: PICKING_REGISTERED },
+    select: { picking_order_id: true, status_code: true },
+  });
+  for (const order of orders) {
+    const to = documentState.assertTransition(PICKING_STATUS, 'picking-issue', order.status_code, HttpStatus.CONFLICT).to;
+    await tx.picking_order.update({ where: { picking_order_id: order.picking_order_id }, data: { status_code: to, updated_by: appUserId, version_no: { increment: 1 } } });
+  }
+}
+
 /** 요청 상태를 전이표대로 옮긴다. */
 export function requestTransition(documentState: DocumentStateService, action: string, from: string): string {
   return documentState.assertTransition(REQUEST_STATUS, action, from, HttpStatus.CONFLICT).to;
@@ -131,6 +149,51 @@ export async function recordRequestAudit(
       reason: entry.detail?.reason ?? null,
     },
   });
+}
+
+/**
+ * 창고 보충 요청 잔량 마감(피처 004 · research R-5). 일부만 출고된 요청의 나머지를 더 내보내지 않는다 — 상태는 그대로
+ * 두고 `closed_at`·사유를 남겨 출고 예정에서 뺀다(W/O 취소·마감 닫기와 같은 방식). 남은 피킹 줄을 닫는다.
+ * 부르는 쪽이 요청을 잠그고 보충·활성·판 번호를 본 뒤 부른다. 진행이 없으면 취소를 쓰고(409), 집었지만 출고하지
+ * 않은 양이 있으면 먼저 출고한다(409 — 집은 자재를 반납하는 기능이 없다, plan 확인할 것 5).
+ */
+export async function closeRemaining(
+  tx: Prisma.TransactionClient,
+  documentState: DocumentStateService,
+  input: { requestId: bigint; reasonCode: string; remark: string | null; appUserId: number },
+): Promise<void> {
+  const progress = await requestProgress(tx, input.requestId);
+  if (!progress.started) throw stateLocked('아직 피킹·출고가 시작되지 않았습니다. 요청 취소를 쓰세요.');
+  if (progress.inFlight) throw stateLocked('집었지만 아직 출고하지 않은 자재가 있습니다. 집은 양을 먼저 출고하세요.');
+  await closePickings(tx, documentState, input.requestId, input.appUserId);
+  // 집은 양이 모두 출고됐으니 남은 지시는 더 집을 것이 없다 — 열어 두면 모바일 피킹 목록·작업 수에 남는다.
+  await finishPickings(tx, documentState, input.requestId, input.appUserId);
+  const now = new Date();
+  const actor = BigInt(input.appUserId);
+  await tx.material_issue_request.update({
+    where: { material_issue_request_id: input.requestId },
+    data: {
+      closed_at: now,
+      close_reason_code: 'REMAINDER_CLOSED',
+      close_reason_detail_code: input.reasonCode,
+      close_remark: input.remark,
+      closed_by: actor,
+      updated_at: now,
+      updated_by: actor,
+      version_no: { increment: 1 },
+    },
+  });
+  await recordRequestAudit(tx, {
+    requestId: input.requestId,
+    action: 'CLOSED',
+    actorId: input.appUserId,
+    detail: { reason: input.reasonCode, ...(input.remark === null ? {} : { after: input.remark }) },
+    at: now,
+  });
+}
+
+function stateLocked(message: string): ContractException {
+  return new ContractException(HttpStatus.CONFLICT, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message }]);
 }
 
 /**

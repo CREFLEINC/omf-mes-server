@@ -14,7 +14,7 @@ export type DisplayStatus = (typeof DISPLAY_STATUSES)[number];
 const ZERO = new Prisma.Decimal(0);
 
 /** 진행 — 줄에 기출고가 있거나 취소 안 된 피킹에서 집은 양이 있다. */
-const STARTED: Prisma.material_issue_requestWhereInput = {
+export const STARTED: Prisma.material_issue_requestWhereInput = {
   material_issue_request_line: {
     some: {
       OR: [
