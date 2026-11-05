@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REVISION_STATUS } from '../revision-status';
+import { recordRoutingAudit, recordRoutingChange } from './routing-audit';
 
 /** 이 서비스가 다스리는 상태 칸. 전이표(`transitions.ts`)의 키와 같은 문자열이다. */
 const STATE_COLUMN = 'planning.routing.status_code';
@@ -20,7 +21,7 @@ export class RoutingRevisionService {
    * 작성중 → 확정. 「이후 in-place 수정은 불가하며 변경은 신규 Rev 로만 한다」(결정 07).
    * 「라인이 1건 이상이어야 한다」(계약 — 위반 시 400 `LINE_REQUIRED`).
    */
-  async confirm(routingId: number): Promise<number> {
+  async confirm(routingId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(routingId);
     // ⛔ 계약이 이 자리에 409 를 «선언하지 않았다» — 400 으로 낸다.
     const transition = this.documentState.assertTransition(
@@ -41,15 +42,26 @@ export class RoutingRevisionService {
       ]);
     }
 
-    await this.prisma.routing.update({
-      where: { routing_id: routingId },
-      data: { status_code: transition.to, version_no: { increment: 1 } },
+    const confirmedAt = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.routing.update({
+        where: { routing_id: routingId },
+        // 확정 일시 — 이력 관리 표가 보인다(omf-all-around#231).
+        data: { status_code: transition.to, confirmed_at: confirmedAt, version_no: { increment: 1 } },
+      });
+      await recordRoutingAudit(tx, {
+        routingId,
+        eventTypeCode: 'UPDATE',
+        actorId,
+        before: { statusCode: row.status_code },
+        after: { statusCode: transition.to, confirmedAt: confirmedAt.toISOString() },
+      });
     });
     return routingId;
   }
 
   /** 확정 → 폐기. ⛔ dead end 다 — 계약 §5-4 상태표가 「폐기 → (없음)」이라 적었다. */
-  async obsolete(routingId: number): Promise<number> {
+  async obsolete(routingId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(routingId);
     const transition = this.documentState.assertTransition(
       STATE_COLUMN,
@@ -58,9 +70,18 @@ export class RoutingRevisionService {
       HttpStatus.BAD_REQUEST,
     );
 
-    await this.prisma.routing.update({
-      where: { routing_id: routingId },
-      data: { status_code: transition.to, version_no: { increment: 1 } },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.routing.update({
+        where: { routing_id: routingId },
+        data: { status_code: transition.to, version_no: { increment: 1 } },
+      });
+      await recordRoutingChange(
+        tx,
+        routingId,
+        actorId,
+        { statusCode: row.status_code },
+        { statusCode: transition.to },
+      );
     });
     return routingId;
   }
@@ -80,7 +101,7 @@ export class RoutingRevisionService {
    * 옮기고 선후행을 버리면 새 Rev 가 공정 순서 관계를 잃은 채 열린다 — 복사의 뜻이 아니다.
    * 되돌림 §S-3 에 적었다.
    */
-  async newRevision(routingId: number): Promise<number> {
+  async newRevision(routingId: number, actorId?: number | null): Promise<number> {
     const source = await this.load(routingId);
     if (source.status_code !== REVISION_STATUS.CONFIRMED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
@@ -92,9 +113,84 @@ export class RoutingRevisionService {
       ]);
     }
 
-    return this.prisma.$transaction(async (tx) =>
-      Number(await copyRoutingRevision(tx, source, REVISION_STATUS.DRAFT)),
-    );
+    return this.prisma.$transaction(async (tx) => {
+      const createdId = await copyRoutingRevision(tx, source, REVISION_STATUS.DRAFT);
+      const created = await tx.routing.findUnique({ where: { routing_id: createdId } });
+
+      await recordRoutingAudit(tx, {
+        routingId: createdId,
+        eventTypeCode: 'CREATE',
+        actorId,
+        after: {
+          routingCode: created?.routing_code ?? source.routing_code,
+          routingVersion: created?.routing_version,
+          statusCode: created?.status_code ?? REVISION_STATUS.DRAFT,
+          copiedFromRoutingId: routingId,
+        },
+      });
+
+      return Number(createdId);
+    });
+  }
+
+  /**
+   * 작성중 Rev 취소(omf-all-around#231) — 작성중 Rev 와 그 공정 라인 · 선후행을 지운다. 잘못 발행한 신규 Rev 를
+   * 되돌리는 길이다(검사기준 작성중 버전 취소와 같은 판단). 작성중 Rev 는 생산에 쓰이지 않아 상태를 늘리지 않고 지운다.
+   * 첫 Rev 를 지우면 품목은 Routing 이 없는 상태로 돌아가 다시 등록할 수 있다 — 폐기는 그 길을 막는다.
+   * 생산계획 · W/O · BOM · 검사기준이 가리키고 있으면 지우지 않는다(400 STATE_LOCKED).
+   */
+  async discard(routingId: number, actorId?: number | null): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // ⛔ `FOR UPDATE` — 판정과 삭제 사이에 확정이 끼면 확정 Rev 가 지워진다.
+      const rows = await tx.$queryRaw<
+        { status_code: string; routing_version: number; routing_code: string }[]
+      >`
+        SELECT status_code, routing_version, routing_code
+          FROM planning.routing
+         WHERE routing_id = ${BigInt(routingId)}
+           FOR UPDATE`;
+      if (rows.length === 0) throw new NotFoundException('없는 Routing 입니다.');
+      if (rows[0].status_code !== REVISION_STATUS.DRAFT) {
+        throw discardLocked('작성중 Rev 만 취소할 수 있습니다. 확정 Rev 는 폐기를 쓰세요.');
+      }
+
+      const lineIds = (
+        await tx.routing_operation.findMany({
+          where: { routing_id: routingId },
+          select: { routing_operation_id: true },
+        })
+      ).map((line) => line.routing_operation_id);
+      const [plans, inspectionPlans, workOrders, components] = await Promise.all([
+        tx.production_plan.count({ where: { routing_id: routingId } }),
+        tx.inspection_plan.count({ where: { routing_id: routingId } }),
+        tx.work_order.count({ where: { routing_operation_id: { in: lineIds } } }),
+        tx.bom_component.count({ where: { routing_operation_id: { in: lineIds } } }),
+      ]);
+      if (plans + inspectionPlans + workOrders + components > 0) {
+        throw discardLocked('이 Rev 를 쓰는 생산계획 · 작업지시 · BOM · 검사기준이 있어 취소할 수 없습니다.');
+      }
+
+      await tx.routing_operation_dependency.deleteMany({
+        where: {
+          OR: [
+            { predecessor_operation_id: { in: lineIds } },
+            { successor_operation_id: { in: lineIds } },
+          ],
+        },
+      });
+      await tx.routing_operation.deleteMany({ where: { routing_id: routingId } });
+      await tx.routing.delete({ where: { routing_id: routingId } });
+      await recordRoutingAudit(tx, {
+        routingId,
+        eventTypeCode: 'DELETE',
+        actorId,
+        before: {
+          routingCode: rows[0].routing_code,
+          routingVersion: Number(rows[0].routing_version),
+          statusCode: rows[0].status_code,
+        },
+      });
+    });
   }
 
   private async load(routingId: number): Promise<Prisma.routingGetPayload<object>> {
@@ -179,4 +275,10 @@ function lineData(
     standard_cycle_time_sec: line.standard_cycle_time_sec,
     standard_yield_rate: line.standard_yield_rate,
   };
+}
+
+function discardLocked(message: string): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message },
+  ]);
 }

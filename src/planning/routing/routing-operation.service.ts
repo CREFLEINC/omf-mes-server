@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { SEQ_PARKING_OFFSET, assertCodeValues, optional } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REVISION_STATUS } from '../revision-status';
+import { recordRoutingAudit } from './routing-audit';
 
 /** 계약 `RoutingOperation` 과 동형. 필드는 `x-source-column` 을 그대로 따른다. */
 interface RoutingOperationView {
@@ -85,6 +86,7 @@ export class RoutingOperationService {
   async replace(
     routingId: number,
     operations: RoutingOperationUpsert[],
+    actorId?: number | null,
   ): Promise<RoutingOperationView[]> {
     await this.assertDraft(routingId, '공정 라인을 저장');
     const existing = await this.prisma.routing_operation.findMany({
@@ -105,6 +107,7 @@ export class RoutingOperationService {
     await this.assertRemovable(removed);
 
     await this.prisma.$transaction(async (tx) => {
+      const before = await operationSnapshot(tx, routingId);
       if (removed.length > 0) {
         await tx.routing_operation.deleteMany({
           where: { routing_operation_id: { in: removed } },
@@ -128,6 +131,7 @@ export class RoutingOperationService {
           data: { ...writeData(routingId, operation), version_no: { increment: 1 } },
         });
       }
+      await recordListChange(tx, routingId, actorId, 'operations', before, await operationSnapshot(tx, routingId));
     });
 
     return this.read(routingId);
@@ -167,18 +171,21 @@ export class RoutingOperationService {
     );
 
     await this.prisma.$transaction(async (tx) => {
+      const before = await dependencySnapshot(tx, known);
       await tx.routing_operation_dependency.deleteMany({
         where: { predecessor_operation_id: { in: [...known] } },
       });
-      if (dependencies.length === 0) return;
-      await tx.routing_operation_dependency.createMany({
-        data: dependencies.map((dependency) => ({
-          predecessor_operation_id: dependency.predecessorOperationId,
-          successor_operation_id: dependency.successorOperationId,
-          ...optional('dependency_type_code', dependency.dependencyTypeCode),
-          ...(actorId === undefined ? {} : { created_by: actorId }),
-        })),
-      });
+      if (dependencies.length > 0) {
+        await tx.routing_operation_dependency.createMany({
+          data: dependencies.map((dependency) => ({
+            predecessor_operation_id: dependency.predecessorOperationId,
+            successor_operation_id: dependency.successorOperationId,
+            ...optional('dependency_type_code', dependency.dependencyTypeCode),
+            ...(actorId === undefined ? {} : { created_by: actorId }),
+          })),
+        });
+      }
+      await recordListChange(tx, routingId, actorId, 'dependencies', before, await dependencySnapshot(tx, known));
     });
 
     return this.readDependencies(routingId);
@@ -463,6 +470,74 @@ function invalid(field: string, message: string): ErrorItem {
 
 function unique(field: string, uniqueScope: string[], message: string): ErrorItem {
   return { scope: 'field', field, code: ERROR_CODE.UNIQUE_VIOLATION, uniqueScope, message };
+}
+
+/**
+ * 변경 이력에 담는 공정 라인 — 계약 `RoutingOperation` 이름, 식별자(routingOperationId · routingId)는 뺀다.
+ * 줄 하나하나의 차이가 아니라 목록 전체를 before · after 로 남긴다(omf-all-around#231 — 화면이 둘을 견준다).
+ */
+async function operationSnapshot(
+  tx: Prisma.TransactionClient,
+  routingId: number,
+): Promise<Record<string, unknown>[]> {
+  const rows = await tx.routing_operation.findMany({
+    where: { routing_id: routingId },
+    orderBy: { operation_seq: 'asc' },
+  });
+  return rows.map((row) => {
+    const { routingOperationId: _id, routingId: _routing, ...fields } = view(row);
+    return fields;
+  });
+}
+
+/** 변경 이력에 담는 선후행 — 앞 · 뒤 공정은 라인 식별자 대신 순서(operationSeq)로 적는다(식별자는 화면에 뜻이 없다). */
+async function dependencySnapshot(
+  tx: Prisma.TransactionClient,
+  operationIds: ReadonlySet<number>,
+): Promise<Record<string, unknown>[]> {
+  const ids = [...operationIds];
+  if (ids.length === 0) return [];
+  const [rows, lines] = await Promise.all([
+    tx.routing_operation_dependency.findMany({
+      where: { predecessor_operation_id: { in: ids } },
+      orderBy: [{ predecessor_operation_id: 'asc' }, { successor_operation_id: 'asc' }],
+    }),
+    tx.routing_operation.findMany({
+      where: { routing_operation_id: { in: ids } },
+      select: { routing_operation_id: true, operation_seq: true },
+    }),
+  ]);
+  const seqOf = new Map(lines.map((line) => [Number(line.routing_operation_id), line.operation_seq]));
+  return rows
+    .map((row) => ({
+      predecessorOperationSeq: seqOf.get(Number(row.predecessor_operation_id)) ?? null,
+      successorOperationSeq: seqOf.get(Number(row.successor_operation_id)) ?? null,
+      dependencyTypeCode: row.dependency_type_code,
+    }))
+    .sort(
+      (a, b) =>
+        (a.predecessorOperationSeq ?? 0) - (b.predecessorOperationSeq ?? 0) ||
+        (a.successorOperationSeq ?? 0) - (b.successorOperationSeq ?? 0),
+    );
+}
+
+/** 목록이 달라졌을 때만 `{ [key]: before }` → `{ [key]: after }` 로 적는다. */
+async function recordListChange(
+  tx: Prisma.TransactionClient,
+  routingId: number,
+  actorId: number | null | undefined,
+  key: 'operations' | 'dependencies',
+  before: Record<string, unknown>[],
+  after: Record<string, unknown>[],
+): Promise<void> {
+  if (JSON.stringify(before) === JSON.stringify(after)) return;
+  await recordRoutingAudit(tx, {
+    routingId,
+    eventTypeCode: 'UPDATE',
+    actorId,
+    before: { [key]: before },
+    after: { [key]: after },
+  });
 }
 
 function view(row: OperationRow): RoutingOperationView {
