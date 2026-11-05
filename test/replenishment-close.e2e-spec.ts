@@ -102,6 +102,8 @@ describe('창고 보충 요청 취소·잔량 마감·수령 요약 (e2e)', () =
     expect(await plannedReplenishment('X')).toBe(0);
     const [picking] = await fx.pickings(id);
     expect(picking.picking_line.map((l) => [l.planned_qty.toNumber(), l.picked_qty.toNumber()])).toEqual([[60, 60]]);
+    // 집은 양이 모두 나갔으니 지시는 완료다 — 모바일 피킹 목록에 남지 않는다.
+    expect(picking.status_code).toBe('POSTED');
     await close(id, 409);
   });
 
@@ -208,6 +210,9 @@ describe('창고 보충 요청 취소·잔량 마감·수령 요약 (e2e)', () =
       .expect(200);
     expect(paged.body.page.total).toBe(2);
     expect(paged.body.items).toHaveLength(1);
+    // 유형을 비워도 보충 상태 조건이면 보충 요청을 찾는다.
+    const untyped = await fx.list({ plantId: Number(fx.ids.p1), replenishmentStatus: 'REMAINDER_CLOSED' });
+    expect(untyped.map((r) => BigInt(r.materialIssueRequestId as number))).toEqual([made.closed]);
     await request(app.getHttpServer()).get(BASE).query({ replenishmentStatus: 'NOPE' }).set('Cookie', fx.replenishmentCookie).expect(400);
   });
 });
