@@ -19,6 +19,7 @@ export interface LockedBalanceRow extends BalanceLockKey {
   inventory_status_code: string;
   ownership_type_code: string;
   owner_partner_id: bigint | null;
+  on_hand_qty: Prisma.Decimal;
   available_qty: Prisma.Decimal | null;
 }
 
@@ -52,7 +53,7 @@ export async function lockBalancesInOrder(
            plant_id AS "plantId", warehouse_id AS "warehouseId", location_id AS "locationId",
            item_id AS "itemId", COALESCE(lot_id, 0) AS "lotKey", lot_id AS "lotId",
            quality_status_code, inventory_status_code, ownership_type_code, owner_partner_id,
-           available_qty
+           on_hand_qty, available_qty
       FROM inventory.inventory_balance
      WHERE (legal_entity_id, business_unit_id, plant_id, warehouse_id, location_id, item_id,
             COALESCE(lot_id, 0))
@@ -92,10 +93,23 @@ export async function lockBalancesByItemLot(
            plant_id AS "plantId", warehouse_id AS "warehouseId", location_id AS "locationId",
            item_id AS "itemId", COALESCE(lot_id, 0) AS "lotKey", lot_id AS "lotId",
            quality_status_code, inventory_status_code, ownership_type_code, owner_partner_id,
-           available_qty
+           on_hand_qty, available_qty
       FROM inventory.inventory_balance
      WHERE item_id = ${itemId}
        AND lot_id = ${lotId}
      ORDER BY inventory_balance_id
        FOR UPDATE`;
+}
+
+/**
+ * 「어느 것을 낼지」 고를 행 — 2행+ 일 때 **보유 0 행**을 뺀다(omf-all-around#233).
+ * 재고 이동 도착이 `IN_TRANSIT` 행을 0 으로 남겨, 계획 위치 = 도착 위치면 같은 7칸에
+ * `AVAILABLE` 과 나란히 선다. 보유 0 이면 예약·피킹·보류도 0 이라(트리거) 낼 것이 없는 행이다.
+ * ⛔ 1행·전부 0 이면 그대로 둔다 — 「재고가 없다」·「모자라다」 판정이 지금과 같아야 한다.
+ * ⛔ 보유가 있는 행이 둘이면 그대로 둘이다 — 그 자리는 문의 031 이다.
+ */
+export function withoutEmptyBalances<T extends { on_hand_qty: Prisma.Decimal }>(rows: T[]): T[] {
+  if (rows.length < 2) return rows;
+  const held = rows.filter((row) => !new Prisma.Decimal(row.on_hand_qty).isZero());
+  return held.length === 0 ? rows : held;
 }
