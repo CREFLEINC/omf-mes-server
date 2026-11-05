@@ -12,6 +12,7 @@ import {
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
+import { localDate } from '../production-plan/plan-window';
 import { REVISION_STATUS } from '../revision-status';
 import { recordRoutingAudit, recordRoutingChange } from './routing-audit';
 
@@ -270,28 +271,43 @@ export class RoutingService {
  * 작성중 Rev 로 계획을 확정하면 고칠 수 있는 공정이 그대로 W/O 가 된다.
  */
 export async function assertPlannableRouting(
-  prisma: Pick<Prisma.TransactionClient, 'routing'>,
+  prisma: Pick<Prisma.TransactionClient, 'routing' | 'plant'>,
   routingId: number | bigint,
   itemId: bigint,
+  plantId: bigint,
 ): Promise<void> {
   const usable = await prisma.routing.count({
-    where: { routing_id: BigInt(routingId), item_id: itemId, ...usableWhere() },
+    where: { routing_id: BigInt(routingId), item_id: itemId, ...usableWhere(await plantToday(prisma, plantId)) },
   });
   if (usable > 0) return;
   throw one(field('routingId', ERROR_CODE.INVALID, '확정되고 유효 기간 안인 이 품목의 Routing 만 쓸 수 있습니다.'));
+}
+
+/** 공장을 모르는 조회의 「오늘」 시간대 — 현장이 하노이 한 곳이다(대시보드 `DEFAULT_TIMEZONE` 과 같다). */
+const SITE_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+/** 그 공장의 오늘(`YYYY-MM-DD`) — `plant.timezone_code` 로 푼다(CLAUDE.md). */
+export async function plantToday(prisma: Pick<Prisma.TransactionClient, 'plant'>, plantId: bigint, now: Date = new Date()): Promise<string> {
+  const plant = await prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId }, select: { timezone_code: true } });
+  return localDate(now, plant.timezone_code);
+}
+
+/** 공장을 모를 때의 오늘(`YYYY-MM-DD`) — 현장 시간대로 푼다. */
+export function siteToday(now: Date = new Date()): string {
+  return localDate(now, SITE_TIMEZONE);
 }
 
 /**
  * 「지금 새 작업지시에 걸 수 있는 개정만 낸다. **판정은 서버가 한다**」(계약).
  * 확정 상태이고 유효 기간 안이다. 비어 있는 끝은 제한이 없다는 뜻이다.
  *
- * ⚠ 「지금」의 날짜를 UTC 로 읽는다. 계약이 이 자리에 날짜 파라미터를 두지 않았고,
- * Routing 은 공장에 매이지 않아 `plant.timezone_code` 로 풀 자리도 없다. 하노이
- * 로컬 00:00~07:00 에는 UTC 날짜가 하루 이르므로, 그 시간대에 「오늘부터」인 Rev 가
- * 아직 안 걸린다. 되돌림 §S 에 적었다.
+ * 「오늘」은 현지 날짜(`YYYY-MM-DD`)다. 공장을 아는 호출(계획 생성·확정·자동 계획)은 `plantToday` 를
+ * 넘기고, 공장을 모르는 조회(Routing 후보 목록 등)는 현장 시간대의 오늘을 쓴다. UTC 날짜로 읽으면
+ * 현지 00:00~07:00 에 하루 이르다(omf-all-around#218).
  */
-export function usableWhere(): Prisma.routingWhereInput {
-  const today = new Date(new Date().toISOString().slice(0, 10));
+export function usableWhere(localToday: string = siteToday()): Prisma.routingWhereInput {
+  // DATE 칸은 그 날짜의 UTC 자정으로 온다 — 현지 날짜 문자열을 같은 모양으로 맞춘다.
+  const today = new Date(localToday);
   return {
     status_code: REVISION_STATUS.CONFIRMED,
     AND: [

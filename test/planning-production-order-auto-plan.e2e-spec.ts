@@ -488,6 +488,72 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     });
   });
 
+  /**
+   * omf-all-around#218 — Routing 유효 판정의 「오늘」은 공장 현지 날짜다. 현지 03:00(UTC 로는 전날 20:00)으로 시계를 고정해
+   * 「오늘부터 유효」한 Rev 는 고르고 「어제까지 유효」한 Rev 는 고르지 않는지 본다. 시계는 `Date` 만 바꾼다.
+   * ⚠ 목록 필터(11)의 기대 오더를 흐리지 않게 맨 끝에 둔다.
+   */
+  describe('현지 00:00~07:00 의 Routing 유효 판정', () => {
+    const fromToday = { item: BigInt(0), routing: BigInt(0) };
+    const untilYesterday = { item: BigInt(0) };
+    let today = '';
+
+    beforeAll(async () => {
+      today = localToday();
+      const makeItem = async (key: string, effective: { effective_from?: Date; effective_to?: Date }) => {
+        const item = await prisma.item.create({
+          data: { item_code: `${PREFIX}-IT-${key}`, item_name: `자동계획검사품목-${key}`, item_type_code: 'FINISHED_GOODS', base_uom_id: uomId, lot_controlled: true },
+        });
+        await prisma.bom.create({
+          data: {
+            parent_item_id: item.item_id, bom_code: `${PREFIX}-BOM-${key}`, bom_version: 1, status_code: 'CONFIRMED', is_default: true,
+            effective_from: new Date('2026-01-01T00:00:00.000Z'), base_qty: 1, base_uom_id: uomId,
+          },
+        });
+        const process = await prisma.process.findFirstOrThrow({ where: { process_code: `${PREFIX}-PR` } });
+        const routing = await prisma.routing.create({
+          data: { item_id: item.item_id, routing_code: `${PREFIX}-RT-${key}`, routing_version: 1, status_code: 'CONFIRMED', ...effective },
+        });
+        await prisma.routing_operation.create({
+          data: { routing_id: routing.routing_id, operation_seq: 10, process_id: process.process_id, operation_name: '공정10', equipment_required: false, mold_required: false },
+        });
+        return { item: item.item_id, routing: routing.routing_id };
+      };
+      Object.assign(fromToday, await makeItem('fromToday', { effective_from: new Date(`${today}T00:00:00.000Z`) }));
+      untilYesterday.item = (await makeItem('untilYesterday', { effective_to: new Date(`${shiftDays(today, -1)}T00:00:00.000Z`) })).item;
+
+      // 현지 오늘 03:00 = UTC 로는 전날 20:00. 타이머는 그대로 두어 DB·HTTP 가 평소대로 돈다.
+      jest.useFakeTimers({
+        now: new Date(`${shiftDays(today, -1)}T20:00:00.000Z`),
+        doNotFake: [
+          'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+          'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+          'setTimeout', 'clearTimeout',
+        ],
+      });
+    });
+
+    afterAll(() => jest.useRealTimers());
+
+    it('16. 「오늘부터 유효」한 Rev 로 계획을 세운다 — UTC 날짜는 아직 어제다', async () => {
+      expect(new Date().toISOString().slice(0, 10)).toBe(shiftDays(today, -1));
+      const response = await postOrder('FROMTODAY', fromToday.item, 10).expect(201);
+
+      expect(response.body.autoPlan.reasons).not.toContain('ROUTING_MISSING');
+      const plans = await plansOf(response.body.productionOrderId as number);
+      expect(plans).toHaveLength(1);
+      expect(plans[0]).toMatchObject({ routing_id: fromToday.routing });
+      expect(plans[0].plan_date.toISOString().slice(0, 10)).toBe(today);
+    });
+
+    it('17. 「어제까지 유효」한 Rev 는 현지 00:00 부터 고르지 않는다', async () => {
+      const response = await postOrder('UNTILYDAY', untilYesterday.item, 10).expect(201);
+
+      expect(response.body.autoPlan).toEqual({ status: 'NEEDS_REVIEW', reasons: ['ROUTING_MISSING'] });
+      expect(await plansOf(response.body.productionOrderId as number)).toEqual([]);
+    });
+  });
+
   function postOrder(suffix: string, itemId: bigint, orderQty: number): request.Test {
     return request(app.getHttpServer())
       .post('/api/planning/production-orders')

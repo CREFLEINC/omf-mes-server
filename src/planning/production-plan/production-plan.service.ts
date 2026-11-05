@@ -130,7 +130,7 @@ export class ProductionPlanService {
     if (!order) {
       throw one(field('productionOrderId', ERROR_CODE.INVALID, '없는 ERP W/O 입니다.'));
     }
-    await assertPlannableRouting(this.prisma, body.routingId, order.item_id);
+    await assertPlannableRouting(this.prisma, body.routingId, order.item_id, order.plant_id);
 
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -199,11 +199,11 @@ export class ProductionPlanService {
       if (body.routingId !== undefined) {
         const current = await tx.production_plan.findUniqueOrThrow({
           where: { production_plan_id: BigInt(productionPlanId) },
-          select: { routing_id: true, production_order: { select: { item_id: true } } },
+          select: { routing_id: true, production_order: { select: { item_id: true, plant_id: true } } },
         });
         // 전체 본문을 싣는 호출자가 같은 값을 다시 보내도 «바꾼» 것이 아니다.
         if (current.routing_id !== BigInt(body.routingId)) {
-          await assertPlannableRouting(tx, body.routingId, current.production_order.item_id);
+          await assertPlannableRouting(tx, body.routingId, current.production_order.item_id, current.production_order.plant_id);
         }
       }
       const updated = await tx.production_plan.update({
