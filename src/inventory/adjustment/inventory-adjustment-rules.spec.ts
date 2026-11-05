@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { ContractException, ErrorItem } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -217,6 +219,7 @@ describe('resolveLineDimensions — 잔액 행이 라인의 두 상태 칸을 �
     lot_id: BigInt(LOT),
     quality_status_code: 'NORMAL',
     inventory_status_code: 'AVAILABLE',
+    on_hand_qty: new Prisma.Decimal(100),
     ...over,
   });
 
@@ -301,5 +304,16 @@ describe('resolveLineDimensions — 잔액 행이 라인의 두 상태 칸을 �
     );
 
     expect(errors[0]).toMatchObject({ field: 'items[0].locationId', code: 'INVALID' });
+  });
+
+  it('재고 이동이 남긴 보유 0 IN_TRANSIT 행은 빼고 남은 행의 상태를 읽는다(#234)', async () => {
+    const { prisma } = balances([
+      balance({ inventory_status_code: 'IN_TRANSIT', on_hand_qty: new Prisma.Decimal(0) }),
+      balance(),
+    ]);
+
+    const dimensions = await resolveLineDimensions(prisma, [line()], orgs, 'lines');
+
+    expect(dimensions[0].inventoryStatusCode).toBe('AVAILABLE');
   });
 });

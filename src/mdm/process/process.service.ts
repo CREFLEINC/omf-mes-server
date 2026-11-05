@@ -22,6 +22,12 @@ import { PrismaService } from '../../prisma/prisma.service';
  * 참조처는 전부 `process_id` FK 라 «셀 수 있다» — code_value 처럼 NOT_COUNTABLE 로
  * 잠그는 갈래가 아니다(계약 `GET /mdm/processes/{processId}`).
  */
+/** 공정 목록 조건 — 마스터 공통 조건에 사용 여부(`isActive`) · 공정 유형(`processTypeCode`)을 더한다(omf-all-around#231). */
+export interface ProcessQuery extends ReferenceQuery {
+  isActive?: boolean;
+  processTypeCode?: string;
+}
+
 export const PROCESS_REFERRERS: readonly Referrer[] = [
   ['app.operation_policy', 'process_id'],
   ['logistics.subcontract_order', 'process_id'],
@@ -71,9 +77,12 @@ export type ProcessResult = {
 export class ProcessService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: ReferenceQuery): Promise<PagedResponse<ProcessView>> {
+  async list(query: ProcessQuery): Promise<PagedResponse<ProcessView>> {
     const page = referencePage(query);
     const where = referenceWhere(query, { code: 'process_code', name: 'process_name' });
+    // 사용 여부 라벨(omf-all-around#231) — 주면 그 값만. `includeInactive` 의 기본(쓰는 것만)보다 앞선다.
+    if (query.isActive !== undefined) where.is_active = query.isActive;
+    if (query.processTypeCode) where.process_type_code = query.processTypeCode;
     const [rows, total] = await Promise.all([
       this.prisma.process.findMany({
         where,

@@ -98,6 +98,8 @@ describe('재고 조정 7 오퍼레이션 (e2e)', () => {
   let mixToLocationId: number;
   let postGeneralLocationId: number;
   let flowLocationId: number;
+  /** 재고 이동 도착이 남긴 모양 — `AVAILABLE` 50 + 보유 0 `IN_TRANSIT` 한 줄(omf-all-around#234·#235). */
+  let transitLocationId: number;
   /** ⭐ `negative_stock_allowed = true` 품목 한 벌 — I-4 와 갈리는 자리다. */
   let negItemId: number;
   let negLotId: number;
@@ -834,6 +836,20 @@ describe('재고 조정 7 오퍼레이션 (e2e)', () => {
     expect(await onHand(flowLocationId)).toBe(40);
   });
 
+  it('⭐ 보유 0 IN_TRANSIT 행이 함께 선 위치도 등록·상신·승인·전기가 된다(omf-all-around#234)', async () => {
+    const fixture = await registered([lineAt({ locationId: transitLocationId, adjustmentQty: -5 })]);
+    const approval = await requestApproval(fixture).expect(202);
+    await decide('approve', approval.body.approvalRequestId);
+
+    await post(fixture).expect(200);
+
+    const rows = await prisma.inventory_balance.findMany({ where: { location_id: transitLocationId } });
+    const qtyOf = (status: string): number =>
+      Number(rows.find((row) => row.inventory_status_code === status)?.on_hand_qty);
+    expect(qtyOf('AVAILABLE')).toBe(45);
+    expect(qtyOf('IN_TRANSIT')).toBe(0);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   /** 치환 본문 한 줄 — 등록의 `line()` 과 칸은 같고 배열 이름만 `items` 다. */
@@ -1036,6 +1052,7 @@ describe('재고 조정 7 오퍼레이션 (e2e)', () => {
     mixToLocationId = await makeLocation('-MB', warehouse.warehouse_id);
     postGeneralLocationId = await makeLocation('-PG', warehouse.warehouse_id);
     flowLocationId = await makeLocation('-PF', warehouse.warehouse_id);
+    transitLocationId = await makeLocation('-TZ', warehouse.warehouse_id);
     negLocationId = await makeLocation('-NG', warehouse.warehouse_id);
 
     // 공장 단일 검사(결정 — 통보 133)용 두 번째 공장 한 벌.
@@ -1206,6 +1223,26 @@ describe('재고 조정 7 오퍼레이션 (e2e)', () => {
     await receive(mixToLocationId, 30, 'AVAILABLE');
     await receive(postGeneralLocationId, 500, 'AVAILABLE');
     await receive(flowLocationId, 50, 'AVAILABLE');
+    await receive(transitLocationId, 50, 'AVAILABLE');
+    // ⚠ 보유 0 `IN_TRANSIT` 행은 직접 심는다 — 재고 이동 반출·도착은 이 스위트의 권한·기준정보 밖이고,
+    //    도착이 남기는 것은 11칸 중 재고 상태만 다르고 수량이 전부 0 인 이 한 줄이다(재고 이동 e2e 가 실제 경로를 본다).
+    const available = await prisma.inventory_balance.findFirstOrThrow({ where: { location_id: transitLocationId } });
+    await prisma.inventory_balance.create({
+      data: {
+        legal_entity_id: available.legal_entity_id,
+        business_unit_id: available.business_unit_id,
+        plant_id: available.plant_id,
+        warehouse_id: available.warehouse_id,
+        location_id: available.location_id,
+        item_id: available.item_id,
+        lot_id: available.lot_id,
+        quality_status_code: available.quality_status_code,
+        inventory_status_code: 'IN_TRANSIT',
+        ownership_type_code: available.ownership_type_code,
+        owner_partner_id: available.owner_partner_id,
+        uom_id: available.uom_id,
+      },
+    });
     await receive(negLocationId, 10, 'AVAILABLE', warehouseId, negItemId, negLotId);
   }
 

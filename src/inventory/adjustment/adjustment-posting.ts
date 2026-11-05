@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { InventoryWriteActor } from '../inventory-write-actor';
-import type { BalanceLockKey } from '../../core/inventory-posting/balance-lock';
+import { BalanceLockKey, withoutEmptyBalances } from '../../core/inventory-posting/balance-lock';
 import {
   LOCATION_ORG_SELECT,
   LocationOrg,
@@ -115,7 +115,7 @@ export async function postAdjustment(
   const errors: ErrorItem[] = [];
   const picked = new Map<string, LockedRow>();
   for (const [id, { net, index }] of demanded) {
-    const rows = found.get(id) ?? [];
+    const rows = withoutEmptyBalances(found.get(id) ?? []);
     const at = `lines[${index}].locationId`;
     if (rows.length === 0) {
       // 등록·치환이 이 행을 읽어 라인의 두 상태 칸을 세웠으므로 여기 0행은 그 사이 차원이

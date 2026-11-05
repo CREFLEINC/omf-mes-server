@@ -58,6 +58,8 @@ export interface ItemUpdate {
 export interface ItemQuery extends ReferenceQuery {
   itemTypeCode?: string[];
   hasRouting?: boolean;
+  /** 가장 최근 Rev 의 상태(#231) — 계약 enum 이 DRAFT · CONFIRMED · OBSOLETE 로 막는다. */
+  latestRoutingStatus?: string;
   /** 계약에 없는 조건이라 검증 가드가 불리언으로 바꾸지 않는다 — 문자열로 온다(장부 P-130). */
   hasBom?: string;
   /** 위와 같다 — 문자열로 온다(장부 P-138). */
@@ -85,7 +87,13 @@ export class ItemService {
 
   async list(query: ItemQuery): Promise<PagedResponse<ItemView>> {
     const page = referencePage(query);
+    const latestStatusItemIds =
+      query.latestRoutingStatus === undefined
+        ? undefined
+        : await this.itemIdsByLatestRoutingStatus(query.latestRoutingStatus);
     const where = referenceWhere(query, { code: 'item_code', name: 'item_name' }, {
+      // 공정 경로 관리 품목 목록의 진행 상태 칩(omf-all-around#231) — 가장 최근 Rev 의 상태.
+      ...(latestStatusItemIds === undefined ? {} : { item_id: { in: latestStatusItemIds } }),
       ...(query.itemTypeCode === undefined ? {} : { item_type_code: { in: query.itemTypeCode } }),
       // 「Routing 미보유 품목 필터를 제공해 보강 등록을 돕는다」(W-06-01 §6). 이것이
       // 없으면 화면이 전 품목과 전 Routing 을 받아 스스로 대조해야 한다.
@@ -106,6 +114,19 @@ export class ItemService {
       this.prisma.item.count({ where }),
     ]);
     return pagedResponse(rows.map(view), total, page);
+  }
+
+  /**
+   * 가장 최근 Rev(routing_version 이 가장 큰 개정)의 상태가 `status` 인 품목들.
+   * 「최근」을 열끼리 견주는 조건은 Prisma where 로 적을 수 없어, 품목마다 최근 Rev 한 줄만 받아 거른다.
+   */
+  private async itemIdsByLatestRoutingStatus(status: string): Promise<bigint[]> {
+    const latest = await this.prisma.routing.findMany({
+      distinct: ['item_id'],
+      orderBy: [{ item_id: 'asc' }, { routing_version: 'desc' }],
+      select: { item_id: true, status_code: true },
+    });
+    return latest.filter((row) => row.status_code === status).map((row) => row.item_id);
   }
 
   async get(
