@@ -72,7 +72,7 @@ export class PlanConfirmService {
     });
     if (operations.length === 0) throw one(field('routingId', ERROR_CODE.LINE_REQUIRED, '공정이 한 줄도 없습니다.'));
     // 작성 중 계획만 본다 — 확정된 계획의 재확정은 아래 전이 판정이 400 STATE_LOCKED 로 막는다.
-    if (plan.status_code === DRAFT) await assertPlannableRouting(client, plan.routing_id, plan.production_order.item_id);
+    if (plan.status_code === DRAFT) await assertPlannableRouting(client, plan.routing_id, plan.production_order.item_id, plan.production_order.plant_id);
     const operationIds = operations.map((operation) => operation.routing_operation_id);
     const dependencies = await client.routing_operation_dependency.findMany({
       where: { predecessor_operation_id: { in: operationIds }, successor_operation_id: { in: operationIds } },

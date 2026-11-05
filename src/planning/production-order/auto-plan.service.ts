@@ -9,7 +9,7 @@ import { PlanConfirmService } from '../production-plan/plan-confirm.service';
 import { isPlanCancelled, sumPlanQty } from '../production-plan/plan-quantity';
 import { ProductionPlanService } from '../production-plan/production-plan.service';
 import { DefaultMap, OperationNeed, pairKey, readDefaultMapsOf } from '../production-plan/resource-assign';
-import { usableWhere as usableRoutingWhere } from '../routing/routing.service';
+import { siteToday, usableWhere as usableRoutingWhere } from '../routing/routing.service';
 import {
   AutoPlanReason,
   AutoPlanView,
@@ -207,6 +207,15 @@ export class AutoPlanService {
     return { outcome: 'CONFIRMED', productionPlanId: plan.productionPlanId };
   }
 
+  /** 공장마다 현지 오늘(`YYYY-MM-DD`) — `plant.timezone_code` 로 푼다. */
+  private async plantTodays(plantIds: readonly bigint[]): Promise<Map<bigint, string>> {
+    const ids = [...new Set(plantIds)];
+    if (ids.length === 0) return new Map();
+    const now = new Date();
+    const plants = await this.prisma.plant.findMany({ where: { plant_id: { in: ids } }, select: { plant_id: true, timezone_code: true } });
+    return new Map(plants.map((plant) => [plant.plant_id, localDate(now, plant.timezone_code)]));
+  }
+
   /** 계획 → (계획 없는 오더의) BOM·Routing → 라인 판정에 쓸 공정·기본 매핑 순으로 몇 번의 쿼리로 모은다. */
   private async factsOf(orders: readonly AutoPlanOrder[]): Promise<Map<bigint, OrderFacts>> {
     const result = new Map<bigint, OrderFacts>();
@@ -228,21 +237,36 @@ export class AutoPlanService {
       (order) => !plansOf.has(order.production_order_id) && order.auto_plan_attempted_at !== null && order.status_code !== CANCELLED,
     );
     const itemIds = [...new Set(unplanned.map((order) => order.item_id))];
+    // Routing 의 「오늘」은 오더 공장의 현지 날짜다(omf-all-around#218) — 같은 날짜의 오더끼리 한 번에 읽는다.
+    const todayOf = await this.plantTodays(unplanned.map((order) => order.plant_id));
+    const dayOf = (order: AutoPlanOrder): string => todayOf.get(order.plant_id) ?? siteToday();
+    const itemsOfDay = new Map<string, Set<bigint>>();
+    for (const order of unplanned) itemsOfDay.set(dayOf(order), (itemsOfDay.get(dayOf(order)) ?? new Set<bigint>()).add(order.item_id));
     const [boms, routings] =
       itemIds.length === 0
         ? [[], []]
         : await Promise.all([
             this.prisma.bom.findMany({ where: { parent_item_id: { in: itemIds }, is_default: true }, select: { bom_id: true, parent_item_id: true } }),
-            this.prisma.routing.findMany({ where: { item_id: { in: itemIds }, ...usableRoutingWhere() }, select: { routing_id: true, item_id: true, is_default: true } }),
+            Promise.all(
+              [...itemsOfDay].map(async ([day, items]) =>
+                (await this.prisma.routing.findMany({
+                  where: { item_id: { in: [...items] }, ...usableRoutingWhere(day) },
+                  select: { routing_id: true, item_id: true, is_default: true },
+                })).map((routing) => ({ ...routing, day })),
+              ),
+            ).then((rows) => rows.flat()),
           ]);
     const bomsOf = groupBy(boms, (bom) => bom.parent_item_id);
-    const routingsOf = groupBy(routings, (routing) => routing.item_id);
+    const routingsOf = groupBy(routings, (routing) => `${routing.day}|${routing.item_id}`);
     const choices = new Map(
       unplanned.map((order) => [
         order.production_order_id,
         chooseMasters(
           (bomsOf.get(order.item_id) ?? []).map((bom) => bom.bom_id),
-          (routingsOf.get(order.item_id) ?? []).map((routing) => ({ routingId: routing.routing_id, isDefault: routing.is_default })),
+          (routingsOf.get(`${dayOf(order)}|${order.item_id}`) ?? []).map((routing) => ({
+            routingId: routing.routing_id,
+            isDefault: routing.is_default,
+          })),
         ),
       ]),
     );
@@ -308,8 +332,8 @@ export class AutoPlanService {
   }
 }
 
-function groupBy<T>(rows: readonly T[], key: (row: T) => bigint): Map<bigint, T[]> {
-  const map = new Map<bigint, T[]>();
+function groupBy<T, K>(rows: readonly T[], key: (row: T) => K): Map<K, T[]> {
+  const map = new Map<K, T[]>();
   for (const row of rows) map.set(key(row), [...(map.get(key(row)) ?? []), row]);
   return map;
 }
