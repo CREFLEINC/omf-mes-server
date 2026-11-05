@@ -119,6 +119,7 @@ export class IdempotencyService {
   async run<T>(
     context: IdempotencyContext,
     work: (tx: Prisma.TransactionClient) => Promise<T>,
+    transactionOptions?: { timeout?: number; maxWait?: number },
   ): Promise<IdempotentOutcome<T>> {
     const seen = await this.replayExisting<T>(context);
     if (seen !== undefined) return seen;
@@ -148,7 +149,7 @@ export class IdempotencyService {
         });
 
         return { replayed: false, status: context.successStatus, body };
-      });
+      }, transactionOptions);
     } catch (error) {
       // 같은 키가 동시에 들어와 PK 로 부딪혔다. 먼저 든 쪽이 처리 중이거나 끝냈다.
       if (

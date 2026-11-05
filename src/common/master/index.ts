@@ -4,7 +4,7 @@ export type { CodeCheck } from './code-reference';
 export { day, optional, optionalDate, toDateString } from './column';
 export { ERP_WAREHOUSE_GROUP, erpWarehouseName } from './erp-warehouse';
 export type { Editability } from './editability';
-export { runIdempotent, runVersioned } from './master-write';
+export { idempotencyContextOf, runIdempotent, runVersioned } from './master-write';
 export { assertNotBlank } from './not-blank';
 export { filter, referencePage, referenceWhere } from './query';
 export type { ReferenceQuery } from './query';

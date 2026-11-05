@@ -1,5 +1,6 @@
+import { Prisma } from '@prisma/client';
+
 import { unusable } from '../../core/work-order';
-import { PrismaService } from '../../prisma/prisma.service';
 
 /** 전개가 공정마다 읽는 Routing 공정의 칸. 공정 순서대로 넘긴다. */
 export interface OperationNeed {
@@ -57,7 +58,7 @@ export function assignResources(operations: OperationNeed[], maps: DefaultMap[])
 }
 
 /** 활성 기본 매핑만 읽는다. 가동 상태가 아닌 설비·금형은 배정하지 않고 4M 에서 고르게 둔다. */
-export async function readDefaultMaps(prisma: PrismaService, plantId: bigint, itemId: bigint): Promise<DefaultMap[]> {
+export async function readDefaultMaps(prisma: Prisma.TransactionClient, plantId: bigint, itemId: bigint): Promise<DefaultMap[]> {
   const rows = await prisma.item_resource_map.findMany({
     where: { plant_id: plantId, item_id: itemId, is_default: true, is_active: true },
     select: DEFAULT_MAP_SELECT,
@@ -67,7 +68,7 @@ export async function readDefaultMaps(prisma: PrismaService, plantId: bigint, it
 
 /** (공장·품목) 여럿의 기본 매핑을 한 번에 — 키는 `pairKey`. 목록이 행마다 읽지 않게. */
 export async function readDefaultMapsOf(
-  prisma: PrismaService,
+  prisma: Prisma.TransactionClient,
   pairs: readonly { plantId: bigint; itemId: bigint }[],
 ): Promise<Map<string, DefaultMap[]>> {
   const result = new Map<string, DefaultMap[]>();

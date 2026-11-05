@@ -30,6 +30,22 @@ export interface PlanLine {
   defaultScrapLocationId: bigint | null;
 }
 
+/**
+ * 계획 제안 확정이 공정마다 실어 보내는 4M — 있으면 계획 라인·기본 매핑 대신 그대로 쓴다. 검증은 보내는 쪽이 끝냈다.
+ * 창은 계획일과 교대로 정한 것이다(`plan-window.ts`).
+ */
+export interface WorkOrderSupplement {
+  productionLineId: bigint;
+  equipmentId: bigint | null;
+  moldId: bigint | null;
+  workerId: bigint | null;
+  shiftId: bigint | null;
+  defaultWipLocationId: bigint;
+  defaultFgLocationId: bigint;
+  defaultScrapLocationId: bigint;
+  window: PlanWindow;
+}
+
 /** 마스터(`routing_operation_dependency`)에 칸이 없다 — 기본값을 명시한다(§3-4). */
 const REQUIRED_QTY_RULE = 'AVAILABLE_GOOD_QTY';
 
@@ -38,11 +54,17 @@ const REQUIRED_QTY_RULE = 'AVAILABLE_GOOD_QTY';
  * 고르게 하면 하루 수백 건을 손으로 넣어야 한다. 계약 생성 규칙과 다른 동작이다(`docs/계약-선행-수정항목.md`).
  * `operation_settings_snapshot` 은 안 쓴다 — `:release` 가 뜬다(I-6).
  */
-export function workOrderRows(plan: PlanToExpand, workOrderNos: string[], appUserId: number | undefined): Prisma.work_orderCreateManyInput[] {
+export function workOrderRows(
+  plan: PlanToExpand,
+  workOrderNos: string[],
+  appUserId: number | undefined,
+  supplements?: ReadonlyMap<bigint, WorkOrderSupplement>,
+): Prisma.work_orderCreateManyInput[] {
   return plan.operationIds.map((routingOperationId, index) => {
+    const supplement = supplements?.get(routingOperationId);
     const resource = plan.resources.get(routingOperationId);
     const line = lineOf(plan, resource);
-    return {
+    const row = {
       work_order_no: workOrderNos[index],
       production_plan_id: BigInt(plan.productionPlanId),
       routing_operation_id: routingOperationId,
@@ -62,6 +84,20 @@ export function workOrderRows(plan: PlanToExpand, workOrderNos: string[], appUse
       status_code: WORK_ORDER_INITIAL_STATUS,
       created_by: appUserId ?? null,
       updated_by: appUserId ?? null,
+    };
+    if (supplement === undefined) return row;
+    return {
+      ...row,
+      planned_start_at: supplement.window.plannedStartAt,
+      planned_end_at: supplement.window.plannedEndAt,
+      production_line_id: supplement.productionLineId,
+      default_wip_location_id: supplement.defaultWipLocationId,
+      default_fg_location_id: supplement.defaultFgLocationId,
+      default_scrap_location_id: supplement.defaultScrapLocationId,
+      planned_equipment_id: supplement.equipmentId,
+      planned_mold_id: supplement.moldId,
+      responsible_worker_id: supplement.workerId,
+      planned_shift_id: supplement.shiftId,
     };
   });
 }

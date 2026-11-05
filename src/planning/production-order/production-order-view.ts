@@ -3,6 +3,7 @@ import type { WorklistReason, WorklistState } from './production-order-worklist'
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import { toDateString } from '../../common/master';
+import type { MasterReason } from '../production-plan/master-choice';
 import { PlanQuantities } from '../production-plan/plan-quantity';
 import { AutoPlanView } from './auto-plan';
 import { ProductionOrderProgressStatus } from './production-order-progress';
@@ -49,6 +50,7 @@ export interface ProductionOrderExtras {
   autoPlan?: AutoPlanView | null;
   worklistState?: WorklistState;
   worklistReasons?: WorklistReason[];
+  masterDataReasons?: MasterReason[];
   releasePendingWorkOrderCount?: number;
   liveWorkOrderCount?: number;
   quantities?: PlanQuantities;
@@ -91,6 +93,7 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     // 「작업지시 목록」 칩 판정(장부 P-142).
     worklistState: extras.worklistState,
     worklistReasons: extras.worklistReasons,
+    masterDataReasons: extras.masterDataReasons,
     releasePendingWorkOrderCount: extras.releasePendingWorkOrderCount,
     liveWorkOrderCount: extras.liveWorkOrderCount,
     // 계획 수량(정의는 plan-quantity.ts) · 품목그룹.

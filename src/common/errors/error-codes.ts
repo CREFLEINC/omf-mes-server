@@ -50,6 +50,8 @@ export const ERROR_CODE = {
   // 계약 생산계획 등록·수정·확정의 400 설명이 이름을 준다 — 등록·수정·확정이 「확정 계획량 + 작성 수량 ≤ ERP W/O 수량」을 넘길 때(`plan-quantity.ts`).
   // `QTY_EXCEEDS_ORDERED`(P/O 입하)와 도메인이 달라 갈라 둔다.
   PLAN_QTY_EXCEEDS_ORDER: 'PLAN_QTY_EXCEEDS_ORDER',
+  // 계약 생산계획 등록·수정·확정과 계획 제안 확정의 400 설명이 이름을 준다 — 작성중 계획의 BOM 이 품목의 지금 ERP 기본 BOM 이 아닐 때(`master-choice.ts`).
+  BOM_NOT_DEFAULT: 'BOM_NOT_DEFAULT',
   // 계약이 이름을 안 준 자리다(grep 실측: `contracts/*.json` 에 이 문자열 0건) —
   // `contracts/logistics-01자재창고.json:6803` 이 「역처리가 재고 잔액을 음수로 만들면
   // 400 이다」로 자리만 세웠고 `plan-api.md` §5.4(1061행)가 S06 에 배정하며 이름을 지었다.

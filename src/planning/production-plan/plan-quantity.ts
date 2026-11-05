@@ -80,19 +80,47 @@ export async function assertWithinOrder(
   delta: Prisma.Decimal,
   fieldName?: string,
 ): Promise<void> {
-  const locked = await tx.$queryRaw<{ order_qty: Prisma.Decimal }[]>`
-    SELECT order_qty FROM planning.production_order WHERE production_order_id = ${productionOrderId} FOR UPDATE`;
+  await checkWithinOrder(tx, productionOrderId, delta, fieldName, true);
+}
+
+/**
+ * 잠그지 않고 같은 검사를 미리 한다 — 채번 «전»에 불러 넘칠 것이 뻔한 요청이 번호를 쓰지 않게. 통과해도 트랜잭션 안의 `assertWithinOrder` 가
+ * 다시 본다(그 사이 다른 계획이 들어올 수 있다).
+ */
+export async function precheckWithinOrder(
+  client: Prisma.TransactionClient,
+  productionOrderId: bigint,
+  delta: Prisma.Decimal,
+  fieldName?: string,
+  reportAfterDelta = false,
+): Promise<void> {
+  await checkWithinOrder(client, productionOrderId, delta, fieldName, false, reportAfterDelta);
+}
+
+async function checkWithinOrder(
+  client: Prisma.TransactionClient,
+  productionOrderId: bigint,
+  delta: Prisma.Decimal,
+  fieldName: string | undefined,
+  lock: boolean,
+  reportAfterDelta = false,
+): Promise<void> {
+  const locked = await client.$queryRaw<{ order_qty: Prisma.Decimal }[]>(Prisma.sql`
+    SELECT order_qty FROM planning.production_order WHERE production_order_id = ${productionOrderId} ${lock ? Prisma.sql`FOR UPDATE` : Prisma.empty}`);
   if (locked.length === 0) return;
-  const sums = await tx.$queryRaw<{ confirmed: Prisma.Decimal; draft: Prisma.Decimal }[]>(Prisma.sql`
+  const sums = await client.$queryRaw<{ confirmed: Prisma.Decimal; draft: Prisma.Decimal }[]>(Prisma.sql`
     SELECT ${CONFIRMED_PLAN_QTY_SQL} AS confirmed, ${DRAFT_PLAN_QTY_SQL} AS draft
       FROM planning.production_order o WHERE o.production_order_id = ${productionOrderId}`);
   const orderQty = new Prisma.Decimal(locked[0].order_qty);
   const { confirmedQty, draftQty, remainingQty } = planQuantities(orderQty, new Prisma.Decimal(sums[0].confirmed), new Prisma.Decimal(sums[0].draft));
   if (remainingQty.minus(delta).gte(0)) return;
 
+  // `reportAfterDelta` — 본문이 작성중 계획 수량을 고쳐 보낸 경우(계획 제안 확정) 저장값이 아니라 반영 뒤 값을 보인다.
+  const draftShown = reportAfterDelta ? draftQty.plus(delta) : draftQty;
+  const remainingShown = reportAfterDelta ? remainingQty.minus(delta) : remainingQty;
   const message =
-    `ERP W/O 수량을 넘는 계획입니다 — ERP W/O ${orderQty.toString()} · 확정 계획 ${confirmedQty.toString()} · 작성 ${draftQty.toString()}` +
-    ` · 잔량 ${remainingQty.toString()}. 계획 수량을 줄이세요.`;
+    `ERP W/O 수량을 넘는 계획입니다 — ERP W/O ${orderQty.toString()} · 확정 계획 ${confirmedQty.toString()} · 작성 ${draftShown.toString()}` +
+    ` · 잔량 ${remainingShown.toString()}. 계획 수량을 줄이세요.`;
   throw new ContractException(HttpStatus.BAD_REQUEST, [
     fieldName === undefined
       ? { scope: 'screen', code: ERROR_CODE.PLAN_QTY_EXCEEDS_ORDER, message }

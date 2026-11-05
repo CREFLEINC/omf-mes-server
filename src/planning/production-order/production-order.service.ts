@@ -19,8 +19,11 @@ import {
   assertWorklistState,
   worklistReasonCountsSql,
   worklistReasonsOf,
+  worklistStateOf,
   worklistStateSql,
 } from './production-order-worklist';
+import { MasterReason, masterReasonsByTarget } from '../production-plan/master-choice';
+import { pairKey } from '../production-plan/resource-assign';
 import {
   ProductionOrderChangeFieldRow,
   ProductionOrderLastChange,
@@ -232,7 +235,7 @@ export class ProductionOrderService {
       this.derivedOf(ids),
       withLastChange ? this.lastChangesOf(rows) : Promise.resolve(new Map<bigint, ProductionOrderLastChange>()),
       this.autoPlans.viewsOf(rows),
-      this.worklistStatesOf(ids),
+      this.worklistStatesOf(rows),
       this.quantitiesOf(rows),
       this.itemGroupsOf(rows),
     ]);
@@ -247,6 +250,7 @@ export class ProductionOrderService {
         autoPlan: autoPlans.get(row.production_order_id) ?? null,
         worklistState: worklist.get(row.production_order_id)?.state,
         worklistReasons: worklist.get(row.production_order_id)?.reasons,
+        masterDataReasons: worklist.get(row.production_order_id)?.masterDataReasons,
         releasePendingWorkOrderCount: worklist.get(row.production_order_id)?.pending,
         liveWorkOrderCount: worklist.get(row.production_order_id)?.live,
         quantities: quantities.get(row.production_order_id),
@@ -314,13 +318,39 @@ export class ProductionOrderService {
     return new Map(items.map((item) => [item.item_id, { code: item.erp_item_group_code ?? undefined, name: item.erp_item_group_name ?? undefined }]));
   }
 
-  /** 페이지의 칩 판정·조치 필요 까닭·W/O 수 — 목록 필터와 같은 식(`worklistStateSql`)을 한 질의로. */
-  private async worklistStatesOf(ids: bigint[]): Promise<Map<bigint, { state: WorklistState; reasons?: WorklistReason[]; pending: number; live: number }>> {
-    if (ids.length === 0) return new Map();
-    const rows = await this.prisma.$queryRaw<({ production_order_id: bigint; state: WorklistState } & WorklistReasonCounts)[]>(Prisma.sql`
-      SELECT o.production_order_id, ${worklistStateSql()} AS state, ${worklistReasonCountsSql()}
-        FROM planning.production_order o WHERE o.production_order_id IN (${Prisma.join(ids)})`);
-    return new Map(rows.map((row) => [row.production_order_id, { state: row.state, reasons: worklistReasonsOf(row.state, row), pending: row.pending, live: row.live }]));
+  /**
+   * 페이지의 칩 판정·조치 필요 까닭·W/O 수 — 목록 필터(`worklistStateSql`)와 같은 조각으로 센 값에서 판정한다.
+   * 계획 전 오더에는 계획을 막는 기준정보(`masterDataReasons`)를 싣는다 — 라인·4M 은 제안에서만 본다.
+   */
+  private async worklistStatesOf(
+    rows: ProductionOrderRow[],
+  ): Promise<Map<bigint, { state: WorklistState; reasons?: WorklistReason[]; masterDataReasons?: MasterReason[]; pending: number; live: number }>> {
+    if (rows.length === 0) return new Map();
+    const counted = await this.prisma.$queryRaw<({ production_order_id: bigint } & WorklistReasonCounts)[]>(Prisma.sql`
+      SELECT o.production_order_id, ${worklistReasonCountsSql()}
+        FROM planning.production_order o WHERE o.production_order_id IN (${Prisma.join(rows.map((row) => row.production_order_id))})`);
+    const states = new Map(counted.map((row) => [row.production_order_id, worklistStateOf(row)]));
+    const rowOf = new Map(rows.map((row) => [row.production_order_id, row]));
+    const targetOf = (orderId: bigint) => {
+      const row = rowOf.get(orderId) as ProductionOrderRow;
+      return { plantId: row.plant_id, itemId: row.item_id };
+    };
+    const masters = await masterReasonsByTarget(
+      this.prisma,
+      counted.filter((row) => states.get(row.production_order_id) === 'BEFORE_PLAN').map((row) => targetOf(row.production_order_id)),
+    );
+    return new Map(counted.map((row) => {
+      const state = states.get(row.production_order_id) as WorklistState;
+      const target = targetOf(row.production_order_id);
+      const blocking = state === 'BEFORE_PLAN' ? masters.get(pairKey(target.plantId, target.itemId)) : undefined;
+      return [row.production_order_id, {
+        state,
+        reasons: worklistReasonsOf(state, row),
+        masterDataReasons: blocking === undefined || blocking.length === 0 ? undefined : blocking,
+        pending: row.pending,
+        live: row.live,
+      }];
+    }));
   }
 
   /** §5-4 — `withLastChange=true` 일 때만. `last_change_received_at` 이 널이면 지도에 없다(키 생략). */

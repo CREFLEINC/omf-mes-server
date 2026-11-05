@@ -168,6 +168,8 @@ const WORKER_TABLE_READERS = [
   'maintenance/inspection/inspection-write.service.ts',
   'mdm/organization/department.service.ts',
   'mdm/organization/worker.service.ts',
+  // 계획 제안 확정의 보완 작업자 — 공장·활성만 본다. 사번 헤더 판정이 아니다.
+  'planning/plan-proposal/proposal-confirm-check.ts',
   // 4M 작업자 추천(P-68) — 후보의 공장·활성만 본다. 사번 헤더 판정이 아니다.
   'production/work-order/crew-recommendation.ts',
   // 생산 알림의 실행한 사람 이름(omf-all-around#160 · P-93) — 이름만 읽는다. 사번 헤더 판정이 아니다.

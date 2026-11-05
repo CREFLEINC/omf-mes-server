@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { RoutingCandidate, chooseRouting, defaultBomOf } from '../production-plan/master-choice';
 import { PlanQtyFact, sumPlanQty } from '../production-plan/plan-quantity';
 import { DefaultMap, OperationNeed, assignResources } from '../production-plan/resource-assign';
 
@@ -23,10 +24,7 @@ export interface AutoPlanView {
   reasons: AutoPlanReason[];
 }
 
-export interface RoutingCandidate {
-  routingId: bigint;
-  isDefault: boolean;
-}
+export type { RoutingCandidate } from '../production-plan/master-choice';
 
 export interface MasterChoice {
   bomId: bigint | null;
@@ -34,25 +32,15 @@ export interface MasterChoice {
   reasons: AutoPlanReason[];
 }
 
-/**
- * W-02-02 가 계획 행에 미리 채우는 BOM·Routing 과 같은 규칙이다(`master-check-pane.tsx` 의
- * `automaticBomId`·`automaticRoutingId`) — 화면에서 사람이 고를 값과 자동 계획이 고른 값이 갈리지 않게.
- * BOM 은 기본 Rev 하나, Routing 은 쓸 수 있는 Rev 가 하나면 그것, 여럿이면 그중 기본 Rev 하나다.
- */
+/** 고르는 규칙은 계획 제안과 같은 `master-choice.ts` 다 — 사유 이름만 이 계약의 것으로 옮긴다. */
 export function chooseMasters(defaultBomIds: readonly bigint[], usableRoutings: readonly RoutingCandidate[]): MasterChoice {
   const reasons: AutoPlanReason[] = [];
-  const bomId = defaultBomIds.length === 1 ? defaultBomIds[0] : null;
+  const bomId = defaultBomOf(defaultBomIds);
   if (bomId === null) reasons.push('BOM_MISSING');
-
-  let routingId: bigint | null = null;
-  if (usableRoutings.length === 0) reasons.push('ROUTING_MISSING');
-  else if (usableRoutings.length === 1) routingId = usableRoutings[0].routingId;
-  else {
-    const defaults = usableRoutings.filter((routing) => routing.isDefault);
-    if (defaults.length === 1) routingId = defaults[0].routingId;
-    else reasons.push('ROUTING_AMBIGUOUS');
-  }
-  return { bomId, routingId, reasons };
+  const routing = chooseRouting(usableRoutings);
+  if (routing.reason === 'ROUTING_REQUIRED') reasons.push('ROUTING_MISSING');
+  if (routing.reason === 'ROUTING_DEFAULT_REQUIRED') reasons.push('ROUTING_AMBIGUOUS');
+  return { bomId, routingId: routing.routingId, reasons };
 }
 
 /**
@@ -62,17 +50,6 @@ export function chooseMasters(defaultBomIds: readonly bigint[], usableRoutings: 
 export function expansionHasLine(planLineId: bigint | null, operations: readonly OperationNeed[], maps: readonly DefaultMap[]): boolean {
   if (planLineId !== null) return true;
   return [...assignResources([...operations], [...maps]).values()].some((resource) => resource.equipmentLineId !== null);
-}
-
-/**
- * 받을 때 자동 계획을 건너뛰는가 — 받은 상태가 아니거나, 오더의 날짜(납기, 없으면 계획 시작일)가 공장 현지 오늘보다 앞이다.
- * ERP W/O 는 납기 없이 계획 시작일만 온다 — 지난 오더를 몰아 받을 때 계획이 쏟아지지 않게 그 날짜로 본다.
- * 날짜는 모두 `YYYY-MM-DD` 라 문자열 비교가 날짜 비교다.
- */
-export function skipOnReceipt(statusCode: string, dueDate: string | null, plannedStartDate: string | null, today: string): boolean {
-  if (statusCode !== 'RECEIVED') return true;
-  const date = dueDate ?? plannedStartDate;
-  return date !== null && date < today;
 }
 
 /** 계획일 — ERP 계획 시작일이 오늘 이후면 그날, 없거나 지났으면 공장 현지 오늘. */

@@ -1,13 +1,14 @@
 import { Prisma } from '@prisma/client';
 
+import { crossesMidnight } from '../../core/calendar/shift-crossing';
+
 type Tx = Prisma.TransactionClient;
 
-/** 교대 창 하나. `mdm.shift` 에서 판정에 필요한 네 칸만 뽑는다. */
+/** 교대 창 하나. 자정 넘김은 플래그가 아니라 시각으로 본다(`crossesMidnight`). */
 export interface ShiftWindow {
   readonly shift_id: bigint;
   readonly start_time: Date;
   readonly end_time: Date;
-  readonly crosses_midnight: boolean;
 }
 
 /**
@@ -41,7 +42,7 @@ export function pickShift(shifts: ShiftWindow[], localTime: string): bigint | nu
   for (const shift of ordered) {
     const start = timeOf(shift.start_time);
     const end = timeOf(shift.end_time);
-    const inside = shift.crosses_midnight
+    const inside = crossesMidnight(start, end)
       ? localTime >= start || localTime < end
       : localTime >= start && localTime < end;
     if (inside) return shift.shift_id;
@@ -69,7 +70,7 @@ export async function resolveShiftId(
 
   const shifts = await tx.shift.findMany({
     where: { plant_id: plantId, is_active: true },
-    select: { shift_id: true, start_time: true, end_time: true, crosses_midnight: true },
+    select: { shift_id: true, start_time: true, end_time: true },
   });
 
   return pickShift(shifts, localTimeOf(startedAt, plant.timezone_code));

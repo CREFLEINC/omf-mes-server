@@ -4,7 +4,7 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { IdempotencyService, requestFingerprint } from '../idempotency';
-import type { IdempotencyConflictCode } from '../idempotency';
+import type { IdempotencyConflictCode, IdempotencyContext } from '../idempotency';
 import { ifMatchVersion, setEtag } from '../optimistic-lock';
 
 /**
@@ -32,21 +32,31 @@ export async function runIdempotent<T>(
   conflictCode?: IdempotencyConflictCode,
   fingerprintBody?: unknown,
 ): Promise<T> {
-  const session = currentSession(request);
   const outcome = await idempotency.run(
-    {
-      key: String(request.headers['idempotency-key']),
-      fingerprint: requestFingerprint(
-        `${request.method} ${request.path}`,
-        fingerprintBody ?? request.body,
-      ),
-      successStatus,
-      ...(session === undefined ? {} : { appUserId: session.userId }),
-      ...(conflictCode === undefined ? {} : { conflictCode }),
-    },
+    idempotencyContextOf(request, successStatus, conflictCode, fingerprintBody),
     (tx) => work(tx),
   );
   return outcome.body;
+}
+
+/**
+ * `runIdempotent` 가 쓰는 멱등 문맥 — 번호를 트랜잭션 밖에서 뽑는 쓰기가 채번 «전»에 `replayExisting` 으로 재전송을
+ * 걸러 내고 같은 문맥으로 `run` 하게 따로 낸다.
+ */
+export function idempotencyContextOf(
+  request: Request,
+  successStatus: number,
+  conflictCode?: IdempotencyConflictCode,
+  fingerprintBody?: unknown,
+): IdempotencyContext {
+  const session = currentSession(request);
+  return {
+    key: String(request.headers['idempotency-key']),
+    fingerprint: requestFingerprint(`${request.method} ${request.path}`, fingerprintBody ?? request.body),
+    successStatus,
+    ...(session === undefined ? {} : { appUserId: session.userId }),
+    ...(conflictCode === undefined ? {} : { conflictCode }),
+  };
 }
 
 /** 멱등 + 낙관적 잠금. 새 `version_no` 를 ETag 로 돌려준다. */

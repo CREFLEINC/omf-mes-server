@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { crossesMidnight, shiftTimeOf } from '../../../core/calendar/shift-crossing';
 import { IF_WO_CLOSE } from '../../../core/outbox/outbox.service';
 import { localDate } from '../../../planning/production-plan/plan-window';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -33,7 +34,7 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
       work_order_type_code: true,
       closed_at: true,
       item: { select: { base_uom_id: true } },
-      shift: { select: { crosses_midnight: true } },
+      shift: { select: { start_time: true, end_time: true } },
       routing_operation: { select: { routing_id: true, operation_seq: true } },
       production_plan: {
         select: {
@@ -76,7 +77,7 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
     PRODT_ORDER_NO: order.erp_order_no,
     OPR_NO: order.erp_operation_no,
     REPORT_DT: localDate(workOrder.closed_at, order.plant.timezone_code),
-    SHIFT_CD: workOrder.shift?.crosses_midnight === true ? 'N' : 'D',
+    SHIFT_CD: workOrder.shift !== null && crossesMidnight(shiftTimeOf(workOrder.shift.start_time), shiftTimeOf(workOrder.shift.end_time)) ? 'N' : 'D',
     REASON_CD: null,
     LOT_NO: '',
     LOT_SUB_NO: 0,

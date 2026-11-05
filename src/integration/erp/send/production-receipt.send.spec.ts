@@ -18,7 +18,7 @@ const WORK_ORDER = {
   // 하노이 2026-10-22 01:30 — UTC 로는 아직 21일이다.
   closed_at: new Date('2026-10-21T18:30:00.000Z'),
   item: { base_uom_id: 1n },
-  shift: null as { crosses_midnight: boolean } | null,
+  shift: null as { start_time: Date; end_time: Date } | null,
   routing_operation: { routing_id: 7n, operation_seq: 20 },
   production_plan: { production_order: ORDER } as { production_order: Record<string, unknown> } | null,
 };
@@ -84,10 +84,11 @@ describe('productionReceiptBuilder', () => {
   });
 
   it.each([
-    [true, 'N'],
-    [false, 'D'],
-  ])('계획 근무조가 자정을 넘는가(%s) → %s', async (crossesMidnight, shiftCode) => {
-    const [row] = await build({ workOrder: { shift: { crosses_midnight: crossesMidnight } } });
+    ['20:00:00', '08:00:00', 'N'],
+    ['08:00:00', '20:00:00', 'D'],
+  ])('계획 근무조 %s~%s — 자정을 넘으면(시각 기준) N, 아니면 D', async (start, end, shiftCode) => {
+    const time = (hhmmss: string): Date => new Date(`1970-01-01T${hhmmss}.000Z`);
+    const [row] = await build({ workOrder: { shift: { start_time: time(start), end_time: time(end) } } });
 
     expect(row.values.SHIFT_CD).toBe(shiftCode);
   });

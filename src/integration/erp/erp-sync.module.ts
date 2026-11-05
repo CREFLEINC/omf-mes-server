@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { AutoPlanService } from '../../planning/production-order/auto-plan.service';
-import { PlanningModule } from '../../planning/planning.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { bomTable } from './apply/bom.apply';
 import { commonCodeTable } from './apply/common-code.apply';
@@ -30,17 +28,15 @@ import { SyncLease } from './sync-lease';
 import { SyncState } from './sync-state';
 
 /**
- * ERP 연동 — api 프로세스 안에서 돈다. 다른 모듈에는 받은 ERP W/O 의 자동 계획에만 기댄다 — ERP 가 느려 화면에
- * 영향이 보이면 이 모듈만 띄우는 worker 로 떼어 낸다(2026-10-16 결정).
+ * ERP 연동 — api 프로세스 안에서 돈다. ERP 가 느려 화면에 영향이 보이면 이 모듈만 띄우는 worker 로 떼어 낸다(2026-10-16 결정).
  */
 @Module({
-  imports: [PlanningModule],
   controllers: [ErpSyncController],
   providers: [
     {
       provide: ERP_SYNC_LANES,
-      inject: [ConfigService, AutoPlanService],
-      useFactory: (config: ConfigService, autoPlans: AutoPlanService): Lane[] => {
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): Lane[] => {
         const settings = erpSyncConfig(config);
         // 참조되는 쪽이 앞이다. 전표는 기준정보 회차가 끝난 뒤 같은 줄에서 돈다(실행기가 순서대로).
         const master: Lane = {
@@ -55,8 +51,7 @@ import { SyncState } from './sync-state';
           tables: [
             purchaseOrderTable,
             salesOrderTable,
-            // ERP 수신에는 세션이 없다 — 계획의 작성자를 비운다.
-            productionOrderTable((id) => autoPlans.planReceived(Number(id), undefined)),
+            productionOrderTable,
           ],
           intervalMs: settings.orderIntervalMs,
         };

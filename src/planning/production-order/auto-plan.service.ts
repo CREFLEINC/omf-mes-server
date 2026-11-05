@@ -65,8 +65,9 @@ interface OrderFacts {
 }
 
 /**
- * ERP W/O 를 받으면 계획을 하나 세우고, 정할 수 있으면 확정까지 한다. 정할 수 없으면 확정하지 않고
+ * `:auto-plan` — 계획을 하나 세우고, 정할 수 있으면 확정까지 한다. 정할 수 없으면 확정하지 않고
  * 그 이유를 목록·상세의 `autoPlan` 으로 보인다 — 별도 표 없이 읽을 때 계산한다.
+ * ⚠ 계획 제안(`plan-proposal`)으로 화면이 옮겨 가면 지운다. ERP 수신·수기 등록은 더는 부르지 않는다.
  */
 @Injectable()
 export class AutoPlanService {
@@ -77,18 +78,6 @@ export class AutoPlanService {
     private readonly plans: ProductionPlanService,
     private readonly confirms: PlanConfirmService,
   ) {}
-
-  /**
-   * 오더 수신 뒤 — 수신이 커밋된 «다음»에 부른다. 건너뛸지(`skipOnReceipt`)는 수신이 정하고 시도 시각도 수신 트랜잭션에서
-   * 찍는다 — 여기서 무엇이 실패해도 오더는 「확인 필요」로 남고 `:auto-plan` 으로 다시 한다. ⛔ 실패를 던지지 않는다.
-   */
-  async planReceived(productionOrderId: number, appUserId: number | undefined): Promise<void> {
-    try {
-      await this.run(productionOrderId, appUserId);
-    } catch (error) {
-      this.logger.warn(`ERP W/O ${String(productionOrderId)} 자동 계획 실패 — ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
 
   /**
    * 계획이 없으면 세우고(정할 수 있으면 확정), 작성중 계획이 있으면 이제 라인이 서는지 보고 확정한다.
