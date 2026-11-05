@@ -53,6 +53,7 @@ import { InboundVarianceService } from './inbound-receipt/inbound-variance.servi
 import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
 import { MaterialIssueRequestEditController } from './material-issue-request/material-issue-request-edit.controller';
 import { MaterialIssueRequestEditService } from './material-issue-request/material-issue-request-edit.service';
+import { FreeStockService } from './material-issue-request/free-stock.service';
 import { PlannedStockService } from './material-issue-request/planned-stock.service';
 import { PlannedManualRequestCreator } from './material-issue-request/manual-request-planned';
 import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
@@ -260,6 +261,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     MaterialIssueRequestQueryService,
     MaterialIssueRequestEditService,
     PlannedStockService,
+    FreeStockService,
     PlannedManualRequestCreator,
     ReplenishmentItemService,
     ReplenishmentRunService,
