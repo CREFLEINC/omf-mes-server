@@ -4,13 +4,14 @@ import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
-import { DocumentStateModule } from '../core/document-state';
+import { DocumentStateModule, DocumentStateService } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule, NumberingService } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
 import { MaterialIssueReleaser } from '../core/material-issue/release-request';
+import { ReplenishmentCreator } from '../core/material-issue/replenishment-create';
 import { PickingHandoverNotifier } from '../core/picking';
 import { SyncLease } from '../integration/erp/sync-lease';
 import { PrismaService } from '../prisma/prisma.service';
@@ -63,6 +64,7 @@ import { ReplenishmentArrivalController } from './replenishment/replenishment-ar
 import { ReplenishmentArrivalService } from './replenishment/replenishment-arrival.service';
 import { ReplenishmentRunController } from './replenishment/replenishment-run.controller';
 import { ReplenishmentRunService } from './replenishment/replenishment-run.service';
+import { REPLENISHMENT_LEASE, ReplenishmentRunner } from './replenishment/replenishment.runner';
 import { ReplenishmentItemController } from './replenishment/replenishment-item.controller';
 import { ReplenishmentItemService } from './replenishment/replenishment-item.service';
 import { ReplenishmentRequestController } from './replenishment/replenishment-request.controller';
@@ -193,6 +195,25 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
           prisma,
           new SyncLease(prisma, MATERIAL_ISSUE_RELEASE_LEASE),
           releaser,
+          numbering,
+        ),
+    },
+    // 생산 창고 자동 보충(피처 004) — 운영 서버에서 REPLENISHMENT_ENABLED=true 여야 돈다(research R-13).
+    {
+      provide: ReplenishmentRunner,
+      inject: [ConfigService, PrismaService, DocumentStateService, PickingHandoverNotifier, NumberingService],
+      useFactory: (
+        config: ConfigService,
+        prisma: PrismaService,
+        documentState: DocumentStateService,
+        pickingNotices: PickingHandoverNotifier,
+        numbering: NumberingService,
+      ): ReplenishmentRunner =>
+        new ReplenishmentRunner(
+          config.get<string>('REPLENISHMENT_ENABLED') === 'true',
+          prisma,
+          new SyncLease(prisma, REPLENISHMENT_LEASE),
+          new ReplenishmentCreator(documentState, pickingNotices),
           numbering,
         ),
     },
