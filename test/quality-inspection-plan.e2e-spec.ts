@@ -298,9 +298,10 @@ describe('검사기준 헤더 (e2e)', () => {
         pqcSkipAllowed: true,
       })
       .expect(200);
+    // PQC 기준은 공정에 붙지 않는다 — 보낸 공정은 비워 저장한다(사용자 결정 2026-11-04).
     expect(saved.body).toMatchObject({
       itemId,
-      processId,
+      processId: null,
       inspectionTypeCode: 'PQC',
       pqcSkipAllowed: true,
       nameKo: '한국어',

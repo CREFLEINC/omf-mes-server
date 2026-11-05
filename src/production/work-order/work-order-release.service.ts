@@ -60,12 +60,9 @@ export class WorkOrderReleaseService {
   ): Promise<WaitingResult | null> {
     const plan = await releasePlan(this.prisma, this.numbering, workOrderId, body.lotSize);
     const issue = plan.issueRequestNo === null ? null : await this.issuePlan(plan, plan.issueRequestNo);
-    /* 검사 공정이면 PQC 의뢰도 이 배포가 만든다 — 채번·기준 조회는 트랜잭션 밖이다. */
+    /* PQC 대상 품목이면 PQC 의뢰도 이 배포가 만든다 — 채번·기준 조회는 트랜잭션 밖이다. */
     const pqc = await preparePqcRequest(this.prisma, this.numbering, {
-      inspectionManaged: plan.row.routing_operation.inspection_managed,
       itemId: plan.row.item_id,
-      processId: plan.row.routing_operation.process_id,
-      routingId: plan.row.routing_operation.routing_id,
       orderQty: plan.row.order_qty,
       businessDate: plan.businessDate,
     });

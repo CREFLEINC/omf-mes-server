@@ -28,77 +28,62 @@ describe('inspectionQty', () => {
   });
 });
 
-/** PQC 기준 고르기 — 품목 전용 기준이 먼저, 없으면 「전 품목 공통」(사용자 결정 2026-11-04). */
-describe('preparePqcRequest — 전 품목 공통 기준', () => {
-  const row = (id: bigint, processId: bigint | null = null, routingId: bigint | null = null) => ({
+/** PQC 대상은 품목이다 — 품목 전용 PQC 기준이 있는 품목만, 「전 품목 공통」은 쓰지 않는다(사용자 결정 2026-11-05). */
+describe('preparePqcRequest — 품목 PQC 대상', () => {
+  const row = (id: bigint) => ({
     inspection_plan_version_id: id,
     inspection_plan_id: id,
     plan_version: 1,
     sampling_method_code: 'FULL_INSPECTION',
     sampling_ratio: null,
     sampling_qty: null,
-    inspection_plan: { process_id: processId, routing_id: routingId, default_skip: false },
+    inspection_plan: { default_skip: false },
   });
-  const run = async (byItem: Map<bigint | null, ReturnType<typeof row>[]>) => {
-    const asked: (bigint | null)[] = [];
+  const run = async (targeted: number, versions: ReturnType<typeof row>[]) => {
+    const asked: unknown[] = [];
+    const counted: unknown[] = [];
     const prisma = {
+      inspection_plan: {
+        count: async ({ where }: { where: unknown }) => {
+          counted.push(where);
+          return targeted;
+        },
+      },
       inspection_plan_version: {
-        findMany: async ({ where }: { where: { inspection_plan: { item_id: bigint | null } } }) => {
-          asked.push(where.inspection_plan.item_id);
-          return byItem.get(where.inspection_plan.item_id) ?? [];
+        findMany: async ({ where }: { where: { inspection_plan: unknown } }) => {
+          asked.push(where.inspection_plan);
+          return versions;
         },
       },
     } as unknown as PrismaService;
     const numbering = { next: jest.fn().mockResolvedValue('IR-1') } as unknown as NumberingService;
     const plan = await preparePqcRequest(prisma, numbering, {
-      inspectionManaged: true, itemId: 10n, processId: 2n, routingId: 1n,
-      orderQty: new Prisma.Decimal(100), businessDate: '2026-11-04',
+      itemId: 10n, orderQty: new Prisma.Decimal(100), businessDate: '2026-11-04',
     });
-    return { plan, asked };
+    return { plan, asked, counted, numbering };
   };
 
-  it('품목 전용 기준이 있으면 그것을 쓰고 공통 기준은 보지 않는다', async () => {
-    const { plan, asked } = await run(new Map([[10n, [row(1n)]], [null, [row(2n)]]]));
+  it('⭐ 품목 전용 기준이 있으면 그 기준으로 의뢰를 만든다 — 공정 · 라우팅 · 공통 기준 조건 없이', async () => {
+    const { plan, asked, counted } = await run(1, [row(1n)]);
     expect(plan?.inspectionPlanVersionId).toBe(1n);
-    expect(asked).toEqual([10n]);
+    expect(counted).toEqual([{ inspection_type_code: 'PQC', is_active: true, item_id: 10n }]);
+    expect(asked).toEqual([{ inspection_type_code: 'PQC', is_active: true, item_id: 10n }]);
   });
 
-  it('품목 전용 기준이 없으면 공통 기준을 쓴다 — 공정 지정 기준이 이기는 규칙도 같다', async () => {
-    const { plan, asked } = await run(new Map([[null, [row(2n), row(3n, 2n)]]]));
-    expect(plan?.inspectionPlanVersionId).toBe(3n);
-    expect(asked).toEqual([10n, null]);
+  it('품목 전용 기준이 없으면 의뢰를 만들지 않는다 — 「전 품목 공통」 기준이 있어도', async () => {
+    const { plan, asked, numbering } = await run(0, [row(2n)]);
+    expect(plan).toBeNull();
+    expect(asked).toEqual([]);
+    expect(numbering.next).not.toHaveBeenCalled();
   });
 
-  it('공정 + 라우팅을 다 지정한 기준이 공정만 지정한 기준을 이긴다', async () => {
-    const { plan } = await run(new Map([[10n, [row(4n, 2n), row(5n, 2n, 1n)]]]));
-    expect(plan?.inspectionPlanVersionId).toBe(5n);
+  it('제품 기준 버전이 둘이면 고르지 않는다 — 기준 없는 의뢰', async () => {
+    const { plan } = await run(1, [row(1n), row(3n)]);
+    expect(plan?.inspectionPlanVersionId).toBeNull();
   });
 
-  it('⭐ 공정과 라우팅이 둘 다 맞아야 받는다 — 같은 라우팅의 다른 공정 기준은 조회 조건에서 빠진다', async () => {
-    let where: unknown;
-    const prisma = {
-      inspection_plan_version: {
-        findMany: async (args: { where: { inspection_plan: unknown } }) => {
-          where = args.where.inspection_plan;
-          return [];
-        },
-      },
-    } as unknown as PrismaService;
-    const numbering = { next: jest.fn().mockResolvedValue('IR-1') } as unknown as NumberingService;
-    await preparePqcRequest(prisma, numbering, {
-      inspectionManaged: true, itemId: 10n, processId: 2n, routingId: 1n,
-      orderQty: new Prisma.Decimal(100), businessDate: '2026-11-04',
-    });
-    expect(where).toMatchObject({
-      AND: [
-        { OR: [{ process_id: 2n }, { process_id: null }] },
-        { OR: [{ routing_id: 1n }, { routing_id: null }] },
-      ],
-    });
-  });
-
-  it('둘 다 없으면 종전처럼 기준 없는 의뢰다', async () => {
-    const { plan } = await run(new Map());
+  it('기준에 유효한 확정 버전이 없으면 종전처럼 기준 없는 의뢰다', async () => {
+    const { plan } = await run(1, []);
     expect(plan?.inspectionPlanVersionId).toBeNull();
   });
 });

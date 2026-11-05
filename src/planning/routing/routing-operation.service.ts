@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { SEQ_PARKING_OFFSET, assertCodeValues, optional } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
-import { syncPqcPlanToRoutingOperation } from '../../quality/inspection-plan/pqc-routing-sync';
 import { REVISION_STATUS } from '../revision-status';
 
 /** 계약 `RoutingOperation` 과 동형. 필드는 `x-source-column` 을 그대로 따른다. */
@@ -90,7 +89,7 @@ export class RoutingOperationService {
     await this.assertDraft(routingId, '공정 라인을 저장');
     const existing = await this.prisma.routing_operation.findMany({
       where: { routing_id: routingId },
-      select: { routing_operation_id: true, process_id: true, inspection_managed: true },
+      select: { routing_operation_id: true },
     });
     const known = new Set(existing.map((row) => Number(row.routing_operation_id)));
 
@@ -129,38 +128,9 @@ export class RoutingOperationService {
           data: { ...writeData(routingId, operation), version_no: { increment: 1 } },
         });
       }
-      await this.syncPqcPlans(tx, routingId, existing, operations);
     });
 
     return this.read(routingId);
-  }
-
-  /**
-   * 「검사 관리」를 바꾼 공정은 그 품목 · 공정 PQC 기준의 「기본 생략」을 반대로 맞춘다(사용자 결정 2026-11-04 · IQC 품목 연동과 같은 결).
-   * 새 공정은 켠 경우만 맞춘다 — 끈 채 넣은 공정마다 기준을 만들지 않는다.
-   */
-  private async syncPqcPlans(
-    tx: Prisma.TransactionClient,
-    routingId: number,
-    existing: { routing_operation_id: bigint; process_id: bigint; inspection_managed: boolean }[],
-    operations: RoutingOperationUpsert[],
-  ): Promise<void> {
-    const before = new Map(existing.map((row) => [Number(row.routing_operation_id), row]));
-    const changed = operations.filter((operation) => {
-      const prev = operation.routingOperationId === undefined ? undefined : before.get(operation.routingOperationId);
-      if (prev === undefined) return operation.inspectionManaged;
-      return prev.inspection_managed !== operation.inspectionManaged || Number(prev.process_id) !== operation.processId;
-    });
-    if (changed.length === 0) return;
-    const routing = await tx.routing.findUnique({ where: { routing_id: routingId }, select: { item_id: true } });
-    if (routing === null) return;
-    for (const operation of changed) {
-      await syncPqcPlanToRoutingOperation(tx, {
-        itemId: routing.item_id,
-        processId: BigInt(operation.processId),
-        inspectionManaged: operation.inspectionManaged,
-      });
-    }
   }
 
   // ── 선후행 ──────────────────────────────────────────────────────────────
