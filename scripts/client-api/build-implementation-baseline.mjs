@@ -17,7 +17,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
 const GENERATED_ON = "2026-10-30";
-const DELIVERY_DIR = "2026-11-03";
+const DELIVERY_DIR = "2026-11-05";
 const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${DELIVERY_DIR}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
@@ -27,11 +27,11 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 작업 브랜치의 커밋을 적으면 squash 병합이나
 // 브랜치 자동 삭제로 해시가 사라질 수 있고, 그러면 아래 assertSourceMatchesServerCommit 의
 // `git rev-parse <sha>:src` 가 새 클론에서 죽는다. 그래서 전달본은 «병합된 뒤» main 의 커밋을 적어 뽑는다.
-// 지금 적힌 것은 main 의 병합 커밋이다 — 배치도 표식 기본 너비 0.12(#936) · 옛 초과분 사용 제거(#934) ·
-// 제품 검사표 formLayoutCode 질의(#939)가 들어간 지점(병합 3fd896a8).
+// 지금 적힌 것은 main 의 병합 커밋이다 — ERP W/O 데이터 범위(공장)·잔량·계획 상태·품목그룹·계획 수량 초과 차단(#1002)이
+// 들어간 지점(병합 23db09e6).
 const SERVER_VERSION = "v0.1.21-next";
-const SERVER_COMMIT = "3fd896a85be807db2e6e3a892da2778410a5307e";
-const GENERATED_VERSION = "0.1.21-next-server.20261103.1";
+const SERVER_COMMIT = "23db09e618dfdc07a60f1d0a7d4e2f341fa039b5";
+const GENERATED_VERSION = "0.1.21-next-server.20261105.1";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -794,9 +794,10 @@ function build() {
   //    2026-10-30 전달본: 검사표 기준 2건(#916) · 계약 이관 7건(#912 1 · #913 2 · #914 2 · #915 2)을 더해 **571** 이다 — `contract-registry.spec.ts` 의 수치와 같다.
   //    2026-10-30 둘째 전달본: ERP 받기 표별 상태·지금 읽기·ERP 창고 3건(#920)을 더해 **574** 다 — `contract-registry.spec.ts` 의 수치와 같다.
   //    2026-10-30 셋째 전달본: 입고 기본값 1건(#924)을 더해 **575** 다 — `contract-registry.spec.ts` 의 수치와 같다.
+  //    2026-11-05 전달본: 검사기준 도면·계획 기반 출고·생산 창고 보충 등이 더한 오퍼레이션을 합쳐 **597** 이다 — `contract-registry.spec.ts` 의 수치와 같다.
   assert(
-    documentsByOperation.size === 575,
-    `계약 오퍼레이션 수가 575이 아닙니다: ${documentsByOperation.size}`,
+    documentsByOperation.size === 597,
+    `계약 오퍼레이션 수가 597이 아닙니다: ${documentsByOperation.size}`,
   );
 
   const missingOperations = [...documentsByOperation.keys()].filter(
