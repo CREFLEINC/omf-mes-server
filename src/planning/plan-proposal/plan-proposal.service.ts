@@ -100,7 +100,7 @@ export class PlanProposalService {
       const precheck = await this.check(this.prisma, orderId, body);
       if (!precheck.already) {
         const { delta, field } = quantityDelta(precheck.resolved);
-        await precheckWithinOrder(this.prisma, orderId, delta, field);
+        await precheckWithinOrder(this.prisma, orderId, delta, field, true);
       }
       const numbers = precheck.already ? { planNos: [], workOrderNos: [] } : await this.drawNumbers(precheck.proposal, precheck.resolved);
       try {

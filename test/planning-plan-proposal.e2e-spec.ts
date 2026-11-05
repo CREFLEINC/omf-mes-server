@@ -488,8 +488,22 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     it('작성중 계획 합이 그대로 넘으면 field 400 이고 저장하지 않는다', async () => {
       const { orderId } = await overOrder('OVER9');
       const response = await confirm(orderId, bodyOf(await proposalOf(orderId))).expect(400);
-      expect(response.body.errors).toEqual([expect.objectContaining({ scope: 'field', field: 'plans[0].plannedQty', code: 'PLAN_QTY_EXCEEDS_ORDER' })]);
+      // 수량을 바꾼 줄이 없으면 마지막 줄을 가리킨다.
+      expect(response.body.errors).toEqual([expect.objectContaining({
+        scope: 'field', field: 'plans[1].plannedQty', code: 'PLAN_QTY_EXCEEDS_ORDER', message: expect.stringMatching(/작성 110 · 잔량 -10/),
+      })]);
       expect(await prisma.production_plan.count({ where: { production_order_id: orderId, status_code: 'CONFIRMED' } })).toBe(0);
+    });
+
+    it('줄였지만 아직 넘으면 그 줄을 가리키고 문구는 본문 반영 뒤 값이다', async () => {
+      const { orderId } = await overOrder('OVER10');
+      const body = bodyOf(await proposalOf(orderId));
+      body.plans[1].plannedQty = 55;
+
+      const response = await confirm(orderId, body).expect(400);
+      expect(response.body.errors).toEqual([expect.objectContaining({
+        scope: 'field', field: 'plans[1].plannedQty', code: 'PLAN_QTY_EXCEEDS_ORDER', message: expect.stringMatching(/작성 105 · 잔량 -5/),
+      })]);
     });
 
     it('확정분이 수량을 채웠는데 작성중 계획이 남으면 보완 필요(BLOCKED DRAFT_PLAN_EXCEEDS_ORDER)다 — 목록은 조치 필요', async () => {

@@ -129,17 +129,14 @@ export async function resolveConfirm(
 
 /**
  * 이번 확정이 계획 수량 합계에 더하는 양 — 새 계획은 수량, 작성중 계획은 저장값과의 차.
- * 오류 칸은 수량이 늘어난 첫 계획이다(없으면 첫 계획) — 화면이 줄일 칸을 가리킨다.
+ * 오류 칸은 화면이 고칠 줄이다 — 수량을 늘린 첫 줄, 없으면 수량을 바꾼(줄였지만 아직 넘는) 첫 줄, 그것도 없으면 마지막 줄.
  */
 export function quantityDelta(plans: readonly ResolvedPlan[]): { delta: Prisma.Decimal; field: string } {
-  let delta = new Prisma.Decimal(0);
-  let field: string | undefined;
-  for (const plan of plans) {
-    const change = new Prisma.Decimal(plan.body.plannedQty).minus(plan.proposal.saved?.planned_qty ?? 0);
-    delta = delta.plus(change);
-    if (field === undefined && change.gt(0)) field = `plans[${plan.index}].plannedQty`;
-  }
-  return { delta, field: field ?? 'plans[0].plannedQty' };
+  const changes = plans.map((plan) => ({ index: plan.index, change: new Prisma.Decimal(plan.body.plannedQty).minus(plan.proposal.saved?.planned_qty ?? 0) }));
+  const delta = changes.reduce((sum, { change }) => sum.plus(change), new Prisma.Decimal(0));
+  const target =
+    changes.find(({ change }) => change.gt(0)) ?? changes.find(({ change }) => !change.isZero()) ?? changes[changes.length - 1];
+  return { delta, field: `plans[${target.index}].plannedQty` };
 }
 
 async function readReferences(client: Prisma.TransactionClient, body: ProposalConfirmBody) {
