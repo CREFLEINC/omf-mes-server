@@ -16,6 +16,8 @@ export type Place = { warehouseId: bigint; locationId: bigint };
 export class ReplenishmentFixture extends MaterialIssueFixture {
   /** W-02-12 만 가진 역할(FR-037). 상속한 `cookie` 의 역할에는 W-02-12 가 없다. */
   replenishmentCookie = "";
+  /** 모바일 생산창고 입고(M-01-09)만 가진 역할 — 그 경로의 권한은 바꾸지 않는다(FR-037). */
+  mobileCookie = "";
 
   constructor(
     private readonly nest: INestApplication,
@@ -44,6 +46,11 @@ export class ReplenishmentFixture extends MaterialIssueFixture {
       data: { app_user_id: user.app_user_id, role_id: role.role_id },
     });
     this.ids.replenishmentUser = user.app_user_id;
+    const mobile = await this.db.app_user.create({ data: { login_id: `${this.prefix}-U09`, user_name: "모바일 수령", status_code: "EMPLOYED" } });
+    const mobileRole = await this.db.role.create({ data: { role_code: `${this.prefix}-R09`, role_name: "모바일 수령" } });
+    await this.db.role_permission.create({ data: { role_id: mobileRole.role_id, permission_code: "M-01-09" } });
+    await this.db.user_role.create({ data: { app_user_id: mobile.app_user_id, role_id: mobileRole.role_id } });
+    this.mobileCookie = `${SESSION_COOKIE}=${this.nest.get(JwtService).sign({ sub: Number(mobile.app_user_id), typ: "session" })}`;
     // 출고 확정은 모바일 피킹·출고(M-01-08) 몫이다 — 상속한 사용자의 역할에 더한다.
     const base = await this.db.role.findUniqueOrThrow({ where: { role_code: `${this.prefix}-R` } });
     await this.db.role_permission.create({ data: { role_id: base.role_id, permission_code: 'M-01-08' } });
