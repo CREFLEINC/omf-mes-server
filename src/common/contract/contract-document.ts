@@ -87,7 +87,7 @@ function rewriteRefs(
 }
 
 const METHODS: readonly string[] = ['get', 'post', 'put', 'patch', 'delete'];
-const COMPONENT_KINDS = ['schemas', 'parameters', 'responses', 'headers', 'requestBodies'];
+const COMPONENT_KINDS = ['schemas', 'parameters', 'responses', 'headers', 'requestBodies', 'securitySchemes'];
 
 /** 오퍼레이션을 묶는 축. 최상위 경로가 곧 도메인이다(`/mdm/warehouses` 는 `mdm`). */
 function tagOf(path: string): string {
