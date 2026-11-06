@@ -472,16 +472,26 @@ describe('출고 전기', () => {
       lines,
     });
 
-  it.each(['DEFECTIVE', 'INSPECTION_PENDING', 'SCRAPPED'])(
+  it.each([
+    ['DEFECTIVE', '불량'],
+    ['INSPECTION_PENDING', '검사 대기'],
+    ['SCRAPPED', '폐기'],
+  ])(
     '전기 — 생산 투입 출고(피킹 지시 출처)는 %s LOT 이면 400 STATE_LOCKED 다(#240)',
-    async (status) => {
+    async (status, label) => {
       const { tx, posting, posted } = fake({ lotStatuses: [status] });
 
       const error = await thrown(() => postIssue(tx, posting, picking(), 1));
 
       expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       expect(error.getResponse()).toMatchObject({
-        errors: [{ field: 'lines[0].lotId', code: ERROR_CODE.STATE_LOCKED }],
+        errors: [
+          {
+            field: 'lines[0].lotId',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: `정상이 아닌 LOT 은 생산 투입 출고할 수 없습니다(현재 상태: ${label}).`,
+          },
+        ],
       });
       expect(posted).toHaveLength(0);
     },

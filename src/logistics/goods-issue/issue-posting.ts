@@ -40,6 +40,12 @@ const PUTAWAY_CANCELLED = 'CANCELLED';
 const DESTINATION_LOCATION = 'LOCATION';
 const PICKING_ORDER = 'PICKING_ORDER';
 const LOT_NORMAL = 'NORMAL';
+/** 오류 문장에 싣는 LOT 상태 표시명 — 계약 `LotQualityStatus.lotStatusCode` 설명과 같은 이름이다. */
+const LOT_STATUS_LABEL: Record<string, string> = {
+  INSPECTION_PENDING: '검사 대기',
+  DEFECTIVE: '불량',
+  SCRAPPED: '폐기',
+};
 
 /** I-23 이 재사용하는 «데이터 모양». 서비스도 `postIssue()` 도 넘기지 않는다. */
 export interface GoodsIssueHeaderWriteInput {
@@ -385,7 +391,7 @@ async function assertLotNotBlocked(
       field(
         `lines[${index}].lotId`,
         ERROR_CODE.STATE_LOCKED,
-        `정상이 아닌 LOT 은 생산 투입 출고할 수 없습니다(${status}).`,
+        `정상이 아닌 LOT 은 생산 투입 출고할 수 없습니다(현재 상태: ${LOT_STATUS_LABEL[status] ?? status}).`,
       ),
     );
   }
