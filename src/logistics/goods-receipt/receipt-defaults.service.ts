@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PUTAWAY_STAGING } from '../../common/master';
+import { matchErpWarehouse } from '../../core/erp-warehouse/erp-warehouse-match';
 import { PrismaService } from '../../prisma/prisma.service';
 import { inboundLineOfLot, receivableQtyOf } from './lot-receivable';
 
@@ -60,7 +61,7 @@ export interface ReceiptDefaults {
 
 type LotRow = { lot_id: bigint; lot_no: string; item_id: bigint; uom_id: bigint; status_code: string };
 type LineRow = Prisma.inbound_receipt_lineGetPayload<{ select: typeof LINE_SELECT }>;
-type WarehouseRow = { warehouse_id: bigint; warehouse_code: string; warehouse_name: string; plant_id: bigint };
+type WarehouseRow = { warehouse_id: bigint; warehouse_code: string; warehouse_name: string; plant_id: bigint; is_active: boolean };
 
 const LINE_SELECT = {
   inbound_receipt_line_id: true,
@@ -117,7 +118,7 @@ export class ReceiptDefaultsService {
   }> {
     const codes = [...new Set(lines.flatMap(erpCodesOf))];
     const plants = [...new Set(lines.map((line) => line.inbound_receipt.plant_id))];
-    const select = { warehouse_id: true, warehouse_code: true, warehouse_name: true, plant_id: true } as const;
+    const select = { warehouse_id: true, warehouse_code: true, warehouse_name: true, plant_id: true, is_active: true } as const;
     const [byCode, defects] = await Promise.all([
       this.prisma.warehouse.findMany({ where: { warehouse_code: { in: codes }, is_active: true }, select }),
       lots.some((lot) => lot.status_code === 'DEFECTIVE')
@@ -162,11 +163,10 @@ export class ReceiptDefaultsService {
         const erpCodes = [...new Set(erpCodesOf(line))];
         if (erpCodes.length === 0) return unplaced('NO_ERP_WAREHOUSE');
         if (erpCodes.length > 1) return unplaced('MULTIPLE_ERP_WAREHOUSES');
-        // ERP 코드 하나에 MES 창고 하나다(장부 P-148) — 결정 전 자료가 둘이면 입하 공장의 것을 고른다.
-        const matches = byCode.filter((row) => row.warehouse_code === erpCodes[0]);
-        if (matches.length === 0) return unplaced('NO_MES_WAREHOUSE');
-        const own = matches.find((row) => row.plant_id === plantId);
-        return own === undefined ? unplaced('OTHER_PLANT_WAREHOUSE') : located(own);
+        // 생산 완제품 위치(`core/erp-warehouse/fg-location.ts`)와 같은 매칭 함수다. 후보가 활성만이라 꺼진 창고는 «없음»으로 나온다.
+        const match = matchErpWarehouse(erpCodes[0], plantId, byCode);
+        if (match.kind === 'MATCHED') return located(match.warehouse);
+        return unplaced(match.kind === 'OTHER_PLANT' ? 'OTHER_PLANT_WAREHOUSE' : 'NO_MES_WAREHOUSE');
       },
     };
   }

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { FgResolution, fgLocationOf } from '../../core/erp-warehouse/fg-location';
 import { WORK_ORDER_DEFAULT_PRIORITY, WORK_ORDER_DEFAULT_TYPE, WORK_ORDER_INITIAL_STATUS } from '../../core/work-order';
 import { PlanWindow } from './plan-window';
 import { OperationResource } from './resource-assign';
@@ -16,6 +17,8 @@ export interface PlanToExpand {
   window: PlanWindow;
   /** 계획의 라인과 그 라인의 기본 위치 셋. 계획에 라인이 없으면 넷 다 비운다. */
   line: PlanLine;
+  /** ERP W/O 의 입고 창고(`SL_CD`) 판정 — 완제품 위치는 라인이 아니라 이것을 따른다. */
+  fg: FgResolution;
   /** 공정별 기본 매핑의 설비·금형. 매핑이 없는 공정은 키가 없다. */
   resources: Map<bigint, OperationResource>;
   /** 배정 설비의 라인별 기본 위치 셋 — 계획에 라인이 없을 때 W/O 라인을 설비에서 얻는다. */
@@ -53,6 +56,7 @@ const REQUIRED_QTY_RULE = 'AVAILABLE_GOOD_QTY';
  * 라인·기본 위치 셋을 계획 라인에서(없으면 배정 설비의 라인에서) 미리 채운다 — 배포가 기본 위치 셋을 요구하는데 W/O 마다 4M 에서
  * 고르게 하면 하루 수백 건을 손으로 넣어야 한다. 계약 생성 규칙과 다른 동작이다(`docs/계약-선행-수정항목.md`).
  * `operation_settings_snapshot` 은 안 쓴다 — `:release` 가 뜬다(I-6).
+ * 완제품 위치는 계획의 모든 공정 W/O 에 같은 값을 둔다. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다.
  */
 export function workOrderRows(
   plan: PlanToExpand,
@@ -75,7 +79,7 @@ export function workOrderRows(
       planned_end_at: plan.window.plannedEndAt,
       production_line_id: line.productionLineId,
       default_wip_location_id: line.defaultWipLocationId,
-      default_fg_location_id: line.defaultFgLocationId,
+      default_fg_location_id: fgLocationOf(plan.fg, line.defaultFgLocationId).locationId,
       default_scrap_location_id: line.defaultScrapLocationId,
       planned_equipment_id: resource?.equipmentId ?? null,
       planned_mold_id: resource?.moldId ?? null,

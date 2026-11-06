@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { filter } from '../../common/master';
+import { fgKey, resolveFgLocations } from '../../core/erp-warehouse/fg-location';
 import { PageRequest, PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AutoPlanStatus } from './auto-plan';
@@ -231,15 +232,17 @@ export class ProductionOrderService {
   /** 페이지 파생 — 집계 2칸 + 확인 3칸을 한 쿼리로, (요청 시) 변경 이력을 더한다. 행마다 돌지 않는다. */
   private async viewsOf(rows: ProductionOrderRow[], withLastChange: boolean): Promise<ProductionOrderView[]> {
     const ids = rows.map((r) => r.production_order_id);
-    const [derived, changes, autoPlans, worklist, quantities, itemGroups] = await Promise.all([
+    const [derived, changes, autoPlans, worklist, quantities, itemGroups, storage] = await Promise.all([
       this.derivedOf(ids),
       withLastChange ? this.lastChangesOf(rows) : Promise.resolve(new Map<bigint, ProductionOrderLastChange>()),
       this.autoPlans.viewsOf(rows),
       this.worklistStatesOf(rows),
       this.quantitiesOf(rows),
       this.itemGroupsOf(rows),
+      resolveFgLocations(this.prisma, rows.map((row) => ({ plantId: row.plant_id, erpCode: row.erp_storage_location_code }))),
     ]);
     return rows.map((row) => {
+      const fg = storage.get(fgKey({ plantId: row.plant_id, erpCode: row.erp_storage_location_code }));
       const d = derived.get(row.production_order_id);
       return productionOrderView(row, {
         expandedWorkOrderCount: d?.expanded ?? 0,
@@ -255,6 +258,7 @@ export class ProductionOrderService {
         liveWorkOrderCount: worklist.get(row.production_order_id)?.live,
         quantities: quantities.get(row.production_order_id),
         itemGroup: itemGroups.get(row.item_id),
+        erpStorageWarehouse: fg?.kind === 'ERP_STORAGE_LOCATION' ? fg.warehouse : undefined,
       });
     });
   }

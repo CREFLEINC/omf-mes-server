@@ -1,3 +1,4 @@
+import { FG_LINK_FAILURES, FgResolution, LocationFact, locationFinding } from '../../core/erp-warehouse/fg-location';
 import { unusable } from '../../core/work-order';
 
 /**
@@ -13,6 +14,8 @@ export const RESOURCE_CODES = [
   'MOLD_NOT_IN_SERVICE',
   'WORK_ORDER_LOCATION_REQUIRED',
   'LOCATION_INVALID',
+  ...FG_LINK_FAILURES,
+  'FG_LOCATION_OUTSIDE_WAREHOUSE',
 ] as const;
 export type ResourceCode = (typeof RESOURCE_CODES)[number];
 
@@ -20,7 +23,7 @@ export interface ResourceRefs {
   lines: ReadonlyMap<bigint, { plant_id: bigint; is_active: boolean }>;
   equipments: ReadonlyMap<bigint, { plant_id: bigint; status_code: string; is_active: boolean; production_line_id: bigint | null }>;
   molds: ReadonlyMap<bigint, { plant_id: bigint; status_code: string; is_active: boolean }>;
-  locations: ReadonlyMap<bigint, { is_active: boolean; warehouse: { plant_id: bigint; warehouse_type_code: string; is_active: boolean } }>;
+  locations: ReadonlyMap<bigint, LocationFact>;
 }
 
 export interface WorkOrderResources {
@@ -38,11 +41,10 @@ export interface ResourceFinding {
   message: string;
 }
 
-/** 자재창고 위치는 W/O 기본 위치로 두지 않는다 — 라인 기본 위치와 같은 규칙(`equipment-group.service.ts`). */
-const MATERIAL_WAREHOUSE = 'MATERIAL';
 const LOCATION_FIELDS = ['defaultWipLocationId', 'defaultFgLocationId', 'defaultScrapLocationId'] as const;
 
-export function resourceFindings(plantId: bigint, values: WorkOrderResources, refs: ResourceRefs): ResourceFinding[] {
+/** `fg` 는 ERP W/O 의 완제품 위치 판정 — 완제품 위치 칸만 이 규칙을 따른다(`core/erp-warehouse/fg-location.ts`). */
+export function resourceFindings(plantId: bigint, values: WorkOrderResources, refs: ResourceRefs, fg: FgResolution): ResourceFinding[] {
   const findings: ResourceFinding[] = [];
   const line = values.productionLineId === null ? undefined : refs.lines.get(values.productionLineId);
   if (values.productionLineId === null) {
@@ -73,20 +75,14 @@ export function resourceFindings(plantId: bigint, values: WorkOrderResources, re
 
   for (const field of LOCATION_FIELDS) {
     const locationId = values[field];
-    if (locationId === null) {
+    const rule = field === 'defaultFgLocationId' ? fg : undefined;
+    // 연결이 실패한 완제품 위치는 비어 있어도 «위치를 고르세요» 가 아니라 연결 실패가 사유다 — 고를 수 있는 위치가 없다.
+    if (locationId === null && rule?.kind !== 'LINK_FAILED') {
       findings.push({ code: 'WORK_ORDER_LOCATION_REQUIRED', field, message: '기본 위치가 없습니다. 위치를 고르세요.' });
       continue;
     }
-    const location = refs.locations.get(locationId);
-    if (
-      location === undefined ||
-      location.warehouse.plant_id !== plantId ||
-      location.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE ||
-      !location.is_active ||
-      !location.warehouse.is_active
-    ) {
-      findings.push({ code: 'LOCATION_INVALID', field, message: '이 공장의, 자재창고가 아닌 사용 중인 위치여야 합니다.' });
-    }
+    const found = locationFinding(plantId, locationId === null ? undefined : refs.locations.get(locationId), rule);
+    if (found !== null) findings.push({ code: found.code, field, message: found.message });
   }
   return findings;
 }

@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
+import { fgLinkMessage, resolveFgLocation } from '../../core/erp-warehouse/fg-location';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { NumberingService } from '../../core/numbering';
@@ -60,7 +61,7 @@ export class PlanConfirmService {
       where: { production_plan_id: BigInt(productionPlanId) },
       select: {
         planned_qty: true, routing_id: true, status_code: true, uom_id: true, plan_date: true, planned_line_id: true,
-        production_order: { select: { item_id: true, plant_id: true } },
+        production_order: { select: { item_id: true, plant_id: true, erp_storage_location_code: true } },
       },
     });
     if (!plan) throw new NotFoundException('없는 생산계획입니다.');
@@ -81,6 +82,7 @@ export class PlanConfirmService {
     const { item_id: itemId, plant_id: plantId } = plan.production_order;
     const window = await planWindow(client, plantId, plan.plan_date);
     const line = await planLine(client, plan.planned_line_id);
+    const fg = await resolveFgLocation(client, { plantId, erpCode: plan.production_order.erp_storage_location_code });
     const needs = operations.map((operation) => ({
       routingOperationId: operation.routing_operation_id,
       processId: operation.process_id,
@@ -91,7 +93,7 @@ export class PlanConfirmService {
     const equipmentLines = await equipmentLinesOf(client, [...resources.values()].map((resource) => resource.equipmentLineId));
     return {
       productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id,
-      operationIds, window, line, resources, equipmentLines, dependencies,
+      operationIds, window, line, fg, resources, equipmentLines, dependencies,
     };
   }
 
@@ -132,6 +134,10 @@ export class PlanConfirmService {
     // 저장한 뒤 ERP 가 BOM 판을 바꿨을 수 있다 — 확정 직전에 다시 본다. 확정된 계획은 위 전이가 이미 막았다.
     const { bom_id: bomId } = await tx.production_plan.findUniqueOrThrow({ where: { production_plan_id: productionPlanId }, select: { bom_id: true } });
     await assertDefaultBom(tx, bomId, plan.itemId);
+    // 계획 제안 확정은 공정마다 완제품 위치를 본문으로 받아 이미 같은 판정으로 검증했다 — 직접 확정만 여기서 막는다.
+    if (supplements === undefined && plan.fg.kind === 'LINK_FAILED') {
+      throw one(field('erpStorageLocationCode', plan.fg.reason, fgLinkMessage(plan.fg)));
+    }
 
     // 작성 → 확정은 합계를 바꾸지 않는다 — 오더 수량이 줄어 이미 넘은 계획이 확정되는 것을 막는다.
     await assertWithinOrder(tx, locked.production_order_id, new Prisma.Decimal(0));

@@ -55,6 +55,8 @@ export interface ProductionOrderExtras {
   liveWorkOrderCount?: number;
   quantities?: PlanQuantities;
   itemGroup?: { code?: string; name?: string };
+  /** `SL_CD` 가 연결된 MES 창고 — 연결하지 못했거나 `SL_CD` 가 없으면 없다. */
+  erpStorageWarehouse?: { id: bigint; code: string; name: string };
 }
 
 export type ProductionOrderView = ReturnType<typeof productionOrderView>;
@@ -77,6 +79,9 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     plannedStartDate: toDateString(row.planned_start_date) ?? undefined,
     erpOperationNo: row.erp_operation_no ?? undefined,
     erpStorageLocationCode: row.erp_storage_location_code ?? undefined,
+    erpStorageWarehouse: extras.erpStorageWarehouse === undefined ? undefined : {
+      id: Number(extras.erpStorageWarehouse.id), code: extras.erpStorageWarehouse.code, name: extras.erpStorageWarehouse.name,
+    },
     erpReworkFlag: row.erp_rework_flag ?? undefined,
     statusCode: row.status_code,
     acknowledgedAt: ack?.acknowledgedAt.toISOString(),

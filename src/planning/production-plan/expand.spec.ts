@@ -11,6 +11,7 @@ const plan = (overrides: Partial<PlanToExpand> = {}): PlanToExpand => ({
   operationIds: [101n, 102n, 103n],
   window: { plannedStartAt: new Date('2026-11-20T00:00:00.000Z'), plannedEndAt: new Date('2026-11-21T00:00:00.000Z') },
   line: { productionLineId: null, defaultWipLocationId: null, defaultFgLocationId: null, defaultScrapLocationId: null },
+  fg: { kind: 'NO_STORAGE_CODE' },
   resources: new Map(),
   equipmentLines: new Map(),
   dependencies: [],
@@ -121,5 +122,23 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
 
   it('③ 의존이 0건이면 빈 배열이다 — 전개는 그대로 성공한다(§3-4)', () => {
     expect(dependencyRows(plan(), new Map(), 9)).toEqual([]);
+  });
+
+  it('⑥ ERP 입고 창고가 정해졌으면 모든 공정 W/O 의 완제품 위치가 그 위치다 — 라인 기본값은 덮어쓰이지 않는다', () => {
+    const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: 33n };
+    const fg = {
+      kind: 'ERP_STORAGE_LOCATION' as const, erpCode: 'S510',
+      warehouse: { id: 5n, code: 'S510', name: '완제품' }, location: { id: 55n, code: 'WH', name: '창고 전체', isActive: true },
+    };
+    const rows = workOrderRows(plan({ line, fg }), ['WO-A', 'WO-B', 'WO-C'], 9);
+
+    for (const row of rows) expect(row).toMatchObject({ default_wip_location_id: 31n, default_fg_location_id: 55n, default_scrap_location_id: 33n });
+  });
+
+  it('⑦ 입고 창고 연결이 실패한 오더는 라인 기본 완제품 위치로 대체하지 않는다', () => {
+    const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: 33n };
+    const rows = workOrderRows(plan({ line, fg: { kind: 'LINK_FAILED', erpCode: 'S510', reason: 'FG_WAREHOUSE_UNMAPPED' } }), ['WO-A', 'WO-B', 'WO-C'], 9);
+
+    for (const row of rows) expect(row.default_fg_location_id).toBeNull();
   });
 });
