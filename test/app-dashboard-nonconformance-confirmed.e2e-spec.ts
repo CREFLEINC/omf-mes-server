@@ -17,11 +17,10 @@ const DETECTED_AT = '2026-09-10T03:00:00Z';
 type Row = { qty: number };
 type Nonconformance = {
   phenomena: (Row & { defectCode: string })[];
-  causeGroups: (Row & { causeName: string })[];
 };
 
 /**
- * 부적합 현황 탭의 불량현상 파레토·원인 대분류(omf-all-around#124). 검사 결과에 붙은 불량 기록은 그 결과가 확정일 때만
+ * 부적합 현황 탭의 불량현상 파레토(omf-all-around#124). 원인 대분류는 #239 에서 뺐다. 검사 결과에 붙은 불량 기록은 그 결과가 확정일 때만
  * 세고, 결과 없는 기록은 그대로 센다. 다른 대시보드 e2e 의 픽스처와 섞지 않으려고 공장을 따로 세운다.
  */
 describe('통합 대시보드 부적합 현황 — 확정 전 검사 결과의 불량 기록 제외 (omf-all-around#124)', () => {
@@ -58,23 +57,22 @@ describe('통합 대시보드 부적합 현황 — 확정 전 검사 결과의 �
         .expect(200)).body as { quality: { nonconformance: Nonconformance } }
     ).quality.nonconformance;
 
-  it('⛔ 작성중 검사 결과의 기록(DRAFT 5)은 현상·원인 어디에도 들어가지 않는다', async () => {
-    const { phenomena, causeGroups } = await nonconformance();
+  it('⛔ 작성중 검사 결과의 기록(DRAFT 5)은 현상에 들어가지 않는다', async () => {
+    const { phenomena } = await nonconformance();
 
     expect(phenomena.map((row) => row.defectCode)).not.toContain(`${PREFIX}-DRAFT`);
-    expect(causeGroups.map((row) => row.causeName)).not.toContain(`${PREFIX}-CAUSE-DRAFT`);
+  });
+
+  it('⛔ 추정 원인이 남은 기존 기록이 있어도 원인 대분류는 응답에 없다(omf-all-around#239)', async () => {
+    expect(await nonconformance()).not.toHaveProperty('causeGroups');
   });
 
   it('⭐ 확정 검사 결과의 기록(3)과 검사 결과 없는 기록(2)은 그대로 센다', async () => {
-    const { phenomena, causeGroups } = await nonconformance();
+    const { phenomena } = await nonconformance();
 
     expect(phenomena.map(({ defectCode, qty }) => ({ defectCode, qty }))).toEqual([
       { defectCode: `${PREFIX}-CONFIRMED`, qty: 3 },
       { defectCode: `${PREFIX}-MATERIAL`, qty: 2 },
-    ]);
-    expect(causeGroups.map(({ causeName, qty }) => ({ causeName, qty }))).toEqual([
-      { causeName: `${PREFIX}-CAUSE-CONFIRMED`, qty: 3 },
-      { causeName: `${PREFIX}-CAUSE-MATERIAL`, qty: 2 },
     ]);
   });
 

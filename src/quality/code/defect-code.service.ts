@@ -25,7 +25,7 @@ export const DEFECT_CODE_REFERRERS: readonly Referrer[] = [
   ['quality.defect_record', 'defect_code_id'],
 ];
 
-/** 계약 `CauseCode` 와 동형. */
+/** 계약 `DefectCode` 와 동형. */
 interface DefectCodeView {
   defectCodeId: number;
   defectCode: string;

@@ -19,7 +19,6 @@ export interface DefectRecordCreate {
   productionResultId?: number | null;
   workOrderId?: number | null;
   lotId?: number | null;
-  suspectedCauseCodeId?: number | null;
   defectDescription?: string | null;
   equipmentId?: number | null;
   moldId?: number | null;
@@ -31,7 +30,6 @@ export interface InspectionDefectInput {
   defectCodeId: number;
   defectQty: number;
   defectDescription?: string | null;
-  suspectedCauseCodeId?: number | null;
 }
 
 /** 트랜잭션 «밖»에서 검증을 마친 사유 — 안에서는 쓰기만 한다. */
@@ -112,7 +110,6 @@ export class DefectRecordWriteService {
         source_document_id: material === null ? null : material.consumptionId,
         work_order_id: target.workOrderId,
         lot_id: target.lotId,
-        suspected_cause_code_id: optionalId(input.suspectedCauseCodeId),
         defect_description: input.defectDescription ?? null,
         equipment_id: optionalId(input.equipmentId),
         mold_id: optionalId(input.moldId),
@@ -164,7 +161,6 @@ export class DefectRecordWriteService {
           inspection_result_id: target.inspectionResultId,
           lot_id: target.lotId,
           work_order_id: target.workOrderId,
-          suspected_cause_code_id: optionalId(row.suspectedCauseCodeId),
           defect_description: row.defectDescription ?? null,
           worker_id: actor.workerId ?? null,
           created_by: actor.appUserId === undefined ? null : BigInt(actor.appUserId),

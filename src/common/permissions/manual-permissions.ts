@@ -274,15 +274,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /planning/production-orders:plan-proposals': ['W-02-01', 'W-02-02'],
   'POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal': ['W-02-01', 'W-02-02'],
 
-  // `W-06-03` 불량·원인코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
-  // 수정·활성 전이와 원인코드 목록이 도출표에 안 들어왔다. 한 화면의 두 탭이다.
-  'GET /quality/cause-codes': ['W-06-03'],
+  // `W-06-03` 불량코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
+  // 수정·활성 전이가 도출표에 안 들어왔다.
   'PUT /quality/defect-codes/{defectCodeId}': ['W-06-03'],
   'POST /quality/defect-codes/{defectCodeId}:activate': ['W-06-03'],
   'POST /quality/defect-codes/{defectCodeId}:deactivate': ['W-06-03'],
-  'PUT /quality/cause-codes/{causeCodeId}': ['W-06-03'],
-  'POST /quality/cause-codes/{causeCodeId}:activate': ['W-06-03'],
-  'POST /quality/cause-codes/{causeCodeId}:deactivate': ['W-06-03'],
 
   // `W-06-02` 검사기준 등록 — §3-3 이 「기준 추가」·「승인」만 적어 수정·활성 전이가
   // 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.

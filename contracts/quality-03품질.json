@@ -5659,16 +5659,6 @@
       "format": "int64",
       "example": 1001
      },
-     "suspectedCauseCodeId": {
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     },
-     "confirmedCauseCodeId": {
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     },
      "responsibilityTypeCode": {
       "type": "string",
       "example": "값",
@@ -7772,13 +7762,6 @@
       ],
       "format": "int64"
      },
-     "suspectedCauseCodeId": {
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64"
-     },
      "defectDescription": {
       "type": [
        "string",
@@ -7830,13 +7813,6 @@
        "string",
        "null"
       ]
-     },
-     "suspectedCauseCodeId": {
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64"
      }
     }
    },

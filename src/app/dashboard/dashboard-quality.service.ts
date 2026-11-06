@@ -73,7 +73,7 @@ const EQUIPMENT_TOP = 8;
 
 /**
  * 품질 섹션(#118 2차 · 장부 P-59). IQC·PQC·OQC 는 확정 검사 결과의 최종 회차로 센다.
- * ⚠ 불량현상·원인은 불량 기록(defect_record)이 쌓여야 나온다 — 지금은 MES 에 등록 경로가 없어 빈 배열이다.
+ * ⚠ 불량현상은 불량 기록(defect_record)이 쌓여야 나온다 — 지금은 MES 에 등록 경로가 없어 빈 배열이다.
  */
 @Injectable()
 export class DashboardQualityService {

@@ -27,7 +27,6 @@ const EMPTY_FIGURES: NonconformanceFigures = {
   block: {
     monthQty: 0,
     phenomena: [],
-    causeGroups: [],
     scrapQty: 0,
     reworkReleasedQty: 0,
     openCount: 0,
@@ -39,7 +38,7 @@ const EMPTY_FIGURES: NonconformanceFigures = {
 
 /**
  * 불량 기록 중 집계에 넣는 것(omf-all-around#124) — 검사 결과에 붙은 기록은 그 결과가 «확정»일 때만 센다.
- * 작성중 저장(장부 P-48)이 남긴 IQC 불합격 사유가 확정 전에 파레토·원인에 들어가지 않게 한다.
+ * 작성중 저장(장부 P-48)이 남긴 IQC 불합격 사유가 확정 전에 파레토에 들어가지 않게 한다.
  * 결과 없는 기록(POP 자재 불량 등)은 그대로 센다 — `defect-view.ts` 의 `CONFIRMED_INSPECTION_ONLY` 와 같은 뜻이다.
  */
 export const CONFIRMED_INSPECTION_RECORD = Prisma.sql`(dr.inspection_result_id IS NULL OR EXISTS (
@@ -90,7 +89,6 @@ export class DashboardNonconformanceService {
       block: {
         monthQty: num(row?.month_qty),
         phenomena: records.phenomena,
-        causeGroups: records.causeGroups,
         scrapQty: num(row?.scrap_qty),
         reworkReleasedQty: num(row?.rework_released_qty),
         openCount: row?.open_count ?? 0,
@@ -101,7 +99,7 @@ export class DashboardNonconformanceService {
     };
   }
 
-  /** 누계 구간(당월 또는 조회 기간) 불량 기록의 현상(파레토)·원인 대분류. 원인은 확정 → 추정 순, 대분류는 상위 원인(없으면 자신). */
+  /** 누계 구간(당월 또는 조회 기간) 불량 기록의 현상(파레토). */
   private async defectRecords(tx: Tx, plants: readonly DashboardPlant[], period: DashboardPeriod) {
     const head = Prisma.sql`WITH ${plantScope(plants)},
       scoped_record AS (
@@ -121,22 +119,11 @@ export class DashboardNonconformanceService {
       SELECT dc.defect_code_id, dc.defect_code, dc.defect_name, SUM(r.defect_qty)::text AS qty
       FROM scoped_record r JOIN quality.defect_code dc ON dc.defect_code_id = r.defect_code_id
       GROUP BY dc.defect_code_id ORDER BY SUM(r.defect_qty) DESC, dc.defect_code_id`);
-    const causes = await tx.$queryRaw<{ cause_code_id: bigint; cause_name: string; qty: string }[]>(Prisma.sql`${head}
-      SELECT top.cause_code_id, top.cause_name, SUM(r.defect_qty)::text AS qty
-      FROM scoped_record r
-      JOIN quality.cause_code cc ON cc.cause_code_id = COALESCE(r.confirmed_cause_code_id, r.suspected_cause_code_id)
-      JOIN quality.cause_code top ON top.cause_code_id = COALESCE(cc.parent_cause_code_id, cc.cause_code_id)
-      GROUP BY top.cause_code_id ORDER BY SUM(r.defect_qty) DESC, top.cause_code_id`);
     return {
       phenomena: phenomena.map((row) => ({
         defectCodeId: Number(row.defect_code_id),
         defectCode: row.defect_code,
         defectName: row.defect_name,
-        qty: num(row.qty),
-      })),
-      causeGroups: causes.map((row) => ({
-        causeCodeId: Number(row.cause_code_id),
-        causeName: row.cause_name,
         qty: num(row.qty),
       })),
     };

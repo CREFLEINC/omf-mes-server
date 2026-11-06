@@ -11,10 +11,9 @@ import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WorkOrderHandoverNotifier } from '../production/work-order/work-order-handover';
-import { CauseCodeService } from './code/cause-code.service';
 import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
-import { CauseCodeController, DefectCodeController } from './code/quality-code.controller';
+import { DefectCodeController } from './code/quality-code.controller';
 import { ConcessionController } from './concession/concession.controller';
 import { ConcessionWriteService } from './concession/concession-write.service';
 import { DefectDistributionService } from './defect/defect-distribution.service';
@@ -87,7 +86,6 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
   ],
   controllers: [
     DefectCodeController,
-    CauseCodeController,
     InspectionPlanImportController, // `inspection-plans:import` — 리터럴 경로라 `:inspectionPlanId` 앞에 둔다.
     InspectionPlanController,
     InspectionSheetTemplateController,
@@ -115,7 +113,6 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
   providers: [
     WorkOrderHandoverNotifier,
     DefectCodeService,
-    CauseCodeService,
     DefectCodeProcessService,
     InspectionPlanService,
     InspectionPlanImportService,

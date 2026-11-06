@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { omitEmpty } from '../../common/http/omit-empty';
 
-/** 계약 `DefectRecord`(21칸) 매퍼 — 결손 0, 물리와 1:1(§2-2). */
+/** 계약 `DefectRecord`(19칸) 매퍼 — 결손 0, 물리와 1:1(§2-2). */
 export type DefectRecordRow = Prisma.defect_recordGetPayload<object>;
 
 export type DefectRecordView = ReturnType<typeof defectRecordView>;
@@ -21,8 +21,6 @@ export function defectRecordView(row: DefectRecordRow) {
     workOrderId: row.work_order_id === null ? null : Number(row.work_order_id),
     lotId: row.lot_id === null ? undefined : Number(row.lot_id),
     defectCodeId: Number(row.defect_code_id),
-    suspectedCauseCodeId: row.suspected_cause_code_id === null ? undefined : Number(row.suspected_cause_code_id),
-    confirmedCauseCodeId: row.confirmed_cause_code_id === null ? undefined : Number(row.confirmed_cause_code_id),
     responsibilityTypeCode: row.responsibility_type_code ?? undefined,
     responsibleDepartmentId: row.responsible_department_id === null ? undefined : Number(row.responsible_department_id),
     workerId: row.worker_id === null ? undefined : Number(row.worker_id),

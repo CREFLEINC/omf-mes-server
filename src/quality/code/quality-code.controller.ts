@@ -21,7 +21,6 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
-import { CauseCodeQuery, CauseCodeService, CauseCodeWrite } from './cause-code.service';
 import { DefectCodeProcessService } from './defect-code-process.service';
 import { DefectCodeQuery, DefectCodeService, DefectCodeWrite } from './defect-code.service';
 
@@ -128,79 +127,6 @@ export class DefectCodeController {
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'defectCode', (version) =>
       this.defectCodes.setActive(defectCodeId, version, false),
-    );
-  }
-}
-
-/** 원인코드. 같은 화면(`W-06-03`)의 「원인코드」 탭이다 — 불량 현상과 분리 관리한다. */
-@Controller('quality/cause-codes')
-export class CauseCodeController {
-  constructor(
-    private readonly causeCodes: CauseCodeService,
-    private readonly idempotency: IdempotencyService,
-  ) {}
-
-  @Get()
-  @Contract('GET /quality/cause-codes')
-  list(@Query() query: CauseCodeQuery): Promise<PagedResponse<unknown>> {
-    return this.causeCodes.list(query);
-  }
-
-  @Get(':causeCodeId')
-  @Contract('GET /quality/cause-codes/{causeCodeId}')
-  async get(
-    @Param('causeCodeId', ParseIntPipe) causeCodeId: number,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<unknown> {
-    const { causeCode, editability, versionNo } = await this.causeCodes.get(causeCodeId);
-    setEtag(response, versionNo);
-    return { causeCode, editability };
-  }
-
-  @Post()
-  @Contract('POST /quality/cause-codes')
-  create(@Req() request: Request, @Body() body: CauseCodeWrite): Promise<unknown> {
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.causeCodes.create(body),
-    );
-  }
-
-  @Put(':causeCodeId')
-  @Contract('PUT /quality/cause-codes/{causeCodeId}')
-  update(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-    @Param('causeCodeId', ParseIntPipe) causeCodeId: number,
-    @Body() body: CauseCodeWrite,
-  ): Promise<unknown> {
-    return runVersioned(this.idempotency, request, response, 'causeCode', (version) =>
-      this.causeCodes.update(causeCodeId, version, body),
-    );
-  }
-
-  @Post(':causeCodeId\\:activate')
-  @Contract('POST /quality/cause-codes/{causeCodeId}:activate')
-  @HttpCode(HttpStatus.OK)
-  activate(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-    @Param('causeCodeId', ParseIntPipe) causeCodeId: number,
-  ): Promise<unknown> {
-    return runVersioned(this.idempotency, request, response, 'causeCode', (version) =>
-      this.causeCodes.setActive(causeCodeId, version, true),
-    );
-  }
-
-  @Post(':causeCodeId\\:deactivate')
-  @Contract('POST /quality/cause-codes/{causeCodeId}:deactivate')
-  @HttpCode(HttpStatus.OK)
-  deactivate(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-    @Param('causeCodeId', ParseIntPipe) causeCodeId: number,
-  ): Promise<unknown> {
-    return runVersioned(this.idempotency, request, response, 'causeCode', (version) =>
-      this.causeCodes.setActive(causeCodeId, version, false),
     );
   }
 }
