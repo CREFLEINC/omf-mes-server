@@ -121,7 +121,6 @@ export interface QualityStatusCounts {
 export interface NonconformanceBlock {
   monthQty: number;
   phenomena: DefectPhenomenon[];
-  causeGroups: { causeCodeId: number; causeName: string; qty: number }[];
   scrapQty: number;
   reworkReleasedQty: number;
   openCount: number;

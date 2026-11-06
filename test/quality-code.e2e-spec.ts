@@ -1,5 +1,5 @@
 /**
- * 불량코드·원인코드 2계층 마스터.
+ * 불량코드 2계층 마스터.
  *
  * ⭐ **DB 가 계층을 아무것도 막지 않는다** — 계약이 그것을 적었다(`ck_*_parent` 없음, #64).
  * 자기 자신·3계층·하위 있는 대분류에 상위 붙이기 셋을 서버가 막는지가 이 파일의 본체다.
@@ -16,7 +16,6 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
-import { CAUSE_CODE_REFERRERS } from '../src/quality/code/cause-code.service';
 import { DEFECT_CODE_REFERRERS } from '../src/quality/code/defect-code.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -98,11 +97,8 @@ describe('불량·원인코드 (e2e)', () => {
     await app.close();
   });
 
-  it('⭐ 참조 목록이 DB 의 FK 와 정확히 같다 — 두 표 모두', async () => {
-    for (const [table, referrers] of [
-      ['defect_code', DEFECT_CODE_REFERRERS],
-      ['cause_code', CAUSE_CODE_REFERRERS],
-    ] as const) {
+  it('⭐ 참조 목록이 DB 의 FK 와 정확히 같다', async () => {
+    for (const [table, referrers] of [['defect_code', DEFECT_CODE_REFERRERS]] as const) {
       const rows = await prisma.$queryRawUnsafe<{ table: string; column: string }[]>(
         `
         SELECT n.nspname || '.' || r.relname AS "table",
@@ -419,86 +415,41 @@ describe('불량·원인코드 (e2e)', () => {
       .expect(404);
   });
 
-  // ── 원인코드 ────────────────────────────────────────────────────────────
-
-  it('⭐ 원인코드가 같은 규칙으로 선다 — 계층 셋을 똑같이 막는다', async () => {
-    const major = await createCause('C1');
-    const detail = await createCause('C1A', major);
-
-    const list = await request(app.getHttpServer())
-      .get(`/api/quality/cause-codes?q=${PREFIX}`)
-      .set('Cookie', cookie)
-      .expect(200);
-    const listValidate = validator('GET /quality/cause-codes');
-    expect(listValidate(list.body)).toBe(true);
-    expect(listValidate.errors ?? []).toEqual([]);
-
-    const one = await request(app.getHttpServer())
-      .get(`/api/quality/cause-codes/${major}`)
-      .set('Cookie', cookie)
-      .expect(200);
-    const oneValidate = validator('GET /quality/cause-codes/{causeCodeId}');
-    expect(oneValidate(one.body)).toBe(true);
-    expect(one.body.editability).toMatchObject({ reason: 'REFERENCED', referenceCount: 1 });
-
-    // 3계층
-    const third = await request(app.getHttpServer())
-      .post('/api/quality/cause-codes')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({ causeCode: `${PREFIX}-C1B`, causeName: '3계층', parentCauseCodeId: detail })
-      .expect(400);
-    expect(third.body.errors[0].message).toContain('2계층');
-
-    // 자기 자신
-    const self = await request(app.getHttpServer())
-      .put(`/api/quality/cause-codes/${major}`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .set('If-Match', '1')
-      .send({ causeCode: `${PREFIX}-C1`, causeName: '자기참조', parentCauseCodeId: major })
-      .expect(400);
-    expect(self.body.errors[0].message).toContain('자기 자신');
-  });
-
   it('⛔ 낡은 If-Match 는 409 이고 봉투는 ConflictResponse 다', async () => {
-    const id = await createCause('C2');
+    const id = await createDefect('C2');
     await request(app.getHttpServer())
-      .put(`/api/quality/cause-codes/${id}`)
+      .put(`/api/quality/defect-codes/${id}`)
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', '1')
-      .send({ causeCode: `${PREFIX}-C2`, causeName: '한 번' })
+      .send({ defectCode: `${PREFIX}-C2`, defectName: '한 번' })
       .expect(200);
 
     const stale = await request(app.getHttpServer())
-      .put(`/api/quality/cause-codes/${id}`)
+      .put(`/api/quality/defect-codes/${id}`)
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', '1')
-      .send({ causeCode: `${PREFIX}-C2`, causeName: '두 번' })
+      .send({ defectCode: `${PREFIX}-C2`, defectName: '두 번' })
       .expect(409);
     expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⛔ 권한이 없으면 쓰기가 403 이고, 없는 코드는 404 다', async () => {
-    for (const resource of ['defect-codes', 'cause-codes'] as const) {
-      await request(app.getHttpServer())
-        .post(`/api/quality/${resource}`)
-        .set('Cookie', noPermCookie)
-        .set('Idempotency-Key', key())
-        .send(
-          resource === 'defect-codes'
-            ? { defectCode: `${PREFIX}-X`, defectName: '막힘' }
-            : { causeCode: `${PREFIX}-X`, causeName: '막힘' },
-        )
-        .expect(403);
+    await request(app.getHttpServer())
+      .post('/api/quality/defect-codes')
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .send({ defectCode: `${PREFIX}-X`, defectName: '막힘' })
+      .expect(403);
 
-      await request(app.getHttpServer())
-        .get(`/api/quality/${resource}/999999999`)
-        .set('Cookie', cookie)
-        .expect(404);
-    }
+    await request(app.getHttpServer())
+      .get('/api/quality/defect-codes/999999999')
+      .set('Cookie', cookie)
+      .expect(404);
+
+    // 원인코드 API 는 없앴다(omf-all-around#239).
+    await request(app.getHttpServer()).get('/api/quality/cause-codes').set('Cookie', cookie).expect(404);
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
@@ -518,23 +469,6 @@ describe('불량·원인코드 (e2e)', () => {
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     return response.body.defectCodeId;
-  }
-
-  async function createCause(suffix: string, parentCauseCodeId?: number): Promise<number> {
-    const response = await request(app.getHttpServer())
-      .post('/api/quality/cause-codes')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({
-        causeCode: `${PREFIX}-${suffix}`,
-        causeName: suffix,
-        ...(parentCauseCodeId === undefined ? {} : { parentCauseCodeId }),
-      })
-      .expect(201);
-    const validate = validator('POST /quality/cause-codes');
-    expect(validate(response.body)).toBe(true);
-    expect(validate.errors ?? []).toEqual([]);
-    return response.body.causeCodeId;
   }
 
   async function login(loginId: string = LOGIN_ID): Promise<string[]> {
@@ -560,10 +494,6 @@ describe('불량·원인코드 (e2e)', () => {
       where: { defect_code: { startsWith: PREFIX }, parent_defect_code_id: { not: null } },
     });
     await prisma.defect_code.deleteMany({ where: { defect_code: { startsWith: PREFIX } } });
-    await prisma.cause_code.deleteMany({
-      where: { cause_code: { startsWith: PREFIX }, parent_cause_code_id: { not: null } },
-    });
-    await prisma.cause_code.deleteMany({ where: { cause_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
 
     for (const id of [LOGIN_ID, NOPERM_ID]) {

@@ -2,7 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 
-/** 계층을 스스로 읽고 쓰는 한 자원의 최소 형태. 불량코드·원인코드가 같은 모양이다. */
+/** 계층을 스스로 읽고 쓰는 한 자원의 최소 형태. 불량코드가 쓴다. */
 export interface TwoLevelNode {
   id: number;
   parentId: number | null;

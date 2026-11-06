@@ -251,7 +251,6 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'POST /production/work-sessions': ['P-02-01', 'P-02-02', 'P-02-03'],
   'POST /production/work-sessions/{workSessionId}/events': ['P-02-01'],
   'POST /production/work-sessions/{workSessionId}:end': ['P-02-10'],
-  'POST /quality/cause-codes': ['W-06-03'],
   'POST /quality/defect-codes': ['W-06-03'],
   'POST /quality/inspection-plan-versions': ['W-06-02'],
   'POST /quality/inspection-plans': ['W-06-02'],
