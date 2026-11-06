@@ -53,6 +53,22 @@ describe('계약 문서(/api/docs)', () => {
     expect([...new Set(dangling)]).toEqual([]);
   });
 
+  it('⛔ 오퍼레이션이 가리키는 보안 스킴이 문서에 정의돼 있다', () => {
+    const defined = Object.keys(
+      ((document.components as Record<string, Record<string, unknown>>).securitySchemes ?? {}),
+    );
+    const used = new Set<string>();
+    for (const item of Object.values(document.paths ?? {})) {
+      for (const operation of Object.values(item)) {
+        const security = (operation as { security?: Record<string, unknown>[] })?.security;
+        for (const requirement of security ?? []) Object.keys(requirement).forEach((name) => used.add(name));
+      }
+    }
+
+    expect(used.size).toBeGreaterThan(0);
+    expect([...used].filter((name) => !defined.includes(name))).toEqual([]);
+  });
+
   it('도메인 태그로 묶는다 — 최상위 경로가 곧 축이다', () => {
     const names = (document.tags ?? []).map((tag) => tag.name);
 

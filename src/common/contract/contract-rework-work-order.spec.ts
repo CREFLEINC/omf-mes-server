@@ -23,7 +23,7 @@ describe('계약 사본 — 선반영한 재작업 W/O 발행 (P-33)', () => {
 
   it('⛔ 발행 경로가 있고 403 을 선언한다 — 없으면 권한 가드가 안 본다', () => {
     const post = contract.paths[ROUTE]?.post;
-    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['201', '400', '403', '404', '409']);
+    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['201', '400', '401', '403', '404', '409']);
   });
 
   /* ⛔ If-Match 가 빠지면 잠금 없이 발행된다 — 두 사람이 같은 잔량을 보고 함께 발행한다. */
