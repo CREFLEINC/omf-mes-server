@@ -342,7 +342,7 @@
      "planning"
     ],
     "summary": "ERP W/O 계획 제안 조회",
-    "description": "고른 ERP W/O 마다 생산계획·공정별 W/O·4M 제안을 계산해 돌려준다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·상태·시도 기록을 바꾸지 않는다. 제안을 보고 닫으면 아무 일도 없던 것이다. 저장은 사람이 고른 ERP W/O 를 하나씩 POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 로 확정할 때만 한다. ERP W/O 수신과 수기 등록(POST /planning/production-orders)도 계획을 저장·확정하지 않는다.\n\n구분(kind)·상태(status)·사유(reasons)의 판정은 ProductionPlanProposal 설명에 있다. 기준정보와 저장된 계획이 그대로면 다시 불러도 같은 결과다(임시 식별자 proposalPlanKey 와 basis 도 같다) — 4M 점검 WARN 만 다른 W/O 의 배정에 따라 달라질 수 있다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 items 에 넣지 않고 notFoundProductionOrderIds 에 담는다. 둘을 가르지 않는다 — 존재를 드러내지 않는다(규칙은 목록 설명).",
+    "description": "고른 ERP W/O 마다 생산계획·공정별 W/O·4M 제안을 계산해 돌려준다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·상태·시도 기록을 바꾸지 않는다. 제안을 보고 닫으면 아무 일도 없던 것이다. 저장은 사람이 고른 ERP W/O 를 하나씩 POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 로 확정할 때만 한다. ERP W/O 수신과 수기 등록(POST /planning/production-orders)도 계획을 저장·확정하지 않는다.\n\n완제품 위치는 ERP W/O 의 입고 창고(SL_CD)를 따른다(erpStorage) — 설명은 ProductionPlanProposalErpStorage.\n\n구분(kind)·상태(status)·사유(reasons)의 판정은 ProductionPlanProposal 설명에 있다. 기준정보와 저장된 계획이 그대로면 다시 불러도 같은 결과다(임시 식별자 proposalPlanKey 와 basis 도 같다) — 4M 점검 WARN 만 다른 W/O 의 배정에 따라 달라질 수 있다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 items 에 넣지 않고 notFoundProductionOrderIds 에 담는다. 둘을 가르지 않는다 — 존재를 드러내지 않는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderIds",
@@ -714,7 +714,7 @@
      "planning"
     ],
     "summary": "ERP W/O 계획 제안 확정",
-    "description": "제안 조회(GET /planning/production-orders:plan-proposals)에서 사람이 고른 ERP W/O 하나를 확정한다 — 요청 하나 = ERP W/O 하나. 여러 건은 건마다 따로 부르고, 한 건의 실패가 다른 건을 되돌리지 않는다.\n\n한 트랜잭션 안에서 ⓐ 작성중 계획(planSource EXISTING_DRAFT)은 본문 값(계획일·수량·BOM·Routing·라인)으로 고친 뒤 확정하고, 새 계획(NEW)은 등록해 바로 확정한다 ⓑ 계획마다 Routing 공정별 W/O 와 공정 의존을 만든다 — 수량·유형·우선순위는 POST /planning/production-plans/{productionPlanId}:confirm 의 전개와 같다 ⓒ 본문의 보완 4M(라인·설비·금형·작업자·교대·기본 위치)과 그 교대로 정한 계획 시각을 W/O 에 저장한다. 하나라도 실패하면 전부 롤백된다 — 부분 성공은 없다.\n\n처리 순서 — ① 없거나 범위 밖인 ERP W/O 는 404 ② 같은 Idempotency-Key 재전송은 처음 응답을 그대로 낸다(새 계획·W/O·번호 없음) ③ ERP W/O 행을 잠그고 제안을 조회와 같은 식으로 다시 계산한다 ④ 취소된 ERP W/O 는 400 STATE_LOCKED ⑤ 확정 계획량이 이미 ERP W/O 수량을 채웠으면 저장하지 않고 200 outcome ALREADY_PROCESSED 와 지금의 확정 계획·W/O 를 낸다 — 다른 키로 다시 눌렀거나 다른 사람이 먼저 확정한 경우다 ⑥ 본문 basis 가 다시 계산한 basis 와 하나라도 다르면 저장하지 않고 409 PROPOSAL_CHANGED — proposalChanges 에 바뀐 기준, currentProposal 에 지금 제안을 싣는다 ⑦ 본문 검증 실패는 400 이고 오류 field 는 본문 경로다(예: plans[0].workOrders[1].productionLineId) ⑧ 저장하고 200 outcome CONFIRMED.\n\n⭐ 본문 값은 제안과 같지 않아도 된다(사람이 고칠 수 있다). 변경 감지는 값이 아니라 basis 로 하고, 값은 수기 등록·확정과 같은 규칙으로 검증한다 — 계획일이 공장 현지 오늘 이후(RANGE) · 수량 합계(PLAN_QTY_EXCEEDS_ORDER — 본문의 모든 계획을 반영한 합계로 한 번 본다, 본문 순서와 무관) · ERP 기본 BOM(BOM_NOT_DEFAULT) · 확정·유효 기간 안의 이 품목 Routing(INVALID) · Routing 공정과 같은 W/O 집합(INVALID) · 라인·설비·금형·기본 위치는 제안의 사유와 같은 판정·같은 코드(LINE_PLANT_MISMATCH·RESOURCE_PLANT_MISMATCH·EQUIPMENT_NOT_IN_SERVICE·EQUIPMENT_LINE_MISMATCH·MOLD_NOT_IN_SERVICE·LOCATION_INVALID) · 작업자·교대가 그 공장의 사용 중인 것(INVALID).\n\n⭐ 번호 — 계획번호·MES W/O 번호는 트랜잭션을 열기 전에 뽑는다. 검증 실패·충돌·롤백이면 뽑은 번호는 쓰이지 않고 결번이 된다 — 번호가 건너뛰는 것은 오류가 아니다. 같은 키 재전송은 ②에서 끝나 번호를 뽑지 않는다.\n\n⭐ If-Match 를 받지 않는다 — 작성중 계획의 판은 basis.plans 가 대신 본다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
+    "description": "제안 조회(GET /planning/production-orders:plan-proposals)에서 사람이 고른 ERP W/O 하나를 확정한다 — 요청 하나 = ERP W/O 하나. 여러 건은 건마다 따로 부르고, 한 건의 실패가 다른 건을 되돌리지 않는다.\n\n한 트랜잭션 안에서 ⓐ 작성중 계획(planSource EXISTING_DRAFT)은 본문 값(계획일·수량·BOM·Routing·라인)으로 고친 뒤 확정하고, 새 계획(NEW)은 등록해 바로 확정한다 ⓑ 계획마다 Routing 공정별 W/O 와 공정 의존을 만든다 — 수량·유형·우선순위는 POST /planning/production-plans/{productionPlanId}:confirm 의 전개와 같다 ⓒ 본문의 보완 4M(라인·설비·금형·작업자·교대·기본 위치)과 그 교대로 정한 계획 시각을 W/O 에 저장한다. 하나라도 실패하면 전부 롤백된다 — 부분 성공은 없다.\n\n처리 순서 — ① 없거나 범위 밖인 ERP W/O 는 404 ② 같은 Idempotency-Key 재전송은 처음 응답을 그대로 낸다(새 계획·W/O·번호 없음) ③ ERP W/O 행을 잠그고 제안을 조회와 같은 식으로 다시 계산한다 ④ 취소된 ERP W/O 는 400 STATE_LOCKED ⑤ 확정 계획량이 이미 ERP W/O 수량을 채웠으면 저장하지 않고 200 outcome ALREADY_PROCESSED 와 지금의 확정 계획·W/O 를 낸다 — 다른 키로 다시 눌렀거나 다른 사람이 먼저 확정한 경우다 ⑥ 본문 basis 가 다시 계산한 basis 와 하나라도 다르면 저장하지 않고 409 PROPOSAL_CHANGED — proposalChanges 에 바뀐 기준, currentProposal 에 지금 제안을 싣는다 ⑦ 본문 검증 실패는 400 이고 오류 field 는 본문 경로다(예: plans[0].workOrders[1].productionLineId) ⑧ 저장하고 200 outcome CONFIRMED.\n\n⭐ 본문 값은 제안과 같지 않아도 된다(사람이 고칠 수 있다). 변경 감지는 값이 아니라 basis 로 하고, 값은 수기 등록·확정과 같은 규칙으로 검증한다 — 계획일이 공장 현지 오늘 이후(RANGE) · 수량 합계(PLAN_QTY_EXCEEDS_ORDER — 본문의 모든 계획을 반영한 합계로 한 번 본다, 본문 순서와 무관) · ERP 기본 BOM(BOM_NOT_DEFAULT) · 확정·유효 기간 안의 이 품목 Routing(INVALID) · Routing 공정과 같은 W/O 집합(INVALID) · 라인·설비·금형·기본 위치는 제안의 사유와 같은 판정·같은 코드(LINE_PLANT_MISMATCH·RESOURCE_PLANT_MISMATCH·EQUIPMENT_NOT_IN_SERVICE·EQUIPMENT_LINE_MISMATCH·MOLD_NOT_IN_SERVICE·LOCATION_INVALID) · 완제품 위치는 ERP W/O 의 입고 창고(SL_CD) 안의 위치만(FG_LOCATION_OUTSIDE_WAREHOUSE — 창고를 정하지 못하면 FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED, SL_CD 가 없으면 외부·불량 창고 위치는 LOCATION_INVALID). 수량이 같아도 SL_CD 나 그 창고·입고 위치가 바뀌었으면 ⑥에서 409 PROPOSAL_CHANGED 다. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다 · 작업자·교대가 그 공장의 사용 중인 것(INVALID).\n\n⭐ 번호 — 계획번호·MES W/O 번호는 트랜잭션을 열기 전에 뽑는다. 검증 실패·충돌·롤백이면 뽑은 번호는 쓰이지 않고 결번이 된다 — 번호가 건너뛰는 것은 오류가 아니다. 같은 키 재전송은 ②에서 끝나 번호를 뽑지 않는다.\n\n⭐ If-Match 를 받지 않는다 — 작성중 계획의 판은 basis.plans 가 대신 본다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -1310,7 +1310,7 @@
      "planning"
     ],
     "summary": "전개 확정",
-    "description": "계획을 확정하고 «전개»까지 서버 한 트랜잭션으로 수행한다 — 확정된 계획의 Routing 공정별 W/O 생성과 공정 의존(work_order_dependency) 생성까지가 안이다(공유계약 B-8 규칙 1 — 업무 엔티티는 전부 안. 부분 성공을 만들지 않는다). 클라이언트는 전개를 위해 W/O 를 따로 POST 하지 않는다. 전개 결과는 GET /production/work-orders?productionPlanId= 로 본다. 생성 규칙 — 수량: 각 공정 W/O 의 orderQty = 계획 수량(planned_qty) · 유형: 기본 양산(개발품 판정 축은 품목 — omf-mes#215 진행 중 · 긴급은 이 경로가 아니라 W-02-07 직접 생성) · 기본 위치: 생성 후 W-02-03·W-02-04 의 PUT 으로 채운다. 재시도: 같은 Idempotency-Key 재전송은 새 전개를 만들지 않는다.\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-plans/{productionPlanId} 의 ETag 를 그대로 싣는다. 관리웹 온라인 전제의 되돌릴 수 없는 확정 전이라 W/O 전이(:release·:close)와 같은 정책이다. 근거: W-02-02 §5-1(3단 체인)·§5-7 · 공유계약 B-8 · omf-mes#199\n\n⭐ BOM — 작성중 계획의 bomId 가 지금 ERP 기본 BOM 과 다르면(저장한 뒤 ERP 가 BOM 을 바꿨다) 확정하지 않고 400 { scope: 'field', field: 'bomId', code: 'BOM_NOT_DEFAULT' } 이다. message 에 저장된 개정과 지금 기본 개정을 적는다 — PUT 으로 bomId 를 바꾼 뒤 다시 확정한다. 확정된 계획은 확정 당시 개정을 유지한다.",
+    "description": "계획을 확정하고 «전개»까지 서버 한 트랜잭션으로 수행한다 — 확정된 계획의 Routing 공정별 W/O 생성과 공정 의존(work_order_dependency) 생성까지가 안이다(공유계약 B-8 규칙 1 — 업무 엔티티는 전부 안. 부분 성공을 만들지 않는다). 클라이언트는 전개를 위해 W/O 를 따로 POST 하지 않는다. 전개 결과는 GET /production/work-orders?productionPlanId= 로 본다. 생성 규칙 — 수량: 각 공정 W/O 의 orderQty = 계획 수량(planned_qty) · 유형: 기본 양산(개발품 판정 축은 품목 — omf-mes#215 진행 중 · 긴급은 이 경로가 아니라 W-02-07 직접 생성) · 기본 위치: 계획 라인(없으면 배정 설비의 라인)의 기본 위치를 채우되 완제품 위치는 ERP W/O 의 입고 창고(SL_CD)와 코드가 같은 MES 창고의 입고 위치(창고 전체, 나뉜 창고는 적치 대기)가 우선이다 — SL_CD 가 없으면 라인 기본값이고, 둘 다 없으면 생성 후 W-02-03·W-02-04 의 PUT 으로 채운다. 계획의 모든 공정 W/O 에 같은 완제품 위치를 둔다 — ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다. 재시도: 같은 Idempotency-Key 재전송은 새 전개를 만들지 않는다.\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-plans/{productionPlanId} 의 ETag 를 그대로 싣는다. 관리웹 온라인 전제의 되돌릴 수 없는 확정 전이라 W/O 전이(:release·:close)와 같은 정책이다. 근거: W-02-02 §5-1(3단 체인)·§5-7 · 공유계약 B-8 · omf-mes#199\n\n⭐ 완제품 위치 — SL_CD 가 있는데 같은 코드의 MES 창고를 정하지 못하면(없다·꺼져 있다·다른 공장에 있다·자재/불량/외부 창고다) 라인 기본 위치로 대체하지 않고 확정하지 않는다: 400 { scope: 'field', field: 'erpStorageLocationCode', code: 'FG_WAREHOUSE_UNMAPPED' | 'FG_WAREHOUSE_INACTIVE' | 'FG_WAREHOUSE_OTHER_PLANT' | 'FG_WAREHOUSE_NOT_ALLOWED' }. 자동 계획(POST …:auto-plan)의 확정도 같다.\n\n⭐ BOM — 작성중 계획의 bomId 가 지금 ERP 기본 BOM 과 다르면(저장한 뒤 ERP 가 BOM 을 바꿨다) 확정하지 않고 400 { scope: 'field', field: 'bomId', code: 'BOM_NOT_DEFAULT' } 이다. message 에 저장된 개정과 지금 기본 개정을 적는다 — PUT 으로 bomId 를 바꾼 뒤 다시 확정한다. 확정된 계획은 확정 당시 개정을 유지한다.",
     "parameters": [
      {
       "name": "productionPlanId",
@@ -3585,7 +3585,7 @@
      "production"
     ],
     "summary": "W/O 수정 · 4M 자원배정",
-    "description": "배포 전에만 고친다. ⛔ 이 경로로 상태를 옮기지 않는다 — 본문에 statusCode 칸을 두지 않은 것이 그 뜻이다(상태 전이는 전부 :동사 이고, 「확정 대기」는 전이가 아니라 파생이다). 근거: W-02-03 §5 · W-02-04 §5",
+    "description": "배포 전에만 고친다. ⛔ 이 경로로 상태를 옮기지 않는다 — 본문에 statusCode 칸을 두지 않은 것이 그 뜻이다(상태 전이는 전부 :동사 이고, 「확정 대기」는 전이가 아니라 파생이다). 근거: W-02-03 §5 · W-02-04 §5\n\n⭐ 기본 위치 검증 — 본문이 W/O 의 값을 «바꾸는» 위치(WIP·완제품·스크랩)만 400 field 오류로 막는다(null 해제·같은 값 재전송은 막지 않는다). 셋 모두 이 공장의 사용 중인 위치이되 자재창고가 아니어야 한다(LOCATION_INVALID). 완제품 위치는 ERP W/O 의 입고 창고(SL_CD)를 따른다 — 그 코드와 같은 MES 창고 안의 위치만 받고(FG_LOCATION_OUTSIDE_WAREHOUSE), 창고를 정하지 못하면 어떤 위치도 받지 않으며(FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED), SL_CD 가 없으면 외부창고·불량창고도 막는다(LOCATION_INVALID). 라인을 바꿔도 완제품 위치는 바뀌지 않는다. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다.",
     "parameters": [
      {
       "name": "workOrderId",
@@ -7320,8 +7320,18 @@
      "erpStorageLocationCode": {
       "type": "string",
       "maxLength": 7,
-      "description": "ERP 창고(SL_CD) — 공통코드 SL_TYPE 의 코드. ERP 가 비워 보냈거나 연계로 들어오지 않은 건은 키가 없다",
+      "description": "ERP 창고(SL_CD) — 공통코드 SL_TYPE 의 코드. ERP 가 비워 보냈거나 연계로 들어오지 않은 건은 키가 없다. 이 오더의 생산품 입고 창고이고, 계획을 확정하면 MES W/O 의 완제품 위치가 이 코드와 같은 MES 창고 안에서 정해진다(erpStorageWarehouse)",
       "example": "S510"
+     },
+     "erpStorageWarehouse": {
+      "type": "object",
+      "description": "SL_CD 와 코드가 같은 MES 창고 — 구매입고의 ERP 창고 연결과 같은 판정이다. 키가 없으면 SL_CD 가 없거나, 연결하지 못했다(MES 창고가 없다·꺼져 있다·다른 공장에 있다·자재/불량/외부 창고다). 연결하지 못한 사유는 계획 제안의 erpStorage.reasonCode 가 낸다",
+      "required": ["id", "code", "name"],
+      "properties": {
+       "id": {"type": "integer", "format": "int64", "example": 1001},
+       "code": {"type": "string", "example": "S510"},
+       "name": {"type": "string", "example": "완제품창고"}
+      }
      },
      "erpReworkFlag": {
       "type": "string",
@@ -7424,7 +7434,7 @@
    },
    "ProductionPlanProposal": {
     "type": "object",
-    "description": "ERP W/O 하나의 계획 제안 — 서버가 조회 때 계산만 하고 저장하지 않는다. 판정 순서: 취소된 ERP W/O → NOT_PROPOSABLE·NO_CHANGE(ORDER_CANCELLED) · 확정 계획량 ≥ ERP W/O 수량 → KEEP_CONFIRMED·NO_CHANGE(작성중 계획이 남았으면 NEEDS_INPUT·DRAFT_PLAN_EXCEEDS_ORDER) · 작성중 계획이 있으면 REVIEW_DRAFT · 없으면 NEW_PLAN. REVIEW_DRAFT·NEW_PLAN 인데 기준정보 사유(category BLOCKED)가 있으면 NOT_PROPOSABLE·NEEDS_INPUT 이고 plans 는 빈 배열이다. 그 밖에는 BLOCK 문제가 하나라도 있으면 NEEDS_INPUT, 없으면 CONFIRMABLE 이다.",
+    "description": "ERP W/O 하나의 계획 제안 — 서버가 조회 때 계산만 하고 저장하지 않는다. 판정 순서: 취소된 ERP W/O → NOT_PROPOSABLE·NO_CHANGE(ORDER_CANCELLED) · 확정 계획량 ≥ ERP W/O 수량 → KEEP_CONFIRMED·NO_CHANGE(작성중 계획이 남았으면 NEEDS_INPUT·DRAFT_PLAN_EXCEEDS_ORDER) · 작성중 계획이 있으면 REVIEW_DRAFT · 없으면 NEW_PLAN. REVIEW_DRAFT·NEW_PLAN 인데 BOM·Routing 사유(BOM_DEFAULT_REQUIRED·ROUTING_REQUIRED·ROUTING_DEFAULT_REQUIRED·ROUTING_OPERATION_REQUIRED)가 있으면 NOT_PROPOSABLE·NEEDS_INPUT 이고 plans 는 빈 배열이다. category BLOCKED 는 표시 분류일 뿐 plans 를 비우지 않는다(예: 입고 창고 연결 실패는 BLOCKED 이지만 계획·4M 은 그대로 낸다). 그 밖에는 BLOCK 문제가 하나라도 있으면 NEEDS_INPUT, 없으면 CONFIRMABLE 이다.",
     "required": [
      "productionOrderId",
      "productionOrderNo",
@@ -7438,6 +7448,7 @@
      "confirmedPlanQty",
      "draftPlanQty",
      "remainingQty",
+     "erpStorage",
      "plans",
      "issues",
      "basis"
@@ -7509,6 +7520,9 @@
       "example": 10.0,
       "description": "저장값 기준 잔량(orderQty − confirmedPlanQty − draftPlanQty) — ProductionOrder.remainingQty 와 같은 식. NEW_PLAN 은 새 계획의 proposedQty 와 같고 그 제안을 확정하면 0 이 된다. REVIEW_DRAFT 는 작성중 계획을 그대로 확정해도 남는 수량이다 — 남은 수량은 새로 제안하지 않으므로 화면이 「작성중 계획을 확정해도 N 남음」을 이 값으로 보인다. 음수면 작성중 계획이 ERP W/O 수량을 넘는다(PLAN_QTY_EXCEEDS_ORDER)"
      },
+     "erpStorage": {
+      "$ref": "#/components/schemas/ProductionPlanProposalErpStorage"
+     },
      "plans": {
       "type": "array",
       "description": "확정하면 저장될 계획. NEW_PLAN 은 새 계획 하나, REVIEW_DRAFT 는 작성중 계획마다 하나(새 계획을 더하지 않는다 — 남는 수량은 remainingQty). KEEP_CONFIRMED·NOT_PROPOSABLE 은 빈 배열",
@@ -7525,6 +7539,44 @@
      },
      "basis": {
       "$ref": "#/components/schemas/ProductionPlanProposalBasis"
+     }
+    }
+   },
+   "ProductionPlanProposalErpStorage": {
+    "type": "object",
+    "description": "ERP W/O 의 입고 창고(SL_CD) 판정 — 공정 W/O 의 완제품 위치(defaultFgLocationId)가 이것을 따른다. 창고는 SL_CD 와 코드가 같은 이 ERP W/O 공장의 MES 창고(구매입고의 ERP 창고 연결과 같은 판정)이고, 위치는 그 창고의 입고 위치다 — 나뉘지 않은 창고는 「창고 전체」, 나뉜 창고는 「적치 대기」. 창고 유형은 PRODUCT 로 제한하지 않는다. 연결하지 못하면(reasonCode) 라인 기본 위치로 대체하지 않고 완제품 위치를 비운다. SL_CD 가 없으면 세 칸이 모두 null 이고 완제품 위치는 라인 기본값이다(공정 W/O 의 defaultFgLocationSource). ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다.",
+    "required": ["erpStorageLocationCode", "warehouse", "location", "reasonCode"],
+    "properties": {
+     "erpStorageLocationCode": {
+      "type": ["string", "null"],
+      "description": "ERP W/O 의 SL_CD. 비어 있으면 null",
+      "example": "S510"
+     },
+     "warehouse": {
+      "type": ["object", "null"],
+      "description": "결정된 MES 창고. 연결하지 못했거나 SL_CD 가 없으면 null",
+      "required": ["id", "code", "name"],
+      "properties": {
+       "id": {"type": "integer", "format": "int64", "example": 1001},
+       "code": {"type": "string", "example": "S510"},
+       "name": {"type": "string", "example": "완제품창고"}
+      }
+     },
+     "location": {
+      "type": ["object", "null"],
+      "description": "결정된 입고 위치(창고 전체 또는 적치 대기). warehouse 와 함께 null 이다",
+      "required": ["id", "code", "name"],
+      "properties": {
+       "id": {"type": "integer", "format": "int64", "example": 1001},
+       "code": {"type": "string", "example": "WH-ALL"},
+       "name": {"type": "string", "example": "창고 전체"}
+      }
+     },
+     "reasonCode": {
+      "type": ["string", "null"],
+      "enum": ["FG_WAREHOUSE_UNMAPPED", "FG_WAREHOUSE_INACTIVE", "FG_WAREHOUSE_OTHER_PLANT", "FG_WAREHOUSE_NOT_ALLOWED", null],
+      "description": "SL_CD 가 있는데 창고를 정하지 못한 까닭 — FG_WAREHOUSE_UNMAPPED 코드가 같은 MES 창고가 없다 · FG_WAREHOUSE_INACTIVE 그 창고가 꺼져 있다 · FG_WAREHOUSE_OTHER_PLANT 그 창고가 다른 공장에 있다 · FG_WAREHOUSE_NOT_ALLOWED 자재창고·불량창고·외부창고다. 정해졌거나 SL_CD 가 없으면 null. 같은 코드가 공정 W/O 의 defaultFgLocationId 칸 문제(issues)로도 나온다",
+      "example": null
      }
     }
    },
@@ -7564,9 +7616,14 @@
      "MOLD_NOT_IN_SERVICE",
      "WORK_ORDER_LOCATION_REQUIRED",
      "LOCATION_INVALID",
+     "FG_WAREHOUSE_UNMAPPED",
+     "FG_WAREHOUSE_INACTIVE",
+     "FG_WAREHOUSE_OTHER_PLANT",
+     "FG_WAREHOUSE_NOT_ALLOWED",
+     "FG_LOCATION_OUTSIDE_WAREHOUSE",
      "PLAN_QTY_EXCEEDS_ORDER"
     ],
-    "description": "BLOCK 사유. 분류 BLOCKED(제안 불가 — 이 화면에서 풀 수 없다): ORDER_CANCELLED 취소된 ERP W/O · BOM_DEFAULT_REQUIRED 기본 BOM 지정 필요(품목의 ERP 기본 BOM 이 없거나 둘 이상) · ROUTING_REQUIRED 공정 등록 필요(확정·유효 기간 안 Routing 이 없다) · ROUTING_DEFAULT_REQUIRED 기본 공정 지정 필요(쓸 수 있는 Routing 이 여럿인데 기본이 하나로 정해지지 않는다) · ROUTING_OPERATION_REQUIRED 고른 Routing 에 공정이 한 줄도 없다 · DRAFT_PLAN_EXCEEDS_ORDER 확정 계획이 이미 수량을 채웠는데 작성중 계획이 남았다(계획 화면에서 작성중 계획을 줄이거나 삭제한다). 분류 INPUT(보완 필요 — 화면에서 골라 확정 본문에 실으면 풀린다): WORK_ORDER_LINE_REQUIRED 공정 W/O 의 생산 라인이 정해지지 않는다(계획 라인도 없고 배정 설비도 라인에 속하지 않는다) · LINE_PLANT_MISMATCH 라인이 ERP W/O 공장의 사용 중인 라인이 아니다 · RESOURCE_PLANT_MISMATCH 설비·금형이 ERP W/O 공장 것이 아니다 · EQUIPMENT_NOT_IN_SERVICE 가동 상태가 아닌 설비 · EQUIPMENT_LINE_MISMATCH 설비가 W/O 라인이 아닌 다른 라인에 속한다(라인이 없는 설비는 된다) · MOLD_NOT_IN_SERVICE 가동 상태가 아닌 금형 · WORK_ORDER_LOCATION_REQUIRED 공정 W/O 의 기본 위치(WIP·완제품·스크랩) 가운데 빈 것이 있다 · LOCATION_INVALID 기본 위치가 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치가 아니다 · PLAN_QTY_EXCEEDS_ORDER 작성중 계획 수량을 더하면 ERP W/O 수량을 넘는다(수량을 줄인다). ⭐ 라인·설비·금형·위치 사유는 확정(POST …:confirm-plan-proposal)의 400 과 같은 판정·같은 코드다 — CONFIRMABLE 제안을 그대로 확정하면 이 판정으로 막히지 않는다."
+    "description": "BLOCK 사유. 분류 BLOCKED(제안 불가 — 이 화면에서 풀 수 없다. 표시 분류라 plans 를 비우는지는 별개다): ORDER_CANCELLED 취소된 ERP W/O · BOM_DEFAULT_REQUIRED 기본 BOM 지정 필요(품목의 ERP 기본 BOM 이 없거나 둘 이상) · ROUTING_REQUIRED 공정 등록 필요(확정·유효 기간 안 Routing 이 없다) · ROUTING_DEFAULT_REQUIRED 기본 공정 지정 필요(쓸 수 있는 Routing 이 여럿인데 기본이 하나로 정해지지 않는다) · ROUTING_OPERATION_REQUIRED 고른 Routing 에 공정이 한 줄도 없다 · DRAFT_PLAN_EXCEEDS_ORDER 확정 계획이 이미 수량을 채웠는데 작성중 계획이 남았다(계획 화면에서 작성중 계획을 줄이거나 삭제한다) · FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED ERP W/O 의 SL_CD 와 코드가 같은 MES 창고가 없다·꺼져 있다·다른 공장에 있다·자재/불량/외부 창고다 — 라인 기본 위치로 대체하지 않고 완제품 위치(defaultFgLocationId)를 막는다. 위치를 골라도 풀리지 않고 창고 기준정보나 ERP 의 SL_CD 를 고친 뒤 제안을 다시 조회하면 풀린다. 분류 INPUT(보완 필요 — 화면에서 골라 확정 본문에 실으면 풀린다): WORK_ORDER_LINE_REQUIRED 공정 W/O 의 생산 라인이 정해지지 않는다(계획 라인도 없고 배정 설비도 라인에 속하지 않는다) · LINE_PLANT_MISMATCH 라인이 ERP W/O 공장의 사용 중인 라인이 아니다 · RESOURCE_PLANT_MISMATCH 설비·금형이 ERP W/O 공장 것이 아니다 · EQUIPMENT_NOT_IN_SERVICE 가동 상태가 아닌 설비 · EQUIPMENT_LINE_MISMATCH 설비가 W/O 라인이 아닌 다른 라인에 속한다(라인이 없는 설비는 된다) · MOLD_NOT_IN_SERVICE 가동 상태가 아닌 금형 · WORK_ORDER_LOCATION_REQUIRED 공정 W/O 의 기본 위치(WIP·완제품·스크랩) 가운데 빈 것이 있다 · LOCATION_INVALID 기본 위치가 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치가 아니다(완제품 위치는 SL_CD 가 없을 때 외부창고·불량창고도 아니어야 한다) · FG_LOCATION_OUTSIDE_WAREHOUSE 확정 본문 전용 — 완제품 위치가 SL_CD 창고 안이 아니다(제안은 늘 그 창고의 위치를 낸다) · PLAN_QTY_EXCEEDS_ORDER 작성중 계획 수량을 더하면 ERP W/O 수량을 넘는다(수량을 줄인다). ⭐ 라인·설비·금형·위치 사유는 확정(POST …:confirm-plan-proposal)의 400 과 같은 판정·같은 코드다 — CONFIRMABLE 제안을 그대로 확정하면 이 판정으로 막히지 않는다."
    },
    "ProductionPlanProposalReason": {
     "type": "object",
@@ -7634,6 +7691,11 @@
        "MOLD_NOT_IN_SERVICE",
        "WORK_ORDER_LOCATION_REQUIRED",
        "LOCATION_INVALID",
+      "FG_WAREHOUSE_UNMAPPED",
+      "FG_WAREHOUSE_INACTIVE",
+      "FG_WAREHOUSE_OTHER_PLANT",
+      "FG_WAREHOUSE_NOT_ALLOWED",
+      "FG_LOCATION_OUTSIDE_WAREHOUSE",
        "PLAN_QTY_EXCEEDS_ORDER",
        "EQUIPMENT_CALIBRATION_EXPIRED",
        "WORKER_QUALIFICATION_EXPIRED",
@@ -7843,6 +7905,7 @@
      "plannedShiftId",
      "defaultWipLocationId",
      "defaultFgLocationId",
+     "defaultFgLocationSource",
      "defaultScrapLocationId",
      "issues"
     ],
@@ -7985,7 +8048,13 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "W/O 라인의 기본 완제품 위치"
+      "description": "완제품 위치 — ERP W/O 에 SL_CD 가 있으면 erpStorage.location(그 창고 안의 입고 위치), 없으면 W/O 라인의 기본 완제품 위치. SL_CD 가 있는데 창고를 정하지 못하면 라인 기본값이 있어도 null 이고 erpStorage.reasonCode 와 같은 코드의 issues 가 선다. 계획의 모든 공정 W/O 에 같은 값을 둔다. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다."
+     },
+     "defaultFgLocationSource": {
+      "type": "string",
+      "enum": ["ERP_STORAGE_LOCATION", "LINE_DEFAULT", "NONE"],
+      "description": "defaultFgLocationId 의 출처 — ERP_STORAGE_LOCATION ERP 입고 창고(SL_CD) · LINE_DEFAULT W/O 라인의 기본 완제품 위치(SL_CD 가 없을 때만) · NONE 정해지지 않았다(SL_CD 연결 실패, 또는 SL_CD 도 라인 기본값도 없다 — 이때 WORK_ORDER_LOCATION_REQUIRED 는 SL_CD 가 없을 때만 선다)",
+      "example": "ERP_STORAGE_LOCATION"
      },
      "defaultScrapLocationId": {
       "type": [
@@ -8019,7 +8088,7 @@
      "productionOrder": {
       "type": "string",
       "maxLength": 128,
-      "description": "ERP W/O 의 판·수량·상태 — ERP 재수신·확인 처리로 바뀐다",
+      "description": "ERP W/O 의 판·수량·상태·입고 창고(SL_CD) — ERP 재수신·확인 처리로 바뀐다. 수량이 같아도 SL_CD 만 바뀌면 달라진다",
       "example": "값"
      },
      "plans": {
@@ -8043,7 +8112,7 @@
      "resources": {
       "type": "string",
       "maxLength": 128,
-      "description": "공장·품목의 기본 매핑, 제안이 고른 라인과 그 기본 위치, 설비·금형의 공장·상태·사용 여부·라인, 공장의 교대. 설비 교정 기한·금형 타수처럼 수시로 바뀌는 칸은 WARN 에만 쓰고 넣지 않는다",
+      "description": "공장·품목의 기본 매핑, 제안이 고른 라인과 그 기본 위치, 설비·금형의 공장·상태·사용 여부·라인, 공장의 교대, SL_CD 로 결정된 MES 창고·입고 위치와 그 활성 여부(창고가 생기거나 꺼지거나 켜져도 달라진다). 설비 교정 기한·금형 타수처럼 수시로 바뀌는 칸은 WARN 에만 쓰고 넣지 않는다",
       "example": "값"
      }
     }
@@ -8164,7 +8233,7 @@
    },
    "ProductionPlanProposalConfirmWorkOrder": {
     "type": "object",
-    "description": "공정 W/O 하나의 보완 4M. 생산 라인과 기본 위치 셋은 필수다 — 배포가 요구하므로 확정 때 막는다. 계획 시각은 싣지 않는다 — 서버가 계획일과 plannedShiftId 로 정한다(ProductionPlanProposalWorkOrder.plannedStartAt 의 규칙). 기본 위치 셋은 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치여야 한다 — 아니면 400 LOCATION_INVALID. 라인·설비·금형·위치는 제안의 사유와 같은 판정·같은 코드다.",
+    "description": "공정 W/O 하나의 보완 4M. 생산 라인과 기본 위치 셋은 필수다 — 배포가 요구하므로 확정 때 막는다. 계획 시각은 싣지 않는다 — 서버가 계획일과 plannedShiftId 로 정한다(ProductionPlanProposalWorkOrder.plannedStartAt 의 규칙). 기본 위치 셋은 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치여야 한다 — 아니면 400 LOCATION_INVALID. 완제품 위치는 더해, ERP W/O 에 SL_CD 가 있으면 그 창고(제안의 erpStorage.warehouse) 안의 위치여야 한다 — 다른 창고면 400 FG_LOCATION_OUTSIDE_WAREHOUSE, SL_CD 의 창고를 정하지 못하면 어떤 위치도 400 FG_WAREHOUSE_*(FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED). SL_CD 가 없으면 외부창고·불량창고 위치도 400 LOCATION_INVALID 다. 라인·설비·금형·위치는 제안의 사유와 같은 판정·같은 코드다.",
     "required": [
      "routingOperationId",
      "productionLineId",
@@ -8228,7 +8297,8 @@
      "defaultFgLocationId": {
       "type": "integer",
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "SL_CD 창고 안의 위치(제안의 defaultFgLocationId). 규칙은 ProductionPlanProposalConfirmWorkOrder 설명. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다."
      },
      "defaultScrapLocationId": {
       "type": "integer",
@@ -10406,19 +10476,19 @@
       "type": ["integer", "null"],
       "format": "int64",
       "example": 1001,
-      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지."
+      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지. 값을 바꿀 때 이 공장의 사용 중인 위치이되 자재창고가 아니어야 한다(아니면 400 LOCATION_INVALID)."
      },
      "defaultFgLocationId": {
       "type": ["integer", "null"],
       "format": "int64",
       "example": 1001,
-      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지."
+      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지. 값을 바꿀 때 — ERP W/O 에 SL_CD 가 있으면 그 코드와 같은 MES 창고 안의 위치여야 한다(다른 창고면 400 FG_LOCATION_OUTSIDE_WAREHOUSE, 창고를 정하지 못하면 400 FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED). SL_CD 가 없으면 이 공장의 사용 중인 위치이되 자재창고·외부창고·불량창고가 아니어야 한다(아니면 400 LOCATION_INVALID). 같은 값을 다시 보내면 검증하지 않는다. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다."
      },
      "defaultScrapLocationId": {
       "type": ["integer", "null"],
       "format": "int64",
       "example": 1001,
-      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지."
+      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지. 값을 바꿀 때 이 공장의 사용 중인 위치이되 자재창고가 아니어야 한다(아니면 400 LOCATION_INVALID)."
      },
      "remarks": {
       "type": [

@@ -20,9 +20,21 @@ export function proposalView(proposal: Proposal) {
     confirmedPlanQty: quantities.confirmedQty.toNumber(),
     draftPlanQty: quantities.draftQty.toNumber(),
     remainingQty: quantities.remainingQty.toNumber(),
+    erpStorage: erpStorageView(proposal.fg),
     plans: proposal.plans.map(planView),
     issues: proposal.issues,
     basis: proposal.basis,
+  };
+}
+
+/** 계약 `ProductionPlanProposalErpStorage` — 연결하지 못한 칸은 null 이고 `reasonCode` 가 까닭이다. */
+function erpStorageView(fg: Proposal['fg']) {
+  const place = (value: { id: bigint; code: string; name: string }) => ({ id: Number(value.id), code: value.code, name: value.name });
+  return {
+    erpStorageLocationCode: fg.kind === 'NO_STORAGE_CODE' ? null : fg.erpCode,
+    warehouse: fg.kind === 'ERP_STORAGE_LOCATION' ? place(fg.warehouse) : null,
+    location: fg.kind === 'ERP_STORAGE_LOCATION' ? place(fg.location) : null,
+    reasonCode: fg.kind === 'LINK_FAILED' ? fg.reason : null,
   };
 }
 
@@ -85,6 +97,7 @@ function workOrderView(workOrder: ProposalWorkOrder) {
     plannedShiftId: null,
     defaultWipLocationId: id(workOrder.defaultWipLocationId),
     defaultFgLocationId: id(workOrder.defaultFgLocationId),
+    defaultFgLocationSource: workOrder.defaultFgLocationSource,
     defaultScrapLocationId: id(workOrder.defaultScrapLocationId),
     issues: workOrder.issues,
   };

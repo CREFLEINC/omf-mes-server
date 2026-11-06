@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { toDateString } from '../../common/master';
+import { FgResolution, FgSource, fgLocationOf } from '../../core/erp-warehouse/fg-location';
 import { checkCalibration, checkDoubleBooked, checkMoldLife, localToday } from '../../production/work-order/validation';
 import { defaultBomOf } from '../production-plan/master-choice';
 import { PlanWindow, dayStartOf, dayWindow, localDate, timeOfColumn } from '../production-plan/plan-window';
@@ -22,7 +23,7 @@ import {
   statusOf,
   warnIssue,
 } from './proposal-policy';
-import { OperationRow, OrderRow, PlanRow, ProposalFacts, routingFor } from './proposal-reader';
+import { OperationRow, OrderRow, PlanRow, ProposalFacts, fgOf, routingFor } from './proposal-reader';
 import { resourceFindings } from './resource-rules';
 
 export interface ProposalWorkOrder {
@@ -35,6 +36,8 @@ export interface ProposalWorkOrder {
   moldId: bigint | null;
   defaultWipLocationId: bigint | null;
   defaultFgLocationId: bigint | null;
+  /** 완제품 위치가 어디서 왔는가 — W/O 마다 다른 것은 라인 기본값뿐이라 이 칸만 W/O 에 둔다. */
+  defaultFgLocationSource: FgSource;
   defaultScrapLocationId: bigint | null;
   issues: ProposalIssue[];
 }
@@ -70,6 +73,8 @@ export interface Proposal {
   plans: ProposalPlan[];
   issues: ProposalIssue[];
   basis: ProposalBasis;
+  /** ERP W/O 의 입고 창고(`SL_CD`) 판정 — 공정 W/O 의 완제품 위치가 이것을 따른다. */
+  fg: FgResolution;
 }
 
 const CONFIRMED = 'CONFIRMED';
@@ -93,7 +98,7 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   const basis = basisOf(facts, order, saved);
   const result = (kind: ProposalKind, plans: ProposalPlan[], issues: ProposalIssue[]): Proposal => {
     const reasons = reasonsOf([...issues, ...plans.flatMap((plan) => [...plan.issues, ...plan.workOrders.flatMap((workOrder) => workOrder.issues)])]);
-    return { order, kind, status: statusOf(kind, order.status_code === CANCELLED, reasons), reasons, quantities, plans, issues, basis };
+    return { order, kind, status: statusOf(kind, order.status_code === CANCELLED, reasons), reasons, quantities, plans, issues, basis, fg: fgOf(facts, order) };
   };
 
   if (order.status_code === CANCELLED) {
@@ -171,17 +176,19 @@ function workOrdersOf(
   const window = dayWindow(planDate, dayStartOf(activeStarts), order.plant.timezone_code);
   const dependencies = facts.dependencies.get(routingId) ?? [];
   const today = localToday(now, order.plant.timezone_code);
+  const fg = fgOf(facts, order);
 
   return operations.map((operation) => {
     const resource = resources.get(operation.routing_operation_id);
     const lineId = planLineId ?? resource?.equipmentLineId ?? null;
     const line = lineId === null ? undefined : facts.lines.get(lineId);
+    const fgPick = fgLocationOf(fg, line?.default_fg_location_id ?? null);
     const values = {
       productionLineId: lineId,
       equipmentId: resource?.equipmentId ?? null,
       moldId: resource?.moldId ?? null,
       defaultWipLocationId: line?.default_wip_location_id ?? null,
-      defaultFgLocationId: line?.default_fg_location_id ?? null,
+      defaultFgLocationId: fgPick.locationId,
       defaultScrapLocationId: line?.default_scrap_location_id ?? null,
     };
     const equipmentIds = resource?.equipmentId == null ? [] : [resource.equipmentId];
@@ -199,8 +206,9 @@ function workOrdersOf(
       proposedQty: qty,
       window,
       ...values,
+      defaultFgLocationSource: fgPick.source,
       issues: [
-        ...resourceFindings(order.plant_id, values, facts).map((finding) => blockIssue(finding.code, finding.message, finding.field)),
+        ...resourceFindings(order.plant_id, values, facts, fg).map((finding) => blockIssue(finding.code, finding.message, finding.field)),
         ...findings.map((finding) => warnIssue(finding.code, finding.message, finding.field)),
       ],
     };
@@ -220,12 +228,16 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
     ...saved.filter((plan) => plan.status_code !== CONFIRMED).map((plan) => plan.planned_line_id),
     ...maps.map((row) => row.map.equipmentLineId),
   ].filter((id) => id !== null));
-  const locationIds = new Set([...lineIds].flatMap((id) => {
-    const line = facts.lines.get(id);
-    return line === undefined ? [] : [line.default_wip_location_id, line.default_fg_location_id, line.default_scrap_location_id];
-  }).filter((id) => id !== null));
+  const fg = fgOf(facts, order);
+  const locationIds = new Set([
+    ...[...lineIds].flatMap((id) => {
+      const line = facts.lines.get(id);
+      return line === undefined ? [] : [line.default_wip_location_id, line.default_fg_location_id, line.default_scrap_location_id];
+    }),
+    fg.kind === 'ERP_STORAGE_LOCATION' ? fg.location.id : null,
+  ].filter((id) => id !== null));
   return {
-    productionOrder: basisHash([order.version_no, order.order_qty, order.status_code, order.plant_id, order.item_id, order.uom_id, order.planned_start_date]),
+    productionOrder: basisHash([order.version_no, order.order_qty, order.status_code, order.plant_id, order.item_id, order.uom_id, order.planned_start_date, order.erp_storage_location_code]),
     // 확정 계획의 W/O 는 「모두 취소됐는가」만 수량에 든다 — 진행 중 상태 변화로 409 가 나지 않게.
     plans: basisHash(saved.map((plan) => [plan.production_plan_id, plan.version_no, plan.status_code, isPlanCancelled(plan.work_order.map((workOrder) => workOrder.status_code))])),
     bom: basisHash((facts.boms.get(order.item_id) ?? []).map((bom) => [bom.bom_id, bom.bom_version, bom.version_no])),
@@ -239,6 +251,9 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
     ]),
     resources: basisHash([
       order.plant.timezone_code,
+      // 결정된 창고·위치와 그 활성 여부. 창고가 꺼지거나 만들어지면 판정(kind·reason)이 바뀌고, 이름은 넣지 않는다.
+      fg.kind === 'ERP_STORAGE_LOCATION' ? [fg.kind, fg.erpCode, fg.warehouse.id, fg.location.id, fg.location.isActive]
+        : fg.kind === 'LINK_FAILED' ? [fg.kind, fg.erpCode, fg.reason] : [fg.kind],
       maps.map((row) => [row.item_resource_map_id, row.version_no, row.map]),
       // 설비·금형은 판정에 드는 칸만 — 교정 기한·타수와 그것이 올리는 판은 WARN 에만 쓰고 넣지 않는다(수시로 바뀐다).
       [...equipmentIds].sort(compare).map((id) => {

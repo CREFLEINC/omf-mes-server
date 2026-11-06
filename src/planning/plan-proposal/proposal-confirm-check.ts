@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { LOCATION_FACT_SELECT } from '../../core/erp-warehouse/fg-location';
 import { WorkOrderSupplement } from '../production-plan/expand';
 import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
@@ -101,7 +102,7 @@ export async function resolveConfirm(
         defaultScrapLocationId: BigInt(workOrder.defaultScrapLocationId),
       };
       // 제안이 사유를 내는 판정과 같은 것 — 「확정 가능」 제안을 그대로 보내면 여기서 막히지 않는다.
-      for (const finding of resourceFindings(order.plant_id, resources, refs)) error(field(finding.field), finding.code, finding.message);
+      for (const finding of resourceFindings(order.plant_id, resources, refs, proposal.fg)) error(field(finding.field), finding.code, finding.message);
       const workerId = idOf(workOrder.responsibleWorkerId);
       if (workerId !== null) {
         const worker = refs.workers.get(workerId);
@@ -153,7 +154,7 @@ async function readReferences(client: Prisma.TransactionClient, body: ProposalCo
     client.worker.findMany({ where: { worker_id: { in: workerIds } }, select: { worker_id: true, plant_id: true, is_active: true } }),
     client.location.findMany({
       where: { location_id: { in: locationIds } },
-      select: { location_id: true, is_active: true, warehouse: { select: { plant_id: true, warehouse_type_code: true, is_active: true } } },
+      select: LOCATION_FACT_SELECT,
     }),
   ]);
   return {

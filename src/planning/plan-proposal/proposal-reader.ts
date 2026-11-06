@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { FgResolution, LOCATION_FACT_SELECT, LocationFact, fgKey, resolveFgLocations } from '../../core/erp-warehouse/fg-location';
 import { RELEASED_WORK_ORDER_STATUSES } from '../../core/work-order';
 import type { EquipmentFacts, MoldFacts, RivalWindow } from '../../production/work-order/validation';
 import { DefaultBomRow, UsableRoutingRow, chooseRouting, readMastersOf } from '../production-plan/master-choice';
@@ -20,6 +21,7 @@ export interface OrderRow {
   order_qty: Prisma.Decimal;
   status_code: string;
   version_no: number;
+  erp_storage_location_code: string | null;
   planned_start_date: Date | null;
   plant: { timezone_code: string };
 }
@@ -107,15 +109,11 @@ export interface ProposalFacts {
   shifts: Map<bigint, ShiftRow[]>;
   equipments: Map<bigint, EquipmentFacts & { plant_id: bigint; production_line_id: bigint | null; version_no: number }>;
   molds: Map<bigint, MoldFacts & { plant_id: bigint; version_no: number }>;
-  /** 라인 기본 위치 — 확정과 같은 위치 판정(`resource-rules.ts`)에 쓴다. */
-  locations: Map<bigint, LocationRow>;
+  /** 라인 기본 위치와 ERP 입고 창고의 입고 위치 — 확정과 같은 위치 판정(`resource-rules.ts`)에 쓴다. */
+  locations: Map<bigint, LocationFact>;
+  /** ERP W/O 마다 완제품 위치 판정 — 키는 `fgKey`. */
+  fg: Map<string, FgResolution>;
   rivals: RivalWindow[];
-}
-
-export interface LocationRow {
-  location_id: bigint;
-  is_active: boolean;
-  warehouse: { plant_id: bigint; warehouse_type_code: string; is_active: boolean };
 }
 
 const CONFIRMED = 'CONFIRMED';
@@ -125,7 +123,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     where: { production_order_id: { in: [...orderIds] } },
     select: {
       production_order_id: true, production_order_no: true, erp_order_no: true, plant_id: true, item_id: true, uom_id: true,
-      order_qty: true, status_code: true, version_no: true, planned_start_date: true, plant: { select: { timezone_code: true } },
+      order_qty: true, status_code: true, version_no: true, erp_storage_location_code: true, planned_start_date: true, plant: { select: { timezone_code: true } },
     },
   });
   const planRows = await client.production_plan.findMany({
@@ -221,11 +219,13 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     }),
   ]);
 
-  const locationIds = unique(lineRows.flatMap((line) => [line.default_wip_location_id, line.default_fg_location_id, line.default_scrap_location_id]));
+  const fg = await resolveFgLocations(client, orders.map((order) => ({ plantId: order.plant_id, erpCode: order.erp_storage_location_code })));
+  const erpLocationIds = [...fg.values()].map((resolution) => (resolution.kind === 'ERP_STORAGE_LOCATION' ? resolution.location.id : null));
+  const locationIds = unique([...lineRows.flatMap((line) => [line.default_wip_location_id, line.default_fg_location_id, line.default_scrap_location_id]), ...erpLocationIds]);
   const locationRows = locationIds.length === 0 ? [] : await client.location.findMany({
     where: { location_id: { in: locationIds } },
     orderBy: { location_id: 'asc' },
-    select: { location_id: true, is_active: true, warehouse: { select: { plant_id: true, warehouse_type_code: true, is_active: true } } },
+    select: LOCATION_FACT_SELECT,
   });
 
   return {
@@ -242,6 +242,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     equipments: new Map(equipments.map((row) => [row.equipment_id, row])),
     molds: new Map(molds.map((row) => [row.mold_id, row])),
     locations: new Map(locationRows.map((row) => [row.location_id, row])),
+    fg,
     rivals,
   };
 }
@@ -262,3 +263,6 @@ function group<T>(rows: readonly T[], key: (row: T) => bigint): Map<bigint, T[]>
 function unique(ids: readonly (bigint | null)[]): bigint[] {
   return [...new Set(ids.filter((id): id is bigint => id !== null))];
 }
+
+export const fgOf = (facts: ProposalFacts, order: OrderRow): FgResolution =>
+  facts.fg.get(fgKey({ plantId: order.plant_id, erpCode: order.erp_storage_location_code })) as FgResolution;
