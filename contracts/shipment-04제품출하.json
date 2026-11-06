@@ -1038,7 +1038,8 @@
        "format": "date",
        "example": "2026-08-13"
       },
-      "description": "필수 — 공유계약 L-3"
+      "description": "필수 — 공유계약 L-3",
+      "required": true
      },
      {
       "name": "shipDateTo",
@@ -1072,9 +1073,14 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "example": "값"
+       "example": "requestedShipDate",
+       "enum": [
+        "requestedShipDate",
+        "customerId",
+        "shipmentRequestNo"
+       ]
       },
-      "description": "출하일·고객·작업지시번호 셋만. 근거: 공유계약 L-4"
+      "description": "출하일·고객·작업지시번호 셋만. 근거: 공유계약 L-4\n\n서버 구현 기준 허용 키는 requestedShipDate·customerId·shipmentRequestNo다(통보 201)."
      },
      {
       "name": "page",
@@ -1309,7 +1315,8 @@
        "format": "date",
        "example": "2026-08-13"
       },
-      "description": "필수 — 공유계약 L-3. 목록과 같은 기준을 쓴다"
+      "description": "필수 — 공유계약 L-3. 목록과 같은 기준을 쓴다",
+      "required": true
      },
      {
       "name": "shipDateTo",
@@ -1963,9 +1970,13 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "example": "값"
+       "example": "shippedAt",
+       "enum": [
+        "shippedAt",
+        "shipmentNo"
+       ]
       },
-      "description": "경과일 긴 순이 기본이다. 근거: W-04-12 §5-7"
+      "description": "경과일 긴 순이 기본이다. 근거: W-04-12 §5-7\n\n서버 구현 기준 허용 키는 shippedAt·shipmentNo다(통보 219)."
      },
      {
       "name": "page",
@@ -2724,7 +2735,8 @@
        "format": "date-time",
        "example": "2026-08-13T10:22:00+09:00"
       },
-      "description": "기간 필수 — 공유계약 L-3"
+      "description": "기간 필수 — 공유계약 L-3",
+      "required": true
      },
      {
       "name": "openedTo",
@@ -2733,7 +2745,8 @@
        "type": "string",
        "format": "date-time",
        "example": "2026-08-13T10:22:00+09:00"
-      }
+      },
+      "required": true
      },
      {
       "name": "page",

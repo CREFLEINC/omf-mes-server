@@ -671,7 +671,8 @@
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
       },
-      "description": "필수"
+      "description": "필수",
+      "required": true
      },
      {
       "name": "detectedTo",
@@ -680,7 +681,8 @@
        "type": "string",
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
-      }
+      },
+      "required": true
      }
     ],
     "security": [

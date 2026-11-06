@@ -19453,6 +19453,17 @@
       "description": "사용자의 «인사» 상태 — EMPLOYED(재직) · ON_LEAVE(휴직) · RESIGNED(퇴사) 3값(2026-09-01 뜻 확정 · 2026-09-03 문자열 도출 · 공유계약 §G). ⭐ 고객이 늘린다 — 위 셋은 초기 시드다(G-31). 값 목록은 GET /mdm/code-values?codeGroupCode=APP_USER_STATUS 로 받는다(G-32). ⛔ **계정 사용 가부는 이 값이 아니라 isActive 가 정한다** — 로그인 차단의 정본은 isActive 다(W-CO-02 §8-4 · 사용자 결정 2026-09-01). ⛔ ACTIVE 를 쓰지 않는다 — 「사용 여부」와 「수명주기」에 같은 낱말을 쓰면 두 축이 다시 섞인다(G-32 v3.5). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "EMPLOYED",
       "x-code-key": "CD-APP-USER-STATUS"
+     },
+     "password": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "password",
+      "writeOnly": true,
+      "minLength": 8,
+      "x-no-example": "비밀번호에 예시를 두지 않는다",
+      "description": "관리자가 직접 정하는 초기 비밀번호. 보내면 그 값이 계정의 비밀번호가 되고 첫 로그인 강제 변경이 걸리지 않는다(Session.mustChangePassword=false). 생략하거나 null이면 서버가 임시 비밀번호를 만들어 응답 temporaryPassword로 한 번만 내려주고 강제 변경을 건다. 최소 길이 8만 검사하며 조합 규칙은 없다 — PasswordChangeRequest.newPassword와 같은 기준이다."
      }
     }
    },
