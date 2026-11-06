@@ -101,8 +101,8 @@ describe('출하 품질 게이트', () => {
   });
 
   it('⛔ 그 밖은 전부 400 STATE_LOCKED — «양성» 판정이다', () => {
-    // ⛔ 출고 코어의 assertLotNotBlocked 는 judgment_type_control 을 보는 «음성» 판정이고
-    //    그 표가 비어 오늘 아무것도 막지 않는다. 출하 계약은 「Release 만」을 요구한다.
+    // ⛔ 출고 코어의 assertLotNotBlocked 는 생산 투입 출고(피킹 지시 출처)만 본다(#240).
+    //    출하 계약은 「Release 만」을 요구한다.
     for (const status of ['DEFECTIVE', 'INSPECTION_PENDING', 'SCRAPPED', 'HOLD']) {
       const failure = caught(() => assertLotsReleased([{ lotId: 9n, statusCode: status }], path));
       expect(failure.getStatus()).toBe(400);

@@ -113,6 +113,23 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     expect((await pickingOrder(order)).status_code).toBe('REGISTERED');
   });
 
+  it.each(['DEFECTIVE', 'INSPECTION_PENDING'])(
+    '⛔ %s LOT 은 생산 투입 출고가 400 STATE_LOCKED 다 — 재고·지시가 그대로다(omf-all-around#240)',
+    async (status) => {
+      const { order, lines } = await releaseAndPick(100);
+      const before = await onHand(ids.materialLocation);
+      await prisma.lot.update({ where: { lot_id: ids.lot }, data: { status_code: status } });
+      try {
+        const rejected = await issue(order, lines).expect(400);
+        expect(rejected.body.errors[0]).toMatchObject({ field: 'lines[0].lotId', code: 'STATE_LOCKED' });
+        expect(await onHand(ids.materialLocation)).toBe(before);
+        expect((await pickingOrder(order)).status_code).toBe('REGISTERED');
+      } finally {
+        await prisma.lot.update({ where: { lot_id: ids.lot }, data: { status_code: 'NORMAL' } });
+      }
+    },
+  );
+
   it('출발 == 도착이면 도착지를 채우지 않는다 — 같은 자리 왕복 원장을 만들지 않는다', async () => {
     const { order, lines } = await releaseAndPick(100, 100, ids.materialLocation);
     const before = await onHand(ids.materialLocation);

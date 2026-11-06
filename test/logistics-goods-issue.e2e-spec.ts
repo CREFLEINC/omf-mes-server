@@ -444,7 +444,7 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
     expect(response.body).toMatchObject({ statusCode: 'POSTED', approvalRequestId: null });
   });
 
-  it('POST …:post — SCRAPPED LOT 도 전기된다(judgment_type_control 이 비어 있다 · 결정 10 의 단일 지점)', async () => {
+  it('POST …:post — 피킹 지시 출처가 아니면 SCRAPPED LOT 도 전기된다(omf-all-around#240)', async () => {
     const fixture = await stockedIssue(10, 100);
     await prisma.lot.update({
       where: { lot_id: fixture.lotId },
