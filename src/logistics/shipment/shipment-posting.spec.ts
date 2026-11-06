@@ -114,7 +114,6 @@ function fake(seed: Seed = {}): {
           .map(({ lot_id, picked_qty }) => ({ lot_id, picked_qty })));
       },
     },
-    judgment_type_control: { findFirst: () => Promise.resolve(null) },
     warehouse: {
       findUniqueOrThrow: () =>
         Promise.resolve({ business_unit_id: 2n, plant_id: 3n, plant: { legal_entity_id: 1n } }),

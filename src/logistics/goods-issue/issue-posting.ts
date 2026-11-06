@@ -38,6 +38,14 @@ const PUTAWAY_PENDING = 'PENDING';
 const PUTAWAY_CANCELLED = 'CANCELLED';
 /** 도착지가 위치일 때만 원장 라인에 `to` 가 실린다 — 나머지는 나가서 없어진다. */
 const DESTINATION_LOCATION = 'LOCATION';
+const PICKING_ORDER = 'PICKING_ORDER';
+const LOT_NORMAL = 'NORMAL';
+/** 오류 문장에 싣는 LOT 상태 표시명 — 계약 `LotQualityStatus.lotStatusCode` 설명과 같은 이름이다. */
+const LOT_STATUS_LABEL: Record<string, string> = {
+  INSPECTION_PENDING: '검사 대기',
+  DEFECTIVE: '불량',
+  SCRAPPED: '폐기',
+};
 
 /** I-23 이 재사용하는 «데이터 모양». 서비스도 `postIssue()` 도 넘기지 않는다. */
 export interface GoodsIssueHeaderWriteInput {
@@ -114,7 +122,7 @@ export async function postIssue(
   appUserId: number | undefined,
 ): Promise<void> {
   const { header, lines } = input;
-  await assertLotNotBlocked(tx, lines);
+  await assertLotNotBlocked(tx, header, lines);
 
   const source = await orgAxis(tx, header.sourceWarehouseId);
   const fromKeys = lines.map((line) => ({ ...source, ...dimensionOf(line, line.sourceLocationId) }));
@@ -359,32 +367,35 @@ async function consumePicked(
 }
 
 /**
- * 결정 10 의 단일 지점은 상태 문자열 집합이 아니라 **`mdm.judgment_type_control`** 이다
- * (공유계약 3163 · `blocksIssue`). 그 표에 `blocks_issue = true` 행이 있으면 막는다.
- *
- * ⛔ `{DEFECTIVE,SCRAPPED,…}` 를 코드에 박지 않는다 — 박으면 폐기(`W-01-06` 불량창고
- * 입고분)·반품(`W-01-05` IQC 불합격) 전건이 400 이 되어 계약이 정의한 업무가 사라진다.
- * ⚠ `JUDGMENT_TYPE` 값 목록이 0개라 **오늘은 아무것도 막지 않는다**(I-4.md §5-3).
- * ⛔ `trace.lot_hold` 는 보지 않는다 — 보류 기록은 `W-03-02` 소관이고 잔액 칸으로도 안
- * 내려온다(`contracts/quality-03품질.json:1845` 「`inventory_balance.blocked_qty` 는 쓰지
- * 않는다 — 잔액은 서버가 파생한다(L-2)」).
+ * 생산 투입 출고(피킹 지시 출처)는 정상(`NORMAL`) LOT 만 낸다 — 출하·생산 투입과 같은 양성
+ * 판정이다(omf-all-around#240). 공급사 반품·폐기 출고는 불량품을 내보내는 것이 목적이라
+ * 상태를 보지 않는다. 출하(`SHIPMENT`)는 `assertLotsReleased` 가 먼저 막는다.
+ * ⛔ `trace.lot_hold` 는 보지 않는다 — 보류는 피킹이 막는다(`picking-pick.service.ts`).
  */
-async function assertLotNotBlocked(tx: Tx, lines: GoodsIssueLineWriteInput[]): Promise<void> {
-  // 라인마다 돌지 않는다 — 요청의 distinct 상태값으로 한 번 본다(I-4.md R-7).
-  const statuses = await tx.lot.findMany({
+async function assertLotNotBlocked(
+  tx: Tx,
+  header: GoodsIssueHeaderWriteInput,
+  lines: GoodsIssueLineWriteInput[],
+): Promise<void> {
+  if (header.sourceDocumentTypeCode !== PICKING_ORDER) return;
+  const lots = await tx.lot.findMany({
     where: { lot_id: { in: [...new Set(lines.map((line) => line.lotId))] } },
-    select: { status_code: true },
-    distinct: ['status_code'],
+    select: { lot_id: true, status_code: true },
   });
-  const blocked = await tx.judgment_type_control.findFirst({
-    where: { blocks_issue: true, lot_status_code: { in: statuses.map((row) => row.status_code) } },
-    select: { code_value_id: true },
-  });
-  if (blocked !== null) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '출고가 막힌 LOT 이 있습니다.' },
-    ]);
+  const statusOf = new Map(lots.map((lot) => [lot.lot_id, lot.status_code]));
+  const errors: ErrorItem[] = [];
+  for (const [index, line] of lines.entries()) {
+    const status = statusOf.get(line.lotId);
+    if (status === undefined || status === LOT_NORMAL) continue;
+    errors.push(
+      field(
+        `lines[${index}].lotId`,
+        ERROR_CODE.STATE_LOCKED,
+        `정상이 아닌 LOT 은 생산 투입 출고할 수 없습니다(현재 상태: ${LOT_STATUS_LABEL[status] ?? status}).`,
+      ),
+    );
   }
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
 /**

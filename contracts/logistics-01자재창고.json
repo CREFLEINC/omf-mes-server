@@ -2498,7 +2498,7 @@
      "logistics"
     ],
     "summary": "출고 등록",
-    "description": "postImmediately 가 참이면 등록과 전기가 같은 트랜잭션이다 — 화면이 한 버튼인 경우다. 승인을 먼저 받는 기타 출고는 거짓으로 보낸다. 근거: M-01-08 · W-01-05 · W-01-06",
+    "description": "postImmediately 가 참이면 등록과 전기가 같은 트랜잭션이다 — 화면이 한 버튼인 경우다. 승인을 먼저 받는 기타 출고는 거짓으로 보낸다. 전기 때 생산 투입 출고(sourceDocumentTypeCode=PICKING_ORDER)는 LOT 상태가 정상(NORMAL)이 아니면 400 STATE_LOCKED(lines[i].lotId)다 — 공급사 반품·폐기 출고는 LOT 상태를 보지 않는다(omf-all-around#240). 근거: M-01-08 · W-01-05 · W-01-06",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2752,7 +2752,7 @@
      "logistics"
     ],
     "summary": "출고 전기",
-    "description": "재고가 움직이는 순간이다. 승인이 필요한 전표는 승인이 끝나기 전에는 400 이다. 근거: W-01-06 §5-5 · 공유계약 B-8",
+    "description": "재고가 움직이는 순간이다. 승인이 필요한 전표는 승인이 끝나기 전에는 400 이다. 생산 투입 출고(sourceDocumentTypeCode=PICKING_ORDER)는 LOT 상태가 정상(NORMAL)이 아니면 400 STATE_LOCKED(lines[i].lotId)다 — 공급사 반품·폐기 출고는 LOT 상태를 보지 않는다(omf-all-around#240). 근거: W-01-06 §5-5 · 공유계약 B-8",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"

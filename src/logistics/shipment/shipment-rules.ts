@@ -87,13 +87,9 @@ export function assertAllocationSum(lines: ShipmentQtyLine[]): void {
  * ⭐⭐ **품질 게이트 — 출하는 «Release 만» 낸다.** 계약이 「배분 LOT 이 Release 가 아니면 400
  * 이다(결정 10 · `W-04-05` §5-3)」라 적었고 ⛔ **긴급 직행도 건너뛰지 않는다**고 못 박았다.
  *
- * ⛔ **출고 코어의 게이트로는 부족하다.** `issue-posting.ts:307-322` 의 `assertLotNotBlocked`
- * 는 `mdm.judgment_type_control.blocks_issue` 를 보는 **음성** 판정이고, 그 표의 `JUDGMENT_TYPE`
- * 값 목록이 **0개라 오늘 아무것도 막지 않는다**(I-4 §5-3 이 그렇게 적었다). 출하 계약은
- * **양성** 판정(「Release 만」)을 요구하므로 여기서 따로 본다.
- *
- * ⚠ 두 게이트를 **둘 다** 둔다 — 판정 유형 표가 채워지면 폐기·반품 갈래는 그쪽이 막고,
- * 출하는 그보다 좁게 막는다. 겹치는 것은 문제가 아니다.
+ * ⛔ **출고 코어의 게이트로는 부족하다.** `issue-posting.ts` 의 `assertLotNotBlocked` 는
+ * 생산 투입 출고(피킹 지시 출처)만 본다(omf-all-around#240) — 출하(`SHIPMENT`) 출처는 거르지
+ * 않으므로 여기서 따로 본다.
  */
 export function assertLotsReleased(
   lots: { lotId: bigint | number; statusCode: string }[],
