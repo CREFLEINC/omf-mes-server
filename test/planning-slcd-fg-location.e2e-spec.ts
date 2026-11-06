@@ -163,7 +163,9 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
       const proposal = await proposalOf(await makeOrder(slCd));
 
       expect(proposal.status).toBe('NEEDS_INPUT');
-      expect(proposal.reasons).toEqual([{ code: reason, category: 'INPUT' }]);
+      expect(proposal.reasons).toEqual([{ code: reason, category: 'BLOCKED' }]);
+      // 분류는 표시용이다 — 제안 불가(빈 plans)가 아니라 계획·4M 은 그대로 나온다.
+      expect(proposal.plans).toHaveLength(1);
       expect(proposal.erpStorage).toMatchObject({ erpStorageLocationCode: slCd, warehouse: null, location: null, reasonCode: reason });
       // 라인에 기본 완제품 위치가 있어도 쓰지 않는다.
       for (const workOrder of proposal.plans[0].workOrders) {

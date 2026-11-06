@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException } from '../../common/errors';
 import {
   assertWholeOrder,
+  categoryOf,
   basisHash,
   blockIssue,
   plansToPropose,
@@ -23,6 +24,22 @@ describe('plansToPropose — 무엇을 제안하는가', () => {
     const choice = plansToPropose([], D(100), D(30));
     expect(choice.kind).toBe('NEW_PLAN');
     expect(choice.kind === 'NEW_PLAN' && choice.qty.toNumber()).toBe(70);
+  });
+});
+
+describe('categoryOf — 입고 창고 연결 실패는 위치를 골라도 풀리지 않는다', () => {
+  it('연결 실패 넷은 BLOCKED, 다른 창고 위치(고르면 풀린다)와 빈 위치는 INPUT', () => {
+    for (const code of ['FG_WAREHOUSE_UNMAPPED', 'FG_WAREHOUSE_INACTIVE', 'FG_WAREHOUSE_OTHER_PLANT', 'FG_WAREHOUSE_NOT_ALLOWED'] as const) {
+      expect(categoryOf(code)).toBe('BLOCKED');
+    }
+    expect(categoryOf('FG_LOCATION_OUTSIDE_WAREHOUSE')).toBe('INPUT');
+    expect(categoryOf('WORK_ORDER_LOCATION_REQUIRED')).toBe('INPUT');
+  });
+
+  it('BLOCKED 사유여도 상태는 NEEDS_INPUT 이다', () => {
+    const reasons = reasonsOf([blockIssue('FG_WAREHOUSE_UNMAPPED', 'm', 'defaultFgLocationId')]);
+    expect(reasons).toEqual([{ code: 'FG_WAREHOUSE_UNMAPPED', category: 'BLOCKED' }]);
+    expect(statusOf('NEW_PLAN', false, reasons)).toBe('NEEDS_INPUT');
   });
 });
 

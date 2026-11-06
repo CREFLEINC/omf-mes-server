@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
+import { FG_LINK_FAILURES } from '../../core/erp-warehouse/fg-location';
 import type { MasterReason } from '../production-plan/master-choice';
 import { RESOURCE_CODES } from './resource-rules';
 
@@ -27,10 +28,11 @@ export type ProposalReasonCode = (typeof PROPOSAL_REASONS)[number];
 
 /**
  * 제안 불가 — 이 화면에서 풀 수 없다(기준정보·ERP W/O 상태). 나머지 BLOCK 은 화면에서 골라 풀린다.
- * 입고 창고 연결 실패(`FG_LINK_FAILURES`)는 여기 넣지 않는다 — 제안 불가는 계획을 비우는 분류인데, 연결 실패는 완제품 위치 칸만 막고
- * 나머지 계획·4M 은 그대로 검토·보완해야 한다.
+ * 분류는 표시용이다: 계획을 비우는 것(NOT_PROPOSABLE)은 `proposal-builder.ts` 의 masterIssues 흐름이 정한다.
+ * 입고 창고 연결 실패(`FG_LINK_FAILURES`)는 위치를 골라도 풀리지 않아 여기 두되 계획·4M 은 그대로 낸다.
  */
 const BLOCKED_REASONS: ReadonlySet<ProposalReasonCode> = new Set([
+  ...FG_LINK_FAILURES,
   'ORDER_CANCELLED',
   'BOM_DEFAULT_REQUIRED',
   'ROUTING_REQUIRED',

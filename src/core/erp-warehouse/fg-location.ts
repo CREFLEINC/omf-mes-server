@@ -71,31 +71,32 @@ export async function resolveFgLocations(db: Db, targets: readonly FgTarget[]): 
   };
 
   const result = new Map<string, FgResolution>();
+  const matched: { key: string; erpCode: string; warehouse: (typeof warehouses)[number] }[] = [];
   for (const target of targets) {
     const erpCode = normalized(target.erpCode);
+    const key = fgKey(target);
     if (erpCode === null) {
-      result.set(fgKey(target), { kind: 'NO_STORAGE_CODE' });
+      result.set(key, { kind: 'NO_STORAGE_CODE' });
       continue;
     }
     const failed = (reason: FgLinkFailure): FgResolution => ({ kind: 'LINK_FAILED', erpCode, reason });
     const match = matchErpWarehouse(erpCode, target.plantId, warehouses);
-    if (match.kind === 'UNMAPPED') result.set(fgKey(target), failed('FG_WAREHOUSE_UNMAPPED'));
-    else if (match.kind === 'OTHER_PLANT') result.set(fgKey(target), failed('FG_WAREHOUSE_OTHER_PLANT'));
-    else if (match.kind === 'INACTIVE') result.set(fgKey(target), failed('FG_WAREHOUSE_INACTIVE'));
-    else {
-      const { warehouse } = match;
-      if (warehouse.warehouse_type_code === MATERIAL_WAREHOUSE || warehouse.is_defect || warehouse.is_external) {
-        result.set(fgKey(target), failed('FG_WAREHOUSE_NOT_ALLOWED'));
-      } else {
-        result.set(fgKey(target), {
-          kind: 'ERP_STORAGE_LOCATION',
-          erpCode,
-          warehouse: { id: warehouse.warehouse_id, code: warehouse.warehouse_code, name: warehouse.warehouse_name },
-          location: await arrivalOf(warehouse.warehouse_id),
-        });
-      }
-    }
+    if (match.kind === 'UNMAPPED') result.set(key, failed('FG_WAREHOUSE_UNMAPPED'));
+    else if (match.kind === 'OTHER_PLANT') result.set(key, failed('FG_WAREHOUSE_OTHER_PLANT'));
+    else if (match.kind === 'INACTIVE') result.set(key, failed('FG_WAREHOUSE_INACTIVE'));
+    else if (match.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE || match.warehouse.is_defect || match.warehouse.is_external) {
+      result.set(key, failed('FG_WAREHOUSE_NOT_ALLOWED'));
+    } else matched.push({ key, erpCode, warehouse: match.warehouse });
   }
+  // 입고 위치는 창고마다 한 번 — 서로 다른 창고는 함께 읽는다.
+  await Promise.all(matched.map(async ({ key, erpCode, warehouse }) => {
+    result.set(key, {
+      kind: 'ERP_STORAGE_LOCATION',
+      erpCode,
+      warehouse: { id: warehouse.warehouse_id, code: warehouse.warehouse_code, name: warehouse.warehouse_name },
+      location: await arrivalOf(warehouse.warehouse_id),
+    });
+  }));
   return result;
 }
 
