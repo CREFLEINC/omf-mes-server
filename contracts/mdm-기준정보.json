@@ -119,6 +119,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -141,6 +146,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -169,6 +184,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -182,6 +202,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -223,6 +253,11 @@
     ],
     "summary": "창고 상세",
     "description": "근거: W-06-07 §4-A · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -239,6 +274,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/WarehouseDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -270,6 +315,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -292,6 +342,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -351,6 +411,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -358,6 +423,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Warehouse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -412,6 +487,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -419,6 +499,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Warehouse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -534,6 +624,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -556,6 +651,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -584,6 +689,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -597,6 +707,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -642,6 +762,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "만든 랙",
@@ -655,6 +780,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -694,6 +829,11 @@
     ],
     "summary": "Location 상세",
     "description": "근거: W-06-07 §4-B · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -710,6 +850,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/LocationDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -741,6 +891,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -763,6 +918,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -806,12 +971,27 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "204": {
       "description": "지웠다"
      },
      "400": {
       "description": "쓰인 위치이거나 서버가 만든 자리",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -860,6 +1040,11 @@
      "mdm"
     ],
     "summary": "위치의 지정 품목",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "지정 품목(품목 코드 순)",
@@ -867,6 +1052,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/LocationItemListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -914,6 +1109,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "바뀐 지정 품목",
@@ -927,6 +1127,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -984,6 +1194,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -991,6 +1206,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Location"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1046,6 +1271,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -1053,6 +1283,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Location"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1141,6 +1381,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -1167,6 +1412,16 @@
        }
       }
      },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "403": {
       "description": "권한 없음. 이 화면 자체가 권한 관리 화면이라 진입 자체를 막고 배너로 사유를 표시한다(G-1 화면 수준). 근거: W-CO-02 §6 「권한 없음」",
       "content": {
@@ -1186,7 +1441,7 @@
      "app"
     ],
     "summary": "사용자 등록",
-    "description": "근거: W-CO-02 §5-1 「사용자 추가」 · 공유계약 A-1",
+    "description": "근거: W-CO-02 §5-1 「사용자 추가」 · 공유계약 A-1\n\n서버 구현 기준: 비밀번호를 함께 정할 수 있다. 생략하면 응답 temporaryPassword로 임시 비밀번호가 한 번만 내려온다 — 화면은 이 값을 그 자리에서 관리자에게 보여 주어야 한다. 다시 받을 길은 :reset-password로 새로 뽑는 것뿐이다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1202,19 +1457,34 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/AppUser"
+         "$ref": "#/components/schemas/AppUserCreated"
         }
        }
       }
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -1256,6 +1526,11 @@
     ],
     "summary": "사용자 상세",
     "description": "근거: W-CO-02 §4-A · 공유계약 B-4. loginId 는 항상 editability.reason=NOT_COUNTABLE",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -1272,6 +1547,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/AppUserDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1303,6 +1588,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -1325,6 +1615,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -1384,6 +1684,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -1404,6 +1709,16 @@
        }
       },
       "description": "업무 규칙 위반. ⛔ **code=LAST_ADMIN** — 이 사용자를 중지하면 「사용자·역할·권한 관리」 권한을 가진 사람이 0명이 된다. ⭐ **자기 자신도 막는다**(사용자 결정 2026-09-01 「둘 다 막는다」) — 관리자 교체는 «다른 관리자»가 한다: 새 관리자를 먼저 세우고 기존 관리자를 내린다. ⚠ 그래서 운영은 관리자를 **둘 이상** 두어야 한다 — 하나뿐이면 그 사람을 내릴 방법이 없다."
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      },
      "403": {
       "description": "권한 없음. 근거: W-CO-02 §6 「권한 없음」",
@@ -1455,6 +1770,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -1462,6 +1782,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/AppUser"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1513,6 +1843,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "초기화됨",
@@ -1520,6 +1855,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/AppUserPasswordReset"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1565,6 +1910,11 @@
     ],
     "summary": "사용자에게 부여된 역할",
     "description": "근거: W-CO-02 §4-C",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "부여분",
@@ -1572,6 +1922,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/UserRoleListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1611,6 +1971,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -1624,6 +1989,16 @@
      },
      "400": {
       "description": "검증 실패. ⛔ **code=LAST_ADMIN** — 이 사용자에게서 관리자 역할을 빼면 「사용자·역할·권한 관리」 권한 보유자가 0명이 된다(사용자 결정 2026-09-01 · W-CO-02 §8-6).",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -1665,6 +2040,11 @@
     ],
     "summary": "계정에 연결된 작업자",
     "description": "관리웹 계정에 연결된 작업자(사번). 연결이 없으면 세 칸이 모두 null 이다. 검사 판정 등 작업자 귀속이 필요한 관리웹 쓰기가 이 연결로 작업자를 정한다. 근거: W-CO-02 · omf-all-around#104 (서버 선행 · 장부 P-38)",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "연결",
@@ -1672,6 +2052,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/AppUserWorker"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1709,6 +2099,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -1722,6 +2117,16 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -1771,6 +2176,11 @@
     ],
     "summary": "사용자에게 부여된 데이터 접근범위",
     "description": "근거: W-CO-02 §4-D",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "부여분",
@@ -1778,6 +2188,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/UserDataScopeListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1832,6 +2252,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -1845,6 +2270,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -1875,6 +2310,11 @@
     ],
     "summary": "기능 권한 목록 — 부여할 수 있는 «후보» 전부",
     "description": "⭐ 권한 격자의 «열»을 만드는 목록이다.\n\n⛔ 이 경로가 없으면 화면은 「이미 부여된 권한」만 알아 **권한을 새로 줄 수 없다** — 최초 상태(부여 0건)에서는 격자가 통째로 비고 아무도 아무 권한을 받지 못한다. 실제로 그래서 프론트가 격자를 「보기 전용」으로 닫아 두었다(omf-mes-client#17).\n\n⛔ **공통코드가 아니다** — 앱 기능 목록이라 고객이 W-06-06 에서 늘리거나 지울 수 없다. 없는 코드를 만들면 그것을 검사하는 자리가 없어 «아무 효과 없는 권한»이 되고, 있는 코드를 지우면 그 기능이 조용히 잠긴다.\n\n⭐ **입도는 화면 단위다** — 값이 화면 코드와 1:1 이다(사용자 결정 2026-09-01). 한 화면 안에서 조회와 편집을 가르지 않는다.\n\n쪽을 나누지 않는다 — 목록이 화면 수만큼으로 닫혀 있고, 쪽이 나뉘면 둘째 쪽을 못 받았을 때 격자에서 열이 조용히 사라진다.\n\n근거: W-CO-02 §4-E · §8-7 사용자 결정 2026-09-01",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "권한 목록",
@@ -1882,6 +2322,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/PermissionListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1931,6 +2381,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -1953,6 +2408,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1992,6 +2457,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -2005,6 +2475,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2046,6 +2526,11 @@
     ],
     "summary": "역할 상세",
     "description": "근거: W-CO-02 §4-B · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -2062,6 +2547,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/RoleDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2093,6 +2588,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -2115,6 +2615,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2174,6 +2684,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -2194,6 +2709,16 @@
        }
       },
       "description": "업무 규칙 위반. ⛔ **code=LAST_ADMIN** — 이 역할을 중지하면 「사용자·역할·권한 관리」 권한을 가진 사람이 0명이 되어 되돌릴 사람이 없어진다(사용자 결정 2026-09-01 · W-CO-02 §8-6). ⛔ 판정 기준은 «역할»이 아니라 «그 권한 보유자 수»다 — 고객이 새 역할을 만들어 같은 권한을 준 경우를 역할로 세면 못 센다."
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      },
      "403": {
       "description": "권한 없음. 근거: W-CO-02 §6 「권한 없음」",
@@ -2246,6 +2771,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -2253,6 +2783,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Role"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2299,6 +2839,11 @@
     ],
     "summary": "역할에 부여된 기능 권한",
     "description": "근거: W-CO-02 §4-E",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "부여분",
@@ -2306,6 +2851,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/RolePermissionListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2345,6 +2900,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -2358,6 +2918,16 @@
      },
      "400": {
       "description": "검증 실패. ⛔ **code=LAST_ADMIN** — 이 역할에서 관리 권한을 빼면 「사용자·역할·권한 관리」 권한 보유자가 0명이 된다(사용자 결정 2026-09-01 · W-CO-02 §8-6).",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2408,6 +2978,11 @@
       "description": "지금 새 작업지시에 걸 수 있는 개정만 낸다. 판정은 서버가 한다 — 화면은 상태 문자열을 알 필요가 없고 알아서도 안 된다(공유계약 G-8). 보내지 않으면 종전대로 전부 낸다 — Routing 관리 화면(W-06-01)은 폐기 개정까지 보여야 하므로 이 파라미터를 쓰지 않는다. 긴급 발행 화면(W-02-07)이 쓴다. 근거: W-02-07 §5-9 · omf-mes#259"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "Rev 목록",
@@ -2415,6 +2990,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/RoutingListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2443,6 +3028,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -2456,6 +3046,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2495,6 +3095,11 @@
     ],
     "summary": "Routing 헤더 상세",
     "description": "근거: W-06-01 §4-A · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -2511,6 +3116,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/RoutingDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2542,6 +3157,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -2564,6 +3184,16 @@
      },
      "400": {
       "description": "검증 실패. 상태≠작성중일 때의 수정 시도도 여기 포함된다(code=STATE_LOCKED) — §5-4",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2607,12 +3237,27 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "204": {
       "description": "취소됨(지워짐)"
      },
      "400": {
       "description": "상태가 작성중이 아니거나, 생산계획 · W/O · BOM · 검사기준이 가리킴(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2667,6 +3312,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "발행됨",
@@ -2680,6 +3330,16 @@
      },
      "400": {
       "description": "지정한 Rev 의 상태가 확정이 아님(code=STATE_LOCKED) — §5-4",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2724,6 +3384,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "확정됨",
@@ -2737,6 +3402,16 @@
      },
      "400": {
       "description": "검증 실패 — 라인 0건인 채 확정 시도(code=LINE_REQUIRED, §6) 또는 상태≠작성중(code=STATE_LOCKED, §5-4)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2781,6 +3456,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "폐기됨",
@@ -2794,6 +3474,16 @@
      },
      "400": {
       "description": "상태가 확정이 아님(code=STATE_LOCKED) — §5-4",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2838,6 +3528,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "지정됨 — 응답은 지정한 Routing만 반환한다",
@@ -2845,6 +3540,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Routing"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2880,6 +3585,11 @@
     ],
     "summary": "공정 라인 목록",
     "description": "operationSeq 오름차순. 화면은 이 값을 그대로 보여주지 않고 목록 내 위치로 1부터 연속 표시한다 — 근거: 00-설계 §2-1-다. 채번 방식(연번/간격)은 데이터 모델링 재량이다",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "라인",
@@ -2887,6 +3597,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/RoutingOperationListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2925,6 +3645,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -2938,6 +3663,16 @@
      },
      "400": {
       "description": "검증 실패(유일 위반·범위 위반 등) 또는 상태≠작성중(code=STATE_LOCKED, §5-4)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -2977,6 +3712,11 @@
     ],
     "summary": "공정 선후행 목록",
     "description": "근거: W-06-01 §4-C",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "선후행",
@@ -2984,6 +3724,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/RoutingOperationDependencyListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3043,6 +3793,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -3056,6 +3811,16 @@
      },
      "400": {
       "description": "검증 실패 — 자기참조(ck_routing_dependency_self) 또는 순환(A-9 ⓐ) 또는 상태≠작성중(code=STATE_LOCKED, §5-4)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -3118,6 +3883,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -3140,6 +3910,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3168,6 +3948,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -3181,6 +3966,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -3222,6 +4017,11 @@
     ],
     "summary": "코드그룹 상세",
     "description": "근거: W-06-06 §4-A · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -3238,6 +4038,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CodeGroupDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3269,6 +4079,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -3291,6 +4106,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -3350,6 +4175,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -3357,6 +4187,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CodeGroup"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3411,6 +4251,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -3418,6 +4263,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CodeGroup"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3509,6 +4364,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -3544,6 +4404,16 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
     "x-internal-note": "공유계약 G-8(유효성 판정은 서버가 한다)"
@@ -3569,6 +4439,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -3582,6 +4457,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -3622,6 +4507,11 @@
     ],
     "summary": "코드값 상세",
     "description": "근거: W-06-06 §4-B · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -3638,6 +4528,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CodeValueDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3668,6 +4568,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -3690,6 +4595,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -3748,6 +4663,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -3755,6 +4675,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CodeValue"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3809,6 +4739,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -3816,6 +4751,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CodeValue"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3851,6 +4796,11 @@
     ],
     "summary": "판정유형별 통제 속성 목록",
     "description": "결정 10 「출고·출하·Picking 차단 판정은 이 단일 지점을 본다」를 되살린 자원(2026-08-30). 판정유형(code_value, codeGroupCode=JUDGMENT_TYPE)마다 물류 통제 속성 6종을 붙인다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-04 §4-B",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "판정유형 통제 속성",
@@ -3869,6 +4819,16 @@
            }
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3894,6 +4854,11 @@
     ],
     "summary": "판정유형 통제 속성 상세",
     "description": "편집 진입용. ⭐ 이 GET 의 ETag 가 뒤이을 PUT 의 If-Match 출처다 — 통제 속성은 «자기 판 번호»(versionNo)를 가지므로 자기 경로의 토큰을 쓴다(공유계약 B-1-1 ①ⓐ). ⛔ 부모인 코드값(GET /mdm/code-values/{codeValueId})의 토큰을 쓰지 않는다 — 판정유형 «이름»을 고쳤다고 통제 저장이 튕기면 안 되고, 잠그는 대상과 버전 축을 일치시킨다(B-1-1). 근거: W-06-04 §4-B·§5-1",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -3910,6 +4875,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/JudgmentTypeControl"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -3941,6 +4916,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "저장됨",
@@ -3948,6 +4928,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/JudgmentTypeControl"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4014,6 +5004,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -4036,6 +5031,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4063,6 +5068,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -4076,6 +5086,16 @@
      },
      "400": {
       "description": "검증 실패 — 자기참조 포함(ck_department_parent)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -4117,6 +5137,11 @@
     ],
     "summary": "부서 상세",
     "description": "근거: W-06-06 §4-C · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -4133,6 +5158,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/DepartmentDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4163,6 +5198,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -4185,6 +5225,16 @@
      },
      "400": {
       "description": "검증 실패 — 자기참조 또는 순환 참조 포함",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -4235,6 +5285,11 @@
     ],
     "summary": "부서 생산 창고",
     "description": "이 부서 라인의 W/O 자재가 나가는 생산 창고(공장 → 창고 코드 순). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "연결한 생산 창고",
@@ -4242,6 +5297,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/DepartmentProductionWarehouseListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4298,6 +5363,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "바뀐(dryRun 이면 바뀔) 생산 창고와 뺀 창고",
@@ -4311,6 +5381,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -4368,6 +5448,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -4375,6 +5460,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Department"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4429,6 +5524,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -4436,6 +5536,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Department"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4539,6 +5649,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -4564,6 +5679,16 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     }
    }
@@ -4586,6 +5711,11 @@
     ],
     "summary": "작업자 상세 (읽기 전용)",
     "description": "기본 정보(코드·이름 원본)는 쓰기 경로가 없다 — 전부 ERP 수신본이다(W-06-06 §5-4). editability.reason 은 항상 RECEIVED_FROM_ERP 로 고정한다. 다국어 명칭(nameKo·nameVi)만 예외로 PUT :update-name-translation 로 편집한다(QA #33·#34 — MES 확장 속성, 2026-08-30 되살림). 자격·인증 편집은 GET/PUT .../qualifications 를 쓴다. 근거: W-06-06 §4-D·§5-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -4602,6 +5732,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/WorkerDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4664,6 +5804,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "저장됨",
@@ -4671,6 +5816,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Worker"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4706,6 +5861,11 @@
     ],
     "summary": "작업자 자격·인증 목록",
     "description": "MES 확장 · 편집 가능. 근거: W-06-06 §4-E",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -4723,6 +5883,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -4811,6 +5981,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -4824,6 +5999,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반(uq_worker_qualification) 또는 날짜 짝 제약 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -4941,6 +6126,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -4963,6 +6153,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -4989,6 +6189,11 @@
     ],
     "summary": "품목 상세",
     "description": "원본(ERP)·MES 확장 속성 전 필드를 함께 준다 — 화면이 위/아래 구획으로 나눠 그린다(§3). editability 는 itemCode 등 ERP 원본 필드가 항상 잠김임을 알린다(RECEIVED_FROM_ERP). 근거: W-06-05 §4-A·§4-B · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -5005,6 +6210,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ItemDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -5035,6 +6250,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -5057,6 +6277,16 @@
      },
      "400": {
       "description": "검증 실패 — 예: 유효기한 관리 ON인데 shelfLifeDays 미입력(조건부 필수 A-2)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -5108,6 +6338,11 @@
     ],
     "summary": "단위 환산 목록",
     "description": "근거: W-06-05 §4-C 「부속 정보」 단위환산 탭",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -5125,6 +6360,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -5199,6 +6444,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -5212,6 +6462,16 @@
      },
      "400": {
       "description": "검증 실패 — ck_item_uom_distinct 또는 ck_item_uom_dates 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -5262,6 +6522,11 @@
     ],
     "summary": "외부 코드 목록",
     "description": "근거: W-06-05 §4-D 「부속 정보」 외부코드 탭",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -5279,6 +6544,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -5351,6 +6626,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -5364,6 +6644,16 @@
      },
      "400": {
       "description": "검증 실패 — uq_item_external_code 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -5414,6 +6704,11 @@
     ],
     "summary": "사업부 매핑 목록",
     "description": "itemId 를 fromItemId 로 고정한 매핑만 낸다. 근거: W-06-05 §3 「부속 정보」 사업부매핑 탭",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -5431,6 +6726,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -5504,6 +6809,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -5517,6 +6827,16 @@
      },
      "400": {
       "description": "검증 실패 — ck_item_bu_map_distinct 또는 ck_item_bu_map_dates 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -5584,6 +6904,11 @@
       "description": "지금 새 작업지시에 걸 수 있는 개정만 낸다. 판정은 서버가 한다 — 화면은 상태 문자열을 알 필요가 없고 알아서도 안 된다(공유계약 G-8). 보내지 않으면 종전대로 전부 낸다 — 자재 명세 헤더 목록(W-06-05)은 폐기 개정까지 보여야 하므로 이 파라미터를 쓰지 않는다. 긴급 발행 화면(W-02-07)이 쓴다. 근거: W-02-07 §5-9 · omf-mes#259"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -5591,6 +6916,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/BomListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -5616,6 +6951,11 @@
     ],
     "summary": "BOM 헤더 상세",
     "description": "ERP 정본 — 전 필드 읽기 전용(QA #3). editability.reason 은 항상 RECEIVED_FROM_ERP. 근거: W-06-05 §4-E",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -5623,6 +6963,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/BomDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -5653,6 +7003,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "지정됨 — 응답은 지정한 BOM 만 반환한다(기존 기본 BOM 해제는 반영되나 응답에 포함하지 않는다)",
@@ -5666,6 +7021,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -5706,6 +7071,11 @@
     ],
     "summary": "BOM 구성품 목록",
     "description": "sequenceNo 오름차순. ERP 원본 열과 MES 확장 열이 한 행에 섞인다(§4-F). 근거: W-06-05 §4-F",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "구성품",
@@ -5713,6 +7083,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/BomComponentListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -5747,6 +7127,11 @@
     ],
     "summary": "BOM 구성품 상세",
     "description": "ERP 원본 열(sequenceNo·componentItemId·requiredQty·uomId·scrapRate·isMandatory)과 MES 확장 열(routingOperationId·actualUseProcessId·lotTraceRequired·backflushAllowed)이 한 행에 섞인다. editability 는 원본 열이 항상 잠김임을 알린다(RECEIVED_FROM_ERP) — `Item`(같은 화면)과 같은 원리. 참조 건수로 갈리지 않는다 — MES 확장 4열은 항상 편집 가능하고 나머지는 항상 잠김이다. 행 단위 GET 신설로 `PUT` 의 `If-Match` 가 실을 `ETag` 자리가 비로소 생겼다. 근거: W-06-05 §5-1 「구성품 확장 열 편집」",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -5763,6 +7148,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/BomComponentDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -5794,6 +7189,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -5816,6 +7216,16 @@
      },
      "400": {
       "description": "검증 실패 — W-06-05 §5-1",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -5907,6 +7317,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -5929,6 +7344,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -5957,6 +7382,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -5970,6 +7400,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6010,6 +7450,11 @@
     ],
     "summary": "검사기준 헤더 상세",
     "description": "근거: W-06-02 §4-A · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -6026,6 +7471,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InspectionPlanDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -6056,6 +7511,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -6078,6 +7538,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6135,6 +7605,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -6142,6 +7617,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InspectionPlan"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -6195,6 +7680,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -6202,6 +7692,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InspectionPlan"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -6252,6 +7752,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "승인됨",
@@ -6265,6 +7770,16 @@
      },
      "400": {
       "description": "확정된 버전이 없음(code=CONFIRMED_VERSION_REQUIRED) — W-06-02 §5-1",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6306,6 +7821,11 @@
       "description": "필수. 버전 목록은 기준을 고른 뒤에 본다 — W-06-02 §3"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "버전 목록",
@@ -6313,6 +7833,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InspectionPlanVersionListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -6340,6 +7870,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -6353,6 +7888,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6392,6 +7937,11 @@
     ],
     "summary": "검사기준 버전 상세",
     "description": "근거: W-06-02 §4-B · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -6408,6 +7958,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InspectionPlanVersionDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -6438,6 +7998,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -6460,6 +8025,16 @@
      },
      "400": {
       "description": "검증 실패. 상태≠작성중일 때의 수정 시도도 여기 포함된다(code=STATE_LOCKED) — §5-4",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6503,12 +8078,27 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "204": {
       "description": "취소됨(지워짐)"
      },
      "400": {
       "description": "상태가 작성중이 아니거나, 수집 채널·검사 의뢰가 연결됨(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6563,6 +8153,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "발행됨",
@@ -6576,6 +8171,16 @@
      },
      "400": {
       "description": "지정한 버전의 상태가 확정이 아님(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6620,6 +8225,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "확정됨",
@@ -6633,6 +8243,16 @@
      },
      "400": {
       "description": "검증 실패 — 항목 0건인 채 확정 시도(code=LINE_REQUIRED) · 샘플링 방식인데 비율 없음(code=REQUIRED) 또는 상태≠작성중(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6677,6 +8297,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "폐기됨",
@@ -6690,6 +8315,16 @@
      },
      "400": {
       "description": "상태가 확정이 아님(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6729,6 +8364,11 @@
     ],
     "summary": "검사 항목 목록",
     "description": "sequenceNo 오름차순. 화면은 이 값을 그대로 보여주지 않고 목록 내 위치로 1부터 연속 표시한다. ⭐ 검사 화면 P-02-13 이 이 경로로 항목 규격을 받는다 — 진입한 검사 의뢰의 inspectionPlanVersionId 로 부른다. 그 값이 비어 있으면 부르지 않는다(기준 없는 갈래 · P-02-13 §5-2). 근거: W-06-02 §4-C · P-02-13 §4-C·§5-11",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "항목",
@@ -6736,6 +8376,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InspectionItemSpecListResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -6774,6 +8424,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "치환됨",
@@ -6787,6 +8442,16 @@
      },
      "400": {
       "description": "검증 실패(유일 위반·범위 위반 등) 또는 상태≠작성중(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6851,6 +8516,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "붙은 도면",
@@ -6864,6 +8534,16 @@
      },
      "400": {
       "description": "파일이 없거나 PNG·JPEG 가 아니다, 또는 작성중 버전이 아니다(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6958,6 +8638,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "바뀐 도면",
@@ -6971,6 +8656,16 @@
      },
      "400": {
       "description": "파일이 없거나 PNG·JPEG 가 아니다, 또는 작성중 버전이 아니다(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -7042,12 +8737,27 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "204": {
       "description": "빠짐"
      },
      "400": {
       "description": "작성중 버전이 아니다(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -7138,6 +8848,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -7160,6 +8875,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7187,6 +8912,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -7200,6 +8930,16 @@
      },
      "400": {
       "description": "검증 실패 — 3계층 이상 시도 포함(결정 12 위반)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -7239,6 +8979,11 @@
     ],
     "summary": "불량코드 상세",
     "description": "근거: W-06-03 §4-A · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -7255,6 +9000,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/DefectCodeDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7286,6 +9041,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -7308,6 +9068,16 @@
      },
      "400": {
       "description": "검증 실패 — 자기 자신을 상위로 지정 또는 3계층 이상 시도",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -7365,6 +9135,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -7372,6 +9147,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/DefectCode"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7425,6 +9210,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -7432,6 +9222,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/DefectCode"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7477,6 +9277,11 @@
     ],
     "summary": "불량코드-공정 매핑 목록",
     "description": "결정 12 「공정—불량코드 연결 = N:M 매핑 테이블」을 되살린 자원(2026-08-30) — 상세 코드만 매핑한다(대분류는 전사 고정 축). POP 불량 입력 화면은 이 매핑으로 자기 공정의 불량코드만 본다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-03 §4-D",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "매핑된 공정",
@@ -7495,6 +9300,16 @@
            }
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7532,6 +9347,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "매핑됨",
@@ -7539,6 +9359,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/DefectCodeProcess"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7588,9 +9418,24 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "204": {
       "description": "해제됨"
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      },
      "404": {
       "description": "없다",
@@ -7654,6 +9499,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -7676,6 +9526,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7703,6 +9563,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -7716,6 +9581,16 @@
      },
      "400": {
       "description": "검증 실패 — 3계층 이상 시도 포함",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -7755,6 +9630,11 @@
     ],
     "summary": "원인코드 상세",
     "description": "근거: W-06-03 §4-C · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -7771,6 +9651,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CauseCodeDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7802,6 +9692,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -7824,6 +9719,16 @@
      },
      "400": {
       "description": "검증 실패 — 자기 자신을 상위로 지정 또는 3계층 이상 시도",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -7881,6 +9786,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -7888,6 +9798,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CauseCode"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7941,6 +9861,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -7948,6 +9873,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CauseCode"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8067,6 +10002,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -8095,6 +10035,16 @@
      },
      "400": {
       "description": "기간 미지정 — 조회 버튼 비활성 + 사유",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -8134,6 +10084,11 @@
     ],
     "summary": "연계 메시지 상세",
     "description": "payload(jsonb) 전문·lastErrorMessage 전문을 포함한다 — 목록 응답에는 payload 가 없고 이 상세에만 있다. ⚠ payload 는 대외비를 담을 수 있어 노출 범위가 확정되지 않았다. 근거: W-06-10 §4-C",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -8141,6 +10096,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/IntegrationMessageDetail"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8182,6 +10147,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재처리 요청됨",
@@ -8195,6 +10165,16 @@
      },
      "400": {
       "description": "statusCode≠실패(code=NOT_RETRYABLE)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -8260,6 +10240,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리 결과",
@@ -8267,6 +10252,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/BatchResult"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8291,6 +10286,11 @@
     ],
     "summary": "ERP 받기 표별 상태",
     "description": "「ERP 연동 현황·이력」 탭(W-06-10). 받는 표 여덟을 묶음 순서(기준정보 → 전표)로 낸다 — 마지막 읽은 시각·다음 예정·도는 중인지. 근거: 사용자 결정 2026-10-20 · 장부 P-81",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "표별 상태",
@@ -8298,6 +10298,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ErpSyncStatus"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8334,6 +10344,11 @@
     ],
     "summary": "ERP 받기 지금 읽기",
     "description": "다음 주기를 기다리지 않고 그 표 하나를 한 회차 읽는다 — ERP 가 중계 DB 에 넣고 아직 안 읽은 줄만. 요청을 적어 두기만 하고, 블루-그린 두 쪽 중 리스를 쥔 실행기가 몇 초 안에 돈다. 이미 걸려 있으면 처음 시각을 지킨다(여러 번 눌러도 한 번 돈다). 돌았는지는 GET /integration/erp-sync/tables 의 requestedAt·running·lastFinishedAt 으로 본다. 근거: 사용자 결정 2026-10-20 · 장부 P-81",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "202": {
       "description": "요청을 적어 두었다",
@@ -8364,6 +10379,16 @@
      },
      "400": {
       "description": "STATE_LOCKED — 이 서버는 ERP 연동이 꺼져 있다(ErpSyncStatus.enabled=false)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -8457,6 +10482,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -8485,6 +10515,16 @@
      },
      "400": {
       "description": "틀린 질의 — 그 칸마다. 무시하면 걸러지지 않은 목록이 걸러진 것처럼 보인다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -8524,6 +10564,11 @@
     ],
     "summary": "외자 발주의 통관번호 받아오기",
     "description": "「ERP 연동 현황·이력 > 구매 발주」의 [통관번호 받아오기]. 취소 안 된 라인마다 ERP 함수(ERP_CC_FUNCTION)를 불러 통관번호가 하나면 그 라인에 적는다(PurchaseOrderLine.erpCustomsClearance*). 없거나 여럿이면 라인을 그대로 둔다. 구매입고를 ERP 로 보낼 때도 적어 둔 값이 없으면 같은 함수를 부른다. 근거: 서버 선행 · 장부 P-143",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "라인마다 받은 결과",
@@ -8537,6 +10582,16 @@
      },
      "400": {
       "description": "STATE_LOCKED — 외자(ERP 발주유형 PO) 발주가 아니다(MES 발주 포함) · 이 서버에 ERP 통관번호 함수가 설정되지 않았다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -8665,6 +10720,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -8693,6 +10753,16 @@
      },
      "400": {
       "description": "기간 미지정 — 조회 버튼 비활성 + 사유",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -8757,6 +10827,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -8779,6 +10854,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8846,6 +10931,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -8868,6 +10958,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8917,6 +11017,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -8939,6 +11044,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8997,6 +11112,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -9019,6 +11139,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9084,6 +11214,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -9106,6 +11241,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9163,6 +11308,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -9185,6 +11335,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9251,6 +11411,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -9273,6 +11438,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9301,6 +11476,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -9314,6 +11494,16 @@
      },
      "400": {
       "description": "검증 실패 — processCode 중복 포함",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -9353,6 +11543,11 @@
     ],
     "summary": "공정 상세",
     "description": "편집 진입용. editability 가 공정코드 수정 가부와 사유·참조 건수를 담는다(공유계약 B-4). ⭐ 공정의 참조처는 전부 process_id FK 라 «셀 수 있다» — code_value 처럼 NOT_COUNTABLE 로 무조건 잠그는 갈래가 아니다. 근거: W-06-01 §4-D · 공유계약 B-4",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -9369,6 +11564,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ProcessDetailResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9400,6 +11605,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -9422,6 +11632,16 @@
      },
      "400": {
       "description": "검증 실패 — 참조가 있는데 processCode 를 바꾸려 함(B-4) 포함",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -9479,6 +11699,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -9486,6 +11711,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Process"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9539,6 +11774,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -9546,6 +11786,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Process"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9682,6 +11932,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -9704,6 +11959,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9731,6 +11996,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -9744,6 +12014,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반이면 유일 범위를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -9783,6 +12063,11 @@
     ],
     "summary": "거래처 역할 목록",
     "description": "이 거래처가 갖는 역할 전부. W-06-06 「거래처 역할」 탭이 읽는다. 근거: DR-013 확정 Q2",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -9803,6 +12088,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      },
@@ -9835,6 +12130,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "교체됨",
@@ -9860,6 +12160,16 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다"
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      },
      "403": {
       "description": "권한·단말 게이팅에 막혔다"
@@ -9940,6 +12250,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -9962,6 +12277,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -9989,6 +12314,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -10002,6 +12332,16 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -10051,6 +12391,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -10068,6 +12413,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      },
@@ -10117,6 +12472,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -10130,6 +12490,16 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -10196,6 +12566,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -10203,6 +12578,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Terminal"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -10262,6 +12647,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "발급됨",
@@ -10269,6 +12659,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/TerminalRegistrationToken"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -10315,6 +12715,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -10343,6 +12748,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다 저장 단위 판정 근거는 W-CO-06 §5-3 · 공유계약 B-6."
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      },
@@ -10392,6 +12807,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "저장됨",
@@ -10416,6 +12836,16 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다 — 같은 공정이 두 줄이면 items[i].processId UNIQUE_VIOLATION, 기능 플래그(can*)가 모두 false 이거나 빠진 줄은 items[i] INVALID(「기능을 하나 이상 켜야 합니다.」 · 장부 P-77)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -10477,6 +12907,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -10494,6 +12929,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      },
@@ -10543,6 +12988,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "저장됨",
@@ -10565,6 +13015,16 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -10627,6 +13087,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -10634,6 +13099,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Partner"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -10709,6 +13184,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -10731,6 +13211,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -10758,6 +13248,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -10771,6 +13266,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반이면 유일 범위를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -10810,6 +13315,11 @@
     ],
     "summary": "설비 그룹 상세",
     "description": "코드 수정 가부와 사유를 응답이 함께 내린다 — 화면이 따로 세지 않는다. 근거: W-05-12 §4-A",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -10827,6 +13337,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -10857,6 +13377,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -10879,6 +13404,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -10937,6 +13472,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -10959,6 +13499,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11016,6 +13566,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -11038,6 +13593,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11087,6 +13652,11 @@
     ],
     "summary": "설비 상세",
     "description": "코드 수정 가부와 사유를 응답이 함께 내린다 — 화면이 따로 세지 않는다. 근거: W-05-12 §4-B · W-05-11 §4-A",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -11104,6 +13674,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -11133,6 +13713,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -11155,6 +13740,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11212,6 +13807,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -11234,6 +13834,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11291,6 +13901,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -11313,6 +13928,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11370,6 +13995,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -11392,6 +14022,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11481,6 +14121,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -11503,6 +14148,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -11531,6 +14186,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -11544,6 +14204,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반이면 유일 범위를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11584,6 +14254,11 @@
     ],
     "summary": "설비 점검 항목 상세",
     "description": "코드 수정 가부와 사유를 응답이 함께 내린다 — 화면이 따로 세지 않는다. 근거: W-05-12 §4-C-1",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -11601,6 +14276,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -11631,6 +14316,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -11653,6 +14343,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11703,6 +14403,11 @@
     ],
     "summary": "설비 그룹의 점검 항목 부여",
     "description": "근거: W-05-12 §4-C-2",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "부여 목록",
@@ -11720,6 +14425,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -11749,6 +14464,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "교체됨",
@@ -11771,6 +14491,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -11821,6 +14551,11 @@
     "summary": "설비의 점검 항목 — 직접 부여와 해석 결과",
     "description": "설비 점검 입력 화면이 이 경로의 effective 를 읽는다. 근거: W-05-12 §4-C-2 · M-05-01 §4",
     "x-server-note": "⭐ POP 단말은 단말 설비와 단말 공장의 가동(IN_SERVICE)·활성 설비를 읽는다 — 작업 전 점검 게이트가 옆 설비로 시작할 때 읽는다(설비 없는 단말은 단말 공장 설비). 다른 공장·없는·비가동·비활성 설비는 같은 401. 장부 P-123",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "부여와 해석 결과",
@@ -11838,6 +14573,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -11867,6 +14612,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "교체됨",
@@ -11889,6 +14639,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12026,6 +14786,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -12083,6 +14848,16 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     }
    },
@@ -12107,6 +14882,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -12120,6 +14900,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반이면 유일 범위를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12159,6 +14949,11 @@
     ],
     "summary": "툴 상세",
     "description": "코드 수정 가부와 사유를 응답이 함께 내린다 — 화면이 따로 세지 않는다. 근거: W-05-13 §4-A",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -12176,6 +14971,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -12205,6 +15010,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -12227,6 +15037,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12284,6 +15104,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -12306,6 +15131,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12363,6 +15198,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -12385,6 +15225,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12442,6 +15292,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -12464,6 +15319,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12527,6 +15392,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리 결과. BatchResult.failed[].index 는 엑셀 자료 행의 순번이다(머리글 제외 0부터)",
@@ -12540,6 +15410,16 @@
      },
      "400": {
       "description": "파일을 읽을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12620,6 +15500,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -12642,6 +15527,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -12669,6 +15564,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -12682,6 +15582,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반이면 유일 범위를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12721,6 +15631,11 @@
     ],
     "summary": "예비품 상세",
     "description": "코드 수정 가부와 사유를 응답이 함께 내린다 — 화면이 따로 세지 않는다. 근거: W-06-08 §4-A",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -12738,6 +15653,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -12767,6 +15692,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -12789,6 +15719,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12846,6 +15786,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -12868,6 +15813,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12925,6 +15880,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -12947,6 +15907,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -12996,6 +15966,11 @@
     ],
     "summary": "예비품-설비 매핑",
     "description": "근거: W-06-08 §4-B",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "매핑 목록",
@@ -13013,6 +15988,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -13042,6 +16027,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "교체됨",
@@ -13064,6 +16054,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13127,6 +16127,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리 결과. BatchResult.failed[].index 는 엑셀 자료 행의 순번이다(머리글 제외 0부터)",
@@ -13140,6 +16145,16 @@
      },
      "400": {
       "description": "파일을 읽을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13203,6 +16218,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -13225,6 +16245,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -13252,6 +16282,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -13265,6 +16300,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반이면 유일 범위를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13304,6 +16349,11 @@
     ],
     "summary": "작업 캘린더 상세",
     "description": "코드 수정 가부와 사유를 응답이 함께 내린다 — 화면이 따로 세지 않는다. 근거: W-05-09 §5-A",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -13321,6 +16371,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -13350,6 +16410,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -13372,6 +16437,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13429,6 +16504,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리됨",
@@ -13451,6 +16531,16 @@
      },
      "400": {
       "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13520,6 +16610,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "일자 목록",
@@ -13527,6 +16622,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/WorkCalendarDayList"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -13554,6 +16659,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "덮어씀",
@@ -13567,6 +16677,16 @@
      },
      "400": {
       "description": "검증 실패 — 부분 가동인데 시각이 비었거나 종료가 시작보다 빠르다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13642,6 +16762,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "적용 목록",
@@ -13664,6 +16789,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -13691,6 +16826,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "지정됨",
@@ -13707,6 +16847,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13746,6 +16896,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "해석 결과",
@@ -13753,6 +16908,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/WorkCalendarEffectiveResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -13835,6 +17000,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -13857,6 +17027,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -13884,6 +17064,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -13897,6 +17082,16 @@
      },
      "400": {
       "description": "검증 실패 — 유일 위반이거나 트리거 짝이 맞지 않는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -13936,6 +17131,11 @@
     ],
     "summary": "연계 정의 상세",
     "description": "기본 정보 · 트리거 · 칸 잇기를 한 번에 내린다. 근거: W-06-09 §3",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -13953,6 +17153,16 @@
          "type": "string"
         },
         "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4 이고, 전송 자체는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
        }
       }
      }
@@ -13982,6 +17192,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -14004,6 +17219,16 @@
      },
      "400": {
       "description": "검증 실패 — 트리거 짝이 맞지 않는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14061,6 +17286,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "중지됨",
@@ -14083,6 +17313,16 @@
      },
      "400": {
       "description": "업무 규칙 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14140,6 +17380,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "재사용됨",
@@ -14162,6 +17407,16 @@
      },
      "400": {
       "description": "업무 규칙 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14216,6 +17471,11 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "시험 결과 — 실패도 200 으로 내린다. 요청이 잘못된 것이 아니라 연결이 안 된 것이라 결과를 구조로 돌려준다",
@@ -14223,6 +17483,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InterfaceConnectionTestResult"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -14247,6 +17517,11 @@
     ],
     "summary": "송신 항목 설정",
     "description": "송신 항목 다섯의 켜짐·꺼짐과 잠금 여부. 검사 결과는 연계하지 않기로 확정돼 목록에 없다. 근거: W-06-12 §3-1",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "설정",
@@ -14254,6 +17529,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/OutboundItemSettingList"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -14281,6 +17566,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "저장됨",
@@ -14294,6 +17584,16 @@
      },
      "400": {
       "description": "끌 수 없는 항목을 끄려 했거나 알 수 없는 항목 코드다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14371,6 +17671,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -14393,6 +17698,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -14454,6 +17769,11 @@
       "description": "사용 중지 포함"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -14472,6 +17792,16 @@
            }
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -14499,6 +17829,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -14512,6 +17847,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14569,6 +17914,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -14590,6 +17940,16 @@
      },
      "400": {
       "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14676,6 +18036,11 @@
       }
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "목록",
@@ -14698,6 +18063,16 @@
            "$ref": "#/components/schemas/PageMeta"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -14725,6 +18100,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "201": {
       "description": "등록됨",
@@ -14738,6 +18118,16 @@
      },
      "400": {
       "description": "검증 실패 · 작성중이 아닌 기준을 고치면 STATE_LOCKED",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14777,6 +18167,11 @@
     ],
     "summary": "검사표 기준 상세 — 단계·항목·LOT 칸 품목 포함",
     "description": "서버 선행(omf-all-around#89 · 장부 P-102) — 설계 사본에 «우리가» 먼저 적었다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -14792,6 +18187,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/InspectionSheetTemplate"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -14822,6 +18227,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "수정됨",
@@ -14843,6 +18253,16 @@
      },
      "400": {
       "description": "검증 실패 · 작성중이 아닌 기준을 고치면 STATE_LOCKED",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14884,12 +18304,27 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "204": {
       "description": "취소됨(지워짐)"
      },
      "400": {
       "description": "상태가 작성중이 아니거나, 이 기준으로 만든 검사표가 있음(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -14947,6 +18382,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "확정됨",
@@ -14968,6 +18408,16 @@
      },
      "400": {
       "description": "검증 실패 · 작성중이 아닌 기준을 고치면 STATE_LOCKED",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -15025,6 +18475,11 @@
       "$ref": "#/components/parameters/IfMatchVersion"
      }
     ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "폐기됨",
@@ -15046,6 +18501,16 @@
      },
      "400": {
       "description": "상태가 확정이 아님(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -15109,6 +18574,11 @@
       }
      }
     },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
     "responses": {
      "200": {
       "description": "처리 결과. succeeded 는 반영된 기준코드 수, BatchResult.failed[].index 는 그 묶음 첫 행의 자료 순번(머리글 제외 0부터), key 는 기준코드다. created 는 반영된 묶음마다 만든 작성중 버전이다(index·key 는 failed 와 같은 뜻)",
@@ -15122,6 +18592,16 @@
      },
      "400": {
       "description": "파일을 읽을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -15921,7 +19401,7 @@
      "loginId",
      "userName"
     ],
-    "description": "사용자 등록 요청. isActive 는 받지 않는다(신규는 항상 사용 중). loginId 는 등록 시에만 지정하고 이후 편집은 항상 잠긴다(참조를 셀 수 없어 NOT_COUNTABLE — 공유계약 B-4). 근거: W-CO-02 §4-A · §5-1 「사용자 추가」",
+    "description": "사용자 등록 요청. isActive 는 받지 않는다(신규는 항상 사용 중). loginId 는 등록 시에만 지정하고 이후 편집은 항상 잠긴다(참조를 셀 수 없어 NOT_COUNTABLE — 공유계약 B-4). 근거: W-CO-02 §4-A · §5-1 「사용자 추가」\n\n서버 구현 기준: 등록은 계정과 자격을 한 트랜잭션으로 만든다. password를 생략해도 계정은 즉시 로그인할 수 있다. 8자 미만은 400 RANGE, 문자열이 아니면 400 INVALID이며 null은 「보내지 않음」으로 읽는다.",
     "properties": {
      "loginId": {
       "x-source-column": "login_id",
@@ -25892,6 +29372,33 @@
       "example": 1001
      }
     }
+   },
+   "AppUserCreated": {
+    "description": "사용자 등록 응답. temporaryPassword는 요청에 password를 담지 «않았을» 때만 실린다 — 담았다면 그 칸 자체가 없다.",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/AppUser"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "temporaryPassword": {
+        "type": "string",
+        "readOnly": true,
+        "x-no-example": "실제 임시 비밀번호 모양을 남기지 않는다",
+        "description": "서버가 만든 임시 비밀번호. 이 응답에서 한 번만 보이고 서버는 해시만 저장한다(:reset-password와 같은 규약). 같은 Idempotency-Key로 재전송하면 저장된 앞 응답을 그대로 돌려주므로 값이 바뀌지 않는다. 이 값으로 로그인하면 Session.mustChangePassword가 true다."
+       }
+      }
+     }
+    ]
+   }
+  },
+  "securitySchemes": {
+   "omfSession": {
+    "type": "apiKey",
+    "in": "cookie",
+    "name": "omf_session",
+    "description": "로그인 성공 시 서버가 발급하는 HttpOnly 세션 쿠키. 브라우저 교차 출처 요청은 credentials: include, Axios는 withCredentials: true를 사용한다."
    }
   }
  }
