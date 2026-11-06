@@ -17,6 +17,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { localDate } from '../src/planning/production-plan/plan-window';
 import { REVISION_STATUS } from '../src/planning/revision-status';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -357,6 +358,53 @@ describe('BOM (e2e)', () => {
     expect(ids).toContain(bomId);
     expect(ids).not.toContain(draft);
     expect(ids).not.toContain(expired);
+  });
+
+  it('⭐ usableOnly 는 현지 날짜로 판정한다 — 현지 00:00~07:00 에도 「오늘부터 유효」가 들고 「어제까지 유효」가 빠진다 (omf-all-around#238)', async () => {
+    const today = localDate(new Date(), 'Asia/Ho_Chi_Minh');
+    const yesterday = new Date(Date.parse(`${today}T00:00:00.000Z`) - 24 * 60 * 60 * 1000);
+    const dated = async (bomCode: string, from: Date, to: Date | null): Promise<number> =>
+      Number(
+        (
+          await prisma.bom.create({
+            data: {
+              parent_item_id: parentItemId,
+              bom_code: bomCode,
+              bom_version: 1,
+              status_code: REVISION_STATUS.CONFIRMED,
+              effective_from: from,
+              effective_to: to,
+              base_qty: 1,
+              base_uom_id: uomId,
+            },
+          })
+        ).bom_id,
+      );
+    const fromToday = await dated(`${PREFIX}-B6`, new Date(`${today}T00:00:00.000Z`), null);
+    const untilYesterday = await dated(`${PREFIX}-B7`, new Date('2019-01-01'), yesterday);
+
+    // 현지 오늘 03:00 = UTC 로는 전날 20:00. 타이머는 그대로 두어 DB·HTTP 가 평소대로 돈다.
+    jest.useFakeTimers({
+      now: new Date(`${yesterday.toISOString().slice(0, 10)}T20:00:00.000Z`),
+      doNotFake: [
+        'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+        'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+        'setTimeout', 'clearTimeout',
+      ],
+    });
+    try {
+      expect(new Date().toISOString().slice(0, 10)).toBe(yesterday.toISOString().slice(0, 10));
+      const usable = await request(app.getHttpServer())
+        .get(`/api/planning/boms?parentItemId=${parentItemId}&usableOnly=true`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const ids = usable.body.items.map((b: { bomId: number }) => b.bomId);
+
+      expect(ids).toContain(fromToday);
+      expect(ids).not.toContain(untilYesterday);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('⭐ bomCode 로 좁힌다', async () => {

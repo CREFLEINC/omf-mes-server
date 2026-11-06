@@ -24,6 +24,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-wo-probe';
@@ -294,6 +295,64 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         await prisma.work_order.update({
           where: { work_order_id: rival.work_order_id },
           data: { planned_equipment_id: rival.planned_equipment_id, planned_start_at: rival.planned_start_at, planned_end_at: rival.planned_end_at, status_code: rival.status_code },
+        });
+      }
+    });
+    it('유효성 — 자격 유효 기간·교정 기한을 공장 현지 날짜로 판정한다 — 현지 00:00~07:00 (omf-all-around#238)', async () => {
+      // 공장 시간대는 Asia/Ho_Chi_Minh 다(픽스처).
+      const today = localDate(new Date(), 'Asia/Ho_Chi_Minh');
+      const yesterday = new Date(Date.parse(`${today}T00:00:00.000Z`) - 24 * 60 * 60 * 1000);
+      const self = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      const equipment = await prisma.equipment.findUniqueOrThrow({ where: { equipment_id: twinId } });
+      const codes = async (): Promise<string[]> => {
+        const report = await request(app.getHttpServer())
+          .get(`/api/production/work-orders/${workOrderId}/validation`)
+          .set('Cookie', cookie)
+          .expect(200);
+        return (report.body.findings as { code: string }[]).map((item) => item.code);
+      };
+      try {
+        await prisma.work_order.update({ where: { work_order_id: self.work_order_id }, data: { planned_equipment_id: twinId, responsible_worker_id: twinId } });
+        await prisma.equipment.update({
+          where: { equipment_id: twinId },
+          data: { status_code: 'IN_SERVICE', calibration_required: true, calibration_due_date: yesterday },
+        });
+        const qualification = await prisma.worker_qualification.create({
+          data: { worker_id: twinId, qualification_type_code: 'PROCESS_OPERATION', process_id: ids.process, valid_from: new Date(`${today}T00:00:00.000Z`) },
+        });
+
+        // 현지 오늘 03:00 = UTC 로는 전날 20:00. 타이머는 그대로 두어 DB·HTTP 가 평소대로 돈다.
+        jest.useFakeTimers({
+          now: new Date(`${yesterday.toISOString().slice(0, 10)}T20:00:00.000Z`),
+          doNotFake: [
+            'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+            'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+            'setTimeout', 'clearTimeout',
+          ],
+        });
+        expect(new Date().toISOString().slice(0, 10)).toBe(yesterday.toISOString().slice(0, 10));
+
+        // 오늘부터 유효한 자격은 유효다 · 어제가 기한인 교정은 지났다.
+        const first = await codes();
+        expect(first).not.toContain('WORKER_QUALIFICATION_EXPIRED');
+        expect(first).toContain('EQUIPMENT_CALIBRATION_EXPIRED');
+
+        // 어제까지 유효한 자격은 현지 00:00 부터 무효다.
+        await prisma.worker_qualification.update({
+          where: { worker_qualification_id: qualification.worker_qualification_id },
+          data: { valid_from: new Date('2019-01-01'), valid_to: yesterday },
+        });
+        expect(await codes()).toContain('WORKER_QUALIFICATION_EXPIRED');
+      } finally {
+        jest.useRealTimers();
+        await prisma.worker_qualification.deleteMany({ where: { worker_id: twinId } });
+        await prisma.equipment.update({
+          where: { equipment_id: twinId },
+          data: { status_code: equipment.status_code, calibration_required: equipment.calibration_required, calibration_due_date: equipment.calibration_due_date },
+        });
+        await prisma.work_order.update({
+          where: { work_order_id: self.work_order_id },
+          data: { planned_equipment_id: self.planned_equipment_id, responsible_worker_id: self.responsible_worker_id },
         });
       }
     });

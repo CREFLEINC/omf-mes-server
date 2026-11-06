@@ -6,6 +6,7 @@ import { Editability, toDateString } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REVISION_STATUS } from '../revision-status';
+import { siteToday } from '../routing/routing.service';
 
 /**
  * ⛔ BOM 은 **ERP 정본**이다(QA #3). 헤더는 전 필드 읽기 전용이고, 구성품도 원본 열은
@@ -235,10 +236,12 @@ export class BomService {
 
 /**
  * 「지금 새 작업지시에 걸 수 있는 개정만」 — 확정이고 유효 기간 안이다.
- * ⚠ 「지금」을 UTC 날짜로 읽는다. Routing 과 같은 자리이고 같은 한계다(되돌림 §S-2).
+ * 「오늘」은 현지 날짜(`YYYY-MM-DD`)다. BOM 은 공장에 매이지 않으므로 Routing 후보와 같이 현장 시간대의 오늘을
+ * 쓴다. UTC 날짜로 읽으면 현지 00:00~07:00 에 하루 이르다(omf-all-around#238).
  */
-function usableWhere(): Prisma.bomWhereInput {
-  const today = new Date(new Date().toISOString().slice(0, 10));
+export function usableWhere(localToday: string = siteToday()): Prisma.bomWhereInput {
+  // DATE 칸은 그 날짜의 UTC 자정으로 온다 — 현지 날짜 문자열을 같은 모양으로 맞춘다.
+  const today = new Date(localToday);
   return {
     status_code: REVISION_STATUS.CONFIRMED,
     AND: [
