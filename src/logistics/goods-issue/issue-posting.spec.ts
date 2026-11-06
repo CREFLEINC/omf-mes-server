@@ -71,8 +71,8 @@ interface Seed {
   /** 원장이 되돌려 주는 라인 수 — 안 주면 요청 라인 수와 같다. */
   ledger?: number;
   absorbed?: boolean;
+  /** LOT 40n 부터 차례로 붙는 상태값이다. */
   lotStatuses?: string[];
-  blocked?: boolean;
 }
 
 function fake(seed: Seed = {}) {
@@ -86,10 +86,11 @@ function fake(seed: Seed = {}) {
 
   const models: Row = {
     lot: {
-      findMany: async () => (seed.lotStatuses ?? ['NORMAL']).map((status_code) => ({ status_code })),
-    },
-    judgment_type_control: {
-      findFirst: async () => (seed.blocked === true ? { code_value_id: 1n } : null),
+      findMany: async () =>
+        (seed.lotStatuses ?? ['NORMAL']).map((status_code, index) => ({
+          lot_id: LOT + BigInt(index),
+          status_code,
+        })),
     },
     warehouse: {
       findUniqueOrThrow: async ({ where }: { where: { warehouse_id: bigint } }) => ({
@@ -465,25 +466,70 @@ describe('출고 전기', () => {
     expect(posted[0].occurredAt).toBe(AT);
   });
 
-  it('전기 — judgment_type_control 에 blocks_issue 행이 있으면 400 STATE_LOCKED 다', async () => {
-    const { tx, posting, posted } = fake({ lotStatuses: ['SCRAPPED'], blocked: true });
-
-    const error = await thrown(() => postIssue(tx, posting, input(), 1));
-
-    expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
-    expect(error.getResponse()).toMatchObject({
-      errors: [{ code: ERROR_CODE.STATE_LOCKED }],
+  const picking = (lines = [line()]): PostIssueInput =>
+    input({
+      header: { ...input().header, issueTypeCode: 'PRODUCTION_ISSUE', sourceDocumentTypeCode: 'PICKING_ORDER' },
+      lines,
     });
-    expect(posted).toHaveLength(0);
+
+  it.each([
+    ['DEFECTIVE', '불량'],
+    ['INSPECTION_PENDING', '검사 대기'],
+    ['SCRAPPED', '폐기'],
+  ])(
+    '전기 — 생산 투입 출고(피킹 지시 출처)는 %s LOT 이면 400 STATE_LOCKED 다(#240)',
+    async (status, label) => {
+      const { tx, posting, posted } = fake({ lotStatuses: [status] });
+
+      const error = await thrown(() => postIssue(tx, posting, picking(), 1));
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.getResponse()).toMatchObject({
+        errors: [
+          {
+            field: 'lines[0].lotId',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: `정상이 아닌 LOT 은 생산 투입 출고할 수 없습니다(현재 상태: ${label}).`,
+          },
+        ],
+      });
+      expect(posted).toHaveLength(0);
+    },
+  );
+
+  it('전기 — 생산 투입 출고는 정상 LOT 이 아닌 라인만 짚는다(#240)', async () => {
+    const { tx, posting } = fake({ lotStatuses: ['NORMAL', 'DEFECTIVE'] });
+    const lines = [line(), line({ goodsIssueLineId: 901n, lotId: LOT + 1n })];
+
+    const error = await thrown(() => postIssue(tx, posting, picking(lines), 1));
+
+    expect(error.getResponse()).toMatchObject({ errors: [{ field: 'lines[1].lotId' }] });
+    expect((error.getResponse() as { errors: unknown[] }).errors).toHaveLength(1);
   });
 
-  it('전기 — LOT 상태 문자열 집합을 코드에 박지 않는다(통제표가 비면 통과한다)', async () => {
-    // 오늘의 실측 — `JUDGMENT_TYPE` 값 0개라 `judgment_type_control` 이 0행이다(I-4.md §5-3).
-    const { tx, posting, posted } = fake({ lotStatuses: ['SCRAPPED', 'DEFECTIVE'], blocked: false });
+  it('전기 — 생산 투입 출고도 정상 LOT 은 그대로 전기된다(#240)', async () => {
+    const { tx, posting, posted } = fake({ lotStatuses: ['NORMAL'] });
 
-    await postIssue(tx, posting, input(), 1);
+    await postIssue(tx, posting, picking(), 1);
 
     expect(posted).toHaveLength(1);
+  });
+
+  it.each([
+    ['공급사 반품', 'SUPPLIER_RETURN', 'GOODS_RECEIPT'],
+    ['폐기', 'DISPOSAL', 'DISPOSITION_DECISION'],
+  ])('전기 — %s 출고는 불량·검사 대기 LOT 도 막지 않는다(#240)', async (_name, issueTypeCode, sourceDocumentTypeCode) => {
+    const { tx, posting, posted, touched } = fake({ lotStatuses: ['DEFECTIVE', 'INSPECTION_PENDING'] });
+
+    await postIssue(
+      tx,
+      posting,
+      input({ header: { ...input().header, issueTypeCode, sourceDocumentTypeCode } }),
+      1,
+    );
+
+    expect(posted).toHaveLength(1);
+    expect(touched.has('lot')).toBe(false);
   });
 
   it('상태 — document-post 가 transitions.ts 에 등록돼 있다(미등록이면 던진다)', () => {

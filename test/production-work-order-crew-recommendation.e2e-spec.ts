@@ -14,6 +14,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-cr74-probe';
@@ -106,6 +107,45 @@ describe('4M 교대·작업자 추천 (e2e)', () => {
       [Number(workers.onLine), 'PROCESS', false],
       [Number(workers.qualified), 'QUALIFIED', false],
     ]);
+  });
+
+  it('4. 자격 유효 기간은 공장 현지 날짜로 본다 — 현지 00:00~07:00 에도 오늘부터 유효한 자격자가 들고, 어제 만료된 자격자는 빠진다 (omf-all-around#238)', async () => {
+    const today = localDate(new Date(), TIMEZONE);
+    const yesterday = new Date(Date.parse(`${today}T00:00:00.000Z`) - 24 * 60 * 60 * 1000);
+    const row = await prisma.worker_qualification.findFirstOrThrow({ where: { worker_id: workers.qualified, process_id: ids.process } });
+    const qualifiedIds = async (): Promise<number[]> =>
+      ((await recommend(targetId)).body.workers as { workerId: number; source: string }[])
+        .filter((worker) => worker.source === 'QUALIFIED')
+        .map((worker) => worker.workerId);
+    try {
+      await prisma.worker_qualification.update({
+        where: { worker_qualification_id: row.worker_qualification_id },
+        data: { valid_from: new Date(`${today}T00:00:00.000Z`), valid_to: null },
+      });
+      // 현지 오늘 03:00 = UTC 로는 전날 20:00. 타이머는 그대로 두어 DB·HTTP 가 평소대로 돈다.
+      jest.useFakeTimers({
+        now: new Date(`${yesterday.toISOString().slice(0, 10)}T20:00:00.000Z`),
+        doNotFake: [
+          'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+          'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+          'setTimeout', 'clearTimeout',
+        ],
+      });
+      expect(new Date().toISOString().slice(0, 10)).toBe(yesterday.toISOString().slice(0, 10));
+      expect(await qualifiedIds()).toEqual([Number(workers.qualified)]);
+
+      await prisma.worker_qualification.update({
+        where: { worker_qualification_id: row.worker_qualification_id },
+        data: { valid_from: new Date('2019-01-01'), valid_to: yesterday },
+      });
+      expect(await qualifiedIds()).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+      await prisma.worker_qualification.update({
+        where: { worker_qualification_id: row.worker_qualification_id },
+        data: { valid_from: row.valid_from, valid_to: row.valid_to },
+      });
+    }
   });
 
   async function makeFixtures(): Promise<void> {

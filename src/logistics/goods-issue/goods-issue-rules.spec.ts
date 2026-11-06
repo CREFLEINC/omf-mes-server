@@ -310,7 +310,6 @@ function serviceStub(seed: Seed = {}) {
       update: async () => ({}),
     },
     lot: { findMany: async () => [{ status_code: 'NORMAL' }] },
-    judgment_type_control: { findFirst: async () => null },
     warehouse: {
       findUniqueOrThrow: async () => ({
         business_unit_id: 2n,

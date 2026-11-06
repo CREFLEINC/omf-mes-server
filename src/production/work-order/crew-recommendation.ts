@@ -1,7 +1,7 @@
 import { RELEASED_WORK_ORDER_STATUSES } from '../../core/work-order';
 import { DEFAULT_DAY_START, localDate, timeOfColumn } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
-import { utcToday, validProcessQualification } from './validation';
+import { localToday, validProcessQualification } from './validation';
 
 /**
  * 4M 의 교대·작업자 추천 — `resource-recommendation.ts` 의 응답에 붙는다. 저장하지 않는다. 고르는 것은 현장이다.
@@ -185,7 +185,7 @@ async function recommendWorkers(
         select: { responsible_worker_id: true },
       })
       .then((rows) => rows.map((row) => row.responsible_worker_id as bigint));
-  const today = utcToday(new Date());
+  const today = localToday(new Date(), rule.timezone);
   const [byEquipment, byLine, byProcess, qualified] = await Promise.all([
     target.plannedEquipmentId === null ? [] : recent({ planned_equipment_id: target.plannedEquipmentId }),
     target.productionLineId === null ? [] : recent({ production_line_id: target.productionLineId }),

@@ -2,6 +2,8 @@ import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { RELEASED_WORK_ORDER_STATUSES, UsableResource, unusable } from '../../core/work-order';
+import { localDate } from '../../planning/production-plan/plan-window';
+import { siteToday } from '../../planning/routing/routing.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -108,6 +110,8 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
       planned_equipment_id: true, planned_mold_id: true, responsible_worker_id: true,
       planned_start_at: true, planned_end_at: true,
       routing_operation: { select: { process_id: true } },
+      production_plan: { select: { production_order: { select: { plant: { select: { timezone_code: true } } } } } },
+      production_line: { select: { plant: { select: { timezone_code: true } } } },
     },
   });
   if (!row) throw new NotFoundException('없는 MES W/O 입니다.');
@@ -123,7 +127,9 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
   const equipmentIds = union(row.planned_equipment_id, 'EQUIPMENT', (item) => item.equipment_id);
   const moldIds = union(row.planned_mold_id, 'MOLD', (item) => item.mold_id);
   const workerIds = union(row.responsible_worker_id, 'WORKER', (item) => item.worker_id);
-  const today = utcToday(new Date());
+  // W/O 의 공장 — 생산계획의 ERP W/O 공장, 없으면 라인의 공장(일별 실적과 같은 순서).
+  const timezone = row.production_plan?.production_order.plant.timezone_code ?? row.production_line?.plant.timezone_code ?? null;
+  const today = localToday(new Date(), timezone);
 
   const [equipments, molds, qualified, rivals] = await Promise.all([
     when(equipmentIds, () => prisma.equipment.findMany({
@@ -194,8 +200,13 @@ export function validProcessQualification(processId: bigint, today: Date): Prism
   };
 }
 
-/** `@db.Date` 는 UTC 자정으로 돌아온다 — 「오늘」도 UTC 날짜로 잡는다(입고 선례와 같은 태도). */
-export const utcToday = (now: Date): Date => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+/**
+ * 자격 유효 기간·교정 기한을 견주는 「오늘」 — 공장 현지 날짜를 `@db.Date` 와 같은 UTC 자정 모양으로 낸다.
+ * 공장을 모르면 현장 시간대의 오늘이다. UTC 날짜로 읽으면 현지 00:00~07:00 에 하루 이르다(omf-all-around#238).
+ */
+export function localToday(now: Date, timezone: string | null): Date {
+  return new Date(timezone === null ? siteToday(now) : localDate(now, timezone));
+}
 
 const finding = (severity: ValidationSeverity, code: string, field: string, message: string): ValidationFinding =>
   ({ severity, field, code, message });
