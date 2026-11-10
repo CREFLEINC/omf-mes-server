@@ -67,18 +67,19 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     await app.close();
   });
 
-  it('⛔ 합격 전에는 입고되지 않는다(#100) — 불합격은 사유가 있어야 확정되고(#106) 부적합이 선다(P-41)', async () => {
+  it('⛔ 합격 전에는 입고되지 않는다(#100) — 불합격은 사유(#106) 없이도 확정되고 부적합이 선다(P-41 · 사용자 결정 2026-11-10)', async () => {
     const { lotId, lineId, requestId } = await registerIqcLot(10);
     await receive(lotId, lineId, 10).expect(400);
 
     const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10 });
-    await confirm(resultId, 'REJECTED').expect(400);
-    await recordReason(resultId, 10);
     await confirm(resultId, 'REJECTED').expect(200);
 
     expect(await lotStatus(lotId)).toBe('DEFECTIVE');
     const nc = await openNonconformance(lotId);
     expect(nc).toMatchObject({ status_code: 'PENDING_DECISION', inspection_result_id: BigInt(resultId) });
+    const created = await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: nc.nonconformance_id }, select: { description: true } });
+    expect(created.description).toBe('수입검사 불합격');
+    expect(await prisma.defect_record.count({ where: { inspection_result_id: BigInt(resultId) } })).toBe(0);
     await receive(lotId, lineId, 10).expect(400);
   });
 
