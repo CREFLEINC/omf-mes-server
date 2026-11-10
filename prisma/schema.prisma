@@ -3780,6 +3780,8 @@ model inspection_plan_version {
   updated_by                  BigInt?
   version_no                  Int                    @default(1)
   sampling_ratio              Decimal?               @db.Decimal(9, 6)
+  guide_text_ko               String?                @db.VarChar(1000)
+  guide_text_vi               String?                @db.VarChar(1000)
   inspection_item_spec        inspection_item_spec[]
   inspection_plan             inspection_plan        @relation(fields: [inspection_plan_id], references: [inspection_plan_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_request          inspection_request[]
