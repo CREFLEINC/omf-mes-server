@@ -115,12 +115,10 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
       expect(await defectQtys(resultId)).toEqual([3]);
     });
 
-    it('⛔ 불합격 3(≤5) + 합격 · 불량 기록 없음 → 400 defects REQUIRED · 합계가 불합격 수량과 다르면 INVALID · LOT·결과 그대로', async () => {
+    it('⛔ 불합격 3(≤5) + 합격 · 합계가 불합격 수량과 다르면 INVALID · LOT·결과 그대로', async () => {
       const { lotId, requestId } = await registerIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 97, rejectedQty: 3, defects: [] });
 
-      const missing = await confirm(resultId, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
-      expect(missing.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
       const mismatched = await confirm(resultId, {
         overallJudgmentCode: 'ACCEPTED',
         defects: [{ defectCodeId, defectQty: 2, defectDescription: '찍힘' }],

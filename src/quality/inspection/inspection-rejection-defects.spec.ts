@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
 import { prepareRejectionDefects } from './inspection-rejection-defects';
 
-/** omf-all-around#106 — 오프라인 확정(`POST …/inspection-results` statusCode=CONFIRMED)도 IQC 불합격 사유를 요구한다. */
+/** omf-all-around#106 — 오프라인 확정(`POST …/inspection-results` statusCode=CONFIRMED)의 IQC 불합격 사유. 사유는 선택이다(사용자 결정 2026-11-10). */
 function harness(type: string) {
   const prisma = {
     inspection_request: {
@@ -27,11 +27,9 @@ const reason = [{ defectCodeId: 5, defectQty: 3, defectDescription: '스크래�
 const firstError = (error: unknown) => (error as ContractException).errors[0];
 
 describe('prepareRejectionDefects', () => {
-  it('IQC 불합격으로 확정하는데 사유가 없으면 400 defects REQUIRED 다', async () => {
+  it('IQC 불합격으로 확정할 때 사유가 없어도 받는다(사용자 결정 2026-11-10)', async () => {
     const { prisma, defects } = harness('IQC');
-    const error = await prepareRejectionDefects(prisma, defects, body(), true).catch((e: unknown) => e);
-
-    expect(firstError(error)).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+    await expect(prepareRejectionDefects(prisma, defects, body(), true)).resolves.toBeNull();
   });
 
   it('IQC 불합격 + 사유면 검증한 사유와 LOT 을 돌려준다', async () => {
@@ -89,12 +87,10 @@ describe('prepareRejectionDefects', () => {
     expect(firstError(error)).toMatchObject({ field: 'defects', code: 'INVALID' });
   });
 
-  it('불합격 수량이 있으면 합격 확정도 사유가 필수다(사용자 결정 2026-10-30)', async () => {
+  it('불합격 수량이 있는 합격 확정도 사유 없이 받는다(사용자 결정 2026-11-10)', async () => {
     const { prisma, defects } = harness('IQC');
     const input = body({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 2 });
-    const error = await prepareRejectionDefects(prisma, defects, input, true).catch((e: unknown) => e);
-
-    expect(firstError(error)).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+    await expect(prepareRejectionDefects(prisma, defects, input, true)).resolves.toBeNull();
   });
 
   it('작성중은 합계가 달라도 받는다', async () => {

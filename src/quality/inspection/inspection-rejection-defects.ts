@@ -12,7 +12,6 @@ import type { InspectionResultCreate } from './inspection-result-write-input';
 
 const IQC = 'IQC';
 const NO_REJECTION = '불량 내역은 불합격 수량이 있거나 불합격 판정일 때만 보낼 수 있습니다.';
-const DEFECTS_REQUIRED = '불량이 있으면 불량 유형과 수량을 함께 보내야 합니다.';
 const REJECTED = 'REJECTED';
 
 /**
@@ -32,8 +31,8 @@ function assertDefectSum(rows: { defectQty: number }[], rejectedQty: number): vo
 }
 
 /**
- * IQC 불합격 사유(omf-all-around#106 · 장부 P-42) — 확정으로 태어나는 IQC 불합격은 본문 `defects` 가
- * 1줄 이상이어야 한다(`:confirm` 의 `assertRejectionRecorded` 와 같은 규칙 · 2026-10-16 결정).
+ * IQC 불합격 사유(omf-all-around#106 · 장부 P-42) — `defects` 는 선택이다. 보내면 검증해 남기고, 안 보내면
+ * 불량 기록 없이 확정한다(사용자 결정 2026-11-10 — IQC 는 불량 유형·수량을 받지 않아도 된다).
  * ⛔ 거부는 채번 «앞»이다 — 400 이 될 저장에 번호를 태우지 않는다.
  */
 export async function prepareRejectionDefects(
@@ -43,24 +42,18 @@ export async function prepareRejectionDefects(
   bornConfirmed: boolean,
 ) {
   const rows = body.defects ?? [];
-  // 확정으로 태어나는 IQC 는 불합격 판정이거나 불량(불합격 수량)이 있으면 사유가 필수다(#205 · 사용자 결정 2026-10-30).
-  const needsDefects = bornConfirmed && keepsDefects(body.overallJudgmentCode, body.rejectedQty);
-  if (rows.length === 0 && !needsDefects) return null;
+  if (rows.length === 0) return null;
   const request = await prisma.inspection_request.findUnique({
     where: { inspection_request_id: BigInt(body.inspectionRequestId) },
     select: { inspection_type_code: true, lot_id: true, work_order_id: true },
   });
   const isIqc = request?.inspection_type_code === IQC;
-  if (rows.length > 0 && !isIqc) {
+  if (!isIqc) {
     throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
   }
   // 불합격 판정도 불합격 수량도 없는 회차에는 불량 기록을 두지 않는다 — `:confirm`(#121 · P-47)·작성중 저장(#122 · P-48)과 같은 규칙(#205).
-  if (rows.length > 0 && !keepsDefects(body.overallJudgmentCode, body.rejectedQty)) {
+  if (!keepsDefects(body.overallJudgmentCode, body.rejectedQty)) {
     throw one(field('defects', ERROR_CODE.INVALID, NO_REJECTION));
-  }
-  if (rows.length === 0) {
-    if (isIqc) throw one(field('defects', ERROR_CODE.REQUIRED, DEFECTS_REQUIRED));
-    return null;
   }
   // 합계는 확정으로 태어날 때만 맞춘다 — 작성중은 아직 입력하는 중이다.
   if (bornConfirmed) assertDefectSum(rows, Number(body.rejectedQty ?? 0));
@@ -95,11 +88,8 @@ export async function prepareConfirmDefects(
   const isIqc = result.inspection_request.inspection_type_code === IQC;
   const judgment = body.overallJudgmentCode ?? result.overall_judgment_code;
   const rejectedQty = Number(result.rejected_qty);
-  if (body.defects.length === 0) {
-    // 불량이 있으면(불합격 판정 · 불합격 수량) 빈 배열은 받지 않는다(#205 · 사용자 결정 2026-10-30).
-    if (isIqc && keepsDefects(judgment, rejectedQty)) throw one(field('defects', ERROR_CODE.REQUIRED, DEFECTS_REQUIRED));
-    return null;
-  }
+  // 빈 배열은 «싣지 않음»과 같다 — IQC 불량 기록은 선택이다(사용자 결정 2026-11-10).
+  if (body.defects.length === 0) return null;
   if (!isIqc) throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
   if (!keepsDefects(judgment, rejectedQty)) throw one(field('defects', ERROR_CODE.INVALID, NO_REJECTION));
   // ⛔ 합계 거부도 트랜잭션·부적합 채번 «앞»이다 — 안에서 다시 보는 것은 잠근 뒤의 수량 대조다.
@@ -110,7 +100,7 @@ export async function prepareConfirmDefects(
 /**
  * 확정 직전, 그 회차의 IQC 불량 기록을 확정 판정·불합격 수량에 맞춘다(omf-all-around#121 · 장부 P-47 · #205).
  * - 불합격 판정이거나 불합격 수량이 있고 본문 사유: 기존 기록을 지우고 본문 값으로 다시 쓴다 — 한 회차의 사유는 확정 시점 입력 1벌이다.
- * - 같은 경우 사유 없음: 임시 저장한 기록을 그대로 쓴다(불합격 판정이면 `assertRejectionRecorded` 가 기록을 요구한다).
+ * - 같은 경우 사유 없음: 임시 저장한 기록을 그대로 쓴다 — 기록이 없어도 확정한다(사용자 결정 2026-11-10).
  * - 불합격 수량 0 인 합격·보류: 확정 전에 붙었던 기록을 지운다.
  * - 남는 기록의 수량 합계는 불합격 수량과 같아야 한다(불합격 수량이 있을 때).
  * ⛔ 확정과 같은 트랜잭션이다 — 확정이 실패하면 기록 변경도 함께 되돌려진다.
@@ -142,8 +132,6 @@ export async function syncConfirmDefectsWithin(
       where: { inspection_result_id: input.inspectionResultId, source_type_code: IQC },
       select: { defect_qty: true },
     });
-    // 불합격 수량이 있으면 임시 저장한 기록도 없으면 안 된다(#205 · 사용자 결정 2026-10-30). 불합격 판정의 0건은 `assertRejectionRecorded` 가 잡는다.
-    if (input.rejectedQty > 0 && stored.length === 0) throw one(field('defects', ERROR_CODE.REQUIRED, DEFECTS_REQUIRED));
     assertDefectSum(stored.map((row) => ({ defectQty: Number(row.defect_qty) })), input.rejectedQty);
     return;
   }
