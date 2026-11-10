@@ -83,6 +83,20 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     await receive(lotId, lineId, 10).expect(400);
   });
 
+  it('불합격 확정은 그 LOT 으로 「검사 불합격(IQC)」 인계 알림을 한 번 남긴다 — 입하·LOT·수량·다음 할 일', async () => {
+    const { lotId } = await rejectedLot(10);
+    const where = { event_type_code: 'IQC_INSPECTION_REJECTED', aggregate_type_code: 'LOT', aggregate_id: BigInt(lotId) };
+    const events = await prisma.notification_event.findMany({ where, select: { payload: true } });
+    try {
+      expect(events).toHaveLength(1);
+      const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId) }, select: { lot_no: true } });
+      expect(events[0].payload).toMatchObject({ lot_no: lot.lot_no, qty: expect.stringMatching(/^10\b/), next_step: '불량 창고로 입하 처리' });
+      expect((events[0].payload as { receipt_no?: string }).receipt_no).toEqual(expect.any(String));
+    } finally {
+      await prisma.notification_event.deleteMany({ where });
+    }
+  });
+
   it('⭐ 불합격 LOT 은 불량창고로만 입고된다(#100 · P-45) — 일반 창고는 계속 거부', async () => {
     const { lotId, lineId } = await rejectedLot(10);
 
