@@ -158,11 +158,14 @@ export async function assertTerminalQualityReadScope(
       await ownInspectionRequest({ inspection_result: { some: { inspection_result_id: id } } });
       break;
     }
+    // 기준 버전은 의뢰 목록과 같은 범위(PQC 작업지시 · 자기 공장 OQC)에 걸린 것만 — POP OQC 도 안내 문구를 읽는다(omf-all-around#252).
     case 'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}':
     case 'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}/items': {
       const id = positiveId(request.params.inspectionPlanVersionId);
-      if (id === null) throw denied();
-      await ownInspectionRequest({ inspection_plan_version_id: id });
+      if (id === null || !await prisma.inspection_request.findFirst({
+        where: { AND: [{ inspection_plan_version_id: id }, await terminalInspectionRequestWhere(prisma, scope)] },
+        select: { inspection_request_id: true },
+      })) throw denied();
       break;
     }
     case 'GET /quality/inspection-plans/{inspectionPlanId}': {
