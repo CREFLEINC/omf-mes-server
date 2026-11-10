@@ -14,6 +14,13 @@ const GROUP_DEFECTS = '/api/app/dashboard-item-group-defects';
 // 하루 조회 → 생산은 그날, 품질 누계 구간은 09-01 ~ 09-10.
 const BASE_DATE = '2026-09-10';
 const AT = '2026-09-10T03:00:00Z';
+const DETAIL = '/api/app/dashboard-equipment-detail';
+const MIN = 60_000;
+// 설비 상세는 공장 «오늘»·«지금» 기준이다 — 픽스처를 실행 시각에 맞춘다. 하노이는 +07 고정(서머타임 없음).
+const NOW = Date.now();
+const DAY_START = Math.floor((NOW + 7 * 60 * MIN) / (24 * 60 * MIN)) * (24 * 60 * MIN) - 7 * 60 * MIN;
+const TODAY = new Date(DAY_START + 7 * 60 * MIN).toISOString().slice(0, 10);
+const since = (minutes: number) => Math.max(DAY_START, NOW - minutes * MIN);
 
 type ItemGroup = { itemGroupCode: string | null; itemGroupName: string | null; totalQty: number; goodQty: number; ngQty: number; defectRate: number | null };
 
@@ -114,6 +121,53 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     expect(body.groups[1]).toMatchObject({ itemGroupCode: 'ESL', topDefects: [], untypedNgQty: 5 });
   });
 
+  it('설비 상세는 로그인이 필요하고, 없는 설비는 404 다', async () => {
+    await request(app.getHttpServer()).get(DETAIL).query({ equipmentId: ids.equipment.toString() }).expect(401);
+    await request(app.getHttpServer()).get(DETAIL).query({ equipmentId: '999999999999' }).set('Cookie', cookie).expect(404);
+  });
+
+  it('⭐ 설비 상세 — 진행 중 작업지시의 금형·진도, 오늘 수량·불량 유형, 가동 + 작업 중 정지 = 세션, 정지 사유별 시간', async () => {
+    const body = (
+      await request(app.getHttpServer())
+        .get(DETAIL)
+        .query({ equipmentId: ids.equipment.toString() })
+        .set('Cookie', cookie)
+        .expect(200)
+    ).body as {
+      mold: unknown;
+      workOrder: { workOrderNo: string; orderQty: number; producedQty: number; progressRate: number };
+      output: { totalQty: number; goodQty: number; ngQty: number };
+      time: { plannedMs: number; runningMs: number; stoppedMs: number; noWorkMs: number; availabilityRate: number };
+      standardOutput: { expectedQty: number; differenceQty: number; excludedSessionCount: number };
+      defectTypes: { defectCode: string; qty: number }[];
+      untypedNgQty: number;
+      stopReasons: { reasonCode: string; reasonName: string; durationMs: number }[];
+    };
+
+    expect(body.mold).toEqual({ moldCode: PREFIX, moldName: PREFIX, cavityCount: 2 });
+    // 누적 실적 = 정정 원본을 뺀 모든 실적(180+20 · 50 · 오늘 30+2) — 조회 기간과 무관하다.
+    expect(body.workOrder).toEqual({ workOrderNo: `${PREFIX}-A`, orderQty: 1000, producedQty: 282, progressRate: 28.2 });
+    expect(body.output).toMatchObject({ totalQty: 32, goodQty: 30, ngQty: 2 });
+    expect(body.defectTypes.map(({ defectCode, qty }) => ({ defectCode, qty }))).toEqual([{ defectCode: `${PREFIX}-D1`, qty: 2 }]);
+    expect(body.untypedNgQty).toBe(0);
+
+    const stopped = since(10) - since(20);
+    const session = body.time.runningMs + body.time.stoppedMs;
+    expect(body.time.stoppedMs).toBe(stopped);
+    // 진행 중 세션은 서버의 «지금»까지라 몇 ms 다를 수 있다.
+    expect(Math.abs(session - (NOW - since(30)))).toBeLessThan(MIN);
+    expect(body.time.noWorkMs).toBe(body.time.plannedMs - session);
+    expect(body.time.availabilityRate).toBeCloseTo((body.time.runningMs / body.time.plannedMs) * 100, 6);
+    // 가동 초 ÷ C/T 10 × 캐비티 2
+    expect(Math.abs(body.standardOutput.expectedQty - (body.time.runningMs / 1000 / 10) * 2)).toBeLessThanOrEqual(1);
+    expect(body.standardOutput).toMatchObject({
+      differenceQty: 32 - body.standardOutput.expectedQty,
+      excludedSessionCount: 0,
+    });
+    // 공통코드에 없는 사유는 코드값을 이름으로 싣는다.
+    expect(body.stopReasons).toEqual(stopped > 0 ? [{ reasonCode: `${PREFIX}-R`, reasonName: `${PREFIX}-R`, durationMs: stopped }] : []);
+  });
+
   async function fixtures(): Promise<void> {
     ids.user = (await prisma.app_user.create({ data: { login_id: `${PREFIX}-USER`, user_name: PREFIX, status_code: 'EMPLOYED' } }))
       .app_user_id;
@@ -155,6 +209,7 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     const orderB = await addOrder('B', itemB, 'NORMAL');
     const orderC = await addOrder('C', itemC, 'NORMAL');
     const reworkA = await addOrder('A-RW', itemA, 'REWORK');
+    await equipmentFixtures(orderA);
     const resultA = await addResult(orderA, 1, { good_qty: 180, defect_qty: 20 });
     const original = await addResult(orderA, 2, { good_qty: 990, defect_qty: 9 });
     await addResult(orderA, 3, { good_qty: 50 }, original);
@@ -174,6 +229,58 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     await addDecision(split, 'SORT');
     const scrapped = await addIqc('2', itemB);
     await addDecision(await addNonconformance('2', itemB, scrapped), 'SCRAP');
+  }
+
+  async function equipmentFixtures(orderA: bigint): Promise<void> {
+    ids.equipment = (
+      await prisma.equipment.create({
+        data: {
+          plant_id: ids.plant, production_line_id: ids.line, equipment_code: PREFIX, equipment_name: PREFIX,
+          equipment_type_code: 'PRESS', status_code: 'IN_SERVICE',
+        },
+      })
+    ).equipment_id;
+    const mold = await prisma.mold.create({
+      data: { plant_id: ids.plant, mold_code: PREFIX, mold_name: PREFIX, status_code: 'ACTIVE', tool_type_code: 'MOLD', cavity_count: 2 },
+    });
+    await prisma.work_order.update({
+      where: { work_order_id: orderA },
+      data: { planned_mold_id: mold.mold_id, planned_equipment_id: ids.equipment },
+    });
+    const terminal = await prisma.terminal.create({
+      data: { terminal_code: PREFIX, plant_id: ids.plant, terminal_type_code: 'POP', status_code: 'ACTIVE' },
+    });
+    // 근무 00:00~23:59 — 계획 시간 = 오늘 0시 ~ 지금.
+    await prisma.shift.create({
+      data: {
+        plant_id: ids.plant, shift_code: PREFIX, shift_name: PREFIX,
+        start_time: new Date('1970-01-01T00:00:00Z'), end_time: new Date('1970-01-01T23:59:00Z'),
+      },
+    });
+    const calendar = await prisma.work_calendar.create({ data: { plant_id: ids.plant, calendar_code: PREFIX, calendar_name: PREFIX } });
+    await prisma.work_calendar_application.create({
+      data: { work_calendar_id: calendar.work_calendar_id, target_type_code: 'PLANT', target_id: ids.plant, effective_from: new Date('2026-01-01') },
+    });
+    await prisma.work_calendar_day.create({
+      data: { work_calendar_id: calendar.work_calendar_id, calendar_date: new Date(TODAY), day_type_code: 'WORKING' },
+    });
+    // 30분 전 시작 · 20~10분 전 정지(사유 코드는 공통코드에 없다) · 지금도 진행 중.
+    const session = await prisma.work_session.create({
+      data: {
+        work_order_id: orderA, session_no: 1, equipment_id: ids.equipment, terminal_id: terminal.terminal_id,
+        started_at: new Date(since(30)), status_code: 'RUNNING', idempotency_key: `${PREFIX}-SESSION`,
+      },
+    });
+    await prisma.work_session_event.createMany({
+      data: [
+        { work_session_id: session.work_session_id, event_type_code: 'STOP', occurred_at: new Date(since(20)), reason_code: `${PREFIX}-R` },
+        { work_session_id: session.work_session_id, event_type_code: 'RESUME', occurred_at: new Date(since(10)) },
+      ],
+    });
+    const today = await addResult(orderA, 4, { good_qty: 30, defect_qty: 2 }, undefined, {
+      occurred_at: new Date(since(5)), equipment_id: ids.equipment, mold_id: mold.mold_id,
+    });
+    await addDefect('D1', today, 2);
   }
 
   async function addItem(suffix: string, group: string | null): Promise<bigint> {
@@ -214,6 +321,7 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     sequence: number,
     quantities: Partial<Record<'good_qty' | 'defect_qty' | 'scrap_qty' | 'rework_qty', number>>,
     corrects?: bigint,
+    extra: { occurred_at?: Date; equipment_id?: bigint; mold_id?: bigint } = {},
   ): Promise<bigint> {
     const no = `${PREFIX}-${workOrderId}-${sequence}`;
     return (
@@ -221,7 +329,7 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
         data: {
           production_result_no: no, work_order_id: workOrderId, result_sequence: sequence,
           corrects_production_result_id: corrects ?? null, ...quantities, uom_id: ids.uom, result_source_code: 'MANUAL',
-          occurred_at: new Date(AT), worker_id: ids.worker, status_code: 'CONFIRMED', idempotency_key: no,
+          occurred_at: new Date(AT), worker_id: ids.worker, status_code: 'CONFIRMED', idempotency_key: no, ...extra,
         },
       })
     ).production_result_id;
@@ -300,11 +408,22 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
       where: { production_result_no: { startsWith: PREFIX }, corrects_production_result_id: { not: null } },
     });
     await prisma.production_result.deleteMany({ where: { production_result_no: { startsWith: PREFIX } } });
+    await prisma.work_session_event.deleteMany({ where: { work_session: { idempotency_key: { startsWith: PREFIX } } } });
+    await prisma.work_session.deleteMany({ where: { idempotency_key: { startsWith: PREFIX } } });
     await prisma.work_order.deleteMany({ where: { work_order_no: { startsWith: PREFIX } } });
     await prisma.routing_operation.deleteMany({ where: { operation_name: PREFIX } });
     await prisma.routing.deleteMany({ where: { routing_code: PREFIX } });
     await prisma.process.deleteMany({ where: { process_code: PREFIX } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    const calendars = await prisma.work_calendar.findMany({ where: { calendar_code: PREFIX } });
+    const calendarIds = calendars.map((row) => row.work_calendar_id);
+    await prisma.work_calendar_day.deleteMany({ where: { work_calendar_id: { in: calendarIds } } });
+    await prisma.work_calendar_application.deleteMany({ where: { work_calendar_id: { in: calendarIds } } });
+    await prisma.work_calendar.deleteMany({ where: { calendar_code: PREFIX } });
+    await prisma.shift.deleteMany({ where: { shift_code: PREFIX } });
+    await prisma.mold.deleteMany({ where: { mold_code: PREFIX } });
+    await prisma.equipment.deleteMany({ where: { equipment_code: PREFIX } });
+    await prisma.terminal.deleteMany({ where: { terminal_code: PREFIX } });
     await prisma.worker.deleteMany({ where: { worker_no: PREFIX } });
     await prisma.production_line.deleteMany({ where: { line_code: PREFIX } });
     await prisma.plant.deleteMany({ where: { plant_code: PREFIX } });

@@ -9,6 +9,7 @@ import { MANUAL_PERMISSIONS } from './manual-permissions';
 export const LOGIN_ONLY_OPERATIONS: ReadonlySet<string> = new Set([
   'GET /app/dashboard-summary',
   'GET /app/dashboard-item-group-defects',
+  'GET /app/dashboard-equipment-detail',
 ]);
 
 /**

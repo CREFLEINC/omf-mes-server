@@ -115,8 +115,8 @@ describe('오퍼레이션 권한 매핑', () => {
     // 작성중 Rev 취소 1건 — `W-06-01`(omf-all-around#231): 344.
     // 계획 제안 조회·선택 확정 2건 — `W-02-01`·`W-02-02`: 346.
     // 원인코드 마스터 4건 삭제(omf-all-around#239): 342.
-    // 대시보드 제품군별 불량 1건(omf-all-around#251) — 로그인만 보는 자리(LOGIN_ONLY_OPERATIONS): 343.
-    expect(declares403).toHaveLength(343);
+    // 대시보드 제품군별 불량 · 설비 상세 2건(omf-all-around#251) — 로그인만 보는 자리(LOGIN_ONLY_OPERATIONS): 344.
+    expect(declares403).toHaveLength(344);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.

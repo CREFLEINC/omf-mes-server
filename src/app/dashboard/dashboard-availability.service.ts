@@ -69,13 +69,17 @@ export class DashboardAvailabilityService {
     plants: readonly DashboardPlant[],
     range: DashboardRange,
     asOf: number,
+    /** 설비 한 대만 센다(설비 상세) — 없으면 공장의 모든 설비. */
+    equipmentId?: bigint,
   ): Promise<AvailabilityFigures> {
     let plannedMs: number | null = 0;
     let actualMs = 0;
     let equipmentCount = 0;
     let excludedSessionCount = 0;
     for (const plant of plants) {
-      const sessions = await this.sessions(tx, plant);
+      const sessions = (await this.sessions(tx, plant)).filter(
+        (row) => equipmentId === undefined || row.equipment_id === equipmentId,
+      );
       excludedSessionCount += sessions.filter((row) => row.equipment_id === null).length;
       const equipment = scopeEquipment(sessions);
       if (equipment.length === 0) continue;

@@ -3514,6 +3514,84 @@
     }
    }
   },
+  "/app/dashboard-equipment-detail": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "설비 상세 현황",
+    "description": "설비 현황판에서 설비를 누르면 여는 상세 — 설비 현황과 같이 공장 «오늘»·«지금» 기준이다(조회 기간과 무관). 금형·진행 중 작업지시 진도·오늘 수량·가동/정지 시간·가동률·표준 C/T 기준 생산량·불량 유형·작업 중 정지 사유. 기능 권한 없이 로그인만 본다(omf-all-around#251)",
+    "parameters": [
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 5001
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "설비 상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DashboardEquipmentDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "equipmentId 가 없거나 정수가 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "볼 수 없는 설비다 — 설비의 공장이 사용자 데이터 범위 밖이다(field: plantId). 기능 권한은 보지 않는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 설비다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/app/operation-policies": {
    "get": {
     "tags": [
@@ -9806,6 +9884,251 @@
          "type": "number",
          "format": "double",
          "description": "NG − 유형이 적힌 불량 수량(0 이상). 폐기·재작업 수량과 유형 없이 들어온 불량이다"
+        }
+       }
+      }
+     }
+    }
+   },
+   "DashboardEquipmentDetail": {
+    "type": "object",
+    "description": "설비 상세(omf-all-around#251)",
+    "required": [
+     "equipmentId",
+     "asOf",
+     "mold",
+     "workOrder",
+     "output",
+     "time",
+     "standardOutput",
+     "defectTypes",
+     "untypedNgQty",
+     "stopReasons"
+    ],
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "asOf": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "mold": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "moldCode",
+         "moldName",
+         "cavityCount"
+        ],
+        "properties": {
+         "moldCode": {
+          "type": "string"
+         },
+         "moldName": {
+          "type": "string"
+         },
+         "cavityCount": {
+          "type": "integer",
+          "description": "표준 캐비티 수"
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "진행 중 작업세션의 금형(세션에 고른 금형, 없으면 작업지시 계획 금형), 없으면 이 설비의 가장 최근 실적 금형. 모두 없으면 null"
+     },
+     "workOrder": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "workOrderNo",
+         "orderQty",
+         "producedQty",
+         "progressRate"
+        ],
+        "properties": {
+         "workOrderNo": {
+          "type": "string"
+         },
+         "orderQty": {
+          "type": "number",
+          "format": "double"
+         },
+         "producedQty": {
+          "type": "number",
+          "format": "double",
+          "description": "그 작업지시의 누적 실적(모든 설비 · 정정 원본 제외)"
+         },
+         "progressRate": {
+          "type": [
+           "number",
+           "null"
+          ],
+          "format": "double",
+          "description": "누적 실적 ÷ 지시 수량(%) · 0~100. 지시 수량 0 이면 null"
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "진행 중 작업세션의 작업지시. 없으면 null"
+     },
+     "output": {
+      "type": "object",
+      "description": "오늘 이 설비의 실적 — 설비 현황과 같은 규칙(재작업 W/O 실적 제외 · 재작업 합격 이동 없음). 설비가 빈 실적은 빠진다",
+      "required": [
+       "totalQty",
+       "goodQty",
+       "ngQty",
+       "defectRate"
+      ],
+      "properties": {
+       "totalQty": {
+        "type": "number",
+        "format": "double"
+       },
+       "goodQty": {
+        "type": "number",
+        "format": "double"
+       },
+       "ngQty": {
+        "type": "number",
+        "format": "double"
+       },
+       "defectRate": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "format": "double"
+       }
+      }
+     },
+     "time": {
+      "type": "object",
+      "description": "공장 오늘 0시 ~ 지금. 단위 ms",
+      "required": [
+       "plannedMs",
+       "runningMs",
+       "stoppedMs",
+       "noWorkMs",
+       "availabilityRate"
+      ],
+      "properties": {
+       "plannedMs": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "format": "double",
+        "description": "오늘 지금까지 계획 가동 시간(근무달력 − 휴무 − 계획 정지). 근무달력을 못 풀면 null"
+       },
+       "runningMs": {
+        "type": "number",
+        "format": "double",
+        "description": "가동 = 작업 세션 − 작업 중 정지(STOP~RESUME)"
+       },
+       "stoppedMs": {
+        "type": "number",
+        "format": "double",
+        "description": "작업 중 정지. 가동 + 작업 중 정지 = 작업 세션 시간"
+       },
+       "noWorkMs": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "format": "double",
+        "description": "작업 없음 = 계획 시간 − 작업 세션 시간(0 이상). 계획 시간이 null 이면 null"
+       },
+       "availabilityRate": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "format": "double",
+        "description": "시간가동률 카드와 같은 계산을 이 설비 한 대로(%) · 0~100. 계획 시간이 null·0 이면 null"
+       }
+      }
+     },
+     "standardOutput": {
+      "type": "object",
+      "required": [
+       "expectedQty",
+       "differenceQty",
+       "excludedSessionCount"
+      ],
+      "properties": {
+       "expectedQty": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "format": "double",
+        "description": "Σ(세션 가동 시간 ÷ 작업지시 표준 C/T × 세션 금형 캐비티 — 금형 없으면 1) 내림. 재작업 W/O 세션은 넣지 않는다. 셀 세션이 없으면 null"
+       },
+       "differenceQty": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "format": "double",
+        "description": "output.totalQty − expectedQty"
+       },
+       "excludedSessionCount": {
+        "type": "integer",
+        "description": "표준 C/T 가 없어 뺀 세션 수"
+       }
+      }
+     },
+     "defectTypes": {
+      "type": "array",
+      "description": "오늘 이 설비 실적에 붙은 불량 기록의 유형별 수량 — 많은 순 전부",
+      "items": {
+       "$ref": "#/components/schemas/DashboardDefectPhenomenon"
+      }
+     },
+     "untypedNgQty": {
+      "type": "number",
+      "format": "double",
+      "description": "output.ngQty − 유형이 적힌 불량 수량(0 이상)"
+     },
+     "stopReasons": {
+      "type": "array",
+      "description": "작업 중 정지(STOP~RESUME)의 사유별 시간 — 긴 순. 세션이 없는 시간(고장으로 작업을 못 한 시간 등)은 들어가지 않는다",
+      "items": {
+       "type": "object",
+       "required": [
+        "reasonCode",
+        "reasonName",
+        "durationMs"
+       ],
+       "properties": {
+        "reasonCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "null 이면 사유 미등록"
+        },
+        "reasonName": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "공통코드 WORK_SESSION_EVENT_REASON 이름. 코드가 비활성·삭제됐으면 코드값"
+        },
+        "durationMs": {
+         "type": "number",
+         "format": "double"
         }
        }
       }
