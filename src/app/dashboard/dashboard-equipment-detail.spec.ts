@@ -36,6 +36,25 @@ describe('설비 상세 — 시간(sessionTimes)', () => {
     expect(times.stoppedByReason.get('WAIT')).toBe(2 * H);
   });
 
+  it('겹친 세션 — 한 세션이 멈춘 동안 다른 세션이 돌았으면 그 시간은 정지 사유에 넣지 않는다(정지 사유 합 = 작업 중 정지)', () => {
+    const times = sessionTimes(
+      [
+        { sessionId: 1n, startedAt: 8 * H, endedAt: 12 * H },
+        { sessionId: 2n, startedAt: 10 * H, endedAt: 14 * H },
+      ],
+      [
+        { sessionId: 1n, eventTypeCode: 'STOP', occurredAt: 9 * H, reasonCode: 'A' },
+        { sessionId: 1n, eventTypeCode: 'RESUME', occurredAt: 11 * H, reasonCode: null },
+      ],
+      day,
+      20 * H,
+    );
+    // 9~10 시만 진짜 정지(10~11 시는 세션 2 가 돌았다)
+    expect(times).toMatchObject({ sessionMs: 6 * H, runningMs: 5 * H, stoppedMs: H });
+    expect([...times.stoppedByReason]).toEqual([['A', H]]);
+    expect(times.sessionSpans).toEqual([{ start: 8 * H, end: 14 * H }]);
+  });
+
   it('겹친 세션은 한 번만 센다', () => {
     const times = sessionTimes(
       [

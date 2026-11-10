@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DashboardAvailabilityService, DashboardPlant } from './dashboard-availability.service';
 import { DetailEvent, DetailSession, sessionTimes } from './dashboard-equipment-detail-time';
 import { CONFIRMED_INSPECTION_RECORD, LATEST_RESULT_RECORD } from './dashboard-nonconformance.service';
+import { intersect, subtract, totalLength } from './dashboard-intervals';
 import { LEAF_RESULT, dashboardScope, num } from './dashboard-scope';
 import type { DefectPhenomenon } from './dashboard-sections';
 import { capRate } from './dashboard-view';
@@ -52,8 +53,10 @@ const PRODUCED = Prisma.sql`pr.good_qty + pr.defect_qty + pr.hold_qty + pr.scrap
 
 /**
  * 설비 상세 팝업(omf-all-around#251) — 설비 현황판과 같이 공장 «오늘»·«지금» 기준이다(조회 기간과 무관).
- * 수량은 설비 현황과 같은 규칙(정정 원본 · 재작업 W/O 실적 제외, 재작업 합격 이동 없음)이라 설비가 빈 실적은 빠진다.
- * 시간·가동률은 시간가동률 카드와 같은 원천(작업 세션 − STOP~RESUME, 근무달력 계획 시간)을 설비 한 대로 센다.
+ * 수량은 설비 현황과 같은 규칙(정정 원본 · 재작업 W/O 실적 제외, 재작업 합격 이동 없음)이되, 실적에 설비가 비었으면 그 작업
+ * 세션의 설비로 센다 — POP 은 세션을 실어도 본문 설비를 생략하곤 하고(result-defect.ts), 표준 C/T 기준 생산량이 세션으로 세므로
+ * 차이의 양쪽 기준을 맞춘다. 시간·가동률은 시간가동률 카드와 같은 원천(작업 세션 − STOP~RESUME, 근무달력 계획 구간)을 설비 한 대로
+ * 센다 — 계획 = 계획 구간 길이, 작업 없음 = 계획 구간 − 세션 구간, 가동률 = 계획 구간과 겹친 가동 ÷ 계획.
  */
 @Injectable()
 export class DashboardEquipmentDetailService {
@@ -68,7 +71,10 @@ export class DashboardEquipmentDetailService {
     const equipmentId = BigInt(query.equipmentId);
     return this.prisma.$transaction(
       async (tx) => {
-        const equipment = await tx.equipment.findUnique({ where: { equipment_id: equipmentId }, select: { plant_id: true } });
+        const equipment = await tx.equipment.findUnique({
+          where: { equipment_id: equipmentId },
+          select: { plant_id: true, production_line_id: true },
+        });
         if (equipment === null) throw new NotFoundException('없는 설비입니다.');
         // 공장 «오늘» — 기준일을 주지 않으면 dashboardScope 가 그 공장의 오늘로 정한다. 범위 밖 공장이면 403.
         const { range, plants } = await dashboardScope(tx, { plantId: equipment.plant_id }, now, actorUserId);
@@ -80,10 +86,19 @@ export class DashboardEquipmentDetailService {
           plant.measured,
           asOf,
         );
-        const figures = await this.availability.figures(tx, [plant], range, asOf, equipmentId);
+        // 오늘 세션이 없는 설비도 계획 구간을 센다 — 작업 없음이 가장 필요한 경우다.
+        const plan = await this.availability.equipmentPlan(
+          tx,
+          plant,
+          { equipmentId, productionLineId: equipment.production_line_id },
+          range,
+        );
+        const plannedMs = plan === null ? null : totalLength(plan);
         const output = await this.output(tx, equipmentId, plant);
         const defects = await this.defects(tx, equipmentId, plant);
-        const open = sessions.find((row) => row.started_at <= now && (row.ended_at === null || row.ended_at > now));
+        // 현재 작업 — 설비 현황판과 같은 규칙: 가장 늦게 시작한 세션이 끝나지 않았을 때만.
+        const latest = sessions.find((row) => row.started_at <= now);
+        const open = latest !== undefined && (latest.ended_at === null || latest.ended_at > now) ? latest : undefined;
         const typed = defects.reduce((sum, row) => sum + row.qty, 0);
         return {
           equipmentId: query.equipmentId,
@@ -92,12 +107,14 @@ export class DashboardEquipmentDetailService {
           workOrder: open === undefined ? null : await this.workOrder(tx, open),
           output,
           time: {
-            plannedMs: figures.plannedMs,
+            plannedMs,
             runningMs: times.runningMs,
             stoppedMs: times.stoppedMs,
-            noWorkMs: figures.plannedMs === null ? null : Math.max(0, figures.plannedMs - times.sessionMs),
+            noWorkMs: plan === null ? null : totalLength(subtract(plan, times.sessionSpans)),
             availabilityRate:
-              figures.plannedMs === null || figures.plannedMs <= 0 ? null : capRate((figures.actualMs / figures.plannedMs) * 100),
+              plan === null || plannedMs === null || plannedMs <= 0
+                ? null
+                : capRate((totalLength(intersect(times.runningSpans, plan)) / plannedMs) * 100),
           },
           standardOutput: standardOutput(sessions, times.runningBySession, output.totalQty),
           defectTypes: defects,
@@ -141,13 +158,19 @@ export class DashboardEquipmentDetailService {
     }));
   }
 
-  /** 진행 중 세션의 금형(세션 → 작업지시 계획 순), 없으면 이 설비의 가장 최근 실적 금형. */
+  /**
+   * 진행 중 세션의 금형(세션 → 작업지시 계획 순). 없으면 최근 실적 금형 — 진행 중 작업이 있으면 «그 작업지시»의 실적에서만
+   * 찾는다(다른 작업지시의 지난 금형을 보이지 않는다). 진행 중 작업이 없으면 이 설비의 가장 최근 실적 금형.
+   */
   private async mold(tx: Tx, equipmentId: bigint, open: SessionRow | undefined): Promise<DashboardEquipmentDetail['mold']> {
     if (open?.mold_code != null && open.mold_name !== null) {
       return { moldCode: open.mold_code, moldName: open.mold_name, cavityCount: open.cavity_count ?? 1 };
     }
     const latest = await tx.production_result.findFirst({
-      where: { equipment_id: equipmentId, mold_id: { not: null } },
+      where: {
+        mold_id: { not: null },
+        ...(open === undefined ? { equipment_id: equipmentId } : { work_order_id: open.work_order_id }),
+      },
       orderBy: [{ occurred_at: 'desc' }, { production_result_id: 'desc' }],
       select: { mold: { select: { mold_code: true, mold_name: true, cavity_count: true } } },
     });
@@ -177,7 +200,8 @@ export class DashboardEquipmentDetailService {
         SUM(pr.defect_qty + pr.scrap_qty + pr.rework_qty)::text AS ng_qty
       FROM production.production_result pr
       JOIN production.work_order wo ON wo.work_order_id = pr.work_order_id
-      WHERE pr.equipment_id = ${equipmentId} AND wo.work_order_type_code <> 'REWORK'
+      LEFT JOIN production.work_session ws ON ws.work_session_id = pr.work_session_id
+      WHERE COALESCE(pr.equipment_id, ws.equipment_id) = ${equipmentId} AND wo.work_order_type_code <> 'REWORK'
         AND pr.occurred_at >= ${new Date(plant.day.start)} AND pr.occurred_at < ${new Date(plant.day.end)}
         AND ${LEAF_RESULT}`);
     const totalQty = num(row?.total_qty);
@@ -185,15 +209,19 @@ export class DashboardEquipmentDetailService {
     return { totalQty, goodQty: num(row?.good_qty), ngQty, defectRate: totalQty > 0 ? capRate((ngQty / totalQty) * 100) : null };
   }
 
-  /** 오늘 이 설비 실적에 붙은 불량 기록의 유형별 수량 — 기록 규칙은 부적합 파레토와 같다. 많은 순 전부. */
+  /**
+   * 오늘 이 설비 실적에 붙은 불량 기록의 유형별 수량 — 위 수량과 같은 실적(정정 원본 실적의 기록은 빠진다)에 확정 검사 결과 ·
+   * 정정본 유형별 내역 규칙을 더한다. 많은 순 전부.
+   */
   private async defects(tx: Tx, equipmentId: bigint, plant: DashboardPlant): Promise<DefectPhenomenon[]> {
     const rows = await tx.$queryRaw<{ defect_code_id: bigint; defect_code: string; defect_name: string; qty: string }[]>(Prisma.sql`
       SELECT dc.defect_code_id, dc.defect_code, dc.defect_name, SUM(dr.defect_qty)::text AS qty
       FROM quality.defect_record dr
       JOIN production.production_result pr ON pr.production_result_id = dr.production_result_id
       JOIN production.work_order wo ON wo.work_order_id = pr.work_order_id
+      LEFT JOIN production.work_session ws ON ws.work_session_id = pr.work_session_id
       JOIN quality.defect_code dc ON dc.defect_code_id = dr.defect_code_id
-      WHERE pr.equipment_id = ${equipmentId} AND wo.work_order_type_code <> 'REWORK'
+      WHERE COALESCE(pr.equipment_id, ws.equipment_id) = ${equipmentId} AND wo.work_order_type_code <> 'REWORK'
         AND pr.occurred_at >= ${new Date(plant.day.start)} AND pr.occurred_at < ${new Date(plant.day.end)}
         AND ${LEAF_RESULT} AND ${CONFIRMED_INSPECTION_RECORD} AND ${LATEST_RESULT_RECORD}
       GROUP BY dc.defect_code_id ORDER BY SUM(dr.defect_qty) DESC, dc.defect_code`);

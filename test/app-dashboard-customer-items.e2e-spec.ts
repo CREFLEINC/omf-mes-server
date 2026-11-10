@@ -186,10 +186,11 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     };
 
     expect(body.mold).toEqual({ moldCode: PREFIX, moldName: PREFIX, cavityCount: 2 });
-    // 누적 실적 = 정정 원본을 뺀 모든 실적(180+20 · 50 · 오늘 30+2) — 조회 기간과 무관하다.
-    expect(body.workOrder).toMatchObject({ workOrderNo: `${PREFIX}-A`, orderQty: 1000, producedQty: 282 });
-    expect(body.workOrder.progressRate).toBeCloseTo(28.2, 9);
-    expect(body.output).toMatchObject({ totalQty: 32, goodQty: 30, ngQty: 2 });
+    // 누적 실적 = 정정 원본을 뺀 모든 실적(180+20 · 50 · 오늘 30+2 · 설비 빈 10) — 조회 기간과 무관하다.
+    expect(body.workOrder).toMatchObject({ workOrderNo: `${PREFIX}-A`, orderQty: 1000, producedQty: 292 });
+    expect(body.workOrder.progressRate).toBeCloseTo(29.2, 9);
+    // 실적에 설비가 비었으면 그 작업 세션의 설비로 센다(POP 이 본문 설비를 생략하는 경우).
+    expect(body.output).toMatchObject({ totalQty: 42, goodQty: 40, ngQty: 2 });
     expect(body.defectTypes.map(({ defectCode, qty }) => ({ defectCode, qty }))).toEqual([{ defectCode: `${PREFIX}-D1`, qty: 2 }]);
     expect(body.untypedNgQty).toBe(0);
 
@@ -198,16 +199,30 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     expect(body.time.stoppedMs).toBe(stopped);
     // 진행 중 세션은 서버의 «지금»까지라 몇 ms 다를 수 있다.
     expect(Math.abs(session - (NOW - since(30)))).toBeLessThan(MIN);
-    expect(body.time.noWorkMs).toBe(body.time.plannedMs - session);
+    // 근무 00:00~23:59 — 세션 밖 계획 시간이 작업 없음이다.
+    expect(Math.abs(body.time.noWorkMs - (body.time.plannedMs - session))).toBeLessThan(MIN);
     expect(body.time.availabilityRate).toBeCloseTo((body.time.runningMs / body.time.plannedMs) * 100, 6);
     // 가동 초 ÷ C/T 10 × 캐비티 2
     expect(Math.abs(body.standardOutput.expectedQty - (body.time.runningMs / 1000 / 10) * 2)).toBeLessThanOrEqual(1);
     expect(body.standardOutput).toMatchObject({
-      differenceQty: 32 - body.standardOutput.expectedQty,
+      differenceQty: 42 - body.standardOutput.expectedQty,
       excludedSessionCount: 0,
     });
     // 공통코드에 없는 사유는 코드값을 이름으로 싣는다.
     expect(body.stopReasons).toEqual(stopped > 0 ? [{ reasonCode: `${PREFIX}-R`, reasonName: `${PREFIX}-R`, durationMs: stopped }] : []);
+  });
+
+  it('⭐ 오늘 작업이 없는 설비 — 계획 시간은 근무달력대로, 작업 없음 = 계획, 가동률 0', async () => {
+    const body = (
+      await request(app.getHttpServer())
+        .get(DETAIL)
+        .query({ equipmentId: ids.idleEquipment.toString() })
+        .set('Cookie', cookie)
+        .expect(200)
+    ).body as { time: { plannedMs: number; runningMs: number; stoppedMs: number; noWorkMs: number; availabilityRate: number } };
+
+    expect(body.time.plannedMs).toBeGreaterThan(0);
+    expect(body.time).toMatchObject({ runningMs: 0, stoppedMs: 0, noWorkMs: body.time.plannedMs, availabilityRate: 0 });
   });
 
   async function fixtures(): Promise<void> {
@@ -323,6 +338,17 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
       occurred_at: new Date(since(5)), equipment_id: ids.equipment, mold_id: mold.mold_id,
     });
     await addDefect('D1', today, 2);
+    // POP 이 세션만 싣고 본문 설비를 비운 실적.
+    await addResult(orderA, 5, { good_qty: 10 }, undefined, { occurred_at: new Date(since(4)), work_session_id: session.work_session_id });
+    // 오늘 세션이 하나도 없는 설비.
+    ids.idleEquipment = (
+      await prisma.equipment.create({
+        data: {
+          plant_id: ids.plant, production_line_id: ids.line, equipment_code: `${PREFIX}-IDLE`, equipment_name: PREFIX,
+          equipment_type_code: 'PRESS', status_code: 'IN_SERVICE',
+        },
+      })
+    ).equipment_id;
   }
 
   async function addItem(suffix: string, group: string | null): Promise<bigint> {
@@ -363,7 +389,7 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     sequence: number,
     quantities: Partial<Record<'good_qty' | 'defect_qty' | 'scrap_qty' | 'rework_qty', number>>,
     corrects?: bigint,
-    extra: { occurred_at?: Date; equipment_id?: bigint; mold_id?: bigint } = {},
+    extra: { occurred_at?: Date; equipment_id?: bigint; mold_id?: bigint; work_session_id?: bigint } = {},
   ): Promise<bigint> {
     const no = `${PREFIX}-${workOrderId}-${sequence}`;
     return (
@@ -464,7 +490,7 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     await prisma.work_calendar.deleteMany({ where: { calendar_code: PREFIX } });
     await prisma.shift.deleteMany({ where: { shift_code: PREFIX } });
     await prisma.mold.deleteMany({ where: { mold_code: PREFIX } });
-    await prisma.equipment.deleteMany({ where: { equipment_code: PREFIX } });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.terminal.deleteMany({ where: { terminal_code: PREFIX } });
     await prisma.worker.deleteMany({ where: { worker_no: PREFIX } });
     await prisma.production_line.deleteMany({ where: { line_code: PREFIX } });

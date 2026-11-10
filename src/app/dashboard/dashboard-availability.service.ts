@@ -28,7 +28,7 @@ interface SessionRow {
   ended_at: Date | null;
 }
 
-interface ScopedEquipment {
+export interface ScopedEquipment {
   readonly equipmentId: bigint;
   readonly productionLineId: bigint | null;
 }
@@ -69,17 +69,13 @@ export class DashboardAvailabilityService {
     plants: readonly DashboardPlant[],
     range: DashboardRange,
     asOf: number,
-    /** 설비 한 대만 센다(설비 상세) — 없으면 공장의 모든 설비. */
-    equipmentId?: bigint,
   ): Promise<AvailabilityFigures> {
     let plannedMs: number | null = 0;
     let actualMs = 0;
     let equipmentCount = 0;
     let excludedSessionCount = 0;
     for (const plant of plants) {
-      const sessions = (await this.sessions(tx, plant)).filter(
-        (row) => equipmentId === undefined || row.equipment_id === equipmentId,
-      );
+      const sessions = await this.sessions(tx, plant);
       excludedSessionCount += sessions.filter((row) => row.equipment_id === null).length;
       const equipment = scopeEquipment(sessions);
       if (equipment.length === 0) continue;
@@ -89,6 +85,20 @@ export class DashboardAvailabilityService {
       equipmentCount += equipment.length;
     }
     return { plannedMs, actualMs, equipmentCount, excludedSessionCount };
+  }
+
+  /**
+   * 설비 한 대의 계획 가동 구간(설비 상세 · omf-all-around#251) — 시간가동률 분모와 같은 식(교대 − 휴무 − 계획 정지,
+   * `measured` 로 자름)이다. 오늘 세션이 없는 설비도 센다. 근무달력을 못 풀면 null.
+   */
+  async equipmentPlan(
+    tx: Prisma.TransactionClient,
+    plant: DashboardPlant,
+    equipment: ScopedEquipment,
+    range: DashboardRange,
+  ): Promise<Span[] | null> {
+    const planned = await this.planned(tx, plant, [equipment], range);
+    return planned === null ? null : (planned.get(equipment.equipmentId) ?? []);
   }
 
   /** 공장은 설비의 공장, 설비가 없는 세션은 작업지시 라인의 공장으로 가른다. */

@@ -21,8 +21,12 @@ export interface SessionTimes {
   readonly stoppedMs: number;
   /** 세션마다 가동 시간 — 표준 C/T 기준 생산량을 세션의 C/T 로 낸다. */
   readonly runningBySession: ReadonlyMap<bigint, number>;
-  /** STOP 의 사유별 정지 시간. 사유 없는 STOP 은 null 키. */
+  /** STOP 의 사유별 정지 시간. 사유 없는 STOP 은 null 키. 같은 설비의 다른 세션이 그 시간에 돌았으면 빼고 센다. */
   readonly stoppedByReason: ReadonlyMap<string | null, number>;
+  /** 세션 구간 합집합 — 작업 없음(계획 − 세션)을 구간으로 빼는 데 쓴다. */
+  readonly sessionSpans: readonly Span[];
+  /** 가동 구간 합집합 — 가동률 분자(계획 구간과 겹친 가동)를 내는 데 쓴다. */
+  readonly runningSpans: readonly Span[];
 }
 
 /**
@@ -36,7 +40,7 @@ export function sessionTimes(
   asOf: number,
 ): SessionTimes {
   const runningBySession = new Map<bigint, number>();
-  const stoppedByReason = new Map<string | null, number>();
+  const stopsByReason = new Map<string | null, Span[]>();
   const sessionSpans: Span[] = [];
   const runningSpans: Span[] = [];
   for (const session of sessions) {
@@ -54,12 +58,26 @@ export function sessionTimes(
     runningSpans.push(...running);
     runningBySession.set(session.sessionId, totalLength(running));
     for (const stop of stops) {
-      stoppedByReason.set(stop.reasonCode, (stoppedByReason.get(stop.reasonCode) ?? 0) + (stop.end - stop.start));
+      stopsByReason.set(stop.reasonCode, [...(stopsByReason.get(stop.reasonCode) ?? []), { start: stop.start, end: stop.end }]);
     }
   }
-  const sessionMs = totalLength(union(sessionSpans));
-  const runningMs = Math.min(sessionMs, totalLength(union(runningSpans)));
-  return { sessionMs, runningMs, stoppedMs: sessionMs - runningMs, runningBySession, stoppedByReason };
+  const sessionUnion = union(sessionSpans);
+  const running = union(runningSpans);
+  const sessionMs = totalLength(sessionUnion);
+  const runningMs = Math.min(sessionMs, totalLength(running));
+  // 겹친 세션이 같은 시간에 돌았으면 설비는 멈춘 것이 아니다 — 사유 구간에서 가동 구간을 빼 stoppedMs 와 맞춘다.
+  const stoppedByReason = new Map(
+    [...stopsByReason].map(([reason, spans]) => [reason, totalLength(subtract(union(spans), running))] as const),
+  );
+  return {
+    sessionMs,
+    runningMs,
+    stoppedMs: sessionMs - runningMs,
+    runningBySession,
+    stoppedByReason,
+    sessionSpans: sessionUnion,
+    runningSpans: running,
+  };
 }
 
 function reasonSpans(events: readonly DetailEvent[], sessionEnd: number): (Span & { reasonCode: string | null })[] {
