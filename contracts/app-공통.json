@@ -4679,7 +4679,7 @@
      "app"
     ],
     "summary": "인계 작업 알림 종류 목록",
-    "description": "인계 작업 10종(업무 흐름 순서). 기존 GET /app/notification-events(이벤트 6종)와 별개 목록이다 — 그 응답은 바뀌지 않는다. 로그인한 사용자 누구나 읽는다(W-CO-03·12·13 이 이름을 합친다). 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "description": "인계 작업 11종(업무 흐름 순서). 기존 GET /app/notification-events(이벤트 6종)와 별개 목록이다 — 그 응답은 바뀌지 않는다. 로그인한 사용자 누구나 읽는다(W-CO-03·12·13 이 이름을 합친다). 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
     "security": [
      {
       "omfSession": []
@@ -4726,7 +4726,7 @@
      "app"
     ],
     "summary": "공장별 인계작업 알림 설정 요약",
-    "description": "한 공장의 인계 작업 10종 요약(W-CO-14). 행이 없는 종류는 꺼짐·꺼짐·0명으로 읽고 행을 만들지 않는다. ETag 없음. 공장이 세션 데이터 범위 밖이면 403. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "description": "한 공장의 인계 작업 11종 요약(W-CO-14). 행이 없는 종류는 꺼짐·꺼짐·0명으로 읽고 행을 만들지 않는다. ETag 없음. 공장이 세션 데이터 범위 밖이면 403. 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
     "parameters": [
      {
       "name": "plantId",
@@ -7273,9 +7273,10 @@
        "SHIPMENT_REQUEST",
        "SHIPMENT",
        "WORK_ORDER",
-       "INBOUND_RECEIPT"
+       "INBOUND_RECEIPT",
+       "LOT"
       ],
-      "description": "알림 대상 유형. IQC(IQC_INSPECTION_REQUESTED)는 LOT 단건 등록이면 알림 대상이 LOT 이다.",
+      "description": "알림 대상 유형. IQC(IQC_INSPECTION_REQUESTED)는 LOT 단건 등록이면 알림 대상이 LOT 이다. 검사 불합격(IQC_INSPECTION_REJECTED)은 불합격 확정된 LOT 이다.",
       "example": "PICKING_ORDER"
      }
     }
@@ -7288,7 +7289,7 @@
      "zaloStatus",
      "items"
     ],
-    "description": "한 공장의 인계 작업 10종 요약(W-CO-14). 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
+    "description": "한 공장의 인계 작업 11종 요약(W-CO-14). 근거: 서버 선행 · 장부 P-134 · omf-all-around#190(피처 002 인계 작업 알림)",
     "properties": {
      "plantId": {
       "type": "integer",
@@ -7716,7 +7717,7 @@
         }
        }
       },
-      "description": "인계 작업 10종의 템플릿(행 없으면 null). 기존 templates(이벤트 6종)와 따로다. 근거: 서버 선행 · 장부 P-135 · omf-all-around#190(피처 002 인계 작업 알림)"
+      "description": "인계 작업 11종의 템플릿(행 없으면 null). 기존 templates(이벤트 6종)와 따로다. 근거: 서버 선행 · 장부 P-135 · omf-all-around#190(피처 002 인계 작업 알림)"
      },
      "deliveryEnabled": {
       "type": "boolean",

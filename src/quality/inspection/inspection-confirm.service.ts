@@ -29,6 +29,7 @@ import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-re
 import { CONFIRMED, assertConfirmedShape, remarksWithJudgmentChange } from './inspection-rules';
 import { type FourMChangeInput, prepareFourMChangeOfResult, writeFourMChangeWithin } from './four-m-change';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
+import { IqcRejectedHandoverNotifier } from './iqc-rejected-handover';
 
 /** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 4. 판정을 비우면 저장된 값을 쓴다. */
 export interface InspectionResultConfirm {
@@ -62,6 +63,7 @@ const VERSION_CONFLICT = 'VERSION_CONFLICT';
 const REQUEST_COMPLETED = 'COMPLETED';
 const JUDGMENT_GROUP = 'INSPECTION_RESULT_OVERALL_JUDGMENT';
 const ACCEPTED = 'ACCEPTED';
+const IQC = 'IQC';
 const PQC = 'PQC';
 const OQC = 'OQC';
 const SHIPMENT_REQUEST_TARGET = 'SHIPMENT_REQUEST';
@@ -116,6 +118,7 @@ export class InspectionConfirmService {
     private readonly holds: LotHoldService,
     private readonly numbering: NumberingService,
     private readonly defects: DefectRecordWriteService,
+    private readonly rejectedNotices: IqcRejectedHandoverNotifier,
   ) {}
 
   async confirm(
@@ -256,6 +259,9 @@ export class InspectionConfirmService {
       itemId: request.item_id,
     });
     await this.moveTargetLot(tx, request, input.judgment, action, moveContext);
+    if (request.inspection_type_code === IQC && input.judgment === REJECTED && request.lot_id !== null) {
+      await this.rejectedNotices.rejected(tx, request.lot_id);
+    }
     await this.movePickedOqcLots(tx, request, input.judgment, moveContext);
     if (input.nonconformanceNo !== undefined && needsIqcNonconformance(request.inspection_type_code, input.judgment, request.lot_id)) {
       await createIqcNonconformanceWithin(tx, {

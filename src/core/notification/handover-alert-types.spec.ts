@@ -13,12 +13,13 @@ const EXPECTED: Record<string, string> = {
   OQC_INSPECTION_REQUESTED: 'SHIPMENT_REQUEST',
   REWORK_WORK_ORDER_CREATED: 'WORK_ORDER',
   IQC_INSPECTION_REQUESTED: 'INBOUND_RECEIPT',
+  IQC_INSPECTION_REJECTED: 'LOT',
 };
 
 describe('인계 작업 알림 종류', () => {
-  it('FR-021 10종 코드·대상 유형이 data-model §3 표와 같다', () => {
+  it('FR-021 11종 코드·대상 유형이 data-model §3 표와 같다', () => {
     expect(Object.fromEntries(HANDOVER_ALERT_TYPES.map((t) => [t.alertTypeCode, t.aggregateTypeCode]))).toEqual(EXPECTED);
-    expect(HANDOVER_ALERT_TYPES).toHaveLength(10);
+    expect(HANDOVER_ALERT_TYPES).toHaveLength(11);
   });
 
   it('FR-021 이름·베트남어 이름·설명이 비어 있지 않다', () => {

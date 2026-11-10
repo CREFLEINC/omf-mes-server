@@ -17,7 +17,7 @@ export const EVENT_PARAMS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * 인계 작업 10종의 Zalo 파라미터 — 템플릿마다 «전부»를 적는다(omf-all-around#190 · specs/002 zalo-templates.md).
+ * 인계 작업 11종의 Zalo 파라미터 — 템플릿마다 «전부»를 적는다(omf-all-around#190 · specs/002 zalo-templates.md).
  * 6종과 달리 `event_time`·`actor` 를 덧붙이지 않는다 — 템플릿에 없는 파라미터를 실으면 키 집합이 표와 달라진다(SC-006).
  * `EVENT_PARAMS`(6종) 키 집합은 그대로다.
  */
@@ -32,6 +32,7 @@ export const HANDOVER_PARAMS: Readonly<Record<string, readonly string[]>> = {
   OQC_INSPECTION_REQUESTED: ['request_no', 'request_count', 'ship_date', 'event_time'],
   REWORK_WORK_ORDER_CREATED: ['wo_no', 'item', 'qty', 'ncr_no', 'process', 'event_time', 'actor'],
   IQC_INSPECTION_REQUESTED: ['receipt_no', 'lot_count', 'supplier', 'event_time'],
+  IQC_INSPECTION_REJECTED: ['receipt_no', 'item', 'lot_no', 'supplier', 'qty', 'next_step', 'event_time'],
 };
 
 /** 인계 알림센터 문장의 라벨 — 6종 키와 겹치지 않는 키만 둔다(6종 문장 불변). */
@@ -99,7 +100,7 @@ function siteParts(at: Date): { yyyy: string; MM: string; dd: string; HH: string
   };
 }
 
-/** 메시지 시각 — `dd/MM/yyyy HH:mm`(UTC+7). 인계 작업 10종의 `event_time`·`required_at` 이 쓴다. */
+/** 메시지 시각 — `dd/MM/yyyy HH:mm`(UTC+7). 인계 작업 11종의 `event_time`·`required_at` 이 쓴다. */
 export function formatEventTime(at: Date): string {
   const p = siteParts(at);
   return `${p.dd}/${p.MM}/${p.yyyy} ${p.HH}:${p.mm}`;
@@ -134,7 +135,7 @@ function paramsOf(eventCode: string): readonly string[] {
 /**
  * Zalo `template_data` — 템플릿 키만, 모두 문자열, `maxLength` 로 자른다. 빈 값은 `-`.
  * 6종은 `ZALO_PARAMS` 로 키를 옮기고, `zaloValues` 는 Zalo 에만 쓰는 값이다(payload 에 남지 않는다).
- * 인계 10종은 `HANDOVER_PARAMS` 키를 그대로 쓴다. `event_time` 은 발생 시각에서 만든다(보낸 값이 있어도 덮는다).
+ * 인계 11종은 `HANDOVER_PARAMS` 키를 그대로 쓴다. `event_time` 은 발생 시각에서 만든다(보낸 값이 있어도 덮는다).
  */
 export function templateData(
   eventCode: string,

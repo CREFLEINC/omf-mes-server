@@ -34,6 +34,13 @@ export const HANDOVER_ALERT_TYPES: readonly HandoverAlertType[] = [
     description: '입하 등록으로 IQC 의뢰가 생길 때(입하 1건에 1회)',
   },
   {
+    alertTypeCode: 'IQC_INSPECTION_REJECTED',
+    aggregateTypeCode: 'LOT',
+    name: '검사 불합격(IQC)',
+    nameVi: 'Không đạt kiểm tra (IQC)',
+    description: 'IQC 검사가 불합격으로 확정될 때(LOT 1건마다) — 불량 창고로 입하 처리할 담당자',
+  },
+  {
     alertTypeCode: 'PUTAWAY_REQUESTED',
     aggregateTypeCode: 'GOODS_RECEIPT',
     name: '적치',
