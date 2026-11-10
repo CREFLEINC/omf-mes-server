@@ -7,6 +7,7 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
 import { InspectionConfirmService } from './inspection-confirm.service';
+import { IqcRejectedHandoverNotifier } from './iqc-rejected-handover';
 
 /** omf-all-around#119 D6 — 출하작업지시 OQC 확정이 그 품목 검사 대상 라인이 집은 LOT 에 판정을 남긴다(장부 P-83). */
 function harness(
@@ -37,7 +38,7 @@ function harness(
   } as unknown as Prisma.TransactionClient;
   const lots = { moveWithin: jest.fn().mockResolvedValue({ movedLotIds: [] }) } as unknown as LotQualityStatusService;
   const holds = { lockLotsWithin: jest.fn().mockResolvedValue([]) } as unknown as LotHoldService;
-  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService);
+  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService, { rejected: jest.fn() } as unknown as IqcRejectedHandoverNotifier);
   const run = () =>
     service.applyConfirmEffects(tx, {
       inspectionResultId: 8n,

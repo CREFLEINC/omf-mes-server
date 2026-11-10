@@ -1,7 +1,7 @@
 /**
  * 인계작업 알림 설정(W-CO-14 · omf-all-around#190 · 장부 P-134).
  *
- * 공장 × 인계 작업 종류 10종. 행이 없으면 꺼짐·0명·판 1 로 읽고 GET 은 행을 만들지 않는다.
+ * 공장 × 인계 작업 종류 11종. 행이 없으면 꺼짐·0명·판 1 로 읽고 GET 은 행을 만들지 않는다.
  * 기존 부서×이벤트 설정(W-CO-11)·이벤트 목록(6종)과 섞이지 않는다(FR-021).
  */
 import { INestApplication } from '@nestjs/common';
@@ -33,6 +33,7 @@ const TYPE_CODES = [
   'OQC_INSPECTION_REQUESTED',
   'REWORK_WORK_ORDER_CREATED',
   'IQC_INSPECTION_REQUESTED',
+  'IQC_INSPECTION_REJECTED',
 ];
 
 const contract = JSON.parse(readFileSync(join(__dirname, '../contracts/app-공통.json'), 'utf8')) as object;
@@ -120,7 +121,7 @@ describe('인계작업 알림 설정 (e2e)', () => {
     await app.close();
   });
 
-  it('FR-021 인계 종류 조회는 10종이고, 기존 알림 이벤트 목록은 6종 그대로다', async () => {
+  it('FR-021 인계 종류 조회는 11종이고, 기존 알림 이벤트 목록은 6종 그대로다', async () => {
     const types = await request(app.getHttpServer())
       .get('/api/app/handover-alert-types')
       .set('Cookie', deniedCookie)
@@ -142,7 +143,7 @@ describe('인계작업 알림 설정 (e2e)', () => {
     expect(eventCodes.filter((code: string) => TYPE_CODES.includes(code))).toEqual([]);
   });
 
-  it('US2-1 행이 없으면 10종 모두 꺼짐·Zalo 꺼짐·담당자 0명이고 GET 은 행을 만들지 않는다', async () => {
+  it('US2-1 행이 없으면 11종 모두 꺼짐·Zalo 꺼짐·담당자 0명이고 GET 은 행을 만들지 않는다', async () => {
     const response = await request(app.getHttpServer())
       .get(PATH)
       .query({ plantId })
@@ -153,7 +154,7 @@ describe('인계작업 알림 설정 (e2e)', () => {
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(response.body.plantId).toBe(plantId);
-    expect(response.body.items).toHaveLength(10);
+    expect(response.body.items).toHaveLength(11);
     for (const item of response.body.items) {
       expect(item).toMatchObject({ enabled: false, zaloEnabled: false, recipientCount: 0, noPhoneCount: 0, inactiveCount: 0 });
     }

@@ -12,12 +12,13 @@ const TEMPLATES: Record<string, string[]> = {
   OQC_INSPECTION_REQUESTED: ['request_no', 'request_count', 'ship_date', 'event_time'],
   REWORK_WORK_ORDER_CREATED: ['wo_no', 'item', 'qty', 'ncr_no', 'process', 'event_time', 'actor'],
   IQC_INSPECTION_REQUESTED: ['receipt_no', 'lot_count', 'supplier', 'event_time'],
+  IQC_INSPECTION_REJECTED: ['receipt_no', 'item', 'lot_no', 'supplier', 'qty', 'next_step', 'event_time'],
 };
 
 const AT = new Date('2026-10-28T02:05:00.000Z'); // 하노이 09:05
 
 describe('인계 작업 알림 메시지', () => {
-  it('SC-006 HANDOVER_PARAMS 10종 키가 zalo-templates.md 표와 정확히 같다', () => {
+  it('SC-006 HANDOVER_PARAMS 11종 키가 zalo-templates.md 표와 정확히 같다', () => {
     expect(HANDOVER_PARAMS).toEqual(TEMPLATES);
   });
 
