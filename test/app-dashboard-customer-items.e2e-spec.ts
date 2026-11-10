@@ -138,6 +138,30 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     expect(body.groups[1]).toMatchObject({ itemGroupCode: 'ESL', topDefects: [], untypedNgQty: 5 });
   });
 
+  it('⛔ 데이터 범위 밖 공장의 설비 상세 · 제품군별 불량은 403 이다', async () => {
+    const other = await prisma.plant.create({
+      data: {
+        legal_entity_id: ids.legal, business_unit_id: ids.unit, plant_code: `${PREFIX}-OTHER`, plant_name: PREFIX,
+        timezone_code: 'Asia/Ho_Chi_Minh',
+      },
+    });
+    const scoped = await prisma.app_user.create({ data: { login_id: `${PREFIX}-SCOPED`, user_name: PREFIX, status_code: 'EMPLOYED' } });
+    await prisma.user_data_scope.create({ data: { app_user_id: scoped.app_user_id, plant_id: other.plant_id } });
+    const scopedCookie = `${SESSION_COOKIE}=${app.get(JwtService).sign({ sub: Number(scoped.app_user_id), typ: 'session' })}`;
+    try {
+      await request(app.getHttpServer()).get(DETAIL).query({ equipmentId: ids.equipment.toString() }).set('Cookie', scopedCookie).expect(403);
+      await request(app.getHttpServer())
+        .get(GROUP_DEFECTS)
+        .query({ plantId: ids.plant.toString(), baseDate: BASE_DATE })
+        .set('Cookie', scopedCookie)
+        .expect(403);
+    } finally {
+      await prisma.user_data_scope.deleteMany({ where: { app_user_id: scoped.app_user_id } });
+      await prisma.app_user.delete({ where: { app_user_id: scoped.app_user_id } });
+      await prisma.plant.delete({ where: { plant_id: other.plant_id } });
+    }
+  });
+
   it('설비 상세는 로그인이 필요하고, 없는 설비는 404 다', async () => {
     await request(app.getHttpServer()).get(DETAIL).query({ equipmentId: ids.equipment.toString() }).expect(401);
     await request(app.getHttpServer()).get(DETAIL).query({ equipmentId: '999999999999' }).set('Cookie', cookie).expect(404);
@@ -444,7 +468,9 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     await prisma.terminal.deleteMany({ where: { terminal_code: PREFIX } });
     await prisma.worker.deleteMany({ where: { worker_no: PREFIX } });
     await prisma.production_line.deleteMany({ where: { line_code: PREFIX } });
-    await prisma.plant.deleteMany({ where: { plant_code: PREFIX } });
+    await prisma.user_data_scope.deleteMany({ where: { app_user: { login_id: `${PREFIX}-SCOPED` } } });
+    await prisma.app_user.deleteMany({ where: { login_id: `${PREFIX}-SCOPED` } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: PREFIX } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: PREFIX } });
     const users = await prisma.app_user.findMany({ where: { login_id: { startsWith: `${PREFIX}-` } } });
