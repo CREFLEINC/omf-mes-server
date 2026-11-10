@@ -9968,6 +9968,7 @@
         "ngQty",
         "defectRate",
         "topDefects",
+        "otherTypedQty",
         "untypedNgQty"
        ],
        "properties": {
@@ -10006,6 +10007,11 @@
          "items": {
           "$ref": "#/components/schemas/DashboardDefectPhenomenon"
          }
+        },
+        "otherTypedQty": {
+         "type": "number",
+         "format": "double",
+         "description": "상위 5 밖 유형들의 수량 합"
         },
         "untypedNgQty": {
          "type": "number",

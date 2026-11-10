@@ -24,12 +24,14 @@ describe('제품군별 불량 현황(withDefects)', () => {
       ['D1', 35], ['D2', 30], ['D4', 7], ['D3', 5], ['D6', 2],
     ]);
     expect(adt.untypedNgQty).toBe(100 - 80);
+    // 상위 5 밖 = D5(1)
+    expect(adt.otherTypedQty).toBe(1);
     expect(adt).not.toHaveProperty('goodQty');
   });
 
   it('미분류 줄은 품목군 없는 기록만 받고, 유형 합이 NG 를 넘어도 미입력은 0 이다', () => {
     const [, unclassified] = withDefects(groups, [defect('ADT', 1, 3), defect(null, 9, 12)]);
-    expect(unclassified).toMatchObject({ itemGroupCode: null, untypedNgQty: 0 });
+    expect(unclassified).toMatchObject({ itemGroupCode: null, untypedNgQty: 0, otherTypedQty: 0 });
     expect(unclassified.topDefects.map((row) => row.defectCode)).toEqual(['D9']);
   });
 

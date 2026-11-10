@@ -133,6 +133,8 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
       { defectCode: `${PREFIX}-D2`, qty: 5 },
     ]);
     expect(body.groups[0].untypedNgQty).toBe(20 - 17);
+    // 유형이 둘뿐이라 상위 5 밖은 0 이다.
+    expect((body.groups[0] as unknown as { otherTypedQty: number }).otherTypedQty).toBe(0);
     expect(body.groups[1]).toMatchObject({ itemGroupCode: 'ESL', topDefects: [], untypedNgQty: 5 });
   });
 

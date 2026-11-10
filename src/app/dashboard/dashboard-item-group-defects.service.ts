@@ -11,6 +11,8 @@ import { itemGroupProduction } from './dashboard-view';
 export interface ItemGroupDefects extends Omit<ItemGroupProduction, 'goodQty'> {
   /** 수량 많은 순 상위 5. */
   topDefects: DefectPhenomenon[];
+  /** 상위 5 밖 유형들의 수량 합. */
+  otherTypedQty: number;
   /** NG − 유형이 적힌 불량 수량(0 이상) — 폐기·재작업 수량이나 유형 없이 들어온 불량은 기록이 없다. */
   untypedNgQty: number;
 }
@@ -62,6 +64,12 @@ export function withDefects(groups: readonly ItemGroupProduction[], defects: rea
     }
     const all = [...byCode.values()].sort((a, b) => b.qty - a.qty || a.defectCode.localeCompare(b.defectCode));
     const typed = all.reduce((sum, row) => sum + row.qty, 0);
-    return { ...group, topDefects: all.slice(0, TOP), untypedNgQty: Math.max(0, group.ngQty - typed) };
+    const top = all.slice(0, TOP);
+    return {
+      ...group,
+      topDefects: top,
+      otherTypedQty: typed - top.reduce((sum, row) => sum + row.qty, 0),
+      untypedNgQty: Math.max(0, group.ngQty - typed),
+    };
   });
 }
