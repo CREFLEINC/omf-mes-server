@@ -652,8 +652,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(await eventsOf(scrapped)).toHaveLength(0);
     });
 
-    /* omf-all-around#106 — 오프라인 확정도 IQC 불합격 사유가 필요하다. 사유는 같은 본문 `defects` 로 온다(P-42). */
-    it('⛔ `POST` IQC 불합격 확정은 `defects` 가 없으면 400 이고, 있으면 같은 트랜잭션에서 불량 기록이 선다', async () => {
+    /* omf-all-around#106 — 오프라인 확정의 IQC 불합격 사유는 같은 본문 `defects` 로 온다(P-42). 사유는 선택이다(사용자 결정 2026-11-10). */
+    it('`POST` IQC 불합격 확정에 `defects` 를 실으면 같은 트랜잭션에서 불량 기록이 선다', async () => {
       const inspectionRequestId = await newConfirmRequest();
       const rejected = draftBody(inspectionRequestId, {
         statusCode: 'CONFIRMED',
@@ -661,9 +661,6 @@ describe('검사 의뢰·결과 (e2e)', () => {
         rejectedQty: 20,
         overallJudgmentCode: 'REJECTED',
       });
-
-      const missing = await post(rejected, { workerNo: WORKER_HEADER }).expect(400);
-      expect(missing.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
 
       const { defectCodeId } = await ensureIqcDefectSetup();
       const created = await post(
@@ -1350,23 +1347,13 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(holds[0].release_reason_code).toBeNull();
     });
 
-    /* omf-all-around#106 — IQC 불합격은 사유(불량 기록)가 있어야 확정된다(장부 P-42). */
-    it('⛔ IQC 불합격인데 불량 기록이 없으면 400 defects 이고 LOT 이 움직이지 않는다', async () => {
+    /* IQC 불량 기록은 선택이다(사용자 결정 2026-11-10) — 기록 없이도 불합격 확정이 되고 LOT 이 불량으로 간다. */
+    it('IQC 불합격은 불량 기록이 없어도 확정되고 LOT 이 `DEFECTIVE` 로 간다', async () => {
       const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
 
-      const rejected = await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(400);
+      await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
 
-      expect(rejected.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
-      expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
-    });
-
-    it('⛔ 불합격 수량 0 인 IQC 불합격도 불량 기록이 없으면 같은 칸(defects)으로 400 이다', async () => {
-      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
-
-      const rejected = await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(400);
-
-      expect(rejected.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
-      expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'DEFECTIVE', version_no: 2 });
     });
 
     it('보류 판정은 `INSPECTION_PENDING`+`C5` 이고 역시 보류를 닫지 않는다', async () => {

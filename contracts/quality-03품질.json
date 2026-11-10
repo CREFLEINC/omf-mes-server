@@ -2132,7 +2132,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다 ⭐ IQC 확정은 불합격(REJECTED) 판정이거나 불합격 수량이 0 보다 크면 그 결과에 불량 기록이 1건 이상 있어야 한다 — 없으면 field=defects, code=REQUIRED(서버 선행 · 장부 P-42 · omf-all-around#205).",
+      "description": "검증 실패. 고쳐야 풀린다 ⭐ IQC 불량 기록은 선택이다 — 불합격 확정이어도 불량 기록 없이 확정할 수 있다(사용자 결정 2026-11-10). 실은 불량 기록은 수량 합계가 불합격 수량과 같아야 한다(아니면 field=defects, code=INVALID · omf-all-around#205).",
       "content": {
        "application/json": {
         "schema": {
@@ -6498,7 +6498,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 불합격 확정의 사유. 실으면 확정과 한 트랜잭션에서 그 회차의 불량 기록을 이 값으로 갈아 끼운다(재시도해도 1벌). 비우면(생략) 이미 붙은 불량 기록을 쓴다. IQC 가 아니거나, 불합격 확정도 아니고 불합격 수량도 0 인데 실으면 400 INVALID, IQC 불합격이거나 불합격 수량이 있는데 빈 배열이면 400 REQUIRED(생략하면 임시 저장한 기록을 쓰되 0건이면 400 REQUIRED). 불합격 수량이 있으면 판정(합격·보류 포함)과 관계없이 받고, 불량 수량 합계가 불합격 수량과 같아야 한다(아니면 400 INVALID · omf-all-around#205). 불합격 수량 0 인 합격·보류 확정은 그 회차의 확정 전 불량 기록을 지운다. 서버 선행 · 장부 P-47 · omf-all-around#121"
+      "description": "⭐ IQC 불합격 확정의 사유. 실으면 확정과 한 트랜잭션에서 그 회차의 불량 기록을 이 값으로 갈아 끼운다(재시도해도 1벌). 비우면(생략) 이미 붙은 불량 기록을 쓴다. IQC 가 아니거나, 불합격 확정도 아니고 불합격 수량도 0 인데 실으면 400 INVALID, 빈 배열은 생략과 같다 — 임시 저장한 기록을 쓰고, 0건이어도 확정한다(IQC 불량 기록은 선택 · 사용자 결정 2026-11-10). 불합격 수량이 있으면 판정(합격·보류 포함)과 관계없이 받고, 불량 수량 합계가 불합격 수량과 같아야 한다(아니면 400 INVALID · omf-all-around#205). 불합격 수량 0 인 합격·보류 확정은 그 회차의 확정 전 불량 기록을 지운다. 서버 선행 · 장부 P-47 · omf-all-around#121"
      },
      "judgmentChangeReason": {
       "type": "string",
@@ -6614,7 +6614,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 1줄 이상은 overallJudgmentCode=REJECTED 이거나 rejectedQty 가 0 보다 클 때만 받는다(아니면 400 INVALID · 장부 P-48 · omf-all-around#122 · #205). 확정으로 저장하면 rejectedQty 가 0 보다 클 때 1줄 이상 필수(없으면 400 REQUIRED)이고 불량 수량 합계가 rejectedQty 와 같아야 한다(omf-all-around#205). 서버 선행 · 장부 P-42 · omf-all-around#106"
+      "description": "⭐ 선택이다 — IQC 를 확정으로 저장해도 생략할 수 있다(사용자 결정 2026-11-10). 실으면 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 1줄 이상은 overallJudgmentCode=REJECTED 이거나 rejectedQty 가 0 보다 클 때만 받는다(아니면 400 INVALID · 장부 P-48 · omf-all-around#122 · #205). 확정으로 저장하면서 실으면 불량 수량 합계가 rejectedQty 와 같아야 한다(omf-all-around#205). 서버 선행 · 장부 P-42 · omf-all-around#106"
      },
      "judgmentChangeReason": {
       "type": "string",
