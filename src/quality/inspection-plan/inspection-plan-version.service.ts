@@ -43,6 +43,8 @@ interface VersionView {
   statusCode: string;
   samplingRatio: number | null;
   samplingQty: number | null;
+  guideTextKo: string | null;
+  guideTextVi: string | null;
 }
 
 export interface VersionWrite {
@@ -57,6 +59,9 @@ export interface VersionWrite {
   frequencyIntervalUomCode?: string | null;
   samplingRatio?: number | null;
   samplingQty?: number | null;
+  /** 검사 안내 문구(omf-all-around#252) — 생략하면 그대로 둔다. */
+  guideTextKo?: string | null;
+  guideTextVi?: string | null;
 }
 
 /**
@@ -464,6 +469,8 @@ export class InspectionPlanVersionService {
           inspection_frequency_code: source.inspection_frequency_code,
           frequency_interval_value: source.frequency_interval_value,
           frequency_interval_uom_code: source.frequency_interval_uom_code,
+          guide_text_ko: source.guide_text_ko,
+          guide_text_vi: source.guide_text_vi,
         },
       });
 
@@ -529,6 +536,7 @@ export class InspectionPlanVersionService {
       },
     ]);
     assertSamplingRatio(input, options);
+    assertGuideText(input);
     if (input.effectiveTo != null && input.effectiveTo < input.effectiveFrom) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
@@ -690,7 +698,26 @@ function writeData(input: VersionWrite): VersionColumns {
     // ⛔ 백분율이다(0 초과 100 이하) — 비율이 아니다. 선행 마이그레이션이 CHECK 를 고쳤다.
     ...optional('sampling_ratio', input.samplingRatio),
     ...optional('sampling_qty', input.samplingQty),
+    ...optional('guide_text_ko', guideTextOf(input.guideTextKo)),
+    ...optional('guide_text_vi', guideTextOf(input.guideTextVi)),
   } as VersionColumns;
+}
+
+/** 안내 문구 — 공백만이면 비운다(null). 생략(undefined)은 그대로 둔다. */
+function guideTextOf(value: string | null | undefined): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+const GUIDE_TEXT_MAX = 1000;
+
+/** 계약의 maxLength 와 같다 — 엑셀 올리기처럼 계약 검사를 거치지 않는 길도 막는다. */
+function assertGuideText(input: VersionWrite): void {
+  const errors = (['guideTextKo', 'guideTextVi'] as const)
+    .filter((field) => (guideTextOf(input[field])?.length ?? 0) > GUIDE_TEXT_MAX)
+    .map((field) => invalid(field, `안내 문구는 ${GUIDE_TEXT_MAX}자까지 적을 수 있습니다.`));
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
 function itemData(
@@ -815,6 +842,8 @@ function view(row: VersionRow): VersionView {
     statusCode: row.status_code,
     samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
     samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
+    guideTextKo: row.guide_text_ko,
+    guideTextVi: row.guide_text_vi,
   };
 }
 
