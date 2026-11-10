@@ -6896,6 +6896,15 @@
        "type": "integer",
        "default": 50
       }
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "이 LOT 이 입하된 발주만(입하 배분 기준). 알림센터의 「검사 불합격(IQC)」 알림(대상 = LOT)에서 입고 관리 화면을 그 발주·LOT 의 입고 처리 창으로 열 때 쓴다."
      }
     ],
     "security": [

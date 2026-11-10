@@ -66,6 +66,8 @@ export interface PurchaseOrderQuery {
   /** `openOnly` 와 따로 AND 로 건다 — `openOnly=true&progress=COMPLETED` 는 0건이다(장부 P-131). */
   progress?: OrderProgress;
   erpOrderTypeCode?: string;
+  /** 이 LOT 이 입하 배분된 발주만 — IQC 불합격 알림이 입고 처리 창을 열 때 쓴다. */
+  lotId?: number;
   page?: number;
   size?: number;
 }
@@ -181,6 +183,7 @@ export class PurchaseOrderQueryService {
       this.progressWhere(query.progress),
       supplierWhere(query.supplierQ),
       query.overdueOnly ? { OR: await overdueOrderWhere(this.prisma, query.plantId, now) } : {},
+      lotWhere(query.lotId),
     ].filter((c) => Object.keys(c).length > 0);
     await this.assertOrderType(query.erpOrderTypeCode);
     return {
@@ -260,6 +263,12 @@ export class PurchaseOrderQueryService {
 
 function itemWhere(itemId: number | undefined): Prisma.purchase_orderWhereInput {
   return itemId === undefined ? {} : { purchase_order_line: { some: { item_id: itemId } } };
+}
+
+function lotWhere(lotId: number | undefined): Prisma.purchase_orderWhereInput {
+  return lotId === undefined
+    ? {}
+    : { purchase_order_line: { some: { inbound_receipt_po_allocation: { some: { inbound_receipt_line: { lot_id: lotId } } } } } };
 }
 
 function supplierWhere(supplierQ: string | undefined): Prisma.purchase_orderWhereInput {

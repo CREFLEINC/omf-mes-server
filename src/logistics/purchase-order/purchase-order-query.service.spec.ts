@@ -105,6 +105,20 @@ describe('PurchaseOrderQueryService', () => {
       ]);
     });
 
+    it('목록 — lotId 는 그 LOT 이 입하 배분된 P/O 만 준다(IQC 불합격 알림 → 입고 처리 창)', async () => {
+      const { prisma, calls } = listStub();
+      await new PurchaseOrderQueryService(prisma, NO_LOTS).list({ lotId: 7, itemId: 42 });
+
+      expect(calls.where?.AND).toEqual([
+        { purchase_order_line: { some: { item_id: 42 } } },
+        {
+          purchase_order_line: {
+            some: { inbound_receipt_po_allocation: { some: { inbound_receipt_line: { lot_id: 7 } } } },
+          },
+        },
+      ]);
+    });
+
     it('목록 — orderDateFrom/To 는 날짜 그대로 비교한다(타임존 캐스팅 없음)', async () => {
       const { prisma, calls } = listStub();
       await new PurchaseOrderQueryService(prisma, NO_LOTS).list({ orderDateFrom: '2026-08-01', orderDateTo: '2026-08-31' });
