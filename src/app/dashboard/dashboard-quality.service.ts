@@ -205,19 +205,8 @@ export class DashboardQualityService {
       tx.$queryRaw<ReinspectRow[]>(Prisma.sql`WITH ${plantScope(plants)}, ${iqcReinspectCte(period)}
         SELECT COALESCE(SUM(inspected_qty), 0)::text AS input_qty, COALESCE(SUM(accepted_qty), 0)::text AS restored_qty
         FROM iqc_reinspect WHERE local_date BETWEEN ${period.from}::date AND ${period.to}::date`),
-      // 선별 처분 LOT = 처분일이 누계 구간인 SORT 의 «원래» IQC 검사 LOT. 선별이 떼어 낸 LOT 의 부적합도 같은 검사 결과를
-      // 물려받으므로(disposition-sort.ts) 검사 의뢰의 LOT 으로 세면 재선별이 따로 늘지 않는다.
-      tx.$queryRaw<{ lot_count: number }[]>(Prisma.sql`WITH ${plantScope(plants)}
-        SELECT COUNT(DISTINCT req.lot_id)::int AS lot_count
-        FROM quality.disposition_decision d
-        JOIN quality.nonconformance nc ON nc.nonconformance_id = d.nonconformance_id
-        JOIN quality.inspection_result ir ON ir.inspection_result_id = nc.inspection_result_id
-        JOIN quality.inspection_request req ON req.inspection_request_id = ir.inspection_request_id
-        JOIN trace.lot lot ON lot.lot_id = req.lot_id
-        JOIN plant_scope ps ON ps.plant_id = lot.plant_id
-        WHERE d.disposition_type_code = 'SORT' AND req.inspection_type_code = 'IQC'
-          AND ${coarseRange(Prisma.sql`d.decided_at`, period.from, period.to)}
-          AND ${localDate(Prisma.sql`d.decided_at`)} BETWEEN ${period.from}::date AND ${period.to}::date`),
+      // 선별 처분 LOT — 상태별 LOT 목록(IQC_SORTED)과 같은 조각이다.
+      tx.$queryRaw<LotRecordRow[]>(lotRecordCountSql(plantScope(plants), 'IQC_SORTED', period)),
     ]);
   }
 

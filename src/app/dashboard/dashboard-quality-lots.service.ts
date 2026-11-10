@@ -14,6 +14,7 @@ import {
   RECEIPT_HOLD_CTE,
   SCOPED_NC_CTE,
   heldWhere,
+  iqcSortedCte,
   lotRecordCountSql,
   lotSupplierName,
   pqcEquipmentCode,
@@ -78,8 +79,8 @@ const LIMIT = 200;
 const INT64_MAX = 2n ** 63n - 1n;
 
 /**
- * 품질 종합 「현재 현황」 상태별 LOT 목록(장부 P-58). 건수(`totalCount`)는 대시보드의 현재 현황 숫자와 같은
- * 조건 조각을 쓴다(dashboard-quality-status.ts). 기간은 「검사 보류」에만 걸리고 나머지는 지금 기준이다.
+ * 품질 종합 「현재 현황」 상태별 LOT 목록(계약 `GET /app/dashboard-quality-lots`). 건수(`totalCount`)는 대시보드의 현재 현황 숫자와
+ * 같은 조건 조각을 쓴다(dashboard-quality-status.ts). 기간은 「검사 보류」·「IQC 선별 처분」에만 걸리고 나머지는 지금 기준이다.
  * 오래 묵은 것부터 최대 200건. DB 에 없는 값은 null 이다.
  */
 @Injectable()
@@ -192,6 +193,19 @@ function listSql(
           LEFT JOIN ${codeName('NONCONFORMANCE_STATUS')} st ON st.code = nc.status_code
           WHERE ${OPEN_NC_WHERE}
         ) open_nc ${tail}`;
+    case 'IQC_SORTED':
+      // 줄 = 선별 처분 하나 — 떼어 낸 불량분을 다시 선별했으면 같은 원래 LOT 으로 한 줄 더 선다(LOT 수는 그대로).
+      return Prisma.sql`WITH ${scope}, ${iqcSortedCte(period)}
+        SELECT * FROM (
+          SELECT 'SORT-' || s.disposition_decision_id AS key, s.lot_no, i.item_code, i.item_name,
+            s.decision_qty::text AS qty, u.uom_code AS unit_code, s.decided_at AS occurred_at,
+            s.nonconformance_no AS ref_no, 'IQC' AS inspection_type,
+            ${lotSupplierName(Prisma.sql`s.lot_id`)} AS counterpart_name, NULL AS equipment_code,
+            NULL AS detail, (COUNT(*) OVER ())::int AS total_count
+          FROM iqc_sorted s
+          JOIN mdm.item i ON i.item_id = s.item_id
+          LEFT JOIN mdm.uom u ON u.uom_id = s.uom_id
+        ) sorted ${tail}`;
   }
 }
 
@@ -219,7 +233,7 @@ function item(row: LotRow): DashboardQualityLotItem {
 }
 
 /**
- * ⛔ 이 경로는 계약 사본에 없어 계약 검증 가드가 질의를 보지 않는다(장부 P-58) — 여기서 같은 오류 모양으로 막는다.
+ * 계약 검증 가드가 형식(상태 값 · 정수 · 날짜)을 먼저 본다. 여기서는 같은 오류 모양으로 한 번 더 걸러 타입을 좁힌다.
  * 기간 순서·길이·미래는 `dashboardRange` 가 대시보드와 같은 규칙으로 막는다.
  */
 export function parseQuery(query: DashboardQualityLotsQuery): {

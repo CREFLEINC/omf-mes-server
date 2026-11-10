@@ -91,6 +91,21 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
     expect(quality.iqc.sortedLotCount).toBe(1);
   });
 
+  it('⭐ 상태별 LOT 목록 IQC_SORTED — 선별 처분마다 한 줄, LOT 수는 원래 검사 LOT 하나(sortedLotCount 와 같다)', async () => {
+    const body = (
+      await request(app.getHttpServer())
+        .get('/api/app/dashboard-quality-lots')
+        .query({ status: 'IQC_SORTED', plantId: ids.plant.toString(), baseDate: BASE_DATE })
+        .set('Cookie', cookie)
+        .expect(200)
+    ).body as { totalCount: number; lotCount: number; recordCount: number; items: { lotNo: string; refNo: string; inspectionType: string }[] };
+
+    expect(body).toMatchObject({ totalCount: 2, lotCount: 1, recordCount: 2 });
+    expect(body.items.map((row) => row.lotNo)).toEqual([`${PREFIX}-LOT-1`, `${PREFIX}-LOT-1`]);
+    expect(body.items.map((row) => row.refNo).sort()).toEqual([`${PREFIX}-NC-1`, `${PREFIX}-NC-1-SPLIT`]);
+    expect(body.items[0].inspectionType).toBe('IQC');
+  });
+
   it('제품군별 불량 경로는 로그인이 필요하다', async () => {
     await request(app.getHttpServer()).get(GROUP_DEFECTS).query({ baseDate: BASE_DATE }).expect(401);
   });
