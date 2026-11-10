@@ -146,7 +146,8 @@ describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 L
 
     expect(body.mold).toEqual({ moldCode: PREFIX, moldName: PREFIX, cavityCount: 2 });
     // 누적 실적 = 정정 원본을 뺀 모든 실적(180+20 · 50 · 오늘 30+2) — 조회 기간과 무관하다.
-    expect(body.workOrder).toEqual({ workOrderNo: `${PREFIX}-A`, orderQty: 1000, producedQty: 282, progressRate: 28.2 });
+    expect(body.workOrder).toMatchObject({ workOrderNo: `${PREFIX}-A`, orderQty: 1000, producedQty: 282 });
+    expect(body.workOrder.progressRate).toBeCloseTo(28.2, 9);
     expect(body.output).toMatchObject({ totalQty: 32, goodQty: 30, ngQty: 2 });
     expect(body.defectTypes.map(({ defectCode, qty }) => ({ defectCode, qty }))).toEqual([{ defectCode: `${PREFIX}-D1`, qty: 2 }]);
     expect(body.untypedNgQty).toBe(0);

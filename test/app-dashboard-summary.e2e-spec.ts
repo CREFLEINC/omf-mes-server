@@ -347,7 +347,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
       statusCounts: { RUNNING: 0, STOPPED: 0, WAITING: 0, CHANGEOVER: 0, IDLE: 0 },
     });
     expect(body.shipment).toMatchObject({ todayShipmentCount: 0, nextShipment: null });
-    expect(body.production).toEqual({ totalQty: 0, goodQty: 0, ngQty: 0, holdQty: 0, defectRate: null });
+    expect(body.production).toEqual({ totalQty: 0, goodQty: 0, ngQty: 0, holdQty: 0, defectRate: null, byItemGroup: [] });
     expect(body.quality).toMatchObject({
       iqc: { monthPassRate: null, recentLots: [], fullReinspect: { inputQty: 0, restoredQty: 0 } },
       nonconformance: { overdueCount: null, monthQty: 0 },
