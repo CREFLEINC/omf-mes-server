@@ -96,7 +96,8 @@ describe('계약 커버리지', () => {
     // 창고 보충 자동 보충 실행 기록(omf-all-around#230) 1 오퍼레이션: 596 → 597.
     // 계획 제안 조회·선택 확정 2 오퍼레이션: 598 → 600.
     // 원인코드 마스터 6 오퍼레이션 삭제(omf-all-around#239): 600 → 594.
-    expect(registry.size).toBe(594);
+    // 대시보드 제품군별 불량 1 오퍼레이션(omf-all-around#251): 594 → 595.
+    expect(registry.size).toBe(595);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

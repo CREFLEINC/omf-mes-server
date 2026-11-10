@@ -18,6 +18,8 @@ import { AttachmentUploadService } from './attachment/attachment-upload.service'
 import { AttachmentService } from './attachment/attachment.service';
 import { DashboardAvailabilityService } from './dashboard/dashboard-availability.service';
 import { DashboardEquipmentService } from './dashboard/dashboard-equipment.service';
+import { DashboardItemGroupDefectsController } from './dashboard/dashboard-item-group-defects.controller';
+import { DashboardItemGroupDefectsService } from './dashboard/dashboard-item-group-defects.service';
 import { DashboardQualityLotsController } from './dashboard/dashboard-quality-lots.controller';
 import { DashboardQualityLotsService } from './dashboard/dashboard-quality-lots.service';
 import { DashboardNonconformanceService } from './dashboard/dashboard-nonconformance.service';
@@ -82,6 +84,7 @@ import { TerminalWorkCountService } from './terminal-work/terminal-work-count.se
     AttachmentController,
     DashboardController,
     DashboardQualityLotsController,
+    DashboardItemGroupDefectsController,
     DocumentIssueController,
     PrinterController,
     OperationPolicyController,
@@ -114,6 +117,7 @@ import { TerminalWorkCountService } from './terminal-work/terminal-work-count.se
     DashboardQualityService,
     DashboardNonconformanceService,
     DashboardQualityLotsService,
+    DashboardItemGroupDefectsService,
     // 시간가동률의 계획 가동시간을 설비 비가동 집계와 같은 근무달력 해석으로 센다.
     DowntimeSummaryCalendarService,
     DocumentIssueQueryService,

@@ -3417,6 +3417,103 @@
     }
    }
   },
+  "/app/dashboard-item-group-defects": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "제품군별 불량 현황",
+    "description": "종합 불량률을 누르면 여는 제품군(ERP 품목군)별 생산·불량률·NG 와 불량 유형 상위 5. 생산 합은 dashboard-summary 의 production.byItemGroup 과 같은 값이다. 질의·권한은 dashboard-summary 와 같다(omf-all-around#251)",
+    "parameters": [
+     {
+      "name": "baseDate",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-13"
+      },
+      "description": "기준 날짜. 없으면 오늘"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      },
+      "description": "기간 조회 시작일 — dateTo 와 함께 보낸다(양 끝 포함 최대 92일). baseDate 와 함께 쓸 수 없다"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-13"
+      },
+      "description": "기간 조회 종료일 — 공장 오늘 이후는 400"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "제품군별 불량",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DashboardItemGroupDefects"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "조회 기간이 잘못됐다 — 형식·짝·순서·길이(92일)·미래 날짜, baseDate 와 기간을 함께 보냄",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "볼 수 없는 공장이다 — plantId 가 사용자 데이터 범위 밖이다(field: plantId). 기능 권한은 보지 않는다 — 로그인한 사용자는 누구나 본다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/app/operation-policies": {
    "get": {
     "tags": [
@@ -9629,6 +9726,89 @@
      },
      "statusCounts": {
       "$ref": "#/components/schemas/DashboardQualityStatusCounts"
+     }
+    }
+   },
+   "DashboardItemGroupDefects": {
+    "type": "object",
+    "description": "제품군별 불량 현황(omf-all-around#251)",
+    "required": [
+     "dateFrom",
+     "dateTo",
+     "asOf",
+     "groups"
+    ],
+    "properties": {
+     "dateFrom": {
+      "type": "string",
+      "format": "date"
+     },
+     "dateTo": {
+      "type": "string",
+      "format": "date"
+     },
+     "asOf": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "groups": {
+      "type": "array",
+      "description": "총생산 많은 순, 미분류(품목군 없음)는 맨 끝",
+      "items": {
+       "type": "object",
+       "required": [
+        "itemGroupCode",
+        "itemGroupName",
+        "totalQty",
+        "ngQty",
+        "defectRate",
+        "topDefects",
+        "untypedNgQty"
+       ],
+       "properties": {
+        "itemGroupCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "null 이면 미분류"
+        },
+        "itemGroupName": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "totalQty": {
+         "type": "number",
+         "format": "double"
+        },
+        "ngQty": {
+         "type": "number",
+         "format": "double"
+        },
+        "defectRate": {
+         "type": [
+          "number",
+          "null"
+         ],
+         "format": "double",
+         "description": "NG ÷ 총생산(%) · 0~100. 총생산 0 이면 null"
+        },
+        "topDefects": {
+         "type": "array",
+         "description": "생산실적에 붙은 불량 기록의 유형별 수량 — 많은 순 상위 5",
+         "items": {
+          "$ref": "#/components/schemas/DashboardDefectPhenomenon"
+         }
+        },
+        "untypedNgQty": {
+         "type": "number",
+         "format": "double",
+         "description": "NG − 유형이 적힌 불량 수량(0 이상). 폐기·재작업 수량과 유형 없이 들어온 불량이다"
+        }
+       }
+      }
      }
     }
    },

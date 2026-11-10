@@ -10,6 +10,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'E2E-AA251';
 const SUMMARY = '/api/app/dashboard-summary';
+const GROUP_DEFECTS = '/api/app/dashboard-item-group-defects';
 // 하루 조회 → 생산은 그날, 품질 누계 구간은 09-01 ~ 09-10.
 const BASE_DATE = '2026-09-10';
 const AT = '2026-09-10T03:00:00Z';
@@ -20,7 +21,7 @@ type ItemGroup = { itemGroupCode: string | null; itemGroupName: string | null; t
  * 고객 대시보드 자료 중 MES 데이터로 보이는 항목(omf-all-around#251). 다른 대시보드 e2e 와 섞지 않으려고 공장을 따로 세운다.
  * 품목 A(ADT)·B(ESL)·C(품목군 없음). 실적은 모두 09-10 이다.
  */
-describe('통합 대시보드 — 제품군별 생산 · 선별 처분 LOT (omf-all-around#251)', () => {
+describe('통합 대시보드 — 제품군별 생산·불량 · 선별 처분 LOT (omf-all-around#251)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string;
@@ -83,6 +84,36 @@ describe('통합 대시보드 — 제품군별 생산 · 선별 처분 LOT (omf-
     expect(quality.iqc.sortedLotCount).toBe(1);
   });
 
+  it('제품군별 불량 경로는 로그인이 필요하다', async () => {
+    await request(app.getHttpServer()).get(GROUP_DEFECTS).query({ baseDate: BASE_DATE }).expect(401);
+  });
+
+  it('⭐ 제품군별 불량은 요약과 같은 생산 합에 Worst 5 · 유형 미입력을 붙인다 — 정정 원본의 기록은 빠진다', async () => {
+    const body = (
+      await request(app.getHttpServer())
+        .get(GROUP_DEFECTS)
+        .query({ plantId: ids.plant.toString(), baseDate: BASE_DATE })
+        .set('Cookie', cookie)
+        .expect(200)
+    ).body as {
+      dateFrom: string;
+      dateTo: string;
+      groups: (Omit<ItemGroup, 'goodQty'> & { topDefects: { defectCode: string; qty: number }[]; untypedNgQty: number })[];
+    };
+    const { production } = await summary();
+
+    expect(body).toMatchObject({ dateFrom: BASE_DATE, dateTo: BASE_DATE });
+    expect(body.groups.map(({ itemGroupCode, totalQty, ngQty, defectRate }) => ({ itemGroupCode, totalQty, ngQty, defectRate }))).toEqual(
+      production.byItemGroup.map(({ itemGroupCode, totalQty, ngQty, defectRate }) => ({ itemGroupCode, totalQty, ngQty, defectRate })),
+    );
+    expect(body.groups[0].topDefects.map(({ defectCode, qty }) => ({ defectCode, qty }))).toEqual([
+      { defectCode: `${PREFIX}-D1`, qty: 12 },
+      { defectCode: `${PREFIX}-D2`, qty: 5 },
+    ]);
+    expect(body.groups[0].untypedNgQty).toBe(20 - 17);
+    expect(body.groups[1]).toMatchObject({ itemGroupCode: 'ESL', topDefects: [], untypedNgQty: 5 });
+  });
+
   async function fixtures(): Promise<void> {
     ids.user = (await prisma.app_user.create({ data: { login_id: `${PREFIX}-USER`, user_name: PREFIX, status_code: 'EMPLOYED' } }))
       .app_user_id;
@@ -124,9 +155,13 @@ describe('통합 대시보드 — 제품군별 생산 · 선별 처분 LOT (omf-
     const orderB = await addOrder('B', itemB, 'NORMAL');
     const orderC = await addOrder('C', itemC, 'NORMAL');
     const reworkA = await addOrder('A-RW', itemA, 'REWORK');
-    await addResult(orderA, 1, { good_qty: 180, defect_qty: 20 });
-    const original = await addResult(orderA, 2, { good_qty: 999 });
+    const resultA = await addResult(orderA, 1, { good_qty: 180, defect_qty: 20 });
+    const original = await addResult(orderA, 2, { good_qty: 990, defect_qty: 9 });
     await addResult(orderA, 3, { good_qty: 50 }, original);
+    await addDefect('D1', resultA, 12);
+    await addDefect('D2', resultA, 5);
+    // 정정된 원본 실적의 기록 — 세지 않는다.
+    await addDefect('D3', original, 9);
     await addResult(orderB, 1, { good_qty: 95, scrap_qty: 5 });
     await addResult(orderC, 1, { good_qty: 40, rework_qty: 10 });
     await addResult(reworkA, 1, { good_qty: 7 });
@@ -192,6 +227,20 @@ describe('통합 대시보드 — 제품군별 생산 · 선별 처분 LOT (omf-
     ).production_result_id;
   }
 
+  async function addDefect(suffix: string, productionResultId: bigint, qty: number): Promise<void> {
+    const code = `${PREFIX}-${suffix}`;
+    const defect =
+      (await prisma.defect_code.findFirst({ where: { defect_code: code } })) ??
+      (await prisma.defect_code.create({ data: { defect_code: code, defect_name: code } }));
+    await prisma.defect_record.create({
+      data: {
+        production_result_id: productionResultId, source_type_code: 'FIELD', defect_code_id: defect.defect_code_id,
+        defect_qty: qty, uom_id: ids.uom, occurrence_process_id: ids.process, detection_process_id: ids.process,
+        detected_at: new Date(AT), worker_id: ids.worker,
+      },
+    });
+  }
+
   async function addIqc(suffix: string, itemId: bigint): Promise<bigint> {
     const lot = await prisma.lot.create({
       data: {
@@ -239,6 +288,8 @@ describe('통합 대시보드 — 제품군별 생산 · 선별 처분 LOT (omf-
   }
 
   async function cleanup(): Promise<void> {
+    await prisma.defect_record.deleteMany({ where: { defect_code: { defect_code: { startsWith: PREFIX } } } });
+    await prisma.defect_code.deleteMany({ where: { defect_code: { startsWith: PREFIX } } });
     const ncScope = { nonconformance_no: { startsWith: PREFIX } };
     await prisma.disposition_decision.deleteMany({ where: { nonconformance: ncScope } });
     await prisma.nonconformance.deleteMany({ where: ncScope });
