@@ -254,8 +254,16 @@ export class InspectionPlanVersionService {
    * ⛔ **행 교체가 아니다.** 계약이 이유를 적었다 — 「`inspection_measurement` 가 이 항목을
    * NOT NULL FK 로 참조하므로 서버는 기존 행을 유지하며 순서만 갱신해야 한다」.
    * 공정 라인(`routing_operation`)과 같은 형태이고 같은 수법을 쓴다.
+   *
+   * `allowNumericWithoutUom` — 엑셀 가져오기만 켠다. 기준서에 단위 칸이 없어 수치 항목이
+   * 단위 없이 들어오고, 화면에서 저장할 때 채우게 한다(사용자 결정 2026-11-10).
    */
-  async replaceItems(versionId: number, items: ItemSpecUpsert[], actorId?: number | null): Promise<ItemSpecView[]> {
+  async replaceItems(
+    versionId: number,
+    items: ItemSpecUpsert[],
+    actorId?: number | null,
+    options: { allowNumericWithoutUom?: boolean } = {},
+  ): Promise<ItemSpecView[]> {
     await this.assertDraft(versionId, '검사 항목을 저장');
     const beforeItems = await this.readItems(versionId);
     const existing = await this.prisma.inspection_item_spec.findMany({
@@ -265,6 +273,7 @@ export class InspectionPlanVersionService {
     const known = new Set(existing.map((row) => Number(row.inspection_item_spec_id)));
 
     assertItemShape(versionId, items, known);
+    if (!options.allowNumericWithoutUom) assertNumericUom(items);
     await this.assertItemTargets(items);
 
     const keep = new Set(
@@ -650,6 +659,16 @@ function locked(action: string): ContractException {
 
 function invalid(field: string, message: string): ErrorItem {
   return { scope: 'field', field, code: ERROR_CODE.INVALID, message };
+}
+
+/** 수치(NUMERIC) 항목은 단위가 필수다 — 텍스트·불리언은 선택이다. DB 는 조건부 필수를 걸지 않는다. */
+function assertNumericUom(items: ItemSpecUpsert[]): void {
+  const errors: ErrorItem[] = items.flatMap((item, index) =>
+    item.dataTypeCode === 'NUMERIC' && item.uomId == null
+      ? [{ scope: 'field', field: `items[${index}].uomId`, code: ERROR_CODE.REQUIRED, message: '수치 항목은 단위를 입력하세요.' }]
+      : [],
+  );
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
 type VersionColumns = Omit<

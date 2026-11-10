@@ -140,7 +140,12 @@ export class InspectionPlanImportService {
         await this.versions.update(versionId, versionNo, write, DRAFT);
       }
       // 복사된 항목은 id 를 싣지 않았으므로 치환에서 빠진다 — 엑셀 항목만 남는다.
-      await this.versions.replaceItems(versionId, items.map((item) => ({ ...item, inspectionPlanVersionId: versionId })));
+      await this.versions.replaceItems(
+        versionId,
+        items.map((item) => ({ ...item, inspectionPlanVersionId: versionId })),
+        undefined,
+        { allowNumericWithoutUom: true },
+      );
     } catch (error) {
       await this.versions.discard(versionId);
       throw error;

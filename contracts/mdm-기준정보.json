@@ -8441,7 +8441,7 @@
       }
      },
      "400": {
-      "description": "검증 실패(유일 위반·범위 위반 등) 또는 상태≠작성중(code=STATE_LOCKED)",
+      "description": "검증 실패(유일 위반·범위 위반·수치 항목 단위 누락(code=REQUIRED) 등) 또는 상태≠작성중(code=STATE_LOCKED)",
       "content": {
        "application/json": {
         "schema": {
@@ -22756,7 +22756,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "수치형일 때만 의미 — 조건부 필수는 DB 에 없다 §8-3",
+      "description": "수치(NUMERIC) 항목이면 필수 — 비우면 400(code=REQUIRED, field=items[i].uomId). 텍스트·불리언은 선택. 조건부 필수는 DB 에 없고 서버가 검사한다(엑셀 가져오기는 예외 — 단위 없이 받는다)",
       "example": 1001
      },
      "targetValue": {
