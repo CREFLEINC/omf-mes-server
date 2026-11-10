@@ -15,7 +15,7 @@ import {
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
+import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
 import { copyDrawings, dropDrawings } from './inspection-plan-drawing';
 import { changedFields, itemChanges, recordPlanVersionAudit } from './inspection-plan-version-audit';
@@ -506,10 +506,12 @@ export class InspectionPlanVersionService {
   }
 
   private async load(versionId: number, scope?: TerminalQualityReadScope): Promise<VersionRow> {
+    // 단말은 자기가 볼 수 있는 의뢰(PQC 작업지시 · 자기 공장 OQC)에 걸린 버전만 — 의뢰 목록과 같은 범위다.
+    // OQC 의뢰는 작업지시가 없어 작업지시만 보면 POP OQC 가 안내 문구를 못 읽는다(omf-all-around#252).
     const row = await this.prisma.inspection_plan_version.findFirst({
       where: { inspection_plan_version_id: versionId,
         ...(scope === undefined ? {} : { inspection_request: {
-          some: { work_order: terminalQualityWorkOrderWhere(scope) },
+          some: await terminalInspectionRequestWhere(this.prisma, scope),
         } }) },
     });
     if (!row) throw new NotFoundException('없는 검사기준 버전입니다.');

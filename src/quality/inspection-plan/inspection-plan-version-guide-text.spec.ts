@@ -139,5 +139,20 @@ describe('검사 기준 버전 안내 문구', () => {
 
     expect(view).toMatchObject({ guideTextKo: '안내', guideTextVi: null });
   });
-});
 
+  it('단말(POP)은 PQC 작업지시뿐 아니라 자기 공장 OQC 의뢰에 걸린 버전도 읽는다', async () => {
+    const row = baseRow({ status_code: 'CONFIRMED' });
+    const findFirst = jest.fn(async () => row);
+    const prisma = {
+      inspection_plan_version: { findFirst },
+      shipment_request: { findMany: jest.fn(async () => [{ shipment_request_id: 31n }]) },
+      $queryRawUnsafe: jest.fn(async () => [{ total: 1n }]),
+    } as unknown as PrismaService;
+    const service = new InspectionPlanVersionService(prisma);
+
+    await service.get(13, { plantId: 2n, terminalId: 5n, terminalTypeCode: 'POP' });
+
+    const where = (findFirst.mock.calls[0] as unknown as [{ where: Record<string, unknown> }])[0].where;
+    expect(JSON.stringify(where, (_k, v) => (typeof v === 'bigint' ? String(v) : v))).toContain('"inspection_type_code":"OQC"');
+  });
+});
