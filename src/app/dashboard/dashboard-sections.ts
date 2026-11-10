@@ -1,7 +1,7 @@
 import type { OqcExtra, PqcExtra } from './dashboard-quality-pqc-oqc';
 
 /**
- * 대시보드 응답의 선택 섹션 — 계약보다 앞선 응답 확장이다(장부 P-59 · omf-all-around#118 2차).
+ * 대시보드 응답의 섹션(omf-all-around#118 2차 · 계약 `DashboardProduction` 등 — #251 에서 옮김).
  * MES DB 에 없는 값은 만들지 않고 null 로 둔다.
  */
 

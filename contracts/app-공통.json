@@ -3346,6 +3346,26 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      },
+      "description": "기간 조회 시작일 — dateTo 와 함께 보낸다(양 끝 포함 최대 92일). baseDate 와 함께 쓸 수 없다"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-13"
+      },
+      "description": "기간 조회 종료일 — 공장 오늘 이후는 400"
      }
     ],
     "security": [
@@ -3360,6 +3380,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/DashboardSummary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "조회 기간이 잘못됐다 — 형식·짝·순서·길이(92일)·미래 날짜, baseDate 와 기간을 함께 보냄",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -8498,9 +8528,1053 @@
        }
       },
       "x-no-example": "하위 프로퍼티(seriesName·unit·targetValue·points·asOf)가 각각 example 을 갖는다 — 객체 통째 예시는 중복이다"
+     },
+     "dateFrom": {
+      "type": "string",
+      "format": "date",
+      "description": "실제 적용한 조회 기간 시작일"
+     },
+     "dateTo": {
+      "type": "string",
+      "format": "date",
+      "description": "실제 적용한 조회 기간 종료일 — baseDate 와 같다"
+     },
+     "production": {
+      "$ref": "#/components/schemas/DashboardProduction"
+     },
+     "equipment": {
+      "$ref": "#/components/schemas/DashboardEquipment"
+     },
+     "shipment": {
+      "$ref": "#/components/schemas/DashboardShipment"
+     },
+     "quality": {
+      "$ref": "#/components/schemas/DashboardQuality"
      }
     },
     "x-internal-note": "✅ 설비종합효율(OEE)을 되살렸다(2026-08-30) — 계획 조업 시간의 분모는 WorkCalendarDay.dayTypeCode(WORKING·HOLIDAY·PARTIAL) + startTime/endTime으로 구한다(공정 대상은 WorkCalendarApplication이 정한다 — 결정 03). 정책 코드 ALLOW_PRODUCTION_ON_HOLIDAYS(시드)와 함께 쓴다. 시간가동률 카드의 note는 이제 「교대 시간 기준」 캐비어트가 필요 없다 — 캘린더 기준으로 계산한다. OEE 카드(cardCode=OEE)를 cards 배열에 추가한다."
+   },
+   "DashboardProduction": {
+    "type": "object",
+    "description": "공장 단위 생산 합 — KPI 띠의 종합 불량률·총 NG 원천",
+    "required": [
+     "totalQty",
+     "goodQty",
+     "ngQty",
+     "holdQty",
+     "defectRate"
+    ],
+    "properties": {
+     "totalQty": {
+      "type": "number",
+      "format": "double",
+      "description": "총생산 = 양품+불량+보류+폐기+재작업(재작업 W/O 실적 제외) — PRODUCTION_QTY 카드와 같은 값"
+     },
+     "goodQty": {
+      "type": "number",
+      "format": "double",
+      "description": "양품 + 재작업 합격분"
+     },
+     "ngQty": {
+      "type": "number",
+      "format": "double",
+      "description": "불량+폐기+재작업 — 재작업 합격분을 빼지 않아 음수가 되지 않는다"
+     },
+     "holdQty": {
+      "type": "number",
+      "format": "double"
+     },
+     "defectRate": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "description": "NG ÷ 총생산(%) · 0~100. 총생산 0 이면 null"
+     }
+    }
+   },
+   "DashboardEquipmentItem": {
+    "type": "object",
+    "required": [
+     "equipmentId",
+     "equipmentCode",
+     "equipmentName",
+     "equipmentTypeCode",
+     "equipmentTypeName",
+     "productionLineId",
+     "productionLineName",
+     "statusCode",
+     "statusSince",
+     "statusReasonCode",
+     "statusReasonName",
+     "todayTotalQty",
+     "todayNgQty",
+     "defectRate",
+     "standardCycleTimeSec",
+     "currentWorkOrderNo",
+     "currentItemCode",
+     "currentItemName"
+    ],
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "equipmentCode": {
+      "type": "string"
+     },
+     "equipmentName": {
+      "type": "string"
+     },
+     "equipmentTypeCode": {
+      "type": "string"
+     },
+     "equipmentTypeName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "productionLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "productionLineName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "statusCode": {
+      "type": "string",
+      "enum": [
+       "RUNNING",
+       "STOPPED",
+       "WAITING",
+       "CHANGEOVER",
+       "IDLE"
+      ]
+     },
+     "statusSince": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "statusReasonCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "고장 정지면 null(이름에 고장 설명 앞 100자가 온다)"
+     },
+     "statusReasonName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "todayTotalQty": {
+      "type": "number",
+      "format": "double"
+     },
+     "todayNgQty": {
+      "type": "number",
+      "format": "double",
+      "description": "재작업 합격분 NG→양품 이동을 하지 않는다"
+     },
+     "defectRate": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double"
+     },
+     "standardCycleTimeSec": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double"
+     },
+     "currentWorkOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "currentItemCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "currentItemName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   },
+   "DashboardEquipment": {
+    "type": "object",
+    "description": "설비 현황 — 조회 기간과 무관하게 «지금»의 상태와 공장 «오늘»의 생산량",
+    "required": [
+     "asOf",
+     "statusCounts",
+     "items"
+    ],
+    "properties": {
+     "asOf": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "statusCounts": {
+      "type": "object",
+      "required": [
+       "RUNNING",
+       "STOPPED",
+       "WAITING",
+       "CHANGEOVER",
+       "IDLE"
+      ],
+      "properties": {
+       "RUNNING": {
+        "type": "integer"
+       },
+       "STOPPED": {
+        "type": "integer"
+       },
+       "WAITING": {
+        "type": "integer"
+       },
+       "CHANGEOVER": {
+        "type": "integer"
+       },
+       "IDLE": {
+        "type": "integer"
+       }
+      }
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DashboardEquipmentItem"
+      },
+      "description": "설비코드 순"
+     }
+    }
+   },
+   "DashboardShipment": {
+    "type": "object",
+    "description": "출하 현황",
+    "required": [
+     "todayShippedQty",
+     "todayShipmentCount",
+     "waitingRequestCount",
+     "oldestWaitingShipDate",
+     "nextShipment",
+     "overdueCount"
+    ],
+    "properties": {
+     "todayShippedQty": {
+      "type": "number",
+      "format": "double"
+     },
+     "todayShipmentCount": {
+      "type": "integer"
+     },
+     "waitingRequestCount": {
+      "type": "integer"
+     },
+     "oldestWaitingShipDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "description": "대기 요청 중 가장 이른 요청일 — 대기 0건이면 null"
+     },
+     "nextShipment": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "shipmentRequestId",
+         "shipmentRequestNo",
+         "customerName",
+         "requestedShipDate",
+         "requestedQty"
+        ],
+        "properties": {
+         "shipmentRequestId": {
+          "type": "integer",
+          "format": "int64"
+         },
+         "shipmentRequestNo": {
+          "type": "string"
+         },
+         "customerName": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "requestedShipDate": {
+          "type": "string",
+          "format": "date"
+         },
+         "requestedQty": {
+          "type": "number",
+          "format": "double",
+          "description": "이름은 요청 수량이지만 값은 «남은 수량»이다"
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "overdueCount": {
+      "type": "integer"
+     }
+    }
+   },
+   "DashboardLotCounts": {
+    "type": "object",
+    "required": [
+     "accepted",
+     "rejected",
+     "held"
+    ],
+    "properties": {
+     "accepted": {
+      "type": "integer"
+     },
+     "rejected": {
+      "type": "integer"
+     },
+     "held": {
+      "type": "integer"
+     }
+    }
+   },
+   "DashboardDefectPhenomenon": {
+    "type": "object",
+    "required": [
+     "defectCodeId",
+     "defectCode",
+     "defectName",
+     "qty"
+    ],
+    "properties": {
+     "defectCodeId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "defectCode": {
+      "type": "string"
+     },
+     "defectName": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "format": "double"
+     }
+    }
+   },
+   "DashboardRecentLot": {
+    "type": "object",
+    "required": [
+     "inspectionResultId",
+     "inspectedAt",
+     "counterpartName",
+     "equipmentCode",
+     "itemCode",
+     "itemName",
+     "lotNo",
+     "qty",
+     "judgmentCode"
+    ],
+    "properties": {
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inspectedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "counterpartName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "IQC = 공급사 · OQC = 고객 · PQC = null"
+     },
+     "equipmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "PQC = 호기, 그 밖 null"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "lotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "PQC·OQC 는 null"
+     },
+     "qty": {
+      "type": "number",
+      "format": "double"
+     },
+     "judgmentCode": {
+      "type": "string",
+      "enum": [
+       "ACCEPTED",
+       "REJECTED",
+       "HELD"
+      ]
+     }
+    }
+   },
+   "DashboardQualityTypeBlock": {
+    "type": "object",
+    "description": "검사 유형 하나 — 확정 결과의 최종 회차. 「당월」 = 하루 조회면 당월 1일~기준일, 기간 조회면 그 기간",
+    "required": [
+     "monthPassRate",
+     "prevMonthPassRate",
+     "dailyPassRates",
+     "todayLots",
+     "monthLots",
+     "monthDefectQty",
+     "defectPhenomena",
+     "recentLots"
+    ],
+    "properties": {
+     "monthPassRate": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double"
+     },
+     "prevMonthPassRate": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double"
+     },
+     "dailyPassRates": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "date",
+        "passRate"
+       ],
+       "properties": {
+        "date": {
+         "type": "string",
+         "format": "date"
+        },
+        "passRate": {
+         "type": [
+          "number",
+          "null"
+         ],
+         "format": "double"
+        }
+       }
+      }
+     },
+     "todayLots": {
+      "$ref": "#/components/schemas/DashboardLotCounts"
+     },
+     "monthLots": {
+      "$ref": "#/components/schemas/DashboardLotCounts"
+     },
+     "monthDefectQty": {
+      "type": "number",
+      "format": "double"
+     },
+     "defectPhenomena": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DashboardDefectPhenomenon"
+      }
+     },
+     "recentLots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DashboardRecentLot"
+      }
+     }
+    }
+   },
+   "DashboardLotRecordCount": {
+    "type": "object",
+    "required": [
+     "lotCount",
+     "recordCount"
+    ],
+    "properties": {
+     "lotCount": {
+      "type": "integer",
+      "description": "고유 LOT 수(LOT 없는 기록 제외)"
+     },
+     "recordCount": {
+      "type": "integer",
+      "description": "기록 수(LOT 없는 것 포함)"
+     }
+    }
+   },
+   "DashboardQualityStatusCounts": {
+    "type": "object",
+    "description": "「현재 현황」 상태별 건수 — 키는 상태별 LOT 목록의 status 값",
+    "required": [
+     "INSPECTION_HELD",
+     "RECEIPT_HOLD",
+     "PQC_PENDING",
+     "NC_OPEN"
+    ],
+    "properties": {
+     "INSPECTION_HELD": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/DashboardLotRecordCount"
+       },
+       {
+        "type": "object",
+        "required": [
+         "byType"
+        ],
+        "properties": {
+         "byType": {
+          "type": "object",
+          "required": [
+           "IQC",
+           "PQC",
+           "OQC"
+          ],
+          "properties": {
+           "IQC": {
+            "$ref": "#/components/schemas/DashboardLotRecordCount"
+           },
+           "PQC": {
+            "$ref": "#/components/schemas/DashboardLotRecordCount"
+           },
+           "OQC": {
+            "$ref": "#/components/schemas/DashboardLotRecordCount"
+           }
+          }
+         }
+        }
+       }
+      ]
+     },
+     "RECEIPT_HOLD": {
+      "$ref": "#/components/schemas/DashboardLotRecordCount"
+     },
+     "PQC_PENDING": {
+      "$ref": "#/components/schemas/DashboardLotRecordCount"
+     },
+     "NC_OPEN": {
+      "$ref": "#/components/schemas/DashboardLotRecordCount"
+     }
+    }
+   },
+   "DashboardOpenNonconformance": {
+    "type": "object",
+    "required": [
+     "nonconformanceId",
+     "nonconformanceNo",
+     "itemCode",
+     "itemName",
+     "severityCode",
+     "severityName",
+     "statusCode",
+     "statusName",
+     "openedAt"
+    ],
+    "properties": {
+     "nonconformanceId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "nonconformanceNo": {
+      "type": "string"
+     },
+     "itemCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "itemName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "severityCode": {
+      "type": "string"
+     },
+     "severityName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "statusCode": {
+      "type": "string"
+     },
+     "statusName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "openedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "DashboardRepeatedItem": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "itemCode",
+     "itemName",
+     "ncCount",
+     "lastOpenedAt"
+    ],
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "ncCount": {
+      "type": "integer"
+     },
+     "lastOpenedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "DashboardQuality": {
+    "type": "object",
+    "description": "품질 현황 — IQC·PQC·OQC·부적합",
+    "required": [
+     "iqc",
+     "pqc",
+     "oqc",
+     "nonconformance",
+     "statusCounts"
+    ],
+    "properties": {
+     "iqc": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/DashboardQualityTypeBlock"
+       },
+       {
+        "type": "object",
+        "required": [
+         "vendorDefects",
+         "itemDefects",
+         "fullReinspect",
+         "receiptHoldLotCount"
+        ],
+        "properties": {
+         "vendorDefects": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "partnerId",
+            "partnerName",
+            "rejectedQty"
+           ],
+           "properties": {
+            "partnerId": {
+             "type": "integer",
+             "format": "int64"
+            },
+            "partnerName": {
+             "type": "string"
+            },
+            "rejectedQty": {
+             "type": "number",
+             "format": "double"
+            }
+           }
+          }
+         },
+         "itemDefects": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "itemId",
+            "itemCode",
+            "itemName",
+            "qty"
+           ],
+           "properties": {
+            "itemId": {
+             "type": "integer",
+             "format": "int64"
+            },
+            "itemCode": {
+             "type": "string"
+            },
+            "itemName": {
+             "type": "string"
+            },
+            "qty": {
+             "type": "number",
+             "format": "double"
+            }
+           }
+          }
+         },
+         "fullReinspect": {
+          "oneOf": [
+           {
+            "type": "object",
+            "required": [
+             "inputQty",
+             "restoredQty"
+            ],
+            "properties": {
+             "inputQty": {
+              "type": "number",
+              "format": "double"
+             },
+             "restoredQty": {
+              "type": "number",
+              "format": "double"
+             }
+            }
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "description": "IQC 재검사 회차의 투입·합격 수량 합. 회차가 없어도 0 으로 싣는다"
+         },
+         "receiptHoldLotCount": {
+          "type": "integer"
+         }
+        }
+       }
+      ]
+     },
+     "pqc": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/DashboardQualityTypeBlock"
+       },
+       {
+        "type": "object",
+        "required": [
+         "fullReinspect",
+         "itemDefects",
+         "oldestPendingSince",
+         "reworkRequestCounts",
+         "pendingLotCount",
+         "reworkRequestCount",
+         "equipmentDefectRates"
+        ],
+        "properties": {
+         "fullReinspect": {
+          "type": "object",
+          "required": [
+           "inputQty",
+           "restoredQty"
+          ],
+          "properties": {
+           "inputQty": {
+            "type": "number",
+            "format": "double"
+           },
+           "restoredQty": {
+            "type": "number",
+            "format": "double"
+           }
+          }
+         },
+         "itemDefects": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "itemId",
+            "itemCode",
+            "itemName",
+            "qty"
+           ],
+           "properties": {
+            "itemId": {
+             "type": "integer",
+             "format": "int64"
+            },
+            "itemCode": {
+             "type": "string"
+            },
+            "itemName": {
+             "type": "string"
+            },
+            "qty": {
+             "type": "number",
+             "format": "double"
+            }
+           }
+          }
+         },
+         "oldestPendingSince": {
+          "type": [
+           "string",
+           "null"
+          ],
+          "format": "date-time"
+         },
+         "reworkRequestCounts": {
+          "$ref": "#/components/schemas/DashboardLotRecordCount"
+         },
+         "pendingLotCount": {
+          "type": "integer"
+         },
+         "reworkRequestCount": {
+          "type": "integer"
+         },
+         "equipmentDefectRates": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "equipmentId",
+            "equipmentCode",
+            "defectRate",
+            "ngQty"
+           ],
+           "properties": {
+            "equipmentId": {
+             "type": "integer",
+             "format": "int64"
+            },
+            "equipmentCode": {
+             "type": "string"
+            },
+            "defectRate": {
+             "type": "number",
+             "format": "double"
+            },
+            "ngQty": {
+             "type": "number",
+             "format": "double"
+            }
+           }
+          },
+          "description": "생산실적 NG ÷ 총생산 — 불량률 → NG → 설비 코드 순 상위 8"
+         }
+        }
+       }
+      ]
+     },
+     "oqc": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/DashboardQualityTypeBlock"
+       },
+       {
+        "type": "object",
+        "required": [
+         "returnReasons",
+         "dailyReturnOutQty",
+         "pendingReturnLotCount",
+         "customerDefects",
+         "customerReturnQty"
+        ],
+        "properties": {
+         "returnReasons": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "reasonCode",
+            "reasonName",
+            "qty"
+           ],
+           "properties": {
+            "reasonCode": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "reasonName": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "qty": {
+             "type": "number",
+             "format": "double"
+            }
+           }
+          }
+         },
+         "dailyReturnOutQty": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "date",
+            "qty"
+           ],
+           "properties": {
+            "date": {
+             "type": "string",
+             "format": "date"
+            },
+            "qty": {
+             "type": [
+              "number",
+              "null"
+             ],
+             "format": "double"
+            }
+           }
+          }
+         },
+         "pendingReturnLotCount": {
+          "$ref": "#/components/schemas/DashboardLotRecordCount"
+         },
+         "customerDefects": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "customerId",
+            "customerName",
+            "rejectedQty"
+           ],
+           "properties": {
+            "customerId": {
+             "type": "integer",
+             "format": "int64"
+            },
+            "customerName": {
+             "type": "string"
+            },
+            "rejectedQty": {
+             "type": "number",
+             "format": "double"
+            }
+           }
+          }
+         },
+         "customerReturnQty": {
+          "type": "number",
+          "format": "double"
+         }
+        }
+       }
+      ]
+     },
+     "nonconformance": {
+      "type": "object",
+      "required": [
+       "monthQty",
+       "phenomena",
+       "scrapQty",
+       "reworkReleasedQty",
+       "openCount",
+       "overdueCount",
+       "openList",
+       "repeatedItems",
+       "repeatedItemCount"
+      ],
+      "properties": {
+       "monthQty": {
+        "type": "number",
+        "format": "double"
+       },
+       "phenomena": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/DashboardDefectPhenomenon"
+        }
+       },
+       "scrapQty": {
+        "type": "number",
+        "format": "double"
+       },
+       "reworkReleasedQty": {
+        "type": "number",
+        "format": "double"
+       },
+       "openCount": {
+        "type": "integer"
+       },
+       "overdueCount": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "조치 기한을 쓰는 경로가 없어 지금은 늘 null"
+       },
+       "openList": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/DashboardOpenNonconformance"
+        },
+        "description": "openCount 와 같은 모집단의 오래된 순 상위 5"
+       },
+       "repeatedItems": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/DashboardRepeatedItem"
+        },
+        "description": "누계 구간에 부적합 2건 이상 품목 상위 5"
+       },
+       "repeatedItemCount": {
+        "type": "integer"
+       }
+      }
+     },
+     "statusCounts": {
+      "$ref": "#/components/schemas/DashboardQualityStatusCounts"
+     }
+    }
    },
    "DashboardCard": {
     "type": "object",
@@ -8568,6 +9642,15 @@
       ],
       "description": "분모에서 제외한 건수. 화면이 「N품목 제외」로 적는다",
       "example": 3
+     },
+     "notYetReasonCode": {
+      "type": "string",
+      "enum": [
+       "NO_SESSION",
+       "CALENDAR_UNRESOLVED",
+       "NO_PLANNED_TIME"
+      ],
+      "description": "시간가동률 카드가 NOT_YET 인 까닭 — 그 밖에는 싣지 않는다"
      }
     }
    },

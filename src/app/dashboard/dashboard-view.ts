@@ -44,7 +44,7 @@ export interface DashboardTrend {
 export interface DashboardSummary {
   /** 조회 종료일 — 실시간 칸(설비 상태·출하 대기)의 기준일이다. */
   baseDate: string;
-  /** 실제 적용한 조회 기간(장부 P-59 — 계약보다 앞선 선택 키). */
+  /** 실제 적용한 조회 기간. */
   dateFrom?: string;
   dateTo?: string;
   plantId?: number;
@@ -53,7 +53,7 @@ export interface DashboardSummary {
   asOf: string;
   trend: DashboardTrend;
   /**
-   * 아래 셋은 계약보다 앞선 선택 섹션이다(장부 P-59). ⛔ 데이터가 없어도 생략하지 않는다 —
+   * 아래 넷은 선택 섹션이다. ⛔ 데이터가 없어도 생략하지 않는다 —
    * 클라이언트는 키가 없으면 「서버가 아직 지원하지 않음」으로 읽는다(빈 값과 구분한다).
    */
   production?: DashboardProduction;
