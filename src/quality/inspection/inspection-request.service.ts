@@ -6,6 +6,7 @@ import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
+import { InspectionGuideView, inspectionGuides } from './inspection-guide';
 import { FOUR_M_CHANGE_INCLUDE, InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 
 /** 조회 2건(I-19 PR ②). */
@@ -40,6 +41,9 @@ const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
   { inspection_request_id: 'asc' },
 ];
 
+/** 상세 조회 — 목록 줄에 안내 문구를 더한다(omf-all-around#252). */
+export type InspectionRequestDetailView = InspectionRequestView & { inspectionGuides?: InspectionGuideView[] };
+
 @Injectable()
 export class InspectionRequestService {
   constructor(private readonly prisma: PrismaService) {}
@@ -57,7 +61,7 @@ export class InspectionRequestService {
     return pagedResponse(rows.map((row, index) => inspectionRequestView(row, levels[index])), total, page);
   }
 
-  async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestView> {
+  async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestDetailView> {
     const byId: Prisma.inspection_requestWhereInput = { inspection_request_id: inspectionRequestId };
     const row = await this.prisma.inspection_request.findFirst({
       where: scope === undefined ? byId : { AND: [byId, await terminalInspectionRequestWhere(this.prisma, scope)] },
@@ -65,7 +69,9 @@ export class InspectionRequestService {
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
     const [level] = await iqcInspectionLevels(this.prisma, [row]);
-    return inspectionRequestView(row, level);
+    // 안내 문구는 상세에만 싣는다 — 목록 줄마다 기준을 읽지 않는다(omf-all-around#252).
+    const guides = await inspectionGuides(this.prisma, row);
+    return { ...inspectionRequestView(row, level), ...(guides.length === 0 ? {} : { inspectionGuides: guides }) };
   }
 }
 

@@ -22247,7 +22247,7 @@
        "string",
        "null"
       ],
-      "maxLength": 1000,
+      "maxLength": 3000,
       "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
      },
@@ -22257,7 +22257,7 @@
        "string",
        "null"
       ],
-      "maxLength": 1000,
+      "maxLength": 3000,
       "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "Đeo găng tay trước khi kiểm tra."
      }
@@ -22386,7 +22386,7 @@
        "string",
        "null"
       ],
-      "maxLength": 1000,
+      "maxLength": 3000,
       "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
      },
@@ -22396,7 +22396,7 @@
        "string",
        "null"
       ],
-      "maxLength": 1000,
+      "maxLength": 3000,
       "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "Đeo găng tay trước khi kiểm tra."
      }
@@ -22517,7 +22517,7 @@
        "string",
        "null"
       ],
-      "maxLength": 1000,
+      "maxLength": 3000,
       "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
      },
@@ -22527,7 +22527,7 @@
        "string",
        "null"
       ],
-      "maxLength": 1000,
+      "maxLength": 3000,
       "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "Đeo găng tay trước khi kiểm tra."
      }

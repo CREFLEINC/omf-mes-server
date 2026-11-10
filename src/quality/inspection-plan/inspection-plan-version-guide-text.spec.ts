@@ -107,14 +107,14 @@ describe('검사 기준 버전 안내 문구', () => {
     expect(error?.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
   });
 
-  it('1000자를 넘으면 400 INVALID 다 — 계약 검사를 거치지 않는 길(엑셀 올리기)도 막는다', async () => {
+  it('3000자를 넘으면 400 INVALID 다 — 계약 검사를 거치지 않는 길(엑셀 올리기)도 막는다', async () => {
     const { service } = setup(baseRow());
 
-    const error = await errorOf(() => service.update(13, 1, write({ guideTextVi: 'a'.repeat(1001) })));
+    const error = await errorOf(() => service.update(13, 1, write({ guideTextVi: 'a'.repeat(3001) })));
 
     expect(error?.getStatus()).toBe(400);
     expect(error?.errors[0]).toMatchObject({ field: 'guideTextVi', code: 'INVALID' });
-    expect(await errorOf(() => service.update(13, 1, write({ guideTextVi: 'a'.repeat(1000) })))).toBeUndefined();
+    expect(await errorOf(() => service.update(13, 1, write({ guideTextVi: 'a'.repeat(3000) })))).toBeUndefined();
   });
 
   it('개정하면 안내 문구가 새 버전에 복사된다', async () => {

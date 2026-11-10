@@ -1118,7 +1118,7 @@ model material_issue_request {
   issue_work_date             DateTime?                     @db.Date
   released_at                 DateTime?                     @db.Timestamptz(6)
   release_attempted_at        DateTime?                     @db.Timestamptz(6)
-  release_error_text          String?                       @db.VarChar(1000)
+  release_error_text          String?                       @db.VarChar(3000)
   closed_at                   DateTime?                     @db.Timestamptz(6)
   close_reason_code           String?                       @db.VarChar(50)
   cancelled_at                DateTime?                     @db.Timestamptz(6)
@@ -3780,8 +3780,8 @@ model inspection_plan_version {
   updated_by                  BigInt?
   version_no                  Int                    @default(1)
   sampling_ratio              Decimal?               @db.Decimal(9, 6)
-  guide_text_ko               String?                @db.VarChar(1000)
-  guide_text_vi               String?                @db.VarChar(1000)
+  guide_text_ko               String?                @db.VarChar(3000)
+  guide_text_vi               String?                @db.VarChar(3000)
   inspection_item_spec        inspection_item_spec[]
   inspection_plan             inspection_plan        @relation(fields: [inspection_plan_id], references: [inspection_plan_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_request          inspection_request[]
@@ -4090,8 +4090,8 @@ model inspection_sheet_ng {
   occurrence_process_text                           String?          @db.VarChar(200)
   standard_no                                       String?          @db.VarChar(50)
   check_item_code                                   String?          @db.VarChar(30)
-  ng_content                                        String           @db.VarChar(1000)
-  investigation_text                                String?          @db.VarChar(1000)
+  ng_content                                        String           @db.VarChar(3000)
+  investigation_text                                String?          @db.VarChar(3000)
   ng_type_code                                      String?          @db.VarChar(20)
   repair_department_code                            String?          @db.VarChar(20)
   repair_worker_id                                  BigInt?
@@ -6012,7 +6012,7 @@ model replenishment_run {
   status_code            String                   @db.VarChar(20)
   checked_item_count     Int                      @default(0)
   created_request_count  Int                      @default(0)
-  error_text             String?                  @db.VarChar(1000)
+  error_text             String?                  @db.VarChar(3000)
   warehouse              warehouse                @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   material_issue_request material_issue_request[]
   replenishment_run_line replenishment_run_line[]

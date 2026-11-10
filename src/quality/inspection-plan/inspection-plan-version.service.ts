@@ -712,7 +712,7 @@ function guideTextOf(value: string | null | undefined): string | null | undefine
   return trimmed === '' ? null : trimmed;
 }
 
-const GUIDE_TEXT_MAX = 1000;
+const GUIDE_TEXT_MAX = 3000;
 
 /** 계약의 maxLength 와 같다 — 엑셀 올리기처럼 계약 검사를 거치지 않는 길도 막는다. */
 function assertGuideText(input: VersionWrite): void {
