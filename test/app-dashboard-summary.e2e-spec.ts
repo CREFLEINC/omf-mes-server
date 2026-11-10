@@ -107,10 +107,20 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     // (양품 900 + 정정본 100 + 재작업 합격 10) ÷ 1100
     expect(card(cards, 'YIELD_RATE').value).toBeCloseTo((1010 / 1100) * 100, 6);
     const { production } = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
-      production: Record<string, number | null>;
+      production: Record<string, unknown>;
     };
     // NG = 불량 상태 수량만(불량 50 + 폐기 30 + 재작업 20) — 재작업 합격 10 은 양품에만 더하고 NG 에서 빼지 않는다
-    expect(production).toEqual({ totalQty: 1100, goodQty: 1010, ngQty: 100, holdQty: 0, defectRate: (100 / 1100) * 100 });
+    expect(production).toEqual({
+      totalQty: 1100,
+      goodQty: 1010,
+      ngQty: 100,
+      holdQty: 0,
+      defectRate: (100 / 1100) * 100,
+      // 품목군 없는 품목 하나 — 미분류 한 줄이 공장 합과 같다(omf-all-around#251).
+      byItemGroup: [
+        { itemGroupCode: null, itemGroupName: null, totalQty: 1100, goodQty: 1010, ngQty: 100, defectRate: (100 / 1100) * 100 },
+      ],
+    });
     expect(trend.points).toHaveLength(9);
     // 실적 기록 없는 날 null, 기록은 있는데 합 0 인 날 0(P-60).
     expect(trend.points[0]).toEqual({ label: '08-24', value: null });

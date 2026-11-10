@@ -8562,7 +8562,8 @@
      "goodQty",
      "ngQty",
      "holdQty",
-     "defectRate"
+     "defectRate",
+     "byItemGroup"
     ],
     "properties": {
      "totalQty": {
@@ -8591,6 +8592,56 @@
       ],
       "format": "double",
       "description": "NG ÷ 총생산(%) · 0~100. 총생산 0 이면 null"
+     },
+     "byItemGroup": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "itemGroupCode",
+        "itemGroupName",
+        "totalQty",
+        "goodQty",
+        "ngQty",
+        "defectRate"
+       ],
+       "properties": {
+        "itemGroupCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "ERP 품목군 코드 — null 이면 미분류(품목군 없는 품목)"
+        },
+        "itemGroupName": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "totalQty": {
+         "type": "number",
+         "format": "double"
+        },
+        "goodQty": {
+         "type": "number",
+         "format": "double"
+        },
+        "ngQty": {
+         "type": "number",
+         "format": "double"
+        },
+        "defectRate": {
+         "type": [
+          "number",
+          "null"
+         ],
+         "format": "double",
+         "description": "NG ÷ 총생산(%) · 0~100. 총생산 0 이면 null"
+        }
+       }
+      },
+      "description": "제품군(ERP 품목군)별 생산 합 — 총생산 많은 순, 미분류는 맨 끝. 합하면 위 값이 된다"
      }
     }
    },
@@ -9209,7 +9260,8 @@
          "vendorDefects",
          "itemDefects",
          "fullReinspect",
-         "receiptHoldLotCount"
+         "receiptHoldLotCount",
+         "sortedLotCount"
         ],
         "properties": {
          "vendorDefects": {
@@ -9291,6 +9343,10 @@
          },
          "receiptHoldLotCount": {
           "type": "integer"
+         },
+         "sortedLotCount": {
+          "type": "integer",
+          "description": "누계 구간에 선별 처분이 난 원래 IQC 검사 LOT 수 — 떼어 낸 LOT·재선별은 따로 세지 않는다"
          }
         }
        }

@@ -16,7 +16,9 @@ import {
   DashboardCard,
   DashboardSummary,
   PerformanceFigures,
+  ItemGroupRow,
   availabilityCard,
+  itemGroupProduction,
   oeeCard,
   performanceCard,
   productionCards,
@@ -45,6 +47,14 @@ interface DailyRow {
   ng_qty: string;
   hold_qty: string;
   rework_good_qty: string;
+}
+
+interface ItemGroupSqlRow {
+  code: string | null;
+  name: string | null;
+  total_qty: string;
+  good_qty: string;
+  ng_qty: string;
 }
 
 interface PerformanceRow {
@@ -102,7 +112,10 @@ export class DashboardSummaryService {
           alerts: alarms.alerts,
           asOf,
           trend: productionTrend(byDay, period.chartDays, asOf),
-          production: productionSection(byDay, range),
+          production: {
+            ...productionSection(byDay, range),
+            byItemGroup: itemGroupProduction(await this.itemGroups(tx, plants, range)),
+          },
           equipment,
           shipment: await this.shipments.read(tx, plants, range, query.plantId !== undefined),
           quality: await this.quality.read(tx, plants, period),
@@ -153,6 +166,46 @@ export class DashboardSummaryService {
       }
     }
     return byDay;
+  }
+
+  /**
+   * 제품군(ERP 품목군)별 생산 합 — `dailyProduction` 과 같은 실적·공장·날짜 규칙이라 합하면 production 섹션 값이 된다.
+   * 양품에는 재작업 W/O 합격분을 더한다(총생산·NG 에는 넣지 않는다).
+   */
+  private async itemGroups(
+    tx: Prisma.TransactionClient,
+    plants: readonly DashboardPlant[],
+    days: DashboardRange,
+  ): Promise<ItemGroupRow[]> {
+    const groups: ItemGroupRow[] = [];
+    for (const plant of plants) {
+      const range = maintenanceDateRange(days.from, days.to, plant.timezone);
+      const rows = await tx.$queryRaw<ItemGroupSqlRow[]>(Prisma.sql`
+        SELECT i.erp_item_group_code AS code, MAX(i.erp_item_group_name) AS name,
+          COALESCE(SUM(pr.good_qty + pr.defect_qty + pr.hold_qty + pr.scrap_qty + pr.rework_qty)
+            FILTER (WHERE wo.work_order_type_code <> 'REWORK'), 0)::text AS total_qty,
+          COALESCE(SUM(pr.good_qty), 0)::text AS good_qty,
+          COALESCE(SUM(pr.defect_qty + pr.scrap_qty + pr.rework_qty)
+            FILTER (WHERE wo.work_order_type_code <> 'REWORK'), 0)::text AS ng_qty
+        FROM production.production_result pr
+        JOIN production.work_order wo ON wo.work_order_id = pr.work_order_id
+        JOIN mdm.production_line l ON l.production_line_id = wo.production_line_id
+        JOIN mdm.item i ON i.item_id = wo.item_id
+        WHERE l.plant_id = ${plant.plantId}
+          AND pr.occurred_at >= ${range.gte} AND pr.occurred_at < ${range.lt}
+          AND ${LEAF_RESULT}
+        GROUP BY i.erp_item_group_code`);
+      groups.push(
+        ...rows.map((row) => ({
+          code: row.code,
+          name: row.name,
+          totalQty: Number(row.total_qty),
+          goodQty: Number(row.good_qty),
+          ngQty: Number(row.ng_qty),
+        })),
+      );
+    }
+    return groups;
   }
 
   /**
