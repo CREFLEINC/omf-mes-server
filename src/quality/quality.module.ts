@@ -31,6 +31,7 @@ import { InspectionPlanDrawingController } from './inspection-plan/inspection-pl
 import { InspectionPlanDrawingService } from './inspection-plan/inspection-plan-drawing.service';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanImportController } from './inspection-plan/inspection-plan-import.controller';
+import { InspectionPlanCopyService } from './inspection-plan/inspection-plan-copy.service';
 import { InspectionPlanImportService } from './inspection-plan/inspection-plan-import.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
@@ -117,6 +118,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     DefectCodeProcessService,
     InspectionPlanService,
     InspectionPlanImportService,
+    InspectionPlanCopyService,
     InspectionSheetTemplateService,
     InspectionSheetEntryService,
     InspectionSheetAccess,

@@ -129,6 +129,26 @@ export class InspectionSheetTemplateController {
     );
   }
 
+  /** 폐기 → 확정(재사용 · omf-all-around#255). */
+  @Post(':inspectionSheetTemplateId\\:reactivate')
+  @Contract('POST /quality/inspection-sheet-templates/{inspectionSheetTemplateId}:reactivate')
+  @HttpCode(HttpStatus.OK)
+  async reactivate(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('inspectionSheetTemplateId', ParseIntPipe) id: number,
+  ): Promise<InspectionSheetTemplateView> {
+    const actor = actorOf(request);
+    await this.access.plantsOf(request);
+    return runVersioned<InspectionSheetTemplateView, 'inspectionSheetTemplate'>(
+      this.idempotency,
+      request,
+      response,
+      'inspectionSheetTemplate',
+      (version) => this.templates.reactivate(id, version, actor),
+    );
+  }
+
   @Delete(':inspectionSheetTemplateId')
   @Contract('DELETE /quality/inspection-sheet-templates/{inspectionSheetTemplateId}')
   @HttpCode(HttpStatus.NO_CONTENT)

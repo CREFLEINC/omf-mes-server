@@ -204,7 +204,7 @@ export class InspectionSheetTemplateService {
     return this.get(id);
   }
 
-  /** 확정 → 폐기(omf-all-around#214). ⛔ 되돌릴 수 없다 — 그 모델은 새 버전을 확정할 때까지 확정본이 없다. */
+  /** 확정 → 폐기(omf-all-around#214). 그 모델은 새 버전을 확정하거나 폐기본을 재사용(#255)할 때까지 확정본이 없다. */
   async obsolete(
     id: number,
     version: number,
@@ -223,6 +223,51 @@ export class InspectionSheetTemplateService {
       });
       assertUpdated(updated.count);
       await recordSheetTemplateAudit(tx, statusAudit(id, 'CONFIRMED', 'OBSOLETE', actor.userId));
+    });
+    return this.get(id);
+  }
+
+  /**
+   * 폐기 → 확정(재사용 · omf-all-around#255). 같은 모델의 지금 확정본은 폐기로 내린다 — 확정과 같은 규칙
+   * (모델당 확정본 하나 · `uq_inspection_sheet_template_item_confirmed`). 내용은 폐기 때 그대로라 다시 검사하지 않는다.
+   */
+  async reactivate(
+    id: number,
+    version: number,
+    actor: TemplateActor,
+  ): Promise<{ inspectionSheetTemplate: InspectionSheetTemplateView; versionNo: number }> {
+    const row = await this.prisma.inspection_sheet_template.findUnique({
+      where: { inspection_sheet_template_id: id },
+      select: { item_id: true, status_code: true },
+    });
+    if (row === null) throw new NotFoundException('없는 검사표 기준입니다.');
+    if (row.status_code !== 'OBSOLETE') throw locked('폐기된 기준만 재사용할 수 있습니다.');
+    await this.prisma.$transaction(async (tx) => {
+      const previous = await tx.inspection_sheet_template.findMany({
+        where: { item_id: row.item_id, status_code: 'CONFIRMED' },
+        select: { inspection_sheet_template_id: true },
+      });
+      await tx.inspection_sheet_template.updateMany({
+        where: { item_id: row.item_id, status_code: 'CONFIRMED' },
+        data: { status_code: 'OBSOLETE', updated_by: actor.userId, updated_at: new Date(), version_no: { increment: 1 } },
+      });
+      const now = new Date();
+      const updated = await tx.inspection_sheet_template.updateMany({
+        where: { inspection_sheet_template_id: id, version_no: version, status_code: 'OBSOLETE' },
+        data: {
+          status_code: 'CONFIRMED',
+          confirmed_by: actor.userId,
+          confirmed_at: now,
+          updated_by: actor.userId,
+          updated_at: now,
+          version_no: { increment: 1 },
+        },
+      });
+      assertUpdated(updated.count);
+      for (const old of previous) {
+        await recordSheetTemplateAudit(tx, statusAudit(old.inspection_sheet_template_id, 'CONFIRMED', 'OBSOLETE', actor.userId));
+      }
+      await recordSheetTemplateAudit(tx, statusAudit(id, 'OBSOLETE', 'CONFIRMED', actor.userId));
     });
     return this.get(id);
   }

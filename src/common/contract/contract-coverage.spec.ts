@@ -97,7 +97,8 @@ describe('계약 커버리지', () => {
     // 계획 제안 조회·선택 확정 2 오퍼레이션: 598 → 600.
     // 원인코드 마스터 6 오퍼레이션 삭제(omf-all-around#239): 600 → 594.
     // 대시보드 제품군별 불량 · 설비 상세 2 오퍼레이션 + 상태별 LOT 목록 계약에 옮김 1(omf-all-around#251): 594 → 597.
-    expect(registry.size).toBe(597);
+    // 검사기준 복사 · 검사표 기준 재사용(omf-all-around#255) 2 오퍼레이션: 597 → 599.
+    expect(registry.size).toBe(599);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

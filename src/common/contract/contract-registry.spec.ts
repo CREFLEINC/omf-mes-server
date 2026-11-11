@@ -29,8 +29,9 @@ describe('ContractRegistry', () => {
   // 계획 제안 조회·선택 확정 2건: 600.
   // 원인코드 마스터 6건 삭제(omf-all-around#239): 594.
   // 대시보드 제품군별 불량 · 설비 상세 2건 + 상태별 LOT 목록 계약에 옮김 1건(omf-all-around#251): 597.
-  it('계약 7파일에서 오퍼레이션 597건을 적재한다', () => {
-    expect(registry.size).toBe(597);
+  // 검사기준 복사 · 검사표 기준 재사용 2건(omf-all-around#255): 599.
+  it('계약 7파일에서 오퍼레이션 599건을 적재한다', () => {
+    expect(registry.size).toBe(599);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
