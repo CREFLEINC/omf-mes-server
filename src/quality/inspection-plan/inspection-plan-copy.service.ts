@@ -59,6 +59,7 @@ export class InspectionPlanCopyService {
           frequencyIntervalValue: source.frequencyIntervalValue,
           frequencyIntervalUomCode: source.frequencyIntervalUomCode,
           guideText: source.guideText,
+          aqlInspectionLevelCode: source.aqlInspectionLevelCode,
         },
         { allowMissingRatio: true },
         actorId,

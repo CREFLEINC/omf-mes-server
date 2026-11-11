@@ -14,6 +14,7 @@ import {
   toDateString,
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
+import { AQL_SAMPLING, isAqlValue, isInspectionLevel } from '../../core/quality/aql';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
@@ -45,6 +46,8 @@ interface VersionView {
   samplingQty: number | null;
   /** 검사 지시문 한 칸(omf-all-around#261 — 한/베 두 칸을 걷었다). */
   guideText: string | null;
+  /** AQL 검사 수준(G-I~G-III · S-1~S-4 · omf-all-around#264) — 품목별 IQC 검사 수준(엄격도)과 다른 축이다. */
+  aqlInspectionLevelCode: string | null;
 }
 
 export interface VersionWrite {
@@ -62,6 +65,8 @@ export interface VersionWrite {
   samplingQty?: number | null;
   /** 검사 지시문(omf-all-around#252 · 한 칸 #261) — 생략하면 그대로 둔다. */
   guideText?: string | null;
+  /** AQL 검사 수준(omf-all-around#264) — 생략하면 그대로 둔다. */
+  aqlInspectionLevelCode?: string | null;
 }
 
 /**
@@ -341,6 +346,8 @@ export class InspectionPlanVersionService {
       samplingMethodCode: row.sampling_method_code,
       samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
       samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
+      aqlValue: row.aql_value === null ? null : Number(row.aql_value),
+      aqlInspectionLevelCode: row.aql_inspection_level_code,
     });
 
     const items = await this.prisma.inspection_item_spec.count({
@@ -484,6 +491,7 @@ export class InspectionPlanVersionService {
           frequency_interval_value: source.frequency_interval_value,
           frequency_interval_uom_code: source.frequency_interval_uom_code,
           guide_text: source.guide_text,
+          aql_inspection_level_code: source.aql_inspection_level_code,
         },
       });
 
@@ -714,6 +722,7 @@ function writeData(input: VersionWrite): VersionColumns {
     ...optional('sampling_ratio', input.samplingRatio),
     ...optional('sampling_qty', input.samplingQty),
     ...optional('guide_text', guideTextOf(input.guideText)),
+    ...optional('aql_inspection_level_code', input.aqlInspectionLevelCode),
   } as VersionColumns;
 }
 
@@ -867,6 +876,7 @@ function view(row: VersionRow): VersionView {
     samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
     samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
     guideText: row.guide_text,
+    aqlInspectionLevelCode: row.aql_inspection_level_code,
   };
 }
 
@@ -905,7 +915,10 @@ const FULL_INSPECTION = 'FULL_INSPECTION';
  * 기존 버전은 다시 저장하거나 확정할 때 걸린다.
  */
 export function assertSamplingRatio(
-  input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio' | 'samplingQty'>,
+  input: Pick<
+    VersionWrite,
+    'samplingMethodCode' | 'samplingRatio' | 'samplingQty' | 'aqlValue' | 'aqlInspectionLevelCode'
+  >,
   options: DraftOptions = {},
 ): void {
   const hasRatio = input.samplingRatio != null;
@@ -913,6 +926,18 @@ export function assertSamplingRatio(
   const fail = (field: string, code: ErrorItem['code'], message: string): never => {
     throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'field', field, code, message }]);
   };
+  if (input.samplingMethodCode === AQL_SAMPLING) {
+    if (hasRatio || hasQty) {
+      fail(hasRatio ? 'samplingRatio' : 'samplingQty', ERROR_CODE.INVALID, 'AQL 샘플링은 시료 수를 표로 정합니다 — 샘플 비율(%) · 개수를 넣지 않습니다.');
+    }
+    if (input.aqlValue == null || !isAqlValue(input.aqlValue)) {
+      fail('aqlValue', input.aqlValue == null ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID, 'AQL 은 0.010~10 의 표준값 중에서 고르세요.');
+    }
+    if (input.aqlInspectionLevelCode == null || !isInspectionLevel(input.aqlInspectionLevelCode)) {
+      fail('aqlInspectionLevelCode', input.aqlInspectionLevelCode == null ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID, 'AQL 검사 수준을 고르세요.');
+    }
+    return;
+  }
   if (input.samplingMethodCode === FULL_INSPECTION) {
     if (hasRatio) fail('samplingRatio', ERROR_CODE.INVALID, '전수검사에는 샘플 비율(%)을 넣지 않습니다.');
     if (hasQty) fail('samplingQty', ERROR_CODE.INVALID, '전수검사에는 샘플 개수를 넣지 않습니다.');

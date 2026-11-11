@@ -22401,7 +22401,8 @@
      "samplingMethodCode",
      "inspectionFrequencyCode",
      "statusCode",
-     "guideText"
+     "guideText",
+     "aqlInspectionLevelCode"
     ],
     "description": "샘플 비율(%)이 정본이다(samplingRatio) — 확정 문구가 「샘플 비율(%)」이고 수량은 로트 크기를 알아야 나오는 파생값이라 두지 않는다(A-8). 2026-08-30 되살림.",
     "properties": {
@@ -22454,7 +22455,7 @@
        "number",
        "null"
       ],
-      "description": "AQL·허용불량수",
+      "description": "AQL(합격 품질 한계, %). 검사 방식이 AQL 이면 필수이고 표준값(0.01 · 0.015 · 0.025 · 0.04 · 0.065 · 0.1 · 0.15 · 0.25 · 0.4 · 0.65 · 1 · 1.5 · 2.5 · 4 · 6.5 · 10) 중 하나다 — 그때 시료 수 · 합격/불합격 판정 수는 의뢰 수량으로 표에서 정한다(omf-all-around#264). 다른 방식이면 표시용이다.",
       "example": 1.0,
       "x-internal-note": "SQL 1766 주석"
      },
@@ -22550,6 +22551,25 @@
       "maxLength": 3000,
       "description": "검사 지시문 — 한 칸(한/베 두 칸을 걷었다 · 사용자 결정 2026-11-11 · omf-all-around#261). 검사 화면이 기준 정보 바로 아래에 보인다(#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
+     },
+     "aqlInspectionLevelCode": {
+      "x-source-column": "aql_inspection_level_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4",
+       null
+      ],
+      "description": "AQL 검사 수준(KS Q ISO 2859-1 일반 G-I~G-III · 특별 S-1~S-4 · omf-all-around#264). 검사 방식이 AQL 이면 필수다. ⛔ 품목별 IQC 검사 수준(무검사 · 수월 · 보통 · 엄격)과 다른 축이다. `:new-revision` · 복사가 그대로 옮긴다.",
+      "example": "G-II"
      }
     },
     "x-internal-note": "미착지 셋: PQC 생략 허용·생략 근거·검사기준 미비 시 단순 선택 허용 — #64"
@@ -22599,7 +22619,8 @@
        "number",
        "null"
       ],
-      "example": 1.0
+      "example": 1.0,
+      "description": "AQL(합격 품질 한계, %). 검사 방식이 AQL 이면 필수이고 표준값(0.01 · 0.015 · 0.025 · 0.04 · 0.065 · 0.1 · 0.15 · 0.25 · 0.4 · 0.65 · 1 · 1.5 · 2.5 · 4 · 6.5 · 10) 중 하나다 — 그때 시료 수 · 합격/불합격 판정 수는 의뢰 수량으로 표에서 정한다(omf-all-around#264). 다른 방식이면 표시용이다."
      },
      "acceptanceNumber": {
       "x-source-column": "acceptance_number",
@@ -22681,6 +22702,25 @@
       "maxLength": 3000,
       "description": "검사 지시문 — 한 칸(한/베 두 칸을 걷었다 · 사용자 결정 2026-11-11 · omf-all-around#261). 검사 화면이 기준 정보 바로 아래에 보인다(#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
+     },
+     "aqlInspectionLevelCode": {
+      "x-source-column": "aql_inspection_level_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4",
+       null
+      ],
+      "description": "AQL 검사 수준(KS Q ISO 2859-1 일반 G-I~G-III · 특별 S-1~S-4 · omf-all-around#264). 검사 방식이 AQL 이면 필수다. ⛔ 품목별 IQC 검사 수준(무검사 · 수월 · 보통 · 엄격)과 다른 축이다. `:new-revision` · 복사가 그대로 옮긴다.",
+      "example": "G-II"
      }
     }
    },
@@ -22722,7 +22762,8 @@
        "number",
        "null"
       ],
-      "example": 1.0
+      "example": 1.0,
+      "description": "AQL(합격 품질 한계, %). 검사 방식이 AQL 이면 필수이고 표준값(0.01 · 0.015 · 0.025 · 0.04 · 0.065 · 0.1 · 0.15 · 0.25 · 0.4 · 0.65 · 1 · 1.5 · 2.5 · 4 · 6.5 · 10) 중 하나다 — 그때 시료 수 · 합격/불합격 판정 수는 의뢰 수량으로 표에서 정한다(omf-all-around#264). 다른 방식이면 표시용이다."
      },
      "acceptanceNumber": {
       "x-source-column": "acceptance_number",
@@ -22804,6 +22845,25 @@
       "maxLength": 3000,
       "description": "검사 지시문 — 한 칸(한/베 두 칸을 걷었다 · 사용자 결정 2026-11-11 · omf-all-around#261). 검사 화면이 기준 정보 바로 아래에 보인다(#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
+     },
+     "aqlInspectionLevelCode": {
+      "x-source-column": "aql_inspection_level_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4",
+       null
+      ],
+      "description": "AQL 검사 수준(KS Q ISO 2859-1 일반 G-I~G-III · 특별 S-1~S-4 · omf-all-around#264). 검사 방식이 AQL 이면 필수다. ⛔ 품목별 IQC 검사 수준(무검사 · 수월 · 보통 · 엄격)과 다른 축이다. `:new-revision` · 복사가 그대로 옮긴다.",
+      "example": "G-II"
      }
     }
    },

@@ -6324,6 +6324,9 @@
       "items": {
        "$ref": "#/components/schemas/InspectionGuide"
       }
+     },
+     "aqlPlan": {
+      "$ref": "#/components/schemas/InspectionAqlPlan"
      }
     },
     "required": [
@@ -9399,6 +9402,58 @@
      "createdAt": {
       "type": "string",
       "format": "date-time"
+     }
+    }
+   },
+   "InspectionAqlPlan": {
+    "type": "object",
+    "required": [
+     "aqlValue",
+     "aqlInspectionLevelCode",
+     "codeLetter",
+     "sampleSize",
+     "acceptanceNumber",
+     "rejectionNumber"
+    ],
+    "description": "AQL 시료 계획(omf-all-around#264) — KS Q ISO 2859-1 보통 검사 1회 샘플링 표준값. 의뢰 수량을 LOT 크기로 본다. 불량 수가 acceptanceNumber 이하면 합격, rejectionNumber 이상이면 불합격이다.",
+    "properties": {
+     "aqlValue": {
+      "type": "number",
+      "example": 0.4
+     },
+     "aqlInspectionLevelCode": {
+      "type": "string",
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4"
+      ],
+      "example": "G-II"
+     },
+     "codeLetter": {
+      "type": "string",
+      "description": "표 1 의 시료 문자(A~R) — 화살표로 다른 칸의 계획을 써도 처음 문자다.",
+      "example": "J"
+     },
+     "sampleSize": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "검사할 수. 표의 시료 수가 의뢰 수량 이상이면 의뢰 수량(전수)이다.",
+      "example": 125
+     },
+     "acceptanceNumber": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 1
+     },
+     "rejectionNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "example": 2
      }
     }
    }
