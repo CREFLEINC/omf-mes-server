@@ -1,7 +1,7 @@
 import type { OqcExtra, PqcExtra } from './dashboard-quality-pqc-oqc';
 
 /**
- * 대시보드 응답의 선택 섹션 — 계약보다 앞선 응답 확장이다(장부 P-59 · omf-all-around#118 2차).
+ * 대시보드 응답의 섹션(omf-all-around#118 2차 · 계약 `DashboardProduction` 등 — #251 에서 옮김).
  * MES DB 에 없는 값은 만들지 않고 null 로 둔다.
  */
 
@@ -11,6 +11,16 @@ export interface DashboardProduction {
   goodQty: number;
   ngQty: number;
   holdQty: number;
+  defectRate: number | null;
+}
+
+/** 제품군(ERP 품목군) 하나의 생산 합 — DashboardProduction 과 같은 규칙이라 합하면 그 값이 된다. 품목군 없는 품목은 code·name null. */
+export interface ItemGroupProduction {
+  itemGroupCode: string | null;
+  itemGroupName: string | null;
+  totalQty: number;
+  goodQty: number;
+  ngQty: number;
   defectRate: number | null;
 }
 
@@ -156,6 +166,8 @@ export interface DashboardQuality {
     itemDefects: { itemId: number; itemCode: string; itemName: string; qty: number }[];
     fullReinspect: { inputQty: number; restoredQty: number } | null;
     receiptHoldLotCount: number;
+    /** 누계 구간에 선별 처분이 난 원래 IQC 검사 LOT 수 — 떼어 낸 LOT·재선별은 따로 세지 않는다. */
+    sortedLotCount: number;
   };
   pqc: QualityTypeBlock & PqcExtra & {
     pendingLotCount: number;

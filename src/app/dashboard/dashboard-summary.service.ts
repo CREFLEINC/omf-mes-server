@@ -9,7 +9,8 @@ import { DashboardAvailabilityService, DashboardPlant } from './dashboard-availa
 import { DashboardEquipmentService } from './dashboard-equipment.service';
 import { DashboardQualityService } from './dashboard-quality.service';
 import { DashboardRange, DashboardRangeQuery, previousRange } from './dashboard-range';
-import { dashboardPlant, dashboardScope, localToday } from './dashboard-scope';
+import { readItemGroupRows } from './dashboard-item-group';
+import { LEAF_RESULT, dashboardPlant, dashboardScope, localToday } from './dashboard-scope';
 import { DashboardShipmentService } from './dashboard-shipment.service';
 import {
   DailyProduction,
@@ -17,6 +18,7 @@ import {
   DashboardSummary,
   PerformanceFigures,
   availabilityCard,
+  itemGroupProduction,
   oeeCard,
   performanceCard,
   productionCards,
@@ -29,14 +31,6 @@ export interface DashboardSummaryQuery extends DashboardRangeQuery {
 }
 
 const ALERT_LIMIT = 5;
-
-/**
- * ⛔ 정정된 원본은 빼고 잎만 센다(`ACTIVE_RESULT_WHERE` 와 같은 규칙의 SQL 판).
- * 공장은 품목이 아니라 작업지시 라인의 공장이다 — 같은 품목코드가 두 공장에 있다.
- */
-const LEAF_RESULT = Prisma.sql`NOT EXISTS (
-  SELECT 1 FROM production.production_result c
-  WHERE c.corrects_production_result_id = pr.production_result_id)`;
 
 interface DailyRow {
   day: string;
@@ -102,7 +96,10 @@ export class DashboardSummaryService {
           alerts: alarms.alerts,
           asOf,
           trend: productionTrend(byDay, period.chartDays, asOf),
-          production: productionSection(byDay, range),
+          production: {
+            ...productionSection(byDay, range),
+            byItemGroup: itemGroupProduction(await readItemGroupRows(tx, plants, range)),
+          },
           equipment,
           shipment: await this.shipments.read(tx, plants, range, query.plantId !== undefined),
           quality: await this.quality.read(tx, plants, period),

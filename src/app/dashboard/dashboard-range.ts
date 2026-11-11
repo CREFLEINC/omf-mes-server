@@ -18,8 +18,7 @@ export interface DashboardRangeQuery {
 }
 
 /**
- * ⛔ `dateFrom`·`dateTo` 는 계약 사본에 없다(장부 P-59) — 계약 검증 가드는 사본에 없는 질의를
- * 그냥 통과시키므로 형식·순서·길이·미래를 «여기서» 막는다. 오류 모양은 가드와 같다.
+ * 계약 검증 가드는 `dateFrom`·`dateTo` 의 날짜 형식만 본다 — 짝·순서·길이·미래는 «여기서» 막는다. 오류 모양은 가드와 같다.
  * `baseDate` 는 하위 호환이라 미래 날짜를 막지 않는다(지금도 200).
  */
 export function dashboardRange(query: DashboardRangeQuery, today: string): DashboardRange {

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { InspectionType, finalResultCte } from './dashboard-inspection';
 import type { DashboardPeriod } from './dashboard-scope';
 
-export const QUALITY_LOT_STATUSES = ['INSPECTION_HELD', 'RECEIPT_HOLD', 'PQC_PENDING', 'NC_OPEN'] as const;
+export const QUALITY_LOT_STATUSES = ['INSPECTION_HELD', 'RECEIPT_HOLD', 'PQC_PENDING', 'NC_OPEN', 'IQC_SORTED'] as const;
 export type QualityLotStatus = (typeof QUALITY_LOT_STATUSES)[number];
 
 /**
@@ -48,6 +48,26 @@ export const SCOPED_NC_CTE = Prisma.sql`scoped_nc AS (
   JOIN plant_scope ps ON ps.plant_id = ${NONCONFORMANCE_PLANT}
 )`;
 
+/**
+ * IQC 선별 처분(omf-all-around#251) — 처분일이 누계 구간인 선별(SORT) 처분마다 한 줄, 대상은 «원래» IQC 검사 LOT 이다.
+ * 선별이 떼어 낸 LOT 의 부적합도 같은 검사 결과를 물려받으므로(disposition-sort.ts) 검사 의뢰의 LOT 으로 세면 재선별이 LOT 을 늘리지 않는다.
+ */
+export function iqcSortedCte(period: DashboardPeriod): Prisma.Sql {
+  return Prisma.sql`iqc_sorted AS (
+    SELECT d.disposition_decision_id, d.decided_at, d.decision_qty, d.uom_id, nc.nonconformance_no,
+      req.lot_id, req.item_id, lot.lot_no
+    FROM quality.disposition_decision d
+    JOIN quality.nonconformance nc ON nc.nonconformance_id = d.nonconformance_id
+    JOIN quality.inspection_result ir ON ir.inspection_result_id = nc.inspection_result_id
+    JOIN quality.inspection_request req ON req.inspection_request_id = ir.inspection_request_id
+    JOIN trace.lot lot ON lot.lot_id = req.lot_id
+    JOIN plant_scope ps ON ps.plant_id = lot.plant_id
+    WHERE d.disposition_type_code = 'SORT' AND req.inspection_type_code = 'IQC'
+      AND d.decided_at >= ${period.from}::date - INTERVAL '1 day' AND d.decided_at < ${period.to}::date + INTERVAL '2 day'
+      AND (d.decided_at AT TIME ZONE ps.tz)::date BETWEEN ${period.from}::date AND ${period.to}::date
+  )`;
+}
+
 /** 미종결 부적합 — 기간과 무관하다. `scoped_nc nc` 에 건다. */
 export const OPEN_NC_WHERE = Prisma.sql`nc.closed_at IS NULL`;
 
@@ -64,7 +84,8 @@ export interface LotRecordRow {
 
 /**
  * 「n LOT · m건」 — 기록 수와 고유 LOT 수. LOT 없는 기록은 기록 수에만 든다(COUNT DISTINCT 는 null 을 세지 않는다).
- * 기록 = 검사 보류: 최종 판정 HELD 결과 · 입고 보류: 미해제 보류 행 · 검사 대기: 의뢰 · 미종결 부적합: 부적합(LOT = 대상 LOT 전부).
+ * 기록 = 검사 보류: 최종 판정 HELD 결과 · 입고 보류: 미해제 보류 행 · 검사 대기: 의뢰 · 미종결 부적합: 부적합(LOT = 대상 LOT 전부)
+ * · IQC 선별 처분: 선별 처분(LOT = 원래 검사 LOT).
  * 대시보드 `quality.statusCounts` 와 상태별 LOT 목록이 이 한 식을 쓴다. `scope` = `plant_scope` CTE 본문.
  */
 export function lotRecordCountSql(
@@ -90,6 +111,9 @@ export function lotRecordCountSql(
         ${count(Prisma.sql`nc.nonconformance_id`, Prisma.sql`nl.lot_id`)} FROM scoped_nc nc
         LEFT JOIN quality.nonconformance_lot nl ON nl.nonconformance_id = nc.nonconformance_id
         WHERE ${OPEN_NC_WHERE}`;
+    case 'IQC_SORTED':
+      return Prisma.sql`WITH ${scope}, ${iqcSortedCte(period)}
+        ${count(Prisma.sql`s.disposition_decision_id`, Prisma.sql`s.lot_id`)} FROM iqc_sorted s`;
   }
 }
 

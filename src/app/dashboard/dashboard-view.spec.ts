@@ -2,6 +2,7 @@ import {
   DailyProduction,
   availabilityCard,
   chartDays,
+  itemGroupProduction,
   oeeCard,
   performanceCard,
   productionCards,
@@ -173,5 +174,36 @@ describe('dashboard view', () => {
     expect([performance.value, yieldRate.value]).toEqual([100, 100]);
     expect(oeeCard([availabilityCard(availability), performance, yieldRate]).value).toBeCloseTo(75, 6);
     expect(oeeCard([availabilityCard(full), performance, yieldRate]).value).toBe(100);
+  });
+  describe('제품군별 생산(itemGroupProduction)', () => {
+    const row = (code: string | null, totalQty: number, ngQty: number, goodQty = totalQty - ngQty) => ({
+      code,
+      name: code === null ? null : `${code} 이름`,
+      totalQty,
+      goodQty,
+      ngQty,
+    });
+
+    it('공장 사이 같은 품목군을 합치고, 합하면 공장 생산 합과 같다', () => {
+      const groups = itemGroupProduction([row('ADT', 100, 5), row('ESL', 300, 9), row('ADT', 300, 15)]);
+      expect(groups.map((group) => [group.itemGroupCode, group.totalQty, group.ngQty])).toEqual([
+        ['ADT', 400, 20],
+        ['ESL', 300, 9],
+      ]);
+      expect(groups.reduce((sum, group) => sum + group.totalQty, 0)).toBe(700);
+      expect(groups[0].defectRate).toBeCloseTo(5, 9);
+    });
+
+    it('품목군 없는 품목은 미분류(null)로 총생산과 관계없이 맨 끝에 온다', () => {
+      const groups = itemGroupProduction([row(null, 900, 9), row('OA', 10, 1)]);
+      expect(groups.map((group) => group.itemGroupCode)).toEqual(['OA', null]);
+      expect(groups[1]).toMatchObject({ itemGroupName: null, totalQty: 900 });
+    });
+
+    it('총생산이 같으면 코드 순, 총생산 0(재작업 합격분만)이면 불량률 null', () => {
+      const groups = itemGroupProduction([row('B', 10, 0), row('A', 10, 0), row('C', 0, 0, 5)]);
+      expect(groups.map((group) => group.itemGroupCode)).toEqual(['A', 'B', 'C']);
+      expect(groups[2]).toMatchObject({ goodQty: 5, defectRate: null });
+    });
   });
 });

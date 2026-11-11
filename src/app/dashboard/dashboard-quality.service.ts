@@ -85,9 +85,9 @@ export class DashboardQualityService {
     period: DashboardPeriod,
   ): Promise<DashboardQuality> {
     // 공장이 없어도 섹션은 낸다 — 빈 원천으로 같은 조립을 탄다(0 · 빈 배열 · null).
-    const [judgments, recent, phenomena, vendors, items, holds, pending, nonconformance, equipmentRows, reinspect] =
+    const [judgments, recent, phenomena, vendors, items, holds, pending, nonconformance, equipmentRows, reinspect, sorted] =
       plants.length === 0
-        ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period), [], []]
+        ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period), [], [], []]
         : await this.queries(tx, plants, period);
     const statusCounts = await this.statusCounts(tx, plants, period);
     // PQC·OQC 추가 칸 — 기존 칸과 따로 센다(기존 집계·값은 그대로).
@@ -118,6 +118,7 @@ export class DashboardQualityService {
         })),
         fullReinspect: fullReinspect(reinspect[0]),
         receiptHoldLotCount: holds[0]?.lot_count ?? 0,
+        sortedLotCount: sorted[0]?.lot_count ?? 0,
       },
       pqc: {
         ...block('PQC'),
@@ -204,6 +205,8 @@ export class DashboardQualityService {
       tx.$queryRaw<ReinspectRow[]>(Prisma.sql`WITH ${plantScope(plants)}, ${iqcReinspectCte(period)}
         SELECT COALESCE(SUM(inspected_qty), 0)::text AS input_qty, COALESCE(SUM(accepted_qty), 0)::text AS restored_qty
         FROM iqc_reinspect WHERE local_date BETWEEN ${period.from}::date AND ${period.to}::date`),
+      // 선별 처분 LOT — 상태별 LOT 목록(IQC_SORTED)과 같은 조각이다.
+      tx.$queryRaw<LotRecordRow[]>(lotRecordCountSql(plantScope(plants), 'IQC_SORTED', period)),
     ]);
   }
 

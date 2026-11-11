@@ -91,6 +91,14 @@ export function requestInScope(request: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`(${requestPlant(request)} IS NULL OR ${requestPlant(request)} IN (SELECT plant_id FROM plant_scope))`;
 }
 
+/**
+ * ⛔ 정정된 원본은 빼고 잎만 센다(`ACTIVE_RESULT_WHERE` 와 같은 규칙의 SQL 판).
+ * 공장은 품목이 아니라 작업지시 라인의 공장이다 — 같은 품목코드가 두 공장에 있다.
+ */
+export const LEAF_RESULT = Prisma.sql`NOT EXISTS (
+  SELECT 1 FROM production.production_result c
+  WHERE c.corrects_production_result_id = pr.production_result_id)`;
+
 export function num(value: string | number | null | undefined): number {
   return value === null || value === undefined ? 0 : Number(value);
 }

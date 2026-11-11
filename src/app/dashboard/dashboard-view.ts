@@ -7,6 +7,7 @@ import type {
   DashboardProduction,
   DashboardQuality,
   DashboardShipment,
+  ItemGroupProduction,
 } from './dashboard-sections';
 
 export type DashboardCardCode =
@@ -44,7 +45,7 @@ export interface DashboardTrend {
 export interface DashboardSummary {
   /** 조회 종료일 — 실시간 칸(설비 상태·출하 대기)의 기준일이다. */
   baseDate: string;
-  /** 실제 적용한 조회 기간(장부 P-59 — 계약보다 앞선 선택 키). */
+  /** 실제 적용한 조회 기간. */
   dateFrom?: string;
   dateTo?: string;
   plantId?: number;
@@ -53,10 +54,10 @@ export interface DashboardSummary {
   asOf: string;
   trend: DashboardTrend;
   /**
-   * 아래 셋은 계약보다 앞선 선택 섹션이다(장부 P-59). ⛔ 데이터가 없어도 생략하지 않는다 —
+   * 아래 넷은 선택 섹션이다. ⛔ 데이터가 없어도 생략하지 않는다 —
    * 클라이언트는 키가 없으면 「서버가 아직 지원하지 않음」으로 읽는다(빈 값과 구분한다).
    */
-  production?: DashboardProduction;
+  production?: DashboardProduction & { byItemGroup: ItemGroupProduction[] };
   equipment?: DashboardEquipment;
   shipment?: DashboardShipment;
   quality?: DashboardQuality;
@@ -236,6 +237,42 @@ export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, r
     holdQty: today?.holdQty ?? 0,
     defectRate: totalQty > 0 ? capRate((ngQty / totalQty) * 100) : null,
   };
+}
+
+/** 제품군 집계 한 줄(공장마다 하나씩 올 수 있다). `goodQty` 는 재작업 합격분을 이미 더한 값이다. */
+export interface ItemGroupRow {
+  readonly code: string | null;
+  readonly name: string | null;
+  readonly totalQty: number;
+  readonly goodQty: number;
+  readonly ngQty: number;
+}
+
+/** 공장 사이 같은 품목군을 합치고 총생산 많은 순으로 — 미분류(품목군 없음)는 맨 끝. 불량률은 productionSection 과 같은 식. */
+export function itemGroupProduction(rows: readonly ItemGroupRow[]): ItemGroupProduction[] {
+  const byCode = new Map<string | null, ItemGroupRow>();
+  for (const row of rows) {
+    const before = byCode.get(row.code);
+    byCode.set(row.code, {
+      code: row.code,
+      name: before?.name ?? row.name,
+      totalQty: (before?.totalQty ?? 0) + row.totalQty,
+      goodQty: (before?.goodQty ?? 0) + row.goodQty,
+      ngQty: (before?.ngQty ?? 0) + row.ngQty,
+    });
+  }
+  return [...byCode.values()]
+    .sort((a, b) =>
+      Number(a.code === null) - Number(b.code === null) || b.totalQty - a.totalQty || (a.code ?? '').localeCompare(b.code ?? ''),
+    )
+    .map((row) => ({
+      itemGroupCode: row.code,
+      itemGroupName: row.code === null ? null : row.name,
+      totalQty: row.totalQty,
+      goodQty: row.goodQty,
+      ngQty: row.ngQty,
+      defectRate: row.totalQty > 0 ? capRate((row.ngQty / row.totalQty) * 100) : null,
+    }));
 }
 
 /** 기간 안 일자 합 — 실적이 하루도 없으면 undefined. */

@@ -6,7 +6,12 @@ import { MANUAL_PERMISSIONS } from './manual-permissions';
  * 통합 대시보드는 로그인한 사용자 누구나 보고(omf-all-around#229), 403 은 데이터 범위 밖 공장뿐이다(#120).
  * ⛔ `OPERATION_PERMISSIONS` 에 함께 두지 않는다 — 두면 다시 권한을 본다.
  */
-export const LOGIN_ONLY_OPERATIONS: ReadonlySet<string> = new Set(['GET /app/dashboard-summary']);
+export const LOGIN_ONLY_OPERATIONS: ReadonlySet<string> = new Set([
+  'GET /app/dashboard-summary',
+  'GET /app/dashboard-item-group-defects',
+  'GET /app/dashboard-equipment-detail',
+  'GET /app/dashboard-quality-lots',
+]);
 
 /**
  * 오퍼레이션 → 그것을 부를 수 있는 권한(그중 **하나**만 있으면 된다).
