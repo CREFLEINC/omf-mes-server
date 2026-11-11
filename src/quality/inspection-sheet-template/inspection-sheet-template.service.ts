@@ -241,7 +241,7 @@ export class InspectionSheetTemplateService {
       select: { item_id: true, status_code: true },
     });
     if (row === null) throw new NotFoundException('없는 검사표 기준입니다.');
-    if (row.status_code !== 'OBSOLETE') throw locked('폐기된 기준만 재사용할 수 있습니다.');
+    if (row.status_code !== 'OBSOLETE') throw locked('사용 중지된 기준만 재사용할 수 있습니다.');
     await this.prisma.$transaction(async (tx) => {
       const previous = await tx.inspection_sheet_template.findMany({
         where: { item_id: row.item_id, status_code: 'CONFIRMED' },
