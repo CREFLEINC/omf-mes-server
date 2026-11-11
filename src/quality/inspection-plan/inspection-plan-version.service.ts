@@ -37,7 +37,7 @@ interface VersionView {
   aqlValue: number | null;
   acceptanceNumber: number | null;
   rejectionNumber: number | null;
-  inspectionFrequencyCode: string;
+  inspectionFrequencyCode: string | null;
   frequencyIntervalValue: number | null;
   frequencyIntervalUomCode: string | null;
   statusCode: string;
@@ -54,7 +54,8 @@ export interface VersionWrite {
   aqlValue?: number | null;
   acceptanceNumber?: number | null;
   rejectionNumber?: number | null;
-  inspectionFrequencyCode: string;
+  /** 기록용 — 화면은 받지 않는다(omf-all-around#263). 생략하면 그대로 둔다(등록이면 비움). */
+  inspectionFrequencyCode?: string | null;
   frequencyIntervalValue?: number | null;
   frequencyIntervalUomCode?: string | null;
   samplingRatio?: number | null;
@@ -701,7 +702,7 @@ function writeData(input: VersionWrite): VersionColumns {
     effective_from: new Date(input.effectiveFrom),
     ...optionalDate('effective_to', input.effectiveTo),
     sampling_method_code: input.samplingMethodCode,
-    inspection_frequency_code: input.inspectionFrequencyCode,
+    ...optional('inspection_frequency_code', input.inspectionFrequencyCode),
     ...optional('aql_value', input.aqlValue),
     ...optional('acceptance_number', input.acceptanceNumber),
     ...optional('rejection_number', input.rejectionNumber),

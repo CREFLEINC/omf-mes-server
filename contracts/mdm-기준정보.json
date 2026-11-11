@@ -22481,9 +22481,12 @@
      },
      "inspectionFrequencyCode": {
       "x-source-column": "inspection_frequency_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
-      "description": "공통코드 — 값 = WORK_ORDER·PRODUCTION_LOT·MATERIAL_LOT·SHIFT·TIME_INTERVAL·QUANTITY_INTERVAL·EQUIPMENT_MOLD_CHANGE·USER_REQUEST (2026-09-03 코드 사전 등재) — ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "공통코드 — 값 = WORK_ORDER·PRODUCTION_LOT·MATERIAL_LOT·SHIFT·TIME_INTERVAL·QUANTITY_INTERVAL·EQUIPMENT_MOLD_CHANGE·USER_REQUEST (2026-09-03 코드 사전 등재) — ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 기록용 — 관리웹은 받지 않는다(사용자 결정 2026-11-11 · omf-all-around#263). 비워 둘 수 있다.",
       "example": "WORK_ORDER",
       "x-code-key": "CD-INSPECTION-FREQUENCY"
      },
@@ -22558,8 +22561,7 @@
     "required": [
      "inspectionPlanId",
      "effectiveFrom",
-     "samplingMethodCode",
-     "inspectionFrequencyCode"
+     "samplingMethodCode"
     ],
     "description": "검사기준 버전 최초 등록(버전 1) 요청 — 기준에 버전이 하나도 없을 때만 쓴다. planVersion 은 서버가 항상 1로, statusCode 는 항상 작성중으로 채운다. 근거: W-06-02 §4-B·§5-1",
     "properties": {
@@ -22620,10 +22622,13 @@
      },
      "inspectionFrequencyCode": {
       "x-source-column": "inspection_frequency_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
       "example": "WORK_ORDER",
-      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 기록용 — 관리웹은 받지 않는다(사용자 결정 2026-11-11 · omf-all-around#263). 비워 둘 수 있다.",
       "x-code-key": "CD-INSPECTION-FREQUENCY"
      },
      "frequencyIntervalValue": {
@@ -22685,8 +22690,7 @@
     "type": "object",
     "required": [
      "effectiveFrom",
-     "samplingMethodCode",
-     "inspectionFrequencyCode"
+     "samplingMethodCode"
     ],
     "description": "검사기준 버전 수정 요청. 상태=작성중일 때만 허용한다. inspectionPlanId·planVersion·statusCode 는 이 요청에 포함하지 않는다. 근거: W-06-02 §4-B·§5-4",
     "properties": {
@@ -22741,10 +22745,13 @@
      },
      "inspectionFrequencyCode": {
       "x-source-column": "inspection_frequency_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
       "example": "WORK_ORDER",
-      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 기록용 — 관리웹은 받지 않는다(사용자 결정 2026-11-11 · omf-all-around#263). 비워 둘 수 있다.",
       "x-code-key": "CD-INSPECTION-FREQUENCY"
      },
      "frequencyIntervalValue": {

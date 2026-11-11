@@ -138,6 +138,27 @@ describe('검사 기준 버전 안내 문구', () => {
     expect(view).toMatchObject({ guideText: '안내' });
   });
 
+  /* omf-all-around#263 — 검사 주기는 기록용이라 화면이 보내지 않는다. 빼면 그대로 두고, 등록이면 비운다. */
+  it('검사 주기를 빼고 고치면 저장된 주기를 그대로 둔다', async () => {
+    const row = baseRow();
+    const { service } = setup(row);
+
+    const result = await service.update(13, 1, { effectiveFrom: '2026-11-10', samplingMethodCode: 'FULL_INSPECTION' });
+
+    expect(result.inspectionPlanVersion).toMatchObject({ inspectionFrequencyCode: 'PRODUCTION_LOT' });
+  });
+
+  it('검사 주기 없이 버전을 만들 수 있다', async () => {
+    const { service } = setup(baseRow());
+    const prisma = (service as unknown as { prisma: Record<string, unknown> }).prisma;
+    prisma.inspection_plan = { findUnique: jest.fn(async () => ({ inspection_plan_id: 6n })) };
+    (prisma.inspection_plan_version as Record<string, unknown>).findFirst = jest.fn(async () => null);
+
+    await expect(
+      service.create({ effectiveFrom: '2026-11-10', samplingMethodCode: 'FULL_INSPECTION', inspectionPlanId: 6 }),
+    ).resolves.toBeDefined();
+  });
+
   it('단말(POP)은 PQC 작업지시뿐 아니라 자기 공장 OQC 의뢰에 걸린 버전도 읽는다', async () => {
     const row = baseRow({ status_code: 'CONFIRMED' });
     const findFirst = jest.fn(async () => row);
