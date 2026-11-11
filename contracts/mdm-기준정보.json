@@ -28302,6 +28302,8 @@
      "itemCode",
      "itemName",
      "templateVersion",
+     "templateCode",
+     "templateName",
      "businessUnitId",
      "formLayoutCode",
      "statusCode",
@@ -28333,6 +28335,24 @@
      },
      "templateVersion": {
       "type": "integer"
+     },
+     "templateCode": {
+      "x-source-column": "template_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다. 그 전에 등록한 기준은 null."
+     },
+     "templateName": {
+      "x-source-column": "template_name",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "description": "관리용 기준명(omf-all-around#260). 그 전에 등록한 기준은 null."
      },
      "businessUnitId": {
       "type": "integer",
@@ -28547,6 +28567,8 @@
    "InspectionSheetTemplateCreate": {
     "type": "object",
     "required": [
+     "templateCode",
+     "templateName",
      "itemId",
      "businessUnitId",
      "formLayoutCode",
@@ -28556,6 +28578,18 @@
     ],
     "description": "검사표 기준 등록 — 같은 모델의 다음 판(최댓값 + 1)을 작성중으로 세운다. 서버 선행(omf-all-around#89 · 장부 P-102) — 설계 사본에 «우리가» 먼저 적었다.",
     "properties": {
+     "templateCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50,
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다."
+     },
+     "templateName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "관리용 기준명(omf-all-around#260)."
+     },
      "itemId": {
       "type": "integer",
       "format": "int64",
@@ -28648,6 +28682,18 @@
     ],
     "description": "검사표 기준 수정 — 작성중(DRAFT) 판만. 단계·항목·LOT 칸은 통째로 갈아 끼운다. 단계는 양식(OP·PP)이 칸을 가진 것만 받는다. 서버 선행(omf-all-around#89 · 장부 P-102) — 설계 사본에 «우리가» 먼저 적었다.",
     "properties": {
+     "templateCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50,
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다. 빼면 그대로 둔다."
+     },
+     "templateName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "관리용 기준명(omf-all-around#260). 빼면 그대로 둔다."
+     },
      "materialText": {
       "type": [
        "string",

@@ -25,6 +25,9 @@ export interface InspectionSheetTemplateStepWrite {
 
 /** 계약 `InspectionSheetTemplateUpdate` — 순서는 배열 순서다. */
 export interface InspectionSheetTemplateUpdate {
+  /** 관리용 기준코드 · 기준명(omf-all-around#260). 수정에서 빼면 그대로 둔다. */
+  templateCode?: string;
+  templateName?: string;
   materialText?: string | null;
   structureText?: string | null;
   rohsFlag: boolean;
@@ -38,6 +41,8 @@ export interface InspectionSheetTemplateUpdate {
 
 /** 계약 `InspectionSheetTemplateCreate`. */
 export interface InspectionSheetTemplateCreate extends InspectionSheetTemplateUpdate {
+  templateCode: string;
+  templateName: string;
   itemId: number;
   businessUnitId: number;
   formLayoutCode: string;
@@ -102,6 +107,7 @@ export class InspectionSheetTemplateService {
   /** 같은 모델의 판 번호는 최댓값 + 1 이다 — 확정본이 있어도 새 작성중 판을 세운다. */
   async create(input: InspectionSheetTemplateCreate, actor: TemplateActor): Promise<InspectionSheetTemplateView> {
     await this.assertContent(input.formLayoutCode, input);
+    await this.assertCodeFree(input.templateCode, input.itemId);
     const id = await this.prisma.$transaction(async (tx) => {
       const latest = await tx.inspection_sheet_template.aggregate({
         where: { item_id: input.itemId },
@@ -113,6 +119,7 @@ export class InspectionSheetTemplateService {
           business_unit_id: input.businessUnitId,
           form_layout_code: input.formLayoutCode,
           template_version: (latest._max.template_version ?? 0) + 1,
+          ...codeData(input),
           ...headerData(input),
           created_by: actor.userId,
           updated_by: actor.userId,
@@ -140,11 +147,12 @@ export class InspectionSheetTemplateService {
   ): Promise<{ inspectionSheetTemplate: InspectionSheetTemplateView; versionNo: number }> {
     const row = await this.loadDraft(id);
     await this.assertContent(row.form_layout_code, input);
+    if (input.templateCode !== undefined) await this.assertCodeFree(input.templateCode, Number(row.item_id));
     const before = contentOf(writeShapeOf((await this.get(id)).inspectionSheetTemplate));
     await this.prisma.$transaction(async (tx) => {
       const updated = await tx.inspection_sheet_template.updateMany({
         where: { inspection_sheet_template_id: id, version_no: version, status_code: 'DRAFT' },
-        data: { ...headerData(input), updated_by: actor.userId, updated_at: new Date(), version_no: { increment: 1 } },
+        data: { ...codeData(input), ...headerData(input), updated_by: actor.userId, updated_at: new Date(), version_no: { increment: 1 } },
       });
       assertUpdated(updated.count);
       const steps = await tx.inspection_sheet_template_step.findMany({
@@ -315,6 +323,27 @@ export class InspectionSheetTemplateService {
     return row;
   }
 
+  /**
+   * 기준코드는 다른 품목의 검사표와 겹치지 않는다(omf-all-around#260) — 같은 품목의 버전끼리는 같은 코드를 쓴다.
+   * 버전마다 한 행이라 DB 유일 제약을 걸 수 없어 여기서 본다. 검사 기준(IQC · OQC)의 코드와는 따로 본다.
+   */
+  private async assertCodeFree(code: string, itemId: number): Promise<void> {
+    const other = await this.prisma.inspection_sheet_template.findFirst({
+      where: { template_code: code.trim(), item_id: { not: itemId } },
+      select: { item: { select: { item_code: true } } },
+    });
+    if (other === null) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'templateCode',
+        code: ERROR_CODE.UNIQUE_VIOLATION,
+        uniqueScope: ['templateCode'],
+        message: `다른 품목(${other.item.item_code})의 검사표 기준이 이미 쓰는 기준코드입니다.`,
+      },
+    ]);
+  }
+
   private async assertContent(formLayoutCode: string, input: InspectionSheetTemplateUpdate): Promise<void> {
     const allowed = LAYOUT_STEPS[formLayoutCode] ?? [];
     const seen = new Set<string>();
@@ -343,8 +372,19 @@ export class InspectionSheetTemplateService {
 function writeShapeOf(view: InspectionSheetTemplateView): InspectionSheetTemplateUpdate {
   return {
     ...view,
+    /* 그 전에 등록한 기준은 비어 있다(null) — 쓰기 모양에서는 「빼면 그대로」라 undefined 로 둔다. */
+    templateCode: view.templateCode ?? undefined,
+    templateName: view.templateName ?? undefined,
     lotSources: view.lotSources ?? [],
     steps: view.steps ?? [],
+  };
+}
+
+/** 빼면 그대로 둔다 — 수정에서 두 칸은 선택이다. 앞뒤 빈칸은 걷는다. */
+function codeData(input: InspectionSheetTemplateUpdate) {
+  return {
+    ...(input.templateCode === undefined ? {} : { template_code: input.templateCode.trim() }),
+    ...(input.templateName === undefined ? {} : { template_name: input.templateName.trim() }),
   };
 }
 
