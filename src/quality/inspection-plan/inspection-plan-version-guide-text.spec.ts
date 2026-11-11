@@ -27,8 +27,7 @@ describe('검사 기준 버전 안내 문구', () => {
       frequency_interval_uom_code: null,
       status_code: 'DRAFT',
       version_no: 1,
-      guide_text_ko: null,
-      guide_text_vi: null,
+      guide_text: null,
       ...over,
     }) as Record<string, unknown>;
 
@@ -80,27 +79,26 @@ describe('검사 기준 버전 안내 문구', () => {
     const row = baseRow();
     const { service } = setup(row);
 
-    const result = await service.update(13, 1, write({ guideTextKo: '  장갑을 착용하세요.\n도면 확인  ', guideTextVi: 'Đeo găng tay.' }));
+    const result = await service.update(13, 1, write({ guideText: '  장갑을 착용하세요.\nĐeo găng tay.  ' }));
 
     expect(result.inspectionPlanVersion).toMatchObject({
-      guideTextKo: '장갑을 착용하세요.\n도면 확인',
-      guideTextVi: 'Đeo găng tay.',
+      guideText: '장갑을 착용하세요.\nĐeo găng tay.',
     });
   });
 
   it('공백만이면 비우고(null), 생략하면 그대로 둔다', async () => {
-    const row = baseRow({ guide_text_ko: '기존 문구', guide_text_vi: 'cũ' });
+    const row = baseRow({ guide_text: '기존 문구' });
     const { service } = setup(row);
 
-    const result = await service.update(13, 1, write({ guideTextKo: '   ' }));
+    const result = await service.update(13, 1, write({ guideText: '   ' }));
 
-    expect(result.inspectionPlanVersion).toMatchObject({ guideTextKo: null, guideTextVi: 'cũ' });
+    expect(result.inspectionPlanVersion).toMatchObject({ guideText: null });
   });
 
   it('확정된 버전은 안내 문구를 고칠 수 없다(400 STATE_LOCKED)', async () => {
     const { service } = setup(baseRow({ status_code: 'CONFIRMED' }));
 
-    const error = await errorOf(() => service.update(13, 1, write({ guideTextKo: '새 문구' })));
+    const error = await errorOf(() => service.update(13, 1, write({ guideText: '새 문구' })));
 
     expect(error).toBeInstanceOf(ContractException);
     expect(error?.getStatus()).toBe(400);
@@ -110,21 +108,21 @@ describe('검사 기준 버전 안내 문구', () => {
   it('3000자를 넘으면 400 INVALID 다 — 계약 검사를 거치지 않는 길(엑셀 올리기)도 막는다', async () => {
     const { service } = setup(baseRow());
 
-    const error = await errorOf(() => service.update(13, 1, write({ guideTextVi: 'a'.repeat(3001) })));
+    const error = await errorOf(() => service.update(13, 1, write({ guideText: 'a'.repeat(3001) })));
 
     expect(error?.getStatus()).toBe(400);
-    expect(error?.errors[0]).toMatchObject({ field: 'guideTextVi', code: 'INVALID' });
-    expect(await errorOf(() => service.update(13, 1, write({ guideTextVi: 'a'.repeat(3000) })))).toBeUndefined();
+    expect(error?.errors[0]).toMatchObject({ field: 'guideText', code: 'INVALID' });
+    expect(await errorOf(() => service.update(13, 1, write({ guideText: 'a'.repeat(3000) })))).toBeUndefined();
   });
 
   it('개정하면 안내 문구가 새 버전에 복사된다', async () => {
     const { service, created } = setup(
-      baseRow({ status_code: 'CONFIRMED', guide_text_ko: '장갑 착용', guide_text_vi: 'Đeo găng tay' }),
+      baseRow({ status_code: 'CONFIRMED', guide_text: '장갑 착용' }),
     );
 
     await service.newRevision(13);
 
-    expect(created[0]).toMatchObject({ guide_text_ko: '장갑 착용', guide_text_vi: 'Đeo găng tay' });
+    expect(created[0]).toMatchObject({ guide_text: '장갑 착용' });
     expect(created[0]?.plan_version).toBe(2);
   });
 
@@ -135,9 +133,9 @@ describe('검사 기준 버전 안내 문구', () => {
     prisma.inspection_plan = { findUnique: jest.fn(async () => ({ inspection_plan_id: 6n })) };
     (prisma.inspection_plan_version as Record<string, unknown>).findFirst = jest.fn(async () => null);
 
-    const view = await service.create({ ...write({ guideTextKo: ' 안내 ' }), inspectionPlanId: 6 });
+    const view = await service.create({ ...write({ guideText: ' 안내 ' }), inspectionPlanId: 6 });
 
-    expect(view).toMatchObject({ guideTextKo: '안내', guideTextVi: null });
+    expect(view).toMatchObject({ guideText: '안내' });
   });
 
   it('단말(POP)은 PQC 작업지시뿐 아니라 자기 공장 OQC 의뢰에 걸린 버전도 읽는다', async () => {
