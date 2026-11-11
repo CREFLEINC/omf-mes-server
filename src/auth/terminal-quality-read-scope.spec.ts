@@ -129,8 +129,11 @@ describe('terminal quality read scope', () => {
     const db = prisma();
     await assertTerminalQualityReadScope(db, request({}, { inspectionPlanVersionId: '71' }),
       'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}/items', terminal('POP'));
+    // 기준 버전은 의뢰 목록과 같은 범위 — 작업지시 또는 자기 공장 OQC(omf-all-around#252).
     expect(db.inspection_request.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ inspection_plan_version_id: 71n }),
+      where: { AND: [{ inspection_plan_version_id: 71n }, expect.objectContaining({ OR: expect.arrayContaining([
+        expect.objectContaining({ inspection_type_code: 'OQC' }),
+      ]) })] },
     }));
     await assertTerminalQualityReadScope(db, request({}, { inspectionPlanId: '12' }),
       'GET /quality/inspection-plans/{inspectionPlanId}', terminal('POP'));

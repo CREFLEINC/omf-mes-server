@@ -5,7 +5,7 @@ import { Contract } from '../../common/contract';
 import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { PagedResponse } from '../../common/pagination';
 import { InspectionHistory, InspectionHistoryService } from './inspection-history.service';
-import { InspectionRequestListQuery, InspectionRequestService } from './inspection-request.service';
+import { InspectionRequestDetailView, InspectionRequestListQuery, InspectionRequestService } from './inspection-request.service';
 import { InspectionRequestView } from './inspection-request-view';
 import { OqcSerialQueryService } from './oqc-serial-query.service';
 
@@ -27,7 +27,7 @@ export class InspectionRequestController {
   /** ⛔ ETag 를 안 낸다(계약 미선언). */
   @Get(':inspectionRequestId')
   @Contract('GET /quality/inspection-requests/{inspectionRequestId}')
-  detail(@Req() request: Request, @Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number): Promise<InspectionRequestView> {
+  detail(@Req() request: Request, @Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number): Promise<InspectionRequestDetailView> {
     return this.requests.detail(inspectionRequestId, currentTerminalQualityReadScope(request));
   }
 

@@ -35,6 +35,7 @@ function setup(type: 'POP' | 'MOBILE' = 'MOBILE', options: { active?: boolean; v
     lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 43n }) },
     handling_unit: { findFirst: jest.fn().mockResolvedValue({ handling_unit_id: 47n }) },
     inspection_request: { findFirst: jest.fn().mockResolvedValue({ inspection_request_id: 61n }) },
+    shipment_request: { findMany: jest.fn().mockResolvedValue([]) },
     nonconformance: { findFirst: jest.fn().mockResolvedValue({ nonconformance_id: 67n }) },
   } as unknown as PrismaService;
   const account = { userId: 1, permissions: ['W-CO-06'] };
@@ -243,13 +244,20 @@ describe('FR-004/005 terminal bearer authentication', () => {
     const { guard, token, prisma } = setup('POP');
     expect(await guard.canActivate(context('GET /quality/inspection-plan-versions/{inspectionPlanVersionId}',
       {}, { inspectionPlanVersionId: '71' }, `Bearer ${token}`).execution)).toBe(true);
+    // 기준 버전은 의뢰 목록과 같은 범위 — 매핑된 작업지시 또는 자기 공장 OQC(omf-all-around#252).
     expect(prisma.inspection_request.findFirst).toHaveBeenCalledWith({
-      where: { inspection_plan_version_id: 71n, work_order: {
-        production_line: { plant_id: 3n },
-        routing_operation: { process: { terminal_process: {
-          some: { terminal_id: 7n, can_start_work: true },
-        } } },
-      } }, select: { inspection_request_id: true },
+      where: { AND: [{ inspection_plan_version_id: 71n }, { OR: [
+        { work_order: {
+          production_line: { plant_id: 3n },
+          routing_operation: { process: { terminal_process: {
+            some: { terminal_id: 7n, can_start_work: true },
+          } } },
+        } },
+        { inspection_type_code: 'OQC', OR: [
+          { lot: { plant_id: 3n } },
+          { target_type_code: 'SHIPMENT_REQUEST', target_id: { in: [] } },
+        ] },
+      ] }] }, select: { inspection_request_id: true },
     });
     (prisma.nonconformance.findFirst as jest.Mock).mockResolvedValueOnce(null);
     expect(await statusOf(guard.canActivate(context('GET /quality/nonconformances/{nonconformanceId}',

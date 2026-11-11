@@ -22102,7 +22102,9 @@
      "effectiveFrom",
      "samplingMethodCode",
      "inspectionFrequencyCode",
-     "statusCode"
+     "statusCode",
+     "guideTextKo",
+     "guideTextVi"
     ],
     "description": "샘플 비율(%)이 정본이다(samplingRatio) — 확정 문구가 「샘플 비율(%)」이고 수량은 로트 크기를 알아야 나오는 파생값이라 두지 않는다(A-8). 2026-08-30 되살림.",
     "properties": {
@@ -22238,6 +22240,26 @@
       "example": 5,
       "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
       "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
+     },
+     "guideTextKo": {
+      "x-source-column": "guide_text_ko",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 3000,
+      "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "example": "검사 전 장갑을 착용하세요."
+     },
+     "guideTextVi": {
+      "x-source-column": "guide_text_vi",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 3000,
+      "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "example": "Đeo găng tay trước khi kiểm tra."
      }
     },
     "x-internal-note": "미착지 셋: PQC 생략 허용·생략 근거·검사기준 미비 시 단순 선택 허용 — #64"
@@ -22357,6 +22379,26 @@
       "example": 5,
       "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
       "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
+     },
+     "guideTextKo": {
+      "x-source-column": "guide_text_ko",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 3000,
+      "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "example": "검사 전 장갑을 착용하세요."
+     },
+     "guideTextVi": {
+      "x-source-column": "guide_text_vi",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 3000,
+      "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "example": "Đeo găng tay trước khi kiểm tra."
      }
     }
    },
@@ -22468,6 +22510,26 @@
       "example": 5,
       "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
       "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
+     },
+     "guideTextKo": {
+      "x-source-column": "guide_text_ko",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 3000,
+      "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "example": "검사 전 장갑을 착용하세요."
+     },
+     "guideTextVi": {
+      "x-source-column": "guide_text_vi",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 3000,
+      "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "example": "Đeo găng tay trước khi kiểm tra."
      }
     }
    },
