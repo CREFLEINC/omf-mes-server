@@ -7729,6 +7729,98 @@
     }
    }
   },
+  "/quality/inspection-plans/{inspectionPlanId}:copy": {
+   "parameters": [
+    {
+     "name": "inspectionPlanId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사기준 복사",
+    "description": "원본 기준의 버전(sourceVersionId) 하나에서 버전 설정 · 검사 항목을 가져와 새 기준과 그 작성중 버전 1 을 만든다. 도면은 가져오지 않는다. 기준 머리 검증은 검사기준 등록(POST /quality/inspection-plans)과 같다. 중간에 실패하면 만든 기준 · 버전을 남기지 않는다. 근거: omf-all-around#255",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InspectionPlanCopy"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "복사됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InspectionPlanCopyResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 검사기준 버전",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/quality/inspection-plans/{inspectionPlanId}:approve": {
    "parameters": [
     {
@@ -18082,6 +18174,99 @@
     }
    }
   },
+  "/quality/inspection-sheet-templates/{inspectionSheetTemplateId}:reactivate": {
+   "parameters": [
+    {
+     "name": "inspectionSheetTemplateId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사표 기준 재사용",
+    "description": "폐기 → 확정. 같은 모델에 확정본이 있으면 그 확정본은 폐기로 내린다(확정과 같은 규칙 — 모델마다 확정본 하나). 내용은 폐기 때 그대로라 다시 검사하지 않는다. 상태≠폐기면 400(code=STATE_LOCKED). 변경 이력(GET /audit/events · targetTypeCode=INSPECTION_SHEET_TEMPLATE)에 상태 변경으로 남는다. 근거: omf-all-around#255",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "재사용됨",
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InspectionSheetTemplate"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "상태가 폐기가 아님(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음(W-06-24) · 로그인 계정의 데이터 범위에 OA 공장(공통코드 INSPECTION_SHEET_PLANT)이 없음 — 「이 화면은 OA 사업부 전용입니다」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "낙관적 잠금 충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/quality/inspection-plans:import": {
    "post": {
     "tags": [
@@ -21979,6 +22164,48 @@
       "type": "boolean",
       "example": false,
       "description": "⚠ 호환용 — defaultSkip 과 같은 값이다(omf-all-around#212 · 장부 P-152). 새 화면은 defaultSkip 을 쓴다. PQC 생략 허용 — QA #4. 2026-08-30 되살림"
+     }
+    }
+   },
+   "InspectionPlanCopy": {
+    "description": "검사기준 복사 요청 — 새 기준의 머리(검사기준 등록과 같은 칸)와 내용을 가져올 원본 버전. 근거: omf-all-around#255",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/InspectionPlanCreate"
+     },
+     {
+      "type": "object",
+      "required": [
+       "sourceVersionId"
+      ],
+      "properties": {
+       "sourceVersionId": {
+        "type": "integer",
+        "format": "int64",
+        "description": "내용(버전 설정 · 검사 항목)을 가져올 원본 버전. 경로의 기준에 속해야 한다(아니면 400 INVALID)",
+        "example": 1001
+       }
+      }
+     }
+    ]
+   },
+   "InspectionPlanCopyResult": {
+    "type": "object",
+    "required": [
+     "inspectionPlanId",
+     "inspectionPlanVersionId"
+    ],
+    "description": "복사로 만든 기준과 그 작성중 버전. 근거: omf-all-around#255",
+    "properties": {
+     "inspectionPlanId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "inspectionPlanVersionId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
      }
     }
    },

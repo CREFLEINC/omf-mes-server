@@ -21,6 +21,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { InspectionPlanCopy, InspectionPlanCopyService } from './inspection-plan-copy.service';
 import {
   InspectionPlanQuery,
   InspectionPlanService,
@@ -32,6 +33,7 @@ import {
 export class InspectionPlanController {
   constructor(
     private readonly plans: InspectionPlanService,
+    private readonly copies: InspectionPlanCopyService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -93,6 +95,21 @@ export class InspectionPlanController {
       () => this.plans.approve(inspectionPlanId, actorId),
     );
     return inspectionPlan;
+  }
+
+  /** 복사(omf-all-around#255) — 원본 버전의 설정 · 검사 항목을 담은 새 기준(버전 1 작성중)을 만든다. */
+  @Post(':inspectionPlanId\\:copy')
+  @Contract('POST /quality/inspection-plans/{inspectionPlanId}:copy')
+  copy(
+    @Req() request: Request,
+    @Param('inspectionPlanId', ParseIntPipe) inspectionPlanId: number,
+    @Body() body: InspectionPlanCopy,
+  ): Promise<unknown> {
+    const actorId = currentSession(request)?.userId;
+    if (actorId === undefined) throw new Error('세션 없이 복사가 도달했다 — 인증 가드와 어긋났다');
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.copies.copy(inspectionPlanId, body, actorId),
+    );
   }
 
   @Post(':inspectionPlanId\\:activate')

@@ -263,6 +263,41 @@ describe('InspectionSheetTemplateService', () => {
       expect(tx.inspection_sheet_template.updateMany).not.toHaveBeenCalled();
     });
 
+    it('재사용은 폐기본을 확정으로 올리고, 같은 모델의 지금 확정본을 폐기로 내린다 (omf-all-around#255)', async () => {
+      const { service, tx } = harness({ status_code: 'OBSOLETE', business_unit_id: 2n });
+      tx.inspection_sheet_template.findMany.mockResolvedValue([{ inspection_sheet_template_id: 9n }]);
+
+      await service.reactivate(11, 3, ACTOR);
+
+      const calls = tx.inspection_sheet_template.updateMany.mock.calls.map(([arg]: [unknown]) => arg);
+      expect(calls).toEqual([
+        expect.objectContaining({ where: { item_id: 5n, status_code: 'CONFIRMED' }, data: expect.objectContaining({ status_code: 'OBSOLETE' }) }),
+        expect.objectContaining({
+          where: { inspection_sheet_template_id: 11, version_no: 3, status_code: 'OBSOLETE' },
+          data: expect.objectContaining({ status_code: 'CONFIRMED', confirmed_by: 7 }),
+        }),
+      ]);
+      expect(audits(tx)).toEqual([
+        expect.objectContaining({ target_id: 9n, before_value: { statusCode: 'CONFIRMED' }, after_value: { statusCode: 'OBSOLETE' } }),
+        expect.objectContaining({ target_id: 11n, before_value: { statusCode: 'OBSOLETE' }, after_value: { statusCode: 'CONFIRMED' } }),
+      ]);
+    });
+
+    it.each(['DRAFT', 'CONFIRMED'])('%s 기준은 재사용할 수 없다 — 400 STATE_LOCKED', async (status) => {
+      const { service, tx } = harness({ status_code: status, business_unit_id: 2n });
+      const error = await service.reactivate(11, 3, ACTOR).catch((e: unknown) => e);
+
+      expect(failure(error).errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      expect(tx.inspection_sheet_template.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('재사용은 잠금 버전이 다르면 409 다', async () => {
+      const { service, tx } = harness({ status_code: 'OBSOLETE', business_unit_id: 2n });
+      tx.inspection_sheet_template.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.reactivate(11, 2, ACTOR)).rejects.toBeInstanceOf(ConflictException);
+    });
+
     it('작성 취소는 하위 줄과 기준을 지우고 DELETE 이력을 남긴다', async () => {
       const { service, tx } = harness({ status_code: 'DRAFT', business_unit_id: 2n });
 
