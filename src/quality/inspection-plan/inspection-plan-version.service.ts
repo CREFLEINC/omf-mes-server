@@ -358,12 +358,24 @@ export class InspectionPlanVersionService {
     return versionId;
   }
 
-  /** 확정 → 폐기. ⛔ 되돌릴 수 없다(계약). */
+  /** 확정 → 사용 중지(화면 이름 · 상태값은 OBSOLETE). 재사용으로 되돌린다(omf-all-around#258). */
   async obsolete(versionId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(versionId);
-    if (row.status_code !== REVISION_STATUS.CONFIRMED) throw locked('폐기');
+    if (row.status_code !== REVISION_STATUS.CONFIRMED) throw locked('사용 중지');
 
     await this.transition(versionId, REVISION_STATUS.CONFIRMED, REVISION_STATUS.OBSOLETE, actorId);
+    return versionId;
+  }
+
+  /**
+   * 사용 중지 → 확정(재사용 · omf-all-around#258). 다른 확정 버전은 건드리지 않는다 — 확정과 같은 규칙.
+   * 내용은 사용 중지 때 그대로라 확정 전 검사를 다시 하지 않는다.
+   */
+  async reactivate(versionId: number, actorId?: number | null): Promise<number> {
+    const row = await this.load(versionId);
+    if (row.status_code !== REVISION_STATUS.OBSOLETE) throw locked('재사용');
+
+    await this.transition(versionId, REVISION_STATUS.OBSOLETE, REVISION_STATUS.CONFIRMED, actorId);
     return versionId;
   }
 
