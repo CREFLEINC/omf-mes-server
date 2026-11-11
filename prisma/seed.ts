@@ -877,6 +877,7 @@ const SEED: CodeGroupSeed[] = [
       { code: 'FULL_INSPECTION', codeName: '전수검사', order: 10 },
       { code: 'SAMPLE_BY_UNIT', codeName: '샘플링(제품 단위)', order: 20 },
       { code: 'SAMPLE_BY_LOT', codeName: '샘플링(LOT 단위)', order: 30 },
+      { code: 'AQL', codeName: 'AQL 샘플링', order: 40 },
     ],
   },
   {

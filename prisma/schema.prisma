@@ -3783,6 +3783,7 @@ model inspection_plan_version {
   guide_text_ko               String?                @db.VarChar(3000)
   guide_text_vi               String?                @db.VarChar(3000)
   guide_text                  String?                @db.VarChar(3000)
+  aql_inspection_level_code   String?                @db.VarChar(50)
   inspection_item_spec        inspection_item_spec[]
   inspection_plan             inspection_plan        @relation(fields: [inspection_plan_id], references: [inspection_plan_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_request          inspection_request[]
