@@ -3770,7 +3770,7 @@ model inspection_plan_version {
   aql_value                   Decimal?               @db.Decimal(9, 4)
   acceptance_number           Int?
   rejection_number            Int?
-  inspection_frequency_code   String                 @db.VarChar(50)
+  inspection_frequency_code   String?                @db.VarChar(50)
   frequency_interval_value    Decimal?               @db.Decimal(18, 6)
   frequency_interval_uom_code String?                @db.VarChar(50)
   status_code                 String                 @db.VarChar(50)
