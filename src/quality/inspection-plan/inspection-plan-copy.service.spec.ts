@@ -20,6 +20,8 @@ const SOURCE_VERSION = {
   inspectionFrequencyCode: 'LOT',
   frequencyIntervalValue: null,
   frequencyIntervalUomCode: null,
+  guideTextKo: '라벨 위치 확인',
+  guideTextVi: 'Kiểm tra vị trí nhãn',
   statusCode: 'CONFIRMED',
 };
 
@@ -73,7 +75,14 @@ describe('InspectionPlanCopyService', () => {
     expect(result).toEqual({ inspectionPlanId: 40, inspectionPlanVersionId: 41 });
     expect(plans.create).toHaveBeenCalledWith(PLAN);
     expect(versions.create).toHaveBeenCalledWith(
-      expect.objectContaining({ inspectionPlanId: 40, samplingMethodCode: 'SAMPLING', samplingRatio: 10, inspectionFrequencyCode: 'LOT' }),
+      expect.objectContaining({
+        inspectionPlanId: 40,
+        samplingMethodCode: 'SAMPLING',
+        samplingRatio: 10,
+        inspectionFrequencyCode: 'LOT',
+        guideTextKo: '라벨 위치 확인',
+        guideTextVi: 'Kiểm tra vị trí nhãn',
+      }),
       { allowMissingRatio: true },
       7,
     );
