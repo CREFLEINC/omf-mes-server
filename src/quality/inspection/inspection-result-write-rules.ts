@@ -10,6 +10,7 @@ import {
   InspectionResultCreate,
   InspectionResultWriteContext,
 } from './inspection-result-write-input';
+import { AQL_VERSION_SELECT, acceptanceNumberOf } from './inspection-aql-plan';
 import { JudgmentQuantities, assertJudgmentChangeReason } from './inspection-rules';
 
 /**
@@ -223,10 +224,15 @@ export async function assertJudgmentChange(
 ): Promise<string | undefined> {
   const request = await prisma.inspection_request.findUnique({
     where: { inspection_request_id: inspectionRequestId },
-    select: { inspection_type_code: true, inspection_plan_version: { select: { acceptance_number: true } } },
+    select: {
+      inspection_type_code: true,
+      target_qty: true,
+      inspection_plan_version: { select: AQL_VERSION_SELECT },
+    },
   });
   if (request === null || !JUDGMENT_RULE_TYPES.has(request.inspection_type_code)) return undefined;
-  const acceptanceNumber = request.inspection_plan_version?.acceptance_number ?? null;
+  // AQL 샘플링 버전은 의뢰 수량으로 표에서 낸 합격 판정 수(Ac)로 잰다(omf-all-around#264).
+  const acceptanceNumber = acceptanceNumberOf(request.inspection_plan_version, request.target_qty);
   return assertJudgmentChangeReason(input, input.judgment, acceptanceNumber, input.reason);
 }
 

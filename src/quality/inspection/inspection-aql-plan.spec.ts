@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { inspectionAqlPlan } from './inspection-aql-plan';
+import { acceptanceNumberOf, inspectionAqlPlan } from './inspection-aql-plan';
 
 /** omf-all-around#264 — 의뢰 수량을 LOT 크기로 본 AQL 시료 계획. */
 describe('inspectionAqlPlan', () => {
@@ -28,5 +28,12 @@ describe('inspectionAqlPlan', () => {
     await expect(
       inspectionAqlPlan(prismaOf(aqlVersion), { inspection_plan_version_id: null, target_qty: new Prisma.Decimal(770) }),
     ).resolves.toBeNull();
+  });
+
+  it('자동 판정의 합격판정개수 — AQL 버전이면 표의 Ac, 아니면 버전에 적은 값이다', () => {
+    const qty = new Prisma.Decimal(770);
+    expect(acceptanceNumberOf({ ...aqlVersion, acceptance_number: 0 }, qty)).toBe(1);
+    expect(acceptanceNumberOf({ ...aqlVersion, sampling_method_code: 'SAMPLE_BY_LOT', acceptance_number: 0 }, qty)).toBe(0);
+    expect(acceptanceNumberOf(null, qty)).toBeNull();
   });
 });
