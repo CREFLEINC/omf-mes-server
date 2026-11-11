@@ -22147,7 +22147,6 @@
     "x-source-table": "quality.inspection_plan",
     "type": "object",
     "required": [
-     "inspectionPlanCode",
      "inspectionPlanName",
      "inspectionTypeCode"
     ],
@@ -22157,7 +22156,7 @@
       "x-source-column": "inspection_plan_code",
       "type": "string",
       "maxLength": 50,
-      "description": "uq — 전역 유일",
+      "description": "uq — 전역 유일 ⭐ 비우면(생략 · 빈 글) 서버가 `QP-{YYYYMMDD}-{SEQ4}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262).",
       "example": "STANDARD",
       "x-no-code-key": "코드 그룹이 아니다 — InspectionPlan 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
      },
@@ -23014,7 +23013,6 @@
     "required": [
      "inspectionPlanVersionId",
      "sequenceNo",
-     "inspectionItemCode",
      "inspectionItemName",
      "dataTypeCode",
      "measurementCount",
@@ -23046,7 +23044,7 @@
       "x-source-column": "inspection_item_code",
       "type": "string",
       "maxLength": 50,
-      "description": "⚠ 버전 내 유일 제약이 없다 — 같은 코드를 두 줄에 넣을 수 있다 §8-3",
+      "description": "⚠ 버전 내 유일 제약이 없다 — 같은 코드를 두 줄에 넣을 수 있다 §8-3 ⭐ 비우면(생략 · 빈 글) 서버가 `ITEM-{순서 3자리}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262).",
       "example": "STANDARD",
       "x-no-code-key": "코드 그룹이 아니다 — 개체 «식별자»다(공유계약 A-16 「가르는 물음 넷」 · 2026-09-02 판정). 검사항목 «자기 행»의 코드다 — 산문이 「버전 내 유일 제약이 없다 §8-3」이라 적어 코드값 집합이 아님을 스스로 증언한다. ⛔ 코드 사전 키를 붙이지 않는다 — 붙이면 «값의 목록»을 공통코드가 갖는다는 뜻이 되어, 실제로는 마스터 표가 갖는 행 목록과 두 벌이 된다(L-2-1)."
      },
@@ -28543,7 +28541,6 @@
    "InspectionSheetTemplateCreate": {
     "type": "object",
     "required": [
-     "templateCode",
      "templateName",
      "itemId",
      "businessUnitId",
@@ -28556,9 +28553,8 @@
     "properties": {
      "templateCode": {
       "type": "string",
-      "minLength": 1,
       "maxLength": 50,
-      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다."
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다. ⭐ 비우면(생략 · 빈 글) 그 품목이 쓰던 기준코드, 없으면 서버가 `QS-{YYYYMMDD}-{SEQ4}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262)."
      },
      "templateName": {
       "type": "string",

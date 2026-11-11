@@ -102,7 +102,8 @@ export interface ItemSpecUpsert {
   inspectionItemSpecId?: number;
   inspectionPlanVersionId: number;
   sequenceNo: number;
-  inspectionItemCode: string;
+  /** 비우면(생략 · 공백) `ITEM-{순서 3자리}` 로 붙는다(omf-all-around#262). */
+  inspectionItemCode?: string;
   inspectionItemName: string;
   nameKo?: string | null;
   nameVi?: string | null;
@@ -265,10 +266,11 @@ export class InspectionPlanVersionService {
    */
   async replaceItems(
     versionId: number,
-    items: ItemSpecUpsert[],
+    body: ItemSpecUpsert[],
     actorId?: number | null,
     options: { allowNumericWithoutUom?: boolean } = {},
   ): Promise<ItemSpecView[]> {
+    const items = body.map((item) => ({ ...item, inspectionItemCode: itemCodeOf(item) }));
     await this.assertDraft(versionId, '검사 항목을 저장');
     const beforeItems = await this.readItems(versionId);
     const existing = await this.prisma.inspection_item_spec.findMany({
@@ -735,7 +737,7 @@ function assertGuideText(input: VersionWrite): void {
 
 function itemData(
   versionId: number,
-  item: ItemSpecUpsert,
+  item: FilledItemSpec,
 ): Prisma.inspection_item_specUncheckedCreateInput {
   return {
     inspection_plan_version_id: versionId,
@@ -783,10 +785,19 @@ function specData(item: SpecRow): Omit<
   };
 }
 
+/** 항목코드를 채운 항목 — 저장 · 검사는 이것만 받는다. */
+type FilledItemSpec = ItemSpecUpsert & { inspectionItemCode: string };
+
+/** 항목코드 — 비우면 순서로 붙인다(omf-all-around#262). 순서를 바꿔도 이미 붙은 코드는 그대로다. */
+function itemCodeOf(item: ItemSpecUpsert): string {
+  const code = (item.inspectionItemCode ?? '').trim();
+  return code !== '' ? code : `ITEM-${String(item.sequenceNo).padStart(3, '0')}`;
+}
+
 /** 요청 안에서 먼저 본다 — DB 까지 가면 500 이고 계약은 여기에 400 을 요구한다. */
 function assertItemShape(
   versionId: number,
-  items: ItemSpecUpsert[],
+  items: FilledItemSpec[],
   known: ReadonlySet<number>,
 ): void {
   const errors: ErrorItem[] = [];

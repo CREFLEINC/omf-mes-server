@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   InspectionSheetTemplateView,
@@ -41,7 +42,8 @@ export interface InspectionSheetTemplateUpdate {
 
 /** 계약 `InspectionSheetTemplateCreate`. */
 export interface InspectionSheetTemplateCreate extends InspectionSheetTemplateUpdate {
-  templateCode: string;
+  /** 비우면 그 품목이 이미 쓰는 기준코드, 없으면 `QS-{YYYYMMDD}-{SEQ4}`(omf-all-around#262). */
+  templateCode?: string;
   templateName: string;
   itemId: number;
   businessUnitId: number;
@@ -74,7 +76,10 @@ const LAYOUT_STEPS: Readonly<Record<string, readonly string[]>> = {
  */
 @Injectable()
 export class InspectionSheetTemplateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: NumberingService,
+  ) {}
 
   async list(query: InspectionSheetTemplateQuery): Promise<PagedResponse<InspectionSheetTemplateView>> {
     const page = pageRequest(query);
@@ -105,7 +110,9 @@ export class InspectionSheetTemplateService {
   }
 
   /** 같은 모델의 판 번호는 최댓값 + 1 이다 — 확정본이 있어도 새 작성중 판을 세운다. */
-  async create(input: InspectionSheetTemplateCreate, actor: TemplateActor): Promise<InspectionSheetTemplateView> {
+  async create(body: InspectionSheetTemplateCreate, actor: TemplateActor): Promise<InspectionSheetTemplateView> {
+    // 번호는 트랜잭션을 열기 «전»에 뽑는다(NumberingService 규약).
+    const input = { ...body, templateCode: await this.codeOrNext(body.templateCode, body.itemId) };
     await this.assertContent(input.formLayoutCode, input);
     await this.assertCodeFree(input.templateCode, input.itemId);
     const id = await this.prisma.$transaction(async (tx) => {
@@ -321,6 +328,21 @@ export class InspectionSheetTemplateService {
     if (row === null) throw new NotFoundException('없는 검사표 기준입니다.');
     if (row.status_code !== 'DRAFT') throw locked('작성중인 기준만 고칠 수 있습니다. 새 판을 만드세요.');
     return row;
+  }
+
+  /** 비운 기준코드 — 같은 품목의 버전끼리는 같은 코드라 그 품목이 쓰던 코드를, 없으면 채번한다(#262). */
+  private async codeOrNext(code: string | undefined, itemId: number): Promise<string> {
+    const trimmed = (code ?? '').trim();
+    if (trimmed !== '') return trimmed;
+    const used = await this.prisma.inspection_sheet_template.findFirst({
+      where: { item_id: itemId, template_code: { not: null } },
+      orderBy: { template_version: 'desc' },
+      select: { template_code: true },
+    });
+    return (
+      used?.template_code ??
+      this.numbering.next('INSPECTION_SHEET_TEMPLATE', null, new Date().toISOString().slice(0, 10))
+    );
   }
 
   /**

@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 
 import { ConflictException, ContractException } from '../../common/errors';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   InspectionSheetTemplateCreate,
@@ -97,7 +98,13 @@ function harness(row: { status_code: string; business_unit_id: bigint } | null =
     },
     $transaction: jest.fn().mockImplementation((work: (client: typeof tx) => unknown) => work(tx)),
   };
-  return { service: new InspectionSheetTemplateService(prisma as unknown as PrismaService), prisma, tx };
+  const numbering = { next: jest.fn().mockResolvedValue('QS-20261111-0001') };
+  return {
+    service: new InspectionSheetTemplateService(prisma as unknown as PrismaService, numbering as unknown as NumberingService),
+    prisma,
+    tx,
+    numbering,
+  };
 }
 
 const failure = (error: unknown) => error as ContractException;
@@ -147,6 +154,33 @@ describe('InspectionSheetTemplateService', () => {
     );
     expect(failure(error).errors[0]).toMatchObject({ field: 'templateCode', code: 'UNIQUE_VIOLATION' });
     expect(tx.inspection_sheet_template.create).not.toHaveBeenCalled();
+  });
+
+  /* omf-all-around#262 — 기준코드를 비우면 그 품목이 쓰던 코드, 없으면 채번. */
+  it('기준코드를 비우면 그 품목이 쓰던 코드를 이어 쓴다', async () => {
+    const { service, prisma, tx, numbering } = harness();
+    prisma.inspection_sheet_template.findFirst
+      .mockResolvedValueOnce({ template_code: 'SHEET-OLD' })
+      .mockResolvedValue(null);
+
+    await service.create(input({ templateCode: '  ' }), ACTOR);
+
+    expect(numbering.next).not.toHaveBeenCalled();
+    expect(tx.inspection_sheet_template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ template_code: 'SHEET-OLD' }) }),
+    );
+  });
+
+  it('기준코드를 비우고 그 품목에 쓰던 코드가 없으면 QS 번호를 붙인다', async () => {
+    const { service, tx, numbering } = harness();
+    const { templateCode: _code, ...rest } = input();
+
+    await service.create(rest, ACTOR);
+
+    expect(numbering.next).toHaveBeenCalledWith('INSPECTION_SHEET_TEMPLATE', null, expect.any(String));
+    expect(tx.inspection_sheet_template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ template_code: 'QS-20261111-0001' }) }),
+    );
   });
 
   it('수정에서 기준코드 · 기준명을 빼면 그대로 둔다', async () => {
