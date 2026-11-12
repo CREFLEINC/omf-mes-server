@@ -29,6 +29,9 @@ export interface LotStatusFilters {
   warehouseId?: number;
   locationId?: number;
   plantId?: number;
+  /** 자재 관리 LOT 의 입하 LOT(피처 005 FR-035) — id 정확·번호 일치. */
+  inboundLotId?: number;
+  inboundLotNo?: string;
   heldOnly?: boolean;
   excludeFullyHeld?: boolean;
   transitionFrom?: string;
@@ -76,6 +79,7 @@ class Conditions {
  */
 export const FROM = `
     FROM trace.lot l
+    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = l.inbound_lot_id
     LEFT JOIN LATERAL (
       SELECT sum(b.on_hand_qty) AS on_hand_qty,          -- ⛔ 0 행도 그대로 더한다(선례 balance-query.ts:128 은 행을 통째로 빼지만, 여긴 접는 칸만 뺀다 — 전량 소진 LOT 의 onHandQty=0 을 잃으면 안 된다)
              CASE WHEN count(DISTINCT b.uom_id) FILTER (WHERE b.on_hand_qty <> 0) = 1
@@ -144,6 +148,14 @@ export function conditionsOf(filters: LotStatusFilters): Conditions {
   if (filters.lotTypeCode !== undefined) c.add((p) => `l.lot_type_code = ${p}`, filters.lotTypeCode);
   if (filters.itemId !== undefined) c.add((p) => `l.item_id = ${p}::bigint`, filters.itemId);
   if (filters.plantId !== undefined) c.add((p) => `l.plant_id = ${p}::bigint`, filters.plantId);
+  if (filters.inboundLotId !== undefined) c.add((p) => `l.inbound_lot_id = ${p}::bigint`, filters.inboundLotId);
+  // 요약의 `FROM_TRANS_ONLY` 에는 `il` 이 없어 번호는 EXISTS 로 건다.
+  if (filters.inboundLotNo !== undefined) {
+    c.add(
+      (p) => `EXISTS (SELECT 1 FROM trace.inbound_lot fil WHERE fil.inbound_lot_id = l.inbound_lot_id AND fil.inbound_lot_no = ${p})`,
+      filters.inboundLotNo,
+    );
+  }
   if (filters.warehouseId !== undefined) {
     c.add(
       (p) => `EXISTS (SELECT 1 FROM inventory.inventory_balance wb WHERE wb.lot_id = l.lot_id AND wb.warehouse_id = ${p}::bigint)`,
@@ -187,7 +199,7 @@ const ORDER_BY: Record<LotStatusSort, string> = {
 };
 
 export const SELECT_COLUMNS = `
-      l.lot_id, l.lot_no, l.item_id, l.lot_type_code, l.status_code, l.version_no,
+      l.lot_id, l.lot_no, l.item_id, l.lot_type_code, l.status_code, l.version_no, il.inbound_lot_id, il.inbound_lot_no,
       bal.on_hand_qty, bal.uom_id, bal.warehouse_id, bal.location_id,
       hold.open_hold_count, hold.fully_held, hold.partial_hold_qty,
       trans.event_at AS latest_transition_at, trans.reason_code AS latest_reason_code`;

@@ -99,7 +99,8 @@ export async function loadInboundLotViews(
        WHERE l.inbound_lot_id IN (${Prisma.join(ids)}) AND gr.status_code <> 'CANCELLED'
        GROUP BY l.inbound_lot_id`,
     db.inspection_request.findMany({
-      where: { inbound_lot_id: { in: ids }, inspection_type_code: 'IQC' },
+      // 입하 LOT 의 «현재» 요청 — 마감 취소로 CANCELLED 가 된 옛 요청은 뺀다.
+      where: { inbound_lot_id: { in: ids }, inspection_type_code: 'IQC', status_code: { not: 'CANCELLED' } },
       select: { inbound_lot_id: true, inspection_request_id: true, inspection_request_no: true, status_code: true, overall_judgment_code: true },
       orderBy: { inspection_request_id: 'asc' },
     }),

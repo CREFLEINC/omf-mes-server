@@ -20,6 +20,8 @@ export interface LotStatusRow {
   partial_hold_qty: unknown;
   latest_transition_at: Date | null;
   latest_reason_code: string | null;
+  inbound_lot_id: bigint | number | null;
+  inbound_lot_no: string | null;
 }
 
 /** 계약 `LotQualityStatus` 와 동형(required 6: lotId·lotNo·itemId·lotStatusCode·fullyHeld·versionNo). */
@@ -40,6 +42,9 @@ export interface LotStatusView {
   fullyHeld: boolean;
   latestTransitionAt?: string;
   latestReasonCode?: string;
+  /** 입하 LOT 이 없는 LOT(생산 등)은 null — 키를 생략하지 않는다(계약 required). */
+  inboundLotId: number | null;
+  inboundLotNo: string | null;
 }
 
 /**
@@ -73,6 +78,8 @@ export function lotStatusView(row: LotStatusRow): LotStatusView {
     fullyHeld,
     latestTransitionAt: row.latest_transition_at instanceof Date ? row.latest_transition_at.toISOString() : undefined,
     latestReasonCode: row.latest_reason_code ?? undefined,
+    inboundLotId: row.inbound_lot_id === null ? null : Number(row.inbound_lot_id),
+    inboundLotNo: row.inbound_lot_no,
   });
 }
 
