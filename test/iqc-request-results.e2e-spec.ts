@@ -29,6 +29,10 @@ const DAY = localDate(new Date(), TZ);
 const WORKER_NO = `${PREFIX}-W1`;
 const RESULTS = '/api/quality/inspection-results';
 const REQUESTS = '/api/quality/inspection-requests';
+const REASON = `${PREFIX}-RT`;
+const REASON_NAME = '결과목록재측정';
+const REJECTED_ALL = { acceptedQty: 0, rejectedQty: 10, overallJudgmentCode: 'REJECTED' };
+const HELD_ALL = { acceptedQty: 0, heldQty: 10, overallJudgmentCode: 'HELD' };
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 addFormats(ajv);
@@ -83,7 +87,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     const iqc = await iqcLot(3);
     expect(await requestStatus(iqc.requestId)).toBe('REQUESTED');
     const created = await post(resultBody(iqc.requestId, {
-      rejectedQty: 2, acceptedQty: 8, overallJudgmentCode: 'REJECTED',
+      rejectedQty: 2, acceptedQty: 8, overallJudgmentCode: 'REJECTED', matchedLotIds: allLots(iqc),
       measurements: [{ inspectionItemSpecId: Number(ids.spec), sampleNo: 1, numericValue: 1.5, judgmentCode: 'REJECTED', measuredAt: `${DAY}T06:00:00.000Z` }],
       defects: [{ defectCodeId: Number(ids.defectCode), defectQty: 2, defectDescription: '긁힘' }],
       fourMChange: { remarks: '공급사 공정 변경' },
@@ -98,13 +102,12 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     expect(await prisma.lot_four_m_change.count({ where: { lot_id: { in: iqc.lots.map((lot) => BigInt(lot.lotId)) } } })).toBe(3);
   });
 
-  it('US3-1 회차 칸(previousResultId·reinspectionReasonCode)과 statusCode=CONFIRMED 는 400 — 결과가 서지 않는다', async () => {
+  // 2026-11-12: 재검 사유는 불합격·보류를 덮는 결과에 받는다(US3-9) — 회차 칸만 400 이다.
+  it('US3-1 회차 칸(previousResultId)과 statusCode=CONFIRMED 는 400 — 결과가 서지 않는다', async () => {
     const iqc = await iqcLot(1);
-    const first = (await post(resultBody(iqc.requestId)).expect(201)).body.inspectionResultId as number;
-    const previous = await post(resultBody(iqc.requestId, { previousResultId: first })).expect(400);
+    const first = (await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201)).body.inspectionResultId as number;
+    const previous = await post(resultBody(iqc.requestId, { previousResultId: first, matchedLotIds: allLots(iqc) })).expect(400);
     expect(previous.body.errors).toEqual([expect.objectContaining({ field: 'previousResultId', code: 'INVALID' })]);
-    const reason = await post(resultBody(iqc.requestId, { reinspectionReasonCode: 'RETEST' })).expect(400);
-    expect(reason.body.errors).toEqual([expect.objectContaining({ field: 'reinspectionReasonCode', code: 'INVALID' })]);
     expect(await resultCount(iqc.requestId)).toBe(1);
   });
 
@@ -117,18 +120,97 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     expect(await lotStatuses(iqc)).toEqual(['INSPECTION_PENDING', 'INSPECTION_PENDING']);
   });
 
-  it('US3-2·US3-3·US3-4 매칭 — 결과 하나에 LOT 둘, 다른 결과와 겹쳐도 되고, 매칭 없이도 저장된다 · 한 결과에 같은 LOT 두 번은 400', async () => {
+  it('US3-2·US3-3 매칭 — 결과 하나에 LOT 둘, 다른 결과와 겹쳐도 된다 · 한 결과에 같은 LOT 두 번은 400', async () => {
     const iqc = await iqcLot(3);
     const [l1, l2] = iqc.lots.map((lot) => lot.lotId);
-    await post(resultBody(iqc.requestId)).expect(201);
     await post(resultBody(iqc.requestId, { matchedLotIds: [l1, l2] })).expect(201);
     await post(resultBody(iqc.requestId, { matchedLotIds: [l1] })).expect(201);
     const twice = await post(resultBody(iqc.requestId, { matchedLotIds: [l1, l1] })).expect(400);
     expect(twice.body.errors).toEqual([expect.objectContaining({ field: 'matchedLotIds', code: 'INVALID' })]);
 
     const results = (await detail(iqc.requestId)).results as SummaryRow[];
-    expect(results.map((row) => [row.seqNo, row.matchedLotIds])).toEqual([[1, []], [2, [l1, l2]], [3, [l1]]]);
-    expect(results[1].matchedLotNos).toEqual([iqc.lots[0].lotNo, iqc.lots[1].lotNo]);
+    expect(results.map((row) => [row.seqNo, row.matchedLotIds])).toEqual([[1, [l1, l2]], [2, [l1]]]);
+    expect(results[0].matchedLotNos).toEqual([iqc.lots[0].lotNo, iqc.lots[1].lotNo]);
+  });
+
+  it('US3-4 매칭 0개는 400 MATCHED_LOT_REQUIRED — POST 칸 생략·빈 배열, PUT 빈 배열(PUT 칸 생략은 지금 매칭 유지)', async () => {
+    const iqc = await iqcLot(2);
+    const [l1] = iqc.lots.map((lot) => lot.lotId);
+    const missing = await post(resultBody(iqc.requestId)).expect(400);
+    expect(missing.body.errors).toEqual([expect.objectContaining({ field: 'matchedLotIds', code: 'MATCHED_LOT_REQUIRED', message: '자재 관리 LOT를 1개 이상 고르세요.' })]);
+    const empty = await post(resultBody(iqc.requestId, { matchedLotIds: [] })).expect(400);
+    expect(empty.body.errors).toEqual([expect.objectContaining({ field: 'matchedLotIds', code: 'MATCHED_LOT_REQUIRED' })]);
+    expect(await resultCount(iqc.requestId)).toBe(0);
+
+    const created = (await post(resultBody(iqc.requestId, { matchedLotIds: [l1] })).expect(201)).body as ResultRow;
+    const cleared = await put(created.inspectionResultId, created.versionNo, { matchedLotIds: [] }).expect(400);
+    expect(cleared.body.errors).toEqual([expect.objectContaining({ field: 'matchedLotIds', code: 'MATCHED_LOT_REQUIRED' })]);
+    await put(created.inspectionResultId, created.versionNo, { remarks: '매칭 그대로' }).expect(200);
+    expect(((await detail(iqc.requestId)).results as SummaryRow[]).map((row) => row.matchedLotIds)).toEqual([[l1]]);
+  });
+
+  it('US3-8 LOT별 마지막 결과 — 결과 1 불합격(LOT 1·2) 뒤 결과 2 합격(LOT 1, 사유) → LOT 1 합격·LOT 2 불합격·종합 불합격, lotJudgments 에 대체', async () => {
+    const iqc = await iqcLot(2);
+    const [l1, l2] = iqc.lots.map((lot) => lot.lotId);
+    const first = (await post(resultBody(iqc.requestId, { ...REJECTED_ALL, matchedLotIds: [l1, l2] })).expect(201)).body as ResultRow;
+    const second = (await post(resultBody(iqc.requestId, { matchedLotIds: [l1], reinspectionReasonCode: REASON })).expect(201)).body as ResultRow;
+
+    const body = await detail(iqc.requestId);
+    expect(body.previewJudgmentCode).toBe('REJECTED');
+    expect(body.lotJudgments).toEqual([
+      {
+        lotId: l1, lotNo: iqc.lots[0].lotNo, judgmentCode: 'ACCEPTED', resultId: second.inspectionResultId, resultSeqNo: 2,
+        superseded: [{ resultId: first.inspectionResultId, resultSeqNo: 1, judgmentCode: 'REJECTED' }],
+        reinspectionReasonCode: REASON, reinspectionReasonName: REASON_NAME,
+      },
+      {
+        lotId: l2, lotNo: iqc.lots[1].lotNo, judgmentCode: 'REJECTED', resultId: first.inspectionResultId, resultSeqNo: 1,
+        superseded: [], reinspectionReasonCode: null, reinspectionReasonName: null,
+      },
+    ]);
+    expect((body.results as (SummaryRow & { reinspectionReasonCode: string | null; reinspectionReasonName: string | null })[])
+      .map((row) => [row.seqNo, row.reinspectionReasonCode, row.reinspectionReasonName])).toEqual([[1, null, null], [2, REASON, REASON_NAME]]);
+  });
+
+  it('US3-9 불합격·보류를 덮는 결과에 재검 사유가 없으면 400 REINSPECTION_REASON_REQUIRED — POST·PUT 모두, 사유를 넣으면 저장', async () => {
+    const iqc = await iqcLot(2);
+    const [l1, l2] = iqc.lots.map((lot) => lot.lotId);
+    await post(resultBody(iqc.requestId, { ...REJECTED_ALL, matchedLotIds: [l1, l2] })).expect(201);
+    await post(resultBody(iqc.requestId, { matchedLotIds: [l1], reinspectionReasonCode: REASON })).expect(201);
+    const noReason = await post(resultBody(iqc.requestId, { matchedLotIds: [l1, l2] })).expect(400);
+    expect(noReason.body.errors).toEqual([expect.objectContaining({ field: 'reinspectionReasonCode', code: 'REINSPECTION_REASON_REQUIRED' })]);
+    expect(await resultCount(iqc.requestId)).toBe(2);
+    await post(resultBody(iqc.requestId, { matchedLotIds: [l1, l2], reinspectionReasonCode: REASON })).expect(201);
+    expect((await detail(iqc.requestId)).previewJudgmentCode).toBe('ACCEPTED');
+
+    // PUT: 결과 2 를 보류 → 합격으로 고치면 결과 1(보류)을 덮는다.
+    const other = await iqcLot(1);
+    const [m1] = other.lots.map((lot) => lot.lotId);
+    await post(resultBody(other.requestId, { ...HELD_ALL, matchedLotIds: [m1] })).expect(201);
+    const held = (await post(resultBody(other.requestId, { ...HELD_ALL, matchedLotIds: [m1] })).expect(201)).body as ResultRow;
+    const accept = { acceptedQty: 10, heldQty: 0, overallJudgmentCode: 'ACCEPTED' };
+    const putNoReason = await put(held.inspectionResultId, held.versionNo, accept).expect(400);
+    expect(putNoReason.body.errors).toEqual([expect.objectContaining({ field: 'reinspectionReasonCode', code: 'REINSPECTION_REASON_REQUIRED' })]);
+    await put(held.inspectionResultId, held.versionNo, { ...accept, reinspectionReasonCode: REASON }).expect(200);
+    const stored = await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(held.inspectionResultId) } });
+    expect(stored).toMatchObject({ overall_judgment_code: 'ACCEPTED', reinspection_reason_code: REASON });
+    expect((await detail(other.requestId)).previewJudgmentCode).toBe('ACCEPTED');
+  });
+
+  it('US3-10 마지막 결과를 지우면 그 LOT 의 앞 결과로 다시 판정 — LOT 1 은 결과 2, LOT 2 는 결과 1', async () => {
+    const iqc = await iqcLot(2);
+    const [l1, l2] = iqc.lots.map((lot) => lot.lotId);
+    await post(resultBody(iqc.requestId, { ...REJECTED_ALL, matchedLotIds: [l1, l2] })).expect(201);
+    await post(resultBody(iqc.requestId, { matchedLotIds: [l1], reinspectionReasonCode: REASON })).expect(201);
+    const third = (await post(resultBody(iqc.requestId, { matchedLotIds: [l1, l2], reinspectionReasonCode: REASON })).expect(201)).body as ResultRow;
+    expect((await detail(iqc.requestId)).previewJudgmentCode).toBe('ACCEPTED');
+
+    await remove(third.inspectionResultId, third.versionNo).expect(204);
+    const body = await detail(iqc.requestId);
+    expect(body.previewJudgmentCode).toBe('REJECTED');
+    expect((body.lotJudgments as { lotId: number; resultSeqNo: number; judgmentCode: string; superseded: { resultSeqNo: number }[] }[])
+      .map((lot) => [lot.lotId, lot.resultSeqNo, lot.judgmentCode, lot.superseded.map((result) => result.resultSeqNo)]))
+      .toEqual([[l1, 2, 'ACCEPTED', [1]], [l2, 1, 'REJECTED', []]]);
   });
 
   it('US3-7 다른 입하 LOT 의 자재 관리 LOT 매칭은 400 — 만들기·고치기 모두', async () => {
@@ -136,7 +218,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     const other = await iqcLot(1);
     const foreign = await post(resultBody(iqc.requestId, { matchedLotIds: [other.lots[0].lotId] })).expect(400);
     expect(foreign.body.errors).toEqual([expect.objectContaining({ field: 'matchedLotIds', code: 'INVALID' })]);
-    const own = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
+    const own = (await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201)).body as ResultRow;
     await put(own.inspectionResultId, own.versionNo, { matchedLotIds: [other.lots[0].lotId] }).expect(400);
   });
 
@@ -161,7 +243,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     expect(await prisma.lot_status_event.count({ where: { lot_id: { in: iqc.lots.map((lot) => BigInt(lot.lotId)) }, source_document_type_code: 'INSPECTION_RESULT' } })).toBe(0);
 
     // 판정이 빈 결과가 끼면 미리 보기는 없다(확정할 수 없음).
-    await post(resultBody(iqc.requestId, { overallJudgmentCode: undefined })).expect(201);
+    await post(resultBody(iqc.requestId, { overallJudgmentCode: undefined, matchedLotIds: allLots(iqc) })).expect(201);
     expect((await detail(iqc.requestId)).previewJudgmentCode).toBeNull();
   });
 
@@ -214,19 +296,19 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
 
   it('US3-6 순번 = 최대 + 1 — 마지막 결과를 지워도 그 번호를 다시 쓰지 않는다', async () => {
     const iqc = await iqcLot(1);
-    await post(resultBody(iqc.requestId)).expect(201);
-    const second = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
+    await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201);
+    const second = (await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201)).body as ResultRow;
     expect(second.inspectionRound).toBe(2);
     await remove(second.inspectionResultId, second.versionNo).expect(204);
     // 상세의 다음 순번도 지운 번호를 건너뛴다 — 화면이 「결과 n」을 서버와 같게 그린다.
     expect((await detail(iqc.requestId)).nextResultSeqNo).toBe(3);
-    const third = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
+    const third = (await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201)).body as ResultRow;
     expect(third.inspectionRound).toBe(3);
   });
 
   it('US3-6 DELETE 409 — 수리 이력이 있는 불량 기록, 이전된 옛 요청의 결과 · 낡은 If-Match 는 409 VERSION_CONFLICT', async () => {
     const iqc = await iqcLot(1);
-    const created = (await post(resultBody(iqc.requestId, { rejectedQty: 1, acceptedQty: 9, overallJudgmentCode: 'REJECTED', defects: [{ defectCodeId: Number(ids.defectCode), defectQty: 1 }] })).expect(201)).body as ResultRow;
+    const created = (await post(resultBody(iqc.requestId, { rejectedQty: 1, acceptedQty: 9, overallJudgmentCode: 'REJECTED', matchedLotIds: allLots(iqc), defects: [{ defectCodeId: Number(ids.defectCode), defectQty: 1 }] })).expect(201)).body as ResultRow;
     await remove(created.inspectionResultId, created.versionNo + 5).expect(409);
     const defect = await prisma.defect_record.findFirstOrThrow({ where: { inspection_result_id: BigInt(created.inspectionResultId) } });
     await prisma.repair_result.create({
@@ -248,7 +330,8 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     const rejected = { acceptedQty: 9, rejectedQty: 1, overallJudgmentCode: 'REJECTED', defects: [{ defectCodeId: Number(ids.defectCode), defectQty: 1 }] };
     const single = (await post(resultBody(iqc.requestId, { ...rejected, matchedLotIds: [l1] })).expect(201)).body as ResultRow;
     const both = (await post(resultBody(iqc.requestId, { ...rejected, matchedLotIds: [l1, l2] })).expect(201)).body as ResultRow;
-    const none = (await post(resultBody(iqc.requestId, rejected)).expect(201)).body as ResultRow;
+    // 2026-11-12 매칭 필수 — 「없음」 자리는 둘(전부 선택)로 넣는다(LOT 은 NULL 그대로).
+    const none = (await post(resultBody(iqc.requestId, { ...rejected, matchedLotIds: [l1, l2] })).expect(201)).body as ResultRow;
     expect(await defectLot(single.inspectionResultId)).toBe(BigInt(l1));
     expect(await defectLot(both.inspectionResultId)).toBeNull();
     expect(await defectLot(none.inspectionResultId)).toBeNull();
@@ -265,15 +348,15 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
 
   it('판정 확정된 요청(검사 단위 확정 — S9)에는 결과 추가·수정·삭제가 409 INVALID_STATE', async () => {
     const iqc = await iqcLot(1);
-    const created = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
-    await post(resultBody(iqc.requestId)).expect(201);
+    const created = (await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201)).body as ResultRow;
+    await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201);
     const { version_no: versionNo } = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(iqc.requestId) } });
     await request(app.getHttpServer()).post(`${REQUESTS}/${String(iqc.requestId)}:confirm`).set('Cookie', cookie)
       .set('Idempotency-Key', idempotencyKey(fx)).send({ versionNo }).expect(200);
     expect(await requestStatus(iqc.requestId)).toBe('COMPLETED');
     const draft = { ...created, versionNo: (await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(created.inspectionResultId) } })).version_no };
 
-    expect((await post(resultBody(iqc.requestId)).expect(409)).body).toMatchObject({ code: 'INVALID_STATE' });
+    expect((await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(409)).body).toMatchObject({ code: 'INVALID_STATE' });
     expect((await put(draft.inspectionResultId, draft.versionNo, { remarks: '늦음' }).expect(409)).body).toMatchObject({ code: 'INVALID_STATE' });
     expect((await remove(draft.inspectionResultId, draft.versionNo).expect(409)).body).toMatchObject({ code: 'INVALID_STATE' });
     const listed = await get(`${REQUESTS}?inboundLotId=${String(iqc.inboundLotId)}`).expect(200);
@@ -283,8 +366,8 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
 
   it('권한 W-01-01 — 없으면 결과 추가·수정·삭제 403', async () => {
     const iqc = await iqcLot(1);
-    const created = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
-    await post(resultBody(iqc.requestId), outsider).expect(403);
+    const created = (await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) })).expect(201)).body as ResultRow;
+    await post(resultBody(iqc.requestId, { matchedLotIds: allLots(iqc) }), outsider).expect(403);
     await put(created.inspectionResultId, created.versionNo, { remarks: '권한' }, outsider).expect(403);
     await remove(created.inspectionResultId, created.versionNo, outsider).expect(403);
   });
@@ -349,6 +432,10 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     });
     await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: line.inbound_receipt_line_id }, data: { lot_id: lot.lot_id } });
     return { requestId: Number(iqc.inspection_request_id), lotId: Number(lot.lot_id), inboundLotId: inbound.inbound_lot_id };
+  }
+
+  function allLots(iqc: IqcLot): number[] {
+    return iqc.lots.map((lot) => lot.lotId);
   }
 
   function resultBody(requestId: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -430,6 +517,8 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
       data: { item_code: `${PREFIX}-X`, item_name: '결과목록기준용', item_type_code: 'RAW_MATERIAL', base_uom_id: ids.ea, lot_controlled: true, inspection_required: false },
     })).item_id;
     ids.defectCode = (await prisma.defect_code.create({ data: { defect_code: `${PREFIX}-DEF`, defect_name: '결과목록불량' } })).defect_code_id;
+    const reasonGroup = await prisma.code_group.findFirstOrThrow({ where: { group_code: 'REINSPECTION_REASON' } });
+    await prisma.code_value.create({ data: { code_group_id: reasonGroup.code_group_id, code: REASON, code_name: REASON_NAME } });
     // 측정치의 항목 FK 만 필요하다 — 이 품목의 IQC 요청이 이 기준을 집지 않게 다른 품목에 둔다.
     const plan = await prisma.inspection_plan.create({
       data: { inspection_plan_code: `${PREFIX}-PLAN`, inspection_plan_name: '결과목록기준', item_id: ids.otherItem, inspection_type_code: 'IQC' },
@@ -491,6 +580,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
       `DELETE FROM quality.inspection_plan_version WHERE inspection_plan_id IN (SELECT inspection_plan_id FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%')`,
       `DELETE FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%'`,
       `DELETE FROM quality.defect_code WHERE defect_code LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.code_value WHERE code LIKE '${PREFIX}%'`,
       `DELETE FROM trace.inbound_lot_event WHERE inbound_lot_id IN (${inboundLots})`,
       `DELETE FROM trace.lot_lifecycle_history WHERE lot_id IN (${lots})`,
       `DELETE FROM trace.lot_status_event WHERE lot_id IN (${lots})`,

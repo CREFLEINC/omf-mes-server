@@ -32,6 +32,8 @@ const RESULTS = '/api/quality/inspection-results';
 const REQUESTS = '/api/quality/inspection-requests';
 const CONCESSIONS = '/api/quality/concessions';
 const APPROVALS = '/api/app/approval-requests';
+/** 재검 사유(공통코드 `REINSPECTION_REASON` — 열린 그룹이라 마스터에 없어도 받는다). */
+const REASON = `${PREFIX}-RT`;
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 addFormats(ajv);
@@ -205,7 +207,8 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     expect((await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: first.inspection_result_id } })).status_code).toBe('CONFIRMED');
     expect(await lotStatuses(nc)).toEqual(['INSPECTION_PENDING', 'INSPECTION_PENDING', 'INSPECTION_PENDING']);
 
-    const again = await addResult(nc.requestId, { inspectedQty: 30, acceptedQty: 30 });
+    // 2026-11-12: 매칭 필수·불합격을 덮으니 재검 사유 필수 — LOT 전부를 다시 본다.
+    const again = await addResult(nc.requestId, { inspectedQty: 30, acceptedQty: 30, matchedLotIds: lotIdsOf(nc), reinspectionReasonCode: REASON });
     expect((await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(again) } })).confirm_cycle).toBe(2);
     const confirmed = await confirm(nc.requestId);
     expect(confirmed.body).toMatchObject({ statusCode: 'COMPLETED', overallJudgmentCode: 'ACCEPTED' });
@@ -217,7 +220,7 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
   it('R15-1 재작업 뒤 재검 불합격이면 새 부적합이 LOT 전부로 선다 — 앞 부적합은 닫혀 있다', async () => {
     const nc = await rejectedIqc(2);
     await decide(nc.nonconformanceId, { dispositionTypeCode: 'REWORK', decisionQty: 20 }, 201);
-    await addResult(nc.requestId, { inspectedQty: 20, acceptedQty: 0, rejectedQty: 20, overallJudgmentCode: 'REJECTED' });
+    await addResult(nc.requestId, { inspectedQty: 20, acceptedQty: 0, rejectedQty: 20, overallJudgmentCode: 'REJECTED', matchedLotIds: lotIdsOf(nc) });
     const confirmed = await confirm(nc.requestId);
     expect(confirmed.body).toMatchObject({ overallJudgmentCode: 'REJECTED' });
     const ncs = await prisma.nonconformance.findMany({
@@ -226,6 +229,49 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     expect(ncs.map((row) => row.status_code)).toEqual(['DECIDED', 'PENDING_DECISION']);
     expect(ncs[1].nonconformance_lot.map((row) => Number(row.lot_id)).sort()).toEqual(nc.lots.map((lot) => lot.lotId).sort());
     expect(await lotStatuses(nc)).toEqual(['DEFECTIVE', 'DEFECTIVE']);
+  });
+
+  it('R15-2 재열기 뒤 앞 확정 결과는 CONFIRMED·고칠 수 없고, 재검이 매칭한 LOT 만 새 결과로 판정 — 다시 보지 않은 불합격 LOT 은 불합격, 모두 재검 합격이면 합격·부적합 없음', async () => {
+    const iqc = await iqcLot(3);
+    const [l1, l2, l3] = lotIdsOf(iqc);
+    const first = await addResult(iqc.requestId, { inspectedQty: 30, acceptedQty: 0, rejectedQty: 30, overallJudgmentCode: 'REJECTED', matchedLotIds: [l1, l2, l3] });
+    await confirm(iqc.requestId);
+    const firstNc = await prisma.nonconformance.findFirstOrThrow({ where: { inspection_request_id: BigInt(iqc.requestId) } });
+    await decide(firstNc.nonconformance_id, { dispositionTypeCode: 'REWORK', decisionQty: 30 }, 201);
+
+    // 앞 확정 결과는 확정 그대로 — 고치기·지우기 409.
+    const kept = await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(first) } });
+    expect(kept.status_code).toBe('CONFIRMED');
+    await resultCall('put', first, kept.version_no).send({ remarks: '고침' }).expect(409);
+    await resultCall('delete', first, kept.version_no).expect(409);
+    expect(await detailOf(iqc.requestId)).toMatchObject({ statusCode: 'IN_PROGRESS', nonconformanceId: null, nonconformanceNo: null });
+
+    // 재검(합격, LOT 1·2) — 불합격을 덮으니 사유가 필요하다.
+    await request(app.getHttpServer()).post(RESULTS).set('Cookie', cookie).set('Idempotency-Key', idempotencyKey(fx))
+      .send(resultBody(iqc.requestId, { inspectedQty: 20, acceptedQty: 20, matchedLotIds: [l1, l2] })).expect(400);
+    const retest = await addResult(iqc.requestId, { inspectedQty: 20, acceptedQty: 20, matchedLotIds: [l1, l2], reinspectionReasonCode: REASON });
+    const preview = await detailOf(iqc.requestId);
+    expect(preview.previewJudgmentCode).toBe('REJECTED');
+    expect((preview.lotJudgments as { lotId: number; judgmentCode: string; resultId: number; superseded: { resultId: number }[] }[])
+      .map((lot) => [lot.lotId, lot.judgmentCode, lot.resultId, lot.superseded.map((result) => result.resultId)]))
+      .toEqual([[l1, 'ACCEPTED', retest, [first]], [l2, 'ACCEPTED', retest, [first]], [l3, 'REJECTED', first, []]]);
+
+    const reconfirmed = await confirm(iqc.requestId);
+    expect(reconfirmed.body).toMatchObject({ statusCode: 'COMPLETED', overallJudgmentCode: 'REJECTED' });
+    expect(await lotStatuses(iqc)).toEqual(['DEFECTIVE', 'DEFECTIVE', 'DEFECTIVE']);
+    const ncs = await prisma.nonconformance.findMany({ where: { inspection_request_id: BigInt(iqc.requestId) }, orderBy: { nonconformance_id: 'asc' } });
+    expect(ncs.map((row) => row.status_code)).toEqual(['DECIDED', 'PENDING_DECISION']);
+    // 결과 연결 = LOT 판정에 쓰인 불합격 결과(LOT 3 의 결과 1) 중 순번 최소.
+    expect(ncs[1].inspection_result_id).toBe(BigInt(first));
+    expect(await detailOf(iqc.requestId)).toMatchObject({ nonconformanceId: Number(ncs[1].nonconformance_id), nonconformanceNo: ncs[1].nonconformance_no });
+
+    // LOT 3 도 재검 합격 → 종합 합격, 요청 상세에는 지금 확정이 만든 부적합이 없으니 null(앞의 닫힌 부적합이 아니다).
+    await decide(ncs[1].nonconformance_id, { dispositionTypeCode: 'REWORK', decisionQty: 30 }, 201);
+    await addResult(iqc.requestId, { matchedLotIds: [l3], reinspectionReasonCode: REASON });
+    const accepted = await confirm(iqc.requestId);
+    expect(accepted.body).toMatchObject({ statusCode: 'COMPLETED', overallJudgmentCode: 'ACCEPTED' });
+    expect(await lotStatuses(iqc)).toEqual(['NORMAL', 'NORMAL', 'NORMAL']);
+    expect(await detailOf(iqc.requestId)).toMatchObject({ statusCode: 'COMPLETED', previewJudgmentCode: 'ACCEPTED', nonconformanceId: null, nonconformanceNo: null });
   });
 
   it('R16-1 IQC 생략 — 입하 중 409 · 마감된 입하 LOT 단위 결재(대상 입하 LOT) · 실행하면 LOT 전부 C22·요청 SKIPPED', async () => {
@@ -280,7 +326,7 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     const nc = await rejectedIqc(2);
     expect(await fullReinspect()).toEqual(before);
     await decide(nc.nonconformanceId, { dispositionTypeCode: 'REWORK', decisionQty: 20 }, 201);
-    await addResult(nc.requestId, { inspectedQty: 20, acceptedQty: 15, rejectedQty: 5, overallJudgmentCode: 'REJECTED' });
+    await addResult(nc.requestId, { inspectedQty: 20, acceptedQty: 15, rejectedQty: 5, overallJudgmentCode: 'REJECTED', matchedLotIds: lotIdsOf(nc) });
     await confirm(nc.requestId);
     expect(await fullReinspect()).toEqual({ inputQty: before.inputQty + 20, restoredQty: before.restoredQty + 15 });
   });
@@ -310,13 +356,32 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     return { ...iqc, nonconformanceId: nc.nonconformance_id };
   }
 
-  async function addResult(requestId: number, overrides: Record<string, unknown> = {}): Promise<number> {
-    const body = {
+  function resultBody(requestId: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
       inspectionRequestId: requestId, inspectedQty: 10, acceptedQty: 10, rejectedQty: 0, heldQty: 0, uomId: Number(ids.ea),
       inspectedAt: `${DAY}T06:00:00.000Z`, statusCode: 'DRAFT', overallJudgmentCode: 'ACCEPTED', ...overrides,
     };
-    const response = await request(app.getHttpServer()).post(RESULTS).set('Cookie', cookie).set('Idempotency-Key', idempotencyKey(fx)).send(body).expect(201);
+  }
+
+  async function addResult(requestId: number, overrides: Record<string, unknown> = {}): Promise<number> {
+    const response = await request(app.getHttpServer()).post(RESULTS).set('Cookie', cookie).set('Idempotency-Key', idempotencyKey(fx))
+      .send(resultBody(requestId, overrides)).expect(201);
     return response.body.inspectionResultId as number;
+  }
+
+  function resultCall(method: 'put' | 'delete', resultId: number, version: number): request.Test {
+    return request(app.getHttpServer())[method](`${RESULTS}/${String(resultId)}`).set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey(fx)).set('If-Match', `W/"${String(version)}"`);
+  }
+
+  async function detailOf(requestId: number): Promise<Record<string, unknown>> {
+    const response = await request(app.getHttpServer()).get(`${REQUESTS}/${String(requestId)}`).set('Cookie', cookie).expect(200);
+    expectShape(schemaOf('quality', '/quality/inspection-requests/{inspectionRequestId}', 'get', 200), response.body);
+    return response.body as Record<string, unknown>;
+  }
+
+  function lotIdsOf(iqc: IqcLot): number[] {
+    return iqc.lots.map((lot) => lot.lotId);
   }
 
   async function confirm(requestId: number): Promise<request.Response> {

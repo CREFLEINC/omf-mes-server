@@ -4,6 +4,7 @@ import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionRequestEventActor, recordInspectionRequestEvent } from './inspection-request-event';
 import type { InspectionResultWriteContext } from './inspection-result-write-input';
+import { IqcJudgedResult, reinspectionReasonRequired } from './iqc-overall-judgment';
 
 /**
  * 입하 LOT IQC 요청(새 흐름 · 피처 005 R-10)의 결과 쓰기 규칙. 분기 기준은 `target_type_code='INBOUND_LOT'` 하나다 —
@@ -14,6 +15,9 @@ import type { InspectionResultWriteContext } from './inspection-result-write-inp
 export const INBOUND_LOT_TARGET = 'INBOUND_LOT';
 const OPEN_REQUEST_STATUSES = ['REQUESTED', 'IN_PROGRESS'];
 const INVALID_STATE = 'INVALID_STATE';
+/** 계약 오류 코드(2026-11-12) — 결과마다 자재 관리 LOT 1개 이상, 불합격·보류를 덮는 결과에 재검 사유. */
+const MATCHED_LOT_REQUIRED = 'MATCHED_LOT_REQUIRED';
+const REINSPECTION_REASON_REQUIRED = 'REINSPECTION_REASON_REQUIRED';
 
 type Db = PrismaService | Prisma.TransactionClient;
 
@@ -23,16 +27,16 @@ export interface InboundLotRequestFacts {
   inbound_lot_id: bigint | null;
 }
 
-/** 본문의 회차·확정 칸 거절(400)과 요청 상태(409). 재검사 가드는 부르는 쪽이 먼저 건다. */
+/**
+ * 본문의 회차·확정 칸 거절(400)과 요청 상태(409). 재검사 가드는 부르는 쪽이 먼저 건다. 재검 사유는 받는다 — 불합격·보류를 덮는
+ * 결과에 필수다(`assertReinspectionReason`).
+ */
 export function assertInboundLotResultCreate(
   request: InboundLotRequestFacts,
-  body: { previousResultId?: number; reinspectionReasonCode?: string; statusCode: string },
+  body: { previousResultId?: number; statusCode: string },
 ): void {
   if (body.previousResultId !== undefined) {
     throw one(field('previousResultId', ERROR_CODE.INVALID, '입하 LOT 검사는 회차를 쓰지 않습니다 — 재검사는 확정 취소 뒤 결과를 더합니다.'));
-  }
-  if (body.reinspectionReasonCode !== undefined) {
-    throw one(field('reinspectionReasonCode', ERROR_CODE.INVALID, '입하 LOT 검사는 재검사 사유를 쓰지 않습니다.'));
   }
   // POP 오프라인 큐의 「태어날 때 확정」을 막는다 — 입하 LOT 검사는 결과를 다 넣은 뒤 판정 확정이 한 번에 정한다(R10-3).
   if (body.statusCode !== 'DRAFT') {
@@ -78,13 +82,15 @@ export interface InboundLotWrite {
 }
 
 /**
- * 매칭 칸 검증 — 입하 LOT 요청이 아니면 `matchedLotIds` 를 받지 않는다(400). 입하 LOT 요청이면 LOT 은 그 입하 LOT 소속만,
- * 한 결과에 같은 LOT 두 번은 400(결과끼리 중복은 허용 · US3-3). 입하 LOT 요청이 아니면 `null`.
+ * 매칭 칸 검증 — 입하 LOT 요청이 아니면 `matchedLotIds` 를 받지 않는다(400). 입하 LOT 요청이면 1개 이상 필수(2026-11-12 —
+ * 만들기는 칸 생략도 400, 고치기는 생략하면 지금 매칭 유지·빈 배열은 400), LOT 은 그 입하 LOT 소속만, 한 결과에 같은 LOT 두 번은
+ * 400(결과끼리 중복은 허용 · US3-3). 입하 LOT 요청이 아니면 `null`.
  */
 export async function prepareInboundLotWrite(
   db: Db,
   inspectionRequestId: bigint,
   matchedLotIds: readonly number[] | undefined,
+  mode: 'create' | 'update' = 'create',
 ): Promise<InboundLotWrite | null> {
   const request = await db.inspection_request.findUnique({
     where: { inspection_request_id: inspectionRequestId },
@@ -97,12 +103,15 @@ export async function prepareInboundLotWrite(
     return null;
   }
   const base = { inboundLotId: request.inbound_lot_id, confirmCycle: request.confirm_cycle };
-  if (matchedLotIds === undefined) return { ...base, matchedLotIds: undefined };
+  if (matchedLotIds === undefined && mode === 'update') return { ...base, matchedLotIds: undefined };
+  if (matchedLotIds === undefined || matchedLotIds.length === 0) {
+    throw one(field('matchedLotIds', MATCHED_LOT_REQUIRED, '자재 관리 LOT를 1개 이상 고르세요.'));
+  }
   const ids = matchedLotIds.map((id) => BigInt(id));
   if (new Set(ids).size !== ids.length) {
     throw one(field('matchedLotIds', ERROR_CODE.INVALID, '한 결과에 같은 자재 관리 LOT 을 두 번 매칭할 수 없습니다.'));
   }
-  const owned = ids.length === 0 ? 0 : await db.lot.count({ where: { lot_id: { in: ids }, inbound_lot_id: request.inbound_lot_id } });
+  const owned = await db.lot.count({ where: { lot_id: { in: ids }, inbound_lot_id: request.inbound_lot_id } });
   if (owned !== ids.length) {
     throw one(field('matchedLotIds', ERROR_CODE.INVALID, '이 입하 LOT 의 자재 관리 LOT 만 매칭할 수 있습니다.'));
   }
@@ -116,7 +125,36 @@ export async function prepareInboundLotWriteOfResult(
   matchedLotIds: readonly number[] | undefined,
 ): Promise<InboundLotWrite | null> {
   const result = await db.inspection_result.findUnique({ where: { inspection_result_id: inspectionResultId }, select: { inspection_request_id: true } });
-  return result === null ? null : prepareInboundLotWrite(db, result.inspection_request_id, matchedLotIds);
+  return result === null ? null : prepareInboundLotWrite(db, result.inspection_request_id, matchedLotIds, 'update');
+}
+
+/** 요청들의 결과를 판정 계산 모양으로 — 순번·판정·매칭 LOT(R-10 「판정 규칙」). */
+export async function judgedResultsOf(db: Db, inspectionRequestIds: readonly bigint[]): Promise<(IqcJudgedResult & { requestId: bigint })[]> {
+  if (inspectionRequestIds.length === 0) return [];
+  const rows = await db.inspection_result.findMany({
+    where: { inspection_request_id: { in: [...inspectionRequestIds] } },
+    orderBy: { inspection_round: 'asc' },
+    select: { inspection_result_id: true, inspection_request_id: true, inspection_round: true, overall_judgment_code: true, inspection_result_lot: { select: { lot_id: true } } },
+  });
+  return rows.map((row) => ({
+    requestId: row.inspection_request_id, resultId: row.inspection_result_id, seqNo: row.inspection_round,
+    judgmentCode: row.overall_judgment_code, lotIds: row.inspection_result_lot.map((match) => match.lot_id),
+  }));
+}
+
+/**
+ * 재검 사유 필수(FR-023a · 2026-11-12) — 이 결과(만들기는 본문, 고치기는 본문이 없으면 저장값)가 매칭한 LOT 의 바로 앞 결과 판정을
+ * 불합격 → 보류·합격, 보류 → 합격으로 덮으면 사유가 있어야 한다. `REINSPECTION_REASON` 은 열린 그룹이라 값은 대조하지 않는다(§1-5).
+ */
+export async function assertReinspectionReason(
+  db: Db,
+  inspectionRequestId: bigint,
+  written: { resultId?: bigint; seqNo: number; judgmentCode: string | null; lotIds: readonly bigint[]; reasonCode: string | null | undefined },
+): Promise<void> {
+  if (written.reasonCode != null && written.reasonCode.trim() !== '') return;
+  const others = (await judgedResultsOf(db, [inspectionRequestId])).filter((result) => result.resultId !== written.resultId);
+  if (!reinspectionReasonRequired(others, written)) return;
+  throw one(field('reinspectionReasonCode', REINSPECTION_REASON_REQUIRED, '불합격·보류 판정을 바꾸는 결과입니다 — 재검 사유를 고르세요.'));
 }
 
 export async function replaceMatchedLotsWithin(tx: Prisma.TransactionClient, inspectionResultId: bigint, lotIds: readonly bigint[]): Promise<void> {

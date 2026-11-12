@@ -2,8 +2,8 @@ import { Prisma } from '@prisma/client';
 
 import { MaterialPackageView, packageView } from '../../logistics/material-lot-batch/material-lot-view';
 import { PrismaService } from '../../prisma/prisma.service';
-import { INBOUND_LOT_TARGET, nextResultSequence } from './iqc-inbound-lot-result';
-import { iqcOverallJudgment, judgedResults } from './iqc-overall-judgment';
+import { INBOUND_LOT_TARGET, judgedResultsOf, nextResultSequence } from './iqc-inbound-lot-result';
+import { IqcJudgedResult, iqcLotJudgments, iqcOverallJudgment } from './iqc-overall-judgment';
 
 /**
  * 입하 LOT 를 가진 IQC 요청의 목록·상세 칸(피처 005 §8). 칸 이름은 클라이언트 C3 이 먼저 정한 것(forward-contract)을 따른다.
@@ -47,7 +47,21 @@ export interface InspectionRequestResultView {
   inspectorName: string | null;
   matchedLotIds: number[];
   matchedLotNos: string[];
+  reinspectionReasonCode: string | null;
+  reinspectionReasonName: string | null;
   versionNo: number;
+}
+
+/** 계약 `InspectionRequestLotJudgment` — 자재 관리 LOT 하나의 판정 근거(2026-11-12). 매칭된 결과가 없으면 판정·결과 칸이 null. */
+export interface InspectionRequestLotJudgmentView {
+  lotId: number;
+  lotNo: string;
+  judgmentCode: string | null;
+  resultId: number | null;
+  resultSeqNo: number | null;
+  superseded: { resultId: number; resultSeqNo: number; judgmentCode: string | null }[];
+  reinspectionReasonCode: string | null;
+  reinspectionReasonName: string | null;
 }
 
 /** 계약 `InspectionRequestPoAllocation` — 입하 LOT 의 P/O 배정(참고 · logistics `InboundLotPoAllocation` 과 같은 모양). */
@@ -66,6 +80,7 @@ export interface InboundLotRequestDetailView {
   poAllocations: InspectionRequestPoAllocationView[];
   unallocatedQty: number;
   results: InspectionRequestResultView[];
+  lotJudgments: InspectionRequestLotJudgmentView[];
   nextResultSeqNo: number;
   confirmedByName: string | null;
   nonconformanceId: number | null;
@@ -95,12 +110,7 @@ export async function inboundLotSummaries(prisma: PrismaService, rows: readonly 
       distinct: ['inbound_lot_id'],
       select: { inbound_lot_id: true, occurred_at: true, actor_worker_id: true },
     }),
-    newFlow.length === 0
-      ? Promise.resolve([] as { inspection_request_id: bigint; overall_judgment_code: string | null; status_code: string; confirmed_at: Date | null }[])
-      : prisma.inspection_result.findMany({
-        where: { inspection_request_id: { in: newFlow } },
-        select: { inspection_request_id: true, overall_judgment_code: true, status_code: true, confirmed_at: true },
-      }),
+    judgedResultsOf(prisma, newFlow),
   ]);
   const lotOf = new Map(lots.map((lot) => [lot.inbound_lot_id, lot]));
   const countOf = new Map(counts.map((count) => [count.inbound_lot_id, count._count._all]));
@@ -115,11 +125,10 @@ export async function inboundLotSummaries(prisma: PrismaService, rows: readonly 
     };
     if (row.target_type_code !== INBOUND_LOT_TARGET) return base;
     const first = firstOf.get(row.inbound_lot_id);
-    const results = judgedResults(judgments.filter((result) => result.inspection_request_id === row.inspection_request_id));
     return {
       ...base,
-      // 결과가 없으면 null — 판정이 빈 결과가 끼어도 null(확정할 수 없음).
-      previewJudgmentCode: iqcOverallJudgment(results.map((result) => ({ overallJudgmentCode: result.overall_judgment_code }))).judgmentCode,
+      // 판정에 쓸 결과가 없으면 null — 판정이 빈 결과가 끼어도 null(확정할 수 없음).
+      previewJudgmentCode: iqcOverallJudgment(judgments.filter((result) => result.requestId === row.inspection_request_id)).judgmentCode,
       splitFromInboundLotNo: lot?.split_from_inbound_lot?.inbound_lot_no ?? null,
       receivedAt: first?.occurred_at.toISOString() ?? null,
       receivedChannelCode: first === undefined ? null : first.actor_worker_id === null ? 'WEB' : 'PDA',
@@ -131,7 +140,7 @@ export async function inboundLotSummaries(prisma: PrismaService, rows: readonly 
 /** 상세의 입하 LOT 검사 칸 — 새 흐름 요청만. 그 밖은 `undefined`. */
 export async function inboundLotRequestDetail(
   prisma: PrismaService,
-  row: Row & { confirmed_by?: bigint | null },
+  row: Row & { status_code: string; confirmed_at: Date | null; confirmed_by?: bigint | null },
 ): Promise<InboundLotRequestDetailView | undefined> {
   if (row.target_type_code !== INBOUND_LOT_TARGET || row.inbound_lot_id == null) return undefined;
   const inboundLotId = row.inbound_lot_id;
@@ -156,15 +165,15 @@ export async function inboundLotRequestDetail(
     prisma.inspection_result.findMany({ where: { inspection_request_id: row.inspection_request_id }, orderBy: { inspection_round: 'asc' }, select: RESULT_SELECT }),
     nextResultSequence(prisma, row.inspection_request_id),
     row.confirmed_by == null ? null : prisma.app_user.findUnique({ where: { app_user_id: row.confirmed_by }, select: { user_name: true } }),
-    prisma.nonconformance.findFirst({
-      where: {
-        status_code: { not: 'CANCELLED' },
-        OR: [{ inspection_request_id: row.inspection_request_id }, { inspection_result: { is: { inspection_request_id: row.inspection_request_id } } }],
-      },
+    // 지금 확정이 만든 부적합만 — 확정 전이면 없다. 재작업 뒤 다시 확정했으면 앞 확정의 (닫힌) 부적합이 아니라 이번 확정 시각
+    // 이후에 열린 것이다(확정 취소가 고르는 것과 같은 조건 · `confirmMadeNonconformanceIds`).
+    row.status_code !== 'COMPLETED' || row.confirmed_at === null ? null : prisma.nonconformance.findFirst({
+      where: { inspection_request_id: row.inspection_request_id, status_code: { not: 'CANCELLED' }, opened_at: { gte: row.confirmed_at } },
       orderBy: { nonconformance_id: 'desc' },
       select: { nonconformance_id: true, nonconformance_no: true },
     }),
   ]);
+  const reasonNames = await reinspectionReasonNames(prisma, results);
   const receivedLots = new Set(received.map((lot) => lot.lot_id));
   const line = inbound.inbound_receipt_line;
   const allocated = line.inbound_receipt_po_allocation.reduce((sum, allocation) => sum.plus(allocation.allocated_qty), new Prisma.Decimal(0));
@@ -183,7 +192,8 @@ export async function inboundLotRequestDetail(
       };
     }),
     unallocatedQty: Number(line.received_qty.minus(allocated)),
-    results: results.map(resultView),
+    results: results.map((result) => resultView(result, reasonNames)),
+    lotJudgments: lotJudgmentViews(lots, results, reasonNames),
     nextResultSeqNo: nextSeqNo,
     confirmedByName: confirmer?.user_name ?? null,
     nonconformanceId: nonconformance === null ? null : Number(nonconformance.nonconformance_id),
@@ -206,13 +216,50 @@ const LINE_SELECT = {
 
 const RESULT_SELECT = {
   inspection_result_id: true, inspection_result_no: true, inspection_round: true, confirm_cycle: true, status_code: true,
-  overall_judgment_code: true, inspected_qty: true, accepted_qty: true, rejected_qty: true, held_qty: true, inspected_at: true,
+  overall_judgment_code: true, reinspection_reason_code: true, inspected_qty: true, accepted_qty: true, rejected_qty: true, held_qty: true, inspected_at: true,
   version_no: true, worker: { select: { worker_name: true } },
   inspection_result_lot: { orderBy: { lot_id: 'asc' }, select: { lot: { select: { lot_id: true, lot_no: true } } } },
   defect_record: { orderBy: { defect_record_id: 'asc' }, select: { defect_code: { select: { defect_name: true } } } },
 } satisfies Prisma.inspection_resultSelect;
 
-function resultView(row: Prisma.inspection_resultGetPayload<{ select: typeof RESULT_SELECT }>): InspectionRequestResultView {
+type ResultRow = Prisma.inspection_resultGetPayload<{ select: typeof RESULT_SELECT }>;
+
+async function reinspectionReasonNames(prisma: PrismaService, results: readonly ResultRow[]): Promise<Map<string, string>> {
+  const codes = [...new Set(results.flatMap((result) => (result.reinspection_reason_code === null ? [] : [result.reinspection_reason_code])))];
+  if (codes.length === 0) return new Map();
+  const found = await prisma.code_value.findMany({
+    where: { code: { in: codes }, code_group: { group_code: 'REINSPECTION_REASON' } }, select: { code: true, code_name: true },
+  });
+  return new Map(found.map((value) => [value.code, value.code_name]));
+}
+
+/** LOT별 판정 근거 — 입하 LOT 의 자재 관리 LOT 전부(번호 순). 사유는 판정에 쓰인 결과의 것이다. */
+function lotJudgmentViews(
+  lots: readonly { lot_id: bigint; lot_no: string }[],
+  results: readonly ResultRow[],
+  reasonNames: ReadonlyMap<string, string>,
+): InspectionRequestLotJudgmentView[] {
+  const judged = results.map((result): IqcJudgedResult & { reasonCode: string | null } => ({
+    resultId: result.inspection_result_id, seqNo: result.inspection_round, judgmentCode: result.overall_judgment_code,
+    lotIds: result.inspection_result_lot.map((match) => match.lot.lot_id), reasonCode: result.reinspection_reason_code,
+  }));
+  const byLot = iqcLotJudgments(judged);
+  return lots.map((lot) => {
+    const judgment = byLot.get(lot.lot_id);
+    const used = judgment?.used;
+    return {
+      lotId: Number(lot.lot_id), lotNo: lot.lot_no,
+      judgmentCode: used?.judgmentCode ?? null,
+      resultId: used === undefined ? null : Number(used.resultId),
+      resultSeqNo: used?.seqNo ?? null,
+      superseded: (judgment?.superseded ?? []).map((result) => ({ resultId: Number(result.resultId), resultSeqNo: result.seqNo, judgmentCode: result.judgmentCode })),
+      reinspectionReasonCode: used?.reasonCode ?? null,
+      reinspectionReasonName: used?.reasonCode == null ? null : (reasonNames.get(used.reasonCode) ?? null),
+    };
+  });
+}
+
+function resultView(row: ResultRow, reasonNames: ReadonlyMap<string, string>): InspectionRequestResultView {
   const lots = row.inspection_result_lot.map((match) => match.lot);
   return {
     inspectionResultId: Number(row.inspection_result_id),
@@ -230,6 +277,8 @@ function resultView(row: Prisma.inspection_resultGetPayload<{ select: typeof RES
     inspectorName: row.worker?.worker_name ?? null,
     matchedLotIds: lots.map((lot) => Number(lot.lot_id)),
     matchedLotNos: lots.map((lot) => lot.lot_no),
+    reinspectionReasonCode: row.reinspection_reason_code,
+    reinspectionReasonName: row.reinspection_reason_code === null ? null : (reasonNames.get(row.reinspection_reason_code) ?? null),
     versionNo: row.version_no,
   };
 }

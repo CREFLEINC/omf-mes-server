@@ -16,7 +16,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { InboundLotFixture, closeInboundLotFixture, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
+import { InboundLotFixture, closeInboundLotFixture, defaultMatchedLotIds, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
 
 const LOGIN_ID = 'e2e-iqc-judgment';
 const PASSWORD = 'IQC-판정-비밀번호';
@@ -292,11 +292,16 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     qty: { acceptedQty: number; rejectedQty: number; heldQty?: number } & Record<string, unknown>,
   ): Promise<number> {
     const { acceptedQty, rejectedQty, heldQty, ...extra } = qty;
+    // 2026-11-12 매칭 필수 — 입하 LOT 요청이면 자재 관리 LOT 를 매칭한다(옛 요청은 칸 없음).
+    const matchedLotIds = await defaultMatchedLotIds(prisma, requestId);
     const response = await request(app.getHttpServer())
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send({ ...resultBody(requestId, { acceptedQty, rejectedQty, heldQty }), statusCode: 'DRAFT', ...defectsFor(rejectedQty), ...extra })
+      .send({
+        ...resultBody(requestId, { acceptedQty, rejectedQty, heldQty }), statusCode: 'DRAFT', ...defectsFor(rejectedQty),
+        ...(matchedLotIds === undefined ? {} : { matchedLotIds }), ...extra,
+      })
       .expect(201);
     return response.body.inspectionResultId as number;
   }

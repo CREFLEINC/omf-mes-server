@@ -112,9 +112,13 @@ describe('피처 005 S10 W-03-05 결과 행 확정 주기 (e2e)', () => {
 
   async function addResult(requestId: number, judgment: 'ACCEPTED' | 'REJECTED'): Promise<number> {
     const rejected = judgment === 'REJECTED' ? 20 : 0;
+    // 2026-11-12 매칭 필수 — 입하 LOT 요청이면 LOT 전부를 매칭하고, 앞 불합격을 덮는 합격에는 재검 사유를 싣는다.
+    const iqc = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(requestId) }, select: { target_type_code: true, inbound_lot_id: true } });
+    const lots = iqc.target_type_code === 'INBOUND_LOT' ? await prisma.lot.findMany({ where: { inbound_lot_id: iqc.inbound_lot_id }, select: { lot_id: true } }) : [];
+    const inbound = lots.length === 0 ? {} : { matchedLotIds: lots.map((lot) => Number(lot.lot_id)), ...(judgment === 'ACCEPTED' ? { reinspectionReasonCode: `${PREFIX}-RT` } : {}) };
     const response = await post(RESULTS, {
       inspectionRequestId: requestId, inspectedQty: 20, acceptedQty: 20 - rejected, rejectedQty: rejected, heldQty: 0, uomId: Number(ids.ea),
-      inspectedAt: `${DAY}T06:00:00.000Z`, statusCode: 'DRAFT', overallJudgmentCode: judgment,
+      inspectedAt: `${DAY}T06:00:00.000Z`, statusCode: 'DRAFT', overallJudgmentCode: judgment, ...inbound,
     }, 201);
     return response.body.inspectionResultId as number;
   }

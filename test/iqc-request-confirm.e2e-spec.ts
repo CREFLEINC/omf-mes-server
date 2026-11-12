@@ -20,7 +20,7 @@ import { PERMISSIONS } from '../src/common/permissions/permissions';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
-  IssuedMaterialLot, InboundLotFixture, closeInboundLotFixture, idempotencyKey, issueAndReceive, sessionAuth, terminalAuth,
+  IssuedMaterialLot, InboundLotFixture, closeInboundLotFixture, idempotencyKey, issueAndReceive, sessionAuth, terminalAuth, defaultMatchedLotIds,
 } from './support/inbound-lot-fixture';
 
 const PREFIX = 'IQCF';
@@ -188,7 +188,7 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 (e2e)', () => {
 
   it('US4-7·R19-1·SC-005 W-01-15 가 없으면 결과 기록은 되고 :confirm·:cancel-confirm 은 403', async () => {
     const iqc = await iqcLot(1);
-    await postResult(resultBody(iqc.requestId), recorder).expect(201);
+    await postResult(resultBody(iqc.requestId, { matchedLotIds: lotIdsOf(iqc).map(Number) }), recorder).expect(201);
     await confirm(iqc.requestId, 403, recorder);
     await request(app.getHttpServer()).post(`${REQUESTS}/${String(iqc.requestId)}:cancel-confirm`).set('Cookie', recorder)
       .set('Idempotency-Key', idempotencyKey(fx)).send({ versionNo: await versionOf(iqc.requestId) }).expect(403);
@@ -322,7 +322,9 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 (e2e)', () => {
   }
 
   async function addResult(requestId: number, overrides: Record<string, unknown> = {}): Promise<ResultRow> {
-    return (await postResult(resultBody(requestId, overrides)).expect(201)).body as ResultRow;
+    // 2026-11-12 매칭 필수 — 칸을 주지 않은 결과는 차례대로 LOT 하나씩 매칭한다(판정 뜻 그대로).
+    const matchedLotIds = 'matchedLotIds' in overrides ? undefined : await defaultMatchedLotIds(prisma, requestId);
+    return (await postResult(resultBody(requestId, { matchedLotIds, ...overrides })).expect(201)).body as ResultRow;
   }
 
   async function versionOf(requestId: number): Promise<number> {

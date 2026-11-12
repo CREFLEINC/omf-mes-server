@@ -64,7 +64,8 @@ export interface InspectionResultCreate {
 /**
  * 계약 `InspectionResultUpdate` — required **0** · 프로퍼티 **9**.
  * ⛔ `statusCode` 가 없다 — `PUT` 으로 확정할 수 없다(확정 경로는 `POST statusCode=CONFIRMED` 와 `:confirm` 둘).
- * ⛔ `previousResultId`·`reinspectionReasonCode` 가 없다 — 회차 사슬은 못 고친다(B-10 「번복은 재검이지 수정이 아니다」).
+ * ⛔ `previousResultId` 가 없다 — 회차 사슬은 못 고친다(B-10 「번복은 재검이지 수정이 아니다」). `reinspectionReasonCode` 는 입하 LOT
+ *   검사 결과만(불합격·보류를 덮는 수정에 필수 · 2026-11-12).
  * ⚠ `[string,null]`·`[integer,null]` 형이 **하나도 없다** — 명시 null 로 «해제»하는 칸이 0 이라
  *   `optional()` 관행 중 **null 갈래를 쓰지 않는다**(§1-3).
  */
@@ -87,8 +88,10 @@ export interface InspectionResultUpdate {
    * 값이면 그 의뢰 LOT 의 한 줄을 갈아 끼운다. 자재 LOT 이 있는 IQC 에만.
    */
   fourMChange?: FourMChangeInput | null;
-  /** 입하 LOT 검사 결과의 매칭 — 실으면 통째로 갈아 끼우고(빈 배열 = 매칭 없음), 생략하면 손대지 않는다. */
+  /** 입하 LOT 검사 결과의 매칭 — 실으면 통째로 갈아 끼우고(빈 배열은 400), 생략하면 손대지 않는다. */
   matchedLotIds?: number[];
+  /** 입하 LOT 검사 결과의 재검 사유(공통코드 `REINSPECTION_REASON`) — 생략하면 손대지 않는다. */
+  reinspectionReasonCode?: string;
 }
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 `POST` 에서 **선택**이고 `PUT` 에서 필수다. */

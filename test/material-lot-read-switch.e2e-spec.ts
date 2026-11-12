@@ -15,6 +15,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PERMISSIONS } from '../src/common/permissions/permissions';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { defaultMatchedLotIds } from './support/inbound-lot-fixture';
 
 const PREFIX = 'E2E005RS';
 const LOGIN_ID = 'e2e-005-read-switch';
@@ -386,6 +387,8 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
 
   async function draft(requestId: bigint, qty: number, split: { rejectedQty?: number } = {}): Promise<number> {
     const rejectedQty = split.rejectedQty ?? 0;
+    // 2026-11-12 매칭 필수 — 입하 LOT 요청이면 자재 관리 LOT 를 매칭한다(옛 요청은 칸 없음).
+    const matchedLotIds = await defaultMatchedLotIds(prisma, Number(requestId));
     const response = await request(app.getHttpServer())
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
@@ -393,7 +396,7 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
       .send({
         inspectionRequestId: Number(requestId), inspectedQty: qty, acceptedQty: qty - rejectedQty, rejectedQty, heldQty: 0,
         uomId: Number(ids.uom), inspectedAt: `${DAY}T03:00:00.000Z`, statusCode: 'DRAFT',
-        overallJudgmentCode: rejectedQty > 0 ? 'REJECTED' : 'ACCEPTED',
+        overallJudgmentCode: rejectedQty > 0 ? 'REJECTED' : 'ACCEPTED', ...(matchedLotIds === undefined ? {} : { matchedLotIds }),
       })
       .expect(201);
     return response.body.inspectionResultId as number;

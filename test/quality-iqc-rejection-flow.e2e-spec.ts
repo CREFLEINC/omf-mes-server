@@ -17,7 +17,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
-import { Authorize, InboundLotFixture, closeInboundLotFixture, issueAndReceive } from './support/inbound-lot-fixture';
+import { Authorize, InboundLotFixture, closeInboundLotFixture, defaultMatchedLotIds, issueAndReceive } from './support/inbound-lot-fixture';
 
 const LOGIN_ID = 'e2e-iqc-flow';
 const PASSWORD = 'IQC-흐름-비밀번호';
@@ -211,7 +211,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(await pendingQueueIds()).toContain(requestId);
 
     // 입하 LOT 검사는 재검사 결과를 더해 검사 단위로 다시 확정한다(R-15 · D-10·D-11 — 회차 사슬 없음).
-    await draft(requestId, { acceptedQty: 10, rejectedQty: 0, judgment: 'ACCEPTED' });
+    // 앞 불합격을 덮는 재검 결과라 재검 사유가 필요하다(2026-11-12).
+    await draft(requestId, { acceptedQty: 10, rejectedQty: 0, judgment: 'ACCEPTED', reinspectionReasonCode: 'RETEST' });
     expect(await requestStatus(requestId)).toBe('IN_PROGRESS');
     await confirmRequest(requestId);
     expect(await requestStatus(requestId)).toBe('COMPLETED');
@@ -594,8 +595,10 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   async function draft(
     requestId: number,
-    qty: { acceptedQty: number; rejectedQty: number; previousResultId?: number; judgment?: string },
+    qty: { acceptedQty: number; rejectedQty: number; previousResultId?: number; judgment?: string; reinspectionReasonCode?: string },
   ): Promise<number> {
+    // 2026-11-12 매칭 필수 — 입하 LOT 요청이면 자재 관리 LOT 를 매칭한다(옛 요청은 칸 없음).
+    const matchedLotIds = await defaultMatchedLotIds(prisma, requestId);
     const response = await request(app.getHttpServer())
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
@@ -611,6 +614,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
         statusCode: 'DRAFT',
         ...(qty.previousResultId === undefined ? {} : { previousResultId: qty.previousResultId }),
         ...(qty.judgment === undefined ? {} : { overallJudgmentCode: qty.judgment }),
+        ...(matchedLotIds === undefined ? {} : { matchedLotIds }),
+        ...(qty.reinspectionReasonCode === undefined ? {} : { reinspectionReasonCode: qty.reinspectionReasonCode }),
       })
       .expect(201);
     return response.body.inspectionResultId as number;

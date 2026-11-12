@@ -156,11 +156,14 @@ export async function passInboundLotIqc(fixture: InboundLotFixture, inboundLotId
   });
   if (iqc === null || iqc.status_code !== 'REQUESTED') throw new Error(`passInboundLotIqc(${String(inboundLotId)}): 검사할 IQC 요청이 없다 — 검사 필요 품목이어야 한다`);
   const qty = Number(iqc.target_qty);
+  // 결과마다 자재 관리 LOT 1개 이상 매칭(2026-11-12) — [전부 선택]처럼 입하 LOT 의 LOT 전부.
+  const matched = await prisma.lot.findMany({ where: { inbound_lot_id: id }, select: { lot_id: true }, orderBy: { lot_id: 'asc' } });
   const created = await inspector(request(fixture.app.getHttpServer()).post(RESULTS))
     .set('Idempotency-Key', idempotencyKey(fixture))
     .send({
       inspectionRequestId: Number(iqc.inspection_request_id), inspectedQty: qty, acceptedQty: qty, rejectedQty: 0, heldQty: 0,
       uomId: Number(iqc.uom_id), inspectedAt: `${fixture.businessDate}T06:00:00.000Z`, statusCode: 'DRAFT', overallJudgmentCode: 'ACCEPTED',
+      matchedLotIds: matched.map((lot) => Number(lot.lot_id)),
     })
     .expect(201);
   expect((created.body as { statusCode: string }).statusCode).toBe('DRAFT');
@@ -178,4 +181,21 @@ export async function passInboundLotIqc(fixture: InboundLotFixture, inboundLotId
   const lots = await prisma.lot.findMany({ where: { inbound_lot_id: id }, select: { lot_id: true, lot_no: true, initial_qty: true, status_code: true }, orderBy: { lot_no: 'asc' } });
   expect(lots.map((lot) => lot.status_code)).toEqual(lots.map(() => 'NORMAL'));
   return lots.map((lot) => ({ lotId: Number(lot.lot_id), lotNo: lot.lot_no, lotQty: Number(lot.initial_qty) }));
+}
+
+/**
+ * 결과 매칭 기본값(2026-11-12 매칭 필수) — 입하 LOT 요청(`targetTypeCode=INBOUND_LOT`)이면 결과 차례대로 자재 관리 LOT 하나씩
+ * (LOT 번호 순, 결과가 LOT 수보다 많으면 처음부터). 결과끼리 LOT 이 겹치지 않으면 LOT별 마지막 결과 판정이 「결과 전부 중 가장
+ * 나쁜 것」과 같아 매칭 없이 쓰던 시험의 뜻이 그대로다. 옛 요청이면 `undefined`(매칭 칸을 싣지 않는다).
+ */
+export async function defaultMatchedLotIds(prisma: PrismaService, inspectionRequestId: number): Promise<number[] | undefined> {
+  const iqc = await prisma.inspection_request.findUniqueOrThrow({
+    where: { inspection_request_id: BigInt(inspectionRequestId) }, select: { target_type_code: true, inbound_lot_id: true },
+  });
+  if (iqc.target_type_code !== 'INBOUND_LOT' || iqc.inbound_lot_id === null) return undefined;
+  const [lots, results] = await Promise.all([
+    prisma.lot.findMany({ where: { inbound_lot_id: iqc.inbound_lot_id }, select: { lot_id: true }, orderBy: { lot_no: 'asc' } }),
+    prisma.inspection_result.count({ where: { inspection_request_id: BigInt(inspectionRequestId) } }),
+  ]);
+  return lots.length === 0 ? undefined : [Number(lots[results % lots.length].lot_id)];
 }

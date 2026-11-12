@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 
-import { ConflictException } from '../../common/errors';
+import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
@@ -40,6 +40,7 @@ import {
 import { reopenInspectionRequestWithin, startInspectionRequestWithin } from './inspection-request-reopen';
 import { recordInspectionRequestEvent } from './inspection-request-event';
 import {
+  assertReinspectionReason,
   eventActor,
   iqcDefectLotIdWithin,
   lockOpenInboundLotRequest,
@@ -83,6 +84,11 @@ export class InspectionResultWriteService {
     const inspectorId = await resolveInspector(this.prisma, context);
     const round = await assertReferences(this.prisma, body, context.version);
     const inbound = await prepareInboundLotWrite(this.prisma, BigInt(body.inspectionRequestId), body.matchedLotIds);
+    if (inbound !== null) {
+      await assertReinspectionReason(this.prisma, BigInt(body.inspectionRequestId), {
+        seqNo: round, judgmentCode: body.overallJudgmentCode ?? null, lotIds: inbound.matchedLotIds ?? [], reasonCode: body.reinspectionReasonCode,
+      });
+    }
     // PQC 는 실적이 먼저이고, 작성중 1회차가 있으면 새로 만들지 않고 그 회차를 덮는다(장부 P-49).
     const draftResultId = await preparePqcWrite(this.prisma, body, round);
     const inspectedAt = new Date(body.inspectedAt);
@@ -237,6 +243,10 @@ export class InspectionResultWriteService {
         ? await assertAccountWorker(this.prisma, context.appUserId)
         : null;
     const inbound = await prepareInboundLotWriteOfResult(this.prisma, BigInt(inspectionResultId), body.matchedLotIds);
+    if (inbound === null && body.reinspectionReasonCode !== undefined) {
+      throw one(field('reinspectionReasonCode', ERROR_CODE.INVALID, '재검사 사유는 입하 LOT 검사 결과에서만 고칩니다 — 번복은 재검 회차입니다.'));
+    }
+    if (inbound !== null) await this.assertUpdateReinspectionReason(inspectionResultId, body, inbound.matchedLotIds);
     const draftDefects = await prepareDraftDefects(this.prisma, this.defects, inspectionResultId, body);
     const fourMChange = await prepareFourMChangeOfResult(this.prisma, BigInt(inspectionResultId), body.fourMChange);
     // 불량 기록을 쓰는 저장만 귀속 작업자를 POST 와 같이 푼다(단말은 사번 헤더 · #122 리뷰 m3). 사유 없는 PUT 은 종전 그대로다.
@@ -269,6 +279,7 @@ export class InspectionResultWriteService {
           ...optional('overall_judgment_code', body.overallJudgmentCode),
           ...optional('inspected_at', body.inspectedAt === undefined ? undefined : new Date(body.inspectedAt)),
           ...optional('remarks', body.remarks),
+          ...optional('reinspection_reason_code', body.reinspectionReasonCode),
           updated_by: context.appUserId ?? null,
           version_no: { increment: 1 },
         },
@@ -295,6 +306,26 @@ export class InspectionResultWriteService {
       await writeFourMChangeWithin(tx, fourMChange, context.appUserId);
       if (inbound !== null) await recordInboundLotUpdate(tx, inbound, BigInt(inspectionResultId), before, eventActor(context, workerId));
       return { view: await this.reread(tx, BigInt(inspectionResultId)), versionNo: current.version_no + 1 };
+    });
+  }
+
+  /** 고친 뒤의 판정·매칭(본문이 없으면 저장값)으로 재검 사유를 본다 — 사유도 본문이 없으면 저장값이다(FR-023a). */
+  private async assertUpdateReinspectionReason(inspectionResultId: number, body: InspectionResultUpdate, matchedLotIds: bigint[] | undefined): Promise<void> {
+    const current = await this.prisma.inspection_result.findUnique({
+      where: { inspection_result_id: inspectionResultId },
+      select: {
+        inspection_request_id: true, inspection_round: true, status_code: true, overall_judgment_code: true, reinspection_reason_code: true,
+        inspection_result_lot: { select: { lot_id: true } },
+      },
+    });
+    // 확정된 결과는 아래 트랜잭션이 409 로 막는다 — 사유 400 이 앞서지 않게 한다.
+    if (current === null || current.status_code === CONFIRMED) return;
+    await assertReinspectionReason(this.prisma, current.inspection_request_id, {
+      resultId: BigInt(inspectionResultId),
+      seqNo: current.inspection_round,
+      judgmentCode: body.overallJudgmentCode ?? current.overall_judgment_code,
+      lotIds: matchedLotIds ?? current.inspection_result_lot.map((match) => match.lot_id),
+      reasonCode: body.reinspectionReasonCode ?? current.reinspection_reason_code,
     });
   }
 
