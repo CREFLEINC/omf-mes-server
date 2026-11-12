@@ -79,6 +79,11 @@ export async function reopenStatesOf(db: Prisma.TransactionClient, inboundLotIds
   }));
 }
 
+/** 막힘이 같은 조합 입하 중(`OPEN_RECEIPT_EXISTS`) 하나뿐인가 — 그쪽을 마감하면 마감 취소할 수 있다. */
+export function onlyOpenReceiptBlocks(blockers: readonly ReopenBlockerCode[]): boolean {
+  return blockers.length === 1 && blockers[0] === 'OPEN_RECEIPT_EXISTS';
+}
+
 function reasonOf(request: { status_code: string; skip_basis_code: string | null } | undefined): ReopenReasonCode {
   if (request?.status_code === 'REQUESTED') return 'NO_IQC_RESULT';
   if (request?.status_code === 'SKIPPED' && request.skip_basis_code === 'APPROVAL') return 'IQC_SKIPPED';

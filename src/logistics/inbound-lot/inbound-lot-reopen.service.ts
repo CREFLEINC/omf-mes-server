@@ -76,7 +76,7 @@ export class InboundLotReopenService {
         status_code: INBOUND_LOT_RECEIVING, open_since_date: new Date(`${localDate(at, plant.timezone_code)}T00:00:00Z`),
         received_closed_at: null, received_closed_by: null, closed_automatically: false, version_no: { increment: 1 }, updated_by: by,
       },
-    });
+    }).catch(openReceiptRace);
     const iqcRequestId = await this.cancelRequest(tx, id, lotIds, locked, actor, at);
     await recordInboundLotEvent(tx, id, 'RECEIPT_REOPENED', actor, {
       releasedAllocations: released, iqcRequestId: iqcRequestId === null ? null : String(iqcRequestId),
@@ -130,6 +130,17 @@ export class InboundLotReopenService {
     });
     return request.inspection_request_id;
   }
+}
+
+/**
+ * 위 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 열면 `uq_inbound_lot_open` 이 걸린다. 트랜잭션이 이미 깨져 그 번호는 못 읽는다 —
+ * 번호 없이 같은 막힘으로 알린다(다시 읽으면 목록·상세가 번호를 준다).
+ */
+function openReceiptRace(error: unknown): never {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+  throw new ContractException(HttpStatus.CONFLICT, [
+    { scope: 'screen', code: 'OPEN_RECEIPT_EXISTS', message: BLOCKER_MESSAGE.OPEN_RECEIPT_EXISTS },
+  ], { openInboundLotNo: null });
 }
 
 /** 배정 행을 지우고 그만큼 P/O 라인 받은 양을 되돌린다 — 부모 P/O 를 오름차순 한 문장으로 먼저 잠근다. 풀린 배정을 돌려준다. */

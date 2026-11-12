@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { reopenStatesOf } from './inbound-lot-reopenable';
+import { onlyOpenReceiptBlocks, reopenStatesOf } from './inbound-lot-reopenable';
 
 /** 계약 `InboundLotIqcSummary`. */
 export interface InboundLotIqcView {
@@ -48,6 +48,8 @@ export interface InboundLotView {
   finalizedAt: string | null;
   reopenable: boolean;
   reopenReasonCode: string | null;
+  reopenBlockerCode: 'OPEN_RECEIPT_EXISTS' | null;
+  openInboundLotNo: string | null;
   reopened: boolean;
   finalizable: boolean;
   erpSendModeCode: string;
@@ -122,6 +124,7 @@ export async function loadInboundLotViews(
     const allocated = line.inbound_receipt_po_allocation.reduce((sum, allocation) => sum.plus(allocation.allocated_qty), ZERO);
     const iqc = iqcOf.get(row.inbound_lot_id);
     const reopen = reopenStates.get(row.inbound_lot_id);
+    const openBlocked = reopen !== undefined && onlyOpenReceiptBlocks(reopen.blockers);
     return {
       inboundLotId: Number(row.inbound_lot_id), inboundLotNo: row.inbound_lot_no, plantId: Number(row.plant_id),
       supplierId: Number(row.supplier_id), supplierCode: row.supplier.partner_code, supplierName: row.supplier.partner_name,
@@ -143,6 +146,7 @@ export async function loadInboundLotViews(
       closedAutomatically: row.closed_automatically,
       finalizedAt: row.finalized_at?.toISOString() ?? null,
       reopenable: reopen !== undefined && reopen.blockers.length === 0, reopenReasonCode: reopen?.reasonCode ?? null,
+      reopenBlockerCode: openBlocked ? 'OPEN_RECEIPT_EXISTS' : null, openInboundLotNo: openBlocked ? reopen.openInboundLotNo : null,
       reopened: reopened.has(row.inbound_lot_id), finalizable: false,
       erpSendModeCode: row.erp_send_mode_code, versionNo: row.version_no,
     };

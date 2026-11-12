@@ -5,7 +5,7 @@ import { PagedResponse, pagedResponse, pageRequest } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import { packageView, type MaterialPackageView } from '../material-lot-batch/material-lot-view';
 import { lastRegistrations } from './inbound-lot-event';
-import { reopenStatesOf } from './inbound-lot-reopenable';
+import { onlyOpenReceiptBlocks, reopenStatesOf } from './inbound-lot-reopenable';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 
 export interface InboundLotQuery {
@@ -91,13 +91,16 @@ export class InboundLotQueryService {
     return pagedResponse(items, total, page);
   }
 
-  /** 마감 취소 가능 입하 LOT — 판정이 집계(IQC 결과·입고·결재·같은 조합)라 SQL 조건으로 못 적어 후보(새 흐름 마감)를 모아 가른다. */
+  /**
+   * 마감 취소 목록(M-01-03) 입하 LOT — 판정이 집계(IQC 결과·입고·결재·같은 조합)라 SQL 조건으로 못 적어 후보(새 흐름 마감)를 모아 가른다.
+   * 같은 조합 입하 중 하나만 막는 건도 넣는다 — 그쪽을 마감하면 풀리니 화면이 막힘 줄과 함께 보여 준다(행 reopenable 은 false).
+   */
   private async reopenableIds(plantId: number): Promise<bigint[]> {
     const candidates = await this.prisma.inbound_lot.findMany({
       where: { plant_id: plantId, status_code: 'RECEIVED', erp_send_mode_code: 'ON_FINALIZE' }, select: { inbound_lot_id: true },
     });
     const states = await reopenStatesOf(this.prisma, candidates.map((row) => row.inbound_lot_id));
-    return [...states].filter(([, state]) => state.blockers.length === 0).map(([id]) => id);
+    return [...states].filter(([, state]) => state.blockers.length === 0 || onlyOpenReceiptBlocks(state.blockers)).map(([id]) => id);
   }
 
   async get(inboundLotId: number): Promise<InboundLotDetailView> {

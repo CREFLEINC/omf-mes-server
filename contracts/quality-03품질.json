@@ -6260,13 +6260,14 @@
      },
      "targetTypeCode": {
       "type": "string",
-      "description": "A-10 다형 참조 판별자 — 값이 «대상 리소스 이름»이고 짝 id 가 그 리소스의 식별자다. ⭐ 대응표는 «설계»가 정한다(A-10 규칙 1 · 2026-09-03 사용자 결정). 검사 대상 — LOT(IQC 입하 LOT · OQC 제품 LOT) · 작업지시(WORK_ORDER · PQC) · 출하 지시(SHIPMENT_REQUEST · OQC). ⭐ W-04-03 §4 가 「다형 — 출하작업지시 · LOT」로, P-02-13 §4 가 작업지시를 적어 두었다. ⚠ 이 스키마는 lotId · workOrderId · productionResultId 를 «따로» 갖는다 — A-10 규칙 3 대로 둘이 같은 대상을 가리키면 FK 쪽을 쓰고, 다르면 이 판별자로 판정한다.",
+      "description": "A-10 다형 참조 판별자 — 값이 «대상 리소스 이름»이고 짝 id 가 그 리소스의 식별자다. ⭐ 대응표는 «설계»가 정한다(A-10 규칙 1 · 2026-09-03 사용자 결정). 검사 대상 — INBOUND_LOT(IQC · 피처 005 입하 마감이 만든 요청 — 짝 id 는 입하 LOT id) · LOT(이전 데이터 IQC 입하 원천 LOT · OQC 제품 LOT) · 작업지시(WORK_ORDER · PQC) · 출하 지시(SHIPMENT_REQUEST · OQC). ⭐ W-04-03 §4 가 「다형 — 출하작업지시 · LOT」로, P-02-13 §4 가 작업지시를 적어 두었다. ⚠ 이 스키마는 lotId · workOrderId · productionResultId 를 «따로» 갖는다 — A-10 규칙 3 대로 둘이 같은 대상을 가리키면 FK 쪽을 쓰고, 다르면 이 판별자로 판정한다.",
       "example": "LOT",
       "x-code-key": "CD-INSPECTION-REQUEST-TARGET-TYPE",
       "enum": [
        "LOT",
        "WORK_ORDER",
-       "SHIPMENT_REQUEST"
+       "SHIPMENT_REQUEST",
+       "INBOUND_LOT"
       ]
      },
      "targetId": {
