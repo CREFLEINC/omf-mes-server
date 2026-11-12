@@ -2835,6 +2835,23 @@
       }
      },
      {
+      "name": "inboundLotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "자재 관리 LOT 의 입하 LOT 으로 거른다. 근거: 피처 005 FR-035 · D-29"
+     },
+     {
+      "name": "inboundLotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입하 LOT 번호 정확 일치. 근거: 피처 005 FR-035 · D-29"
+     },
+     {
       "name": "heldOnly",
       "in": "query",
       "schema": {
@@ -3022,6 +3039,23 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "inboundLotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "자재 관리 LOT 의 입하 LOT 으로 거른다. 근거: 피처 005 FR-035 · D-29"
+     },
+     {
+      "name": "inboundLotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입하 LOT 번호 정확 일치. 근거: 피처 005 FR-035 · D-29"
      },
      {
       "name": "heldOnly",
@@ -7275,6 +7309,21 @@
       "example": "INCOMING_INSPECTION_WAIT",
       "x-code-key": "CD-LOT-HOLD-REASON",
       "description": "「최근 전이」의 사유. ⛔ 변경이력 표가 없어 «보류» 기록의 최신 건으로 낸다 — 합격·불합격·재판정 전이는 여기 나타나지 않는다(W-03-01 §5-1). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_REASON 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+     },
+     "inboundLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "자재 관리 LOT 의 입하 LOT — 입하 LOT 이 없는 LOT(생산·재생 등)은 null, 이전 데이터는 IL-MIG-… 입하 LOT. 근거: 피처 005 FR-035"
+     },
+     "inboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "입하 LOT 번호 — 없으면 null"
      }
     },
     "required": [
@@ -7283,7 +7332,9 @@
      "itemId",
      "lotStatusCode",
      "fullyHeld",
-     "versionNo"
+     "versionNo",
+     "inboundLotId",
+     "inboundLotNo"
     ],
     "description": "품질 축의 LOT 목록. ⚠ 01 계약의 GET /trace/lots 는 물류 축이라 창고 필터·보류 요약·최근 전이를 갖지 않는다 — 세 화면(W-03-01·02·03)이 공통으로 요구해 03 이 낸다. ⭐ versionNo 는 필수다 — POST /quality/lot-holds 의 lots[].versionNo 가 required 인데, 그 본문을 한 번의 조회로 조립할 수 있는 자리가 이 목록이라 선택이면 화면이 토큰을 채우지 못하는 경우가 계약상 허용된다(공유계약 A-4-1).",
     "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 2단계 §4-1"

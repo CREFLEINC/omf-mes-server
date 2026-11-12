@@ -22,6 +22,7 @@ import {
 
 export interface BalanceQuery {
   warehouseId?: number; itemId?: number; lotId?: number; locationId?: number;
+  inboundLotId?: number; inboundLotNo?: string;
   groupBy?: string;
   qualityStatusCode?: string; inventoryStatusCode?: string;
   ownershipTypeCode?: string; mesCategoryCode?: string;
@@ -61,6 +62,9 @@ interface BalanceView {
   locationCode: string | null;
   warehouseName: string | null;
   locationName: string | null;
+  /** `groupBy=LOT` 줄에만 — 입하 LOT 이 없는 LOT(생산 등)·LOT 무관 재고는 null. */
+  inboundLotId?: number | null;
+  inboundLotNo?: string | null;
 }
 
 /** 계약 `InventoryBalanceSummary` — ⚠ 페이지가 아니라 필터 «전체» 기준이다. */
@@ -152,7 +156,8 @@ export class InventoryBalanceService {
       itemId: assertId('itemId', query.itemId),
       lotId: assertId('lotId', query.lotId),
       locationId: assertId('locationId', query.locationId),
-      ...pick(query, 'qualityStatusCode', 'inventoryStatusCode', 'ownershipTypeCode', 'mesCategoryCode'),
+      inboundLotId: assertId('inboundLotId', query.inboundLotId),
+      ...pick(query, 'inboundLotNo', 'qualityStatusCode', 'inventoryStatusCode', 'ownershipTypeCode', 'mesCategoryCode'),
       includeZero: bool(query.includeZero),
       heldOnly: bool(query.heldOnly),
       ...(query.expiryDateTo === undefined
@@ -238,6 +243,7 @@ function view(row: RawRow, groupBy: GroupBy): SortableRow {
     locationCode: text(row.location_code),
     warehouseName: text(row.warehouse_name),
     locationName: text(row.location_name),
+    ...(groupBy === 'LOT' ? { inboundLotId: id(row.inbound_lot_id), inboundLotNo: text(row.inbound_lot_no) } : {}),
     // 계약에 없는 칸이라 응답에 싣지 않고 정렬에만 쓴다.
     manufacturedAt: row.manufactured_at instanceof Date ? row.manufactured_at.toISOString() : null,
   };
