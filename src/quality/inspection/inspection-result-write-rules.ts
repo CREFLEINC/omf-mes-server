@@ -10,6 +10,7 @@ import {
   InspectionResultCreate,
   InspectionResultWriteContext,
 } from './inspection-result-write-input';
+import { AQL_VERSION_SELECT, acceptanceNumberOf, aqlPlanOf } from './inspection-aql-plan';
 import { JudgmentQuantities, assertJudgmentChangeReason } from './inspection-rules';
 
 /**
@@ -217,17 +218,68 @@ const JUDGMENT_RULE_TYPES = new Set(['IQC', 'OQC']);
  * ⭐ OQC 는 출하 관문(`shipment-inspection.ts`)이 판정 코드만 본다 — 수량과 어긋난 합격을 여기서 막는다(#126).
  */
 export async function assertJudgmentChange(
-  prisma: Pick<PrismaService, 'inspection_request'> | Prisma.TransactionClient,
+  prisma: Pick<PrismaService, 'inspection_request' | 'inspection_item_spec'> | Prisma.TransactionClient,
   inspectionRequestId: bigint,
-  input: JudgmentQuantities & { judgment: string; reason: string | undefined },
+  input: JudgmentQuantities & {
+    judgment: string;
+    reason: string | undefined;
+    /** 측정값 — AQL 버전일 때만 읽는다(치수 항목 불합격 판정 · omf-all-around#264). */
+    measurements?: () => Promise<readonly JudgedMeasurement[]> | readonly JudgedMeasurement[];
+  },
 ): Promise<string | undefined> {
   const request = await prisma.inspection_request.findUnique({
     where: { inspection_request_id: inspectionRequestId },
-    select: { inspection_type_code: true, inspection_plan_version: { select: { acceptance_number: true } } },
+    select: {
+      inspection_type_code: true,
+      target_qty: true,
+      inspection_plan_version: { select: AQL_VERSION_SELECT },
+    },
   });
   if (request === null || !JUDGMENT_RULE_TYPES.has(request.inspection_type_code)) return undefined;
-  const acceptanceNumber = request.inspection_plan_version?.acceptance_number ?? null;
-  return assertJudgmentChangeReason(input, input.judgment, acceptanceNumber, input.reason);
+  // AQL 샘플링 버전은 의뢰 수량으로 표에서 낸 합격 판정 수(Ac)로 잰다(omf-all-around#264).
+  const acceptanceNumber = acceptanceNumberOf(request.inspection_plan_version, request.target_qty);
+  const isAql = aqlPlanOf(request.inspection_plan_version, request.target_qty) !== null;
+  const dimensionRejected =
+    isAql && input.measurements !== undefined
+      ? await hasRejectedDimension(
+          prisma,
+          await input.measurements(),
+          request.inspection_plan_version?.acceptance_number ?? null,
+        )
+      : false;
+  return assertJudgmentChangeReason(input, input.judgment, acceptanceNumber, input.reason, dimensionRejected);
+}
+
+/** 판정에 쓰는 측정값 두 칸. */
+export interface JudgedMeasurement {
+  inspectionItemSpecId: number | bigint;
+  judgmentCode: string;
+}
+
+/**
+ * 치수(수치) 항목 중 불합격이 있는가 — 항목마다 불합격 시료 수가 그 항목의 합격판정개수(없으면 버전 값, 그것도 없으면 0)를
+ * 넘으면 불합격이다. 화면(부품 IQC `judgeDimension`)과 같은 기준이다(omf-all-around#264).
+ */
+async function hasRejectedDimension(
+  prisma: Pick<PrismaService, 'inspection_item_spec'> | Prisma.TransactionClient,
+  measurements: readonly JudgedMeasurement[],
+  versionAcceptance: number | null,
+): Promise<boolean> {
+  const rejected = new Map<string, number>();
+  for (const m of measurements) {
+    if (m.judgmentCode !== 'REJECTED') continue;
+    const id = String(m.inspectionItemSpecId);
+    rejected.set(id, (rejected.get(id) ?? 0) + 1);
+  }
+  if (rejected.size === 0) return false;
+  const specs = await prisma.inspection_item_spec.findMany({
+    where: { inspection_item_spec_id: { in: [...rejected.keys()].map(BigInt) }, data_type_code: 'NUMERIC' },
+    select: { inspection_item_spec_id: true, acceptance_number: true },
+  });
+  return specs.some(
+    (spec) =>
+      (rejected.get(String(spec.inspection_item_spec_id)) ?? 0) > (spec.acceptance_number ?? versionAcceptance ?? 0),
+  );
 }
 
 /** ⛔ 종합 판정과 항목 판정은 **그룹이 다르다** — 항목에는 「보류」가 없다(§1-5). */

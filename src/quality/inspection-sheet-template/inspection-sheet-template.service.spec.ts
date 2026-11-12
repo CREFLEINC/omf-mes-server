@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 
 import { ConflictException, ContractException } from '../../common/errors';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   InspectionSheetTemplateCreate,
@@ -15,6 +16,8 @@ const DETAIL_ROW = {
   inspection_sheet_template_id: 11n,
   item_id: 5n,
   template_version: 2,
+  template_code: 'SHEET-A',
+  template_name: '검사표 A',
   business_unit_id: 2n,
   form_layout_code: 'OP',
   status_code: 'DRAFT',
@@ -35,6 +38,8 @@ const DETAIL_ROW = {
 
 function input(overrides: Partial<InspectionSheetTemplateCreate> = {}): InspectionSheetTemplateCreate {
   return {
+    templateCode: 'SHEET-A',
+    templateName: '검사표 A',
     itemId: 5,
     businessUnitId: 2,
     formLayoutCode: 'OP',
@@ -77,6 +82,8 @@ function harness(row: { status_code: string; business_unit_id: bigint } | null =
             : DETAIL_ROW,
         ),
       ),
+      /* 기준코드 중복 — 기본은 다른 품목이 쓰지 않는다(omf-all-around#260). */
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     inspection_sheet_template_step: { count: jest.fn().mockResolvedValue(stepCount) },
     code_value: {
@@ -91,7 +98,13 @@ function harness(row: { status_code: string; business_unit_id: bigint } | null =
     },
     $transaction: jest.fn().mockImplementation((work: (client: typeof tx) => unknown) => work(tx)),
   };
-  return { service: new InspectionSheetTemplateService(prisma as unknown as PrismaService), prisma, tx };
+  const numbering = { next: jest.fn().mockResolvedValue('QS-20261111-0001') };
+  return {
+    service: new InspectionSheetTemplateService(prisma as unknown as PrismaService, numbering as unknown as NumberingService),
+    prisma,
+    tx,
+    numbering,
+  };
 }
 
 const failure = (error: unknown) => error as ContractException;
@@ -117,6 +130,70 @@ describe('InspectionSheetTemplateService', () => {
   });
 
 
+  /* 관리용 기준코드 · 기준명(omf-all-around#260). */
+  it('생성은 기준코드 · 기준명을 앞뒤 빈칸을 걷어 저장한다', async () => {
+    const { service, tx } = harness();
+
+    await service.create(input({ templateCode: ' SHEET-A ', templateName: ' 검사표 A ' }), ACTOR);
+
+    expect(tx.inspection_sheet_template.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ template_code: 'SHEET-A', template_name: '검사표 A' }),
+      }),
+    );
+  });
+
+  it('다른 품목의 검사표가 쓰는 기준코드면 400 UNIQUE_VIOLATION 이고 만들지 않는다', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.inspection_sheet_template.findFirst.mockResolvedValue({ item: { item_code: 'BBB' } });
+
+    const error = await service.create(input(), ACTOR).catch((e: unknown) => e);
+
+    expect(prisma.inspection_sheet_template.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { template_code: 'SHEET-A', item_id: { not: 5 } } }),
+    );
+    expect(failure(error).errors[0]).toMatchObject({ field: 'templateCode', code: 'UNIQUE_VIOLATION' });
+    expect(tx.inspection_sheet_template.create).not.toHaveBeenCalled();
+  });
+
+  /* omf-all-around#262 — 기준코드를 비우면 그 품목이 쓰던 코드, 없으면 채번. */
+  it('기준코드를 비우면 그 품목이 쓰던 코드를 이어 쓴다', async () => {
+    const { service, prisma, tx, numbering } = harness();
+    prisma.inspection_sheet_template.findFirst
+      .mockResolvedValueOnce({ template_code: 'SHEET-OLD' })
+      .mockResolvedValue(null);
+
+    await service.create(input({ templateCode: '  ' }), ACTOR);
+
+    expect(numbering.next).not.toHaveBeenCalled();
+    expect(tx.inspection_sheet_template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ template_code: 'SHEET-OLD' }) }),
+    );
+  });
+
+  it('기준코드를 비우고 그 품목에 쓰던 코드가 없으면 QS 번호를 붙인다', async () => {
+    const { service, tx, numbering } = harness();
+    const { templateCode: _code, ...rest } = input();
+
+    await service.create(rest, ACTOR);
+
+    expect(numbering.next).toHaveBeenCalledWith('INSPECTION_SHEET_TEMPLATE', null, expect.any(String));
+    expect(tx.inspection_sheet_template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ template_code: 'QS-20261111-0001' }) }),
+    );
+  });
+
+  it('수정에서 기준코드 · 기준명을 빼면 그대로 둔다', async () => {
+    const { service, prisma, tx } = harness({ status_code: 'DRAFT', business_unit_id: 2n });
+    const { templateCode: _code, templateName: _name, ...rest } = input();
+
+    await service.update(11, 3, rest, ACTOR);
+
+    const data = tx.inspection_sheet_template.updateMany.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty('template_code');
+    expect(data).not.toHaveProperty('template_name');
+    expect(prisma.inspection_sheet_template.findFirst).not.toHaveBeenCalled();
+  });
 
   it('확정된 기준은 고칠 수 없다 — 400 STATE_LOCKED', async () => {
     const { service, tx } = harness({ status_code: 'CONFIRMED', business_unit_id: 2n });

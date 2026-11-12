@@ -6,6 +6,7 @@ import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
+import { InspectionAqlPlanView, inspectionAqlPlan } from './inspection-aql-plan';
 import { InspectionGuideView, inspectionGuides } from './inspection-guide';
 import { FOUR_M_CHANGE_INCLUDE, InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 
@@ -41,8 +42,11 @@ const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
   { inspection_request_id: 'asc' },
 ];
 
-/** 상세 조회 — 목록 줄에 안내 문구를 더한다(omf-all-around#252). */
-export type InspectionRequestDetailView = InspectionRequestView & { inspectionGuides?: InspectionGuideView[] };
+/** 상세 조회 — 목록 줄에 안내 문구(omf-all-around#252) · AQL 시료 계획(#264)을 더한다. */
+export type InspectionRequestDetailView = InspectionRequestView & {
+  inspectionGuides?: InspectionGuideView[];
+  aqlPlan?: InspectionAqlPlanView;
+};
 
 @Injectable()
 export class InspectionRequestService {
@@ -70,8 +74,15 @@ export class InspectionRequestService {
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
     const [level] = await iqcInspectionLevels(this.prisma, [row]);
     // 안내 문구는 상세에만 싣는다 — 목록 줄마다 기준을 읽지 않는다(omf-all-around#252).
-    const guides = await inspectionGuides(this.prisma, row);
-    return { ...inspectionRequestView(row, level), ...(guides.length === 0 ? {} : { inspectionGuides: guides }) };
+    const [guides, aqlPlan] = await Promise.all([
+      inspectionGuides(this.prisma, row),
+      inspectionAqlPlan(this.prisma, row),
+    ]);
+    return {
+      ...inspectionRequestView(row, level),
+      ...(guides.length === 0 ? {} : { inspectionGuides: guides }),
+      ...(aqlPlan === null ? {} : { aqlPlan }),
+    };
   }
 }
 

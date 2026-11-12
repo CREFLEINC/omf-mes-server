@@ -48,6 +48,8 @@ export function statusAudit(templateId: number | bigint, from: string, to: strin
 /** 고칠 수 있는 내용 — 머리 칸 · LOT 칸 · 단계와 항목. 계약 `InspectionSheetTemplateUpdate` 의 모양이다. */
 export function contentOf(input: InspectionSheetTemplateUpdate): Fields {
   return {
+    ...(input.templateCode === undefined ? {} : { templateCode: input.templateCode.trim() }),
+    ...(input.templateName === undefined ? {} : { templateName: input.templateName.trim() }),
     materialText: input.materialText ?? null,
     structureText: input.structureText ?? null,
     rohsFlag: input.rohsFlag,
