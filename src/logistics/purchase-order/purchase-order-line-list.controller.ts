@@ -2,8 +2,8 @@ import { Controller, Get, Query } from '@nestjs/common';
 
 import { Contract } from '../../common/contract';
 import { PagedResponse } from '../../common/pagination';
-import { LineListContractQuery, PurchaseOrderLineListItem, parseLineListQuery } from './purchase-order-line-list';
-import { PurchaseOrderLineListService } from './purchase-order-line-list.service';
+import { LineListContractQuery, parseLineListQuery } from './purchase-order-line-list';
+import { PurchaseOrderLineListRow, PurchaseOrderLineListService } from './purchase-order-line-list.service';
 
 /**
  * 입하 예정 — 구매발주 라인 목록(장부 P-78 · #741). 화면은 관리웹 W-01-09.
@@ -15,7 +15,7 @@ export class PurchaseOrderLineListController {
 
   @Get()
   @Contract('GET /logistics/purchase-order-lines')
-  list(@Query() query: LineListContractQuery): Promise<PagedResponse<PurchaseOrderLineListItem>> {
+  list(@Query() query: LineListContractQuery): Promise<PagedResponse<PurchaseOrderLineListRow>> {
     return this.lines.list(parseLineListQuery(query));
   }
 }

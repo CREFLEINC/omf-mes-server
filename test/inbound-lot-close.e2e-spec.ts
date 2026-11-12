@@ -46,7 +46,7 @@ function expectShape(validate: ValidateFunction, body: unknown): void {
   expect(validate.errors ?? []).toEqual([]);
 }
 
-type Row = { inboundLotId: number; statusCode: string; reopenable: boolean; reopenReasonCode: string | null; reopened: boolean };
+type Row = { inboundLotId: number; statusCode: string; reopenable: boolean; reopenReasonCode: string | null; reopenBlockerCode: string | null; reopened: boolean };
 
 describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', () => {
   let app: INestApplication;
@@ -281,7 +281,8 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     const listed = await sessionGet(`${LOTS}?plantId=${String(ids.plant)}&reopenable=true&size=200`, closerCookie).expect(200);
     const listedIds = (listed.body.items as Row[]).map((row) => row.inboundLotId);
     for (const lot of [recorded, received, pending, legacy, finalized]) expect(listedIds).not.toContain(lot.inboundLotId);
-    expect((listed.body.items as Row[]).every((row) => row.reopenable && row.reopenReasonCode !== null)).toBe(true);
+    // G1 결정 — 같은 조합 입하 중 하나만 막는 건은 reopenable:false·reopenBlockerCode 로 함께 나온다.
+    expect((listed.body.items as Row[]).every((row) => (row.reopenable ? row.reopenReasonCode !== null : row.reopenBlockerCode === 'OPEN_RECEIPT_EXISTS'))).toBe(true);
   });
 
   it('US2-13 같은 공급사·품목에 입하 중이 있으면 마감 취소 409 OPEN_RECEIPT_EXISTS(그 번호 함께)', async () => {

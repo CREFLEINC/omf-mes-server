@@ -53,7 +53,7 @@ const EXISTING_LINE_SELECT = {
   received_qty: true,
   lot_id: true,
   inbound_receipt_po_allocation: { select: { purchase_order_line_id: true, allocated_qty: true } },
-  inbound_lot: { select: { inbound_lot_id: true } },
+  inbound_lot: { select: { inbound_lot_id: true, erp_send_mode_code: true } },
 } satisfies Prisma.inbound_receipt_lineSelect;
 type ExistingLine = Prisma.inbound_receipt_lineGetPayload<{ select: typeof EXISTING_LINE_SELECT }>;
 
@@ -72,10 +72,21 @@ export class InboundReceiptUpdateService {
   ): Promise<{ inboundReceipt: InboundReceiptView; versionNo: number }> {
     const current = await this.prisma.inbound_receipt.findUnique({
       where: { inbound_receipt_id: inboundReceiptId },
-      select: { status_code: true },
+      select: { status_code: true, supplier_id: true },
     });
     if (!current) throw new NotFoundException('없는 입하입니다.');
     assertRegistered(current.status_code, '수정할');
+    // 새 흐름 입하의 공급사는 입하 LOT(공장·공급사·품목)의 축이다 — 헤더만 바꾸면 입하 LOT·P/O 배정과 어긋난다.
+    if (current.supplier_id !== BigInt(input.supplierId)) {
+      const newFlow = await this.prisma.inbound_receipt_line.count({
+        where: { inbound_receipt_id: inboundReceiptId, inbound_lot: { erp_send_mode_code: 'ON_FINALIZE' } },
+      });
+      if (newFlow > 0) {
+        throw new ContractException(HttpStatus.CONFLICT, [
+          banner(ERROR_CODE.STATE_LOCKED, '입하 LOT 받기로 만든 입하는 공급사를 바꿀 수 없습니다.'),
+        ]);
+      }
+    }
     if (Number.isNaN(Date.parse(input.receiptDatetime))) {
       throw one(field('receiptDatetime', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
     }
@@ -142,6 +153,7 @@ export class InboundReceiptUpdateService {
         where: { inbound_receipt_id: inboundReceiptId },
         select: EXISTING_LINE_SELECT,
       });
+      assertNoNewFlowInboundLot(existing);
       const known = new Map(existing.map((row) => [Number(row.inbound_receipt_line_id), row]));
       assertOwnLines(items, known);
       // 계약 「요청에서 빠진 기존 행은 삭제한다」.
@@ -426,6 +438,15 @@ function assertInboundLotQtyFixed(lines: ExistingLine[]): void {
   if (!lines.some((row) => row.inbound_lot != null)) return;
   throw new ContractException(HttpStatus.CONFLICT, [
     banner(ERROR_CODE.STATE_LOCKED, '입하 LOT 에 속한 줄은 수량을 바꾸거나 지울 수 없습니다 — 받기·해제로 바꾸세요.'),
+  ]);
+}
+
+/** 새 흐름(`ON_FINALIZE`) 입하 LOT 의 입하는 받기·마감이 줄과 P/O 배정을 만든다 — 손으로 줄을 더하거나 품목·P/O 라인을
+ *  바꾸면 입하 LOT 과 배정이 어긋난다. 이전 데이터(`PER_RECEIPT`)는 줄 수량 자물쇠(`assertInboundLotQtyFixed`)만 받는다. */
+function assertNoNewFlowInboundLot(lines: ExistingLine[]): void {
+  if (!lines.some((row) => row.inbound_lot?.erp_send_mode_code === 'ON_FINALIZE')) return;
+  throw new ContractException(HttpStatus.CONFLICT, [
+    banner(ERROR_CODE.STATE_LOCKED, '입하 LOT 받기로 만든 입하는 줄을 고칠 수 없습니다 — 받기·해제·마감으로 바꾸세요.'),
   ]);
 }
 

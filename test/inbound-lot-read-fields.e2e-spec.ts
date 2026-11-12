@@ -154,10 +154,12 @@ describe('피처 005 S5b — 재고·LOT 조회의 입하 LOT 칸·조건 (e2e)'
     expect(none.body.items).toEqual([]);
   });
 
-  it('FR-035 자재 입고 줄 — 조건도 기간도 없으면 지금처럼 400(안내 문구 그대로), 생산입고 행의 입하 LOT 칸은 null', async () => {
+  it('FR-035 자재 입고 줄 — 조건도 기간도 없으면 400(기간 생략 조건에 입하 LOT 번호·입하 LOT 이 든 안내), 생산입고 행의 입하 LOT 칸은 null', async () => {
     const rejected = await get('/api/logistics/goods-receipt-lines?receiptTypeCode=MATERIAL').expect(400);
     expect(rejected.body.errors[0]).toMatchObject({ field: 'receiptDateFrom', code: 'REQUIRED' });
-    expect(rejected.body.errors[0].message).toContain('LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo)');
+    expect(rejected.body.errors[0].message).toContain(
+      'LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo), 입하 LOT 번호(inboundLotNo), 입하 LOT(inboundLotId)',
+    );
 
     const product = await get(`/api/logistics/goods-receipt-lines?receiptTypeCode=PRODUCT&lotNo=${productLot.lotNo}`).expect(200);
     expectShape(schemaOf('logistics', '/logistics/goods-receipt-lines'), product.body);

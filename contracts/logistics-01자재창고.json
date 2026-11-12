@@ -4996,7 +4996,7 @@
      "logistics"
     ],
     "summary": "입하 헤더 수정",
-    "description": "작성중 상태에서만 허용한다. 근거: 공유계약 B-1 · G-1",
+    "description": "작성중 상태에서만 허용한다. 근거: 공유계약 B-1 · G-1 ⭐ 입하 LOT 받기로 만든 입하(줄의 입하 LOT 이 ON_FINALIZE)는 공급사(supplierId)를 바꿀 수 없다 — 409 STATE_LOCKED(공급사는 입하 LOT 의 축). 이전 데이터(PER_RECEIPT)는 그대로",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5071,11 +5071,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "저장 충돌(conflictCause — 다시 읽어 오면 풀린다) 또는 상태 잠김(errors[].code=STATE_LOCKED — 입하 LOT 받기로 만든 입하의 공급사 변경)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -5161,7 +5168,7 @@
      "logistics"
     ],
     "summary": "입하 라인 치환",
-    "description": "LOT 이 이미 만들어진 라인은 지울 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/inbound-receipts/{inboundReceiptId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1 ⭐ 입하 LOT 에 속한 줄(피처 005)은 수량을 바꾸거나 지울 수 없다 — 409 STATE_LOCKED(R-5a).",
+    "description": "LOT 이 이미 만들어진 라인은 지울 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/inbound-receipts/{inboundReceiptId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1 ⭐ 입하 LOT 에 속한 줄(피처 005)은 수량을 바꾸거나 지울 수 없다 — 409 STATE_LOCKED(R-5a). ⭐ 입하 LOT 받기로 만든 입하(줄의 입하 LOT 이 ON_FINALIZE 인 줄이 하나라도 있는 헤더)는 줄 추가·품목 변경·P/O 라인 다시 쓰기를 포함해 통째로 409 STATE_LOCKED — 줄과 P/O 배정은 받기·해제·마감이 만든다. 이전 데이터(PER_RECEIPT) 헤더는 위 줄 수량 자물쇠만 받는다",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5238,7 +5245,7 @@
       }
      },
      "409": {
-      "description": "저장 충돌(conflictCause — 다시 읽어 오면 풀린다) 또는 상태 잠김(errors[].code=STATE_LOCKED — 입하 LOT 에 속한 줄의 수량 변경·삭제. 입하 LOT 줄 수량은 받기·해제로만 바뀐다 · 피처 005 R-5a)",
+      "description": "저장 충돌(conflictCause — 다시 읽어 오면 풀린다) 또는 상태 잠김(errors[].code=STATE_LOCKED — 입하 LOT 에 속한 줄의 수량 변경·삭제. 입하 LOT 줄 수량은 받기·해제로만 바뀐다 · 피처 005 R-5a — 또는 입하 LOT 받기로 만든(ON_FINALIZE) 입하의 줄 치환 전부)",
       "content": {
        "application/json": {
         "schema": {
@@ -7322,7 +7329,7 @@
      "logistics"
     ],
     "summary": "입하 예정 — P/O 라인 목록",
-    "description": "입고 관리 허브(W-01-09) 오른쪽 표. 한 행 = P/O 라인 하나에 헤더·공급사·품목·단위 값을 함께 싣는다 — 발주 목록(GET /logistics/purchase-orders)은 헤더 단위라 라인·남은 수량을 줄 수 없다. 정렬: 납기 → 발주번호 → 라인번호(납기 없는 발주는 뒤). 근거: 서버 선행 · 장부 P-78 · P-85",
+    "description": "입고 관리 허브(W-01-09) 오른쪽 표. 한 행 = P/O 라인 하나에 헤더·공급사·품목·단위 값을 함께 싣는다 — 발주 목록(GET /logistics/purchase-orders)은 헤더 단위라 라인·남은 수량을 줄 수 없다. 정렬: 납기 → 발주번호 → 라인번호(납기 없는 발주는 뒤). 근거: 서버 선행 · 장부 P-78 · P-85 · 피처 005 §12: 행에 같은 조합의 입하 중 입하 LOT(receivingInboundLots)",
     "parameters": [
      {
       "name": "purchaseOrderId",
@@ -14006,7 +14013,7 @@
      "logistics"
     ],
     "summary": "대기 자재 관리 LOT — 공급사·품목별",
-    "description": "대기(WAITING) 자재 관리 LOT 을 공급사·품목별로 모은다(FR-004 · 피처 005 §1). 정렬: 공급사 코드·품목 코드. 근거: P-01-01 · W-01-14",
+    "description": "대기(WAITING) 자재 관리 LOT 을 공급사·품목별로 모은다(FR-004 · 피처 005 §1). 조합 = 발행 이력이 있거나 공급사·품목 기본 정보가 있거나 그 공장의 미마감 P/O 라인(헤더 CLOSED·CANCELLED 아님 · 라인 취소 아님 · 받은 양 < 발주 수량)이 있는 공급사·품목 — 대기가 없으면 waitingCount 0 행. 정렬: 공급사 코드·품목 코드. 근거: P-01-01 · W-01-14",
     "parameters": [
      {
       "name": "plantId",
@@ -14200,7 +14207,7 @@
      "logistics"
     ],
     "summary": "입하 LOT 목록",
-    "description": "피처 005 §2. 정렬: 입하 날짜 최근 → 입하 LOT 번호. closable·reopenable·closedAutomatically·finalizable·erpSendModeCode 조건은 S5·S12 에서 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
+    "description": "피처 005 §2. 정렬: 입하 날짜 최근 → 입하 LOT 번호. finalizable·erpSendModeCode 조건은 최종 마감(S12)과 함께 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
     "parameters": [
      {
       "name": "plantId",
@@ -14264,7 +14271,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "true = 마감 취소 가능 조건(행 reopenable 과 같다 — M-01-03 「입하 완료 · 마감 취소 가능」), false = 그 밖"
+      "description": "true = M-01-03 「입하 완료 · 마감 취소 가능」 목록 — 행 reopenable 이 true 인 것과, 막힘이 같은 조합 입하 중 하나뿐인 것(행 reopenBlockerCode = OPEN_RECEIPT_EXISTS · reopenable false). false = 그 밖"
      },
      {
       "name": "closedAutomatically",
@@ -14393,7 +14400,7 @@
      "logistics"
     ],
     "summary": "입하 LOT 상세",
-    "description": "피처 005 §2 — 행 + 자재 관리 LOT(lots[])·이력(events[]). finalizeBlockers 는 S12 에서 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
+    "description": "피처 005 §2 — 행 + 자재 관리 LOT(lots[])·이력(events[]). finalizeBlockers 는 최종 마감(S12)과 함께 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
     "parameters": [
      {
       "name": "inboundLotId",
@@ -14461,7 +14468,7 @@
      "logistics"
     ],
     "summary": "PDA 입하 받기(스캔마다 한 번)",
-    "description": "피처 005 §3 · R-5. 한 트랜잭션: ① 자재 관리 LOT 마다 대기(WAITING)인지 본다 — 아니면 409 STATE_LOCKED·아무것도 등록 안 됨. 사전부착 라벨(lotNo)이 시스템에 없으면 P-3 형식·코드(품목·공급사가 MES 에 있는가) 검사 뒤 이 자리에서 만들고(바로 ACTIVE, 라벨의 공급사 LOT 번호), 있으면 그 LOT 으로 ② (공장, 공급사, 품목)으로 묶어 (공급사 id, 품목 id) 순으로 열린(RECEIVING) 입하 LOT 를 SELECT … FOR UPDATE 로 찾고, 없으면 입하 헤더·줄(lot_id 비움)·입하 LOT(IL-YYYYMMDD-NNNN, receiving_date = open_since_date = occurredAt 의 공장 현지 날짜, ON_FINALIZE)을 INSERT … ON CONFLICT DO NOTHING 뒤 다시 읽는다(uq_inbound_lot_open — 두 PDA 가 동시에 처음 받아도 하나) ③ 붙으면 줄 received_qty 증가 ④ 자재 관리 LOT: 원천을 입하 줄로·inbound_lot_id·생애 L4, 검사 필요면 보류 INCOMING_INSPECTION_WAIT, 불필요·기본 생략이면 C21 정상 ⑤ 이벤트 CREATED_BY_RECEIVE·LOTS_REGISTERED. P/O 배정·P/O 받은 양·IQC 요청은 건드리지 않는다(입하 마감 때). ⚠ 찾은 입하 LOT 가 지난 날짜면 먼저 자동 마감하는 일은 S5 에서 잇는다 — 그 전에는 그대로 붙는다. 같은 Idempotency-Key 로 다시 보내면 첫 결과를 돌려준다. 근거: M-01-01",
+    "description": "피처 005 §3 · R-5. 한 트랜잭션: ① 자재 관리 LOT 마다 대기(WAITING)인지 본다 — 아니면 409 STATE_LOCKED·아무것도 등록 안 됨. 사전부착 라벨(lotNo)이 시스템에 없으면 P-3 형식·코드(품목·공급사가 MES 에 있는가) 검사 뒤 이 자리에서 만들고(바로 ACTIVE, 라벨의 공급사 LOT 번호), 있으면 그 LOT 으로 ② (공장, 공급사, 품목)으로 묶어 (공급사 id, 품목 id) 순으로 열린(RECEIVING) 입하 LOT 를 SELECT … FOR UPDATE 로 찾고, 없으면 입하 헤더·줄(lot_id 비움)·입하 LOT(IL-YYYYMMDD-NNNN, receiving_date = open_since_date = occurredAt 의 공장 현지 날짜, ON_FINALIZE)을 INSERT … ON CONFLICT DO NOTHING 뒤 다시 읽는다(uq_inbound_lot_open — 두 PDA 가 동시에 처음 받아도 하나) ③ 붙으면 줄 received_qty 증가 ④ 자재 관리 LOT: 원천을 입하 줄로·inbound_lot_id·생애 L4, 검사 필요면 보류 INCOMING_INSPECTION_WAIT, 불필요·기본 생략이면 C21 정상 ⑤ 이벤트 CREATED_BY_RECEIVE·LOTS_REGISTERED. P/O 배정·P/O 받은 양·IQC 요청은 건드리지 않는다(입하 마감 때). 찾은 입하 LOT 가 지난 날짜(open_since_date < occurredAt 의 공장 현지 날짜)면 같은 트랜잭션에서 먼저 날짜 자동 마감하고(입하 마감과 같은 일 — P/O 배정·IQC 요청) 새로 연다 — 결과의 autoClosedInboundLotNo. 같은 Idempotency-Key 로 다시 보내면 첫 결과를 돌려준다. 근거: M-01-01",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -14913,7 +14920,7 @@
      "logistics"
     ],
     "summary": "입하 마감 취소",
-    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 긴급 생략을 실행한 건은 자재 관리 LOT NORMAL → INSPECTION_PENDING(C30)·검사 대기 보류 다시·이벤트 SKIP_VOIDED·생략 결재 기록에 무효 표시, 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 근거: M-01-03",
+    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 긴급 생략을 실행한 건은 자재 관리 LOT NORMAL → INSPECTION_PENDING(C30)·검사 대기 보류 다시·이벤트 SKIP_VOIDED·생략 결재 기록에 무효 표시, 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 먼저 열면 409 OPEN_RECEIPT_EXISTS(이때 openInboundLotNo 는 null — 다시 읽으면 목록이 번호를 준다). 근거: M-01-03",
     "parameters": [
      {
       "name": "inboundLotId",
@@ -14966,7 +14973,7 @@
       }
      },
      "400": {
-      "description": "검증 실패 — occurredAt 형식 등",
+      "description": "검증 실패 — versionNo·reason 형식",
       "content": {
        "application/json": {
         "schema": {
@@ -23023,7 +23030,8 @@
        "uomCode",
        "uomName",
        "remainingQty",
-       "receiptStatusCode"
+       "receiptStatusCode",
+       "receivingInboundLots"
       ],
       "properties": {
        "purchaseOrderNo": {
@@ -23107,10 +23115,40 @@
         ],
         "description": "라인의 입하 진행 — 위에서부터 처음 맞는 것: CANCELLED(라인 cancelledAt 이 있거나 헤더 CANCELLED) → COMPLETED(받은 수량 ≥ 발주 수량 · 부족 허용치는 보지 않는다) → PARTIAL(받은 것이 있음) → NOT_STARTED",
         "example": "PARTIAL"
+       },
+       "receivingInboundLots": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/ReceivingInboundLot"
+        },
+        "description": "같은 공장(헤더 plantId)·공급사·품목의 입하 중(RECEIVING) 입하 LOT — 마감 전 새 흐름 입하 LOT 은 P/O 배정이 없어 W-01-09 「입하 중」을 이것으로 그린다. 조합마다 열린 입하 LOT 은 하나뿐이라 0~1건이고, 같은 조합의 P/O 라인마다 같은 값이 실린다(어느 P/O 라인에 배정될지는 마감 때 정해진다). 피처 005 §12"
        }
       }
      }
     ]
+   },
+   "ReceivingInboundLot": {
+    "type": "object",
+    "description": "입하 중 입하 LOT 요약(P/O 라인 목록 receivingInboundLots[]) · 피처 005",
+    "required": [
+     "inboundLotId",
+     "inboundLotNo",
+     "receivedQty"
+    ],
+    "properties": {
+     "inboundLotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inboundLotNo": {
+      "type": "string",
+      "description": "IL-YYYYMMDD-NNNN"
+     },
+     "receivedQty": {
+      "type": "number",
+      "description": "지금까지 받은 양 = 입하 줄 수량 = 자재 관리 LOT 수량 합(품목 기본 단위 — P/O 라인 단위와 다를 수 있다)"
+     }
+    }
    },
    "PurchaseOrderLineListResponse": {
     "type": "object",
@@ -26759,7 +26797,7 @@
    },
    "WaitingMaterialLotGroup": {
     "type": "object",
-    "description": "공급사·품목별 대기 자재 관리 LOT. 조합 = 발행 이력이 있거나 공급사·품목 기본 정보가 있는 것. batches = 대기가 남았거나 최근 7일의 묶음. lots = 대기 전부 + 그 묶음들의 폐기 + 열린(RECEIVING) 입하 LOT 에 든 것(라벨 다시 인쇄 대상)",
+    "description": "공급사·품목별 대기 자재 관리 LOT. 조합 = 발행 이력이 있거나 공급사·품목 기본 정보가 있거나 그 공장의 미마감 P/O 라인이 있는 것. batches = 대기가 남았거나 최근 7일의 묶음. lots = 대기 전부 + 그 묶음들의 폐기 + 열린(RECEIVING) 입하 LOT 에 든 것(라벨 다시 인쇄 대상)",
     "required": [
      "supplierId",
      "supplierCode",
@@ -26907,7 +26945,7 @@
      "statusCode",
      "overallJudgmentCode"
     ],
-    "description": "입하 LOT 의 IQC 요청 요약(피처 005 §2). 새 흐름은 입하 마감(S5) 때 생긴다 — 그 전에는 행의 iqc 가 null 이다",
+    "description": "입하 LOT 의 IQC 요청 요약(피처 005 §2). 새 흐름은 입하 마감(수동·날짜 자동) 때 생긴다 — 그 전에는 행의 iqc 가 null 이다",
     "properties": {
      "requestId": {
       "type": "integer",
@@ -26935,7 +26973,7 @@
    },
    "InboundLot": {
     "type": "object",
-    "description": "입하 LOT 한 행(피처 005 §2). 받기(PDA)가 만든다 — 사람이 만들거나 고르지 않는다. 「(C2 정함)」 칸은 클라이언트 화면이 먼저 정한 칸이다. P/O 배정(poAllocations)·마감 취소 칸은 입하 마감(S5)이 채운다. lotProgress 는 최종 마감(S12)과 함께 더한다",
+    "description": "입하 LOT 한 행(피처 005 §2). 받기(PDA)가 만든다 — 사람이 만들거나 고르지 않는다. 「(C2 정함)」 칸은 클라이언트 화면이 먼저 정한 칸이다. P/O 배정(poAllocations)은 입하 마감이 채운다. finalizable 은 아직 늘 false 이고, lotProgress·처분 상태는 최종 마감(S12)과 함께 더한다",
     "required": [
      "inboundLotId",
      "inboundLotNo",
@@ -26963,6 +27001,8 @@
      "finalizedAt",
      "reopenable",
      "reopenReasonCode",
+     "reopenBlockerCode",
+     "openInboundLotNo",
      "reopened",
      "finalizable",
      "erpSendModeCode",
@@ -27108,13 +27148,31 @@
       ],
       "description": "마감 취소 가능 건의 까닭(C2 정함) — NO_IQC_RESULT(검사 필요·결과 없음) · INSPECTION_NOT_REQUIRED(검사 불필요·기본 생략, 입고 전) · IQC_SKIPPED(긴급 생략 실행, 입고 전). reopenable 이 false 면 null"
      },
+     "reopenBlockerCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "OPEN_RECEIPT_EXISTS",
+       null
+      ],
+      "description": "마감 취소를 막는 것이 같은 공장·공급사·품목의 입하 중(RECEIVING) 입하 LOT 하나뿐이면 OPEN_RECEIPT_EXISTS — 그쪽을 마감하면 풀린다(M-01-03 막힘 줄). 막힘이 없거나 다른 막힘이 함께 있으면 null. 이 값이면 reopenable 은 false 이고 마감 취소는 409 OPEN_RECEIPT_EXISTS"
+     },
+     "openInboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "reopenBlockerCode 가 OPEN_RECEIPT_EXISTS 일 때 막는 입하 중 입하 LOT 번호. 그 밖에는 null"
+     },
      "reopened": {
       "type": "boolean",
       "description": "마감 취소로 다시 연 적이 있는가(C2 정함 — RECEIPT_REOPENED 이벤트가 있으면 true)"
      },
      "finalizable": {
       "type": "boolean",
-      "description": "「마감 승인 대기」(S12 에서 채운다 — 그 전에는 false)"
+      "description": "「마감 승인 대기」 — 최종 마감(S12)과 함께 채운다. 지금은 늘 false"
      },
      "erpSendModeCode": {
       "type": "string",
@@ -27200,7 +27258,7 @@
     "properties": {
      "eventCode": {
       "type": "string",
-      "description": "CREATED_BY_RECEIVE · LOTS_REGISTERED · LOTS_UNREGISTERED · SUPPLIER_LOT_SET · VOIDED · (S5~) RECEIPT_CLOSED 등"
+      "description": "CREATED_BY_RECEIVE · LOTS_REGISTERED · LOTS_UNREGISTERED · SUPPLIER_LOT_SET · VOIDED · RECEIPT_CLOSED · RECEIPT_REOPENED"
      },
      "occurredAt": {
       "type": "string",
@@ -27284,7 +27342,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "(S4 더함) 계정 세션에서 사전부착 라벨(lotNo)을 받을 때의 공장. 단말은 보내지 않는다(단말 공장). lotId 만 보내면 LOT 의 공장이다"
+      "description": "계정 세션에서 사전부착 라벨(lotNo)을 받을 때의 공장. 단말은 보내지 않는다(단말 공장). lotId 만 보내면 LOT 의 공장이다"
      },
      "lots": {
       "type": "array",
@@ -27371,7 +27429,7 @@
           "string",
           "null"
          ],
-         "description": "스캔 때 자동 마감한 지난 날짜 입하 LOT — 자동 마감은 S5 에서 잇는다(그 전에는 늘 null)"
+         "description": "스캔 때 자동 마감한 지난 날짜 입하 LOT 번호 — 없으면 null"
         },
         "inboundReceiptNo": {
          "type": "string"
@@ -27429,7 +27487,7 @@
      "errors",
      "rejectedLots"
     ],
-    "description": "받기 거부(409 STATE_LOCKED) — 아무것도 등록되지 않았다. errors[] 는 줄마다 하나(field = lots.{index}), rejectedLots[] 가 같은 줄의 까닭을 가른다(S4 더함)",
+    "description": "받기 거부(409 STATE_LOCKED) — 아무것도 등록되지 않았다. errors[] 는 줄마다 하나(field = lots.{index}), rejectedLots[] 가 같은 줄의 까닭을 가른다",
     "properties": {
      "errors": {
       "type": "array",
@@ -27672,7 +27730,7 @@
        "string",
        "null"
       ],
-      "description": "OPEN_RECEIPT_EXISTS 일 때 같은 조합의 입하 중 입하 LOT 번호(먼저 마감할 것), 그 밖 null"
+      "description": "OPEN_RECEIPT_EXISTS 일 때 같은 조합의 입하 중 입하 LOT 번호(먼저 마감할 것), 그 밖 null. 판정 뒤 동시 받기와 겹친 OPEN_RECEIPT_EXISTS 는 번호를 못 읽어 null"
      }
     }
    }

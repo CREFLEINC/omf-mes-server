@@ -21,6 +21,8 @@ export class IqcHandoverNotifier {
       receiptNo: string;
       lotCount: number;
       inboundReceiptId: bigint;
+      /** 같은 입하에 IQC 요청이 다시 서는 경로(입하 LOT 마감) — 앞선 알림이 있어도 다시 알린다. */
+      repeatable?: boolean;
     },
   ): Promise<void> {
     await this.emitter.guarded(tx, `IQC_INSPECTION_REQUESTED ${input.aggregateTypeCode} ${input.aggregateId}`, async () => {
@@ -39,6 +41,7 @@ export class IqcHandoverNotifier {
           lot_count: input.lotCount,
           supplier: receipt?.partner.partner_name,
         },
+        ...(input.repeatable === true ? { repeatable: true } : {}),
       });
     }, undefined);
   }

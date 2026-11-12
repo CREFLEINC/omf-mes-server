@@ -77,7 +77,7 @@ function fake(options: Options = {}) {
       }));
 
   const receipt = {
-    findUnique: async () => ({ status_code: options.statusCode ?? 'REGISTERED' }),
+    findUnique: async () => ({ status_code: options.statusCode ?? 'REGISTERED', supplier_id: 10n }),
     updateMany: async ({ data }: { data: Args }) => {
       recorded.calls.push('bump');
       recorded.headerData = data;
@@ -404,6 +404,30 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
 
       expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.STATE_LOCKED });
       expect(recorded.deleted).toEqual([]);
+    });
+  });
+
+  describe('G1-4 새 흐름(ON_FINALIZE) 입하 LOT 줄이 있는 입하 — 줄 치환은 통째로 잠긴다', () => {
+    const newFlow = (index: number) => ({ ...EXISTING[index], inbound_lot: { inbound_lot_id: 7n, erp_send_mode_code: 'ON_FINALIZE' } });
+
+    it('G1-4 수량을 그대로 두고 줄만 더해도 409 STATE_LOCKED 이고 아무것도 쓰지 않는다', async () => {
+      const { service, recorded } = fake({ existing: [newFlow(0)] as unknown as typeof EXISTING });
+
+      const error = await thrown(() => service.replaceLines(500, 1, [item(), item({ inboundReceiptLineId: undefined, purchaseOrderLineId: null })], 99));
+
+      expect((error as ContractException).getStatus()).toBe(409);
+      expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.STATE_LOCKED });
+      expect(recorded.written).toEqual([]);
+      expect(recorded.increments).toEqual([]);
+    });
+
+    it('G1-4 이전 데이터(PER_RECEIPT) 입하 LOT 줄은 그대로 두면 다른 줄을 더할 수 있다', async () => {
+      const legacy = { ...EXISTING[0], inbound_lot: { inbound_lot_id: 7n, erp_send_mode_code: 'PER_RECEIPT' } };
+      const { service } = fake({ existing: [legacy] as unknown as typeof EXISTING });
+
+      const lines = await service.replaceLines(500, 1, [item(), item({ inboundReceiptLineId: undefined, purchaseOrderLineId: null })], 99);
+
+      expect(lines).toHaveLength(2);
     });
   });
 });
