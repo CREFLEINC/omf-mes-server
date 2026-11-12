@@ -169,6 +169,7 @@ export class InspectionPlanVersionService {
   /** 「기준에 아직 버전이 하나도 없을 때만 쓴다」(계약). 두 번째부터는 `:new-revision`. */
   async create(input: VersionCreate, options: DraftOptions = {}, actorId?: number | null): Promise<VersionView> {
     await this.assertWritable(input, options);
+    await this.assertAqlPlanType(input.inspectionPlanId, input.samplingMethodCode);
     const plan = await this.prisma.inspection_plan.findUnique({
       where: { inspection_plan_id: input.inspectionPlanId },
       select: { inspection_plan_id: true },
@@ -231,7 +232,9 @@ export class InspectionPlanVersionService {
   ): Promise<VersionResult> {
     await this.assertWritable(input, options);
     await this.assertDraft(versionId, '수정');
-    const before = view(await this.load(versionId));
+    const loaded = await this.load(versionId);
+    await this.assertAqlPlanType(loaded.inspection_plan_id, input.samplingMethodCode);
+    const before = view(loaded);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.inspection_plan_version.updateMany({
@@ -275,9 +278,10 @@ export class InspectionPlanVersionService {
     actorId?: number | null,
     options: { allowNumericWithoutUom?: boolean } = {},
   ): Promise<ItemSpecView[]> {
-    const items = body.map((item) => ({ ...item, inspectionItemCode: itemCodeOf(item) }));
     await this.assertDraft(versionId, '검사 항목을 저장');
     const beforeItems = await this.readItems(versionId);
+    const savedCodes = new Map(beforeItems.map((item) => [item.inspectionItemSpecId, item.inspectionItemCode]));
+    const items = body.map((item) => ({ ...item, inspectionItemCode: itemCodeOf(item, savedCodes) }));
     const existing = await this.prisma.inspection_item_spec.findMany({
       where: { inspection_plan_version_id: versionId },
       select: { inspection_item_spec_id: true },
@@ -349,6 +353,7 @@ export class InspectionPlanVersionService {
       aqlValue: row.aql_value === null ? null : Number(row.aql_value),
       aqlInspectionLevelCode: row.aql_inspection_level_code,
     });
+    await this.assertAqlPlanType(row.inspection_plan_id, row.sampling_method_code);
 
     const items = await this.prisma.inspection_item_spec.count({
       where: { inspection_plan_version_id: versionId },
@@ -543,6 +548,27 @@ export class InspectionPlanVersionService {
     const row = await this.load(versionId);
     if (row.status_code === REVISION_STATUS.DRAFT) return;
     throw locked(action);
+  }
+
+  /**
+   * AQL 샘플링은 IQC 기준에서만 쓴다(사용자 결정 2026-11-12 · omf-all-around#264) — PQC · OQC 경로는 표의 판정 수를
+   * 읽지 않아(검사 수량 · 일괄 검사대기 · 판정 사유) 저장되면 조용히 다른 기준으로 검사한다.
+   */
+  private async assertAqlPlanType(planId: number | bigint, samplingMethodCode: string): Promise<void> {
+    if (samplingMethodCode !== AQL_SAMPLING) return;
+    const plan = await this.prisma.inspection_plan.findUnique({
+      where: { inspection_plan_id: BigInt(planId) },
+      select: { inspection_type_code: true },
+    });
+    if (plan === null || plan.inspection_type_code === 'IQC') return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'samplingMethodCode',
+        code: ERROR_CODE.INVALID,
+        message: 'AQL 샘플링은 IQC 검사 기준에서만 쓸 수 있습니다.',
+      },
+    ]);
   }
 
   private async assertWritable(input: VersionWrite, options: DraftOptions): Promise<void> {
@@ -797,10 +823,15 @@ function specData(item: SpecRow): Omit<
 /** 항목코드를 채운 항목 — 저장 · 검사는 이것만 받는다. */
 type FilledItemSpec = ItemSpecUpsert & { inspectionItemCode: string };
 
-/** 항목코드 — 비우면 순서로 붙인다(omf-all-around#262). 순서를 바꿔도 이미 붙은 코드는 그대로다. */
-function itemCodeOf(item: ItemSpecUpsert): string {
+/**
+ * 항목코드 — 비우면 순서로 붙인다(omf-all-around#262). 이미 저장된 항목을 비워 보내면 저장된 코드를 그대로 둔다 —
+ * 순서를 바꿔도 붙은 코드가 바뀌지 않는다.
+ */
+function itemCodeOf(item: ItemSpecUpsert, savedCodes: ReadonlyMap<number, string>): string {
   const code = (item.inspectionItemCode ?? '').trim();
-  return code !== '' ? code : `ITEM-${String(item.sequenceNo).padStart(3, '0')}`;
+  if (code !== '') return code;
+  const saved = item.inspectionItemSpecId === undefined ? undefined : savedCodes.get(item.inspectionItemSpecId);
+  return saved ?? `ITEM-${String(item.sequenceNo).padStart(3, '0')}`;
 }
 
 /** 요청 안에서 먼저 본다 — DB 까지 가면 500 이고 계약은 여기에 400 을 요구한다. */
