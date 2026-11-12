@@ -32,6 +32,11 @@ export interface LotView {
   completedAt: string | null;
   remarks: string | null;
   held: boolean;
+  /** 속한 입하 LOT(피처 005) — 입하 전·자재가 아닌 LOT 은 null. */
+  inboundLotId: number | null;
+  inboundLotNo: string | null;
+  /** 패키징(피처 005 R-4) — 셋 다 있을 때만, 아니면 null. */
+  package: { uomId: number; uomCode: string; count: number; qtyPerPackage: number } | null;
   /** ⚠ `withProgress=true` 로 «부른 조회»만 채운다 — 계약이 ⌜목록에서는 LOT 마다 세게 되므로
    *  기본은 끈다⌝ 라 적었고, 끈 요청에는 키 자체가 없다. `lotView()` 는 이 칸을 만들지 않고
    *  부르는 쪽(`lot.service.ts`)이 얹는다. */
@@ -79,7 +84,21 @@ export interface LotDetail {
   holds: HoldView[];
 }
 
-export function lotView(row: LotRow): LotView {
+/**
+ * 입하 LOT 번호·패키징 단위 코드는 관계에서 읽는다 — 읽는 쪽이 `LOT_VIEW_RELATIONS` 를 함께 include 한다.
+ * 관계를 안 실은 자리(완료 처리 응답 — 생산 LOT 이라 둘 다 없다)는 null 로 떨어진다.
+ */
+export const LOT_VIEW_RELATIONS = {
+  inbound_lot: { select: { inbound_lot_no: true } },
+  package_uom: { select: { uom_code: true } },
+} as const;
+
+type LotViewRow = LotRow & {
+  inbound_lot?: { inbound_lot_no: string } | null;
+  package_uom?: { uom_code: string } | null;
+};
+
+export function lotView(row: LotViewRow): LotView {
   return {
     lotId: Number(row.lot_id),
     lotNo: row.lot_no,
@@ -99,6 +118,14 @@ export function lotView(row: LotRow): LotView {
     remarks: row.remarks,
     // 「해제되지 않은」 보류가 하나라도 있으면 잡혀 있다.
     held: row.lot_hold.some((hold) => hold.released_at === null),
+    inboundLotId: id(row.inbound_lot_id),
+    inboundLotNo: row.inbound_lot?.inbound_lot_no ?? null,
+    package: row.package_uom_id === null || row.package_count === null || row.qty_per_package === null ? null : {
+      uomId: Number(row.package_uom_id),
+      uomCode: row.package_uom?.uom_code ?? '',
+      count: row.package_count,
+      qtyPerPackage: Number(row.qty_per_package),
+    },
   };
 }
 

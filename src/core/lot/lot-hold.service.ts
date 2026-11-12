@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { optional } from '../../common/master';
 import type { Tx } from './lot-registry.service';
+import { assertMaterialLotsUsable } from './lot-usable';
 
 /**
  * LOT 3축의 ③ **작업 홀드**(`server-architecture.md:145-147` — `trace.lot_hold` 가 LOT 세 표 중
@@ -78,6 +79,9 @@ export interface LockedLot {
   lot_id: bigint;
   status_code: string;
   version_no: number;
+  lot_no: string;
+  lot_type_code: string;
+  lifecycle_status_code: string | null;
 }
 
 @Injectable()
@@ -94,7 +98,7 @@ export class LotHoldService {
   async lockLotsWithin(tx: Tx, lotIds: bigint[]): Promise<LockedLot[]> {
     if (lotIds.length === 0) return [];
     return tx.$queryRaw<LockedLot[]>`
-      SELECT lot_id, status_code, version_no
+      SELECT lot_id, status_code, version_no, lot_no, lot_type_code, lifecycle_status_code
         FROM trace.lot
        WHERE lot_id IN (${Prisma.join(lotIds.map((id) => Prisma.sql`${id}::bigint`))})
        ORDER BY lot_id
@@ -104,6 +108,8 @@ export class LotHoldService {
   /** 보류 N 건 INSERT. 반환 순서가 입력 순서다 — 호출자가 LOT 마다 `lot_hold_id` 를 되짚는다(R-12). */
   async holdWithin(tx: Tx, locked: LockedLot[], inputs: LotHoldInput[], actor: LotHoldActor): Promise<LotHoldRow[]> {
     const rows: LotHoldRow[] = [];
+    // 대기·폐기 자재 관리 LOT 에는 보류를 걸지 않는다(피처 005 R-3). PDA 받기는 생애를 먼저 옮긴 뒤 건다.
+    assertMaterialLotsUsable(locked.filter((lot) => inputs.some((input) => input.lotId === lot.lot_id)));
     for (const input of inputs) {
       assertLocked(locked, input.lotId);
       rows.push(

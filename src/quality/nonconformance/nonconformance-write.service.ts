@@ -5,6 +5,7 @@ import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
+import { assertMaterialLotsUsable } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionRequest, NonconformanceCreate, SEVERITY_GROUP, assertCreateShape, assertDispositionRequestShape } from './nonconformance-rules';
@@ -144,7 +145,7 @@ export class NonconformanceWriteService {
     const [item, uom, lots, workOrder, inspectionResult, department] = await Promise.all([
       this.prisma.item.findUnique({ where: { item_id: BigInt(body.itemId) }, select: { item_id: true } }),
       this.prisma.uom.findUnique({ where: { uom_id: BigInt(uomId) }, select: { uom_id: true } }),
-      this.prisma.lot.findMany({ where: { lot_id: { in: lotIds } }, select: { lot_id: true, status_code: true } }),
+      this.prisma.lot.findMany({ where: { lot_id: { in: lotIds } }, select: { lot_id: true, status_code: true, lot_no: true, lot_type_code: true, lifecycle_status_code: true } }),
       findOptional(body.workOrderId, (id) => this.prisma.work_order.findUnique({ where: { work_order_id: id }, select: { work_order_id: true } })),
       findOptional(body.inspectionResultId, (id) => this.prisma.inspection_result.findUnique({ where: { inspection_result_id: id }, select: { inspection_result_id: true } })),
       findOptional(body.responsibleDepartmentId, (id) => this.prisma.department.findUnique({ where: { department_id: id }, select: { department_id: true } })),
@@ -155,6 +156,7 @@ export class NonconformanceWriteService {
     const statusById = new Map(lots.map((lot) => [lot.lot_id, lot.status_code]));
     const missing = body.lots.findIndex((lot) => !statusById.has(BigInt(lot.lotId)));
     if (missing >= 0) throw invalidReference(`lots[${missing}].lotId`, body.lots[missing].lotId);
+    assertMaterialLotsUsable(lots);
     if (workOrder === null) throw invalidReference('workOrderId', body.workOrderId);
     if (inspectionResult === null) throw invalidReference('inspectionResultId', body.inspectionResultId);
     if (department === null) throw invalidReference('responsibleDepartmentId', body.responsibleDepartmentId);

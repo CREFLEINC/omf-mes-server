@@ -69,3 +69,27 @@ describe('materialLotTspl', () => {
     expect(bytes.includes(Buffer.from(partNo, 'utf8'))).toBe(true);
   });
 });
+
+describe('materialLotTspl package (피처 005 T019)', () => {
+  const values = {
+    type: 'RAW',
+    status: 'INSPECTION_PENDING',
+    partNo: 'ITEM-A',
+    qty: '1,000 EA',
+    lotNo: 'ITEM-A|1000|261112|SUP01|0001',
+    mfgDt: '26-11-12 08:00',
+    issueSeq: 1,
+  };
+
+  it('US1-4 패키징이 있으면 QTY 줄에만 「(봉지 10 × 100)」 이 붙고 다른 줄은 그대로다', () => {
+    const plain = materialLotTspl(values).toString('utf8').split('\r\n');
+    const packed = materialLotTspl({ ...values, package: '봉지 10 × 100' }).toString('utf8').split('\r\n');
+    const qtyIndex = plain.findIndex((line) => line.includes('"QTY: '));
+    expect(packed[qtyIndex]).toMatch(/"QTY: 1,000 EA \(봉지 10 × 100\)"$/);
+    expect(packed.filter((_, index) => index !== qtyIndex)).toEqual(plain.filter((_, index) => index !== qtyIndex));
+  });
+
+  it('US1-4 패키징이 없으면 출력이 바이트까지 같다', () => {
+    expect(materialLotTspl({ ...values, package: undefined }).equals(materialLotTspl(values))).toBe(true);
+  });
+});

@@ -39,6 +39,7 @@ export async function splitLotWithin(tx: Tx, input: LotSplitInput): Promise<LotS
     select: {
       lot_no: true, item_id: true, lot_type_code: true, plant_id: true, uom_id: true,
       status_code: true, manufactured_at: true, expiry_date: true, bom_id: true, bom_version: true,
+      inbound_lot_id: true,
     },
   });
   const siblings = await tx.lot.count({ where: { parent_lot_id: input.parentLotId } });
@@ -60,6 +61,8 @@ export async function splitLotWithin(tx: Tx, input: LotSplitInput): Promise<LotS
       // ⛔ BOM 은 id·버전을 «함께» 옮긴다 — `ck_lot_bom_snapshot`((bom_id IS NULL) = (bom_version IS NULL)).
       bom_id: parent.bom_id,
       bom_version: parent.bom_version,
+      // 자식도 같은 입하 LOT 소속이다. 패키징은 옮기지 않는다 — 떼어 낸 수량은 패키징 곱과 맞지 않는다(R-4).
+      inbound_lot_id: parent.inbound_lot_id,
       created_by: input.createdBy,
     },
     select: { lot_id: true, lot_no: true },

@@ -33,6 +33,8 @@ export interface MaterialLotLabelValues {
    * 자재 라벨은 비운다(줄 내용이 전과 «한 글자도» 달라지지 않는다).
    */
   workOrderNo?: string;
+  /** 패키징 표기(「봉지 10 × 100」) — 있으면 QTY 줄 뒤 괄호에 붙는다. 없으면 QTY 줄이 전과 같다. */
+  package?: string;
 }
 
 export interface MaterialLotLabelLayout {
@@ -54,7 +56,7 @@ function head(values: MaterialLotLabelValues): string {
 
 export function layoutMaterialLotLabel(values: MaterialLotLabelValues): MaterialLotLabelLayout {
   [values.type, values.status, values.partNo, values.qty, values.lotNo, values.mfgDt,
-    values.workOrderNo ?? ''].forEach(assertTsplSafe);
+    values.workOrderNo ?? '', values.package ?? ''].forEach(assertTsplSafe);
   const width = dots(80);
   const height = dots(30);
   const pad = dots(2);
@@ -84,7 +86,7 @@ export function layoutMaterialLotLabel(values: MaterialLotLabelValues): Material
     texts: [
       fitted(ROWS.head, head(values), 10, beside),
       fitted(ROWS.partNo, `PART NO.: ${values.partNo}`, 12, beside),
-      fitted(ROWS.qty, `QTY: ${values.qty}`, 12, below),
+      fitted(ROWS.qty, values.package ? `QTY: ${values.qty} (${values.package})` : `QTY: ${values.qty}`, 12, below),
       fitted(ROWS.lot, `LOT NO.: ${values.lotNo}`, 10, below),
       placed(left, ROWS.date, datePoint, dateText, half),
       placed(left + Math.round(half), ROWS.date, datePoint, `ISSUE NO.: ${String(values.issueSeq)}`, half),

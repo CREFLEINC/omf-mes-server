@@ -21,6 +21,9 @@ import {
 } from './material-issue-request/material-issue-release.runner';
 import { PrismaModule } from '../prisma/prisma.module';
 import { LogisticsHandoverNotifier } from './logistics-handover';
+import { MaterialLotBatchController } from './material-lot-batch/material-lot-batch.controller';
+import { MaterialLotBatchQueryService } from './material-lot-batch/material-lot-batch-query.service';
+import { MaterialLotBatchService } from './material-lot-batch/material-lot-batch.service';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { DocumentProgressModule } from './document-progress/document-progress.module';
@@ -141,6 +144,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     AuthModule,
   ],
   controllers: [
+    MaterialLotBatchController,
     GoodsIssueController,
     ReplenishmentItemController,
     ReplenishmentRunController,
@@ -177,6 +181,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     StockTransferController,
   ],
   providers: [
+    MaterialLotBatchService,
+    MaterialLotBatchQueryService,
     LogisticsHandoverNotifier,
     PickingHandoverNotifier,
     MaterialIssueReleaser,

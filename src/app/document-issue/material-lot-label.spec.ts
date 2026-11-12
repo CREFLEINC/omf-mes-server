@@ -92,3 +92,33 @@ describe('material LOT label values', () => {
     expect(region(actual)).toEqual(region(expected));
   });
 });
+
+describe('material LOT label package (피처 005 T019)', () => {
+  const row = {
+    issue_seq: 1,
+    issued_at: new Date('2026-11-12T01:00:00Z'),
+    lot: {
+      lot_no: 'ITEM-A|1000|261112|SUP01|0001',
+      lot_type_code: 'MATERIAL',
+      status_code: 'INSPECTION_PENDING',
+      initial_qty: new Prisma.Decimal('1000.000000'),
+      manufactured_at: null,
+      item: { item_code: 'ITEM-A' },
+      uom: { uom_code: 'EA' },
+      plant: { timezone_code: 'Asia/Ho_Chi_Minh' },
+    },
+  };
+
+  it('US1-4 패키징이 있으면 「봉지 10 × 100」(패키징 단위 이름 · 수 × 패키징당 수량)을 싣고 QTY 줄 뒤 괄호에 찍는다', () => {
+    const packed = { ...row, lot: { ...row.lot, package_count: 10, qty_per_package: new Prisma.Decimal('100.000000'), package_uom: { uom_name: '봉지' } } };
+    const values = materialLotLabelValues(packed);
+    expect(values.package).toBe('봉지 10 × 100');
+    expect(layoutMaterialLotLabel(values).texts[2].content).toBe('QTY: 1,000 EA (봉지 10 × 100)');
+  });
+
+  it('US1-4 패키징이 없으면 값에 칸이 없고 QTY 줄이 지금과 같다', () => {
+    const values = materialLotLabelValues({ ...row, lot: { ...row.lot, package_count: null, qty_per_package: null, package_uom: null } });
+    expect(values).not.toHaveProperty('package');
+    expect(layoutMaterialLotLabel(values).texts[2].content).toBe('QTY: 1,000 EA');
+  });
+});

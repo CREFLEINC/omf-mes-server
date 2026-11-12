@@ -152,6 +152,8 @@ const WORKER_TABLE_READERS = [
   'auth/terminal-logistics-scope.ts',
   'auth/terminal-lot-write-scope.ts',
   'auth/terminal-maintenance-scope.ts',
+  // 자재 관리 LOT 발행·폐기(POP · 피처 005) — 단말 작업자를 사번으로 찾는다.
+  'auth/terminal-material-lot-scope.ts',
   'auth/terminal-mobile-production-scope.ts',
   'auth/terminal-production-scope.ts',
   'auth/terminal-quality-write-scope.ts',
