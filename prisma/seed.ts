@@ -464,6 +464,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'DISPOSITION_NORMAL', codeName: '처분 정상(입고 가능)', order: 60 },
       // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
       { code: 'CONCESSION_APPROVED', codeName: '특채 승인', order: 70 },
+      // 입하 등록 해제가 닫는 검사 대기 보류(피처 005 · omf-all-around#254) — 마이그 20261112150000 에도 같은 줄이 있다.
+      { code: 'LOT_UNREGISTERED', codeName: '입하 등록 해제', order: 80 },
     ],
   },
   {
