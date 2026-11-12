@@ -53,6 +53,7 @@ const EXISTING_LINE_SELECT = {
   received_qty: true,
   lot_id: true,
   inbound_receipt_po_allocation: { select: { purchase_order_line_id: true, allocated_qty: true } },
+  inbound_lot: { select: { inbound_lot_id: true } },
 } satisfies Prisma.inbound_receipt_lineSelect;
 type ExistingLine = Prisma.inbound_receipt_lineGetPayload<{ select: typeof EXISTING_LINE_SELECT }>;
 
@@ -151,6 +152,7 @@ export class InboundReceiptUpdateService {
         throw one(banner(ERROR_CODE.STATE_LOCKED, 'LOT 이 만들어진 라인은 지울 수 없습니다.'));
       }
       const removed = gone.map((row) => row.inbound_receipt_line_id);
+      assertInboundLotQtyFixed([...gone, ...qtyChanged(items, known)]);
       const touched = [...gone, ...changed(items, known)];
       await assertNoSuccessor(tx, touched);
       await this.applyAttribution(tx, attributionsOf(existing, items), appUserId);
@@ -410,6 +412,21 @@ async function writeAllocations(
       });
     }
   }
+}
+
+function qtyChanged(items: InboundReceiptLineWriteInput[], known: Map<number, ExistingLine>): ExistingLine[] {
+  return items.flatMap((item) => {
+    const row = item.inboundReceiptLineId === undefined ? undefined : known.get(item.inboundReceiptLineId);
+    return row !== undefined && !row.received_qty.equals(item.receivedQty) ? [row] : [];
+  });
+}
+
+/** 입하 LOT 에 속한 줄의 수량은 받기·해제로만 바뀐다 — 줄 수량 = 자재 관리 LOT 합(피처 005 R-5a · SC-003). 지우기도 막는다. */
+function assertInboundLotQtyFixed(lines: ExistingLine[]): void {
+  if (!lines.some((row) => row.inbound_lot != null)) return;
+  throw new ContractException(HttpStatus.CONFLICT, [
+    banner(ERROR_CODE.STATE_LOCKED, '입하 LOT 에 속한 줄은 수량을 바꾸거나 지울 수 없습니다 — 받기·해제로 바꾸세요.'),
+  ]);
 }
 
 /** 계약이 LOT 만 적었다 — 입고·차이·역참조 P/O 도 막는다(I-3.md §7-4). 안 막으면 FK 위반이 500

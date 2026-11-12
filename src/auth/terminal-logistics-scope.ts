@@ -26,6 +26,12 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/goods-issues/{goodsIssueId}': ['POP'],
   'GET /logistics/goods-issues/{goodsIssueId}/lines': ['POP', 'MOBILE'],
   'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['MOBILE'],
+  // 입하 LOT 조회·받기·해제·공급사 LOT(피처 005 §2·§3) — PDA M-01-01·M-01-03.
+  'GET /logistics/inbound-lots': ['MOBILE'],
+  'GET /logistics/inbound-lots/{inboundLotId}': ['MOBILE'],
+  'POST /logistics/inbound-lots:receive': ['MOBILE'],
+  'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots': ['MOBILE'],
+  'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no': ['MOBILE'],
   'GET /logistics/inbound-receipts': ['POP', 'MOBILE'],
   'GET /logistics/inbound-receipts/{inboundReceiptId}/lines': ['POP', 'MOBILE'],
   'GET /logistics/material-issue-requests/{materialIssueRequestId}': ['MOBILE'],
@@ -90,6 +96,7 @@ export async function assertTerminalLogisticsScope(
   };
   const issue = async (v: unknown) => check(await prisma.goods_issue.findFirst({ where: { goods_issue_id: id(v), warehouse: { plant_id: plant } }, select: { goods_issue_id: true } }));
   const inbound = async (v: unknown) => check(await prisma.inbound_receipt.findFirst({ where: { inbound_receipt_id: id(v), plant_id: plant }, select: { inbound_receipt_id: true } }));
+  const inboundLot = async (v: unknown) => check(await prisma.inbound_lot.findFirst({ where: { inbound_lot_id: id(v), plant_id: plant }, select: { inbound_lot_id: true } }));
   const inboundLine = async (v: unknown) => check(await prisma.inbound_receipt_line.findFirst({ where: { inbound_receipt_line_id: id(v), inbound_receipt: { plant_id: plant } }, select: { inbound_receipt_line_id: true } }));
   const pickOrder = async (v: unknown) => check(await prisma.picking_order.findFirst({ where: { picking_order_id: id(v), warehouse: { plant_id: plant } }, select: { picking_order_id: true } }));
   // 창고 보충 수령 원천(피처 004)은 입고 전표가 없다 — 출발 위치 창고의 공장으로 본다.
@@ -130,6 +137,7 @@ export async function assertTerminalLogisticsScope(
 
   switch (key) {
     case 'GET /logistics/goods-issues':
+    case 'GET /logistics/inbound-lots':
     case 'GET /logistics/inbound-receipts':
     case 'GET /logistics/picking-orders':
     case 'GET /logistics/purchase-orders':
@@ -146,6 +154,11 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances':
     case 'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': await inboundLine(p.inboundReceiptLineId); break;
     case 'GET /logistics/inbound-receipts/{inboundReceiptId}/lines': await inbound(p.inboundReceiptId); break;
+    case 'GET /logistics/inbound-lots/{inboundLotId}':
+    case 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots':
+    case 'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no': await inboundLot(p.inboundLotId); break;
+    // 본문에 공장이 없다(단말 공장) — `lots[].lotId` 는 아래 본문 자원 검사가 공장을 본다.
+    case 'POST /logistics/inbound-lots:receive': break;
     case 'GET /logistics/material-issue-requests/{materialIssueRequestId}':
       // 창고 보충 요청(피처 004)은 W/O 가 없다 — 출발 창고의 공장으로 본다.
       await check(await prisma.material_issue_request.findFirst({ where: { material_issue_request_id: id(p.materialIssueRequestId), OR: [
@@ -262,7 +275,7 @@ function id(value: unknown): bigint {
 }
 /** 쓰기로 치는 동사 — 작업자 사번과 본문 자원 검사가 걸리는 기준이다. */
 function isWrite(key: string): boolean {
-  return key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE ');
+  return key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('PATCH ') || key.startsWith('DELETE ');
 }
 function denied(): ContractException {
   return new ContractException(HttpStatus.UNAUTHORIZED, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '단말 인증 범위 밖입니다.' }]);

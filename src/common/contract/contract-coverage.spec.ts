@@ -99,7 +99,8 @@ describe('계약 커버리지', () => {
     // 대시보드 제품군별 불량 · 설비 상세 2 오퍼레이션 + 상태별 LOT 목록 계약에 옮김 1(omf-all-around#251): 594 → 597.
     // 검사기준 복사 · 검사표 기준 재사용(omf-all-around#255) 2 오퍼레이션: 597 → 599.
     // 자재 관리 LOT 발행·대기 목록·폐기 4 · 공급사·품목 기본 정보 4 오퍼레이션(피처 005): 599 → 607.
-    expect(registry.size).toBe(607);
+    // 입하 LOT 조회 2·받기·해제·공급사 LOT 3 오퍼레이션(피처 005 S4): 607 → 612.
+    expect(registry.size).toBe(612);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
