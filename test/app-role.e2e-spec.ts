@@ -135,7 +135,8 @@ describe('역할·기능 권한 (e2e)', () => {
     // W-CO-05(통합 대시보드)는 권한 대상에서 뺐다(사용자 결정 2026-11-03 · omf-all-around#229).
     // W-02-11(출고 요청 현황)·W-CO-15(공장 근무일 설정)(피처 003 · omf-all-around#66).
     // W-02-12(생산 창고 보충)(피처 004 · omf-all-around#230).
-    expect(response.body.items).toHaveLength(140);
+    // M-01-03·W-01-14·W-01-15·W-01-16·W-06-25(피처 005 · omf-all-around#254).
+    expect(response.body.items).toHaveLength(145);
     expect(response.body.items.map((p: { code: string }) => p.code)).not.toContain('W-CO-05');
     // 이 화면 자신의 권한이 목록에 있어야 격자에서 관리자를 만들 수 있다.
     expect(response.body.items.map((p: { code: string }) => p.code)).toContain('W-CO-02');

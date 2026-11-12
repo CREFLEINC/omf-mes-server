@@ -134,8 +134,9 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
-   * 생산LOT 생명주기. 설계 확정 2026-08-07(`omf-mes#46`) + `DR-007`(2026-08-12).
-   * 전이 코드는 `trace.lot_lifecycle_history.transition_code` 에 들어간다.
+   * LOT 생명주기 — 생산 사전 발행·자재 대기/폐기. 생산은 설계 확정 2026-08-07(`omf-mes#46`) + `DR-007`(2026-08-12),
+   * 자재 관리 LOT(미리 만든 대기 LOT)는 피처 005(omf-all-around#254 — L4~L6 은 받기·폐기·해제 경로와 함께 연다).
+   * 그 밖의 자재 LOT 은 NULL(사용 중)이다. 전이 코드는 `trace.lot_lifecycle_history.transition_code` 에 들어간다.
    */
   'trace.lot.lifecycle_status_code': {
     /** 첫 실적이 붙는다 — 선발행 슬롯에 실물이 귀속된다. */
