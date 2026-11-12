@@ -20,7 +20,7 @@ import { PERMISSIONS } from '../src/common/permissions/permissions';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
-  IssuedMaterialLot, InboundLotFixture, closeInboundLotFixture, idempotencyKey, issueAndReceive, sessionAuth, terminalAuth,
+  IssuedMaterialLot, InboundLotFixture, closeInboundLotFixture, idempotencyKey, issueAndReceive, sessionAuth, terminalAuth, defaultMatchedLotIds,
 } from './support/inbound-lot-fixture';
 
 const PREFIX = 'IQCC';
@@ -277,7 +277,9 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 취소 (e2e)', () => {
   }
 
   async function addResult(requestId: number, overrides: Record<string, unknown> = {}): Promise<ResultRow> {
-    return (await postResult(resultBody(requestId, overrides)).expect(201)).body as ResultRow;
+    // 2026-11-12 매칭 필수 — 칸을 주지 않은 결과는 차례대로 LOT 하나씩 매칭한다(판정 뜻 그대로).
+    const matchedLotIds = 'matchedLotIds' in overrides ? undefined : await defaultMatchedLotIds(prisma, requestId);
+    return (await postResult(resultBody(requestId, { matchedLotIds, ...overrides })).expect(201)).body as ResultRow;
   }
 
   async function versionOf(requestId: number): Promise<number> {

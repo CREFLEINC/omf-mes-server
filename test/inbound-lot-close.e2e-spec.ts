@@ -529,9 +529,11 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
   }
 
   async function addDraftResult(closed: ClosedInboundLot): Promise<void> {
+    // 2026-11-12 매칭 필수 — 입하 LOT 의 자재 관리 LOT 하나를 매칭한다.
+    const lot = await prisma.lot.findFirstOrThrow({ where: { inbound_lot_id: BigInt(closed.inboundLotId) }, orderBy: { lot_no: 'asc' } });
     await webPost('/api/quality/inspection-results').send({
       inspectionRequestId: closed.iqcRequestId, inspectedQty: 5, acceptedQty: 5, rejectedQty: 0, heldQty: 0, uomId: Number(ids.ea),
-      inspectedAt: `${DAY}T06:00:00.000Z`, statusCode: 'DRAFT',
+      inspectedAt: `${DAY}T06:00:00.000Z`, statusCode: 'DRAFT', matchedLotIds: [Number(lot.lot_id)],
     }).expect(201);
   }
 
