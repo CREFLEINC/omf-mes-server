@@ -16,6 +16,7 @@ import {
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
@@ -47,6 +48,7 @@ interface InspectionPlanView {
 }
 
 export interface InspectionPlanWrite {
+  /** 수정은 필수. 등록 · 복사는 `InspectionPlanCreate` — 비울 수 있다. */
   inspectionPlanCode: string;
   inspectionPlanName: string;
   nameKo?: string | null;
@@ -59,6 +61,9 @@ export interface InspectionPlanWrite {
   /** 호환용 — `defaultSkip` 이 없을 때만 그 값으로 쓴다. */
   pqcSkipAllowed?: boolean;
 }
+
+/** 등록 · 복사는 기준코드를 비우면(생략 · 공백) 서버가 `QP-{YYYYMMDD}-{SEQ4}` 로 붙인다(omf-all-around#262). */
+export type InspectionPlanCreate = Omit<InspectionPlanWrite, 'inspectionPlanCode'> & { inspectionPlanCode?: string };
 
 export interface InspectionPlanQuery extends ReferenceQuery {
   inspectionTypeCode?: string;
@@ -76,7 +81,10 @@ export interface InspectionPlanResult {
 /** 검사기준 헤더. 화면은 `W-06-02`(검사기준 등록 — IQC/PQC/OQC)가 소유한다. */
 @Injectable()
 export class InspectionPlanService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: NumberingService,
+  ) {}
 
   async list(query: InspectionPlanQuery): Promise<PagedResponse<InspectionPlanView>> {
     const page = referencePage(query);
@@ -127,7 +135,9 @@ export class InspectionPlanService {
     };
   }
 
-  async create(input: InspectionPlanWrite): Promise<InspectionPlanView> {
+  async create(body: InspectionPlanCreate): Promise<InspectionPlanView> {
+    // 번호는 트랜잭션을 열기 «전»에 뽑는다(NumberingService 규약).
+    const input = { ...body, inspectionPlanCode: await this.codeOrNext(body.inspectionPlanCode) };
     await this.assertWritable(input, null);
 
     return view(
@@ -372,6 +382,13 @@ export class InspectionPlanService {
         message: '이미 있는 검사기준 코드입니다.',
       },
     ]);
+  }
+
+  /** 비운 코드는 채번한다 — 기간 키는 서버 UTC 날짜(마스터 코드라 영업일이 없다). */
+  private async codeOrNext(code: string | undefined): Promise<string> {
+    const trimmed = (code ?? '').trim();
+    if (trimmed !== '') return trimmed;
+    return this.numbering.next('INSPECTION_PLAN', null, new Date().toISOString().slice(0, 10));
   }
 
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
