@@ -91,6 +91,9 @@ function disableErpSync(): void {
   // 생산 창고 자동 보충 러너도 끈다(피처 004) — 켜 두면 검사가 만든 관리 품목으로 실제 시각에 요청·실행 기록을 만든다.
   // 러너 검사는 러너를 직접 만들어 tick 을 부른다.
   process.env.REPLENISHMENT_ENABLED = 'false';
+  // 입하 LOT 날짜 자동 마감 러너도 끈다(피처 005) — 값이 없으면 켜지는 러너라 켜 두면 실제 시각으로 검사의 지난 날짜 입하 LOT 을 닫는다.
+  // 러너 검사는 러너를 직접 만들어 tick 을 부른다.
+  process.env.INBOUND_LOT_AUTO_CLOSE_ENABLED = 'false';
   // 연결 정보 저장(W-CO-12)은 암호화 키가 있어야 한다 — 검사용 고정 키(운영 값이 아니다).
   process.env.ZALO_CREDENTIAL_KEY ||= Buffer.alloc(32, 7).toString('base64');
 }
