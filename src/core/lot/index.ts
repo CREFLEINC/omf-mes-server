@@ -12,3 +12,4 @@ export { LOT_SPLIT_SOURCE, MATERIAL_LOT_BATCH_SOURCE, WORK_ORDER_LOT_SOURCE } fr
 export * from './lot-usable';
 export * from './lot-registry-batch';
 export * from './lot-split';
+export * from './inbound-lot-register';

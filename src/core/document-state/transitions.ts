@@ -172,6 +172,20 @@ export const TRANSITIONS: TransitionRegistry = {
       transitionCode: 'L5',
       sourceOperation: 'POST /trace/lots:void',
     },
+    /** PDA 받기(피처 005 R-3·R-5) — 대기 자재 관리 LOT 이 입하 LOT 에 등록된다. */
+    'material-inbound-registered': {
+      from: ['WAITING'],
+      to: 'ACTIVE',
+      transitionCode: 'L4',
+      sourceOperation: 'POST /logistics/inbound-lots:receive',
+    },
+    /** 입하 마감 전 등록 해제(피처 005 R-5) — 미리 만든 대기 상태로 돌아가 다시 받을 수 있다. */
+    'material-inbound-unregistered': {
+      from: ['ACTIVE'],
+      to: 'WAITING',
+      transitionCode: 'L6',
+      sourceOperation: 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots',
+    },
   },
 
   /**
@@ -262,6 +276,10 @@ export const TRANSITIONS: TransitionRegistry = {
     // 기본 생략(C26)과 이력 코드로 가른다 — IQC(C22)·OQC(C27) 결재 생략과 같은 자리다.
     'pqc-skip-approved': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
       transitionCode: 'C28', sourceOperation: 'POST /production/work-orders/{workOrderId}:skip-pqc' },
+    // 입하 등록 해제(피처 005 R-3) — 받기 때 검사 불필요·기본 생략으로 정상(C21)이 된 자재 관리 LOT 을 미리 만든 상태
+    // (검사 대기)로 되돌린다. 다시 받으면 C21 이 다시 돈다. ⛔ C29(판정 확정 취소)와 섞지 않는다.
+    'material-inbound-unregistered-quality-reset': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
+      transitionCode: 'C31', sourceOperation: 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots' },
 
     // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
     // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.
