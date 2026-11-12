@@ -29,6 +29,8 @@ export const PERMISSIONS: readonly Permission[] = [
   // 01 자재·창고
   { code: 'M-01-01', name: '입하 등록', groupCode: '01' },
   { code: 'M-01-02', name: '자재LOT 번호 스캔·등록 (발번)', groupCode: '01' },
+  // 피처 005(omf-all-around#254) — PDA 입하 마감. 마이그레이션이 M-01-01 보유 역할에 덧붙인다.
+  { code: 'M-01-03', name: '입하 마감', groupCode: '01' },
   { code: 'M-01-04', name: '자재 위치 확인', groupCode: '01' },
   { code: 'M-01-05', name: '적치·입고 완료', groupCode: '01' },
   { code: 'M-01-06', name: '입하 오류 등록', groupCode: '01' },
@@ -53,6 +55,10 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-01-11', name: '신규 P/O 등록', groupCode: '01' },
   { code: 'W-01-12', name: '재고조정', groupCode: '01' },
   { code: 'W-01-13', name: '물류 문서 진행현황·취소', groupCode: '01' },
+  // 피처 005(omf-all-around#254) — 설계 밖 화면·권한. W-01-15 는 화면이 아니라 W-01-01 안의 판정 확정·확정 취소 권한(선례 W-03-14).
+  { code: 'W-01-14', name: '자재 관리 LOT 발행', groupCode: '01' },
+  { code: 'W-01-15', name: 'IQC 판정 확정', groupCode: '01' },
+  { code: 'W-01-16', name: '입하/입고 작업 기록', groupCode: '01' },
   // 02 생산 실행
   { code: 'M-02-01', name: 'WIP 공정 이동 스캔', groupCode: '02' },
   { code: 'M-02-02', name: '수리 왕복 투입·반출 스캔', groupCode: '02' },
@@ -172,6 +178,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-06-23', name: 'ERP W/O 조회(ERP)', groupCode: '06' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).
   { code: 'W-06-24', name: '검사표 기준', groupCode: '06' },
+  // 피처 005(omf-all-around#254) — 설계 밖 기준정보 화면.
+  { code: 'W-06-25', name: '공급사·품목 기본 정보', groupCode: '06' },
   // CO 공통
   { code: 'M-CO-01', name: '기기 등록·사번 인증', groupCode: 'CO' },
   { code: 'P-CO-01', name: '사번 경량 인증', groupCode: 'CO' },

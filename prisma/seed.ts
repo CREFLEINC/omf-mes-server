@@ -509,7 +509,7 @@ const SEED: CodeGroupSeed[] = [
     //
     // ⛔ 품질 판정 축(trace.lot.status_code)과 *다른 축*이다. 한 이력에 섞지 않는다는 것이
     //    계약 명시 사항이고, 화면 스펙(W-03-01)에서 이 둘을 헷갈린 사고가 실제로 있었다.
-    //    생산LOT 선발행에서만 쓰고 자재·제품 LOT은 null이다.
+    //    생산LOT 선발행과 자재 관리 LOT 대기·폐기(피처 005)에서 쓰고, 그 밖의 자재·제품 LOT은 null이다.
     //
     // ⚠ 그룹명 LOT_LIFECYCLE_STATUS는 우리가 지은 잠정 이름이다 — 공유계약 G-32 등록부에
     //   이 그룹이 없다. 값 셋은 2026-08-31 설계 회신(#50)이 확정한 것이다.
@@ -539,6 +539,10 @@ const SEED: CodeGroupSeed[] = [
       { code: 'L1', codeName: '대기 → 활성(첫 실적)', order: 10 },
       { code: 'L2', codeName: '대기 → 폐번(마감, 실적 없는 슬롯)', order: 20 },
       { code: 'L3', codeName: '활성 → 폐번(MES W/O 취소)', order: 30 },
+      // 자재 관리 LOT 대기·폐기(피처 005 · omf-all-around#254) — 마이그 20261112090000 에도 같은 줄이 있다.
+      { code: 'L4', codeName: '대기 → 활성(자재 입하 등록)', order: 40 },
+      { code: 'L5', codeName: '대기 → 폐번(자재 관리 LOT 폐기)', order: 50 },
+      { code: 'L6', codeName: '활성 → 대기(자재 입하 등록 해제)', order: 60 },
     ],
   },
   {
@@ -585,6 +589,10 @@ const SEED: CodeGroupSeed[] = [
       // OQC 생략 실행(omf-all-around#119) — 마이그 20261021130000 에도 같은 줄이 있다.
       { code: 'C27', codeName: 'OQC 생략 → 정상', order: 200 },
       { code: 'C28', codeName: 'PQC 생략(결재) → 정상', order: 210 },
+      // 입하 LOT IQC(피처 005 · omf-all-around#254) — 마이그 20261112090000 에도 같은 줄이 있다.
+      { code: 'C29', codeName: 'IQC 확정 취소 → 검사 대기', order: 220 },
+      { code: 'C30', codeName: 'IQC 생략 무효 → 검사 대기', order: 230 },
+      { code: 'C31', codeName: '입하 등록 해제 → 검사 대기', order: 240 },
     ],
   },
   {
@@ -1161,6 +1169,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'WORK_ORDER', codeName: 'MES W/O(선발행)', order: 30 },
       // 처분 선별의 불량분 LOT — 원 LOT 이 원천이다(omf-all-around#108 · 마이그 20261020110000).
       { code: 'LOT_SPLIT', codeName: 'LOT 분할(선별 불량분)', order: 40 },
+      // 미리 만든 자재 관리 LOT — 받기 때 INBOUND_RECEIPT_LINE 으로 바뀐다(피처 005 · 마이그 20261112090000).
+      { code: 'MATERIAL_LOT_BATCH', codeName: '자재 관리 LOT 발행 묶음', order: 50 },
     ],
   },
   {
@@ -1247,6 +1257,64 @@ const SEED: CodeGroupSeed[] = [
       { code: 'NOT_REQUESTED', codeName: '의뢰 전', order: 10 },
       { code: 'PENDING_DECISION', codeName: '판정 대기', order: 20 },
       { code: 'DECIDED', codeName: '판정 완료', order: 30 },
+      // IQC 판정 확정 취소(피처 005 · 마이그 20261112090000).
+      { code: 'CANCELLED', codeName: '취소', order: 40 },
+    ],
+  },
+  // ── 입하 LOT(피처 005 · omf-all-around#254) — 마이그 20261112090000 에도 같은 그룹·값이 있다. ──
+  {
+    groupCode: 'INBOUND_LOT_STATUS',
+    groupName: '입하 LOT 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'RECEIVING', codeName: '입하 중', order: 10 },
+      { code: 'RECEIVED', codeName: '입하 완료', order: 20 },
+      { code: 'FINALIZED', codeName: '최종 마감', order: 30 },
+      { code: 'VOIDED', codeName: '폐기', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'INBOUND_LOT_EVENT_TYPE',
+    groupName: '입하 LOT 이력 유형',
+    isSystemOwned: true,
+    values: [
+      { code: 'CREATED_BY_RECEIVE', codeName: '받기로 생성', order: 10 },
+      { code: 'LOTS_REGISTERED', codeName: '자재 관리 LOT 등록', order: 20 },
+      { code: 'LOTS_UNREGISTERED', codeName: '자재 관리 LOT 해제', order: 30 },
+      { code: 'SUPPLIER_LOT_SET', codeName: '공급사 LOT 번호 변경', order: 40 },
+      { code: 'RECEIPT_CLOSED', codeName: '입하 마감', order: 50 },
+      { code: 'RECEIPT_REOPENED', codeName: '마감 취소', order: 60 },
+      { code: 'ALLOCATION_EDITED', codeName: '배정 수정', order: 70 },
+      { code: 'RECEIPT_FINALIZED', codeName: '최종 마감', order: 80 },
+      { code: 'SPLIT', codeName: '분리', order: 90 },
+      { code: 'VOIDED', codeName: '폐기', order: 100 },
+    ],
+  },
+  {
+    groupCode: 'INBOUND_LOT_ERP_SEND_MODE',
+    groupName: '입하 LOT ERP 전송 방식',
+    isSystemOwned: true,
+    values: [
+      { code: 'PER_RECEIPT', codeName: '입고별 전송', order: 10 },
+      { code: 'ON_FINALIZE', codeName: '최종 마감 때 전송', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'INSPECTION_REQUEST_EVENT_TYPE',
+    groupName: 'IQC 변경 이력 유형',
+    isSystemOwned: true,
+    values: [
+      { code: 'RESULT_ADDED', codeName: '결과 추가', order: 10 },
+      { code: 'RESULT_UPDATED', codeName: '결과 수정', order: 20 },
+      { code: 'RESULT_DELETED', codeName: '결과 삭제', order: 30 },
+      { code: 'CONFIRMED', codeName: '판정 확정', order: 40 },
+      { code: 'CONFIRM_CANCELLED', codeName: '확정 취소', order: 50 },
+      { code: 'REOPENED_BY_REWORK', codeName: '재작업 재열기', order: 60 },
+      { code: 'SKIPPED', codeName: '생략', order: 70 },
+      { code: 'SKIP_VOIDED', codeName: '생략 무효', order: 80 },
+      { code: 'SPLIT_OUT', codeName: '분리로 나감', order: 90 },
+      { code: 'SPLIT_IN', codeName: '분리로 들어옴', order: 100 },
+      { code: 'CANCELLED_BY_REOPEN', codeName: '마감 취소로 무효', order: 110 },
     ],
   },
   {
@@ -1701,6 +1769,13 @@ const ROLES = [
       'W-06-23',
       // LOT 생산 이력 조회(장부 P-119) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
       'W-02-09',
+      // 자재 LOT 운영 구조 변경(피처 005 · omf-all-around#254) — 설계 밖 화면·권한이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
+      // 기존 역할에 덧붙이는 부여(W-01-01 → W-01-15, W-01-09 → W-01-16, M-01-01 → M-01-03)는 마이그 20261112090000 이 한다.
+      'W-01-14',
+      'W-01-15',
+      'W-01-16',
+      'W-06-25',
+      'M-01-03',
     ],
   },
 ];

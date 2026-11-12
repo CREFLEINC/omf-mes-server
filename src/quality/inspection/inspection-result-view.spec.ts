@@ -28,6 +28,7 @@ function resultRow(overrides: Partial<InspectionResultRow> = {}): InspectionResu
     updated_at: new Date('2026-09-07T00:00:00.000Z'),
     updated_by: null,
     version_no: 1,
+    confirm_cycle: null,
     worker: { worker_name: '검사원' },
     inspection_request: {
       inspection_request_no: 'IR-2026-0907-0001',

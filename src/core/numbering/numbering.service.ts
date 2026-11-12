@@ -13,6 +13,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
   NOTICE: 'NTC',
   APPROVAL_REQUEST: 'AP',
   INBOUND_RECEIPT: 'IR',
+  /** 규칙 미등재 — 입하 LOT `IL-{YYYYMMDD}-{SEQ4}`(16자, ERP `POP_INF_KEY` 25자 안 · 피처 005 R-2). */
+  INBOUND_LOT: 'IL',
   /** 규칙 미등재 — `GI-{YYYYMMDD}-{SEQ4}`(`plan-api.md` 1090행 · 계약 example `GI-2026-000402` 는 형식만). */
   GOODS_ISSUE: 'GI',
   /** 규칙 미등재 — 형식 확정은 문의 14 표에 두 행을 더해 받는다(I-6 §2-7). */
