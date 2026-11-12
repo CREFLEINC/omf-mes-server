@@ -22,6 +22,25 @@ export class IqcRejectedHandoverNotifier {
   constructor(private readonly emitter: NotificationEmitter) {}
 
   async rejected(tx: Tx, lotId: bigint): Promise<void> {
+    await this.emit(tx, lotId);
+  }
+
+  /**
+   * 입하 LOT 검사 불합격(피처 005 R-12) — 입하 LOT 당 한 번. 대상은 첫 자재 관리 LOT, LOT 번호는 「첫 번호 외 n」, 수량은 LOT 합이다.
+   * 확정 취소 뒤 다시 불합격으로 확정해도 같은 대상이라 다시 알리지 않는다(이미 보낸 알림은 그대로 · R-13).
+   */
+  async rejectedInboundLot(tx: Tx, lots: readonly { lot_id: bigint; lot_no: string; initial_qty: Prisma.Decimal }[]): Promise<void> {
+    if (lots.length === 0) return;
+    const total = lots.reduce((sum, lot) => sum.plus(lot.initial_qty), new Prisma.Decimal(0));
+    await this.emit(tx, lots[0].lot_id, {
+      lotNo: lots.length === 1 ? lots[0].lot_no : `${lots[0].lot_no} 외 ${String(lots.length - 1)}`,
+      qty: total,
+      // 확정 취소 뒤 다시 불합격 확정하면 같은 대상이라도 다시 알린다(G1 의 입하 마감 알림과 같은 규칙).
+      repeatable: true,
+    });
+  }
+
+  private async emit(tx: Tx, lotId: bigint, inbound?: { lotNo: string; qty: Prisma.Decimal; repeatable: boolean }): Promise<void> {
     await this.emitter.guarded(tx, `IQC_INSPECTION_REJECTED LOT ${lotId}`, async () => {
       const lot = await tx.lot.findUniqueOrThrow({
         where: { lot_id: lotId },
@@ -48,12 +67,13 @@ export class IqcRejectedHandoverNotifier {
         aggregateTypeCode: 'LOT',
         aggregateId: lotId,
         occurredAt: new Date(),
+        ...(inbound?.repeatable === true ? { repeatable: true } : {}),
         values: {
           receipt_no: receipt?.inbound_receipt_no,
           item: `${lot.item.item_code} ${lot.item.item_name}`,
-          lot_no: lot.lot_no,
+          lot_no: inbound?.lotNo ?? lot.lot_no,
           supplier: receipt?.partner.partner_name,
-          qty: formatQty(lot.initial_qty, lot.uom.uom_code),
+          qty: formatQty(inbound?.qty ?? lot.initial_qty, lot.uom.uom_code),
           next_step: IQC_REJECTED_NEXT_STEP,
         },
       });

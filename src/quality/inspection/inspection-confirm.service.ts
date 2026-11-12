@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictExtra, ContractException, ERROR_CODE, field, one } from '../../common/errors';
+import { ConflictException, ConflictExtra, ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues, optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
@@ -31,6 +31,7 @@ import { type FourMChangeInput, prepareFourMChangeOfResult, writeFourMChangeWith
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
 import { IqcRejectedHandoverNotifier } from './iqc-rejected-handover';
 import { requestLotIds } from './inspection-request-lots';
+import { INBOUND_LOT_TARGET } from './iqc-inbound-lot-result';
 
 /** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 4. 판정을 비우면 저장된 값을 쓴다. */
 export interface InspectionResultConfirm {
@@ -132,8 +133,15 @@ export class InspectionConfirmService {
     await assertCodeValues(this.prisma, [
       { field: 'overallJudgmentCode', value: body.overallJudgmentCode, groupCode: JUDGMENT_GROUP },
     ]);
-    const workerId = await assertAccountWorker(this.prisma, appUserId);
     const resultId = BigInt(inspectionResultId);
+    // 입하 LOT 검사(새 흐름)는 결과 전부를 요청 `:confirm` 이 한 번에 확정한다(피처 005 D-11) — 옛 요청·PQC·OQC 는 그대로.
+    const target = await this.prisma.inspection_result.findUnique({
+      where: { inspection_result_id: resultId }, select: { inspection_request: { select: { target_type_code: true } } },
+    });
+    if (target?.inspection_request.target_type_code === INBOUND_LOT_TARGET) {
+      throw new ConflictException('user', '검사 단위로 확정하세요 — 입하 LOT 검사는 결과 전부를 한 번에 판정 확정합니다.', { code: 'INVALID_STATE' });
+    }
+    const workerId = await assertAccountWorker(this.prisma, appUserId);
     const preparedDefects = await prepareConfirmDefects(this.prisma, this.defects, resultId, body);
     const fourMChange = await prepareFourMChangeOfResult(this.prisma, resultId, body.fourMChange);
     // IQC 불합격이면 부적합 번호를 트랜잭션 «밖»에서 받는다(P-41 · 채번 규약). 판정은 본문이 우선이다.
@@ -384,7 +392,7 @@ export class InspectionConfirmService {
    * 허용되므로(`W-03-02` §4-B) 수입검사 보류만 닫고 올리면 의심자재 보류가 열린 채 출고가 풀린다.
    * ⛔ 불합격·보류 판정은 보류를 **닫지 않는다** — `W-01-01` §5-1 「불합격 = Hold 유지 → 반품」.
    */
-  private async moveTargetLots(
+  async moveTargetLots(
     tx: Tx,
     lotIds: bigint[],
     judgment: string,

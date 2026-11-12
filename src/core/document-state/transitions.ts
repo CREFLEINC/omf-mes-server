@@ -30,6 +30,8 @@ const RELEASE = 'POST /quality/lot-holds/{lotHoldId}:release';
 const DECIDE = 'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions';
 /** 입하 마감 취소 — 생략 무효(C30)와 IQC 요청 취소를 «한 트랜잭션»에서 연다(피처 005). */
 const REOPEN_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt';
+/** IQC 판정 확정 취소 — LOT(C29)·결과·부적합 세 축을 «한 트랜잭션»에서 되돌린다(피처 005 R-13). */
+const CANCEL_CONFIRM = 'POST /quality/inspection-requests/{inspectionRequestId}:cancel-confirm';
 
 /**
  * 전이표. **데이터로 둔다** — 코드에 상태 문자열을 박으면 값이 확정될 때 찾아 고칠 수 없다
@@ -196,11 +198,12 @@ export const TRANSITIONS: TransitionRegistry = {
    * ⚠ `conflictStatus` 는 호출자가 **400** 을 넘긴다 — 재확정은 재로드해도 안 풀리는 잠금이다.
    *    ⛔ 그러나 `PUT` 의 확정본 수정은 **409 `INVALID_STATE`** 다 — 계약이 그 자리에만 409 를
    *    문자로 적었다(`InspectionResultUpdate` 설명). 두 자리의 봉투가 다르다.
-   * ⛔ 되돌아오는 전이가 없다 — 확정을 푸는 오퍼레이션이 계약에 0건이고 번복은 재검 회차다(B-10).
+   * ⛔ 되돌아오는 전이는 입하 LOT IQC 의 확정 취소 하나뿐이다(피처 005 R-13) — PQC·OQC·옛 IQC 의 번복은 재검 회차다(B-10).
    * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다.
    */
   'quality.inspection_result.status_code': {
     'inspection-confirm': { from: ['DRAFT'], to: 'CONFIRMED', sourceOperation: CONFIRM },
+    'iqc-confirm-cancelled': { from: ['CONFIRMED'], to: 'DRAFT', sourceOperation: CANCEL_CONFIRM },
   },
 
   /**
@@ -295,6 +298,10 @@ export const TRANSITIONS: TransitionRegistry = {
     // 돌아간다. 검사 대기 보류는 호출자가 다시 건다.
     'iqc-skip-voided': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
       transitionCode: 'C30', sourceOperation: REOPEN_RECEIPT },
+    // 판정 확정 취소(피처 005 R-13) — 합격(C4)·불합격(C6)으로 옮긴 자재 관리 LOT 을 검사 대기로 되돌린다. 보류 확정(C5)은
+    // 이미 검사 대기라 옮기지 않는다. 검사 대기 보류는 호출자가 다시 건다.
+    'iqc-confirm-cancelled': { from: ['NORMAL', 'DEFECTIVE'], to: 'INSPECTION_PENDING',
+      transitionCode: 'C29', sourceOperation: CANCEL_CONFIRM },
 
     // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
     // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.
@@ -342,6 +349,9 @@ export const TRANSITIONS: TransitionRegistry = {
       sourceOperation: 'POST /quality/nonconformances/{nonconformanceId}:request-disposition' },
     'nonconformance-decide': { from: ['PENDING_DECISION'], to: 'DECIDED',
       sourceOperation: DECIDE },
+    // 판정 확정 취소가 그 확정이 만든 부적합을 닫는다(피처 005 R-13) — 처분 판정·특채가 있으면 취소가 먼저 막는다.
+    'iqc-confirm-cancelled': { from: ['NOT_REQUESTED', 'PENDING_DECISION'], to: 'CANCELLED',
+      sourceOperation: CANCEL_CONFIRM },
   },
 
   /**

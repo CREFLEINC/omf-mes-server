@@ -12,6 +12,7 @@ const BATCHES = '/api/logistics/material-lot-batches';
 const RECEIVE = '/api/logistics/inbound-lots:receive';
 const INBOUND_LOTS = '/api/logistics/inbound-lots';
 const RESULTS = '/api/quality/inspection-results';
+const REQUESTS = '/api/quality/inspection-requests';
 
 /** 요청에 인증을 싣는다 — 단말(토큰 + 작업자 사번) 또는 계정(세션 쿠키). */
 export type Authorize = (test: request.Test) => request.Test;
@@ -64,7 +65,7 @@ export interface InboundLotFixture {
   keys?: Set<string>;
   /** 마감하는 쪽 — MOBILE 단말 또는 M-01-01·M-01-03 계정. 없으면 `receiver`. */
   closer?: Authorize;
-  /** IQC 결과를 기록·확정하는 계정(W-01-01) — `passInboundLotIqc` 가 쓴다. */
+  /** IQC 결과를 기록(W-01-01)·판정 확정(W-01-15)하는 계정 — `passInboundLotIqc` 가 쓴다. */
   inspector?: Authorize;
   /** `passInboundLotIqc` 가 결과 단위와 확정 효과를 읽는다. */
   prisma?: PrismaService;
@@ -140,13 +141,13 @@ export async function closeInboundLotFixture(fixture: InboundLotFixture, inbound
 
 /**
  * IQC 합격 자재 관리 LOT 만들기(T040) — 입고·피킹처럼 합격 LOT 이 필요한 시험이 쓰는 하나뿐인 자리.
- * 순서: (입하 중이면) 입하 마감(`:close-receipt` → 입하 LOT IQC 요청) → 그 요청에 합격 결과 → 결과 `:confirm`(S5~S8) — 도우미 안에서
- * LOT 전부 정상·요청 `COMPLETED`·`overall_judgment_code`·`confirmed_at` 을 단언한다. S9 에서 요청 단위 `:confirm` 으로 바꾼다
- * (바꾸는 곳은 여기 하나). 검사 불필요 품목으로 돌리는 우회는 쓰지 않는다 — 검사 필요 품목이 아니면 던진다.
+ * 순서: (입하 중이면) 입하 마감(`:close-receipt` → 입하 LOT IQC 요청) → 그 요청에 합격 결과(작성중) → 요청 `:confirm`(S9 부터 —
+ * S5~S8 은 결과 `:confirm`) — 도우미 안에서 LOT 전부 정상·요청 `COMPLETED`·`overall_judgment_code`·`confirmed_at` 을 단언한다.
+ * `inspector` 는 W-01-01·W-01-15 를 가진 계정이어야 한다. 검사 불필요 품목으로 돌리는 우회는 쓰지 않는다 — 검사 필요 품목이 아니면 던진다.
  */
 export async function passInboundLotIqc(fixture: InboundLotFixture, inboundLotId: number): Promise<IssuedMaterialLot[]> {
   const { inspector, prisma } = fixture;
-  if (inspector === undefined || prisma === undefined) throw new Error('passInboundLotIqc: fixture.inspector(W-01-01)·fixture.prisma 가 필요하다');
+  if (inspector === undefined || prisma === undefined) throw new Error('passInboundLotIqc: fixture.inspector(W-01-01·W-01-15)·fixture.prisma 가 필요하다');
   const id = BigInt(inboundLotId);
   const inbound = await prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: id }, select: { status_code: true } });
   if (inbound.status_code === 'RECEIVING') await closeInboundLotFixture(fixture, inboundLotId);
@@ -159,13 +160,16 @@ export async function passInboundLotIqc(fixture: InboundLotFixture, inboundLotId
     .set('Idempotency-Key', idempotencyKey(fixture))
     .send({
       inspectionRequestId: Number(iqc.inspection_request_id), inspectedQty: qty, acceptedQty: qty, rejectedQty: 0, heldQty: 0,
-      uomId: Number(iqc.uom_id), inspectedAt: `${fixture.businessDate}T06:00:00.000Z`, statusCode: 'DRAFT',
+      uomId: Number(iqc.uom_id), inspectedAt: `${fixture.businessDate}T06:00:00.000Z`, statusCode: 'DRAFT', overallJudgmentCode: 'ACCEPTED',
     })
     .expect(201);
-  const resultId = (created.body as { inspectionResultId: number }).inspectionResultId;
-  await inspector(request(fixture.app.getHttpServer()).post(`${RESULTS}/${String(resultId)}:confirm`))
-    .set('Idempotency-Key', idempotencyKey(fixture)).set('If-Match', 'W/"1"')
-    .send({ overallJudgmentCode: 'ACCEPTED' })
+  expect((created.body as { statusCode: string }).statusCode).toBe('DRAFT');
+  // 판정 확정은 검사 단위(요청 `:confirm` · 권한 W-01-15) — 결과 전부를 한 번에 확정한다(S9 · D-11).
+  const requestPath = `${REQUESTS}/${String(iqc.inspection_request_id)}`;
+  const current = await inspector(request(fixture.app.getHttpServer()).get(requestPath)).expect(200);
+  await inspector(request(fixture.app.getHttpServer()).post(`${requestPath}:confirm`))
+    .set('Idempotency-Key', idempotencyKey(fixture))
+    .send({ versionNo: (current.body as { versionNo: number }).versionNo })
     .expect(200);
 
   const confirmed = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: iqc.inspection_request_id } });

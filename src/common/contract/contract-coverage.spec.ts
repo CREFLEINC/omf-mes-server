@@ -103,7 +103,8 @@ describe('계약 커버리지', () => {
     // 입하 LOT 조회 2·받기·해제·공급사 LOT 3 오퍼레이션(피처 005 S4): 608 → 613.
     // 입하 마감·마감 취소 2 오퍼레이션(피처 005 S5): 613 → 615.
     // IQC 결과 삭제 1 오퍼레이션(피처 005 S8): 615 → 616.
-    expect(registry.size).toBe(616);
+    // IQC 판정 확정·확정 취소 2 오퍼레이션(피처 005 S9): 616 → 618.
+    expect(registry.size).toBe(618);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

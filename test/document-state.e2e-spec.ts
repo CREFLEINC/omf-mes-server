@@ -98,8 +98,8 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     // 가릴 표식이 데이터에 없다 — 지어내지 않는다(F-6 · 미발행 · I-19 §9-2 후보 8).
     // 피처 005(omf-all-around#254) — 코드값은 마이그레이션(S1)이 먼저 넣고, 전이는 그것을 여는 경로와 함께 등록한다
     // (C29 판정 확정 취소 · C30 마감 취소의 생략 무효 · C31 등록 해제). 경로가 생기면 여기서 뺀다.
-    // C31 은 `:unregister-lots` 와, C30 은 `:reopen-receipt` 와 함께 열었다.
-    'trace.lot.status_code': ['C15', 'C29'],
+    // C31 은 `:unregister-lots` 와, C30 은 `:reopen-receipt` 와, C29 는 `:cancel-confirm` 과 함께 열었다.
+    'trace.lot.status_code': ['C15'],
   };
 
   it('⭐ 전이표가 쓰는 상태가 축마다의 코드 그룹에 전부 있다', async () => {

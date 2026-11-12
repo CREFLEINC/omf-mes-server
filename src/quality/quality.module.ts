@@ -44,6 +44,7 @@ import { InspectionSheetQueryService } from './inspection-sheet/inspection-sheet
 import { InspectionSheetSignService } from './inspection-sheet/inspection-sheet-sign.service';
 import { InspectionConfirmService } from './inspection/inspection-confirm.service';
 import { IqcRejectedHandoverNotifier } from './inspection/iqc-rejected-handover';
+import { IqcRequestConfirmService } from './inspection/iqc-request-confirm.service';
 import { InspectionRequestController } from './inspection/inspection-request.controller';
 import { InspectionHistoryService } from './inspection/inspection-history.service';
 import { OqcSerialController } from './inspection/oqc-serial.controller';
@@ -133,6 +134,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InspectionResultWriteService,
     InspectionConfirmService,
     IqcRejectedHandoverNotifier,
+    IqcRequestConfirmService,
     InspectionSummaryService,
     InspectionMeasurementService,
     DefectRecordService,
