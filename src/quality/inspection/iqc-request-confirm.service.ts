@@ -125,7 +125,8 @@ export class IqcRequestConfirmService {
     await tx.inspection_request.update({
       where: { inspection_request_id: request.inspection_request_id },
       data: {
-        status_code: IN_PROGRESS, overall_judgment_code: null, confirmed_at: null, confirmed_by: null,
+        // 검사 수준은 확정 때 그때의 품목 수준으로 다시 적는다(`recordIqcInspectionLevelWithin` 은 빈 칸에만 쓴다).
+        status_code: IN_PROGRESS, overall_judgment_code: null, confirmed_at: null, confirmed_by: null, inspection_level_code: null,
         confirm_cycle: { increment: 1 }, updated_by: by, version_no: { increment: 1 },
       },
     });

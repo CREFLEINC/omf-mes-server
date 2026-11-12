@@ -35,10 +35,12 @@ export class IqcRejectedHandoverNotifier {
     await this.emit(tx, lots[0].lot_id, {
       lotNo: lots.length === 1 ? lots[0].lot_no : `${lots[0].lot_no} 외 ${String(lots.length - 1)}`,
       qty: total,
+      // 확정 취소 뒤 다시 불합격 확정하면 같은 대상이라도 다시 알린다(G1 의 입하 마감 알림과 같은 규칙).
+      repeatable: true,
     });
   }
 
-  private async emit(tx: Tx, lotId: bigint, inbound?: { lotNo: string; qty: Prisma.Decimal }): Promise<void> {
+  private async emit(tx: Tx, lotId: bigint, inbound?: { lotNo: string; qty: Prisma.Decimal; repeatable: boolean }): Promise<void> {
     await this.emitter.guarded(tx, `IQC_INSPECTION_REJECTED LOT ${lotId}`, async () => {
       const lot = await tx.lot.findUniqueOrThrow({
         where: { lot_id: lotId },
@@ -65,6 +67,7 @@ export class IqcRejectedHandoverNotifier {
         aggregateTypeCode: 'LOT',
         aggregateId: lotId,
         occurredAt: new Date(),
+        ...(inbound?.repeatable === true ? { repeatable: true } : {}),
         values: {
           receipt_no: receipt?.inbound_receipt_no,
           item: `${lot.item.item_code} ${lot.item.item_name}`,

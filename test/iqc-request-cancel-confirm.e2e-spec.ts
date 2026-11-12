@@ -123,7 +123,7 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 취소 (e2e)', () => {
     expect((await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(added.inspectionResultId) } })).confirm_cycle).toBe(2);
   });
 
-  it('US5-2·SC-006 불합격 확정 취소(처분 전) → 부적합 CANCELLED(closed_at)·LOT 검사 대기·보류는 한 벌 — 이미 보낸 알림은 그대로', async () => {
+  it('US5-2·SC-006 불합격 확정 취소(처분 전) → 부적합 CANCELLED(closed_at)·LOT 검사 대기·보류는 한 벌 — 다시 불합격 확정하면 알림 다시', async () => {
     const iqc = await iqcLot(2);
     await addResult(iqc.requestId, { acceptedQty: 6, rejectedQty: 4, overallJudgmentCode: 'REJECTED' });
     await confirm(iqc.requestId);
@@ -135,10 +135,10 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 취소 (e2e)', () => {
     expect(await lotStatuses(iqc)).toEqual(['INSPECTION_PENDING', 'INSPECTION_PENDING']);
     expect(await openInspectionHolds(iqc)).toBe(2);
     expect(await rejectedAlerts(iqc)).toBe(1);
-    // 다시 불합격으로 확정하면 새 부적합이 서고, 알림은 같은 대상이라 다시 나가지 않는다.
+    // 다시 불합격으로 확정하면 새 부적합이 서고, 옮길 LOT 이 다시 생겼으니 알림도 다시 나간다.
     await confirm(iqc.requestId);
     expect(await prisma.nonconformance.count({ where: { inspection_request_id: BigInt(iqc.requestId), status_code: 'PENDING_DECISION' } })).toBe(1);
-    expect(await rejectedAlerts(iqc)).toBe(1);
+    expect(await rejectedAlerts(iqc)).toBe(2);
   });
 
   it('US5-3·SC-006 자재 관리 LOT 하나가 입고된 뒤 → 409 GOODS_RECEIVED(그 LOT 번호) — LOT·결과·요청 그대로', async () => {
