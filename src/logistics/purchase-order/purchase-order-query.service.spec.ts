@@ -113,7 +113,10 @@ describe('PurchaseOrderQueryService', () => {
         { purchase_order_line: { some: { item_id: 42 } } },
         {
           purchase_order_line: {
-            some: { inbound_receipt_po_allocation: { some: { inbound_receipt_line: { lot_id: 7 } } } },
+            some: { inbound_receipt_po_allocation: { some: { inbound_receipt_line: { OR: [
+              { lot_id: 7 },
+              { lot_id: null, inbound_lot: { lot: { some: { lot_id: 7, source_type_code: 'INBOUND_RECEIPT_LINE' } } } },
+            ] } } } },
           },
         },
       ]);

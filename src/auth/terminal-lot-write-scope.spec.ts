@@ -23,7 +23,7 @@ it('limits new material LOTs to unassigned receipt lines in the terminal plant',
   await assertTerminalLotWriteScope(db, req, 'POST /trace/lots', terminal);
   expect(currentTerminalLotWorkerId(req)).toBe(23n);
   expect(db.inbound_receipt_line.findFirst).toHaveBeenCalledWith({ where: {
-    inbound_receipt_line_id: 11n, inbound_receipt: { plant_id: 3n }, lot_id: null,
+    inbound_receipt_line_id: 11n, inbound_receipt: { plant_id: 3n }, lot_id: null, inbound_lot: null,
   }, select: { inbound_receipt_line_id: true } });
   await expect(assertTerminalLotWriteScope(db, request({ plantId: 4,
     sourceTypeCode: 'INBOUND_RECEIPT_LINE', sourceId: 11 }), 'POST /trace/lots', terminal))

@@ -35,7 +35,8 @@ export async function assertTerminalLotWriteScope(
     const source = await prisma.inbound_receipt_line.findFirst({ where: {
       inbound_receipt_line_id: sourceId,
       inbound_receipt: { plant_id: terminal.plantId },
-      lot_id: null,
+      // 새 흐름의 줄(입하 LOT 있음)은 `lot_id` 가 비어도 LOT 이 이미 있다 — 옛 LOT 등록으로 열지 않는다(피처 005).
+      lot_id: null, inbound_lot: null,
     }, select: { inbound_receipt_line_id: true } });
     if (!source) throw denied();
   } else {

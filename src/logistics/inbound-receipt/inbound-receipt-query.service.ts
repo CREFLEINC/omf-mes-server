@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { receivableQtyOf, splitLotsOf } from '../goods-receipt/lot-receivable';
-import { lotsOfInboundLines, representativeLot } from '../../core/lot';
+import { INBOUND_RECEIPT_LINE_SOURCE, lotsOfInboundLines, representativeLot } from '../../core/lot';
 
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
@@ -35,11 +35,19 @@ export interface InboundReceiptLineQuery {
   labelIssued?: boolean;
 }
 
-/** 라벨 발행 기록 — 라인의 LOT 에 이 문서유형이 찍혀 있는가(A-21 · I-3.md §2-6 주석 ⓑ). */
+/**
+ * 라벨 발행 기록 — 라인의 LOT 중 하나라도 이 문서유형이 찍혀 있는가(A-21 · I-3.md §2-6 주석 ⓑ). 옛 라인은 `lot` 칸,
+ * 새 흐름의 라인(`lot_id` 없음 · LOT 여럿)은 입하 LOT 에 묶인 원천 LOT 으로 본다 — Prisma `where` 는 다형 원천
+ * (`source_id`)으로 잇지 못한다(`inbound-receipt-line-list.service.ts` 와 같은 규칙).
+ */
+const LOT_LABEL_ISSUED = {
+  document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } },
+} satisfies Prisma.lotWhereInput;
 const LABEL_ISSUED: Prisma.inbound_receipt_lineWhereInput = {
-  lot: {
-    document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } },
-  },
+  OR: [
+    { lot: LOT_LABEL_ISSUED },
+    { lot_id: null, inbound_lot: { lot: { some: { source_type_code: INBOUND_RECEIPT_LINE_SOURCE, ...LOT_LABEL_ISSUED } } } },
+  ],
 };
 
 /** 입하·차이 조회 4건. 화면은 `W-01-03`·`M-01-06`·`P-01-01` 이 소유한다(등록·수정은 다른 PR). */

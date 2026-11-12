@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { INBOUND_RECEIPT_LINE_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InboundProgressService } from './inbound-progress.service';
 import { OrderSort, isComputedSort, orderByOf, sortComputed } from './purchase-order-list-sort';
@@ -265,10 +266,19 @@ function itemWhere(itemId: number | undefined): Prisma.purchase_orderWhereInput 
   return itemId === undefined ? {} : { purchase_order_line: { some: { item_id: itemId } } };
 }
 
+/**
+ * `lotId` 의 LOT 을 가진 입하 라인 — 옛 라인은 `lot_id`, 새 흐름의 라인(`lot_id` 없음)은 입하 LOT 에 묶인 원천 LOT
+ * (`lotsOfInboundLines` 와 같은 규칙 · Prisma `where` 는 다형 원천 `source_id` 로 잇지 못한다).
+ */
 function lotWhere(lotId: number | undefined): Prisma.purchase_orderWhereInput {
-  return lotId === undefined
-    ? {}
-    : { purchase_order_line: { some: { inbound_receipt_po_allocation: { some: { inbound_receipt_line: { lot_id: lotId } } } } } };
+  if (lotId === undefined) return {};
+  const line: Prisma.inbound_receipt_lineWhereInput = {
+    OR: [
+      { lot_id: lotId },
+      { lot_id: null, inbound_lot: { lot: { some: { lot_id: lotId, source_type_code: INBOUND_RECEIPT_LINE_SOURCE } } } },
+    ],
+  };
+  return { purchase_order_line: { some: { inbound_receipt_po_allocation: { some: { inbound_receipt_line: line } } } } };
 }
 
 function supplierWhere(supplierQ: string | undefined): Prisma.purchase_orderWhereInput {

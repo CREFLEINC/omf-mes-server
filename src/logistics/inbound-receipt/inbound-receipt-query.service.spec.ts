@@ -90,11 +90,11 @@ describe('InboundReceiptQueryService', () => {
         {
           inbound_receipt_line: {
             some: {
-              lot: {
-                document_issue_log: {
-                  some: { document_type_code: 'MATERIAL_LOT_LABEL' },
-                },
-              },
+              OR: [
+                { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } },
+                { lot_id: null, inbound_lot: { lot: { some: { source_type_code: 'INBOUND_RECEIPT_LINE',
+                  document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } } } },
+              ],
             },
           },
         },
@@ -125,11 +125,11 @@ describe('InboundReceiptQueryService', () => {
         {
           inbound_receipt_line: {
             none: {
-              lot: {
-                document_issue_log: {
-                  some: { document_type_code: 'MATERIAL_LOT_LABEL' },
-                },
-              },
+              OR: [
+                { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } },
+                { lot_id: null, inbound_lot: { lot: { some: { source_type_code: 'INBOUND_RECEIPT_LINE',
+                  document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } } } },
+              ],
             },
           },
         },
@@ -148,11 +148,11 @@ describe('InboundReceiptQueryService', () => {
         {
           inbound_receipt_line: {
             none: {
-              lot: {
-                document_issue_log: {
-                  some: { document_type_code: 'MATERIAL_LOT_LABEL' },
-                },
-              },
+              OR: [
+                { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } },
+                { lot_id: null, inbound_lot: { lot: { some: { source_type_code: 'INBOUND_RECEIPT_LINE',
+                  document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } } } },
+              ],
             },
           },
         },
@@ -191,11 +191,11 @@ describe('InboundReceiptQueryService', () => {
         { supplier_lot_missing: true },
         {
           NOT: {
-            lot: {
-              document_issue_log: {
-                some: { document_type_code: 'MATERIAL_LOT_LABEL' },
-              },
-            },
+            OR: [
+              { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } },
+              { lot_id: null, inbound_lot: { lot: { some: { source_type_code: 'INBOUND_RECEIPT_LINE',
+                document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } } } },
+            ],
           },
         },
       ]);
