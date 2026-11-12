@@ -186,7 +186,7 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
       expect(inboundLot).toMatchObject({ iqcDefaultSkipApplies: applies });
       const list = await sessionGet(`${LOTS}?plantId=${String(ids.plant)}&closable=true&supplierId=${String(supplier)}`, closerCookie).expect(200);
       expectShape(schemaOf('/logistics/inbound-lots', 'get', 200), list.body);
-      expect((list.body.items as Row[]).map((row) => row.iqcDefaultSkipApplies)).toEqual([applies]);
+      expect((list.body.items as { iqcDefaultSkipApplies: boolean }[]).map((row) => row.iqcDefaultSkipApplies)).toEqual([applies]);
       const detail = await sessionGet(`${LOTS}/${String(inboundLot.inboundLotId)}`, closerCookie).expect(200);
       expect(detail.body).toMatchObject({ iqcDefaultSkipApplies: applies });
       // 마감이 같은 판단을 쓴다 — 검사 불필요에서 true 면 생략 기록, false 면 요청 없음.
