@@ -128,7 +128,7 @@ export class DocumentIssueRenditionService {
   private async materialLotLabelValues(issueId: number): Promise<MaterialLotLabelValues> {
     const issue = await this.prisma.document_issue_log.findUnique({
       where: { document_issue_log_id: issueId },
-      include: { lot: { include: { item: true, uom: true, plant: true } } },
+      include: { lot: { include: { item: true, uom: true, plant: true, package_uom: true } } },
     });
     if (!issue) throw new NotFoundException('없는 발행 기록입니다.');
     const { lot } = issue;

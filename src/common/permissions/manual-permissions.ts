@@ -127,6 +127,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // LOT 수정 — 요구서 §3 이 「등록·라벨발행」만 액션으로 적어 수정이 도출표에서 빠졌다.
   // 만드는 화면이 고치는 것이 자연스럽다(M-01-02 자재LOT 스캔등록 · P-01-01 LOT 등록).
   'PUT /trace/lots/{lotId}': ['M-01-02', 'P-01-01'],
+  // 자재 관리 LOT 발행(피처 005 §1 · omf-all-around#254) — POP P-01-01 「LOT 등록」과 웹 W-01-14 「자재 관리 LOT 발행」이
+  // 공급사·품목별 묶음을 만들고, 대기 목록을 보고, 대기 LOT 을 폐기한다. 두 화면이 이 넷의 주인이다.
+  'POST /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
+  'GET /logistics/waiting-material-lots': ['P-01-01', 'W-01-14'],
+  'POST /trace/lots:void': ['P-01-01', 'W-01-14'],
   // 외부 식별자 치환 — 계약이 이 자식 자원의 조회에 「근거: M-01-02 §4」라 적었고, 요구서가
   // 「부모의 화면이 곧 이 오퍼레이션의 화면」이라 답했다(`plan-uiux.md:852`). 부모를 소유한
   // 화면 하나만 적는다.
@@ -496,5 +502,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /logistics/inbound-receipt-lines/{inboundReceiptLineId}/allocations/{inboundReceiptPoAllocationId}': ['W-01-03'],
   // 입고 기본값(장부 P-150) — 입고 칸을 채우는 사람과 같은 권한이다(`POST /logistics/goods-receipts` 의 권한 그대로).
   'GET /logistics/goods-receipts:defaults': ['M-04-04', 'W-01-10', 'W-04-06'],
+  // 공급사·품목 기본 정보(피처 005 research R-19·R-26 · omf-all-around#254) — W-06-25 가 이 표의 마스터를 소유한다.
+  // 자재 관리 LOT 발행 화면(POP P-01-01 · 관리웹 W-01-14)은 기본값을 읽기만 한다.
+  'GET /mdm/supplier-item-defaults': ['W-06-25', 'P-01-01', 'W-01-14'],
+  'POST /mdm/supplier-item-defaults': ['W-06-25'],
+  'PUT /mdm/supplier-item-defaults/{supplierItemDefaultId}': ['W-06-25'],
+  'DELETE /mdm/supplier-item-defaults/{supplierItemDefaultId}': ['W-06-25'],
 };
 

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE } from '../../common/errors';
+import { INBOUND_RECEIPT_LINE_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DOCUMENT_TYPES, LogisticsDocumentType } from './document-type-registry';
 
@@ -207,11 +208,22 @@ export class CancelEligibilityService {
     ]);
   }
 
-  /** 「이 문서가 만든 LOT」 — 입하는 라인의 `lot_id`(nullable), 입고는 라인의 `lot_id`(NOT NULL). */
+  /**
+   * 「이 문서가 만든 LOT」 — 입고는 라인의 `lot_id`(NOT NULL). 입하는 `lotsOfInboundLines` 규칙: 라인 `lot_id` 가 있으면
+   * 그것만, 비었으면 그 라인을 원천으로 한 자재 관리 LOT 전부(피처 005 — 줄 하나에 LOT 여럿).
+   */
   private async lotIds(tx: Tx, typeCode: LogisticsDocumentType, documentId: bigint): Promise<bigint[]> {
     if (typeCode === 'INBOUND_RECEIPT') {
-      const lines = await tx.inbound_receipt_line.findMany({ where: { inbound_receipt_id: documentId }, select: { lot_id: true } });
-      return lines.flatMap((l) => (l.lot_id === null ? [] : [l.lot_id]));
+      const lines = await tx.inbound_receipt_line.findMany({
+        where: { inbound_receipt_id: documentId }, select: { inbound_receipt_line_id: true, lot_id: true },
+      });
+      const legacy = lines.flatMap((l) => (l.lot_id === null ? [] : [l.lot_id]));
+      const sourced = lines.flatMap((l) => (l.lot_id === null ? [l.inbound_receipt_line_id] : []));
+      if (sourced.length === 0) return legacy;
+      const lots = await tx.lot.findMany({
+        where: { source_type_code: INBOUND_RECEIPT_LINE_SOURCE, source_id: { in: sourced } }, select: { lot_id: true },
+      });
+      return [...legacy, ...lots.map((l) => l.lot_id)];
     }
     const lines = await tx.goods_receipt_line.findMany({ where: { goods_receipt_id: documentId }, select: { lot_id: true } });
     return lines.map((l) => l.lot_id);

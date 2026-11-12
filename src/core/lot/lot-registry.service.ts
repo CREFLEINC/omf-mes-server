@@ -317,6 +317,21 @@ export async function nextInboundMaterialLotNo(
     businessDate: string;
   },
 ): Promise<string> {
+  const [lotNo] = await nextMaterialLotNos(tx, input, 1, 'lines');
+  return lotNo;
+}
+
+/**
+ * 같은 (품목·수량·날짜·공급사)로 자재 MES LOT 번호 `count` 개 — 입하(1개)와 자재 관리 LOT 발행 묶음(N개)이 같은
+ * 규칙을 쓴다. ⛔ 기존 일련을 **한 번만** 읽고 이어 매긴다(같은 트랜잭션에서 N 번 세면 모두 같은 번호가 된다).
+ * `fieldName` 은 형식 오류를 실을 요청 칸이다.
+ */
+export async function nextMaterialLotNos(
+  tx: Tx,
+  input: { plantId: number; itemId: number; receivedQty: number; supplierId: number; businessDate: string },
+  count: number,
+  fieldName: string,
+): Promise<string[]> {
   const [item, supplier] = await Promise.all([
     tx.item.findUnique({
       where: { item_id: input.itemId },
@@ -342,7 +357,7 @@ export async function nextInboundMaterialLotNo(
     // 구분자 5칸에서는 «앞 4칸 조립»과 «번호까지 붙인 최종 조립」이 같은 실패 모드(SEGMENT/LENGTH)
     // 뿐이다 — 옛 34자리 형식 시절의 「접두 실패 → INVALID / 최종 실패 → RANGE」 구분이 없어졌다.
     const code = error instanceof MaterialLotFormatError && error.kind === 'LENGTH' ? ERROR_CODE.RANGE : ERROR_CODE.INVALID;
-    throw error instanceof Error ? one(field('lines', code, error.message)) : error;
+    throw error instanceof Error ? one(field(fieldName, code, error.message)) : error;
   }
   // ⭐ 문자열을 «정확히» 같은 행만 센다 — `parseMaterialLotNo` 로 다시 파싱하지 않는다.
   //    구분자 `|` 는 칸 값에 못 들어가므로(형식 규칙), 「길이가 접두+4 · 접두로 시작 ·
@@ -363,18 +378,18 @@ export async function nextInboundMaterialLotNo(
   // 같은 (제품코드·수량·날짜·공급사) 조합의 4자리 자리가 «실제로 다 찼다»는 뜻이라
   // 재시도로 풀리지 않는다. 계약 「사용자가 고칠 수 없는 값은 400 이 아니다」에 따라
   // 여기서 바로 409 로 낸다 — `materialMesLotNo` 의 방어적 1~9999 검사(400)까지 안 간다.
-  if (serial + 1 > 9999) {
+  if (serial + count > 9999) {
     throw new ConflictException('user', '같은 제품코드·수량·날짜·공급사로는 번호를 더 매길 수 없습니다.');
   }
   try {
-    return materialMesLotNo({
+    return Array.from({ length: count }, (_, index) => materialMesLotNo({
       itemCode: item.item_code,
       qty: input.receivedQty,
       businessDate: input.businessDate,
       supplierCode: supplier.partner_code,
-      serial: serial + 1,
-    });
+      serial: serial + 1 + index,
+    }));
   } catch (error) {
-    throw error instanceof Error ? one(field('lines', ERROR_CODE.RANGE, error.message)) : error;
+    throw error instanceof Error ? one(field(fieldName, ERROR_CODE.RANGE, error.message)) : error;
   }
 }

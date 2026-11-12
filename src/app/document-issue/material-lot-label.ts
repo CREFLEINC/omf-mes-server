@@ -17,6 +17,10 @@ export interface MaterialLotLabelRow {
     item: { item_code: string };
     uom: { uom_code: string };
     plant: { timezone_code: string };
+    /** 패키징(피처 005) — 셋이 다 있을 때만 라벨에 찍는다. 없는 행(이전 LOT)은 지금 출력 그대로다. */
+    package_count?: number | null;
+    qty_per_package?: Prisma.Decimal | null;
+    package_uom?: { uom_name: string } | null;
   };
 }
 
@@ -30,7 +34,15 @@ export function materialLotLabelValues(issue: MaterialLotLabelRow): MaterialLotL
     lotNo: lot.lot_no,
     mfgDt: labelDateTime(lot.manufactured_at ?? issue.issued_at, lot.plant.timezone_code),
     issueSeq: issue.issue_seq,
+    ...packageText(lot),
   };
+}
+
+/** 「봉지 10 × 100」 — 단위 이름은 패키징 단위, 패키징당 수량은 기본 단위 수량이다(단위는 QTY 줄에 있다). */
+function packageText(lot: MaterialLotLabelRow['lot']): { package?: string } {
+  const { package_count: count, qty_per_package: perPackage, package_uom: uom } = lot;
+  if (count === undefined || count === null || perPackage === undefined || perPackage === null || !uom) return {};
+  return { package: `${uom.uom_name} ${String(count)} × ${labelQty(perPackage, '').trimEnd()}` };
 }
 
 /** 천 단위를 끊되 반올림하지 않는다 — 목업의 `toLocaleString` 은 소수 넷째 자리부터 버린다. */

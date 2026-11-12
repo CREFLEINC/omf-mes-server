@@ -53,6 +53,7 @@ function fake(seed: Seed = {}) {
       findMany: found('material_consumption'),
     },
     inbound_receipt_line: { findMany: rec('inbound_receipt_line.findMany', lotRows) },
+    lot: { findMany: rec('lot.findMany', () => []) },
     goods_receipt_line: { findMany: rec('goods_receipt_line.findMany', lotRows) },
     approval_request: {
       findFirst: rec('approval_request.findFirst', () =>

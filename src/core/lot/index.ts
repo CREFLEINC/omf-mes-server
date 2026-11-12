@@ -8,5 +8,7 @@ export * from './lot-number';
 export * from './lot-quality-status.service';
 export * from './lot-registry.service';
 export * from './pqc-release';
-export { LOT_SPLIT_SOURCE, WORK_ORDER_LOT_SOURCE } from './lot-source';
+export { LOT_SPLIT_SOURCE, MATERIAL_LOT_BATCH_SOURCE, WORK_ORDER_LOT_SOURCE } from './lot-source';
+export * from './lot-usable';
+export * from './lot-registry-batch';
 export * from './lot-split';

@@ -24,6 +24,8 @@ const ISSUABLE_PRODUCTION_LOT_STATUS: readonly string[] = [
   "INSPECTION_PENDING",
   "NORMAL",
 ];
+/** 폐기된 자재 관리 LOT(생애 축 · 피처 005 L5). */
+const MATERIAL_LOT_VOIDED = "VOIDED";
 /** 실적이 한 번이라도 반영된 슬롯(`production-result-recorded` 가 `WAITING` 에서 옮긴다). */
 const PRODUCTION_LOT_ACTIVE = "ACTIVE";
 
@@ -156,6 +158,9 @@ export function qualifyDocumentIssueTarget(
         !["INSPECTION_PENDING", "NORMAL"].includes(facts.statusCode)
       )
         failTarget(target, MATERIAL_LABEL_UNRESOLVED_STATE_POLICY);
+      // 폐기된 자재 관리 LOT 은 다시 쓰지 않는다 — 대기(WAITING) LOT 은 입하 전에 미리 찍으므로 받는다(피처 005).
+      if (facts.lifecycleStatusCode === MATERIAL_LOT_VOIDED)
+        failTarget(target, ERROR_CODE.STATE_LOCKED, "폐기된 LOT은 라벨을 발행할 수 없습니다.");
       sourceLotId = facts.targetId;
       break;
     case "IQC_LABEL":

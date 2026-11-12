@@ -1399,7 +1399,7 @@
     ],
     "operationId": "createDocumentIssues",
     "summary": "발행 · 재발행",
-    "description": "대상마다 회차를 매겨 기록을 만든다. 이미 발행된 대상이면 회차가 오르고 재발행 사유가 필수다.\n\n인쇄하지 않는다 — 이 호출은 기록만 만든다. 이미지는 별도로 받아 프린터로 보내고 결과를 따로 보고한다. 프린터가 죽어도 기록은 남는다.\n\n서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 대상이 SHIPPING_UNIT이어야 하고 마감(CLOSED)된 출하 단위에만 발행된다 — 다른 대상 유형은 422 INVALID, 안 닫힌 단위는 422 STATE_LOCKED다.",
+    "description": "대상마다 회차를 매겨 기록을 만든다. 이미 발행된 대상이면 회차가 오르고 재발행 사유가 필수다.\n\n인쇄하지 않는다 — 이 호출은 기록만 만든다. 이미지는 별도로 받아 프린터로 보내고 결과를 따로 보고한다. 프린터가 죽어도 기록은 남는다.\n\n서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 대상이 SHIPPING_UNIT이어야 하고 마감(CLOSED)된 출하 단위에만 발행된다 — 다른 대상 유형은 422 INVALID, 안 닫힌 단위는 422 STATE_LOCKED다. MATERIAL_LOT_LABEL은 품질 상태가 검사 대기·정상인 자재 LOT에 발행되고, 생애가 폐기(VOIDED)인 자재 관리 LOT은 422 STATE_LOCKED다 — 미리 만든 대기(WAITING) 자재 관리 LOT은 입하 전에 라벨을 찍으므로 발행된다(피처 005). 패키징이 있는 LOT은 렌디션 QTY 줄 뒤에 「봉지 10 × 100」 꼴(패키징 단위 이름 · 패키징 수 × 패키징당 수량)을 덧붙인다 — 없으면 지금 출력 그대로다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"

@@ -13606,6 +13606,434 @@
      }
     }
    }
+  },
+  "/logistics/material-lot-batches": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 발행 묶음 목록",
+    "description": "근거: P-01-01 · W-01-14 (피처 005 §1). 행마다 대기·입하·폐기 수. 최근 만든 것부터",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "createdFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "만든 시각 이상"
+     },
+     {
+      "name": "createdTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "만든 시각 미만"
+     },
+     {
+      "name": "hasWaiting",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "true = 대기 LOT 이 남은 묶음만, false = 남지 않은 묶음만"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaterialLotBatchRow"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 발행(묶음)",
+    "description": "공급사·품목으로 자재 관리 LOT 을 lotCount 개 미리 만든다(피처 005 §1 · R-3). 각 LOT: 원천 MATERIAL_LOT_BATCH(source_id = 묶음), 생애 WAITING, 품질 INSPECTION_PENDING, 보류 없음, IQC 요청 없음, 재고 없음, 입하 LOT 없음, 수량 단위 = 품목 기본 단위, 번호 = 자재 MES 규칙(품목|수량|YYMMDD|공급사|NNNN · 수량 = lotQty · 일련 이어 매김). supplierLotNo 는 LOT 마다 SUPPLIER_LOT 외부 식별자로 붙는다. 채널: POP 단말(작업자 → created_worker_id) = POP, 계정(W-01-14) = WEB. 라벨은 이어서 POST /app/document-issues(MATERIAL_LOT_LABEL)로 낸다. 서버는 공급사·품목 기본 정보를 강제하지 않는다(본문 값이 정본). 근거: P-01-01 · W-01-14",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "POP 단말에서는 필수(활성 작업자 사번 — 단말 공장). 웹(W-01-14)은 보내지 않는다 — 계정이 행위자다."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaterialLotBatchCreate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "만들어짐",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialLotBatchCreated"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — RANGE(lotQty ≤ 0 · lotCount 0/201 · 공급사 LOT 100자 초과), INVALID(패키징 곱 불일치 · uomId 가 기본 단위 아님 · 없는 공장·공급사·품목·단위)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "번호 충돌이 거듭됐다 — 다시 부르면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/waiting-material-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "대기 자재 관리 LOT — 공급사·품목별",
+    "description": "대기(WAITING) 자재 관리 LOT 을 공급사·품목별로 모은다(FR-004 · 피처 005 §1). 정렬: 공급사 코드·품목 코드. 근거: P-01-01 · W-01-14",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사·품목 코드·이름(부분 일치)"
+     },
+     {
+      "name": "hasWaiting",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "true = 대기가 있는 조합만"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/WaitingMaterialLotGroup"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/trace/lots:void": {
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "대기 자재 관리 LOT 폐기",
+    "description": "대기(WAITING) 자재 관리 LOT 만 폐기(VOIDED · 전이 L5)한다. 건별 결과 — 대기가 아닌 LOT(입하됨·이미 폐기·생산 LOT)은 그 건만 errorCode STATE_LOCKED 로 남고 나머지는 폐기된다(200). 없는 LOT 이 섞이면 아무것도 하지 않고 400 INVALID. 폐기된 번호는 다시 매기지 않는다. 폐기된 LOT 은 라벨 발행·보류·부적합·특채가 거절된다. 근거: P-01-01 · W-01-14 (피처 005 §1)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "POP 단말에서는 필수(활성 작업자 사번 — 단말 공장). 웹(W-01-14)은 보내지 않는다 — 계정이 행위자다."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaterialLotVoidRequest"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "건별 결과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialLotVoidResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 없는 LOT 이 섞였다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -19148,7 +19576,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "LOT 번호 슬롯의 생명주기 — 대기(WAITING · 번호 슬롯만 예약) · 활성(ACTIVE · 실적이 붙어 실물에 귀속) · 폐번(VOIDED · 마감 시 미달 슬롯 자동 폐번). ⛔ statusCode(품질 판정)와 «다른 축»이다. 생산 LOT 선발행(W-02-04)에서만 쓰고 자재·제품 LOT 은 null 이다. ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_LIFECYCLE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "LOT 번호 슬롯의 생명주기 — 대기(WAITING · 번호 슬롯만 예약) · 활성(ACTIVE · 실적이 붙어 실물에 귀속) · 폐번(VOIDED · 마감 시 미달 슬롯 자동 폐번). ⛔ statusCode(품질 판정)와 «다른 축»이다. 생산 사전 발행·자재 대기/폐기에 쓴다 — 생산 LOT 선발행(W-02-04)과 미리 만든 자재 관리 LOT(대기 WAITING · 입하 ACTIVE · 폐기 VOIDED · 피처 005). 이전 자재 LOT·제품 LOT 은 null(사용 중)이다. ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_LIFECYCLE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "WAITING",
       "x-code-key": "CD-LOT-LIFECYCLE-STATUS"
      },
@@ -19238,6 +19666,33 @@
        }
       },
       "description": "⭐ 4M 변경품 — IQC 판정 때 이 LOT 에 적은 변경 종류·비고. 변경품이 아니면 칸이 없다. 목록(GET /trace/lots)·단건(GET /trace/lots/{lotId}) 이 싣는다 — POP 자재 투입 스캔·러닝 체인지·LOT 상태 상세가 알린다. ⚠ 내부 「4M 자원배정」과 다른 말이다. 서버 선행 · 장부 P-86 · omf-all-around#63 · 변경 종류 선택(#133 · 장부 P-105)"
+     },
+     "inboundLotId": {
+      "x-source-column": "inbound_lot_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "속한 입하 LOT(피처 005) — 입하 전·자재가 아닌 LOT 은 null"
+     },
+     "inboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "속한 입하 LOT 번호 — 없으면 null"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackage"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "패키징(피처 005 R-4) — 없으면 null. 분할로 생긴 자식 LOT 은 패키징이 없다"
      }
     },
     "x-internal-note": "입하 시점의 LOT 은 Hold 로 생긴다 — 가용 재고가 아니다(M-01-01 §5-4 · ✓확정 §재정의 #5). 📨 「W/O 내 순번」(별도 속성 — 선발행 슬롯 구간 지정용)은 계약이 앞서 세울 자리이고 저장 컬럼은 통지 대상이다 — 기다리지 않는다. 근거: 02-SW설계사양서 §4.6 · omf-mes#46."
@@ -24855,6 +25310,550 @@
           "string",
           "null"
          ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "MaterialPackage": {
+    "type": "object",
+    "required": [
+     "uomId",
+     "uomCode",
+     "count",
+     "qtyPerPackage"
+    ],
+    "description": "패키징(선택) — 셋 다 있거나 없다. 있으면 lotQty = count × qtyPerPackage 여야 한다(FR-003 · CHECK ck_lot_package). 단위 이름·코드는 패키징 단위다. 응답 모양 — uomCode 는 서버가 채운다(피처 005 R-4)",
+    "properties": {
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "패키징 단위"
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "BOX"
+     },
+     "count": {
+      "type": "integer",
+      "minimum": 1,
+      "example": 10
+     },
+     "qtyPerPackage": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "example": 100,
+      "description": "패키징 하나에 든 수량(품목 기본 단위)"
+     }
+    }
+   },
+   "MaterialPackageInput": {
+    "type": "object",
+    "required": [
+     "uomId",
+     "count",
+     "qtyPerPackage"
+    ],
+    "description": "패키징(선택) — 셋 다 있거나 없다. 있으면 lotQty = count × qtyPerPackage 여야 한다(FR-003 · CHECK ck_lot_package). 단위 이름·코드는 패키징 단위다. 쓰기 본문 모양",
+    "properties": {
+     "uomId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "count": {
+      "type": "integer",
+      "minimum": 1,
+      "example": 10
+     },
+     "qtyPerPackage": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "example": 100
+     }
+    }
+   },
+   "MaterialLotSummary": {
+    "type": "object",
+    "description": "자재 관리 LOT 한 개(발행·대기 목록 화면이 그리는 값 · 피처 005 §1)",
+    "required": [
+     "lotId",
+     "lotNo",
+     "lotQty",
+     "package",
+     "supplierLotNo",
+     "lifecycleStatusCode",
+     "statusCode",
+     "inboundLotId",
+     "inboundLotNo",
+     "lastLabelIssue",
+     "createdChannelCode",
+     "createdAt"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string",
+      "description": "자재 MES LOT 번호(품목|수량|YYMMDD|공급사|NNNN — 수량 = lotQty)"
+     },
+     "lotQty": {
+      "type": "number",
+      "description": "자재 관리 LOT 하나의 재고 수량(품목 기본 단위)"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackage"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "supplierLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "공급사 LOT 번호(lot_external_identifier SUPPLIER_LOT · 여러 LOT 이 같은 값일 수 있다)"
+     },
+     "lifecycleStatusCode": {
+      "type": "string",
+      "enum": [
+       "WAITING",
+       "ACTIVE",
+       "VOIDED"
+      ],
+      "description": "대기(미리 만듦 · 재고 없음) · 입하됨 · 폐기"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "품질 상태(LOT_STATUS) — 대기 LOT 은 INSPECTION_PENDING"
+     },
+     "inboundLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "속한 입하 LOT — 입하 전이면 null"
+     },
+     "inboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "lastLabelIssue": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "issueSeq",
+         "issuedAt"
+        ],
+        "properties": {
+         "issueSeq": {
+          "type": "integer"
+         },
+         "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "마지막 자재 관리 LOT 라벨(MATERIAL_LOT_LABEL) 발행 — 없으면 미출력"
+     },
+     "createdChannelCode": {
+      "type": "string",
+      "enum": [
+       "POP",
+       "WEB"
+      ],
+      "description": "만든 곳 — 발행 묶음의 채널. 입하로 원천이 입하 줄로 바뀐 LOT 은 만든 사람으로 가른다(계정 = WEB)"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "MaterialLotBatchCreate": {
+    "type": "object",
+    "required": [
+     "plantId",
+     "supplierId",
+     "itemId",
+     "lotQty",
+     "lotCount",
+     "businessDate",
+     "occurredAt"
+    ],
+    "description": "자재 관리 LOT 발행 묶음 — 공급사·품목으로 대기 LOT 을 lotCount 개 미리 만든다. 입하 LOT 을 받지 않는다(피처 005 §1)",
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "supplierId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "자재 관리 LOT 하나의 재고 수량(품목 기본 단위). ≤ 0 이면 400 RANGE"
+     },
+     "uomId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "선택. 보내면 품목 기본 단위여야 한다 — 아니면 400 INVALID(수량 단위는 LOT 마다 고르지 않는다 · FR-002). 서버는 늘 품목 기본 단위로 기록한다"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackageInput"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "곱이 맞지 않으면(예: 10 × 100 인데 lotQty 950) 400 INVALID(field package)"
+     },
+     "supplierLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 100,
+      "description": "공급사 LOT 번호 — LOT 마다 같은 값으로 붙는다(N:1). 앞뒤 공백을 뗀다"
+     },
+     "lotCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "description": "만들 개수 1~200 — 밖이면 400 RANGE"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "번호의 YYMMDD — 클라이언트가 보낸 값(C-8)"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "MaterialLotBatchCreated": {
+    "type": "object",
+    "required": [
+     "batchId",
+     "lots"
+    ],
+    "properties": {
+     "batchId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaterialLotSummary"
+      },
+      "description": "만든 순서(번호 일련 순)"
+     }
+    }
+   },
+   "MaterialLotBatchRow": {
+    "type": "object",
+    "description": "발행 묶음 한 건과 그 LOT 들의 지금 상태 수",
+    "required": [
+     "batchId",
+     "plantId",
+     "supplierId",
+     "supplierCode",
+     "supplierName",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "uomId",
+     "uomCode",
+     "lotQty",
+     "package",
+     "supplierLotNo",
+     "lotCount",
+     "createdChannelCode",
+     "createdAt",
+     "waitingCount",
+     "receivedCount",
+     "voidedCount"
+    ],
+    "properties": {
+     "batchId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "supplierId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "supplierCode": {
+      "type": "string"
+     },
+     "supplierName": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목 기본 단위"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "lotQty": {
+      "type": "number"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackage"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "supplierLotNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "lotCount": {
+      "type": "integer"
+     },
+     "createdChannelCode": {
+      "type": "string",
+      "enum": [
+       "POP",
+       "WEB"
+      ]
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "waitingCount": {
+      "type": "integer"
+     },
+     "receivedCount": {
+      "type": "integer",
+      "description": "입하된 수 — 입하되면 원천이 입하 줄로 바뀌어 묶음에서 빠지므로 lotCount − 대기 − 폐기다"
+     },
+     "voidedCount": {
+      "type": "integer"
+     }
+    }
+   },
+   "MaterialLotBatchSummary": {
+    "type": "object",
+    "required": [
+     "batchId",
+     "createdAt",
+     "createdChannelCode",
+     "lotCount",
+     "waitingCount"
+    ],
+    "properties": {
+     "batchId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "createdChannelCode": {
+      "type": "string",
+      "enum": [
+       "POP",
+       "WEB"
+      ]
+     },
+     "lotCount": {
+      "type": "integer"
+     },
+     "waitingCount": {
+      "type": "integer"
+     }
+    }
+   },
+   "WaitingMaterialLotGroup": {
+    "type": "object",
+    "description": "공급사·품목별 대기 자재 관리 LOT. 조합 = 발행 이력이 있거나 공급사·품목 기본 정보가 있는 것. batches = 대기가 남았거나 최근 7일의 묶음. lots = 대기 전부 + 그 묶음들의 폐기 + 열린(RECEIVING) 입하 LOT 에 든 것(라벨 다시 인쇄 대상)",
+    "required": [
+     "supplierId",
+     "supplierCode",
+     "supplierName",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "uomId",
+     "uomCode",
+     "inspectionRequired",
+     "waitingCount",
+     "waitingQty",
+     "unprintedCount",
+     "lastIssuedAt",
+     "batches",
+     "lots"
+    ],
+    "properties": {
+     "supplierId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "supplierCode": {
+      "type": "string"
+     },
+     "supplierName": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목 기본 단위"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "inspectionRequired": {
+      "type": "boolean",
+      "description": "IQC 대상 품목 — 자재 관리 LOT 라벨 뒤에 IQC 라벨을 함께 찍는다"
+     },
+     "waitingCount": {
+      "type": "integer"
+     },
+     "waitingQty": {
+      "type": "number",
+      "description": "대기 LOT 수량 합(기본 단위)"
+     },
+     "unprintedCount": {
+      "type": "integer",
+      "description": "대기 중 자재 관리 LOT 라벨을 한 번도 찍지 않은 수"
+     },
+     "lastIssuedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "마지막 묶음을 만든 시각 — 발행 이력이 없으면 null"
+     },
+     "batches": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaterialLotBatchSummary"
+      }
+     },
+     "lots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaterialLotSummary"
+      }
+     }
+    }
+   },
+   "MaterialLotVoidRequest": {
+    "type": "object",
+    "required": [
+     "lotIds"
+    ],
+    "properties": {
+     "lotIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      }
+     }
+    }
+   },
+   "MaterialLotVoidResult": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "lotId",
+        "lotNo",
+        "voided",
+        "errorCode"
+       ],
+       "properties": {
+        "lotId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "lotNo": {
+         "type": "string"
+        },
+        "voided": {
+         "type": "boolean"
+        },
+        "errorCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "폐기하지 못한 까닭 — STATE_LOCKED(대기 자재 관리 LOT 이 아님: 입하됨·이미 폐기·생산 LOT 등). 폐기됐으면 null"
         }
        }
       }

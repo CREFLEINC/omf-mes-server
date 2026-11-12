@@ -38,7 +38,7 @@ import {
 } from './lot-rules';
 import { LotProgressView, lotProgress } from './lot-progress';
 import { type FourMChangeRow, fourMChangeView } from '../../quality/inspection/four-m-change';
-import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
+import { LOT_VIEW_RELATIONS, LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
 import type { LotWriteActor } from './lot-write-actor';
 
 /**
@@ -157,7 +157,7 @@ export class LotService {
     const where: Prisma.lotWhereInput = currentOnly ? { AND: [base, CURRENT_LOT_WHERE] } : base;
 
     // 목록의 `lotView` 는 보류를 `some()` 불리언으로만 쓴다 — 순서가 나가지 않아 정렬하지 않는다.
-    const include = { lot_hold: true, lot_four_m_change: { select: { change_type_code: true, remarks: true } } } as const;
+    const include = { lot_hold: true, lot_four_m_change: { select: { change_type_code: true, remarks: true } }, ...LOT_VIEW_RELATIONS } as const;
     if (currentOnly) {
       // 한 W/O 의 선발행 슬롯만이라 후보가 적다 — 다 읽고 고른다. 받은 쪽(page·size)은 보지 않고 1쪽·1건으로 답한다.
       const current = pickCurrentLot(await this.prisma.lot.findMany({ where, include }));
@@ -479,6 +479,7 @@ export class LotService {
         lot_hold: { orderBy: [{ held_at: 'desc' }, { lot_hold_id: 'desc' }] },
         // 4M 변경품(장부 P-86) — 단건도 싣는다(POP 러닝 체인지·LOT 상태 상세 · omf-all-around#63 2단계).
         lot_four_m_change: { select: { change_type_code: true, remarks: true } },
+        ...LOT_VIEW_RELATIONS,
       },
     });
     if (!row) throw new NotFoundException('없는 LOT 입니다.');

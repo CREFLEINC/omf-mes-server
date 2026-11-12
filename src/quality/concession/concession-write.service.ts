@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { ApprovalService } from '../../core/approval';
 import { DocumentStateService } from '../../core/document-state';
-import { LotHoldService, LotQualityStatusService, Tx } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService, Tx, assertMaterialLotsUsable } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { releaseInspectionHoldsWithin } from '../disposition/disposition-hold-release';
@@ -76,11 +76,12 @@ export class ConcessionWriteService {
     assertCreateShape(body);
     const nc = await this.prisma.nonconformance.findUnique({
       where: { nonconformance_id: BigInt(body.nonconformanceId) },
-      select: { status_code: true, nonconformance_lot: { select: { lot_id: true, uom_id: true } } },
+      select: { status_code: true, nonconformance_lot: { select: { lot_id: true, uom_id: true, lot: { select: { lot_no: true, lot_type_code: true, lifecycle_status_code: true } } } } },
     });
     if (nc === null) throw new NotFoundException('없는 부적합입니다.');
     const lot = nc.nonconformance_lot.find((row) => row.lot_id === BigInt(body.lotId));
     if (lot === undefined) throw badRequest([field('lotId', ERROR_CODE.INVALID, '이 부적합의 LOT 이 아닙니다.')]);
+    assertMaterialLotsUsable([lot.lot]);
     if (Number(lot.uom_id) !== body.uomId) {
       throw badRequest([field('uomId', ERROR_CODE.INVALID, '부적합의 단위와 같아야 합니다.')]);
     }

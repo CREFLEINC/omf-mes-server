@@ -24,6 +24,8 @@ import { LotLifecycleEventService } from './lot/lot-lifecycle-event.service';
 import { LotStatusEventController } from './lot/lot-status-event.controller';
 import { LotStatusEventService } from './lot/lot-status-event.service';
 import { LotController } from './lot/lot.controller';
+import { LotVoidController } from './lot/lot-void.controller';
+import { LotVoidService } from './lot/lot-void.service';
 import { LotService } from './lot/lot.service';
 import { LotGenealogyQueryService } from './lot/lot-genealogy-query.service';
 import { LotImpactService } from './lot/lot-impact.service';
@@ -37,8 +39,9 @@ import { SerialNumberController } from './serial-number/serial-number.controller
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, LotRegistryModule, ApprovalModule, NumberingModule, AuthModule, NotificationCoreModule],
-  controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController, TraceHistoryController],
+  controllers: [LotController, LotVoidController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController, TraceHistoryController],
   providers: [
+    LotVoidService,
     IqcHandoverNotifier,
     LotService,
     LotImpactService,

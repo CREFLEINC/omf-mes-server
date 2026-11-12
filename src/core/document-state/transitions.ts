@@ -165,6 +165,13 @@ export const TRANSITIONS: TransitionRegistry = {
       transitionCode: 'L3',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel',
     },
+    /** 미리 만든 자재 관리 LOT 폐기(피처 005 R-3) — 대기만. 입하된 것은 등록 해제(L6)로 대기에 돌린 뒤다. */
+    'material-lot-voided': {
+      from: ['WAITING'],
+      to: 'VOIDED',
+      transitionCode: 'L5',
+      sourceOperation: 'POST /trace/lots:void',
+    },
   },
 
   /**
