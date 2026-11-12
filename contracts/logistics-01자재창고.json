@@ -633,7 +633,7 @@
      "inventory"
     ],
     "summary": "재고 잔액 조회",
-    "description": "warehouseId · itemId · lotId 중 적어도 하나는 있어야 한다 — 셋 다 비면 400 이다. 관리웹 조회는 창고를 고르고 들어오지만 현장에서 LOT 을 스캔해 위치를 찾는 경로는 창고를 모른 채 들어온다. groupBy 로 묶는 축을 고르되 소유 구분은 어떤 축에서도 합치지 않는다. 근거: W-01-07 §5-1 · M-01-04 · 공유계약 L-7",
+    "description": "warehouseId · itemId · lotId · locationId · inboundLotId · inboundLotNo 중 적어도 하나는 있어야 한다 — 모두 비면 400 이다(오류 칸은 warehouseId·itemId·lotId). 관리웹 조회는 창고를 고르고 들어오지만 현장에서 LOT 을 스캔해 위치를 찾는 경로는 창고를 모른 채 들어온다. groupBy 로 묶는 축을 고르되 소유 구분은 어떤 축에서도 합치지 않는다. 근거: W-01-07 §5-1 · M-01-04 · 공유계약 L-7",
     "parameters": [
      {
       "name": "warehouseId",
@@ -681,6 +681,23 @@
        "type": "integer",
        "format": "int64"
       }
+     },
+     {
+      "name": "inboundLotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT 으로 거른다 — 그 입하 LOT 의 자재 관리 LOT 잔액만. 범위 조건으로 인정한다(이것 하나로 조회할 수 있다). 근거: 피처 005 FR-035 · D-29"
+     },
+     {
+      "name": "inboundLotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입하 LOT 번호 정확 일치 — inboundLotId 와 같은 범위 조건. 근거: 피처 005 FR-035 · D-29"
      },
      {
       "name": "qualityStatusCode",
@@ -3442,7 +3459,7 @@
      "logistics"
     ],
     "summary": "입고 줄 목록(자재입고·생산입고 현황)",
-    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·inboundReceiptNo·workOrderNo 로 집으면 기간은 선택(장부 P-151) — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소 완료(CANCELLED) 입고만 뺀다 — 취소요청 중인 입고는 재고가 그대로라 보인다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119",
+    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·inboundReceiptNo·workOrderNo·inboundLotId·inboundLotNo 로 집으면 기간은 선택(장부 P-151 · 피처 005 FR-035) — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소 완료(CANCELLED) 입고만 뺀다 — 취소요청 중인 입고는 재고가 그대로라 보인다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119",
     "parameters": [
      {
       "name": "receiptTypeCode",
@@ -3459,7 +3476,7 @@
        "type": "string",
        "format": "date"
       },
-      "description": "입고일 시작(공장 현지 날짜) · lotNo·inboundReceiptNo·workOrderNo 가 없으면 필수"
+      "description": "입고일 시작(공장 현지 날짜) · lotNo·inboundReceiptNo·workOrderNo·inboundLotId·inboundLotNo 가 없으면 필수"
      },
      {
       "name": "receiptDateTo",
@@ -3526,6 +3543,23 @@
        "type": "string"
       },
       "description": "W/O 번호 정확 일치 — LOT 원천이 그 W/O 인 생산입고(장부 P-151)"
+     },
+     {
+      "name": "inboundLotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입고한 LOT 의 입하 LOT — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
+     },
+     {
+      "name": "inboundLotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입고한 LOT 의 입하 LOT 번호 정확 일치 — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
      },
      {
       "name": "statusCode",
@@ -3599,7 +3633,9 @@
              "uomId",
              "uomCode",
              "supplier",
-             "workOrder"
+             "workOrder",
+             "inboundLotId",
+             "inboundLotNo"
             ],
             "properties": {
              "goodsReceiptLineId": {
@@ -3732,6 +3768,21 @@
                 "type": "string"
                }
               }
+             },
+             "inboundLotId": {
+              "type": [
+               "integer",
+               "null"
+              ],
+              "format": "int64",
+              "description": "입고한 LOT 의 입하 LOT — 입하 LOT 이 없는 LOT(생산 등)은 null, 이전 데이터는 IL-MIG-… 입하 LOT. 근거: 피처 005 FR-035"
+             },
+             "inboundLotNo": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "description": "입하 LOT 번호 — 없으면 null"
              }
             }
            }
@@ -10257,7 +10308,7 @@
      "trace"
     ],
     "summary": "투입 줄 목록(기간별 이력)",
-    "description": "자재 투입 기록을 기간으로 거른 목록. 기간은 투입 시각의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·inboundReceiptNo 로 집으면 기간은 선택이다. 투입에는 취소 상태가 없어 정정된 원 투입은 빼고 정정 투입을 싣는다(정방향 목록의 투입량과 같은 셈). 정렬: 투입 시각 내림차순. 근거: 서버 선행 · 장부 P-151",
+    "description": "자재 투입 기록을 기간으로 거른 목록. 기간은 투입 시각의 공장 현지 날짜(양 끝 포함)이고 최대 366일이다. 기간 시작이 필수이고, lotNo·workOrderNo·inboundReceiptNo·inboundLotId·inboundLotNo 로 집으면 기간은 선택이다(피처 005 FR-035). 투입에는 취소 상태가 없어 정정된 원 투입은 빼고 정정 투입을 싣는다(정방향 목록의 투입량과 같은 셈). 정렬: 투입 시각 내림차순. 근거: 서버 선행 · 장부 P-151",
     "parameters": [
      {
       "name": "inputDateFrom",
@@ -10266,7 +10317,7 @@
        "type": "string",
        "format": "date"
       },
-      "description": "투입일 시작(공장 현지 날짜) · lotNo·workOrderNo·inboundReceiptNo 가 없으면 필수"
+      "description": "투입일 시작(공장 현지 날짜) · lotNo·workOrderNo·inboundReceiptNo·inboundLotId·inboundLotNo 가 없으면 필수"
      },
      {
       "name": "inputDateTo",
@@ -10317,6 +10368,23 @@
        "type": "string"
       },
       "description": "투입한 LOT 이 들어온 입하 번호 정확 일치"
+     },
+     {
+      "name": "inboundLotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "투입한 LOT 의 입하 LOT — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
+     },
+     {
+      "name": "inboundLotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "투입한 LOT 의 입하 LOT 번호 정확 일치 — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
      },
      {
       "name": "supplierId",
@@ -10388,7 +10456,9 @@
              "lotNo",
              "inputQty",
              "uomId",
-             "uomCode"
+             "uomCode",
+             "inboundLotId",
+             "inboundLotNo"
             ],
             "properties": {
              "materialConsumptionId": {
@@ -10476,6 +10546,21 @@
              },
              "uomCode": {
               "type": "string"
+             },
+             "inboundLotId": {
+              "type": [
+               "integer",
+               "null"
+              ],
+              "format": "int64",
+              "description": "투입한 LOT 의 입하 LOT — 입하 LOT 이 없는 LOT(생산 등)은 null, 이전 데이터는 IL-MIG-… 입하 LOT. 근거: 피처 005 FR-035"
+             },
+             "inboundLotNo": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "description": "입하 LOT 번호 — 없으면 null"
              }
             }
            }
@@ -19335,6 +19420,21 @@
       "readOnly": true,
       "example": "A구역 01열 03단",
       "description": "화면이 보이는 값. ⛔ 이 값이 있으므로 GET /mdm/locations/{locationId} 를 부르지 않는다. groupBy 가 LOCATION 이 아니거나 축이 접힌 줄에서는 비어 온다 — locationId·locationCode 와 같은 조건이다. 근거: M-01-04 §3 · W-01-07 §3"
+     },
+     "inboundLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "groupBy=LOT 줄에만 싣는다 — 그 자재 관리 LOT 의 입하 LOT. 입하 LOT 이 없는 LOT(생산·재생 등)·LOT 무관 재고는 null, 이전 데이터는 IL-MIG-… 입하 LOT. 다른 묶음 방식에는 칸이 없다. 근거: 피처 005 FR-035"
+     },
+     "inboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "inboundLotId 의 입하 LOT 번호 — 없으면 null. groupBy=LOT 줄에만 싣는다"
      }
     },
     "x-internal-note": "available_qty 는 GENERATED STORED 다 — 공유계약 L-2. 소유 축을 합치지 않는 규칙은 L-7. heldLotCount 는 B-4 와 같은 원리로 서버가 센다."

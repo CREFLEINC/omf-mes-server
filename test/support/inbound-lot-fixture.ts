@@ -151,7 +151,7 @@ export async function passInboundLotIqc(fixture: InboundLotFixture, inboundLotId
   const inbound = await prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: id }, select: { status_code: true } });
   if (inbound.status_code === 'RECEIVING') await closeInboundLotFixture(fixture, inboundLotId);
   const iqc = await prisma.inspection_request.findFirst({
-    where: { inbound_lot_id: id, inspection_type_code: 'IQC' }, select: { inspection_request_id: true, target_qty: true, uom_id: true, status_code: true },
+    where: { inbound_lot_id: id, inspection_type_code: 'IQC', status_code: { not: 'CANCELLED' } }, select: { inspection_request_id: true, target_qty: true, uom_id: true, status_code: true },
   });
   if (iqc === null || iqc.status_code !== 'REQUESTED') throw new Error(`passInboundLotIqc(${String(inboundLotId)}): 검사할 IQC 요청이 없다 — 검사 필요 품목이어야 한다`);
   const qty = Number(iqc.target_qty);

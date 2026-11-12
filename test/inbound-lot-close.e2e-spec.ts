@@ -235,7 +235,7 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect(before.body).toMatchObject({ reopenable: true, reopenReasonCode: 'INSPECTION_NOT_REQUIRED' });
     await sessionPost(reopenPath(closed.inboundLotId), closerCookie).send({ versionNo: closed.versionNo }).expect(200);
     expect(await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(closed.iqcRequestId as number) } }))
-      .toMatchObject({ status_code: 'CANCELLED', inbound_lot_id: null });
+      .toMatchObject({ status_code: 'CANCELLED', inbound_lot_id: BigInt(closed.inboundLotId) });
     expect((await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(closed.inboundLotId) } })).every((lot) => lot.status_code === 'NORMAL')).toBe(true);
   });
 
@@ -309,6 +309,14 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect([await receivedOf(order.lineIds[0]), await receivedOf(order.lineIds[1])]).toEqual([30, 30]);
     expect(second.iqcRequestId).not.toBe(first.iqcRequestId);
     expect(await prisma.inspection_request.count({ where: { target_type_code: 'INBOUND_LOT', target_id: BigInt(first.inboundLotId) } })).toBe(2);
+    // US2-12 — 옛 요청은 CANCELLED 로 같은 입하 LOT 칸을 유지하고, 새 요청이 «현재»다(유일 색인은 취소된 요청을 뺀다).
+    const requests = await prisma.inspection_request.findMany({
+      where: { inbound_lot_id: BigInt(first.inboundLotId) }, orderBy: { inspection_request_id: 'asc' }, select: { inspection_request_id: true, status_code: true },
+    });
+    expect(requests.map((row) => [Number(row.inspection_request_id), row.status_code])).toEqual([
+      [first.iqcRequestId, 'CANCELLED'],
+      [second.iqcRequestId, 'REQUESTED'],
+    ]);
     expect((await get(`${LOTS}/${String(second.inboundLotId)}`).expect(200)).body.iqc).toMatchObject({ requestId: second.iqcRequestId, statusCode: 'REQUESTED' });
   });
 

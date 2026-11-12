@@ -23,6 +23,9 @@ export interface GoodsReceiptLineListQuery {
   inboundReceiptNo?: string;
   /** 생산입고의 LOT 원천 W/O 번호. */
   workOrderNo?: string;
+  /** 입고한 LOT 의 입하 LOT(피처 005 FR-035) — id 정확·번호 일치. */
+  inboundLotId?: number;
+  inboundLotNo?: string;
   statusCode?: string;
   q?: string;
   page?: number;
@@ -49,6 +52,9 @@ export interface GoodsReceiptLineListItem {
   supplier: Named | null;
   /** LOT 원천이 W/O 인 입고(생산입고)만. */
   workOrder: { workOrderId: number; workOrderNo: string } | null;
+  /** 입고한 LOT 의 입하 LOT — 생산 LOT 등 입하 LOT 이 없으면 null. */
+  inboundLotId: number | null;
+  inboundLotNo: string | null;
 }
 
 /**
@@ -68,7 +74,8 @@ const FROM = `
 export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today: string): BuiltSql {
   const period = periodUnlessPinned(query.receiptDateFrom, query.receiptDateTo,
     { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' },
-    query.lotNo !== undefined || query.inboundReceiptNo !== undefined || query.workOrderNo !== undefined,
+    query.lotNo !== undefined || query.inboundReceiptNo !== undefined || query.workOrderNo !== undefined
+      || query.inboundLotId !== undefined || query.inboundLotNo !== undefined,
     'LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo)', today);
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
@@ -90,6 +97,11 @@ export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today: s
     and.push(`EXISTS (SELECT 1 FROM logistics.inbound_receipt_line nrl
       JOIN logistics.inbound_receipt nr ON nr.inbound_receipt_id = nrl.inbound_receipt_id
       WHERE nrl.inbound_receipt_line_id = l.inbound_receipt_line_id AND nr.inbound_receipt_no = ${bind(query.inboundReceiptNo)})`);
+  }
+  if (query.inboundLotId !== undefined) and.push(`lt.inbound_lot_id = ${bind(query.inboundLotId)}::bigint`);
+  if (query.inboundLotNo !== undefined) {
+    and.push(`EXISTS (SELECT 1 FROM trace.inbound_lot qil
+      WHERE qil.inbound_lot_id = lt.inbound_lot_id AND qil.inbound_lot_no = ${bind(query.inboundLotNo)})`);
   }
   if (query.workOrderNo !== undefined) {
     and.push(`EXISTS (SELECT 1 FROM production.work_order qw
@@ -130,6 +142,8 @@ interface LineRow {
   supplier_name: string | null;
   work_order_id: bigint | null;
   work_order_no: string | null;
+  inbound_lot_id: bigint | null;
+  inbound_lot_no: string | null;
 }
 
 @Injectable()
@@ -147,7 +161,7 @@ export class GoodsReceiptLineListService {
                 gr.receipt_datetime, gr.status_code, gr.plant_id, w.warehouse_id, w.warehouse_code, w.warehouse_name,
                 i.item_id, i.item_code, i.item_name, lt.lot_id, lt.lot_no, l.receipt_qty, u.uom_id, u.uom_code,
                 sp.partner_id AS supplier_id, sp.partner_code AS supplier_code, sp.partner_name AS supplier_name,
-                wo.work_order_id, wo.work_order_no
+                wo.work_order_id, wo.work_order_no, il.inbound_lot_id, il.inbound_lot_no
          ${FROM}
          JOIN mdm.warehouse w ON w.warehouse_id = gr.warehouse_id
          JOIN mdm.item i ON i.item_id = l.item_id
@@ -157,6 +171,7 @@ export class GoodsReceiptLineListService {
          LEFT JOIN mdm.partner sp ON sp.partner_id = ir.supplier_id
          LEFT JOIN production.work_order wo
                 ON lt.source_type_code = '${WORK_ORDER_LOT_SOURCE}' AND wo.work_order_id = lt.source_id
+         LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = lt.inbound_lot_id
          WHERE ${where.sql}
          ORDER BY gr.receipt_datetime DESC, l.goods_receipt_id DESC, l.line_no ASC
          LIMIT $${next + 1} OFFSET $${next + 2}`,
@@ -207,5 +222,7 @@ function itemOf(row: LineRow): GoodsReceiptLineListItem {
     uomCode: row.uom_code,
     supplier: row.supplier_id === null ? null : named(row.supplier_id, row.supplier_code ?? '', row.supplier_name ?? ''),
     workOrder: row.work_order_id === null ? null : { workOrderId: Number(row.work_order_id), workOrderNo: row.work_order_no ?? '' },
+    inboundLotId: row.inbound_lot_id === null ? null : Number(row.inbound_lot_id),
+    inboundLotNo: row.inbound_lot_no,
   };
 }

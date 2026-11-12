@@ -60,6 +60,9 @@ export interface BalanceFilters {
   itemId?: number;
   lotId?: number;
   locationId?: number;
+  /** 자재 관리 LOT 의 입하 LOT(피처 005 FR-035) — id 정확·번호 일치. */
+  inboundLotId?: number;
+  inboundLotNo?: string;
   qualityStatusCode?: string;
   inventoryStatusCode?: string;
   ownershipTypeCode?: string;
@@ -109,6 +112,7 @@ const FROM = `
     JOIN mdm.warehouse w ON w.warehouse_id = b.warehouse_id
     JOIN mdm.location loc ON loc.location_id = b.location_id
     LEFT JOIN trace.lot l ON l.lot_id = b.lot_id
+    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = l.inbound_lot_id
     LEFT JOIN LATERAL (
       SELECT 1 AS held FROM trace.lot_hold h
        WHERE h.lot_id = b.lot_id AND h.released_at IS NULL LIMIT 1
@@ -121,6 +125,8 @@ function conditionsOf(filters: BalanceFilters, withExpiry: boolean): Conditions 
   if (filters.itemId !== undefined) c.add((p) => `b.item_id = ${p}::bigint`, filters.itemId);
   if (filters.lotId !== undefined) c.add((p) => `b.lot_id = ${p}::bigint`, filters.lotId);
   if (filters.locationId !== undefined) c.add((p) => `b.location_id = ${p}::bigint`, filters.locationId);
+  if (filters.inboundLotId !== undefined) c.add((p) => `l.inbound_lot_id = ${p}::bigint`, filters.inboundLotId);
+  if (filters.inboundLotNo !== undefined) c.add((p) => `il.inbound_lot_no = ${p}`, filters.inboundLotNo);
   if (filters.qualityStatusCode !== undefined) c.add((p) => `b.quality_status_code = ${p}`, filters.qualityStatusCode);
   if (filters.inventoryStatusCode !== undefined) c.add((p) => `b.inventory_status_code = ${p}`, filters.inventoryStatusCode);
   if (filters.ownershipTypeCode !== undefined) c.add((p) => `b.ownership_type_code = ${p}`, filters.ownershipTypeCode);
@@ -153,6 +159,11 @@ function foldedColumns(groupBy: GroupBy): string {
   ).join(',\n           ');
 }
 
+/** LOT 으로 묶은 줄만 싣는다 — LOT 이 키라 줄마다 입하 LOT 이 하나다(계약: 다른 묶음 방식에는 칸 없음). */
+const INBOUND_LOT_COLUMNS = `
+           min(l.inbound_lot_id) AS inbound_lot_id,
+           min(il.inbound_lot_no) AS inbound_lot_no,`;
+
 export function balanceRowsQuery(groupBy: GroupBy, filters: BalanceFilters): BuiltQuery {
   const c = conditionsOf(filters, true);
   const keys = GROUP_KEYS[groupBy];
@@ -161,7 +172,7 @@ export function balanceRowsQuery(groupBy: GroupBy, filters: BalanceFilters): Bui
            ${foldedColumns(groupBy)},
            min(i.item_code) AS item_code,
            min(i.item_name) AS item_name,
-           CASE WHEN count(DISTINCT b.lot_id) = 1 THEN min(l.lot_no) END AS lot_no,
+           CASE WHEN count(DISTINCT b.lot_id) = 1 THEN min(l.lot_no) END AS lot_no,${groupBy === 'LOT' ? INBOUND_LOT_COLUMNS : ''}
            CASE WHEN count(DISTINCT b.warehouse_id) = 1 THEN min(w.warehouse_name) END AS warehouse_name,
            CASE WHEN count(DISTINCT b.location_id) = 1 THEN min(loc.location_code) END AS location_code,
            CASE WHEN count(DISTINCT b.location_id) = 1 THEN min(loc.location_name) END AS location_name,
@@ -201,16 +212,17 @@ export function balanceSummaryQuery(filters: BalanceFilters): BuiltQuery {
   return { sql, params: c.params };
 }
 
-/** 창고·위치·품목·LOT 중 하나는 있어야 한다. 위치도 단일 재고 범위다. */
-export function assertScoped(filters: Pick<BalanceFilters, 'warehouseId' | 'locationId' | 'itemId' | 'lotId'>): void {
-  if (filters.warehouseId !== undefined || filters.locationId !== undefined || filters.itemId !== undefined || filters.lotId !== undefined) {
-    return;
-  }
+/** 창고·위치·품목·LOT·입하 LOT 중 하나는 있어야 한다. 위치·입하 LOT 도 좁은 재고 범위다. */
+export function assertScoped(
+  filters: Pick<BalanceFilters, 'warehouseId' | 'locationId' | 'itemId' | 'lotId' | 'inboundLotId' | 'inboundLotNo'>,
+): void {
+  const scopes = [filters.warehouseId, filters.locationId, filters.itemId, filters.lotId, filters.inboundLotId, filters.inboundLotNo];
+  if (scopes.some((scope) => scope !== undefined)) return;
   const errors: ErrorItem[] = ['warehouseId', 'itemId', 'lotId'].map((field) => ({
     scope: 'field',
     field,
     code: ERROR_CODE.REQUIRED,
-    message: '창고·품목·LOT 중 적어도 하나로 좁혀야 합니다.',
+    message: '창고·품목·LOT·입하 LOT 중 적어도 하나로 좁혀야 합니다.',
   }));
   throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
