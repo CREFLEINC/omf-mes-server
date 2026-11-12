@@ -49,22 +49,36 @@ export const SCOPED_NC_CTE = Prisma.sql`scoped_nc AS (
 )`;
 
 /**
- * IQC 선별 처분(omf-all-around#251) — 처분일이 누계 구간인 선별(SORT) 처분마다 한 줄, 대상은 «원래» IQC 검사 LOT 이다.
- * 선별이 떼어 낸 LOT 의 부적합도 같은 검사 결과를 물려받으므로(옛 수량 분할 선별 — FR-038 로 삭제) 검사 의뢰의 LOT 으로 세면 재선별이 LOT 을 늘리지 않는다.
+ * IQC 선별 처분(omf-all-around#251) — 처분일이 누계 구간인 선별(SORT) 처분, 줄 키 `row_key`.
+ * - 옛 선별(수량 분할 — FR-038 로 삭제): 처분마다 한 줄, 대상은 «원래» IQC 검사 LOT 이다. 떼어 낸 LOT 의 부적합도 같은 검사 결과를
+ *   물려받으므로 검사 의뢰의 LOT 으로 세면 재선별이 LOT 을 늘리지 않는다.
+ * - 새 선별(자재 관리 LOT 분리 — R-14b · plan 확인할 것 9): 분리한 자재 관리 LOT 마다 한 줄 — 그 처분이 만든 새 부적합의 LOT 이다.
  */
 export function iqcSortedCte(period: DashboardPeriod): Prisma.Sql {
+  const decided = Prisma.sql`d.disposition_type_code = 'SORT' AND req.inspection_type_code = 'IQC'
+      AND d.decided_at >= ${period.from}::date - INTERVAL '1 day' AND d.decided_at < ${period.to}::date + INTERVAL '2 day'
+      AND (d.decided_at AT TIME ZONE ps.tz)::date BETWEEN ${period.from}::date AND ${period.to}::date`;
   return Prisma.sql`iqc_sorted AS (
-    SELECT d.disposition_decision_id, d.decided_at, d.decision_qty, d.uom_id, nc.nonconformance_no,
-      req.lot_id, req.item_id, lot.lot_no
+    SELECT d.disposition_decision_id::text AS row_key, d.disposition_decision_id, d.decided_at, d.decision_qty, d.uom_id,
+      nc.nonconformance_no, req.lot_id, req.item_id, lot.lot_no
     FROM quality.disposition_decision d
     JOIN quality.nonconformance nc ON nc.nonconformance_id = d.nonconformance_id
     JOIN quality.inspection_result ir ON ir.inspection_result_id = nc.inspection_result_id
     JOIN quality.inspection_request req ON req.inspection_request_id = ir.inspection_request_id
     JOIN trace.lot lot ON lot.lot_id = req.lot_id
     JOIN plant_scope ps ON ps.plant_id = lot.plant_id
-    WHERE d.disposition_type_code = 'SORT' AND req.inspection_type_code = 'IQC'
-      AND d.decided_at >= ${period.from}::date - INTERVAL '1 day' AND d.decided_at < ${period.to}::date + INTERVAL '2 day'
-      AND (d.decided_at AT TIME ZONE ps.tz)::date BETWEEN ${period.from}::date AND ${period.to}::date
+    WHERE ${decided} AND req.target_type_code <> 'INBOUND_LOT'
+    UNION ALL
+    SELECT d.disposition_decision_id || '-' || nl.lot_id, d.disposition_decision_id, d.decided_at, nl.affected_qty, nl.uom_id,
+      nc.nonconformance_no, nl.lot_id, req.item_id, lot.lot_no
+    FROM quality.disposition_decision d
+    JOIN quality.nonconformance nc ON nc.nonconformance_id = d.nonconformance_id
+    JOIN quality.inspection_request req ON req.inspection_request_id = nc.inspection_request_id
+    JOIN quality.nonconformance split_nc ON split_nc.source_nonconformance_id = nc.nonconformance_id
+    JOIN quality.nonconformance_lot nl ON nl.nonconformance_id = split_nc.nonconformance_id
+    JOIN trace.lot lot ON lot.lot_id = nl.lot_id
+    JOIN plant_scope ps ON ps.plant_id = lot.plant_id
+    WHERE ${decided} AND req.target_type_code = 'INBOUND_LOT'
   )`;
 }
 
@@ -85,7 +99,7 @@ export interface LotRecordRow {
 /**
  * 「n LOT · m건」 — 기록 수와 고유 LOT 수. LOT 없는 기록은 기록 수에만 든다(COUNT DISTINCT 는 null 을 세지 않는다).
  * 기록 = 검사 보류: 최종 판정 HELD 결과 · 입고 보류: 미해제 보류 행 · 검사 대기: 의뢰 · 미종결 부적합: 부적합(LOT = 대상 LOT 전부)
- * · IQC 선별 처분: 선별 처분(LOT = 원래 검사 LOT).
+ * · IQC 선별 처분: 선별 처분(LOT = 옛 선별은 원래 검사 LOT, 새 선별은 분리한 자재 관리 LOT).
  * 대시보드 `quality.statusCounts` 와 상태별 LOT 목록이 이 한 식을 쓴다. `scope` = `plant_scope` CTE 본문.
  */
 export function lotRecordCountSql(

@@ -16,14 +16,24 @@ export const NONCONFORMANCE_INCLUDE = {
     include: { lot: { select: { lot_no: true, inbound_lot: { select: { inbound_lot_no: true } }, ...SOURCE_LOT_SELECT } } },
   },
   disposition_decision: { select: { decision_qty: true } },
-  // 입하 LOT 판정 확정이 만든 부적합(피처 005) — 입하 LOT 번호와 LOT 별 불합격 결과 수(참고)를 낸다.
+  // 입하 LOT 판정 확정이 만든 부적합(피처 005) — 입하 LOT·검사 번호·공급사와 결과 ↔ LOT 매칭 요약(참고)을 낸다.
   inspection_request: {
     select: {
       target_type_code: true,
-      inbound_lot: { select: { inbound_lot_no: true } },
-      inspection_result: { where: { overall_judgment_code: 'REJECTED' }, select: { inspection_result_lot: { select: { lot_id: true } } } },
+      inspection_request_no: true,
+      inbound_lot: { select: { inbound_lot_id: true, inbound_lot_no: true, supplier: { select: { partner_name: true } } } },
+      inspection_result: {
+        orderBy: { inspection_round: 'asc' },
+        select: {
+          inspection_result_id: true, inspection_round: true, overall_judgment_code: true,
+          inspection_result_lot: { select: { lot_id: true } },
+          defect_record: { orderBy: { defect_record_id: 'asc' }, select: { defect_code: { select: { defect_name: true } } } },
+        },
+      },
     },
   },
+  // 선별로 생긴 부적합의 원래 부적합(R-14b).
+  source_nonconformance: { select: { nonconformance_no: true } },
   // ⭐ PR 리뷰 Minor-3 — `lots` 가 0행이면 `uomId` 를 고를 데가 없다(DB 는 그 상태를 막지 않는다 —
   //   `minItems:1` 는 등록 API 가드뿐이고 PR ⑥ 이전엔 그 가드조차 없다). 대상 품목의 기준 단위로 접는다.
   item: { select: { base_uom_id: true } },
@@ -41,6 +51,16 @@ export interface NonconformanceLotView {
   qualityStatusAfterCode: string;
   /** 입하 LOT 검사 부적합만 — 이 LOT 에 매칭된 불합격 결과 수(참고). 그 밖은 null. */
   rejectedResultCount: number | null;
+  /** 입하 LOT 검사 부적합만 — 이 LOT 에 매칭된 결과(참고). 그 밖은 null. */
+  matchedResults: IqcResultRefView[] | null;
+}
+
+/** 계약 `NonconformanceIqcResultRef` — 결과 한 건(참고 표시). */
+export interface IqcResultRefView {
+  inspectionResultId: number;
+  seqNo: number;
+  overallJudgmentCode: string | null;
+  defectSummary: string | null;
 }
 
 /** 계약 `Nonconformance` 와 동형(required 12 / 프로퍼티 21). */
@@ -53,6 +73,13 @@ export interface NonconformanceView {
   /** 입하 LOT 판정 확정이 만든 부적합의 검사 요청(피처 005). */
   inspectionRequestId: number | null;
   inboundLotNo: string | null;
+  /** 입하 LOT 검사 부적합만(피처 005 W-03-10) — 그 밖은 null. */
+  inboundLotId: number | null;
+  inspectionRequestNo: string | null;
+  supplierName: string | null;
+  sortedFromNonconformanceId: number | null;
+  sortedFromNonconformanceNo: string | null;
+  unmatchedResults: IqcResultRefView[] | null;
   sourceCode: SourceCode;
   severityCode: string;
   description: string;
@@ -92,7 +119,7 @@ export function nonconformanceView(row: NonconformanceRow): NonconformanceView {
   // 판정). ⛔ 오늘은 그 가드가 없어 DB 가 0행·단위 혼합을 막지 않는다(PR 리뷰 Major-3·Minor-3)
   // — 0행이면 대상 품목의 기준 단위로 접는다(위 `item` 조인).
   const uomId = lots.length > 0 ? Number(lots[0].uom_id) : Number(row.item.base_uom_id);
-  const counts = rejectedCounts(row);
+  const iqc = iqcFacts(row);
 
   return omitEmpty({
     nonconformanceId: Number(row.nonconformance_id),
@@ -102,6 +129,12 @@ export function nonconformanceView(row: NonconformanceRow): NonconformanceView {
     inspectionResultId: row.inspection_result_id === null ? null : Number(row.inspection_result_id),
     inspectionRequestId: row.inspection_request_id === null ? null : Number(row.inspection_request_id),
     inboundLotNo: row.inspection_request?.inbound_lot?.inbound_lot_no ?? lots[0]?.lot.inbound_lot?.inbound_lot_no ?? null,
+    inboundLotId: iqc === null ? null : Number(iqc.inboundLotId),
+    inspectionRequestNo: iqc === null ? null : iqc.requestNo,
+    supplierName: iqc === null ? null : iqc.supplierName,
+    sortedFromNonconformanceId: row.source_nonconformance_id === null ? null : Number(row.source_nonconformance_id),
+    sortedFromNonconformanceNo: row.source_nonconformance?.nonconformance_no ?? null,
+    unmatchedResults: iqc === null ? null : iqc.unmatched,
     sourceCode: sourceCodeOf(lots),
     severityCode: row.severity_code,
     description: row.description,
@@ -116,22 +149,42 @@ export function nonconformanceView(row: NonconformanceRow): NonconformanceView {
     affectedQtyTotal,
     uomId,
     dispositionProgressCode: dispositionProgressCodeOf(decidedQtyTotalDecimal, affectedQtyTotalDecimal),
-    lots: lots.map((lot) => nonconformanceLotView(lot, counts)),
+    lots: lots.map((lot) => nonconformanceLotView(lot, iqc)),
   });
 }
 
-/** 입하 LOT 검사 부적합의 LOT 별 불합격 결과 수 — 결과 ↔ LOT 매칭(R-10)으로 센다. 입하 LOT 검사가 아니면 `null`. */
-function rejectedCounts(row: NonconformanceRow): Map<bigint, number> | null {
-  const request = row.inspection_request;
-  if (request === null || request.target_type_code !== 'INBOUND_LOT') return null;
-  const counts = new Map<bigint, number>();
-  for (const result of request.inspection_result) {
-    for (const match of result.inspection_result_lot) counts.set(match.lot_id, (counts.get(match.lot_id) ?? 0) + 1);
-  }
-  return counts;
+interface IqcFacts {
+  inboundLotId: bigint;
+  requestNo: string;
+  supplierName: string;
+  /** LOT 별 매칭 결과(순번 순) — 불합격 결과 수도 여기서 센다(결과 ↔ LOT 매칭 R-10). */
+  byLot: Map<bigint, IqcResultRefView[]>;
+  unmatched: IqcResultRefView[];
 }
 
-function nonconformanceLotView(row: NonconformanceRow['nonconformance_lot'][number], counts: Map<bigint, number> | null): NonconformanceLotView {
+/** 입하 LOT 검사 부적합의 결과 매칭 요약 — 입하 LOT 검사가 아니면 `null`. */
+function iqcFacts(row: NonconformanceRow): IqcFacts | null {
+  const request = row.inspection_request;
+  if (request === null || request.target_type_code !== 'INBOUND_LOT' || request.inbound_lot === null) return null;
+  const byLot = new Map<bigint, IqcResultRefView[]>();
+  const unmatched: IqcResultRefView[] = [];
+  for (const result of request.inspection_result) {
+    const names = [...new Set(result.defect_record.map((defect) => defect.defect_code.defect_name))];
+    const ref: IqcResultRefView = {
+      inspectionResultId: Number(result.inspection_result_id), seqNo: result.inspection_round,
+      overallJudgmentCode: result.overall_judgment_code, defectSummary: names.length === 0 ? null : names.join(', '),
+    };
+    if (result.inspection_result_lot.length === 0) unmatched.push(ref);
+    for (const match of result.inspection_result_lot) byLot.set(match.lot_id, [...(byLot.get(match.lot_id) ?? []), ref]);
+  }
+  return {
+    inboundLotId: request.inbound_lot.inbound_lot_id, requestNo: request.inspection_request_no,
+    supplierName: request.inbound_lot.supplier.partner_name, byLot, unmatched,
+  };
+}
+
+function nonconformanceLotView(row: NonconformanceRow['nonconformance_lot'][number], iqc: IqcFacts | null): NonconformanceLotView {
+  const matched = iqc === null ? null : (iqc.byLot.get(row.lot_id) ?? []);
   return omitEmpty({
     nonconformanceLotId: Number(row.nonconformance_lot_id),
     lotId: Number(row.lot_id),
@@ -140,7 +193,8 @@ function nonconformanceLotView(row: NonconformanceRow['nonconformance_lot'][numb
     uomId: Number(row.uom_id),
     qualityStatusBeforeCode: row.quality_status_before_code,
     qualityStatusAfterCode: row.quality_status_after_code,
-    rejectedResultCount: counts === null ? null : (counts.get(row.lot_id) ?? 0),
+    rejectedResultCount: matched === null ? null : matched.filter((result) => result.overallJudgmentCode === 'REJECTED').length,
+    matchedResults: matched,
   });
 }
 
