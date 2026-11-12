@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { assertJudgmentChange } from './inspection-result-write-rules';
+import { assertJudgmentChange, storedJudgedMeasurements } from './inspection-result-write-rules';
 import { assertJudgmentChangeReason, expectedJudgment, remarksWithJudgmentChange } from './inspection-rules';
 
 /** omf-all-around#125 — IQC 판정은 합격판정개수 기준 자동 판정과 다르면 변경 사유가 필요하다(장부 P-70). */
@@ -104,5 +104,111 @@ describe('assertJudgmentChange', () => {
     await expect(
       assertJudgmentChange(db(type, acceptanceNumber), 1n, { ...qty(10), judgment: 'ACCEPTED', reason: undefined }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/*
+ * omf-all-around#264 — AQL 버전은 기타 항목 불량 수를 표의 Ac 와 견주고, 치수(수치) 항목은 하나라도 불합격이면
+ * 수량과 상관없이 불합격이다(사용자 결정 2026-11-12).
+ */
+describe('assertJudgmentChange — AQL 치수 항목', () => {
+  const { Prisma: P } = jest.requireActual<typeof import('@prisma/client')>('@prisma/client');
+  function aqlDb(numericSpecs: { id: number; acceptance: number | null }[], versionAcceptance: number | null = null) {
+    return {
+      inspection_request: {
+        findUnique: jest.fn().mockResolvedValue({
+          inspection_type_code: 'IQC',
+          target_qty: new P.Decimal(770),
+          inspection_plan_version: {
+            sampling_method_code: 'AQL',
+            aql_value: new P.Decimal(0.4),
+            aql_inspection_level_code: 'G-II',
+            acceptance_number: versionAcceptance,
+          },
+        }),
+      },
+      inspection_item_spec: {
+        findMany: jest.fn().mockImplementation(({ where }: { where: { inspection_item_spec_id: { in: bigint[] } } }) =>
+          Promise.resolve(
+            numericSpecs
+              .filter((s) => where.inspection_item_spec_id.in.includes(BigInt(s.id)))
+              .map((s) => ({ inspection_item_spec_id: BigInt(s.id), acceptance_number: s.acceptance })),
+          ),
+        ),
+      },
+    } as unknown as Prisma.TransactionClient;
+  }
+  const rejectedAt = (id: number) => ({ inspectionItemSpecId: id, judgmentCode: 'REJECTED' });
+
+  it('치수 항목이 불합격이면 불합격 수량이 Ac(1) 이하여도 합격 확정에 사유가 필요하다', async () => {
+    await expect(
+      assertJudgmentChange(aqlDb([{ id: 1, acceptance: null }]), 1n, {
+        ...qty(1),
+        judgment: 'ACCEPTED',
+        reason: undefined,
+        measurements: () => [rejectedAt(1)],
+      }),
+    ).rejects.toMatchObject({
+      errors: [
+        expect.objectContaining({
+          field: 'judgmentChangeReason',
+          message: expect.stringContaining('치수 항목이 불합격'),
+        }),
+      ],
+    });
+  });
+
+  it('치수가 아닌 항목의 불량은 Ac(1) 이하면 합격이다', async () => {
+    await expect(
+      assertJudgmentChange(aqlDb([]), 1n, {
+        ...qty(1),
+        judgment: 'ACCEPTED',
+        reason: undefined,
+        measurements: () => [rejectedAt(2)],
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('치수 항목도 항목의 합격판정개수 이하 불합격 시료면 불합격이 아니다', async () => {
+    await expect(
+      assertJudgmentChange(aqlDb([{ id: 1, acceptance: 1 }]), 1n, {
+        ...qty(1),
+        judgment: 'ACCEPTED',
+        reason: undefined,
+        measurements: () => [rejectedAt(1)],
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('항목 허용 수가 없으면 버전의 합격판정개수로 견준다', async () => {
+    await expect(
+      assertJudgmentChange(aqlDb([{ id: 1, acceptance: null }], 1), 1n, {
+        ...qty(1),
+        judgment: 'ACCEPTED',
+        reason: undefined,
+        measurements: () => [rejectedAt(1)],
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  /* `:confirm` 은 본문에 측정값이 없다 — 저장된 측정값을 읽어 같은 규칙으로 잰다. */
+  it('저장된 측정값으로 치수 불합격을 판정한다(:confirm 경로)', async () => {
+    const tx = {
+      inspection_measurement: {
+        findMany: jest.fn().mockResolvedValue([{ inspection_item_spec_id: 1n, judgment_code: 'REJECTED' }]),
+      },
+    } as unknown as Prisma.TransactionClient;
+
+    await expect(
+      assertJudgmentChange(aqlDb([{ id: 1, acceptance: null }]), 1n, {
+        ...qty(1),
+        judgment: 'ACCEPTED',
+        reason: undefined,
+        measurements: () => storedJudgedMeasurements(tx, 8n),
+      }),
+    ).rejects.toMatchObject({ errors: [expect.objectContaining({ field: 'judgmentChangeReason' })] });
+    expect(tx.inspection_measurement.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { inspection_result_id: 8n } }),
+    );
   });
 });

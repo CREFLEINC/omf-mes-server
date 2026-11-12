@@ -62,4 +62,16 @@ describe('검사 항목 저장 — 수치 항목은 단위 필수', () => {
       service.replaceItems(1, [item({ uomId: null })], undefined, { allowNumericWithoutUom: true }),
     ).rejects.toBe(PASSED);
   });
+
+  /* omf-all-around#262 — 항목코드를 비우면 순서로 붙인다. 넣은 코드는 그대로다. */
+  it('항목코드를 비우면 ITEM-{순서 3자리} 로 붙이고, 넣은 코드는 앞뒤 빈칸만 걷는다', async () => {
+    const service = harness();
+    const targets = (service as unknown as { assertItemTargets: jest.Mock }).assertItemTargets;
+
+    await service
+      .replaceItems(1, [item({ sequenceNo: 2, inspectionItemCode: ' ' }), item({ sequenceNo: 3, inspectionItemCode: ' D-3 ' }), item({ sequenceNo: 12, inspectionItemCode: undefined })])
+      .catch(() => undefined);
+
+    expect(targets.mock.calls[0][0].map((row: ItemSpecUpsert) => row.inspectionItemCode)).toEqual(['ITEM-002', 'D-3', 'ITEM-012']);
+  });
 });
