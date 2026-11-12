@@ -102,7 +102,6 @@ export const UNALLOCATED_LINE_INCLUDE = {
   inbound_receipt: { include: { partner: { select: { partner_code: true, partner_name: true } } } },
   item: { select: { item_code: true, item_name: true } },
   uom: { select: { uom_code: true } },
-  lot: { select: { lot_no: true } },
   inbound_receipt_po_allocation: { include: ALLOCATION_INCLUDE, orderBy: { inbound_receipt_po_allocation_id: 'asc' } },
 } satisfies Prisma.inbound_receipt_lineInclude;
 export type UnallocatedLineRow = Prisma.inbound_receipt_lineGetPayload<{ include: typeof UNALLOCATED_LINE_INCLUDE }>;
@@ -133,7 +132,11 @@ export interface UnallocatedLineView {
   allocations: InboundAllocationView[];
 }
 
-export function unallocatedLineView(row: UnallocatedLineRow): UnallocatedLineView {
+/** `lot` 은 줄의 대표 LOT(`core/lot` `representativeLot`) — 없으면 `null`. */
+export function unallocatedLineView(
+  row: UnallocatedLineRow,
+  lot: { lot_id: bigint; lot_no: string } | null,
+): UnallocatedLineView {
   const receipt = row.inbound_receipt;
   return {
     inboundReceiptLineId: Number(row.inbound_receipt_line_id),
@@ -153,8 +156,8 @@ export function unallocatedLineView(row: UnallocatedLineRow): UnallocatedLineVie
     itemName: row.item.item_name,
     uomId: Number(row.uom_id),
     uomCode: row.uom.uom_code,
-    lotId: row.lot_id === null ? null : Number(row.lot_id),
-    lotNo: row.lot?.lot_no ?? null,
+    lotId: lot === null ? null : Number(lot.lot_id),
+    lotNo: lot?.lot_no ?? null,
     allocations: row.inbound_receipt_po_allocation.map(allocationView),
   };
 }

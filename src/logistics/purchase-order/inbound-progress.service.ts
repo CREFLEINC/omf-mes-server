@@ -57,6 +57,7 @@ export interface InboundLotRow {
 /** 취소했거나 취소 요청 중인 입하 — 취소가 받은 수량을 되돌린다(`inbound-allocation.service.ts` 와 같은 기준). */
 const RECEIPT_CANCEL_STATUSES = ['CANCELLED', 'CANCEL_REQUESTED'];
 const POSTED = 'POSTED';
+const INBOUND_LINE_SOURCE = 'INBOUND_RECEIPT_LINE';
 /** 선별의 선별 정도면 충분하다 — `lot-receivable.ts` 의 상한과 같다. 순환이 생겨도 멈춘다. */
 const MAX_DEPTH = 10;
 /** 적치 줄이 보여 줄 작업 — 가장 뒤처진 것부터. */
@@ -106,8 +107,9 @@ export class InboundProgressService {
       select: { ...LINE_SELECT, lot_id: true, received_qty: true, uom: { select: { uom_code: true } } },
       orderBy: { inbound_receipt_line_id: 'asc' },
     });
-    const labelRows = lines.flatMap((line) => (line.lot_id === null ? labelRow(line, wanted) : []));
-    const origins = await this.withSplitChildren(lines);
+    const lotsByLine = await this.lotsOfLines(lines);
+    const labelRows = lines.flatMap((line) => (lotsByLine.has(line.inbound_receipt_line_id) ? [] : labelRow(line, wanted)));
+    const origins = await this.withSplitChildren(lines, lotsByLine);
     const lotIds = [...origins.keys()];
     const [lots, receivable, inspections, holds, receipts] = await Promise.all([
       this.prisma.lot.findMany({
@@ -157,11 +159,32 @@ export class InboundProgressService {
     return [...labelRows, ...lotRows];
   }
 
+  /**
+   * 줄마다 그 LOT 들 — 옛 줄은 `lot_id` 하나, 새 흐름 줄(`lot_id` 없음)은 원천이 그 줄인 자재 관리 LOT 전부(피처 005).
+   * LOT 이 없는 줄은 맵에 없다(라벨 대기).
+   */
+  private async lotsOfLines(lines: { inbound_receipt_line_id: bigint; lot_id: bigint | null }[]): Promise<Map<bigint, bigint[]>> {
+    const byLine = new Map<bigint, bigint[]>();
+    for (const line of lines) if (line.lot_id !== null) byLine.set(line.inbound_receipt_line_id, [line.lot_id]);
+    const bare = lines.filter((line) => line.lot_id === null).map((line) => line.inbound_receipt_line_id);
+    if (bare.length === 0) return byLine;
+    const sourced = await this.prisma.lot.findMany({
+      where: { source_type_code: INBOUND_LINE_SOURCE, source_id: { in: bare } },
+      select: { lot_id: true, source_id: true },
+      orderBy: { lot_id: 'asc' },
+    });
+    for (const lot of sourced) byLine.set(lot.source_id, [...(byLine.get(lot.source_id) ?? []), lot.lot_id]);
+    return byLine;
+  }
+
   /** 입하 LOT 마다 그 입하 라인. 선별 자식(`LOT_SPLIT`)은 조상의 라인을 따른다 — 검사 대상 표식도 그렇다. */
-  private async withSplitChildren(lines: (InboundLine & { lot_id: bigint | null })[]): Promise<Map<bigint, LotOrigin>> {
+  private async withSplitChildren(
+    lines: (InboundLine & { lot_id: bigint | null })[],
+    lotsByLine: Map<bigint, bigint[]>,
+  ): Promise<Map<bigint, LotOrigin>> {
     const origins = new Map<bigint, LotOrigin>();
-    for (const { lot_id: lotId, ...line } of lines) {
-      if (lotId !== null) origins.set(lotId, { line, rootLotId: lotId });
+    for (const { lot_id: _lotId, ...line } of lines) {
+      for (const lotId of lotsByLine.get(line.inbound_receipt_line_id) ?? []) origins.set(lotId, { line, rootLotId: lotId });
     }
     let frontier = [...origins.keys()];
     for (let depth = 0; frontier.length > 0 && depth < MAX_DEPTH; depth += 1) {
@@ -180,10 +203,16 @@ export class InboundProgressService {
     return origins;
   }
 
-  /** LOT 마다 가장 최근 IQC 의뢰. 판정은 의뢰가 끝났을 때만 — 재검사 중에는 앞 판정을 싣지 않는다. */
+  /**
+   * LOT 마다 가장 최근 IQC 의뢰. 판정은 의뢰가 끝났을 때만 — 재검사 중에는 앞 판정을 싣지 않는다.
+   * 입하 LOT 요청(`lot_id` 없음 · 피처 005)은 그 입하 LOT 의 자재 관리 LOT 전부에 걸리고 판정은 요청의 종합 판정이다.
+   */
   private async inspections(lotIds: bigint[]): Promise<Map<bigint, InspectionView>> {
     const requests = await this.prisma.inspection_request.findMany({
-      where: { lot_id: { in: lotIds }, inspection_type_code: 'IQC' },
+      where: {
+        OR: [{ lot_id: { in: lotIds } }, { lot_id: null, inbound_lot: { lot: { some: { lot_id: { in: lotIds } } } } }],
+        inspection_type_code: 'IQC',
+      },
       orderBy: [{ requested_at: 'desc' }, { inspection_request_id: 'desc' }],
       select: {
         inspection_request_id: true,
@@ -191,6 +220,9 @@ export class InboundProgressService {
         status_code: true,
         requested_at: true,
         lot_id: true,
+        overall_judgment_code: true,
+        confirmed_at: true,
+        inbound_lot: { select: { lot: { where: { lot_id: { in: lotIds } }, select: { lot_id: true } } } },
         inspection_result: {
           where: { status_code: 'CONFIRMED' },
           orderBy: { inspection_round: 'desc' },
@@ -201,16 +233,19 @@ export class InboundProgressService {
     });
     const byLot = new Map<bigint, InspectionView>();
     for (const request of requests) {
-      if (request.lot_id === null || byLot.has(request.lot_id)) continue;
-      const judged = request.status_code === 'COMPLETED' ? request.inspection_result[0] : undefined;
-      byLot.set(request.lot_id, {
+      const byRequest = request.lot_id === null;
+      const targets = byRequest ? (request.inbound_lot?.lot ?? []).map((lot) => lot.lot_id) : [request.lot_id as bigint];
+      const completed = request.status_code === 'COMPLETED';
+      const judged = completed && !byRequest ? request.inspection_result[0] : undefined;
+      const view: InspectionView = {
         inspectionRequestId: Number(request.inspection_request_id),
         inspectionRequestNo: request.inspection_request_no,
         statusCode: request.status_code,
         requestedAt: request.requested_at.toISOString(),
-        judgmentCode: judged?.overall_judgment_code ?? null,
-        judgedAt: judged?.confirmed_at?.toISOString() ?? null,
-      });
+        judgmentCode: (byRequest ? (completed ? request.overall_judgment_code : null) : judged?.overall_judgment_code) ?? null,
+        judgedAt: (byRequest ? (completed ? request.confirmed_at : null) : judged?.confirmed_at)?.toISOString() ?? null,
+      };
+      for (const lotId of targets) if (!byLot.has(lotId)) byLot.set(lotId, view);
     }
     return byLot;
   }

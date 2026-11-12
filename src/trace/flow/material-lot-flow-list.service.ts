@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { inboundLineLotSql } from '../../core/lot';
 import { localPeriodSql, periodUnlessPinned, plantToday, utcMarginSql } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
@@ -83,7 +84,7 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
   if (inbound.length > 0) {
     and.push(`EXISTS (SELECT 1 FROM logistics.inbound_receipt_line irl
       JOIN logistics.inbound_receipt ir ON ir.inbound_receipt_id = irl.inbound_receipt_id
-      WHERE irl.lot_id = lt.lot_id AND ${inbound.join(' AND ')})`);
+      WHERE ${inboundLineLotSql('lt', 'irl')} AND ${inbound.join(' AND ')})`);
   }
   const stage = stageCaseSql(FORWARD_STAGES, {
     CONSUMED: 'c.wo_count', PRODUCED: 'a.produced', PRODUCTION_RECEIVED: 'a.received_lots', PACKED: 'a.packed_lots', SHIPPED: 'a.shipped_lots',

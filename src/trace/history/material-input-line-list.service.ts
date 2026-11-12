@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { pageRequest } from '../../common/pagination';
+import { inboundLineLotSql } from '../../core/lot';
 import { localPeriodSql, periodUnlessPinned, plantToday } from '../../common/period/plant-local-period';
 import { BuiltSql, Named, PagedWithTotals, named } from '../../logistics/line-list';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -71,7 +72,7 @@ export function materialInputLineWhere(query: MaterialInputLineListQuery, today:
   if (inbound.length > 0) {
     and.push(`EXISTS (SELECT 1 FROM logistics.inbound_receipt_line irl
       JOIN logistics.inbound_receipt ir ON ir.inbound_receipt_id = irl.inbound_receipt_id
-      WHERE irl.lot_id = mc.lot_id AND ${inbound.join(' AND ')})`);
+      WHERE ${inboundLineLotSql('lt', 'irl')} AND ${inbound.join(' AND ')})`);
   }
   if (query.q !== undefined && query.q.trim() !== '') {
     const like = bind(`%${query.q.trim()}%`);
