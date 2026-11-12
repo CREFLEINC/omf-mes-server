@@ -1,8 +1,8 @@
 /**
- * 입하 등록 — 화면 `M-01-01`. 「입하·라인·자재 LOT 이 한 트랜잭션으로 만들어진다」(계약).
+ * 입하 — 옛 등록·`:split`·`:per-line` 은 닫혀 409 이고(FR-036), 나머지는 옛 모양으로 직접 넣은 이전 데이터 입하의 조회·수정·배정이다.
  *
  * ⚠ 픽스처는 전부 «직접 INSERT» 다 — ASN·P/O 라인·입하 라인을 만드는 등록 경로를 이
- * 스위트가 쓰지 않기 위해서다(P/O 는 동시성 검사 하나에서만 API 로 만든다).
+ * 스위트가 쓰지 않기 위해서다(P/O 는 SUCCESSOR_EXISTS 검사 하나에서만 API 로 만든다).
  * ⚠ 정리 순서 — `inbound_receipt_line` 이 `trace.lot` 을 «가리키므로» LOT 보다 먼저 지운다
  * (I-3.md §6-5 · P/O e2e 에는 없던 순서).
  */
@@ -112,6 +112,8 @@ describe('입하 등록 (e2e)', () => {
   let lotSeq = 0;
   let orderSeq = 0;
   let receiptSeq = 0;
+  let legacySeq = 0;
+  let userId: bigint;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -130,182 +132,47 @@ describe('입하 등록 (e2e)', () => {
     await app.close();
   });
 
-  it('입하 — 등록 응답이 계약 InboundReceiptDetailResponse 를 만족한다', async () => {
-    const detail = await create();
-
-    const validate = validator('POST /logistics/inbound-receipts', 201);
-    expect(validate(detail)).toBe(true);
-    expect(validate.errors ?? []).toEqual([]);
-  });
-
-  it('입하 — 등록이 헤더·라인·LOT 을 한 트랜잭션으로 만든다(라인 실패면 헤더도 LOT 도 없다)', async () => {
-    const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
+  // 옛 등록 자체를 보던 시험(응답 모양·한 트랜잭션·채번·상태·LINE_REQUIRED·PAIR·유통기한·사전부착 lotId·received_qty·한도·누적·
+  // 초과분 검증·같은 P/O 라인 줄 여럿·동시성·승인 안 된 P/O·멱등·If-Match·원장·본문 id·첨부 id·ERP 취소 P/O 라인)은 이 하나로 줄었다.
+  it('FR-036 POST /logistics/inbound-receipts 는 본문이 무엇이든 409 STATE_LOCKED「입하 LOT 받기를 쓰세요」이고 아무것도 서지 않는다', async () => {
+    const { purchaseOrderLineId } = await seedOrderLine(100);
+    const cancelled = await seedOrderLine(100);
+    await prisma.purchase_order_line.update({
+      where: { purchase_order_line_id: BigInt(cancelled.purchaseOrderLineId) },
+      data: { cancelled_at: new Date() },
+    });
+    const receiptsBefore = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
     const lotsBefore = await prisma.lot.count({ where: { plant_id: plantId } });
-
-    await send(
-      await body({
-        lines: [
-          await lineDraft(),
-          // 없는 uom — 라인 삽입이 FK 위반으로 실패해 트랜잭션 전체가 롤백돼야 한다.
-          { ...(await lineDraft()), uomId: 999999999 },
-        ],
-      }),
-    ).expect(400);
-
-    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
-    expect(await prisma.lot.count({ where: { plant_id: plantId } })).toBe(lotsBefore);
-  });
-
-  it('입하 — 입하번호는 서버가 짓는다(IR-YYYYMMDD-\\d{4,})', async () => {
-    const detail = await create();
-
-    expect(detail.inboundReceipt.inboundReceiptNo).toMatch(/^IR-20260806-\d{4,}$/);
-  });
-
-  it('입하 — 상태는 서버가 REGISTERED 로 정한다(본문이 statusCode 를 받지 않는다)', async () => {
-    const created = await send({ ...(await body()), statusCode: 'POSTED' } as object).expect(201);
-
-    const detail = created.body as Detail;
-    expect(detail.inboundReceipt.statusCode).toBe('REGISTERED');
-    expect(detail.lines[0].statusCode).toBe('REGISTERED');
-  });
-
-  it('입하 — lines 가 빈 배열이면 400 LINE_REQUIRED 다', async () => {
-    const rejected = await send(await body({ lines: [] })).expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'lines', code: 'LINE_REQUIRED' });
-  });
-
-  it('입하 — supplierLotMissing=true 인데 substituteLotReasonCode 가 없으면 400 이다', async () => {
-    const draft = await lineDraft();
-    const rejected = await send(
-      await body({
-        lines: [{ ...draft, supplierLotNo: null, supplierLotMissing: true }],
-      }),
-    ).expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({
-      field: 'lines.0.substituteLotReasonCode',
-      code: 'PAIR',
-    });
-  });
-
-  it('입하 — exceptionTypeCode 만 있고 exceptionReason 이 없으면 400 PAIR 다', async () => {
-    const rejected = await send(
+    const drafts: object[] = [
+      await body(),
+      { ...(await body()), statusCode: 'POSTED', deliveryNoteAttachmentId: 999999999 },
+      await body({ lines: [] }),
+      await body({ lines: [{ ...(await lineDraft()), uomId: 999999999 }] }),
       await body({ exceptionTypeCode: 'CUSTOMER_SUPPLY', exceptionReason: undefined }),
-    ).expect(400);
+      await body({ lines: [{ ...(await lineDraft()), supplierLotNo: null, supplierLotMissing: true }] }),
+      await body({ lines: [{ ...(await lineDraft()), manufacturedDate: '2026-08-06', expiryDate: '2026-08-05' }] }),
+      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 30 }] }),
+      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 120, excessQty: 20 }] }),
+      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 60 }, { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50 }] }),
+      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId: null, excessQty: 1 }] }),
+      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId: cancelled.purchaseOrderLineId, receivedQty: 5 }] }),
+      await body({ lines: [{ ...(await lineDraft()), inboundReceiptLineId: 1 }] }),
+    ];
 
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'exceptionReason', code: 'PAIR' });
-  });
+    for (const draft of drafts) expectClosed('POST /logistics/inbound-receipts', await send(draft));
+    expectClosed('POST /logistics/inbound-receipts', await send(await body()).set('If-Match', '"1"'));
 
-  it('입하 — expiryDate 가 manufacturedDate 보다 앞서면 400 이다(ck_inbound_expiry 가 500 으로 새지 않는다)', async () => {
-    const draft = await lineDraft();
-    const rejected = await send(
-      await body({
-        lines: [{ ...draft, manufacturedDate: '2026-08-06', expiryDate: '2026-08-05' }],
-      }),
-    ).expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'lines.0.expiryDate', code: 'INVALID' });
-  });
-
-  it('입하 — 사전부착 라인의 lotId 가 응답에 채워진다', async () => {
-    const supplierLotNo = supplierLotNoOf((lotSeq += 1));
-    const detail = await create({ lines: [{ ...(await lineDraft()), supplierLotNo }] });
-
-    const lotId = detail.lines[0].lotId;
-    expect(lotId).not.toBeNull();
-    const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId as number) } });
-    expect(lot.lot_no).toBe(supplierLotNo);
-    expect(lot.lot_type_code).toBe('MATERIAL');
-    expect(lot.manufactured_at).toBeNull();
-    expect(await prisma.lot_hold.count({ where: { lot_id: lot.lot_id } })).toBe(1);
-  });
-
-  it('입하 — 미부착 라인의 lotId 는 널이다(키를 생략하지 않는다)', async () => {
-    const draft = await lineDraft();
-    const detail = await create({
-      lines: [
-        {
-          ...draft,
-          supplierLotNo: null,
-          supplierLotMissing: true,
-          substituteLotReasonCode: 'NO_LABEL',
-        },
-      ],
-    });
-
-    expect(detail.lines[0]).toHaveProperty('lotId');
-    expect(detail.lines[0].lotId).toBeNull();
-  });
-
-  it('입하 — purchase_order_line.received_qty 가 라인 수량만큼 오른다', async () => {
-    const { purchaseOrderLineId } = await seedOrderLine(100);
-
-    await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 30 }] });
-
-    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
-  });
-
-  it('입하 — 발주+허용치를 넘기면 400 QTY_EXCEEDS_ORDERED 다(ck_po_line_received 가 500 으로 새지 않는다)', async () => {
-    const { purchaseOrderLineId } = await seedOrderLine(10, 2);
-
-    const rejected = await send(
-      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 13 }] }),
-    ).expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({
-      field: 'lines.0.receivedQty',
-      code: 'QTY_EXCEEDS_ORDERED',
-    });
+    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(receiptsBefore);
+    expect(await prisma.lot.count({ where: { plant_id: plantId } })).toBe(lotsBefore);
     expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
+    expect(await prisma.inbound_receipt_po_allocation.count({ where: { purchase_order_line_id: BigInt(purchaseOrderLineId) } })).toBe(0);
+    expect(await prisma.inventory_transaction.count({ where: { plant_id: plantId } })).toBe(0);
   });
 
-  it('입하 — 같은 P/O 에 두 번 등록하면 received_qty 가 누적된다(분할 납품)', async () => {
-    const { purchaseOrderLineId } = await seedOrderLine(100);
-
-    await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 40 }] });
-    await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 25 }] });
-
-    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(65);
-  });
 
   // 발주 5,000 — 500 을 먼저 받고, 공급사 포장 사정으로 라벨 한 장 5,000 이 더 왔다. 그 LOT 이 IQC 한 단위라
   // 줄 하나로 받고, 남은 4,500 만 P/O 에 넣고 500 은 ERP 추가 P/O 를 기다리는 초과분으로 남긴다(장부 P-100).
   describe('초과분 — 한 LOT 의 일부만 P/O 에 넣는다', () => {
-    it('초과분 — 줄·LOT 은 5,000 그대로이고 P/O 에는 4,500 만 오르며 초과분 500 이 미배정으로 남는다', async () => {
-      const { purchaseOrderLineId } = await seedOrderLine(5000);
-      await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 500 }] });
-
-      const detail = await create({
-        lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 5000, excessQty: 500 }],
-      });
-
-      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(5000);
-      const line = detail.lines[0] as LineBody & { unallocatedQty: number };
-      expect(line.receivedQty).toBe(5000);
-      expect(line.unallocatedQty).toBe(500);
-      const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(line.lotId as number) } });
-      expect(Number(lot.initial_qty)).toBe(5000);
-      // 줄의 P/O 몫 4,500 하나. 초과분 500 은 미배정이라 행이 없다.
-      expect(await allocationsOf(line.inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 4500]]);
-    });
-
-    it('초과분 — 줄 전체가 초과분이어도 된다: P/O 에는 0 이 오르고 배정 없이 전부 미배정으로 남는다', async () => {
-      const { purchaseOrderLineId } = await seedOrderLine(100);
-
-      const detail = await create({
-        lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 1000, excessQty: 1000 }],
-      });
-
-      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
-      const line = detail.lines[0] as LineBody & { unallocatedQty: number };
-      expect(line.unallocatedQty).toBe(1000);
-      expect(await allocationsOf(line.inboundReceiptLineId)).toEqual([]);
-      const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(line.lotId as number) } });
-      expect(Number(lot.initial_qty)).toBe(1000);
-    });
-
     it('초과분 — 수가 아니면 400 INVALID · 음수면 400 RANGE 다(계약 검증기가 막는다 — 칸 표기 lines[0])', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
       const errorsFor = async (excessQty: unknown): Promise<unknown> =>
@@ -316,39 +183,9 @@ describe('입하 등록 (e2e)', () => {
       expect(await errorsFor(-1)).toEqual([expect.objectContaining({ field: 'lines[0].excessQty', code: 'RANGE' })]);
     });
 
-    it('초과분 — 받은 수량을 넘으면 400 RANGE 가 그 줄을 짚고 아무것도 남지 않는다', async () => {
-      const { purchaseOrderLineId } = await seedOrderLine(100);
-      const allocationsBefore = await prisma.inbound_receipt_po_allocation.count();
-
-      const rejected = await send(
-        await body({
-          lines: [
-            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: 5 },
-            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: 51 },
-          ],
-        }),
-      ).expect(400);
-
-      expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.1.excessQty', code: 'RANGE' })]);
-      expect(await prisma.inbound_receipt_po_allocation.count()).toBe(allocationsBefore);
-      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
-    });
-
-    it('초과분 — 무발주 줄에는 초과분을 쓸 수 없다(400 INVALID)', async () => {
-      const rejected = await send(
-        await body({
-          exceptionTypeCode: 'CUSTOMER_SUPPLY',
-          exceptionReason: '고객사급 자재',
-          lines: [{ ...(await lineDraft()), purchaseOrderLineId: null, excessQty: 1 }],
-        }),
-      ).expect(400);
-
-      expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: 'INVALID' })]);
-    });
-
     it('초과분 — 라인 치환이 초과분을 바꾸면 P/O 에 넣은 몫과 배정이 함께 바뀐다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
-      const detail = await create({
+      const detail = await legacy({
         lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 120, excessQty: 20 }],
       });
       expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(100);
@@ -363,7 +200,7 @@ describe('입하 등록 (e2e)', () => {
 
     it('배정 — 라인 치환이 받은 수량만 바꿔도 몫이 따라간다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
-      const detail = await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 60 }] });
+      const detail = await legacy({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 60 }] });
       expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 60]]);
 
       await replace(detail.inboundReceipt.inboundReceiptId, [itemOf(detail.lines[0], { receivedQty: 70 })]);
@@ -389,7 +226,7 @@ describe('입하 등록 (e2e)', () => {
     /** 발주 `ordered` 에 `allocated` 만 넣고 `excess` 를 미배정으로 남긴 줄 하나. */
     async function unallocatedOf(ordered: number, allocated: number, excess: number) {
       const source = await seedOrderLine(ordered);
-      const detail = await create({
+      const detail = await legacy({
         lines: [{ ...(await lineDraft()), purchaseOrderLineId: source.purchaseOrderLineId, receivedQty: allocated + excess, excessQty: excess }],
       });
       return { source, detail, lineId: detail.lines[0].inboundReceiptLineId };
@@ -486,7 +323,7 @@ describe('입하 등록 (e2e)', () => {
     it('excludeExceptionTypeCode — 그 유형의 입하 줄이 빠지고 예외 없는 줄은 남는다 · page.total 도 뺀 수', async () => {
       const lineOf = async (exceptionTypeCode: string | null): Promise<number> => {
         const source = await seedOrderLine(100);
-        const detail = await create({
+        const detail = await legacy({
           exceptionTypeCode,
           exceptionReason: exceptionTypeCode === null ? null : '시험',
           lines: [{ ...(await lineDraft()), purchaseOrderLineId: source.purchaseOrderLineId, receivedQty: 110, excessQty: 10 }],
@@ -552,105 +389,6 @@ describe('입하 등록 (e2e)', () => {
     });
   });
 
-  // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄이고 LOT 도 줄마다 선다(장부 P-99).
-  it('입하 — 같은 P/O 라인 줄 여럿(라벨마다 한 줄)은 LOT 이 줄마다 서고 received_qty 는 합계만큼 오른다', async () => {
-    const { purchaseOrderLineId } = await seedOrderLine(100);
-
-    const detail = await create({
-      lines: [
-        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 40 },
-        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 35 },
-      ],
-    });
-
-    expect(detail.lines.map((line) => line.purchaseOrderLineId)).toEqual([purchaseOrderLineId, purchaseOrderLineId]);
-    expect(new Set(detail.lines.map((line) => line.lotId)).size).toBe(2);
-    expect(detail.lines.every((line) => line.lotId !== null)).toBe(true);
-    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(75);
-  });
-
-  it('입하 — 같은 P/O 라인 줄들의 «합계»가 발주+허용치를 넘으면 첫 줄을 짚는 400 QTY_EXCEEDS_ORDERED 다', async () => {
-    const { purchaseOrderLineId } = await seedOrderLine(100);
-    const lotsBefore = await prisma.lot.count({ where: { plant_id: plantId } });
-
-    const rejected = await send(
-      await body({
-        lines: [
-          { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 60 },
-          { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50 },
-        ],
-      }),
-    ).expect(400);
-
-    expect(rejected.body.errors).toEqual([
-      expect.objectContaining({ field: 'lines.0.receivedQty', code: 'QTY_EXCEEDS_ORDERED' }),
-    ]);
-    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
-    expect(await prisma.lot.count({ where: { plant_id: plantId } })).toBe(lotsBefore);
-  });
-
-  it('⭐ 입하 등록과 P/O 라인 치환을 동시에 걸어도 500 이 없다(부모 FOR UPDATE 로 직렬화된다)', async () => {
-    const order = await createOrder();
-    const purchaseOrderLineId = order.lines[0].purchaseOrderLineId;
-    const etag = await orderEtag(order.purchaseOrder.purchaseOrderId);
-
-    const [receipt, replaced] = await Promise.all([
-      send(await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 5 }] })),
-      request(app.getHttpServer())
-        .put(`/api/logistics/purchase-orders/${order.purchaseOrder.purchaseOrderId}/lines`)
-        .set('Cookie', cookie)
-        .set('Idempotency-Key', key())
-        .set('If-Match', etag)
-        .send({ items: [{ purchaseOrderLineId, itemId, orderedQty: 100, uomId }] }),
-    ]);
-
-    expect(receipt.status).toBeLessThan(500);
-    expect(replaced.status).toBeLessThan(500);
-  });
-
-  it('입하 — 승인되지 않은 P/O 에도 입하가 붙는다(계약에 승인 문장이 0건이다 — 문의 023)', async () => {
-    const { purchaseOrderId, purchaseOrderLineId } = await seedOrderLine(100);
-    const order = await prisma.purchase_order.findUniqueOrThrow({
-      where: { purchase_order_id: BigInt(purchaseOrderId) },
-    });
-    expect(order.approval_request_id).toBeNull();
-
-    const detail = await create({
-      lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 1 }],
-    });
-
-    expect(detail.lines[0].purchaseOrderLineId).toBe(purchaseOrderLineId);
-  });
-
-  it('입하 — 같은 Idempotency-Key 재전송도 같은 ETag 를 준다(201)', async () => {
-    const draft = await body();
-    const idempotencyKey = key();
-
-    const first = await send(draft, idempotencyKey).expect(201);
-    const second = await send(draft, idempotencyKey).expect(201);
-
-    expect(second.body).toEqual(first.body);
-    expect(second.headers.etag).toBe(first.headers.etag);
-    expect(
-      await prisma.inbound_receipt.count({
-        where: { inbound_receipt_id: BigInt(first.body.inboundReceipt.inboundReceiptId) },
-      }),
-    ).toBe(1);
-  });
-
-  it('입하 — If-Match 없이 등록된다(선택이다 — 오프라인 큐는 토큰을 안 싣는다)', async () => {
-    await send(await body()).expect(201);
-
-    // 실려 와도 대조할 버전이 없다 — 서비스가 값을 무시한다(400 이 아니다).
-    await request(app.getHttpServer())
-      .post('/api/logistics/inbound-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .set('If-Match', '"1"')
-      .send(await body())
-      .expect(201);
-  });
-
   it('입하 — 권한 없는 사용자의 POST 는 403 이다(500 이 아니다)', async () => {
     await request(app.getHttpServer())
       .post('/api/logistics/inbound-receipts')
@@ -660,30 +398,8 @@ describe('입하 등록 (e2e)', () => {
       .expect(403);
   });
 
-  it('⭐ 원장이 움직이지 않는다 — inventory_transaction 이 0건 그대로다', async () => {
-    await create();
-
-    expect(await prisma.inventory_transaction.count({ where: { plant_id: plantId } })).toBe(0);
-  });
-
-  it('등록 — 본문의 inboundReceiptLineId 는 무시되고 신규 행으로 선다', async () => {
-    const first = await create();
-    const carried = first.lines[0].inboundReceiptLineId;
-
-    const second = await create({ lines: [{ ...(await lineDraft()), inboundReceiptLineId: carried }] });
-
-    expect(second.lines[0].inboundReceiptLineId).not.toBe(carried);
-    expect(second.lines[0].lineNo).toBe(1);
-  });
-
-  it('등록 — deliveryNoteAttachmentId 를 받아도 400 이 아니다', async () => {
-    const created = await send(await body({ deliveryNoteAttachmentId: 999999999 })).expect(201);
-
-    expect((created.body as Detail).inboundReceipt.inboundReceiptId).toBeDefined();
-  });
-
   it('입하 — 상세가 ETag 를 헤더로만 내린다(본문에 versionNo 가 없다)', async () => {
-    const detail = await create();
+    const detail = await legacy();
 
     const response = await request(app.getHttpServer())
       .get(`/api/logistics/inbound-receipts/${detail.inboundReceipt.inboundReceiptId}`)
@@ -702,7 +418,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('입하 — 라인 목록은 ETag 를 내리지 않는다(자식 컬렉션 · B-1-1)', async () => {
-    const detail = await create();
+    const detail = await legacy();
 
     const response = await request(app.getHttpServer())
       .get(`/api/logistics/inbound-receipts/${detail.inboundReceipt.inboundReceiptId}/lines`)
@@ -714,7 +430,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('입하 — 목록이 supplierId·plantId·statusCode·receiptDate 로 걸린다', async () => {
-    const detail = await create();
+    const detail = await legacy();
 
     const found = await list(
       `supplierId=${supplierId}&plantId=${plantId}&statusCode=REGISTERED` +
@@ -730,7 +446,7 @@ describe('입하 등록 (e2e)', () => {
     const labeledAttached = await lineDraft();
     const plainAttached = await lineDraft();
     const missing = await lineDraft();
-    const detail = await create({
+    const detail = await legacy({
       lines: [
         labeledAttached,
         plainAttached,
@@ -769,7 +485,7 @@ describe('입하 등록 (e2e)', () => {
   // ── 헤더 수정 · 라인 치환 ────────────────────────────────────────────────
 
   it('수정 — If-Match 가 없으면 400 이다', async () => {
-    const detail = await create();
+    const detail = await legacy();
 
     await request(app.getHttpServer())
       .put(`/api/logistics/inbound-receipts/${detail.inboundReceipt.inboundReceiptId}`)
@@ -780,7 +496,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('수정 — 낡은 If-Match 로 수정하면 409 다', async () => {
-    const detail = await create();
+    const detail = await legacy();
     const id = detail.inboundReceipt.inboundReceiptId;
     const etag = await receiptEtag(id);
 
@@ -789,7 +505,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('수정 — 200 이 ETag 를 준다(다음 쓰기가 그대로 쓴다)', async () => {
-    const detail = await create();
+    const detail = await legacy();
     const id = detail.inboundReceipt.inboundReceiptId;
 
     const first = await putHeader(id, await receiptEtag(id)).expect(200);
@@ -804,7 +520,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('수정 — 권한 없는 사용자의 PUT 은 403 이다', async () => {
-    const detail = await create();
+    const detail = await legacy();
     const id = detail.inboundReceipt.inboundReceiptId;
     const etag = await receiptEtag(id);
 
@@ -822,7 +538,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — If-Match 가 없으면 400', async () => {
-    const detail = await create();
+    const detail = await legacy();
 
     await request(app.getHttpServer())
       .put(`/api/logistics/inbound-receipts/${detail.inboundReceipt.inboundReceiptId}/lines`)
@@ -833,7 +549,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 낡은 If-Match 면 409', async () => {
-    const detail = await create({ lines: [await missingLotDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
     const etag = await receiptEtag(id);
 
@@ -842,7 +558,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 배열 순서가 lineNo 1..N 이 된다(요청이 lineNo 를 보내지 않는다)', async () => {
-    const detail = await create({ lines: [await missingLotDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
 
     const items = await replace(id, [newItem({ receivedQty: 3 }), newItem({ receivedQty: 4 })]);
@@ -852,7 +568,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 1↔2 를 맞바꿔도 uq_inbound_receipt_line 을 위반하지 않는다(한 트랜잭션)', async () => {
-    const detail = await create({ lines: [await missingLotDraft(), await missingLotDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft(), await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
     const [first, second] = detail.lines;
 
@@ -866,7 +582,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 요청에서 빠진 기존 행은 지워진다', async () => {
-    const detail = await create({ lines: [await missingLotDraft(), await missingLotDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft(), await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
 
     const items = await replace(id, [itemOf(detail.lines[0])]);
@@ -876,7 +592,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — LOT 이 만들어진 라인을 지우면 400 STATE_LOCKED 다(계약이 코드까지 적었다)', async () => {
-    const detail = await create({ lines: [await lineDraft(), await missingLotDraft()] });
+    const detail = await legacy({ lines: [await lineDraft(), await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
     expect(detail.lines[0].lotId).not.toBeNull();
 
@@ -886,7 +602,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 입고가 붙은 라인을 지우면 400 SUCCESSOR_EXISTS 다(§7-4 · FK 위반이 500 으로 새지 않는다)', async () => {
-    const detail = await create({ lines: [await missingLotDraft(), await lineDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft(), await lineDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
     await seedGoodsReceipt(detail.lines[0], detail.lines[1].lotId as number);
 
@@ -896,7 +612,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 입고가 붙은 라인의 수량을 바꿔도 400 SUCCESSOR_EXISTS 다(계약이 삭제만 막았다)', async () => {
-    const detail = await create({ lines: [await missingLotDraft(), await lineDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft(), await lineDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
     await seedGoodsReceipt(detail.lines[0], detail.lines[1].lotId as number);
 
@@ -909,7 +625,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 차이가 붙은 라인을 지우면 400 이다(inbound_variance FK)', async () => {
-    const detail = await create({ lines: [await missingLotDraft(), await missingLotDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft(), await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
     await prisma.inbound_variance.create({
       data: {
@@ -926,7 +642,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 200 에 ETag 가 없다(계약이 헤더를 선언하지 않았다)', async () => {
-    const detail = await create({ lines: [await missingLotDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
 
     const response = await putLines(id, await receiptEtag(id), [newItem()]).expect(200);
@@ -936,7 +652,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 부모 version_no 는 오른다(다음 If-Match 는 상세 GET 이 준다)', async () => {
-    const detail = await create({ lines: [await missingLotDraft()] });
+    const detail = await legacy({ lines: [await missingLotDraft()] });
     const id = detail.inboundReceipt.inboundReceiptId;
     const before = await receiptEtag(id);
 
@@ -947,7 +663,7 @@ describe('입하 등록 (e2e)', () => {
 
   it('치환 — 수량을 내리면 received_qty 도 내린다(차분)', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
-    const detail = await create({
+    const detail = await legacy({
       lines: [{ ...(await missingLotDraft()), purchaseOrderLineId, receivedQty: 30 }],
     });
     expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
@@ -959,28 +675,9 @@ describe('입하 등록 (e2e)', () => {
     expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(10);
   });
 
-  it('입하 — ERP 가 취소한 P/O 라인으로 등록하면 400 이고 received_qty 가 그대로다(장부 P-73)', async () => {
-    const { purchaseOrderLineId } = await seedOrderLine(100);
-    await prisma.purchase_order_line.update({
-      where: { purchase_order_line_id: BigInt(purchaseOrderLineId) },
-      data: { cancelled_at: new Date() },
-    });
-
-    const rejected = await send(
-      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 5 }] }),
-    ).expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({
-      field: 'lines.0.purchaseOrderLineId',
-      code: 'INVALID',
-      message: 'ERP 에서 취소한 P/O 라인입니다.',
-    });
-    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
-  });
-
   it('치환 — 등록 뒤 ERP 가 취소한 P/O 라인은 늘리면 400 이고 줄이기는 된다(장부 P-73)', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
-    const detail = await create({
+    const detail = await legacy({
       lines: [{ ...(await missingLotDraft()), purchaseOrderLineId, receivedQty: 30 }],
     });
     const id = detail.inboundReceipt.inboundReceiptId;
@@ -1001,7 +698,7 @@ describe('입하 등록 (e2e)', () => {
 
   it('치환 — 라인을 지우면 received_qty 가 그만큼 내린다', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
-    const detail = await create({
+    const detail = await legacy({
       lines: [
         { ...(await missingLotDraft()), purchaseOrderLineId, receivedQty: 30 },
         await missingLotDraft(),
@@ -1014,7 +711,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — items 가 빈 배열이면 400 LINE_REQUIRED 다', async () => {
-    const detail = await create();
+    const detail = await legacy();
     const id = detail.inboundReceipt.inboundReceiptId;
 
     const rejected = await putLines(id, await receiptEtag(id), []).expect(400);
@@ -1023,7 +720,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('치환 — 권한 없는 사용자의 PUT 은 403 이다', async () => {
-    const detail = await create();
+    const detail = await legacy();
     const id = detail.inboundReceipt.inboundReceiptId;
     const etag = await receiptEtag(id);
 
@@ -1038,127 +735,32 @@ describe('입하 등록 (e2e)', () => {
 
   // ── 초과 분리 등록 · 차이 등록 ────────────────────────────────────────────
 
-  it('분리 — mode=BOTH 가 입하 2건을 만들고 번호가 서로 다르다', async () => {
-    const created = await split();
-
-    expect(created).toHaveLength(2);
-    expect(created[0].inboundReceiptNo).not.toBe(created[1].inboundReceiptNo);
-    for (const receipt of created) expect(receipt.inboundReceiptNo).toMatch(/^IR-20260806-\d{4,}$/);
-  });
-
-  it('분리 — mode=NORMAL_ONLY 는 1건만 만든다', async () => {
-    const created = await split({ mode: 'NORMAL_ONLY', excess: undefined });
-
-    expect(created).toHaveLength(1);
-  });
-
-  it('분리 — mode=EXCESS_ONLY 는 1건만 만든다', async () => {
-    const created = await split({ mode: 'EXCESS_ONLY', normal: undefined });
-
-    expect(created).toHaveLength(1);
-  });
-
-  it('분리 — 어느 part 의 lines 가 비면 400 LINE_REQUIRED', async () => {
-    const rejected = await sendSplit(await splitBody({ excess: await splitPart({ lines: [] }) })).expect(400);
-
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'excess.lines', code: 'LINE_REQUIRED' });
-  });
-
-  it('분리 — 초과분이 실패하면 정량분도 없다(한 트랜잭션 · 부분 저장 금지)', async () => {
-    const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
-
-    // 검증을 통과한 뒤 트랜잭션 «안»에서 깨지는 값 — 없는 uom 이라 라인 삽입이 FK 위반이다.
-    const draft = await lineDraft();
-    await sendSplit(
-      await splitBody({ excess: await splitPart({ lines: [{ ...draft, uomId: 999999999 }] }) }),
-    ).expect(400);
-
-    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
-  });
-
-  it('분리 — 정량분만 received_qty 를 올린다(초과분은 P/O 비귀속)', async () => {
+  // 옛 `:split` 시험(BOTH·NORMAL_ONLY·EXCESS_ONLY·LINE_REQUIRED·한 트랜잭션·received_qty·합계 한도·원본 입하·응답 순서·멱등·같은
+  // 공급사 LOT)은 이 하나로 줄었다.
+  it('FR-036 POST /logistics/inbound-receipts:split 는 mode 가 무엇이든 409 STATE_LOCKED 이고 아무것도 서지 않는다', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
-    const normalLine = { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 30 };
-
-    await split({ normal: await splitPart({ lines: [normalLine] }) });
-
-    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
-  });
-
-  it('분리 — 정량분에 같은 P/O 라인 줄 여럿을 실으면 합계로 검사하고 합계만큼 올린다', async () => {
-    const { purchaseOrderLineId } = await seedOrderLine(100);
-    const normal = async (receivedQty: number) => ({ ...(await lineDraft()), purchaseOrderLineId, receivedQty });
-
-    const rejected = await sendSplit(
-      await splitBody({ normal: await splitPart({ lines: [await normal(70), await normal(40)] }) }),
-    ).expect(400);
-    expect(rejected.body.errors).toEqual([
-      expect.objectContaining({ field: 'normal.lines.0.receivedQty', code: 'QTY_EXCEEDS_ORDERED' }),
-    ]);
-
-    await split({ normal: await splitPart({ lines: [await normal(70), await normal(30)] }) });
-    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(100);
-  });
-
-  it('분리 — 요청이 원본 입하를 가리키지 않는다(원 도착은 저장된 적이 없다 — W-01-03 §5-1)', async () => {
-    const original = await create();
-    const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
-
-    const created = await split();
-
-    expect(created.map((receipt) => receipt.inboundReceiptId)).not.toContain(
-      original.inboundReceipt.inboundReceiptId,
-    );
-    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before + 2);
-    const reloaded = await prisma.inbound_receipt.findUniqueOrThrow({
-      where: { inbound_receipt_id: BigInt(original.inboundReceipt.inboundReceiptId) },
-    });
-    expect(reloaded.version_no).toBe(1);
-  });
-
-  it('분리 — 응답 created 순서가 정량분·초과분이다', async () => {
-    const created = await split({
-      excess: await splitPart({ exceptionTypeCode: 'OVER_DELIVERY', exceptionReason: '초과 도착' }),
-    });
-
-    expect(created[0].exceptionTypeCode).toBeNull();
-    expect(created[1].exceptionTypeCode).toBe('OVER_DELIVERY');
-  });
-
-  it('분리 — 같은 Idempotency-Key 재전송도 201 이고 건이 늘지 않는다', async () => {
-    const draft = await splitBody();
-    const idempotencyKey = key();
-
-    const first = await sendSplit(draft, idempotencyKey).expect(201);
-    const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
-    const second = await sendSplit(draft, idempotencyKey).expect(201);
-
-    expect(second.body).toEqual(first.body);
-    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
-  });
-
-  it('분리 — 정량분·초과분이 같은 공급사 LOT 을 실으면 400 INVALID 가 초과분 칸을 짚는다', async () => {
     const receiptsBefore = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
     const lotsBefore = await prisma.lot.count({ where: { plant_id: plantId } });
-    // W-01-03 대표 시나리오 — 한 물리 LOT 이 정량분·초과분으로 갈린다(문의 029).
     const shared = await lineDraft();
+    const drafts: object[] = [
+      await splitBody(),
+      await splitBody({ mode: 'NORMAL_ONLY', excess: undefined }),
+      await splitBody({ mode: 'EXCESS_ONLY', normal: undefined }),
+      await splitBody({ excess: await splitPart({ lines: [] }) }),
+      await splitBody({ excess: await splitPart({ lines: [{ ...(await lineDraft()), uomId: 999999999 }] }) }),
+      await splitBody({ normal: await splitPart({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 30 }] }) }),
+      await splitBody({ normal: await splitPart({ lines: [shared] }), excess: await splitPart({ lines: [{ ...shared, receivedQty: 20 }] }) }),
+    ];
 
-    const rejected = await sendSplit(
-      await splitBody({
-        normal: await splitPart({ lines: [shared] }),
-        excess: await splitPart({ lines: [{ ...shared, receivedQty: 20 }] }),
-      }),
-    ).expect(400);
+    for (const draft of drafts) expectClosed('POST /logistics/inbound-receipts:split', await sendSplit(draft));
 
-    expect(rejected.body.errors[0]).toMatchObject({
-      field: 'excess.lines.0.supplierLotNo',
-      code: 'INVALID',
-    });
     expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(receiptsBefore);
     expect(await prisma.lot.count({ where: { plant_id: plantId } })).toBe(lotsBefore);
+    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
   });
 
-  // 줄마다 입하 한 건(장부 P-117) — 일괄 입하도 품목마다 입하번호가 따로 붙는다(사용자 결정 2026-10-24).
+  // 줄마다 입하 한 건(장부 P-117) — 닫혔다(FR-036). 옛 시험(줄 셋이면 세 건·한 줄이라도 막히면 아무것도 없음·W-01-03 만으로 등록)은
+  // 이 하나로 줄었다.
   describe('줄마다 입하 한 건 (:per-line)', () => {
     function sendPerLine(draft: object, as = cookie): request.Test {
       return request(app.getHttpServer())
@@ -1169,66 +771,26 @@ describe('입하 등록 (e2e)', () => {
         .send(draft);
     }
 
-    it('줄 셋이면 입하 세 건 — 입하번호가 모두 다르고 건마다 줄 하나·헤더 값은 같다 · P/O 받은 수량·배정도 줄마다', async () => {
+    it('FR-036 줄 셋·웹 입하 등록 권한(W-01-03)만 있는 사용자·빈 줄 모두 409 STATE_LOCKED 이고 아무것도 서지 않는다 · 본문 형식 400 · 권한 없음 403 · 로그인 없음 401 은 그대로다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
+      const receiptsBefore = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
       const lines = [
         { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
         { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 20 },
         { ...(await lineDraft()), receivedQty: 5 },
       ];
 
-      const response = await sendPerLine(await body({ lines })).expect(201);
+      expectClosed('POST /logistics/inbound-receipts:per-line', await sendPerLine(await body({ lines })));
+      expectClosed('POST /logistics/inbound-receipts:per-line', await sendPerLine(await body(), webCookie));
+      expectClosed('POST /logistics/inbound-receipts:per-line', await sendPerLine(await body({ lines: [] })));
 
-      const validate = validator('POST /logistics/inbound-receipts:per-line', 201);
-      expect(validate(response.body)).toBe(true);
-      expect(validate.errors ?? []).toEqual([]);
-      const created = (response.body as { created: Detail[] }).created;
-      expect(created).toHaveLength(3);
-      const numbers = created.map((detail) => detail.inboundReceipt.inboundReceiptNo);
-      expect(new Set(numbers).size).toBe(3);
-      expect(created.map((detail) => detail.lines.map((line) => [line.lineNo, line.receivedQty]))).toEqual([[[1, 10]], [[1, 20]], [[1, 5]]]);
-      const headers = created.map((detail) => detail.inboundReceipt as ReceiptBody & { supplierId: number; receiptDatetime: string });
-      expect(new Set(headers.map((header) => `${header.supplierId}|${header.receiptDatetime}`)).size).toBe(1);
-      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
-      expect(await allocationsOf(created[1].lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 20]]);
-      // 건마다 따로 조회된다 — 상세가 그 건의 줄 하나만 낸다.
-      const detail = await request(app.getHttpServer())
-        .get(`/api/logistics/inbound-receipts/${created[2].inboundReceipt.inboundReceiptId}`)
-        .set('Cookie', cookie)
-        .expect(200);
-      expect((detail.body as Detail).lines).toHaveLength(1);
-    });
-
-    it('한 줄이라도 막히면 아무것도 서지 않는다 — 400 이 그 줄(lines.{i})을 짚는다', async () => {
-      const { purchaseOrderLineId } = await seedOrderLine(25);
-      const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
-      const lines = [
-        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
-        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
-        // 앞 두 줄이 20 을 올린 뒤라 이 줄이 한도(25)를 넘는다.
-        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
-      ];
-
-      const rejected = await sendPerLine(await body({ lines })).expect(400);
-
-      expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.2.receivedQty', code: 'QTY_EXCEEDS_ORDERED' })]);
-      expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
-      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
-    });
-
-    it('검사는 입하 등록과 같다 — 본문 형식 400 · 줄 없음 LINE_REQUIRED · 권한 없음 403 · 로그인 없음 401', async () => {
       const invalid = await sendPerLine(await body({ lines: [{ ...(await lineDraft()), receivedQty: 'x' }] })).expect(400);
       // 계약 검증기가 막았다(입하 등록과 같은 모양 — 검증기의 칸 표기 lines[0]).
       expect(invalid.body.errors[0]).toMatchObject({ field: 'lines[0].receivedQty' });
-      const empty = await sendPerLine(await body({ lines: [] })).expect(400);
-      expect(empty.body.errors[0]).toMatchObject({ code: 'LINE_REQUIRED' });
       await sendPerLine(await body(), noPermCookie).expect(403);
       await request(app.getHttpServer()).post('/api/logistics/inbound-receipts:per-line').send(await body()).expect(401);
-    });
-
-    it('⭐ 웹 입하 등록 권한(W-01-03)만 있어도 등록한다 — 웹 입고 관리의 「라인 표에서 바로 입하」(사용자 결정 2026-10-27)', async () => {
-      const response = await sendPerLine(await body(), webCookie).expect(201);
-      expect((response.body as { created: Detail[] }).created).toHaveLength(1);
+      expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(receiptsBefore);
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
     });
   });
 
@@ -1246,9 +808,9 @@ describe('입하 등록 (e2e)', () => {
     let first: Detail;
     let second: Detail;
     beforeAll(async () => {
-      first = await create({ receiptDatetime: `${DAY}T01:00:00Z`, lines: [await lotless(3), await lotless(4)] });
+      first = await legacy({ receiptDatetime: `${DAY}T01:00:00Z`, lines: [await lotless(3), await lotless(4)] });
       // 둘째 건은 미부착 하나 + 라벨이 붙어 온 줄 하나(이 줄은 대기가 아니다).
-      second = await create({ receiptDatetime: `${DAY}T02:00:00Z`, lines: [await lotless(5), await lineDraft()] });
+      second = await legacy({ receiptDatetime: `${DAY}T02:00:00Z`, lines: [await lotless(5), await lineDraft()] });
     });
 
     it('대기 줄 — 미부착이고 발행 기록이 없는 줄이 입하 일시 → 줄 번호 순으로 건을 가로질러 나온다', async () => {
@@ -1323,7 +885,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('차이 — 등록 응답이 계약 InboundVariance 를 만족한다', async () => {
-    const detail = await create();
+    const detail = await legacy();
     const variance = await addVariance(detail.lines[0].inboundReceiptLineId);
 
     const validate = validator(
@@ -1337,7 +899,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('차이 — 같은 라인에 두 번 등록해도 막지 않는다(유일 제약이 없다)', async () => {
-    const detail = await create();
+    const detail = await legacy();
     const inboundReceiptLineId = detail.lines[0].inboundReceiptLineId;
 
     await addVariance(inboundReceiptLineId);
@@ -1352,7 +914,7 @@ describe('입하 등록 (e2e)', () => {
 
   it('차이 — 등록해도 received_qty 가 그대로다(원장도 라인 상태도 안 움직인다)', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
-    const detail = await create({
+    const detail = await legacy({
       lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 30 }],
     });
     const line = detail.lines[0];
@@ -1373,7 +935,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('차이 — 권한 없는 사용자의 POST 는 403 이다', async () => {
-    const detail = await create();
+    const detail = await legacy();
 
     await request(app.getHttpServer())
       .post(`/api/logistics/inbound-receipt-lines/${detail.lines[0].inboundReceiptLineId}/variances`)
@@ -1384,9 +946,9 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('⭐ 원장이 움직이지 않는다 — 12건 전건 뒤 inventory_transaction 이 0건이다', async () => {
-    const created = await split();
+    const created = await legacy();
     const lines = await request(app.getHttpServer())
-      .get(`/api/logistics/inbound-receipts/${created[0].inboundReceiptId}/lines`)
+      .get(`/api/logistics/inbound-receipts/${created.inboundReceipt.inboundReceiptId}/lines`)
       .set('Cookie', cookie)
       .expect(200);
     await addVariance((lines.body.items as LineBody[])[0].inboundReceiptLineId);
@@ -1404,9 +966,15 @@ describe('입하 등록 (e2e)', () => {
       .send(draft);
   }
 
-  async function split(overrides: object = {}): Promise<ReceiptBody[]> {
-    const created = await sendSplit(await splitBody(overrides)).expect(201);
-    return (created.body as { created: ReceiptBody[] }).created;
+  /** FR-036 — 옛 입하 쓰기는 본문을 보기 전에 닫혀 있다(본문 형식 400·권한 403 만 그보다 앞선다). */
+  function expectClosed(operation: string, response: request.Response): void {
+    expect([operation, response.status]).toEqual([operation, 409]);
+    const validate = validator(operation, 409);
+    expect(validate(response.body)).toBe(true);
+    expect(response.body.errors[0]).toMatchObject({
+      code: 'STATE_LOCKED',
+      message: '옛 입하 등록은 닫혔습니다. 입하 LOT 받기를 쓰세요.',
+    });
   }
 
   /** ⛔ `businessDate`·`occurredAt` 은 «바깥에서 한 번»이다 — part 에는 칸이 없다(계약). */
@@ -1467,9 +1035,91 @@ describe('입하 등록 (e2e)', () => {
       .send(draft);
   }
 
-  async function create(overrides: object = {}): Promise<Detail> {
-    const created = await send(await body(overrides)).expect(201);
-    return created.body as Detail;
+  /**
+   * 이전 데이터 입하 — 옛 등록(이제 409 · FR-036)이 쓰던 모양 그대로 직접 넣는다(`inbound-receipt.service.ts` createWithin):
+   * 헤더·줄 `REGISTERED`, P/O 몫(받은 수량 − 초과분)은 배정 행 + `received_qty` 증가, 사전부착 줄은 그 줄을 원천으로 한 LOT
+   * 하나를 줄 `lot_id` 로 잇는다. LOT 보류·IQC 의뢰는 이 파일의 단언이 보지 않아 넣지 않는다. 응답 모양은 상세 GET 이 준다.
+   */
+  async function legacy(overrides: object = {}): Promise<Detail> {
+    const draft = (await body(overrides)) as {
+      receiptDatetime: string;
+      exceptionTypeCode?: string | null;
+      exceptionReason?: string | null;
+      lines: (LineDraft & { excessQty?: number })[];
+    };
+    legacySeq += 1;
+    const header = await prisma.inbound_receipt.create({
+      data: {
+        inbound_receipt_no: `${PREFIX}-IR-${legacySeq}`,
+        supplier_id: BigInt(supplierId),
+        plant_id: BigInt(plantId),
+        receipt_datetime: new Date(draft.receiptDatetime),
+        exception_type_code: draft.exceptionTypeCode ?? null,
+        exception_reason: draft.exceptionReason ?? null,
+        status_code: 'REGISTERED',
+        received_by: userId,
+        created_by: userId,
+      },
+    });
+    for (const [index, line] of draft.lines.entries()) {
+      const created = await prisma.inbound_receipt_line.create({
+        data: {
+          inbound_receipt_id: header.inbound_receipt_id,
+          line_no: index + 1,
+          purchase_order_line_id: line.purchaseOrderLineId == null ? null : BigInt(line.purchaseOrderLineId),
+          item_id: BigInt(line.itemId),
+          received_qty: line.receivedQty,
+          uom_id: BigInt(line.uomId),
+          supplier_lot_no: line.supplierLotNo ?? null,
+          supplier_lot_missing: line.supplierLotMissing,
+          supplier_lot_label_attached: !line.supplierLotMissing,
+          substitute_lot_reason_code: line.substituteLotReasonCode ?? null,
+          // 품목(검사 필요)에서 승계된다.
+          inspection_required: true,
+          status_code: 'REGISTERED',
+          created_by: userId,
+        },
+      });
+      const attributed = line.receivedQty - (line.excessQty ?? 0);
+      if (line.purchaseOrderLineId != null && attributed > 0) {
+        await prisma.inbound_receipt_po_allocation.create({
+          data: {
+            inbound_receipt_line_id: created.inbound_receipt_line_id,
+            purchase_order_line_id: BigInt(line.purchaseOrderLineId),
+            allocated_qty: attributed,
+            created_by: userId,
+          },
+        });
+        await prisma.purchase_order_line.update({
+          where: { purchase_order_line_id: BigInt(line.purchaseOrderLineId) },
+          data: { received_qty: { increment: attributed } },
+        });
+      }
+      if (line.supplierLotMissing) continue;
+      const lot = await prisma.lot.create({
+        data: {
+          lot_no: line.supplierLotNo as string,
+          item_id: BigInt(line.itemId),
+          lot_type_code: 'MATERIAL',
+          plant_id: BigInt(plantId),
+          initial_qty: line.receivedQty,
+          uom_id: BigInt(line.uomId),
+          source_type_code: 'INBOUND_RECEIPT_LINE',
+          source_id: created.inbound_receipt_line_id,
+          status_code: 'INSPECTION_PENDING',
+          created_by: userId,
+        },
+      });
+      await prisma.inbound_receipt_line.update({
+        where: { inbound_receipt_line_id: created.inbound_receipt_line_id },
+        data: { lot_id: lot.lot_id },
+      });
+    }
+    const detail = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${header.inbound_receipt_id}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return detail.body as Detail;
   }
 
   /** 기본 라인은 «무발주»다 — 그래서 예외 유형·사유가 늘 실린다(R-7 ②). P/O 귀속을
@@ -1789,6 +1439,7 @@ function supplierLotNoOf(seq: number): string {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '입하등록검사', status_code: 'EMPLOYED' },
     });
+    userId = user.app_user_id;
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });

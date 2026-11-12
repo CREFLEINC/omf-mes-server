@@ -2,7 +2,7 @@
  * 인계 작업 알림 — 생산·품질 T6~T10(omf-all-around#190 · specs/002 research R-3).
  *
  * W/O 배포(일반 T6 · 긴급 T7, 배포 경로의 자재 피킹 T2), 출하지시 OQC 의뢰(T8, 출하지시 1건에 1건),
- * 재작업 W/O 발행(T9), 입하 IQC 의뢰(T10, 입하 1건에 1건). 공장 × 종류 담당자에게만 간다.
+ * 재작업 W/O 발행(T9), 입하 IQC 의뢰(T10, 입하 1건에 1건 — 피처 005 뒤로는 입하 LOT 마감이 세운다). 공장 × 종류 담당자에게만 간다.
  * ⚠ 같은 DB 를 다른 스위트와 쓰므로 접두어(`ROOT`)로 짚는다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -16,6 +16,7 @@ import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { WorkOrderHandoverNotifier } from '../src/production/work-order/work-order-handover';
+import { InboundLotFixture, closeInboundLotFixture, issueAndReceive, sessionAuth } from './support/inbound-lot-fixture';
 
 const ROOT = 'E2EHOPQ';
 const PREFIX = `${ROOT}${randomUUID().slice(0, 6).toUpperCase()}`;
@@ -27,8 +28,6 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string;
   let seq = 0;
-  /** 공급사 LOT 번호의 번호 칸 — 앞 시험이 0001·0002 를 쓴다. */
-  let lotSerial = 2;
   const ids: Record<string, bigint> = {};
   const users: Record<string, bigint> = {};
   const roleIds: bigint[] = [];
@@ -128,28 +127,7 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   });
 
   it('US1-5 FR-002 T10 입하에 IQC LOT 이 둘이어도 입하 1건에 알림 1건, 내용에 LOT 수·공급사', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/logistics/inbound-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
-        supplierId: Number(ids.supplier),
-        plantId: Number(ids.plant),
-        receiptDatetime: AT,
-        businessDate: DAY,
-        occurredAt: AT,
-        exceptionTypeCode: 'CUSTOMER_SUPPLY',
-        exceptionReason: '무발주 도착',
-        lines: [1, 2].map((serial) => ({
-          itemId: Number(ids.itemIqc),
-          receivedQty: 10,
-          uomId: Number(ids.uom),
-          supplierLotNo: `${PREFIX}IQC|10|261028|${PREFIX}S|${String(serial).padStart(4, '0')}`,
-          supplierLotMissing: false,
-        })),
-      })
-      .expect(201);
-    const receiptId = BigInt(response.body.inboundReceipt.inboundReceiptId);
+    const receiptId = await receiveAndClose(2);
 
     const events = await eventsOf('IQC_INSPECTION_REQUESTED', 'INBOUND_RECEIPT', receiptId);
     expect(events).toHaveLength(1);
@@ -168,43 +146,19 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   });
 
   it('US1-5 FR-002 T10 :split·:per-line 도 입하 1건에 알림 1건이다', async () => {
-    const part = () => ({ supplierId: Number(ids.supplier), plantId: Number(ids.plant), receiptDatetime: AT, lines: [iqcLine()] });
-    const split = await request(app.getHttpServer())
-      .post('/api/logistics/inbound-receipts:split')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({ mode: 'BOTH', normal: part(), excess: part(), businessDate: DAY, occurredAt: AT })
-      .expect(201);
-    const perLine = await request(app.getHttpServer())
-      .post('/api/logistics/inbound-receipts:per-line')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
-        supplierId: Number(ids.supplier),
-        plantId: Number(ids.plant),
-        receiptDatetime: AT,
-        businessDate: DAY,
-        occurredAt: AT,
-        exceptionTypeCode: 'CUSTOMER_SUPPLY',
-        exceptionReason: '무발주 도착',
-        lines: [iqcLine(), iqcLine()],
-      })
-      .expect(201);
+    // 옛 :split·:per-line 은 닫혔다(FR-036) — 입하 여러 건은 입하 LOT 을 차례로 마감해 세운다.
+    const receiptIds: bigint[] = [];
+    for (let index = 0; index < 4; index += 1) receiptIds.push(await receiveAndClose(1));
 
-    const receiptIds = [
-      ...split.body.created.map((r: { inboundReceiptId: number }) => r.inboundReceiptId),
-      ...perLine.body.created.map((r: { inboundReceipt: { inboundReceiptId: number } }) => r.inboundReceipt.inboundReceiptId),
-    ];
     expect(receiptIds).toHaveLength(4);
     for (const receiptId of receiptIds) {
-      const events = await eventsOf('IQC_INSPECTION_REQUESTED', 'INBOUND_RECEIPT', BigInt(receiptId));
+      const events = await eventsOf('IQC_INSPECTION_REQUESTED', 'INBOUND_RECEIPT', receiptId);
       expect(events).toHaveLength(1);
       expect(events[0].payload).toMatchObject({ lot_count: 1 });
     }
   });
 
-  it('US1-5 T10 POST /trace/lots 단건 등록이 IQC 의뢰를 세우면 LOT 1건에 알림 1건', async () => {
-    // 공장을 다시 쓰므로 이 실행의 공급사가 만든 입하에 줄을 단다.
+  it('FR-036 POST /trace/lots 단건 등록(입하 원천)은 닫혀 409 STATE_LOCKED 이고 LOT·알림이 서지 않는다', async () => {
     const receipt = await prisma.inbound_receipt.findFirstOrThrow({
       where: { plant_id: ids.plant, supplier_id: ids.supplier },
       select: { inbound_receipt_id: true },
@@ -221,7 +175,7 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
         status_code: 'REGISTERED',
       },
     });
-    const created = await request(app.getHttpServer())
+    const closed = await request(app.getHttpServer())
       .post('/api/trace/lots')
       .set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID())
@@ -237,23 +191,22 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
         businessDate: DAY,
         occurredAt: AT,
       })
-      .expect(201);
-    const lotId = BigInt(created.body.lot.lotId);
-
-    const events = await eventsOf('IQC_INSPECTION_REQUESTED', 'LOT', lotId);
-    expect(events).toHaveLength(1);
-    expect(events[0].payload).toMatchObject({ receipt_no: created.body.lot.lotNo, lot_count: 1, supplier: `${PREFIX} 공급사` });
+      .expect(409);
+    expect(closed.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    expect(await prisma.lot.count({ where: { source_type_code: 'INBOUND_RECEIPT_LINE', source_id: line.inbound_receipt_line_id } })).toBe(0);
   });
 
-  function iqcLine() {
-    lotSerial += 1;
-    return {
-      itemId: Number(ids.itemIqc),
-      receivedQty: 10,
-      uomId: Number(ids.uom),
-      supplierLotNo: `${PREFIX}IQC|10|261028|${PREFIX}S|${String(lotSerial).padStart(4, '0')}`,
-      supplierLotMissing: false,
-    };
+  /** 검사 필요 품목 LOT `lotCount` 개를 발행·받기·입하 마감한다 — 마감이 입하 LOT IQC 요청과 T10 을 세운다. 그 입하 id. */
+  async function receiveAndClose(lotCount: number): Promise<bigint> {
+    const fx: InboundLotFixture = { app, issuer: sessionAuth(cookie), receiver: sessionAuth(cookie), businessDate: DAY };
+    const { inboundLot } = await issueAndReceive(fx, {
+      plantId: Number(ids.plant), supplierId: Number(ids.supplier), itemId: Number(ids.itemIqc), lotQty: 10, lotCount,
+    });
+    await closeInboundLotFixture(fx, inboundLot.inboundLotId);
+    const row = await prisma.inbound_lot.findUniqueOrThrow({
+      where: { inbound_lot_id: BigInt(inboundLot.inboundLotId) }, select: { inbound_receipt_line: { select: { inbound_receipt_id: true } } },
+    });
+    return row.inbound_receipt_line.inbound_receipt_id;
   }
 
   async function eventsOf(type: string, aggregate: string, id: bigint) {
@@ -528,7 +481,7 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     const role = await prisma.role.create({ data: { role_code: `${PREFIX}_R`, role_name: '인계 생산 시험' } });
     roleIds.push(role.role_id);
     await prisma.role_permission.createMany({
-      data: ['W-CO-14', 'W-02-04', 'W-01-03', 'W-04-01', 'W-03-10', 'M-01-01'].map((code) => ({ role_id: role.role_id, permission_code: code })),
+      data: ['W-CO-14', 'W-02-04', 'W-01-03', 'W-04-01', 'W-03-10', 'M-01-01', 'W-01-14', 'M-01-03'].map((code) => ({ role_id: role.role_id, permission_code: code })),
     });
     await prisma.user_role.create({ data: { app_user_id: users.ADMIN, role_id: role.role_id } });
     cookie = `${SESSION_COOKIE}=${app.get(JwtService).sign({ sub: Number(users.ADMIN), typ: 'session' })}`;
@@ -565,8 +518,10 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   async function deleteDocuments(): Promise<void> {
     const requests = `SELECT shipment_request_id FROM logistics.shipment_request WHERE customer_id IN (SELECT partner_id FROM mdm.partner WHERE partner_code LIKE '${ROOT}%')`;
     const lots = `SELECT lot_id FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${ROOT}%')`;
+    const inboundLots = `SELECT inbound_lot_id FROM trace.inbound_lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${ROOT}%')`;
     for (const statement of [
-      `DELETE FROM quality.inspection_request WHERE (target_type_code = 'SHIPMENT_REQUEST' AND target_id IN (${requests})) OR lot_id IN (${lots})`,
+      `DELETE FROM quality.inspection_request_event WHERE inspection_request_id IN (SELECT inspection_request_id FROM quality.inspection_request WHERE inbound_lot_id IN (${inboundLots}))`,
+      `DELETE FROM quality.inspection_request WHERE (target_type_code = 'SHIPMENT_REQUEST' AND target_id IN (${requests})) OR lot_id IN (${lots}) OR inbound_lot_id IN (${inboundLots})`,
       `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (${requests})`,
       `DELETE FROM logistics.shipment_request WHERE shipment_request_id IN (${requests})`,
     ]) {

@@ -688,7 +688,10 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
     return response.body.goodsIssue.goodsIssueId as number;
   }
 
-  /** P/O 는 직접 INSERT(등록은 이 스위트 밖이다) · 입하 API 가 `received_qty` 를 올린다. */
+  /**
+   * P/O 는 직접 INSERT(등록은 이 스위트 밖이다). 입하도 옛 입하 API(이제 닫힘 · 피처 005 FR-036)가 쓰던 이전 데이터 모양 그대로
+   * 직접 넣는다 — 줄 `lot_id` 가 그 줄 원천 LOT 하나, P/O 배정 행과 `received_qty` 증가.
+   */
   async function inboundAgainstOrder(
     receivedQty: number,
   ): Promise<{ inboundReceiptId: number; purchaseOrderLineId: number }> {
@@ -715,31 +718,49 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
         uom_id: BigInt(uomId),
       },
     });
-    const response = await request(app.getHttpServer())
-      .post('/api/logistics/inbound-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .set('X-Worker-No', 'W-0001')
-      .send({
-        supplierId: Number(supplier.partner_id),
-        plantId,
-        receiptDatetime: AT,
-        businessDate: DAY,
-        occurredAt: AT,
-        lines: [
-          {
-            itemId,
-            purchaseOrderLineId: Number(line.purchase_order_line_id),
-            receivedQty,
-            uomId,
-            supplierLotNo: supplierLotNoOf(inboundSeq),
-            supplierLotMissing: false,
-          },
-        ],
-      })
-      .expect(201);
+    const receipt = await prisma.inbound_receipt.create({
+      data: {
+        inbound_receipt_no: `${PREFIX}-IRP-${inboundSeq}`,
+        supplier_id: supplier.partner_id,
+        plant_id: BigInt(plantId),
+        receipt_datetime: new Date(AT),
+        status_code: 'REGISTERED',
+      },
+    });
+    const inboundLine = await prisma.inbound_receipt_line.create({
+      data: {
+        inbound_receipt_id: receipt.inbound_receipt_id,
+        line_no: 1,
+        purchase_order_line_id: line.purchase_order_line_id,
+        item_id: BigInt(itemId),
+        received_qty: receivedQty,
+        uom_id: BigInt(uomId),
+        supplier_lot_no: supplierLotNoOf(inboundSeq),
+        supplier_lot_label_attached: true,
+        inspection_required: false,
+        status_code: 'REGISTERED',
+      },
+    });
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: supplierLotNoOf(inboundSeq),
+        item_id: BigInt(itemId),
+        lot_type_code: 'MATERIAL',
+        plant_id: BigInt(plantId),
+        initial_qty: receivedQty,
+        uom_id: BigInt(uomId),
+        source_type_code: 'INBOUND_RECEIPT_LINE',
+        source_id: inboundLine.inbound_receipt_line_id,
+        status_code: 'NORMAL',
+      },
+    });
+    await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: inboundLine.inbound_receipt_line_id }, data: { lot_id: lot.lot_id } });
+    await prisma.inbound_receipt_po_allocation.create({
+      data: { inbound_receipt_line_id: inboundLine.inbound_receipt_line_id, purchase_order_line_id: line.purchase_order_line_id, allocated_qty: receivedQty },
+    });
+    await prisma.purchase_order_line.update({ where: { purchase_order_line_id: line.purchase_order_line_id }, data: { received_qty: receivedQty } });
     return {
-      inboundReceiptId: response.body.inboundReceipt.inboundReceiptId as number,
+      inboundReceiptId: Number(receipt.inbound_receipt_id),
       purchaseOrderLineId: Number(line.purchase_order_line_id),
     };
   }

@@ -1,7 +1,8 @@
 /**
  * 입고 관리 허브 — 발주 하나의 LOT 진행(#805 · omf-all-around#168 · 장부 P-110).
  *
- * 실제 API 로 잇는다 — LOT 등록(P-01-01) · 판정(W-01-01) · 입고(W-01-10). 적치 완료만 행을 바꾼다
+ * 실제 API 로 잇는다 — 판정(W-01-01) · 입고(W-01-10). LOT 은 옛 등록 경로가 남긴 이전 데이터 모양으로 넣고
+ * (`issueLabel` — 옛 경로는 닫혔다 · 피처 005 FR-036), 적치 완료만 행을 바꾼다
  * (단말 작업자·버전 머리가 드는 쓰기라 이 시험의 관심이 아니다).
  */
 import { INestApplication } from '@nestjs/common';
@@ -60,6 +61,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   const validate = responseValidator();
   const ids: Record<string, bigint> = {};
   let lineNo = 0;
+  let lotSeq = 0;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -423,24 +425,41 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     return issueLabel(item, await inboundLine(item, orderLineId, qty, allocated), qty);
   }
 
-  /** POP 「자재LOT 등록·라벨 발행」 — 라인 수량 전체로 LOT 하나. */
+  /**
+   * 옛 POP 「자재LOT 등록·라벨 발행」이 남긴 이전 데이터 모양 — 라인 수량 전체로 LOT 하나, 줄 `lot_id` 가 그 LOT.
+   * 옛 등록 경로는 닫혔고(피처 005 FR-036) 새 흐름은 P/O 배정을 마감 때 스스로 정해 이 시험이 고른 발주 라인·몫을
+   * 만들 수 없다 — 그래서 옛 경로가 쓰던 칸(`LotRegistryService.createWithin`)을 그대로 넣는다: 검사 대상이면
+   * 검사 대기 LOT + 수입검사 대기 보류 + LOT 단위 IQC 의뢰, 아니면 정상 LOT. 생애는 기존 자재 LOT 처럼 NULL.
+   */
   async function issueLabel(item: string, lineId: number, qty: number) {
-    const created = await request(app.getHttpServer())
-      .post('/api/trace/lots')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({
-        itemId: Number(ids[item]), lotTypeCode: 'MATERIAL', plantId: Number(ids.plant), initialQty: qty,
-        uomId: Number(ids.uom), sourceTypeCode: 'INBOUND_RECEIPT_LINE', sourceId: lineId, numberSourceCode: 'MES',
-        businessDate: DAY, occurredAt: `${DAY}T02:00:00.000Z`,
-      })
-      .expect(201);
-    const lotId = created.body.lot.lotId as number;
-    const iqc = await prisma.inspection_request.findFirst({
-      where: { lot_id: BigInt(lotId), inspection_type_code: 'IQC' },
-      select: { inspection_request_id: true },
+    lotSeq += 1;
+    const inspected = item === 'iqcItem';
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-L${lotSeq}`, item_id: ids[item], lot_type_code: 'MATERIAL', plant_id: ids.plant, initial_qty: qty,
+        uom_id: ids.uom, source_type_code: 'INBOUND_RECEIPT_LINE', source_id: BigInt(lineId),
+        status_code: inspected ? 'INSPECTION_PENDING' : 'NORMAL', created_by: ids.user,
+      },
     });
-    return { lotId, lineId, requestId: Number(iqc?.inspection_request_id ?? 0) };
+    let requestId = 0;
+    if (inspected) {
+      await prisma.lot_hold.create({
+        data: {
+          lot_id: lot.lot_id, reason_code: 'INCOMING_INSPECTION_WAIT', status_code: 'HELD', target_lot_status_code: 'INSPECTION_PENDING',
+          held_by: ids.user, held_at: new Date(`${DAY}T02:00:00.000Z`), created_by: ids.user,
+        },
+      });
+      const iqc = await prisma.inspection_request.create({
+        data: {
+          inspection_request_no: `${PREFIX}-IQC-${lotSeq}`, inspection_type_code: 'IQC', target_type_code: 'LOT', target_id: lot.lot_id,
+          item_id: ids[item], lot_id: lot.lot_id, target_qty: qty, uom_id: ids.uom, status_code: 'REQUESTED',
+          requested_at: new Date(`${DAY}T02:00:00.000Z`), created_by: ids.user,
+        },
+      });
+      requestId = Number(iqc.inspection_request_id);
+    }
+    await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: BigInt(lineId) }, data: { lot_id: lot.lot_id } });
+    return { lotId: Number(lot.lot_id), lineId, requestId };
   }
 
   async function draft(requestId: number, qty: number): Promise<number> {
@@ -533,6 +552,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
 
   async function makeUser(): Promise<void> {
     const user = await prisma.app_user.create({ data: { login_id: LOGIN_ID, user_name: '입고진행', status_code: 'EMPLOYED' } });
+    ids.user = user.app_user_id;
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '입고진행용' } });
     await prisma.role_permission.createMany({ data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })) });

@@ -5,6 +5,7 @@
  * 보류를 건다 · **원장이 움직인 LOT 은 수량을 못 바꾼다**(A1 이 세운 표를 되읽는다).
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
@@ -18,8 +19,10 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { InventoryPostingModule, InventoryPostingService } from '../src/core/inventory-posting';
 import { PostingEndpoint } from '../src/core/inventory-posting/posting.types';
+import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
+import { InboundLotFixture, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
 
 const LOGIN_ID = 'e2e-lot-probe';
 const NOPERM_ID = 'e2e-lot-noperm';
@@ -36,6 +39,8 @@ const SUPPLIER_CODE = '100019';
 const ROLE = 'E2E_LOT';
 const PERMISSIONS = ['M-01-02', 'P-01-01', 'M-01-04', 'M-01-13'];
 const DAY = '2026-05-01';
+const TZ = 'Asia/Ho_Chi_Minh';
+const WORKER_NO = `${PREFIX}-W1`;
 
 function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
@@ -74,8 +79,11 @@ describe('LOT (e2e)', () => {
   let itemId: number;
   let uomId: number;
   let here: PostingEndpoint;
+  let supplierId: number;
   let inboundReceiptId: bigint;
   let lineNo = 0;
+  let fx: InboundLotFixture;
+  const keys = new Set<string>();
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -91,6 +99,10 @@ describe('LOT (e2e)', () => {
     await makeUsers();
     await makeMasters();
     iqcRouteId = await seedRoute(prisma, 'IQC_SKIP', [probeUserId]);
+    fx = {
+      app, issuer: terminalAuth(await terminalToken('POP'), WORKER_NO), receiver: terminalAuth(await terminalToken('MOBILE'), WORKER_NO),
+      businessDate: localDate(new Date(), TZ), keys,
+    };
   });
 
   afterAll(async () => {
@@ -107,60 +119,36 @@ describe('LOT (e2e)', () => {
       .expect(403);
   });
 
-  it('⛔ SUPPLIER 인데 번호가 없으면 400 이다', async () => {
-    const rejected = await post(await body({ numberSourceCode: 'SUPPLIER' })).expect(400);
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'lotNo', code: 'REQUIRED' });
-  });
-
-  it('⛔ MES 인데 번호를 보내면 400 이다', async () => {
-    const rejected = await post(
-      await body({ numberSourceCode: 'MES', lotNo: `${PREFIX}-손으로` }),
-    ).expect(400);
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'lotNo', code: 'INVALID' });
-  });
-
-  it('⭐ SUPPLIER 는 스캔값이 그대로 번호가 된다', async () => {
-    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SCAN-1` });
-    expect(lot.lotNo).toBe(`${PREFIX}-SCAN-1`);
-  });
-
-  it('⛔ 같은 공장에 같은 번호는 400 이다 — 재시도해도 안 풀린다', async () => {
-    await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-DUP` });
-
-    const rejected = await post(
-      await body({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-DUP` }),
-    ).expect(400);
-    expect(rejected.body.errors[0]).toMatchObject({
-      field: 'lotNo',
-      code: 'UNIQUE_VIOLATION',
-      uniqueScope: ['plantId', 'lotNo'],
-    });
-  });
-
-  it('⭐ MES 는 서버가 구분자 5칸으로 매긴다 — 화면은 번호를 안 보낸다. 두 번째 등록은 번호가 오른다', async () => {
-    const first = await create({ numberSourceCode: 'MES' });
-    const second = await create({ numberSourceCode: 'MES' });
-
-    // ⛔ 「M 으로 시작한다」가 아니다 — 입하에서 난 자재 LOT 은 `materialMesLotNo` 가 매기고
-    // 품목 코드로 «시작한다»(생산 LOT 만 기존 `mesLotNo` 의 M 체계를 쓴다 · #610).
-    // 이 스위트에서 처음 성공하는 MES 발번 둘이라 번호(마지막 4칸)가 0001·0002 로 오른다 —
-    // 같은 값이 그대로 「앞 4칸이 같은 LOT 끼리 센다」(결정 4)의 회귀 확인이다.
-    expect(first.lotNo).toBe(`${ITEM_CODE}|10|260501|${SUPPLIER_CODE}|0001`);
-    expect(second.lotNo).toBe(`${ITEM_CODE}|10|260501|${SUPPLIER_CODE}|0002`);
-  });
-
-  it('소수 수량(KG 등) 입하도 MES 발번이 된다 — 정수 9자리로 막던 옛 형식의 회귀 확인', async () => {
-    const lot = await create({ numberSourceCode: 'MES', initialQty: 12.5 });
-    expect(lot.lotNo).toBe(`${ITEM_CODE}|12.5|260501|${SUPPLIER_CODE}|0001`);
-  });
-
-  it('⭐ 등록 즉시 보류가 걸린다 — 화면이 보내지 않고 서버가 건다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
-    expect(lot.held).toBe(true);
-
-    const holds = await prisma.lot_hold.findMany({ where: { lot_id: lot.lotId } });
-    expect(holds).toHaveLength(1);
-    expect(holds[0]).toMatchObject({ reason_code: 'INCOMING_INSPECTION_WAIT', released_at: null });
+  /*
+   * FR-036 — 입하 원천 등록(`POST /trace/lots`)은 닫혔다. 서비스 검증(번호 출처·채번·식별자 유형·sourceId)보다 먼저 409 라
+   * 본문이 무엇이든 같다. 번호 출처·채번·등록 즉시 보류·무검사 입하 LOT·외부 식별자 동시 등록은 입하 LOT 받기가 맡는다.
+   */
+  it('FR-036 입하 원천 등록은 본문과 관계없이 409 STATE_LOCKED 다 — LOT·IQC 요청이 서지 않는다', async () => {
+    const before = await countsOfPlant();
+    for (const extra of [
+      { numberSourceCode: 'SUPPLIER' },
+      { numberSourceCode: 'MES', lotNo: `${PREFIX}-손으로` },
+      { numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SCAN-1` },
+      { numberSourceCode: 'MES' },
+      { numberSourceCode: 'MES', initialQty: 12.5 },
+      { numberSourceCode: 'MES', iqc: false },
+      {
+        numberSourceCode: 'SUPPLIER',
+        lotNo: `${PREFIX}-EXT`,
+        externalIdentifiers: [{ identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-SUP-9` }],
+      },
+      {
+        numberSourceCode: 'SUPPLIER',
+        lotNo: `${PREFIX}-BADEXT`,
+        externalIdentifiers: [{ identifierTypeCode: '없는유형', externalIdentifier: 'x' }],
+      },
+      { numberSourceCode: 'MES', sourceId: 999999999 },
+    ]) {
+      const rejected = await post(await body(extra));
+      expect([extra, rejected.status]).toEqual([extra, 409]);
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    }
+    expect(await countsOfPlant()).toEqual(before);
   });
 
   /**
@@ -171,7 +159,7 @@ describe('LOT (e2e)', () => {
    * **키가 생략된다**. 마지막 단언이 그 갈래를 함께 잠근다.
    */
   it('⭐⭐ R-9 — 보류의 lotStatusCode 는 target_lot_status_code 다(lot.status_code 의 「지금」이 아니다)', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
 
     const before = await detailOf(lot.lotId);
     const hold = before.holds[0] as { lotHoldId: number; lotStatusCode?: string };
@@ -192,51 +180,8 @@ describe('LOT (e2e)', () => {
     expect(legacy.holds[0]).not.toHaveProperty('lotStatusCode'); // 옛 행(백필 안 함) — 널 금지로 키 생략
   });
 
-  it('⭐ 등록하면 상태가 검사 대기다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
-    expect(lot.statusCode).toBe('INSPECTION_PENDING');
-  });
-
-  /* omf-all-around#105 — 무검사(IQC 비대상) 입하 LOT 은 검사를 하지 않는다: 보류 없이 정상이다. */
-  it('⭐ 무검사 입하 LOT 은 보류 없이 정상으로 선다', async () => {
-    const lot = await create({ numberSourceCode: 'MES', iqc: false });
-    expect(lot.statusCode).toBe('NORMAL');
-    expect(lot.held).toBe(false);
-    expect(await prisma.lot_hold.count({ where: { lot_id: lot.lotId } })).toBe(0);
-    expect(await prisma.inspection_request.count({ where: { lot_id: BigInt(lot.lotId) } })).toBe(0);
-  });
-
-  it('⭐ 외부 식별자를 함께 받는다', async () => {
-    const lot = await create({
-      numberSourceCode: 'SUPPLIER',
-      lotNo: `${PREFIX}-EXT`,
-      externalIdentifiers: [
-        { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-SUP-9` },
-      ],
-    });
-
-    const detail = await detailOf(lot.lotId);
-    expect(detail.externalIdentifiers).toHaveLength(1);
-    expect(detail.externalIdentifiers[0]).toMatchObject({
-      identifierTypeCode: 'SUPPLIER_LOT',
-      externalIdentifier: `${PREFIX}-SUP-9`,
-    });
-  });
-
-  it('⛔ 마스터에 없는 식별자 유형은 400 이다', async () => {
-    await post(
-      await body({
-        numberSourceCode: 'SUPPLIER',
-        lotNo: `${PREFIX}-BADEXT`,
-        externalIdentifiers: [
-          { identifierTypeCode: '없는유형', externalIdentifier: 'x' },
-        ],
-      }),
-    ).expect(400);
-  });
-
   it('⭐ 상세가 «해제되지 않은» 보류만 준다 — 푼 것은 이력이지 지금이 아니다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     expect((await detailOf(lot.lotId)).holds).toHaveLength(1);
 
     await release(lot.lotId);
@@ -247,27 +192,23 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 목록이 계약 스키마를 만족한다', async () => {
-    await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-LIST` });
+    await newLot();
     const body = await list(`plantId=${plantId}`);
     expect(body.items.length).toBeGreaterThan(0);
   });
 
   it('⭐ lotNo 는 정확 일치다 — 스캔값 하나로 한 건을 집는다', async () => {
-    await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-EXACT-1` });
-    await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-EXACT-12` });
+    await newLot(`${PREFIX}-EXACT-1`);
+    await newLot(`${PREFIX}-EXACT-12`);
 
     const exact = await list(`lotNo=${PREFIX}-EXACT-1`);
     expect(exact.items.map((l) => l.lotNo)).toEqual([`${PREFIX}-EXACT-1`]);
   });
 
   it('⭐ q 는 번호와 외부 식별자를 함께 본다', async () => {
-    const lot = await create({
-      numberSourceCode: 'SUPPLIER',
-      lotNo: `${PREFIX}-QNO`,
-      externalIdentifiers: [
-        { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-찾을값` },
-      ],
-    });
+    const lot = await newLot(`${PREFIX}-QNO`, [
+      { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-찾을값` },
+    ]);
 
     const byIdentifier = await list(`q=${encodeURIComponent(`${PREFIX}-찾을값`)}`);
     expect(byIdentifier.items.map((l) => l.lotId)).toContain(lot.lotId);
@@ -277,8 +218,8 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ heldOnly 가 보류 중인 것만 준다', async () => {
-    const held = await create({ numberSourceCode: 'MES' });
-    const released = await create({ numberSourceCode: 'MES' });
+    const held = await newLot();
+    const released = await newLot();
     await release(released.lotId);
 
     const ids = (await list(`plantId=${plantId}&heldOnly=true`)).items.map((l) => l.lotId);
@@ -287,7 +228,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⛔ 원장이 움직인 LOT 은 수량을 바꿀 수 없다 — A1 이 세운 표를 되읽는다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const etag = await etagOf(lot.lotId);
 
     await prisma.$transaction((tx) =>
@@ -319,7 +260,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 원장이 안 움직였으면 수량을 고칠 수 있다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const etag = await etagOf(lot.lotId);
 
     const updated = await request(app.getHttpServer())
@@ -334,7 +275,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⛔ 수정이 If-Match 를 쓰고, 낡은 값은 409 다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const etag = await etagOf(lot.lotId);
 
     await request(app.getHttpServer())
@@ -355,13 +296,6 @@ describe('LOT (e2e)', () => {
     expect(stale.body.conflictCause).toBe('user');
   });
 
-  it('⛔ 없는 sourceId 는 400 INVALID 다 — 고아 참조를 더 이상 안 받는다', async () => {
-    const rejected = await post(
-      await body({ numberSourceCode: 'MES', sourceId: 999999999 }),
-    ).expect(400);
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'sourceId', code: 'INVALID' });
-  });
-
   it('⛔ 없는 LOT 은 404 다', async () => {
     await request(app.getHttpServer())
       .get('/api/trace/lots/999999999')
@@ -370,14 +304,10 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 외부식별자 목록이 등록 때 넣은 식별자를 id 오름차순으로 준다', async () => {
-    const lot = await create({
-      numberSourceCode: 'SUPPLIER',
-      lotNo: `${PREFIX}-EXTLIST`,
-      externalIdentifiers: [
-        { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-EL-1` },
-        { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-EL-2` },
-      ],
-    });
+    const lot = await newLot(undefined, [
+      { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-EL-1` },
+      { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-EL-2` },
+    ]);
 
     const response = await request(app.getHttpServer())
       .get(`/api/trace/lots/${lot.lotId}/external-identifiers`)
@@ -393,7 +323,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 식별자가 없는 LOT 은 빈 목록이다 — 404 가 아니다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
 
     const response = await request(app.getHttpServer())
       .get(`/api/trace/lots/${lot.lotId}/external-identifiers`)
@@ -410,7 +340,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 보류 목록 기본값은 해제되지 않은 것만 준다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     // 등록이 이미 건 보류(해제 안 됨) 1건에, 해제된 보류 1건을 더 심는다.
     await prisma.lot_hold.create({
       data: {
@@ -438,7 +368,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ activeOnly=false 는 「해제된 것만」이 아니라 «전체»다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     await prisma.lot_hold.create({
       data: {
         lot_id: BigInt(lot.lotId),
@@ -461,7 +391,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ R-5 — 보류 정렬은 `heldAt desc` · 동률은 `lotHoldId desc` 로 닫는다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     // 등록이 만든 보류보다 «나중»이면서 서로 «동률»인 둘 — 방향과 2차 키를 함께 잠근다.
     const tie = new Date(Date.now() + 60_000);
     for (let i = 0; i < 2; i += 1) {
@@ -490,7 +420,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 보류 목록의 첫 행이 상세 GET 의 첫 보류와 완전히 같다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const detail = await detailOf(lot.lotId);
 
     const response = await request(app.getHttpServer())
@@ -511,14 +441,10 @@ describe('LOT (e2e)', () => {
   // ── PR ② 쓰기 2건 ───────────────────────────────────────────────────────
 
   it('⭐ 외부식별자 치환 — 빠진 기존 행이 사라지고 부모 ETag 가 +1 이다', async () => {
-    const lot = await create({
-      numberSourceCode: 'SUPPLIER',
-      lotNo: `${PREFIX}-EXTPUT`,
-      externalIdentifiers: [
-        { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-P-1` },
-        { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-P-2` },
-      ],
-    });
+    const lot = await newLot(undefined, [
+      { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-P-1` },
+      { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-P-2` },
+    ]);
     const etag = await etagOf(lot.lotId);
 
     const replaced = await putIdentifiers(lot.lotId, etag, [
@@ -538,13 +464,9 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 0행 치환은 전건 삭제다 — 계약이 minItems 를 안 걸었다', async () => {
-    const lot = await create({
-      numberSourceCode: 'SUPPLIER',
-      lotNo: `${PREFIX}-EXTZERO`,
-      externalIdentifiers: [
-        { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-Z-1` },
-      ],
-    });
+    const lot = await newLot(undefined, [
+      { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-Z-1` },
+    ]);
 
     const emptied = await putIdentifiers(lot.lotId, await etagOf(lot.lotId), []).expect(200);
     expect(emptied.body).toEqual({ items: [] });
@@ -552,7 +474,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 같은 멱등 키의 재전송은 한 번만 반영된다 — 버전이 두 번 오르지 않는다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const etag = await etagOf(lot.lotId);
     const items = [{ identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-IDEM` }];
     const idempotencyKey = key();
@@ -566,7 +488,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⛔ 치환의 If-Match 는 필수고, 낡은 값은 409 다 — 없는 LOT 은 404 다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const etag = await etagOf(lot.lotId);
 
     await request(app.getHttpServer())
@@ -585,7 +507,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⛔ 요청 «안» 5칸 중복은 400 UNIQUE_VIOLATION · partnerId 만 다르면 통과한다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const supplier = await prisma.partner.findFirstOrThrow({
       where: { partner_code: SUPPLIER_CODE },
     });
@@ -614,7 +536,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⛔ 마스터에 없는 유형·없는 거래처는 400 INVALID 다 — FK 위반이 500 으로 새지 않는다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
 
     const badCode = await putIdentifiers(lot.lotId, await etagOf(lot.lotId), [
       { identifierTypeCode: 'NO_SUCH_TYPE', externalIdentifier: `${PREFIX}-BAD` },
@@ -634,7 +556,8 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ IQC 생략 요청은 202 다 — 다형 축 세 칸이 서고 LOT 은 그대로다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    // 이전 데이터 LOT(버전 1) — 새 흐름 LOT 은 받기 전이(L4)가 버전을 올려 「그대로」를 버전 1 로 잴 수 없다. 입하 LOT 단위 생략은 S10(FR-032).
+    const lot = await legacyLot();
 
     const accepted = await requestIqcSkip(lot.lotId).expect(202);
     const validate = validator('POST /trace/lots/{lotId}:request-iqc-skip', 202);
@@ -660,7 +583,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⛔ 사번 헤더가 없으면 400 REQUIRED · 결재선이 없으면 400 ROUTE_NOT_FOUND 다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
 
     const noWorker = await requestIqcSkip(lot.lotId, { workerNo: null }).expect(400);
     expect(noWorker.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
@@ -680,12 +603,12 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ 자격 두 축은 «서로 다른» 코드로 갈린다 — 원천 INVALID · 상태 STATE_LOCKED', async () => {
-    const notInbound = await create({ numberSourceCode: 'MES' });
+    const notInbound = await newLot();
     await prisma.lot.update({
       where: { lot_id: notInbound.lotId },
       data: { source_type_code: 'WORK_ORDER' },
     });
-    const notPending = await create({ numberSourceCode: 'MES' });
+    const notPending = await newLot();
     await prisma.lot.update({
       where: { lot_id: notPending.lotId },
       data: { status_code: 'NORMAL' },
@@ -714,7 +637,7 @@ describe('LOT (e2e)', () => {
   });
 
   it('⛔ 권한이 없으면 쓰기 둘 다 403 이다', async () => {
-    const lot = await create({ numberSourceCode: 'MES' });
+    const lot = await newLot();
     const etag = await etagOf(lot.lotId);
 
     await request(app.getHttpServer())
@@ -726,59 +649,6 @@ describe('LOT (e2e)', () => {
       .expect(403);
 
     await requestIqcSkip(lot.lotId, { as: noPermCookie }).expect(403);
-  });
-
-  // ── omf-all-around#18 — SUPPLIER(사전부착)도 IQC 대상 라인이면 IQC 의뢰를 만든다 ──────────
-  // 순서가 뜻이다: 기준이 «없을 때» 두 건을 먼저 보고, 마지막 건이 확정 기준을 세운다.
-
-  it('⭐ SUPPLIER — IQC 대상이 아닌 라인은 의뢰를 만들지 않는다', async () => {
-    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOIQC`, iqc: false });
-
-    expect(await prisma.inspection_request.count({ where: { lot_id: BigInt(lot.lotId) } })).toBe(0);
-  });
-
-  /* omf-all-around#101 결정 A — 기준이 없어도 LOT·라벨을 막지 않고 기준 칸이 빈 IQC 의뢰를 세운다. */
-  it('⭐ SUPPLIER — IQC 대상 라인에 확정 기준이 없어도 LOT 이 서고 기준 빈 IQC 의뢰가 선다', async () => {
-    const sourceId = await newLine(10, true);
-    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOPLAN`, sourceId });
-
-    const requests = await prisma.inspection_request.findMany({ where: { lot_id: BigInt(lot.lotId) } });
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ inspection_type_code: 'IQC', status_code: 'REQUESTED', inspection_plan_version_id: null });
-  });
-
-  it('⭐ SUPPLIER — IQC 대상 라인에 확정 기준이 있으면 LOT 과 함께 IQC 의뢰(REQUESTED)가 선다', async () => {
-    const plan = await prisma.inspection_plan.create({
-      data: {
-        inspection_plan_code: `${PREFIX}-IQC`,
-        inspection_plan_name: 'LOT검사 입하검사기준',
-        inspection_type_code: 'IQC',
-        item_id: BigInt(itemId),
-        is_active: true,
-      },
-    });
-    const version = await prisma.inspection_plan_version.create({
-      data: {
-        inspection_plan_id: plan.inspection_plan_id,
-        plan_version: 1,
-        effective_from: new Date('2026-01-01T00:00:00.000Z'),
-        sampling_method_code: 'FULL',
-        inspection_frequency_code: 'EVERY_LOT',
-        status_code: 'CONFIRMED',
-      },
-    });
-    const sourceId = await newLine(10, true);
-
-    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-IQC`, sourceId });
-
-    const requests = await prisma.inspection_request.findMany({ where: { lot_id: BigInt(lot.lotId) } });
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
-      inspection_type_code: 'IQC',
-      status_code: 'REQUESTED',
-      target_type_code: 'LOT',
-      inspection_plan_version_id: version.inspection_plan_version_id,
-    });
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
@@ -834,13 +704,56 @@ describe('LOT (e2e)', () => {
       .send(payload);
   }
 
-  /** ⚠ 201 은 `Lot` 이 아니라 상세 봉투(`lot`·`externalIdentifiers`·`holds`)를 준다. */
-  async function create(extra: Record<string, unknown>): Promise<LotBody> {
-    const created = await post(await body(extra)).expect(201);
-    const validate = validator('POST /trace/lots', 201);
-    expect(validate(created.body)).toBe(true);
-    expect(validate.errors ?? []).toEqual([]);
-    return created.body.lot as LotBody;
+  /**
+   * 입하 LOT 받기로 LOT 하나(피처 005) — 발행 묶음 1개 → `:receive`. 품목이 검사 필요라 검사 대기·입고검사 대기 보류로 선다(마감 전).
+   * `lotNo` 는 옛 SUPPLIER 등록(스캔값 = 번호)을 대신해 번호를 바꿔 둔다 — 사전부착 라벨은 MES 번호 형식만 받는다.
+   * `externalIdentifiers` 는 옛 등록 때 함께 넣던 식별자 — 치환(PUT)으로 넣는다.
+   */
+  async function newLot(lotNo?: string, externalIdentifiers?: Record<string, unknown>[]): Promise<LotBody> {
+    const { lots } = await issueAndReceive(fx, { plantId, supplierId, itemId, lotQty: 10, lotCount: 1 });
+    const lotId = lots[0].lotId;
+    if (lotNo !== undefined) await prisma.lot.update({ where: { lot_id: BigInt(lotId) }, data: { lot_no: lotNo } });
+    if (externalIdentifiers !== undefined) {
+      await putIdentifiers(lotId, await etagOf(lotId), externalIdentifiers).expect(200);
+    }
+    return (await detailOf(lotId)).lot;
+  }
+
+  /** 옛 등록 경로(이제 닫힘 · FR-036)가 쓰던 이전 데이터 모양 — 검사 대기 LOT(버전 1) + 수입검사 대기 보류 + 줄 `lot_id`. */
+  async function legacyLot(): Promise<LotBody> {
+    const lineId = await newLine(10, true);
+    const at = new Date(`${DAY}T02:00:00.000Z`);
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LEGACY-${lineId}`, item_id: BigInt(itemId), lot_type_code: 'MATERIAL', plant_id: BigInt(plantId), initial_qty: 10,
+        uom_id: BigInt(uomId), source_type_code: 'INBOUND_RECEIPT_LINE', source_id: BigInt(lineId), status_code: 'INSPECTION_PENDING',
+        created_by: probeUserId,
+      },
+    });
+    await prisma.lot_hold.create({
+      data: {
+        lot_id: lot.lot_id, reason_code: 'INCOMING_INSPECTION_WAIT', status_code: 'HELD', target_lot_status_code: 'INSPECTION_PENDING',
+        held_by: probeUserId, held_at: at, created_by: probeUserId,
+      },
+    });
+    await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: BigInt(lineId) }, data: { lot_id: lot.lot_id } });
+    return (await detailOf(Number(lot.lot_id))).lot;
+  }
+
+  async function countsOfPlant(): Promise<number[]> {
+    return Promise.all([
+      prisma.lot.count({ where: { plant_id: BigInt(plantId) } }),
+      prisma.inspection_request.count({ where: { item_id: BigInt(itemId) } }),
+    ]);
+  }
+
+  async function terminalToken(type: 'POP' | 'MOBILE'): Promise<string> {
+    const terminal = await prisma.terminal.create({
+      data: { terminal_code: `${PREFIX}-T-${type}`, plant_id: BigInt(plantId), terminal_type_code: type, status_code: 'RUNNING' },
+    });
+    return app.get(JwtService).sign({
+      sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId,
+    });
   }
 
   async function detailOf(
@@ -948,6 +861,7 @@ describe('LOT (e2e)', () => {
     const plant = await prisma.plant.create({
       data: {
         legal_entity_id: entity.legal_entity_id,
+        business_unit_id: unit.business_unit_id,
         plant_code: `${PREFIX}-P`,
         plant_name: 'LOT검사공장',
         timezone_code: 'Asia/Ho_Chi_Minh',
@@ -964,6 +878,8 @@ describe('LOT (e2e)', () => {
         item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
         lot_controlled: true,
+        // 이 스위트의 보류·검사 대기 단언은 «수입검사를 기다리는» 입하 LOT 의 것이다 — 받기가 품목 기준으로 건다.
+        inspection_required: true,
       },
     });
     itemId = Number(item.item_id);
@@ -993,9 +909,13 @@ describe('LOT (e2e)', () => {
       inventoryStatusCode: 'AVAILABLE',
     };
 
-    // 등록이 채우는 `inbound_receipt_line.lot_id` 의 상대 — 등록 경로가 없어 직접 심는다.
+    // FR-036 시험이 보내는 옛 모양 입하 줄(`sourceId`)의 머리 — 옛 등록 경로가 닫혀 직접 심는다.
     const supplier = await prisma.partner.create({
       data: { partner_code: SUPPLIER_CODE, partner_name: 'LOT검사공급사' },
+    });
+    supplierId = Number(supplier.partner_id);
+    await prisma.worker.create({
+      data: { worker_no: WORKER_NO, worker_name: 'LOT검사작업자', business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED' },
     });
     const receipt = await prisma.inbound_receipt.create({
       data: {
@@ -1051,6 +971,17 @@ describe('LOT (e2e)', () => {
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.inventory_balance
        WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code = '${ITEM_CODE}')`);
+    // 입하 LOT 받기(피처 005)가 남긴 행 — LOT·입하 LOT 보다 먼저 지운다.
+    const plants = `SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`;
+    const lots = `SELECT lot_id FROM trace.lot WHERE plant_id IN (${plants})`;
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM trace.inbound_lot_event WHERE inbound_lot_id IN (SELECT inbound_lot_id FROM trace.inbound_lot WHERE plant_id IN (${plants}))`,
+    );
+    await prisma.$executeRawUnsafe(`DELETE FROM trace.lot_lifecycle_history WHERE lot_id IN (${lots})`);
+    await prisma.$executeRawUnsafe(`DELETE FROM trace.lot_status_event WHERE lot_id IN (${lots})`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM quality.inspection_request WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code = '${ITEM_CODE}')`,
+    );
     await prisma.$executeRawUnsafe(`
       DELETE FROM trace.lot_external_identifier
        WHERE lot_id IN (SELECT lot_id FROM trace.lot
@@ -1071,6 +1002,11 @@ describe('LOT (e2e)', () => {
     await prisma.$executeRawUnsafe(`
       DELETE FROM trace.lot
        WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`);
+    const receipts = `SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`;
+    await prisma.$executeRawUnsafe(`DELETE FROM trace.inbound_lot WHERE plant_id IN (${plants})`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (${receipts})`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`);
+    await prisma.$executeRawUnsafe(`DELETE FROM trace.material_lot_batch WHERE plant_id IN (${plants})`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM quality.inspection_plan_version
        WHERE inspection_plan_id IN (
@@ -1081,6 +1017,13 @@ describe('LOT (e2e)', () => {
     await prisma.$executeRawUnsafe(
       `DELETE FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%'`,
     );
+    const keyList = [...keys].map((k) => `'${k}'`).join(',');
+    if (keyList !== '') await prisma.$executeRawUnsafe(`DELETE FROM app.idempotency_record WHERE idempotency_key IN (${keyList})`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM audit.audit_event WHERE terminal_id IN (SELECT terminal_id FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%')`,
+    );
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code = '${SUPPLIER_CODE}'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);

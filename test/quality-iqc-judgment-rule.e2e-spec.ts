@@ -1,11 +1,12 @@
 /**
  * IQC 판정 — 합격판정개수 기준 자동 판정과 다르면 변경 사유가 필요하다 (e2e · omf-all-around#125 · 장부 P-70).
  *
- * 실제 API 로 잇는다 — LOT 등록(P-01-01)이 품목 전용 IQC 기준 버전을 의뢰에 붙이고, 판정(W-01-01)이
+ * 실제 API 로 잇는다 — 입하 LOT 받기·마감(피처 005)이 입하 LOT 단위 IQC 요청에 품목 전용 IQC 기준 버전을 붙이고, 판정(W-01-01)이
  * `:confirm` 또는 `POST …/inspection-results` statusCode=CONFIRMED(오프라인 큐)로 확정한다.
  * 기준: 불합격 > 합격판정개수 → 불합격 · 아니면 보류 > 0 → 보류 · 아니면 합격. 합격판정개수가 없으면 규칙이 없다.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
@@ -13,7 +14,9 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { InboundLotFixture, closeInboundLotFixture, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
 
 const LOGIN_ID = 'e2e-iqc-judgment';
 const PASSWORD = 'IQC-판정-비밀번호';
@@ -26,6 +29,8 @@ const ROLE = 'E2E_IQC_JUDGMENT';
 const PERMISSIONS = ['P-01-01', 'W-01-01'];
 const DAY = '2026-10-20';
 const REASON = '육안 재확인 — 경미한 외관 불량, 사용 가능';
+const TZ = 'Asia/Ho_Chi_Minh';
+const WORKER_NO = `${PREFIX}-W1`;
 
 const key = (): string => randomUUID();
 
@@ -38,8 +43,9 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
   let itemWithoutAn: number;
   let uomId: number;
   let defectCodeId: number;
-  let inboundReceiptId: bigint;
-  let lineNo = 0;
+  let supplierId: number;
+  let fx: InboundLotFixture;
+  const keys = new Set<string>();
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -50,6 +56,10 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     await cleanup();
     await makeMasters();
     await makeUser();
+    fx = {
+      app, issuer: terminalAuth(await terminalToken('POP'), WORKER_NO), receiver: terminalAuth(await terminalToken('MOBILE'), WORKER_NO),
+      businessDate: localDate(new Date(), TZ), keys,
+    };
   });
 
   afterAll(async () => {
@@ -219,45 +229,29 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
   });
 
-  /** IQC 대상 입하 라인 + LOT 등록(실제 API) — 품목 전용 IQC 기준 버전이 의뢰에 붙는다. */
+  /**
+   * 검사 필요 품목의 입하 LOT 하나(실제 API) — 발행 묶음(LOT 1개 · 100) → `:receive` → 입하 마감. 마감이 입하 LOT 단위 IQC 요청을
+   * 세우고 품목 전용 IQC 기준 버전을 붙인다. 입하 LOT 에 LOT 이 하나라 요청 대상 = 그 LOT 이다.
+   */
   async function registerIqcLot(itemId: number): Promise<{ lotId: number; requestId: number }> {
-    lineNo += 1;
-    const line = await prisma.inbound_receipt_line.create({
-      data: {
-        inbound_receipt_id: inboundReceiptId,
-        line_no: lineNo,
-        item_id: BigInt(itemId),
-        received_qty: 100,
-        uom_id: BigInt(uomId),
-        supplier_lot_label_attached: false,
-        inspection_required: true,
-        status_code: 'REGISTERED',
-      },
-    });
-    const created = await request(app.getHttpServer())
-      .post('/api/trace/lots')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({
-        itemId,
-        lotTypeCode: 'MATERIAL',
-        plantId,
-        initialQty: 100,
-        uomId,
-        sourceTypeCode: 'INBOUND_RECEIPT_LINE',
-        sourceId: Number(line.inbound_receipt_line_id),
-        numberSourceCode: 'MES',
-        businessDate: DAY,
-        occurredAt: `${DAY}T02:00:00.000Z`,
-      })
-      .expect(201);
-    const lotId = created.body.lot.lotId as number;
+    const { lots, inboundLot } = await issueAndReceive(fx, { plantId, supplierId, itemId, lotQty: 100, lotCount: 1 });
+    const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
     const iqc = await prisma.inspection_request.findFirstOrThrow({
-      where: { lot_id: BigInt(lotId), inspection_type_code: 'IQC' },
+      where: { inbound_lot_id: BigInt(inboundLot.inboundLotId), inspection_type_code: 'IQC' },
       select: { inspection_request_id: true, inspection_plan_version_id: true },
     });
+    expect(Number(iqc.inspection_request_id)).toBe(closed.iqcRequestId);
     expect(iqc.inspection_plan_version_id).not.toBeNull();
-    return { lotId, requestId: Number(iqc.inspection_request_id) };
+    return { lotId: lots[0].lotId, requestId: Number(iqc.inspection_request_id) };
+  }
+
+  async function terminalToken(type: 'POP' | 'MOBILE'): Promise<string> {
+    const terminal = await prisma.terminal.create({
+      data: { terminal_code: `${PREFIX}-T-${type}`, plant_id: BigInt(plantId), terminal_type_code: type, status_code: 'RUNNING' },
+    });
+    return app.get(JwtService).sign({
+      sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId,
+    });
   }
 
   function resultBody(requestId: number, qty: { acceptedQty: number; rejectedQty: number; heldQty?: number }) {
@@ -341,11 +335,11 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: 'IQC판정법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
-    await prisma.business_unit.create({
+    const unit = await prisma.business_unit.create({
       data: { legal_entity_id: entity.legal_entity_id, business_unit_code: `${PREFIX}-BU`, business_unit_name: 'IQC판정사업부' },
     });
     const plant = await prisma.plant.create({
-      data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: 'IQC판정공장', timezone_code: 'Asia/Ho_Chi_Minh' },
+      data: { legal_entity_id: entity.legal_entity_id, business_unit_id: unit.business_unit_id, plant_code: `${PREFIX}-P`, plant_name: 'IQC판정공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
     plantId = Number(plant.plant_id);
     const uom = await prisma.uom.findFirstOrThrow();
@@ -378,13 +372,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     await planOf(withAn.item_id, 'AN', 5);
     await planOf(withoutAn.item_id, 'NOAN', null);
     const supplier = await prisma.partner.create({ data: { partner_code: SUPPLIER_CODE, partner_name: 'IQC판정공급사' } });
-    const receipt = await prisma.inbound_receipt.create({
-      data: {
-        inbound_receipt_no: `${PREFIX}-IR`, supplier_id: supplier.partner_id, plant_id: plant.plant_id,
-        receipt_datetime: new Date(`${DAY}T02:00:00.000Z`), status_code: 'REGISTERED',
-      },
-    });
-    inboundReceiptId = receipt.inbound_receipt_id;
+    supplierId = Number(supplier.partner_id);
     const code = await prisma.defect_code.create({ data: { defect_code: DEFECT_CODE, defect_name: 'IQC판정불량' } });
     defectCodeId = Number(code.defect_code_id);
     await prisma.process.upsert({
@@ -418,23 +406,47 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
 
   /** 이 스위트가 만든 행만 지운다 — 원장(TRUNCATE)은 건드리지 않는다(입고를 하지 않는다). */
   async function cleanup(): Promise<void> {
-    const lotsOfPlant = `SELECT lot_id FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
+    const plants = `SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`;
+    const lotsOfPlant = `SELECT lot_id FROM trace.lot WHERE plant_id IN (${plants})`;
     const items = `SELECT item_id FROM mdm.item WHERE item_code IN ('${ITEM_AN}', '${ITEM_NO_AN}')`;
+    const inboundLots = `SELECT inbound_lot_id FROM trace.inbound_lot WHERE plant_id IN (${plants})`;
+    const receipts = `SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`;
+    const requests = `SELECT inspection_request_id FROM quality.inspection_request WHERE item_id IN (${items})`;
+    const results = `SELECT inspection_result_id FROM quality.inspection_result WHERE inspection_request_id IN (${requests})`;
+    // 입하 마감이 남기는 IQC 인계 알림.
+    const events = `SELECT notification_event_id FROM app.notification_event
+      WHERE (aggregate_type_code = 'INBOUND_RECEIPT' AND aggregate_id IN (${receipts}))
+         OR (aggregate_type_code = 'INSPECTION_REQUEST' AND aggregate_id IN (${requests}))`;
+    const keyList = [...keys].map((k) => `'${k}'`).join(',');
     for (const sql of [
+      `DELETE FROM app.zalo_delivery WHERE notification_event_id IN (${events})`,
+      `DELETE FROM app.notification WHERE notification_event_id IN (${events})`,
+      `DELETE FROM app.notification_event WHERE notification_event_id IN (${events})`,
       `DELETE FROM quality.nonconformance_lot WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM quality.nonconformance WHERE item_id IN (${items})`,
       `DELETE FROM quality.defect_record WHERE defect_code_id IN (SELECT defect_code_id FROM quality.defect_code WHERE defect_code = '${DEFECT_CODE}')`,
-      `DELETE FROM quality.inspection_result WHERE inspection_request_id IN (SELECT inspection_request_id FROM quality.inspection_request WHERE lot_id IN (${lotsOfPlant}))`,
-      `DELETE FROM quality.inspection_request WHERE lot_id IN (${lotsOfPlant})`,
+      `DELETE FROM quality.inspection_request_event WHERE inspection_request_id IN (${requests})`,
+      `DELETE FROM quality.inspection_result_lot WHERE inspection_result_id IN (${results})`,
+      `DELETE FROM quality.inspection_result WHERE inspection_result_id IN (${results})`,
+      `DELETE FROM quality.inspection_request WHERE item_id IN (${items})`,
+      `DELETE FROM trace.inbound_lot_event WHERE inbound_lot_id IN (${inboundLots})`,
+      `DELETE FROM trace.lot_lifecycle_history WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM trace.lot_status_event WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM trace.lot_hold WHERE lot_id IN (${lotsOfPlant})`,
+      `DELETE FROM trace.lot_external_identifier WHERE lot_id IN (${lotsOfPlant})`,
       `UPDATE logistics.inbound_receipt_line SET lot_id = NULL WHERE lot_id IN (${lotsOfPlant})`,
-      `DELETE FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`,
-      `DELETE FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%')`,
-      `DELETE FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%'`,
+      `DELETE FROM trace.lot WHERE plant_id IN (${plants})`,
+      `DELETE FROM trace.inbound_lot WHERE plant_id IN (${plants})`,
+      `DELETE FROM logistics.inbound_receipt_po_allocation WHERE inbound_receipt_line_id IN (SELECT inbound_receipt_line_id FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (${receipts}))`,
+      `DELETE FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (${receipts})`,
+      `DELETE FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`,
+      `DELETE FROM trace.material_lot_batch WHERE plant_id IN (${plants})`,
       `DELETE FROM quality.inspection_plan_version WHERE inspection_plan_id IN (SELECT inspection_plan_id FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%')`,
       `DELETE FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%'`,
       `DELETE FROM quality.defect_code WHERE defect_code = '${DEFECT_CODE}'`,
+      ...(keyList === '' ? [] : [`DELETE FROM app.idempotency_record WHERE idempotency_key IN (${keyList})`]),
+      `DELETE FROM audit.audit_event WHERE terminal_id IN (SELECT terminal_id FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%')`,
+      `DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.partner WHERE partner_code = '${SUPPLIER_CODE}'`,
       `DELETE FROM mdm.item WHERE item_code IN ('${ITEM_AN}', '${ITEM_NO_AN}')`,
