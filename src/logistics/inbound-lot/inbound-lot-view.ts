@@ -119,7 +119,8 @@ export async function loadInboundLotViews(
       where: { inbound_lot_id: { in: ids }, event_type_code: 'RECEIPT_REOPENED' }, select: { inbound_lot_id: true }, distinct: ['inbound_lot_id'],
     }),
     reopenStatesOf(db, ids),
-    finalizeFactsOf(db, ids),
+    // 입하 중은 입고·처분 전이라 판정할 것이 없다 — PDA 받기 응답마다 도는 길이라 건너뛴다(진행 0·막힘 없음).
+    finalizeFactsOf(db, rows.filter((row) => row.status_code !== 'RECEIVING').map((row) => row.inbound_lot_id)),
     finalizers.length === 0 ? [] : db.app_user.findMany({ where: { app_user_id: { in: finalizers } }, select: { app_user_id: true, user_name: true } }),
   ]);
   const userName = new Map(users.map((user) => [user.app_user_id, user.user_name]));

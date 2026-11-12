@@ -60,6 +60,9 @@ export class InboundLotFinalizeService {
     const state = (await finalizeFactsOf(tx, [id])).get(id)?.state;
     if (state === undefined || !state.finalizable) {
       const blockers = state?.blockers ?? [];
+      if (blockers.length === 0) {
+        throw new ContractException(HttpStatus.CONFLICT, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '자재 관리 LOT 이 없는 입하 LOT 은 최종 마감할 수 없습니다.' }]);
+      }
       throw new ContractException(HttpStatus.CONFLICT, blockers.map((blocker) => ({
         scope: 'screen' as const, code: blocker.code, message: `${BLOCKER_MESSAGE[blocker.code]} — ${blocker.lotNos.join(', ')}`, lotNos: blocker.lotNos,
       })), { blockers });
