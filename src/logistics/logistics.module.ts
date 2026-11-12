@@ -25,6 +25,8 @@ import { InboundLotController } from './inbound-lot/inbound-lot.controller';
 import { INBOUND_LOT_AUTO_CLOSE_LEASE, InboundLotAutoCloseRunner } from './inbound-lot/inbound-lot-auto-close.runner';
 import { InboundLotCloseService } from './inbound-lot/inbound-lot-close';
 import { InboundLotReopenService } from './inbound-lot/inbound-lot-reopen.service';
+import { InboundLotAllocationService } from './inbound-lot/inbound-lot-allocation.service';
+import { InboundLotFinalizeService } from './inbound-lot/inbound-lot-finalize.service';
 import { InboundLotLotsService } from './inbound-lot/inbound-lot-lots.service';
 import { InboundLotQueryService } from './inbound-lot/inbound-lot-query.service';
 import { InboundLotReceiveService } from './inbound-lot/inbound-lot-receive.service';
@@ -198,6 +200,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundLotCloseService,
     InboundLotReopenService,
     InboundLotSplitService,
+    InboundLotAllocationService,
+    InboundLotFinalizeService,
     LogisticsHandoverNotifier,
     PickingHandoverNotifier,
     MaterialIssueReleaser,

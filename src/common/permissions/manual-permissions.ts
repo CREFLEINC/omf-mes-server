@@ -147,6 +147,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 자재 관리 LOT 분리(피처 005 §3 · FR-040) — IQC 판정 화면(W-01-01)이 판정 확정 전에 불량 LOT 을 새 입하 LOT 으로 뗀다.
   'POST /logistics/inbound-lots/{inboundLotId}:split-lots': ['W-01-01'],
   'GET /logistics/inbound-lots/{inboundLotId}/split-preview': ['W-01-01'],
+  // W-01-16 「입하/입고 작업 기록」(피처 005 §5 · R-23·R-24) — 관리자가 입하 LOT 의 P/O 배정을 고치고 최종 마감한다.
+  // 배정 후보·수정·최종 마감은 이 화면에만 있는 액션이라 도출표에 화면 행이 없다.
+  'GET /logistics/inbound-lots/{inboundLotId}/allocation-candidates': ['W-01-16'],
+  'PUT /logistics/inbound-lots/{inboundLotId}/po-allocations': ['W-01-16'],
+  'POST /logistics/inbound-lots/{inboundLotId}:finalize': ['W-01-16'],
   // 외부 식별자 치환 — 계약이 이 자식 자원의 조회에 「근거: M-01-02 §4」라 적었고, 요구서가
   // 「부모의 화면이 곧 이 오퍼레이션의 화면」이라 답했다(`plan-uiux.md:852`). 부모를 소유한
   // 화면 하나만 적는다.

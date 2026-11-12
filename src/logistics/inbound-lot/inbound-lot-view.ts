@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { FinalizeBlocker, LotProgress, finalizeFactsOf } from './inbound-lot-finalizable';
 import { onlyOpenReceiptBlocks, reopenStatesOf } from './inbound-lot-reopenable';
 
 /** 계약 `InboundLotIqcSummary`. */
@@ -18,9 +19,10 @@ export interface InboundLotPoAllocationView {
   orderDate: string;
   erpPurchaseOrderNo: string | null;
   qty: number;
+  excessQty: number;
 }
 
-/** 계약 `InboundLot` — 입하 LOT 한 행. 최종 마감 칸(`finalizable`)은 S12 가 채우기 전까지 false 다. */
+/** 계약 `InboundLot` — 입하 LOT 한 행. */
 export interface InboundLotView {
   inboundLotId: number;
   inboundLotNo: string;
@@ -46,19 +48,22 @@ export interface InboundLotView {
   receivedClosedAt: string | null;
   closedAutomatically: boolean;
   finalizedAt: string | null;
+  finalizedByName: string | null;
   reopenable: boolean;
   reopenReasonCode: string | null;
   reopenBlockerCode: 'OPEN_RECEIPT_EXISTS' | null;
   openInboundLotNo: string | null;
   reopened: boolean;
   finalizable: boolean;
+  finalizeBlockers: FinalizeBlocker[];
+  lotProgress: LotProgress;
   erpSendModeCode: string;
   versionNo: number;
 }
 
 const INBOUND_LOT_SELECT = {
   inbound_lot_id: true, inbound_lot_no: true, plant_id: true, supplier_id: true, item_id: true, status_code: true,
-  receiving_date: true, received_closed_at: true, closed_automatically: true, finalized_at: true,
+  receiving_date: true, received_closed_at: true, closed_automatically: true, finalized_at: true, finalized_by: true,
   erp_send_mode_code: true, version_no: true,
   supplier: { select: { partner_code: true, partner_name: true } },
   item: { select: { item_code: true, item_name: true } },
@@ -71,7 +76,7 @@ const INBOUND_LOT_SELECT = {
         select: {
           purchase_order_line_id: true, allocated_qty: true,
           purchase_order_line: {
-            select: { line_no: true, purchase_order: { select: { purchase_order_no: true, order_date: true, erp_purchase_order_no: true } } },
+            select: { line_no: true, ordered_qty: true, received_qty: true, purchase_order: { select: { purchase_order_no: true, order_date: true, erp_purchase_order_no: true } } },
           },
         },
       },
@@ -91,7 +96,8 @@ export async function loadInboundLotViews(
   const rows = await db.inbound_lot.findMany({ where, select: INBOUND_LOT_SELECT, ...page });
   if (rows.length === 0) return [];
   const ids = rows.map((row) => row.inbound_lot_id);
-  const [counts, received, requests, firsts, reopenedEvents, reopenStates] = await Promise.all([
+  const finalizers = [...new Set(rows.flatMap((row) => (row.finalized_by === null ? [] : [row.finalized_by])))];
+  const [counts, received, requests, firsts, reopenedEvents, reopenStates, finalizeFacts, users] = await Promise.all([
     db.lot.groupBy({ by: ['inbound_lot_id'], where: { inbound_lot_id: { in: ids } }, _count: { _all: true } }),
     db.$queryRaw<{ inbound_lot_id: bigint; qty: Prisma.Decimal }[]>`
       SELECT l.inbound_lot_id, sum(grl.receipt_qty) AS qty
@@ -113,7 +119,10 @@ export async function loadInboundLotViews(
       where: { inbound_lot_id: { in: ids }, event_type_code: 'RECEIPT_REOPENED' }, select: { inbound_lot_id: true }, distinct: ['inbound_lot_id'],
     }),
     reopenStatesOf(db, ids),
+    finalizeFactsOf(db, ids),
+    finalizers.length === 0 ? [] : db.app_user.findMany({ where: { app_user_id: { in: finalizers } }, select: { app_user_id: true, user_name: true } }),
   ]);
+  const userName = new Map(users.map((user) => [user.app_user_id, user.user_name]));
   const reopened = new Set(reopenedEvents.map((row) => row.inbound_lot_id));
   const countOf = new Map(counts.map((row) => [row.inbound_lot_id, row._count._all]));
   const receivedOf = new Map(received.map((row) => [row.inbound_lot_id, Number(row.qty)]));
@@ -125,6 +134,7 @@ export async function loadInboundLotViews(
     const iqc = iqcOf.get(row.inbound_lot_id);
     const reopen = reopenStates.get(row.inbound_lot_id);
     const openBlocked = reopen !== undefined && onlyOpenReceiptBlocks(reopen.blockers);
+    const finalize = finalizeFacts.get(row.inbound_lot_id)?.state;
     return {
       inboundLotId: Number(row.inbound_lot_id), inboundLotNo: row.inbound_lot_no, plantId: Number(row.plant_id),
       supplierId: Number(row.supplier_id), supplierCode: row.supplier.partner_code, supplierName: row.supplier.partner_name,
@@ -145,9 +155,11 @@ export async function loadInboundLotViews(
       receivedClosedAt: row.received_closed_at?.toISOString() ?? null,
       closedAutomatically: row.closed_automatically,
       finalizedAt: row.finalized_at?.toISOString() ?? null,
+      finalizedByName: row.finalized_by === null ? null : (userName.get(row.finalized_by) ?? null),
       reopenable: reopen !== undefined && reopen.blockers.length === 0, reopenReasonCode: reopen?.reasonCode ?? null,
       reopenBlockerCode: openBlocked ? 'OPEN_RECEIPT_EXISTS' : null, openInboundLotNo: openBlocked ? reopen.openInboundLotNo : null,
-      reopened: reopened.has(row.inbound_lot_id), finalizable: false,
+      reopened: reopened.has(row.inbound_lot_id), finalizable: finalize?.finalizable ?? false,
+      finalizeBlockers: finalize?.blockers ?? [], lotProgress: finalize?.progress ?? NO_PROGRESS,
       erpSendModeCode: row.erp_send_mode_code, versionNo: row.version_no,
     };
   });
@@ -155,12 +167,18 @@ export async function loadInboundLotViews(
 
 type AllocationRow = Prisma.inbound_lotGetPayload<{ select: typeof INBOUND_LOT_SELECT }>['inbound_receipt_line']['inbound_receipt_po_allocation'][number];
 
+const NO_PROGRESS: LotProgress = { received: 0, inIqc: 0, inDisposition: 0, disposed: 0, returned: 0 };
+
+/** 초과 = 이 배정 − 그 라인 잔량(발주 − 이 입하 LOT 몫을 뺀 받은 양), 음수면 0(W-01-16 「(초과 n)」). */
 function allocationView(row: AllocationRow): InboundLotPoAllocationView {
   const order = row.purchase_order_line.purchase_order;
+  const line = row.purchase_order_line;
+  const room = Prisma.Decimal.max(ZERO, line.ordered_qty.minus(line.received_qty.minus(row.allocated_qty)));
   return {
     purchaseOrderLineId: Number(row.purchase_order_line_id), purchaseOrderNo: order.purchase_order_no,
     lineNo: row.purchase_order_line.line_no, orderDate: order.order_date.toISOString().slice(0, 10),
     erpPurchaseOrderNo: order.erp_purchase_order_no, qty: Number(row.allocated_qty),
+    excessQty: Number(Prisma.Decimal.max(ZERO, row.allocated_qty.minus(room))),
   };
 }
 
