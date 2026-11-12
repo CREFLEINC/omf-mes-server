@@ -73,3 +73,38 @@ describe('receiptShares — 입고 수량을 배정 순서대로 채운다', () 
     expect(receiptShares(d(150), rows).get(8n)?.toString()).toBe('20');
   });
 });
+
+/** 입하 줄 40 은 새 흐름(`ON_FINALIZE`), 50 은 이전 데이터(`PER_RECEIPT`) 입하 LOT 의 줄이다 — 둘 다 ERP 발주에 다 배정됐다. */
+function fakeWithModes(): PrismaService {
+  const lots: Record<string, { source_type_code: string; source_id: bigint; parent_lot_id: bigint | null }> = {
+    '41': { source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 40n, parent_lot_id: null },
+    '51': { source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 50n, parent_lot_id: null },
+  };
+  return {
+    concession: { findMany: async () => [] },
+    lot: { findUnique: async (args: { where: { lot_id: bigint } }) => lots[String(args.where.lot_id)] ?? null },
+    inbound_receipt_line: {
+      findUnique: async (args: { where: { inbound_receipt_line_id: bigint } }) =>
+        ({
+          '40': { received_qty: d(10), inbound_lot: { erp_send_mode_code: 'ON_FINALIZE' }, inbound_receipt_po_allocation: [alloc(10, 'ERP-1')] },
+          '50': { received_qty: d(10), inbound_lot: { erp_send_mode_code: 'PER_RECEIPT' }, inbound_receipt_po_allocation: [alloc(10, 'ERP-1')] },
+        })[String(args.where.inbound_receipt_line_id)] ?? null,
+    },
+  } as unknown as PrismaService;
+}
+
+describe('erpInboundLines — 입하 LOT ERP 전송 방식(R-25)', () => {
+  it('US8-6 새 흐름(ON_FINALIZE) 입하 LOT 의 줄은 null(보내지 않음) — 줄 연결이 있든 LOT 의 원천을 따르든', async () => {
+    expect(await erpInboundLines(fakeWithModes(), [
+      { lotId: 41n, inboundReceiptLineId: 40n },
+      { lotId: 41n, inboundReceiptLineId: null },
+    ])).toEqual([null, null]);
+  });
+
+  it('US8-7 이전 데이터(PER_RECEIPT) 줄은 지금 결과 그대로 — 섞이면 새 흐름 줄만 빠진다', async () => {
+    expect(await erpInboundLines(fakeWithModes(), [
+      { lotId: 51n, inboundReceiptLineId: 50n },
+      { lotId: 41n, inboundReceiptLineId: 40n },
+    ])).toEqual([50n, null]);
+  });
+});
