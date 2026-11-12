@@ -252,6 +252,53 @@ describe('InspectionSheetTemplateService', () => {
     expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 
+  /* PR #1030 리뷰 — 수정은 앞뒤 공백을 걷은 코드로 검사하고, 고치는 판은 같은 품목 비교에서 뺀다. */
+  it('수정은 앞뒤 공백을 걷은 기준코드로 검사 · 저장하고 자기 판은 같은 품목 비교에서 뺀다', async () => {
+    const { service, tx } = harness({ status_code: 'DRAFT', business_unit_id: 2n });
+
+    await service.update(11, 3, input({ templateCode: ' SHEET-A ' }), ACTOR);
+
+    expect(tx.inspection_sheet_template.findFirst).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: { template_code: 'SHEET-A', item_id: { not: 5 } } }),
+    );
+    expect(tx.inspection_sheet_template.findFirst).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({ item_id: 5, inspection_sheet_template_id: { not: 11 } }),
+      }),
+    );
+    const data = tx.inspection_sheet_template.updateMany.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data.template_code).toBe('SHEET-A');
+  });
+
+  it('수정에서 같은 품목의 다른 판과 다른 기준코드면 400 INVALID 이고 고치지 않는다', async () => {
+    const { service, tx } = harness({ status_code: 'DRAFT', business_unit_id: 2n });
+    tx.inspection_sheet_template.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ template_code: 'SHEET-OLD', template_version: 1 });
+
+    const error = await service.update(11, 3, input({ templateCode: 'SHEET-NEW' }), ACTOR).catch((e: unknown) => e);
+
+    expect(failure(error).errors[0]).toMatchObject({ field: 'templateCode', code: 'INVALID' });
+    expect(tx.inspection_sheet_template.updateMany).not.toHaveBeenCalled();
+  });
+
+  /* PR #1030 리뷰 — 코드를 비운 등록이 동시에 들면 품목 잠금 뒤 먼저 생긴 같은 품목의 코드를 잇는다. */
+  it('비운 기준코드 등록은 품목 잠금 뒤 같은 품목에 생긴 코드를 잇는다', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.inspection_sheet_template.findFirst.mockResolvedValue(null);
+    tx.inspection_sheet_template.findFirst
+      .mockResolvedValueOnce({ template_code: 'QS-20261112-0001', template_version: 1 })
+      .mockResolvedValue(null);
+
+    await service.create(input({ templateCode: '' }), ACTOR);
+
+    expect(tx.inspection_sheet_template.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ template_code: 'QS-20261112-0001' }) }),
+    );
+  });
+
   it('잠금 버전이 다르면 409 다', async () => {
     const { service, tx } = harness({ status_code: 'DRAFT', business_unit_id: 2n });
     tx.inspection_sheet_template.updateMany.mockResolvedValue({ count: 0 });

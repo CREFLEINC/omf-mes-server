@@ -6,18 +6,19 @@ import { InspectionPlanVersionService } from './inspection-plan-version.service'
 function harness(statusCode: string, newer: { plan_version: number } | null = null, changed = 1) {
   const update = jest.fn().mockResolvedValue({ count: changed });
   const audit = jest.fn().mockResolvedValue(undefined);
-  const tx = { inspection_plan_version: { updateMany: update }, audit_event: { create: audit } };
+  const tx = {
+    inspection_plan_version: { updateMany: update },
+    audit_event: { create: audit },
+    $queryRaw: jest.fn().mockResolvedValue(newer === null ? [] : [newer]),
+  };
   const prisma = {
     inspection_plan_version: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValueOnce({
-          inspection_plan_version_id: 7n,
-          inspection_plan_id: 3n,
-          plan_version: 1,
-          status_code: statusCode,
-        })
-        .mockResolvedValue(newer),
+      findFirst: jest.fn().mockResolvedValue({
+        inspection_plan_version_id: 7n,
+        inspection_plan_id: 3n,
+        plan_version: 1,
+        status_code: statusCode,
+      }),
     },
     $transaction: jest.fn(async (run: (client: typeof tx) => unknown) => run(tx)),
   } as unknown as PrismaService;

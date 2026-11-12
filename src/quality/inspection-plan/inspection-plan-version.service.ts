@@ -388,33 +388,41 @@ export class InspectionPlanVersionService {
   async reactivate(versionId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(versionId);
     if (row.status_code !== REVISION_STATUS.OBSOLETE) throw locked('재사용');
-    // 검사 의뢰는 기준마다 가장 높은 확정 판만 쓴다(`latestPerPlan`) — 더 새 확정 판이 있으면 다시 써도 쓰이지 않는다.
-    const newer = await this.prisma.inspection_plan_version.findFirst({
-      where: {
-        inspection_plan_id: row.inspection_plan_id,
-        status_code: REVISION_STATUS.CONFIRMED,
-        plan_version: { gt: row.plan_version },
-      },
-      orderBy: { plan_version: 'desc' },
-      select: { plan_version: true },
+    await this.transition(versionId, REVISION_STATUS.OBSOLETE, REVISION_STATUS.CONFIRMED, actorId, async (tx) => {
+      // 검사 의뢰는 기준마다 가장 높은 확정 판만 쓴다(`latestPerPlan`) — 더 새 확정 판이 있으면 다시 써도 쓰이지 않는다.
+      // ⛔ `FOR UPDATE` — 판정과 상태 변경 사이에 더 새 판이 확정되지 않게 같은 기준의 판들을 잠근다.
+      const newer = await tx.$queryRaw<{ plan_version: number }[]>`
+        SELECT plan_version
+          FROM quality.inspection_plan_version
+         WHERE inspection_plan_id = ${row.inspection_plan_id}
+           AND status_code = ${REVISION_STATUS.CONFIRMED}
+           AND plan_version > ${row.plan_version}
+         ORDER BY plan_version DESC
+           FOR UPDATE`;
+      if (newer.length > 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          {
+            scope: 'screen',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: `더 새 확정 버전(버전 ${String(newer[0].plan_version)})이 있어 다시 사용해도 검사에 쓰이지 않습니다. 그 버전을 사용 중지한 뒤 다시 사용하세요.`,
+          },
+        ]);
+      }
     });
-    if (newer !== null) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        {
-          scope: 'screen',
-          code: ERROR_CODE.STATE_LOCKED,
-          message: `더 새 확정 버전(버전 ${String(newer.plan_version)})이 있어 다시 사용해도 검사에 쓰이지 않습니다. 그 버전을 사용 중지한 뒤 다시 사용하세요.`,
-        },
-      ]);
-    }
-
-    await this.transition(versionId, REVISION_STATUS.OBSOLETE, REVISION_STATUS.CONFIRMED, actorId);
     return versionId;
   }
 
   /** 상태만 바꾸고 그 사실을 같은 트랜잭션에서 이력으로 남긴다(#196). */
-  private async transition(versionId: number, from: string, to: string, actorId?: number | null): Promise<void> {
+  private async transition(
+    versionId: number,
+    from: string,
+    to: string,
+    actorId?: number | null,
+    /** 상태를 바꾸기 전 같은 트랜잭션에서 볼 것(재사용의 더 새 확정 판 검사). */
+    guard?: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      await guard?.(tx);
       // 상태를 조건에 건다 — 읽은 뒤 다른 요청이 먼저 바꿨으면 0행이다.
       const changed = await tx.inspection_plan_version.updateMany({
         where: { inspection_plan_version_id: versionId, status_code: from },
