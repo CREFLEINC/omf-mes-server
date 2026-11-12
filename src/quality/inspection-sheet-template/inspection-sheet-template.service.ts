@@ -2,9 +2,10 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertNotBlank } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   InspectionSheetTemplateView,
@@ -25,6 +26,9 @@ export interface InspectionSheetTemplateStepWrite {
 
 /** 계약 `InspectionSheetTemplateUpdate` — 순서는 배열 순서다. */
 export interface InspectionSheetTemplateUpdate {
+  /** 관리용 기준코드 · 기준명(omf-all-around#260). 수정에서 빼면 그대로 둔다. */
+  templateCode?: string;
+  templateName?: string;
   materialText?: string | null;
   structureText?: string | null;
   rohsFlag: boolean;
@@ -38,6 +42,9 @@ export interface InspectionSheetTemplateUpdate {
 
 /** 계약 `InspectionSheetTemplateCreate`. */
 export interface InspectionSheetTemplateCreate extends InspectionSheetTemplateUpdate {
+  /** 비우면 그 품목이 이미 쓰는 기준코드, 없으면 `QS-{YYYYMMDD}-{SEQ4}`(omf-all-around#262). */
+  templateCode?: string;
+  templateName: string;
   itemId: number;
   businessUnitId: number;
   formLayoutCode: string;
@@ -69,7 +76,10 @@ const LAYOUT_STEPS: Readonly<Record<string, readonly string[]>> = {
  */
 @Injectable()
 export class InspectionSheetTemplateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: NumberingService,
+  ) {}
 
   async list(query: InspectionSheetTemplateQuery): Promise<PagedResponse<InspectionSheetTemplateView>> {
     const page = pageRequest(query);
@@ -100,9 +110,18 @@ export class InspectionSheetTemplateService {
   }
 
   /** 같은 모델의 판 번호는 최댓값 + 1 이다 — 확정본이 있어도 새 작성중 판을 세운다. */
-  async create(input: InspectionSheetTemplateCreate, actor: TemplateActor): Promise<InspectionSheetTemplateView> {
-    await this.assertContent(input.formLayoutCode, input);
+  async create(body: InspectionSheetTemplateCreate, actor: TemplateActor): Promise<InspectionSheetTemplateView> {
+    // 번호는 트랜잭션을 열기 «전»에 뽑는다(NumberingService 규약).
+    assertNotBlank([['templateName', body.templateName]]);
+    const typed = (body.templateCode ?? '').trim() !== '';
+    const drawn = { ...body, templateCode: await this.codeOrNext(body.templateCode, body.itemId) };
+    await this.assertContent(drawn.formLayoutCode, drawn);
     const id = await this.prisma.$transaction(async (tx) => {
+      await lockTemplateItem(tx, drawn.itemId);
+      // 비워 보낸 등록이 동시에 들면 둘 다 새 번호를 뽑는다 — 품목 잠금 뒤 그 품목의 코드가 생겼으면 그것을 잇는다.
+      const sibling = typed ? null : await siblingCode(tx, drawn.itemId);
+      const input = sibling === null ? drawn : { ...drawn, templateCode: sibling.template_code };
+      await assertTemplateCode(tx, input.templateCode, input.itemId);
       const latest = await tx.inspection_sheet_template.aggregate({
         where: { item_id: input.itemId },
         _max: { template_version: true },
@@ -113,6 +132,7 @@ export class InspectionSheetTemplateService {
           business_unit_id: input.businessUnitId,
           form_layout_code: input.formLayoutCode,
           template_version: (latest._max.template_version ?? 0) + 1,
+          ...codeData(input),
           ...headerData(input),
           created_by: actor.userId,
           updated_by: actor.userId,
@@ -135,16 +155,24 @@ export class InspectionSheetTemplateService {
   async update(
     id: number,
     version: number,
-    input: InspectionSheetTemplateUpdate,
+    body: InspectionSheetTemplateUpdate,
     actor: TemplateActor,
   ): Promise<{ inspectionSheetTemplate: InspectionSheetTemplateView; versionNo: number }> {
     const row = await this.loadDraft(id);
+    if (body.templateName !== undefined) assertNotBlank([['templateName', body.templateName]]);
+    // 비운 기준코드는 「그대로 둔다」(#262) — 공백만이면 빼고, 앞뒤 공백은 걷은 값으로 검사 · 저장한다.
+    const code = body.templateCode?.trim() || undefined;
+    const input = { ...body, templateCode: code };
     await this.assertContent(row.form_layout_code, input);
     const before = contentOf(writeShapeOf((await this.get(id)).inspectionSheetTemplate));
     await this.prisma.$transaction(async (tx) => {
+      if (code !== undefined) {
+        await lockTemplateItem(tx, Number(row.item_id));
+        await assertTemplateCode(tx, code, Number(row.item_id), id);
+      }
       const updated = await tx.inspection_sheet_template.updateMany({
         where: { inspection_sheet_template_id: id, version_no: version, status_code: 'DRAFT' },
-        data: { ...headerData(input), updated_by: actor.userId, updated_at: new Date(), version_no: { increment: 1 } },
+        data: { ...codeData(input), ...headerData(input), updated_by: actor.userId, updated_at: new Date(), version_no: { increment: 1 } },
       });
       assertUpdated(updated.count);
       const steps = await tx.inspection_sheet_template_step.findMany({
@@ -315,6 +343,21 @@ export class InspectionSheetTemplateService {
     return row;
   }
 
+  /** 비운 기준코드 — 같은 품목의 버전끼리는 같은 코드라 그 품목이 쓰던 코드를, 없으면 채번한다(#262). */
+  private async codeOrNext(code: string | undefined, itemId: number): Promise<string> {
+    const trimmed = (code ?? '').trim();
+    if (trimmed !== '') return trimmed;
+    const used = await this.prisma.inspection_sheet_template.findFirst({
+      where: { item_id: itemId, template_code: { not: null } },
+      orderBy: { template_version: 'desc' },
+      select: { template_code: true },
+    });
+    return (
+      used?.template_code ??
+      this.numbering.next('INSPECTION_SHEET_TEMPLATE', null, new Date().toISOString().slice(0, 10))
+    );
+  }
+
   private async assertContent(formLayoutCode: string, input: InspectionSheetTemplateUpdate): Promise<void> {
     const allowed = LAYOUT_STEPS[formLayoutCode] ?? [];
     const seen = new Set<string>();
@@ -343,8 +386,76 @@ export class InspectionSheetTemplateService {
 function writeShapeOf(view: InspectionSheetTemplateView): InspectionSheetTemplateUpdate {
   return {
     ...view,
+    /* 그 전에 등록한 기준은 비어 있다(null) — 쓰기 모양에서는 「빼면 그대로」라 undefined 로 둔다. */
+    templateCode: view.templateCode ?? undefined,
+    templateName: view.templateName ?? undefined,
     lotSources: view.lotSources ?? [],
     steps: view.steps ?? [],
+  };
+}
+
+/** 빼면 그대로 둔다 — 수정에서 두 칸은 선택이다. 앞뒤 빈칸은 걷는다. */
+/** 같은 품목의 판 등록 · 코드 수정을 줄 세운다 — 코드 잠금보다 «먼저» 잡는다(늘 같은 차례라 서로 막히지 않는다). */
+async function lockTemplateItem(tx: Prisma.TransactionClient, itemId: number): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`inspection-sheet-template-item:${itemId}`}))`;
+}
+
+/** 같은 품목의 다른 판이 쓰는 기준코드(가장 최근 판) — `selfId` 는 고치는 판이라 뺀다. */
+function siblingCode(tx: Prisma.TransactionClient, itemId: number, selfId?: number, other?: string) {
+  return tx.inspection_sheet_template.findFirst({
+    where: {
+      item_id: itemId,
+      template_code: other === undefined ? { not: null } : { not: null, notIn: [other] },
+      ...(selfId === undefined ? {} : { inspection_sheet_template_id: { not: selfId } }),
+    },
+    orderBy: { template_version: 'desc' },
+    select: { template_code: true, template_version: true },
+  }) as Promise<{ template_code: string; template_version: number } | null>;
+}
+
+/**
+ * 기준코드 규칙(omf-all-around#260) — 다른 품목의 검사표와 겹치지 않고, 같은 품목의 판끼리는 같다.
+ * 판마다 한 행이라 DB 유일 제약을 걸 수 없다 — 품목 잠금(`lockTemplateItem`) 뒤 같은 코드의 등록 · 수정을
+ * 코드 잠금으로 줄 세운 뒤 본다. 검사 기준(IQC · OQC)의 코드와는 따로 본다. `selfId` 는 고치는 판.
+ */
+async function assertTemplateCode(
+  tx: Prisma.TransactionClient,
+  code: string,
+  itemId: number,
+  selfId?: number,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`inspection-sheet-template-code:${code}`}))`;
+  const other = await tx.inspection_sheet_template.findFirst({
+    where: { template_code: code, item_id: { not: itemId } },
+    select: { item: { select: { item_code: true } } },
+  });
+  if (other !== null) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'templateCode',
+        code: ERROR_CODE.UNIQUE_VIOLATION,
+        uniqueScope: ['templateCode'],
+        message: `다른 품목(${other.item.item_code})의 검사표 기준이 이미 쓰는 기준코드입니다.`,
+      },
+    ]);
+  }
+  const sibling = await siblingCode(tx, itemId, selfId, code);
+  if (sibling !== null) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      fieldError(
+        'templateCode',
+        ERROR_CODE.INVALID,
+        `같은 품목의 다른 판(${String(sibling.template_version)}판)이 기준코드 ${String(sibling.template_code)} 를 씁니다 — 같은 코드로 맞추세요.`,
+      ),
+    ]);
+  }
+}
+
+function codeData(input: InspectionSheetTemplateUpdate) {
+  return {
+    ...(input.templateCode === undefined ? {} : { template_code: input.templateCode.trim() }),
+    ...(input.templateName === undefined ? {} : { template_name: input.templateName.trim() }),
   };
 }
 

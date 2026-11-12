@@ -14,6 +14,7 @@ import {
   toDateString,
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
+import { AQL_SAMPLING, isAqlValue, isInspectionLevel } from '../../core/quality/aql';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
@@ -37,14 +38,16 @@ interface VersionView {
   aqlValue: number | null;
   acceptanceNumber: number | null;
   rejectionNumber: number | null;
-  inspectionFrequencyCode: string;
+  inspectionFrequencyCode: string | null;
   frequencyIntervalValue: number | null;
   frequencyIntervalUomCode: string | null;
   statusCode: string;
   samplingRatio: number | null;
   samplingQty: number | null;
-  guideTextKo: string | null;
-  guideTextVi: string | null;
+  /** 검사 지시문 한 칸(omf-all-around#261 — 한/베 두 칸을 걷었다). */
+  guideText: string | null;
+  /** AQL 검사 수준(G-I~G-III · S-1~S-4 · omf-all-around#264) — 품목별 IQC 검사 수준(엄격도)과 다른 축이다. */
+  aqlInspectionLevelCode: string | null;
 }
 
 export interface VersionWrite {
@@ -54,14 +57,16 @@ export interface VersionWrite {
   aqlValue?: number | null;
   acceptanceNumber?: number | null;
   rejectionNumber?: number | null;
-  inspectionFrequencyCode: string;
+  /** 기록용 — 화면은 받지 않는다(omf-all-around#263). 생략하면 그대로 둔다(등록이면 비움). */
+  inspectionFrequencyCode?: string | null;
   frequencyIntervalValue?: number | null;
   frequencyIntervalUomCode?: string | null;
   samplingRatio?: number | null;
   samplingQty?: number | null;
-  /** 검사 안내 문구(omf-all-around#252) — 생략하면 그대로 둔다. */
-  guideTextKo?: string | null;
-  guideTextVi?: string | null;
+  /** 검사 지시문(omf-all-around#252 · 한 칸 #261) — 생략하면 그대로 둔다. */
+  guideText?: string | null;
+  /** AQL 검사 수준(omf-all-around#264) — 생략하면 그대로 둔다. */
+  aqlInspectionLevelCode?: string | null;
 }
 
 /**
@@ -102,7 +107,8 @@ export interface ItemSpecUpsert {
   inspectionItemSpecId?: number;
   inspectionPlanVersionId: number;
   sequenceNo: number;
-  inspectionItemCode: string;
+  /** 비우면(생략 · 공백) `ITEM-{순서 3자리}` 로 붙는다(omf-all-around#262). */
+  inspectionItemCode?: string;
   inspectionItemName: string;
   nameKo?: string | null;
   nameVi?: string | null;
@@ -163,6 +169,7 @@ export class InspectionPlanVersionService {
   /** 「기준에 아직 버전이 하나도 없을 때만 쓴다」(계약). 두 번째부터는 `:new-revision`. */
   async create(input: VersionCreate, options: DraftOptions = {}, actorId?: number | null): Promise<VersionView> {
     await this.assertWritable(input, options);
+    await this.assertAqlPlanType(input.inspectionPlanId, input.samplingMethodCode);
     const plan = await this.prisma.inspection_plan.findUnique({
       where: { inspection_plan_id: input.inspectionPlanId },
       select: { inspection_plan_id: true },
@@ -225,7 +232,9 @@ export class InspectionPlanVersionService {
   ): Promise<VersionResult> {
     await this.assertWritable(input, options);
     await this.assertDraft(versionId, '수정');
-    const before = view(await this.load(versionId));
+    const loaded = await this.load(versionId);
+    await this.assertAqlPlanType(loaded.inspection_plan_id, input.samplingMethodCode);
+    const before = view(loaded);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.inspection_plan_version.updateMany({
@@ -265,12 +274,14 @@ export class InspectionPlanVersionService {
    */
   async replaceItems(
     versionId: number,
-    items: ItemSpecUpsert[],
+    body: ItemSpecUpsert[],
     actorId?: number | null,
     options: { allowNumericWithoutUom?: boolean } = {},
   ): Promise<ItemSpecView[]> {
     await this.assertDraft(versionId, '검사 항목을 저장');
     const beforeItems = await this.readItems(versionId);
+    const savedCodes = new Map(beforeItems.map((item) => [item.inspectionItemSpecId, item.inspectionItemCode]));
+    const items = body.map((item) => ({ ...item, inspectionItemCode: itemCodeOf(item, savedCodes) }));
     const existing = await this.prisma.inspection_item_spec.findMany({
       where: { inspection_plan_version_id: versionId },
       select: { inspection_item_spec_id: true },
@@ -339,7 +350,10 @@ export class InspectionPlanVersionService {
       samplingMethodCode: row.sampling_method_code,
       samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
       samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
+      aqlValue: row.aql_value === null ? null : Number(row.aql_value),
+      aqlInspectionLevelCode: row.aql_inspection_level_code,
     });
+    await this.assertAqlPlanType(row.inspection_plan_id, row.sampling_method_code);
 
     const items = await this.prisma.inspection_item_spec.count({
       where: { inspection_plan_version_id: versionId },
@@ -358,22 +372,71 @@ export class InspectionPlanVersionService {
     return versionId;
   }
 
-  /** 확정 → 폐기. ⛔ 되돌릴 수 없다(계약). */
+  /** 확정 → 사용 중지(화면 이름 · 상태값은 OBSOLETE). 재사용으로 되돌린다(omf-all-around#258). */
   async obsolete(versionId: number, actorId?: number | null): Promise<number> {
     const row = await this.load(versionId);
-    if (row.status_code !== REVISION_STATUS.CONFIRMED) throw locked('폐기');
+    if (row.status_code !== REVISION_STATUS.CONFIRMED) throw locked('사용 중지');
 
     await this.transition(versionId, REVISION_STATUS.CONFIRMED, REVISION_STATUS.OBSOLETE, actorId);
     return versionId;
   }
 
+  /**
+   * 사용 중지 → 확정(재사용 · omf-all-around#258). 다른 확정 버전은 건드리지 않는다 — 확정과 같은 규칙.
+   * 내용은 사용 중지 때 그대로라 확정 전 검사를 다시 하지 않는다.
+   */
+  async reactivate(versionId: number, actorId?: number | null): Promise<number> {
+    const row = await this.load(versionId);
+    if (row.status_code !== REVISION_STATUS.OBSOLETE) throw locked('재사용');
+    await this.transition(versionId, REVISION_STATUS.OBSOLETE, REVISION_STATUS.CONFIRMED, actorId, async (tx) => {
+      // 검사 의뢰는 기준마다 가장 높은 확정 판만 쓴다(`latestPerPlan`) — 더 새 확정 판이 있으면 다시 써도 쓰이지 않는다.
+      // ⛔ `FOR UPDATE` — 판정과 상태 변경 사이에 더 새 판이 확정되지 않게 같은 기준의 판들을 잠근다.
+      const newer = await tx.$queryRaw<{ plan_version: number }[]>`
+        SELECT plan_version
+          FROM quality.inspection_plan_version
+         WHERE inspection_plan_id = ${row.inspection_plan_id}
+           AND status_code = ${REVISION_STATUS.CONFIRMED}
+           AND plan_version > ${row.plan_version}
+         ORDER BY plan_version DESC
+           FOR UPDATE`;
+      if (newer.length > 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          {
+            scope: 'screen',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: `더 새 확정 버전(버전 ${String(newer[0].plan_version)})이 있어 다시 사용해도 검사에 쓰이지 않습니다. 그 버전을 사용 중지한 뒤 다시 사용하세요.`,
+          },
+        ]);
+      }
+    });
+    return versionId;
+  }
+
   /** 상태만 바꾸고 그 사실을 같은 트랜잭션에서 이력으로 남긴다(#196). */
-  private async transition(versionId: number, from: string, to: string, actorId?: number | null): Promise<void> {
+  private async transition(
+    versionId: number,
+    from: string,
+    to: string,
+    actorId?: number | null,
+    /** 상태를 바꾸기 전 같은 트랜잭션에서 볼 것(재사용의 더 새 확정 판 검사). */
+    guard?: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      await tx.inspection_plan_version.update({
-        where: { inspection_plan_version_id: versionId },
+      await guard?.(tx);
+      // 상태를 조건에 건다 — 읽은 뒤 다른 요청이 먼저 바꿨으면 0행이다.
+      const changed = await tx.inspection_plan_version.updateMany({
+        where: { inspection_plan_version_id: versionId, status_code: from },
         data: { status_code: to, version_no: { increment: 1 } },
       });
+      if (changed.count === 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          {
+            scope: 'screen',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: '그 사이 버전 상태가 바뀌었습니다. 새로고침한 뒤 다시 하세요.',
+          },
+        ]);
+      }
       await recordPlanVersionAudit(tx, {
         versionId,
         eventTypeCode: 'UPDATE',
@@ -469,8 +532,8 @@ export class InspectionPlanVersionService {
           inspection_frequency_code: source.inspection_frequency_code,
           frequency_interval_value: source.frequency_interval_value,
           frequency_interval_uom_code: source.frequency_interval_uom_code,
-          guide_text_ko: source.guide_text_ko,
-          guide_text_vi: source.guide_text_vi,
+          guide_text: source.guide_text,
+          aql_inspection_level_code: source.aql_inspection_level_code,
         },
       });
 
@@ -522,6 +585,27 @@ export class InspectionPlanVersionService {
     const row = await this.load(versionId);
     if (row.status_code === REVISION_STATUS.DRAFT) return;
     throw locked(action);
+  }
+
+  /**
+   * AQL 샘플링은 IQC 기준에서만 쓴다(사용자 결정 2026-11-12 · omf-all-around#264) — PQC · OQC 경로는 표의 판정 수를
+   * 읽지 않아(검사 수량 · 일괄 검사대기 · 판정 사유) 저장되면 조용히 다른 기준으로 검사한다.
+   */
+  private async assertAqlPlanType(planId: number | bigint, samplingMethodCode: string): Promise<void> {
+    if (samplingMethodCode !== AQL_SAMPLING) return;
+    const plan = await this.prisma.inspection_plan.findUnique({
+      where: { inspection_plan_id: BigInt(planId) },
+      select: { inspection_type_code: true },
+    });
+    if (plan === null || plan.inspection_type_code === 'IQC') return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'samplingMethodCode',
+        code: ERROR_CODE.INVALID,
+        message: 'AQL 샘플링은 IQC 검사 기준에서만 쓸 수 있습니다.',
+      },
+    ]);
   }
 
   private async assertWritable(input: VersionWrite, options: DraftOptions): Promise<void> {
@@ -691,7 +775,7 @@ function writeData(input: VersionWrite): VersionColumns {
     effective_from: new Date(input.effectiveFrom),
     ...optionalDate('effective_to', input.effectiveTo),
     sampling_method_code: input.samplingMethodCode,
-    inspection_frequency_code: input.inspectionFrequencyCode,
+    ...optional('inspection_frequency_code', input.inspectionFrequencyCode),
     ...optional('aql_value', input.aqlValue),
     ...optional('acceptance_number', input.acceptanceNumber),
     ...optional('rejection_number', input.rejectionNumber),
@@ -700,8 +784,8 @@ function writeData(input: VersionWrite): VersionColumns {
     // ⛔ 백분율이다(0 초과 100 이하) — 비율이 아니다. 선행 마이그레이션이 CHECK 를 고쳤다.
     ...optional('sampling_ratio', input.samplingRatio),
     ...optional('sampling_qty', input.samplingQty),
-    ...optional('guide_text_ko', guideTextOf(input.guideTextKo)),
-    ...optional('guide_text_vi', guideTextOf(input.guideTextVi)),
+    ...optional('guide_text', guideTextOf(input.guideText)),
+    ...optional('aql_inspection_level_code', input.aqlInspectionLevelCode),
   } as VersionColumns;
 }
 
@@ -716,15 +800,16 @@ const GUIDE_TEXT_MAX = 3000;
 
 /** 계약의 maxLength 와 같다 — 엑셀 올리기처럼 계약 검사를 거치지 않는 길도 막는다. */
 function assertGuideText(input: VersionWrite): void {
-  const errors = (['guideTextKo', 'guideTextVi'] as const)
-    .filter((field) => (guideTextOf(input[field])?.length ?? 0) > GUIDE_TEXT_MAX)
-    .map((field) => invalid(field, `안내 문구는 ${GUIDE_TEXT_MAX}자까지 적을 수 있습니다.`));
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+  if ((guideTextOf(input.guideText)?.length ?? 0) > GUIDE_TEXT_MAX) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      invalid('guideText', `안내 문구는 ${GUIDE_TEXT_MAX}자까지 적을 수 있습니다.`),
+    ]);
+  }
 }
 
 function itemData(
   versionId: number,
-  item: ItemSpecUpsert,
+  item: FilledItemSpec,
 ): Prisma.inspection_item_specUncheckedCreateInput {
   return {
     inspection_plan_version_id: versionId,
@@ -772,10 +857,24 @@ function specData(item: SpecRow): Omit<
   };
 }
 
+/** 항목코드를 채운 항목 — 저장 · 검사는 이것만 받는다. */
+type FilledItemSpec = ItemSpecUpsert & { inspectionItemCode: string };
+
+/**
+ * 항목코드 — 비우면 순서로 붙인다(omf-all-around#262). 이미 저장된 항목을 비워 보내면 저장된 코드를 그대로 둔다 —
+ * 순서를 바꿔도 붙은 코드가 바뀌지 않는다.
+ */
+function itemCodeOf(item: ItemSpecUpsert, savedCodes: ReadonlyMap<number, string>): string {
+  const code = (item.inspectionItemCode ?? '').trim();
+  if (code !== '') return code;
+  const saved = item.inspectionItemSpecId === undefined ? undefined : savedCodes.get(item.inspectionItemSpecId);
+  return saved ?? `ITEM-${String(item.sequenceNo).padStart(3, '0')}`;
+}
+
 /** 요청 안에서 먼저 본다 — DB 까지 가면 500 이고 계약은 여기에 400 을 요구한다. */
 function assertItemShape(
   versionId: number,
-  items: ItemSpecUpsert[],
+  items: FilledItemSpec[],
   known: ReadonlySet<number>,
 ): void {
   const errors: ErrorItem[] = [];
@@ -844,8 +943,8 @@ function view(row: VersionRow): VersionView {
     statusCode: row.status_code,
     samplingRatio: row.sampling_ratio === null ? null : Number(row.sampling_ratio),
     samplingQty: row.sampling_qty === null ? null : Number(row.sampling_qty),
-    guideTextKo: row.guide_text_ko,
-    guideTextVi: row.guide_text_vi,
+    guideText: row.guide_text,
+    aqlInspectionLevelCode: row.aql_inspection_level_code,
   };
 }
 
@@ -884,7 +983,10 @@ const FULL_INSPECTION = 'FULL_INSPECTION';
  * 기존 버전은 다시 저장하거나 확정할 때 걸린다.
  */
 export function assertSamplingRatio(
-  input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio' | 'samplingQty'>,
+  input: Pick<
+    VersionWrite,
+    'samplingMethodCode' | 'samplingRatio' | 'samplingQty' | 'aqlValue' | 'aqlInspectionLevelCode'
+  >,
   options: DraftOptions = {},
 ): void {
   const hasRatio = input.samplingRatio != null;
@@ -892,6 +994,18 @@ export function assertSamplingRatio(
   const fail = (field: string, code: ErrorItem['code'], message: string): never => {
     throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'field', field, code, message }]);
   };
+  if (input.samplingMethodCode === AQL_SAMPLING) {
+    if (hasRatio || hasQty) {
+      fail(hasRatio ? 'samplingRatio' : 'samplingQty', ERROR_CODE.INVALID, 'AQL 샘플링은 시료 수를 표로 정합니다 — 샘플 비율(%) · 개수를 넣지 않습니다.');
+    }
+    if (input.aqlValue == null || !isAqlValue(input.aqlValue)) {
+      fail('aqlValue', input.aqlValue == null ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID, 'AQL 은 0.010~10 의 표준값 중에서 고르세요.');
+    }
+    if (input.aqlInspectionLevelCode == null || !isInspectionLevel(input.aqlInspectionLevelCode)) {
+      fail('aqlInspectionLevelCode', input.aqlInspectionLevelCode == null ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID, 'AQL 검사 수준을 고르세요.');
+    }
+    return;
+  }
   if (input.samplingMethodCode === FULL_INSPECTION) {
     if (hasRatio) fail('samplingRatio', ERROR_CODE.INVALID, '전수검사에는 샘플 비율(%)을 넣지 않습니다.');
     if (hasQty) fail('samplingQty', ERROR_CODE.INVALID, '전수검사에는 샘플 개수를 넣지 않습니다.');
