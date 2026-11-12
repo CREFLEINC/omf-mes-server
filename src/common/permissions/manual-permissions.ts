@@ -311,6 +311,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /quality/inspection-plan-versions/{inspectionPlanVersionId}/items': ['W-06-02'],
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:confirm': ['W-06-02'],
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:obsolete': ['W-06-02'],
+  // 재사용 — 같은 화면의 조작이다(omf-all-around#258).
+  'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:reactivate': ['W-06-02'],
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:new-revision': ['W-06-02'],
   // 작성중 버전 취소(장부 P-128) — 신규 버전 발행의 되돌림이라 같은 화면이다.
   'DELETE /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['W-06-02'],
