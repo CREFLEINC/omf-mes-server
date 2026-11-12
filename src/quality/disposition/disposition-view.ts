@@ -22,6 +22,9 @@ export interface DispositionDecisionRow {
   lot_id: bigint | number | null;
   lot_no: string | null;
   posted_qty: unknown;
+  /** 선별(R-14b) 정보 수량 — 선별 판정만, 입력이 없으면 NULL. */
+  sort_good_qty?: unknown;
+  sort_defect_qty?: unknown;
   /** 특채 LOT 에 불량창고 재고가 남았는가(#207) — `reinstatable` 판정에만 쓴다. */
   concession_defect_stock?: boolean | null;
 }
@@ -46,6 +49,8 @@ export interface DispositionDecisionView {
   decidedByName?: string;
   followUpStatusCode: 'NOT_STARTED' | 'PARTIAL' | 'COMPLETED';
   followUpQty: number;
+  sortGoodQty: number | null;
+  sortDefectQty: number | null;
 }
 
 export interface DispositionDecisionRendered {
@@ -90,8 +95,14 @@ export function dispositionDecisionView(row: DispositionDecisionRow): Dispositio
     decidedByName: row.decided_by_name ?? undefined,
     followUpStatusCode: followUp.followUpStatusCode,
     followUpQty: followUp.followUpQty,
+    sortGoodQty: qtyOrNull(row.sort_good_qty),
+    sortDefectQty: qtyOrNull(row.sort_defect_qty),
   });
   return { view, followUp };
+}
+
+function qtyOrNull(value: unknown): number | null {
+  return value === null || value === undefined ? null : new Prisma.Decimal(String(value)).toNumber();
 }
 
 /**

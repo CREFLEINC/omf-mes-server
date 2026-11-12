@@ -3579,7 +3579,7 @@
      "quality"
     ],
     "summary": "처분 판정 저장",
-    "description": "W-03-10 「판정 저장」. 부적합 하나를 수량으로 갈라 여러 번 부를 수 있다 — 일부 재작업 · 일부 폐기가 성립한다. ⭐ 판정 저장과 Lot Status 전이는 한 트랜잭션이다(공유계약 B-8) — 처분만 남고 LOT 이 안 바뀌면 다음 화면이 잘못된 대상을 집는다. 근거: W-03-10 §5-1·§5-2 · DR-008 확정 3-A ⭐ 도착 상태는 처분에 따라 갈린다 — 재작업 → INSPECTION_PENDING(검사 대기) · 폐기 → SCRAPPED(폐기) · 정상 → NORMAL(정상). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 가 갖는다. ⭐ If-Match 값은 이 경로의 GET 이 아니라 부적합 상세(GET /quality/nonconformances/{nonconformanceId} · 제품출하 계약)의 ETag 를 담는다 — 잠그는 대상이 처분 결정 한 건이 아니라 부적합이기 때문이다. ⛔ 이 경로의 목록 GET 에는 ETag 가 없다. ⭐ 판정 하나가 부적합의 LOT 전부(자재 입하 IQC 부적합이면 입하 LOT 의 자재 관리 LOT 전부)를 옮긴다(FR-031). ⛔ SORT 는 400(dispositionTypeCode INVALID) — 옛 수량 분할 선별 본문(acceptedQty·rejectedQty·businessDate)은 없어졌고(FR-038), 반품·OQC 부적합에는 선별이 없다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
+    "description": "W-03-10 「판정 저장」. 부적합 하나를 수량으로 갈라 여러 번 부를 수 있다 — 일부 재작업 · 일부 폐기가 성립한다. ⭐ 판정 저장과 Lot Status 전이는 한 트랜잭션이다(공유계약 B-8) — 처분만 남고 LOT 이 안 바뀌면 다음 화면이 잘못된 대상을 집는다. 근거: W-03-10 §5-1·§5-2 · DR-008 확정 3-A ⭐ 도착 상태는 처분에 따라 갈린다 — 재작업 → INSPECTION_PENDING(검사 대기) · 폐기 → SCRAPPED(폐기) · 정상 → NORMAL(정상). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 가 갖는다. ⭐ If-Match 값은 이 경로의 GET 이 아니라 부적합 상세(GET /quality/nonconformances/{nonconformanceId} · 제품출하 계약)의 ETag 를 담는다 — 잠그는 대상이 처분 결정 한 건이 아니라 부적합이기 때문이다. ⛔ 이 경로의 목록 GET 에는 ETag 가 없다. ⭐ 판정 하나가 부적합의 LOT 전부(자재 입하 IQC 부적합이면 입하 LOT 의 자재 관리 LOT 전부)를 옮긴다(FR-031). ⭐ SORT(선별 — 자재 관리 LOT 분리 · R-14b): 본문 { dispositionTypeCode: SORT, lotIds[], goodQty?, defectQty?, reason }. 새 흐름 자재 입하 IQC 부적합이고 판정·특채가 하나도 없을 때만(판정·특채 있음·닫힘 409 INVALID_STATE). 한 트랜잭션: 고른 LOT 을 새 입하 LOT 으로 분리(:split-lots 와 같은 공통 효과 — 새 줄·원래 줄 감소·LOT 의 입하 LOT·원천·P/O 배정 이전 「P/O 없음」부터·이벤트 SPLIT), 남은 LOT → 정상(처분 정상과 같은 전이·검사 보류 해제), 이 부적합에서 옮긴 LOT 줄을 빼고 SORT 판정 1건(수량 = 남은 LOT 의 부적합 수량 합, sortGoodQty·sortDefectQty = 보낸 정보 수량) → 닫힘, 새 입하 LOT 에 IQC 요청 COMPLETED·종합 판정 REJECTED·splitFromInspectionRequestId = 원래 요청(옮긴 LOT 에만 매칭된 원래 결과를 확정으로 복사 — 측정치 포함·불량 기록 제외, 원래 결과는 그대로), 요청 이벤트 SPLIT_OUT·SPLIT_IN, 옮긴 LOT 은 불량 그대로 새 부적합 1건(PENDING_DECISION · sortedFromNonconformanceId = 이 부적합 · 결과 연결 = 복사한 불합격 결과 중 순번 최소). 응답 201 에 newInboundLotId·newInboundLotNo·newNonconformanceId·newNonconformanceNo·newInspectionRequestNo. 400: lotIds 가 부적합 LOT 전부(「원래 입하 LOT에 자재 관리 LOT가 하나 이상 남아야 합니다」)·부적합 LOT 이 아닌 것·반품·OQC·이전 데이터 부적합. 옛 수량 분할 본문(lotIds 없음)은 400(FR-038). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254 · FR-038 · D-14",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6231,6 +6231,59 @@
         "type": "string"
        }
       }
+     },
+     "sortGoodQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "description": "선별(SORT) 판정의 정보 수량(양품) — 입력이 없었거나 선별이 아니면 null. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "sortDefectQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "description": "선별(SORT) 판정의 정보 수량(불량) — 입력이 없었거나 선별이 아니면 null. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "newInboundLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "판정 저장(POST) 응답의 선별만 — 분리한 불량 자재 관리 LOT 의 새 입하 LOT. 선별이 아니거나 조회 응답이면 싣지 않는다. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "newInboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "판정 저장 응답의 선별만 — 새 입하 LOT 번호. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "newNonconformanceId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "판정 저장 응답의 선별만 — 옮긴 LOT 의 새 부적합(판정 대기 · sortedFromNonconformanceId = 이 부적합). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "newNonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "판정 저장 응답의 선별만 — 새 부적합 번호. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "newInspectionRequestNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "판정 저장 응답의 선별만 — 새 입하 LOT 에 불합격으로 확정된 IQC 검사 번호(원래 검사와 연결, 옮긴 LOT 에만 매칭된 결과를 복사). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
      }
     },
     "required": [
@@ -6290,7 +6343,7 @@
     "properties": {
      "dispositionTypeCode": {
       "type": "string",
-      "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31) ⛔ SORT(선별)는 지금 400 이다 — 수량으로 LOT 을 나누는 옛 선별은 없어졌고(FR-038), 반품·OQC 부적합에는 선별이 없다. 자재 입하 IQC 부적합의 선별(불량 자재 관리 LOT 분리 — R-14b)은 뒤 단계에서 연다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
+      "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31) ⭐ SORT(선별)는 자재 입하 IQC 부적합(입하 LOT 검사)에서 불량 자재 관리 LOT 를 새 입하 LOT 으로 분리한다 — 본문은 lotIds(+정보 수량 goodQty·defectQty)이고 decisionQty·uomId 를 받지 않는다(R-14b). 수량으로 LOT 을 나누는 옛 선별 본문(lotIds 없음)은 400(FR-038), 반품·OQC·이전 데이터 부적합의 선별도 400. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254 · FR-038 · D-14",
       "enum": [
        "REWORK",
        "SCRAP",
@@ -6318,15 +6371,34 @@
       "minLength": 1,
       "description": "⭐ 비울 수 없다 — 남이 읽고 판단할 자유 텍스트라 화면이 필수로 만든다. 왜 그렇게 정했는지가 근거로 남는다. 공백만 있는 문자열도 받지 않는다(공유계약 A-12 — 같은 계약의 NonconformanceCreate.description 과 같은 처리)",
       "example": "변형 손상이 커 재작업으로 회복되지 않는다"
+     },
+     "lotIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "SORT 만 — 불량 자재 관리 LOT(이 부적합의 LOT, 전부는 아님). 고른 LOT 은 새 입하 LOT 으로 분리돼 불량 그대로 새 부적합(판정 대기)에 담기고, 남은 LOT 은 정상이 되며 이 부적합은 SORT 판정 1건(수량 = 남은 LOT 의 부적합 수량 합)으로 닫힌다. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "goodQty": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "description": "SORT 만 — 정보 수량(양품). 판정 행 sortGoodQty 에 남고 재고·LOT 수량은 바뀌지 않는다. 없으면 null. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+     },
+     "defectQty": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "description": "SORT 만 — 정보 수량(불량). 판정 행 sortDefectQty 에 남는다. 없으면 null. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
      }
     },
     "required": [
      "dispositionTypeCode",
-     "decisionQty",
-     "uomId",
      "reason"
     ],
-    "description": "처분 결정 등록. ⭐ decidedBy·decidedAt 은 받지 않는다 — 서버가 인증 주체와 수신 시각으로 채운다(공유계약 B-6)"
+    "description": "처분 결정 등록. ⭐ decidedBy·decidedAt 은 받지 않는다 — 서버가 인증 주체와 수신 시각으로 채운다(공유계약 B-6). 정상·폐기·재작업은 decisionQty·uomId 가 필수다(없으면 400 REQUIRED — 선별 본문이 따로라 스키마가 필수로 두지 못한다). 선별(SORT)은 lotIds·reason(+goodQty·defectQty)이다. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
    },
    "ErrorItem": {
     "type": "object",
