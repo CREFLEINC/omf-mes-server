@@ -110,6 +110,7 @@ export class InspectionResultWriteService {
             ...body,
             judgment: body.overallJudgmentCode as string,
             reason: body.judgmentChangeReason,
+            measurements: () => body.measurements ?? [],
           });
     const remarks = changeReason === undefined ? body.remarks : remarksWithJudgmentChange(changeReason, body.remarks);
     const fourMChange = await prepareFourMChange(this.prisma, BigInt(body.inspectionRequestId), body.fourMChange);

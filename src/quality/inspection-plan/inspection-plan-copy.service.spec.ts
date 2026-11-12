@@ -20,8 +20,7 @@ const SOURCE_VERSION = {
   inspectionFrequencyCode: 'LOT',
   frequencyIntervalValue: null,
   frequencyIntervalUomCode: null,
-  guideTextKo: '라벨 위치 확인',
-  guideTextVi: 'Kiểm tra vị trí nhãn',
+  guideText: '라벨 위치 확인',
   statusCode: 'CONFIRMED',
 };
 
@@ -80,8 +79,7 @@ describe('InspectionPlanCopyService', () => {
         samplingMethodCode: 'SAMPLING',
         samplingRatio: 10,
         inspectionFrequencyCode: 'LOT',
-        guideTextKo: '라벨 위치 확인',
-        guideTextVi: 'Kiểm tra vị trí nhãn',
+        guideText: '라벨 위치 확인',
       }),
       { allowMissingRatio: true },
       7,
