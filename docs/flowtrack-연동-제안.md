@@ -1,6 +1,6 @@
 # flowtrack ↔ MES 연동 제안 — OA(PL13)
 
-상태: 제안 · 안 B 로 정함 · API 는 flowtrack 구현(`flowtrack_backend/docs/mes-integration.md` · `mes-dev` 2026-11-09)에 맞춤 · flowtrack 회신 반영 · 미룬 것 1(§1-2) (2026-11-12)
+상태: 제안 · 안 B 로 정함 · API 는 flowtrack 구현(`flowtrack_backend/docs/mes-integration.md` · `mes-dev` 2026-11-09)에 맞춤 · flowtrack 회신(`058471a`) 반영 · 미룬 것 1(§1-2) (2026-11-12)
 
 OA 사업부는 MES 에서 생산계획을 세우지 않는다. ERP W/O 를 그대로 쓰고, 창고·IQC 는 MES 를 쓴다. 조립·검사·포장·출하 스캔은 flowtrack(`flowtrack_swarm/flowtrack_backend`, FastAPI)이 한다.
 
@@ -36,7 +36,7 @@ OA 사업부는 MES 에서 생산계획을 세우지 않는다. ERP W/O 를 그�
 | 16 | 자재 차감이 모자랄 때 | 있는 만큼 빼고 모자란 몫은 「미차감」으로 남겨 화면에서 정리한다. 제품 입고는 막지 않는다 | 사용자 2026-11-12 |
 | 17 | 마감 전이 | 연동 마감이 `RELEASED` 에서 바로 마감하는 전이를 연다(§7-3 의 4) | 사용자 2026-11-12 |
 | 18 | ERP W/O 에 창고(SL_CD)가 없거나 MES 에 없는 창고 | 포장 입고이동·마감 보고를 거절한다 | 사용자 2026-11-12 |
-| 19 | 조기 마감 | flowtrack 이 수동 마감하고, 그 W/O 의 포장을 모두 보낸 뒤 마감 보고(3-5)에 남은 수량 처리·사유·비고를 싣는다. 사유 목록은 MES 공통코드 조회로 받는다. 양품 합이 0 이면 MES 는 마감하지 않고 취소한다. MES 관리웹은 OA 자동 W/O 를 마감하지 않는다(§7-3 의 4 · §5) | 사용자 2026-11-12 |
+| 19 | 조기 마감 | flowtrack 이 수동 마감하고, 그 W/O 의 포장을 모두 보낸 뒤 마감 보고(3-5)에 남은 수량 처리·사유·비고를 싣는다. 처분은 늘 `WRITE_OFF`(flowtrack 쪽 결정). 사유 목록은 MES 공통코드 조회로 받는다. 양품 합이 0 이면 MES 는 마감하지 않고 취소한다. MES 관리웹은 OA 자동 W/O 를 마감하지 않는다(§7-3 의 4 · §5) | 사용자 2026-11-12 |
 | 20 | 업무일자 | flowtrack 이 모든 본문에 `businessDate` 를 더한다(공유계약 C-8 · §5) | 사용자 2026-11-12 |
 
 ### 1-2. 미룬 것
@@ -185,8 +185,8 @@ flowtrack 은 3-2 로 받아 둔 W/O 를 품목코드로 찾는다. MES 목록 �
 ```
 
 - `qty` — 시리얼 없이 올릴 양품 수. S410 은 만든 수 — 다 만들면 지시수량(flowtrack 2.6), 적게 끝내면 그 수(#274). 시리얼 품목은 0 — 시리얼은 입고이동(3-3)으로 이미 왔다.
-- `remainderDispositionCode`(`CARRY_OVER` 이월 · `WRITE_OFF` 소멸) · `reasonCode` — 양품 합이 지시수량보다 적으면 둘 다 필수, 지시수량에 닿으면 둘 다 비운다(`close-rules.ts` · 관리웹 마감과 같다). 이월은 표시만 하고 새 W/O 를 만들지 않는다.
-- 사유 목록 — `GET /mdm/code-values?codeGroupCode=WORK_ORDER_COMPLETION_VARIANCE_REASON`. `OVER_PRODUCTION` 은 초과 마감용이다.
+- `remainderDispositionCode`(`CARRY_OVER` 이월 · `WRITE_OFF` 소멸) · `reasonCode` — 양품 합이 지시수량보다 적으면 둘 다 필수, 지시수량에 닿으면 둘 다 비운다(`close-rules.ts` · 관리웹 마감과 같다). 이월은 표시만 하고 새 W/O 를 만들지 않는다. flowtrack 은 늘 `WRITE_OFF` 를 보낸다.
+- 사유 목록 — `GET /mdm/code-values?codeGroupCode=WORK_ORDER_COMPLETION_VARIANCE_REASON`(쪽은 1부터 · 기본은 사용 중인 값만). `OVER_PRODUCTION` 은 초과 마감용이다. 이름은 `codeName` 에만 있다(`nameKo`·`nameVi` 비어 있음). 마감 보고는 사용 중인 코드만 받는다 — flowtrack 이 MES 가 끊긴 사이 내장 목록으로 고른 코드가 꺼져 있으면 400.
 - `remarks` — 선택. flowtrack 마감자를 싣는다. MES 의 마감자는 연동 계정이다.
 - 처리 — 한 트랜잭션: `qty` 만큼 실적 · 제품 입고(ERP W/O 의 창고) · 자재 차감 → 마감. 양품 합이 0 이면 마감하지 않고 취소한다(LOT 폐번 · §1-1 의 11 과 같다).
 - 그 W/O 의 입고이동이 모두 `SENT` 가 된 뒤에 보낸다. 지시수량에 닿은 W/O 는 MES 가 이미 마감했으므로 보내지 않는다.
@@ -249,13 +249,13 @@ flowtrack 저장소(`mes-dev`)의 일이다. 회신: 2026-11-12 · `bb31e61`(pus
 | S410 품목 11개 등록 | #274 에서 정한다 — 시리얼이 없는 품목이라 flowtrack 제품 기준정보 설계가 필요하다 |
 | `packing_logs.product_sno` 중복 막기 | 반영 — 지우지 않은 포장은 S/NO 당 1건(부분 UNIQUE) · 다시 포장하면 409 |
 
-다음 요청(2026-11-12):
+다음 요청(2026-11-12) · 회신 `058471a`(push 전 · `MES_ENABLED` 꺼짐):
 
 | 요청 | flowtrack 회신 |
 |---|---|
-| 수동 마감에서 남은 수량 처리(이월·소멸)·사유를 고르고 비고와 함께 마감 보고에 싣는다. 사유 목록은 `GET /mdm/code-values` 로 받는다(§1-1 의 19 · §3-5) | |
+| 수동 마감에서 남은 수량 처리(이월·소멸)·사유를 고르고 비고와 함께 마감 보고에 싣는다. 사유 목록은 `GET /mdm/code-values` 로 받는다(§1-1 의 19 · §3-5) | 반영 — 처분은 늘 `WRITE_OFF`(flowtrack 사용자 결정) · 미달 마감은 사유·마감자 필수 · `remarks` 「flowtrack 마감: <이름>」. 사유 목록은 `page=1&size=100` · 사용 중인 값만 · `OVER_PRODUCTION` 뺌. 연동이 꺼졌거나 MES 가 답하지 않으면 내장 목록(개발 DB 값). 양품 0 으로 MES 가 취소한 W/O 는 flowtrack 에서 CLOSED 로 둔다. W/O 받기도 1쪽부터 · 받은 수 < size 이면 멈춤 |
 | S410 을 지시수량보다 적게 마감할 때 만든 수와 같은 칸을 싣는다(#274) | |
-| `STOCK-` W/O 는 지금대로 둔다(§1-2) | |
+| `STOCK-` W/O 는 지금대로 둔다(§1-2) | 반영 — 켜기 전 확인 목록에 「`STOCK-` 시리얼이 섞인 출고 4xx」 · 「MES PR 1(공통코드 조회·마감 보고)」 |
 
 ## 6. 지금 데이터에서 본 사실
 
