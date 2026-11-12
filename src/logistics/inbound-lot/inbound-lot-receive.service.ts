@@ -18,6 +18,7 @@ import { assertDay, assertInstant, isDuplicateLotNo } from '../../trace/lot/lot-
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { RegisteredLotSummary, recordInboundLotEvent } from './inbound-lot-event';
 import { InboundLotCloseService, IqcRequestNoNeeded } from './inbound-lot-close';
+import { iqcSkipRecorded } from './inbound-lot-iqc-skip-default';
 import { OpenInboundLot, createInboundLotWithin, lockOpenInboundLot } from './inbound-lot-open';
 import {
   InboundLotReceiveEntry, ResolvedReceiveLot, assertReceiveEntries, resolveReceiveLots,
@@ -38,6 +39,8 @@ export interface InboundLotReceivedView {
   inboundLotNo: string;
   created: boolean;
   autoClosedInboundLotNo: string | null;
+  /** 검사 불필요 입하 LOT 을 마감하면 IQC 가 「검사 생략」으로 남는가(G2 L15) — 마감 확인 창 문구. */
+  iqcDefaultSkipApplies: boolean;
   inboundReceiptNo: string;
   receivedQty: number;
   lotCount: number;
@@ -221,6 +224,7 @@ export class InboundLotReceiveService {
     const statusCode = line.inspection_required ? INITIAL_LOT_STATUS : NORMAL;
     return {
       inboundLotId: Number(open.inboundLotId), inboundLotNo: open.inboundLotNo, created, autoClosedInboundLotNo,
+      iqcDefaultSkipApplies: !line.inspection_required && (await iqcSkipRecorded(tx, lotKey.itemId, ctx.localDay)),
       inboundReceiptNo: line.inbound_receipt.inbound_receipt_no, receivedQty: Number(line.received_qty),
       lotCount: await tx.lot.count({ where: { inbound_lot_id: open.inboundLotId } }),
       lots: group.map((lot) => ({

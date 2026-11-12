@@ -27551,7 +27551,8 @@
      "lotProgress",
      "finalizeBlockers",
      "erpSendModeCode",
-     "versionNo"
+     "versionNo",
+     "iqcDefaultSkipApplies"
     ],
     "properties": {
      "inboundLotId": {
@@ -27648,6 +27649,11 @@
      "inspectionRequired": {
       "type": "boolean",
       "description": "검사 필요 품목인가(C2 정함). 새 흐름은 입하 LOT 이 생길 때 품목 수입검사 대상이고 IQC 기준이 기본 생략이 아니면 참 — 그 입하 LOT 의 LOT 들이 같은 값을 따른다. 이전 데이터는 입하 줄의 값"
+     },
+     "iqcDefaultSkipApplies": {
+      "type": "boolean",
+      "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 품목이 검사 대상이거나 품목 기준이 기본 생략일 때만 true. 아니면 마감해도 IQC 요청이 생기지 않는다(US2-7). 검사 필요 입하 LOT 은 false. 판단 날짜는 공장 현지 오늘(받기는 스캔 날짜). M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
+      "example": false
      },
      "firstRegisteredAt": {
       "type": [
@@ -27991,7 +27997,8 @@
         "inboundReceiptNo",
         "receivedQty",
         "lotCount",
-        "lots"
+        "lots",
+        "iqcDefaultSkipApplies"
        ],
        "properties": {
         "inboundLotId": {
@@ -28011,6 +28018,11 @@
           "null"
          ],
          "description": "스캔 때 자동 마감한 지난 날짜 입하 LOT 번호 — 없으면 null"
+        },
+        "iqcDefaultSkipApplies": {
+         "type": "boolean",
+         "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 품목이 검사 대상이거나 품목 기준이 기본 생략일 때만 true. 아니면 마감해도 IQC 요청이 생기지 않는다(US2-7). 검사 필요 입하 LOT 은 false. 판단 날짜는 공장 현지 오늘(받기는 스캔 날짜). M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
+         "example": false
         },
         "inboundReceiptNo": {
          "type": "string"

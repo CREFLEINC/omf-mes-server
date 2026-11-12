@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 
+import { localDate } from '../../planning/production-plan/plan-window';
 import { FinalizeBlocker, LotProgress, finalizeFactsOf } from './inbound-lot-finalizable';
+import { iqcSkipRecorded } from './inbound-lot-iqc-skip-default';
 import { onlyOpenReceiptBlocks, reopenStatesOf } from './inbound-lot-reopenable';
 
 /** 계약 `InboundLotIqcSummary`. */
@@ -44,6 +46,8 @@ export interface InboundLotView {
   unallocatedQty: number;
   iqc: InboundLotIqcView | null;
   inspectionRequired: boolean;
+  /** 검사 불필요로 받았고 마감하면 IQC 가 「검사 생략」으로 남는가(G2 L15) — 검사 필요면 false. */
+  iqcDefaultSkipApplies: boolean;
   firstRegisteredAt: string | null;
   receivedClosedAt: string | null;
   closedAutomatically: boolean;
@@ -67,6 +71,7 @@ const INBOUND_LOT_SELECT = {
   erp_send_mode_code: true, version_no: true,
   supplier: { select: { partner_code: true, partner_name: true } },
   item: { select: { item_code: true, item_name: true } },
+  plant: { select: { timezone_code: true } },
   uom: { select: { uom_code: true } },
   inbound_receipt_line: {
     select: {
@@ -124,6 +129,7 @@ export async function loadInboundLotViews(
     finalizers.length === 0 ? [] : db.app_user.findMany({ where: { app_user_id: { in: finalizers } }, select: { app_user_id: true, user_name: true } }),
   ]);
   const userName = new Map(users.map((user) => [user.app_user_id, user.user_name]));
+  const skipApplies = await iqcSkipAppliesOf(db, rows);
   const reopened = new Set(reopenedEvents.map((row) => row.inbound_lot_id));
   const countOf = new Map(counts.map((row) => [row.inbound_lot_id, row._count._all]));
   const receivedOf = new Map(received.map((row) => [row.inbound_lot_id, Number(row.qty)]));
@@ -152,6 +158,7 @@ export async function loadInboundLotViews(
         statusCode: iqc.status_code, overallJudgmentCode: iqc.overall_judgment_code,
       },
       inspectionRequired: line.inspection_required,
+      iqcDefaultSkipApplies: skipApplies.has(row.inbound_lot_id),
       firstRegisteredAt: firstOf.get(row.inbound_lot_id)?.toISOString() ?? null,
       receivedClosedAt: row.received_closed_at?.toISOString() ?? null,
       closedAutomatically: row.closed_automatically,
@@ -167,6 +174,22 @@ export async function loadInboundLotViews(
 }
 
 type AllocationRow = Prisma.inbound_lotGetPayload<{ select: typeof INBOUND_LOT_SELECT }>['inbound_receipt_line']['inbound_receipt_po_allocation'][number];
+
+/** 검사 불필요 입하 LOT 중 마감하면 「검사 생략」이 남는 것 — 품목·공장 현지 오늘마다 한 번 판단한다. */
+async function iqcSkipAppliesOf(
+  db: Db, rows: { inbound_lot_id: bigint; item_id: bigint; plant: { timezone_code: string }; inbound_receipt_line: { inspection_required: boolean } }[],
+): Promise<Set<bigint>> {
+  const now = new Date();
+  const decided = new Map<string, boolean>();
+  const applies = new Set<bigint>();
+  for (const row of rows.filter((candidate) => !candidate.inbound_receipt_line.inspection_required)) {
+    const day = localDate(now, row.plant.timezone_code);
+    const key = `${String(row.item_id)}:${day}`;
+    if (!decided.has(key)) decided.set(key, await iqcSkipRecorded(db, row.item_id, day));
+    if (decided.get(key) === true) applies.add(row.inbound_lot_id);
+  }
+  return applies;
+}
 
 const NO_PROGRESS: LotProgress = { received: 0, inIqc: 0, inDisposition: 0, disposed: 0, returned: 0 };
 

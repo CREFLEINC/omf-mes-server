@@ -9,13 +9,14 @@ import { idempotencyContextOf } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { INBOUND_LOT_RECEIVING, type InboundLotActor, IqcHandoverNotifier } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
-import { findInspectionPlanVersion, itemIqcDefaultSkipped } from '../../core/quality/inspection-plan-version';
+import { findInspectionPlanVersion } from '../../core/quality/inspection-plan-version';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertInstant } from '../../trace/lot/lot-rules';
 import { CLOSED_ORDER_STATUSES } from '../purchase-order/purchase-order-receipt';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { recordInboundLotEvent } from './inbound-lot-event';
+import { iqcSkipRecorded } from './inbound-lot-iqc-skip-default';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 import { AutoAllocationResult, allocateByOrderAge } from './po-auto-allocate';
 
@@ -213,10 +214,7 @@ interface IqcRecord {
 export async function iqcRecordOf(
   db: Prisma.TransactionClient, itemId: bigint, inspectionNeeded: boolean, effectiveDate: string,
 ): Promise<IqcRecord | null> {
-  if (!inspectionNeeded) {
-    const item = await db.item.findUniqueOrThrow({ where: { item_id: itemId }, select: { inspection_required: true } });
-    if (!item.inspection_required && !(await itemIqcDefaultSkipped(db, Number(itemId), effectiveDate))) return null;
-  }
+  if (!inspectionNeeded && !(await iqcSkipRecorded(db, itemId, effectiveDate))) return null;
   return {
     statusCode: inspectionNeeded ? 'REQUESTED' : 'SKIPPED',
     planVersionId: await findInspectionPlanVersion(db, 'IQC', Number(itemId), effectiveDate),
