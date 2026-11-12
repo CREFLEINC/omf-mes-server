@@ -592,7 +592,8 @@ describe('DocumentStateService', () => {
       // +1 — 자재 출고요청 배포 WAITING→REGISTERED(피처 003 · omf-all-around#66).
       // +3 — 자재 출고요청 미룸·취소 · 피킹 지시 취소(피처 003 · omf-all-around#66).
       // +1 — 자재 관리 LOT 폐기 L5(피처 005 · omf-all-around#254).
-      expect(service.registered()).toHaveLength(65);
+      // +3 — 자재 관리 LOT 받기 L4 · 등록 해제 L6·C31(피처 005 S4).
+      expect(service.registered()).toHaveLength(68);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

@@ -5082,7 +5082,7 @@
      "logistics"
     ],
     "summary": "입하 라인 치환",
-    "description": "LOT 이 이미 만들어진 라인은 지울 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/inbound-receipts/{inboundReceiptId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1",
+    "description": "LOT 이 이미 만들어진 라인은 지울 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/inbound-receipts/{inboundReceiptId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1 ⭐ 입하 LOT 에 속한 줄(피처 005)은 수량을 바꾸거나 지울 수 없다 — 409 STATE_LOCKED(R-5a).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5159,11 +5159,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "저장 충돌(conflictCause — 다시 읽어 오면 풀린다) 또는 상태 잠김(errors[].code=STATE_LOCKED — 입하 LOT 에 속한 줄의 수량 변경·삭제. 입하 LOT 줄 수량은 받기·해제로만 바뀐다 · 피처 005 R-5a)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -11773,7 +11780,8 @@
         "C9",
         "C10",
         "C14",
-        "C15"
+        "C15",
+        "C31"
        ]
       },
       "description": "「이력으로 찾기」의 판정유형 축\n\n서버 구현 기준: 질의는 아직 C17~C20을 받지 않고 400으로 거부한다. 응답 행에는 C17~C20이 실릴 수 있다(통보 218).",
@@ -11875,7 +11883,10 @@
        "enum": [
         "L1",
         "L2",
-        "L3"
+        "L3",
+        "L4",
+        "L5",
+        "L6"
        ]
       },
       "description": "「이력으로 찾기」의 전이유형 축",
@@ -14028,6 +14039,577 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 LOT 목록",
+    "description": "피처 005 §2. 정렬: 입하 날짜 최근 → 입하 LOT 번호. closable·reopenable·closedAutomatically·finalizable·erpSendModeCode 조건은 S5·S12 에서 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장"
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "enum": [
+         "RECEIVING",
+         "RECEIVED",
+         "FINALIZED",
+         "VOIDED"
+        ]
+       }
+      },
+      "style": "form",
+      "explode": false,
+      "description": "상태(여러 값 — 쉼표로 잇는다)"
+     },
+     {
+      "name": "receivingDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "입하 날짜 이상"
+     },
+     {
+      "name": "receivingDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "입하 날짜 이하"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 100
+      },
+      "description": "입하 LOT 번호·품목 코드(부분 일치)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 200,
+       "default": 50
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/InboundLot"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — M-01-01 · M-01-03 · W-01-16 · W-01-01 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots/{inboundLotId}": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 LOT 상세",
+    "description": "피처 005 §2 — 행 + 자재 관리 LOT(lots[])·이력(events[]). finalizeBlockers 는 S12 에서 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotDetail"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — M-01-01 · M-01-03 · W-01-16 · W-01-01 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots:receive": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "PDA 입하 받기(스캔마다 한 번)",
+    "description": "피처 005 §3 · R-5. 한 트랜잭션: ① 자재 관리 LOT 마다 대기(WAITING)인지 본다 — 아니면 409 STATE_LOCKED·아무것도 등록 안 됨. 사전부착 라벨(lotNo)이 시스템에 없으면 P-3 형식·코드(품목·공급사가 MES 에 있는가) 검사 뒤 이 자리에서 만들고(바로 ACTIVE, 라벨의 공급사 LOT 번호), 있으면 그 LOT 으로 ② (공장, 공급사, 품목)으로 묶어 (공급사 id, 품목 id) 순으로 열린(RECEIVING) 입하 LOT 를 SELECT … FOR UPDATE 로 찾고, 없으면 입하 헤더·줄(lot_id 비움)·입하 LOT(IL-YYYYMMDD-NNNN, receiving_date = open_since_date = occurredAt 의 공장 현지 날짜, ON_FINALIZE)을 INSERT … ON CONFLICT DO NOTHING 뒤 다시 읽는다(uq_inbound_lot_open — 두 PDA 가 동시에 처음 받아도 하나) ③ 붙으면 줄 received_qty 증가 ④ 자재 관리 LOT: 원천을 입하 줄로·inbound_lot_id·생애 L4, 검사 필요면 보류 INCOMING_INSPECTION_WAIT, 불필요·기본 생략이면 C21 정상 ⑤ 이벤트 CREATED_BY_RECEIVE·LOTS_REGISTERED. P/O 배정·P/O 받은 양·IQC 요청은 건드리지 않는다(입하 마감 때). ⚠ 찾은 입하 LOT 가 지난 날짜면 먼저 자동 마감하는 일은 S5 에서 잇는다 — 그 전에는 그대로 붙는다. 같은 Idempotency-Key 로 다시 보내면 첫 결과를 돌려준다. 근거: M-01-01",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "MOBILE 단말(PDA M-01-01·M-01-03)에서는 필수(활성 작업자 사번 — 단말 공장). 계정 세션은 보내지 않는다 — 계정이 행위자다."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundLotReceive"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "받음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotReceiveResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — INVALID(라벨 형식, 라벨의 품목·공급사 코드가 MES 에 없음, 같은 요청에 같은 LOT 두 번, 없는 LOT, 계정 세션의 라벨에 plantId 없음·LOT 공장이 섞임), RANGE(공급사 LOT 번호 100자 초과)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — M-01-01 이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "LOT 이 대기가 아님(InboundLotReceiveRejection — errors[].code STATE_LOCKED · rejectedLots[].reasonCode) 또는 같은 키로 다른 본문·처리 중(ConflictResponse)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/InboundLotReceiveRejection"
+          },
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots/{inboundLotId}:unregister-lots": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 LOT 에서 자재 관리 LOT 등록 해제",
+    "description": "피처 005 §3 · R-5. 입하 중(RECEIVING)만 — 그 밖 409 STATE_LOCKED. 효과: 줄 received_qty 감소, LOT 생애 L6(ACTIVE → WAITING)·원천을 발행 묶음으로 되돌림(받기 때 이벤트가 적은 묶음 — 사전부착 라벨로 즉석 생성한 LOT 은 되돌릴 묶음이 없어 그 자리에서 LOT 하나짜리 묶음을 만든다)·inbound_lot_id 비움·검사 대기 보류 닫음, 받기 때 검사 불필요·기본 생략으로 정상이 된 LOT 은 C31(NORMAL → INSPECTION_PENDING). 이벤트 LOTS_UNREGISTERED. 마지막 LOT 을 풀면 입하 줄 취소·헤더는 살아 있는 줄이 없을 때만 취소·입하 LOT VOIDED·이벤트 VOIDED(같은 조합을 다시 받으면 새 입하 LOT). 근거: M-01-01 · M-01-03",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT"
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "MOBILE 단말(PDA M-01-01·M-01-03)에서는 필수(활성 작업자 사번 — 단말 공장). 계정 세션은 보내지 않는다 — 계정이 행위자다."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundLotUnregister"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "해제됨 — 입하 LOT 행",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLot"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — INVALID(이 입하 LOT 의 자재 관리 LOT 이 아님 · 같은 LOT 두 번)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — M-01-01 · M-01-03 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌(conflictCause — versionNo 가 다름, 다시 읽으면 풀림) 또는 상태 잠김(errors[].code=STATE_LOCKED — 입하 중이 아님)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no": {
+   "patch": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 공급사 LOT 번호 넣기·바꾸기·지우기",
+    "description": "피처 005 §3 · R-5. 고른 자재 관리 LOT 의 공급사 LOT 번호(lot_external_identifier SUPPLIER_LOT)를 한 값으로 넣거나 바꾸고, null·빈 문자열이면 지운다(N:1 허용). 입하 LOT 이 RECEIVING 일 때만 — 그 밖 409 STATE_LOCKED. versionNo 를 받지 않는다(마지막 저장이 이긴다). 재고·상태·P/O 무관. LOT 마다 이벤트 SUPPLIER_LOT_SET(LOT 번호·전·후). 온라인에서만 부른다. 근거: M-01-01",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT"
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "MOBILE 단말(PDA M-01-01·M-01-03)에서는 필수(활성 작업자 사번 — 단말 공장). 계정 세션은 보내지 않는다 — 계정이 행위자다."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundLotSupplierLotSet"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "바뀜",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotSupplierLotResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — INVALID(빈 lotIds · 이 입하 LOT 의 자재 관리 LOT 이 아님), RANGE(100자 초과)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — M-01-01 이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "상태 잠김(errors[].code=STATE_LOCKED — 입하 중이 아님) 또는 같은 키로 다른 본문(ConflictResponse)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -20251,9 +20833,10 @@
        "C17",
        "C18",
        "C19",
-       "C20"
+       "C20",
+       "C31"
       ],
-      "description": "원본 설계 전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표. 서버 구현 기준 C17·C18·C19·C20을 더해 응답은 13종이다\n\n서버 구현 기준 추가값: C17·C18·C19=처분 전이, C20=재고 재등록 후 정상 전이(통보 089·218).",
+      "description": "원본 설계 전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표. 서버 구현 기준 C17·C18·C19·C20을 더해 응답은 13종이다\n\n서버 구현 기준 추가값: C17·C18·C19=처분 전이, C20=재고 재등록 후 정상 전이(통보 089·218). C31=입하 등록 해제로 정상 → 검사 대기(피처 005).",
       "example": "C7",
       "x-code-key": "CD-LOT-STATUS-HISTORY-EVENT-TRANSITION"
      },
@@ -20349,9 +20932,12 @@
       "enum": [
        "L1",
        "L2",
-       "L3"
+       "L3",
+       "L4",
+       "L5",
+       "L6"
       ],
-      "description": "L1=대기→활성(첫 실적이 붙을 때, 해당 슬롯) · L2=대기→폐번(마감, 실적 없는 슬롯만) · L3=활성→폐번(작업지시 취소, 그 작업지시의 선발행 슬롯 전건 — DR-007). ⚠ L3를 여는 것은 취소 오퍼레이션 한 곳뿐이다 — 사람이 화면에서 직접 폐번하는 액션은 없다",
+      "description": "L1=대기→활성(첫 실적이 붙을 때, 해당 슬롯) · L2=대기→폐번(마감, 실적 없는 슬롯만) · L3=활성→폐번(작업지시 취소, 그 작업지시의 선발행 슬롯 전건 — DR-007). ⚠ L3를 여는 것은 취소 오퍼레이션 한 곳뿐이다 — 사람이 화면에서 직접 폐번하는 액션은 없다 · 자재 관리 LOT(피처 005): L4=대기→활성(PDA 받기) · L5=대기→폐기(:void) · L6=활성→대기(입하 등록 해제)",
       "example": "L1",
       "x-code-key": "CD-LOT-LIFECYCLE-HISTORY-EVENT-TRANSITION"
      },
@@ -25854,6 +26440,650 @@
           "null"
          ],
          "description": "폐기하지 못한 까닭 — STATE_LOCKED(대기 자재 관리 LOT 이 아님: 입하됨·이미 폐기·생산 LOT 등). 폐기됐으면 null"
+        }
+       }
+      }
+     }
+    }
+   },
+   "InboundLotIqcSummary": {
+    "type": "object",
+    "required": [
+     "requestId",
+     "requestNo",
+     "statusCode",
+     "overallJudgmentCode"
+    ],
+    "description": "입하 LOT 의 IQC 요청 요약(피처 005 §2). 새 흐름은 입하 마감(S5) 때 생긴다 — 그 전에는 행의 iqc 가 null 이다",
+    "properties": {
+     "requestId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "requestNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "IQC 요청 번호(C2 정함 — 마감 결과 「IQC 요청 {번호}」)"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "INSPECTION_REQUEST_STATUS"
+     },
+     "overallJudgmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "판정 확정의 종합 판정 — 확정 전이면 null"
+     }
+    }
+   },
+   "InboundLot": {
+    "type": "object",
+    "description": "입하 LOT 한 행(피처 005 §2). 받기(PDA)가 만든다 — 사람이 만들거나 고르지 않는다. 「(C2 정함)」 칸은 클라이언트 화면이 먼저 정한 칸이다. P/O 배정(poAllocations)·lotProgress·closable 는 입하 마감(S5)·최종 마감(S12)과 함께 더한다",
+    "required": [
+     "inboundLotId",
+     "inboundLotNo",
+     "plantId",
+     "supplierId",
+     "supplierCode",
+     "supplierName",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "uomCode",
+     "statusCode",
+     "receivingDate",
+     "inboundReceiptNo",
+     "lotCount",
+     "receivedQty",
+     "goodsReceivedQty",
+     "unallocatedQty",
+     "iqc",
+     "inspectionRequired",
+     "firstRegisteredAt",
+     "receivedClosedAt",
+     "closedAutomatically",
+     "finalizedAt",
+     "reopenable",
+     "reopenReasonCode",
+     "reopened",
+     "finalizable",
+     "erpSendModeCode",
+     "versionNo"
+    ],
+    "properties": {
+     "inboundLotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inboundLotNo": {
+      "type": "string",
+      "description": "채번 INBOUND_LOT(IL-YYYYMMDD-NNNN). 이전 데이터는 IL-MIG-<입하 줄 id>"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "supplierId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "supplierCode": {
+      "type": "string"
+     },
+     "supplierName": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "uomCode": {
+      "type": "string",
+      "description": "품목 기본 단위 코드"
+     },
+     "statusCode": {
+      "type": "string",
+      "enum": [
+       "RECEIVING",
+       "RECEIVED",
+       "FINALIZED",
+       "VOIDED"
+      ],
+      "description": "INBOUND_LOT_STATUS — 입하 중 · 입하 완료(마감) · 최종 마감 · 폐기(마감 전 마지막 자재 관리 LOT 해제)"
+     },
+     "receivingDate": {
+      "type": "string",
+      "format": "date",
+      "description": "첫 등록의 공장 현지 날짜(plant.timezone_code). 바뀌지 않는다"
+     },
+     "inboundReceiptNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "입하 번호(C2 정함 — M-01-03 상세 「입하 번호」)"
+     },
+     "lotCount": {
+      "type": "integer",
+      "description": "이 입하 LOT 의 자재 관리 LOT 수"
+     },
+     "receivedQty": {
+      "type": "number",
+      "description": "입하 줄 수량 = 자재 관리 LOT 수량 합(품목 기본 단위)"
+     },
+     "goodsReceivedQty": {
+      "type": "number",
+      "description": "살아 있는(취소 아닌) 입고 수량 합"
+     },
+     "unallocatedQty": {
+      "type": "number",
+      "description": "P/O 없음 = 입하 줄 수량 − P/O 배정 합. 새 흐름은 마감 전 배정이 없어 줄 수량과 같다"
+     },
+     "iqc": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/InboundLotIqcSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "inspectionRequired": {
+      "type": "boolean",
+      "description": "검사 필요 품목인가(C2 정함). 새 흐름은 입하 LOT 이 생길 때 품목 수입검사 대상이고 IQC 기준이 기본 생략이 아니면 참 — 그 입하 LOT 의 LOT 들이 같은 값을 따른다. 이전 데이터는 입하 줄의 값"
+     },
+     "firstRegisteredAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "첫 자재 관리 LOT 등록 시각(LOTS_REGISTERED 이벤트). 이전 데이터는 null"
+     },
+     "receivedClosedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "closedAutomatically": {
+      "type": "boolean"
+     },
+     "finalizedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "reopenable": {
+      "type": "boolean",
+      "description": "마감 취소 가능(S5 에서 채운다 — 그 전에는 false)"
+     },
+     "reopenReasonCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "NO_IQC_RESULT",
+       "INSPECTION_NOT_REQUIRED",
+       "IQC_SKIPPED",
+       null
+      ],
+      "description": "마감 취소 가능 건의 까닭(C2 정함) — 아니면 null. S5 에서 채운다"
+     },
+     "reopened": {
+      "type": "boolean",
+      "description": "마감 취소로 다시 연 건인가(C2 정함). S5 에서 채운다 — 그 전에는 false"
+     },
+     "finalizable": {
+      "type": "boolean",
+      "description": "「마감 승인 대기」(S12 에서 채운다 — 그 전에는 false)"
+     },
+     "erpSendModeCode": {
+      "type": "string",
+      "enum": [
+       "PER_RECEIPT",
+       "ON_FINALIZE"
+      ]
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "해제·마감의 versionNo 로 보낸다. 받기마다 오른다"
+     }
+    }
+   },
+   "InboundLotMaterialLot": {
+    "type": "object",
+    "description": "입하 LOT 상세의 자재 관리 LOT 한 개(피처 005 §2 lots[])",
+    "required": [
+     "lotId",
+     "lotNo",
+     "lotQty",
+     "package",
+     "supplierLotNo",
+     "lifecycleStatusCode",
+     "statusCode",
+     "registeredAt",
+     "fromSupplierLabel"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "lotQty": {
+      "type": "number"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackage"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "supplierLotNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "lifecycleStatusCode": {
+      "type": "string",
+      "description": "WAITING · ACTIVE · VOIDED — 이전 데이터 LOT(생애 NULL)은 ACTIVE"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "품질 상태(LOT_STATUS)"
+     },
+     "registeredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "이 입하 LOT 에 등록된 시각(C2 정함) — 그 LOT 을 담은 마지막 LOTS_REGISTERED 이벤트 시각. 이벤트가 없는 이전 데이터는 LOT 생성 시각"
+     },
+     "fromSupplierLabel": {
+      "type": "boolean",
+      "description": "공급사 사전부착 라벨로 받기 때 만든 LOT 인가(C2 정함) — 그 LOT 을 담은 마지막 LOTS_REGISTERED 이벤트가 이 받기에서 만들었다고 적었으면 참. 해제 뒤 다시 받은 LOT 은 거짓"
+     }
+    }
+   },
+   "InboundLotEvent": {
+    "type": "object",
+    "required": [
+     "eventCode",
+     "occurredAt",
+     "actorName"
+    ],
+    "description": "입하 LOT 이력 한 줄(INBOUND_LOT_EVENT_TYPE)",
+    "properties": {
+     "eventCode": {
+      "type": "string",
+      "description": "CREATED_BY_RECEIVE · LOTS_REGISTERED · LOTS_UNREGISTERED · SUPPLIER_LOT_SET · VOIDED · (S5~) RECEIPT_CLOSED 등"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "actorName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "사용자 또는 작업자 이름 — 시스템이면 null"
+     }
+    }
+   },
+   "InboundLotDetail": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/InboundLot"
+     },
+     {
+      "type": "object",
+      "required": [
+       "lots",
+       "events"
+      ],
+      "properties": {
+       "lots": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/InboundLotMaterialLot"
+        },
+        "description": "자재 관리 LOT — 번호 순"
+       },
+       "events": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/InboundLotEvent"
+        },
+        "description": "이력 — 일어난 순"
+       }
+      }
+     }
+    ]
+   },
+   "InboundLotReceive": {
+    "type": "object",
+    "required": [
+     "receiptDatetime",
+     "businessDate",
+     "occurredAt",
+     "lots"
+    ],
+    "description": "PDA 받기 본문(피처 005 §3). 클라이언트는 스캔 하나(원소 1개)만 담는다 — 배열은 호환으로 남긴다(여러 개면 스캔 순서, 공급사·품목이 섞여도 된다)",
+    "properties": {
+     "receiptDatetime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "새 입하 헤더의 입하 일시"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "업무일(공유계약 C-8) — 채번 기간·IQC 기준 조회"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "스캔 시각 — 공장 현지 날짜로 새 입하 LOT 의 receiving_date·open_since_date 를 정한다"
+     },
+     "deliveryNoteNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 100,
+      "description": "새 입하 헤더에 적고, 붙는 받기면 이벤트에만 남긴다"
+     },
+     "plantId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "(S4 더함) 계정 세션에서 사전부착 라벨(lotNo)을 받을 때의 공장. 단말은 보내지 않는다(단말 공장). lotId 만 보내면 LOT 의 공장이다"
+     },
+     "lots": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+       "oneOf": [
+        {
+         "type": "object",
+         "required": [
+          "lotId"
+         ],
+         "additionalProperties": false,
+         "properties": {
+          "lotId": {
+           "type": "integer",
+           "format": "int64",
+           "description": "미리 만든(대기) 자재 관리 LOT"
+          }
+         }
+        },
+        {
+         "type": "object",
+         "required": [
+          "lotNo"
+         ],
+         "additionalProperties": false,
+         "properties": {
+          "lotNo": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 100,
+           "description": "공급사 사전부착 라벨(자재 MES 형식 품목|수량|YYMMDD|공급사|NNNN). 시스템에 없으면 이 자리에서 만든다(P-3 형식·코드 검사), 있으면 그 LOT 으로"
+          },
+          "supplierLotNo": {
+           "type": [
+            "string",
+            "null"
+           ],
+           "description": "라벨에 찍힌 공급사 LOT 번호(앞뒤 공백 제거, 100자 안). 즉석 생성 때만 쓴다"
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   },
+   "InboundLotReceiveResult": {
+    "type": "object",
+    "required": [
+     "inboundLots"
+    ],
+    "properties": {
+     "inboundLots": {
+      "type": "array",
+      "description": "붙은 입하 LOT 마다 — 처음 붙은 순서",
+      "items": {
+       "type": "object",
+       "required": [
+        "inboundLotId",
+        "inboundLotNo",
+        "created",
+        "autoClosedInboundLotNo",
+        "inboundReceiptNo",
+        "receivedQty",
+        "lotCount",
+        "lots"
+       ],
+       "properties": {
+        "inboundLotId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "inboundLotNo": {
+         "type": "string"
+        },
+        "created": {
+         "type": "boolean",
+         "description": "이 받기가 새로 만들었나"
+        },
+        "autoClosedInboundLotNo": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "스캔 때 자동 마감한 지난 날짜 입하 LOT — 자동 마감은 S5 에서 잇는다(그 전에는 늘 null)"
+        },
+        "inboundReceiptNo": {
+         "type": "string"
+        },
+        "receivedQty": {
+         "type": "number",
+         "description": "입하 줄 누계"
+        },
+        "lotCount": {
+         "type": "integer",
+         "description": "이 받기 뒤 그 입하 LOT 의 자재 관리 LOT 수(C2 정함 — 「IL-… 에 추가 (n개째)」)"
+        },
+        "lots": {
+         "type": "array",
+         "description": "이 받기가 등록한 자재 관리 LOT",
+         "items": {
+          "type": "object",
+          "required": [
+           "lotId",
+           "lotNo",
+           "lotQty",
+           "statusCode",
+           "fromSupplierLabel"
+          ],
+          "properties": {
+           "lotId": {
+            "type": "integer",
+            "format": "int64"
+           },
+           "lotNo": {
+            "type": "string"
+           },
+           "lotQty": {
+            "type": "number"
+           },
+           "statusCode": {
+            "type": "string",
+            "description": "품질 상태 — 검사 필요면 INSPECTION_PENDING(+보류), 아니면 NORMAL"
+           },
+           "fromSupplierLabel": {
+            "type": "boolean",
+            "description": "공급사 사전부착 라벨로 이 자리에서 만들었는가(C2 정함)"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "InboundLotReceiveRejection": {
+    "type": "object",
+    "required": [
+     "errors",
+     "rejectedLots"
+    ],
+    "description": "받기 거부(409 STATE_LOCKED) — 아무것도 등록되지 않았다. errors[] 는 줄마다 하나(field = lots.{index}), rejectedLots[] 가 같은 줄의 까닭을 가른다(S4 더함)",
+    "properties": {
+     "errors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErrorItem"
+      }
+     },
+     "rejectedLots": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "index",
+        "lotId",
+        "lotNo",
+        "reasonCode"
+       ],
+       "properties": {
+        "index": {
+         "type": "integer",
+         "description": "본문 lots[] 의 자리"
+        },
+        "lotId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "lotNo": {
+         "type": "string"
+        },
+        "reasonCode": {
+         "type": "string",
+         "enum": [
+          "ALREADY_RECEIVED",
+          "VOIDED",
+          "NOT_MATERIAL_LOT"
+         ],
+         "description": "ALREADY_RECEIVED = 이미 입하된 LOT(다른·같은 입하 LOT 에 등록됨, 또는 이전 데이터) · VOIDED = 폐기된 대기 LOT · NOT_MATERIAL_LOT = 자재 관리 LOT 이 아님(생산 LOT 등)"
+        }
+       }
+      }
+     }
+    }
+   },
+   "InboundLotUnregister": {
+    "type": "object",
+    "required": [
+     "lotIds",
+     "versionNo"
+    ],
+    "properties": {
+     "lotIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "입하 LOT 의 versionNo — 다르면 409 VERSION_CONFLICT"
+     }
+    }
+   },
+   "InboundLotSupplierLotSet": {
+    "type": "object",
+    "required": [
+     "lotIds",
+     "supplierLotNo"
+    ],
+    "properties": {
+     "lotIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "이 입하 LOT 의 자재 관리 LOT — 빈 배열은 400 INVALID"
+     },
+     "supplierLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "넣거나 바꿀 값(앞뒤 공백 제거, 100자 안). null·빈 문자열 = 지움"
+     }
+    }
+   },
+   "InboundLotSupplierLotResult": {
+    "type": "object",
+    "required": [
+     "lots"
+    ],
+    "properties": {
+     "lots": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "lotId",
+        "lotNo",
+        "supplierLotNo"
+       ],
+       "properties": {
+        "lotId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "lotNo": {
+         "type": "string"
+        },
+        "supplierLotNo": {
+         "type": [
+          "string",
+          "null"
+         ]
         }
        }
       }

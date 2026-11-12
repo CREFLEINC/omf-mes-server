@@ -133,6 +133,14 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/waiting-material-lots': ['P-01-01', 'W-01-14'],
   'POST /trace/lots:void': ['P-01-01', 'W-01-14'],
+  // PDA 입하 받기·해제·공급사 LOT(피처 005 §3) — 받기와 공급사 LOT 입력은 스캔 화면 M-01-01 뿐이고(M-01-03 에는 입력
+  // 화면이 없다), 해제는 스캔 화면 카드와 입하 마감 화면 M-01-03 둘 다 한다.
+  'POST /logistics/inbound-lots:receive': ['M-01-01'],
+  'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots': ['M-01-01', 'M-01-03'],
+  'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no': ['M-01-01'],
+  // 입하 LOT 조회(피처 005 §2) — PDA 두 화면, 입하/입고 작업 기록 W-01-16, 관리웹 입하 LOT 상태 표시(W-01-01)가 읽는다.
+  'GET /logistics/inbound-lots': ['M-01-01', 'M-01-03', 'W-01-16', 'W-01-01'],
+  'GET /logistics/inbound-lots/{inboundLotId}': ['M-01-01', 'M-01-03', 'W-01-16', 'W-01-01'],
   // 외부 식별자 치환 — 계약이 이 자식 자원의 조회에 「근거: M-01-02 §4」라 적었고, 요구서가
   // 「부모의 화면이 곧 이 오퍼레이션의 화면」이라 답했다(`plan-uiux.md:852`). 부모를 소유한
   // 화면 하나만 적는다.
