@@ -126,6 +126,15 @@ describe('피처 005 S7 — 옛 입하·LOT 생성 경로 닫기 (e2e)', () => {
 
   it('FR-036 GET /logistics/inbound-receipt-lines(라벨 대기)에 새 흐름 입하 줄은 없고 이전 데이터 줄만 있다', async () => {
     const legacy = await legacyLine(30);
+    // 마이그레이션이 옛 줄에 붙인 입하 LOT(PER_RECEIPT)도 이전 데이터다.
+    const migrated = await legacyLine(20);
+    await prisma.inbound_lot.create({
+      data: {
+        inbound_lot_no: `${PREFIX}-MIG`, plant_id: ids.plant, item_id: ids.item, supplier_id: ids.supplier, uom_id: ids.uom,
+        status_code: 'RECEIVED', receiving_date: new Date(`${DAY}T00:00:00.000Z`), received_closed_at: new Date(AT),
+        erp_send_mode_code: 'PER_RECEIPT', inbound_receipt_line_id: migrated.lineId,
+      },
+    });
     const { inboundLot } = await issueAndReceive(fx, {
       plantId: Number(ids.plant), supplierId: Number(ids.supplier), itemId: Number(ids.item), lotQty: 100, lotCount: 2,
     });
@@ -133,7 +142,7 @@ describe('피처 005 S7 — 옛 입하·LOT 생성 경로 닫기 (e2e)', () => {
       .inbound_receipt_line_id;
 
     const waiting = await lineIds({ labelIssued: false, supplierLotLabelAttached: false });
-    expect(waiting).toContain(Number(legacy.lineId));
+    expect(waiting).toEqual(expect.arrayContaining([Number(legacy.lineId), Number(migrated.lineId)]));
     expect(waiting).not.toContain(Number(newLine));
     const counts = (await read('/logistics/inbound-receipt-lines:supplier-counts')
       .query({ plantId: Number(ids.plant), labelIssued: false, supplierLotLabelAttached: false }).expect(200)).body as {
