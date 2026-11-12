@@ -28690,6 +28690,7 @@
     "required": [
      "uomId",
      "uomCode",
+     "uomName",
      "count",
      "qtyPerPackage"
     ],
@@ -28716,6 +28717,10 @@
      "uomCode": {
       "type": "string",
       "description": "패키징 단위 코드"
+     },
+     "uomName": {
+      "type": "string",
+      "description": "패키징 단위 이름(표시용)"
      }
     }
    },

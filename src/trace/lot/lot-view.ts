@@ -36,7 +36,7 @@ export interface LotView {
   inboundLotId: number | null;
   inboundLotNo: string | null;
   /** 패키징(피처 005 R-4) — 셋 다 있을 때만, 아니면 null. */
-  package: { uomId: number; uomCode: string; count: number; qtyPerPackage: number } | null;
+  package: { uomId: number; uomCode: string; uomName: string; count: number; qtyPerPackage: number } | null;
   /** ⚠ `withProgress=true` 로 «부른 조회»만 채운다 — 계약이 ⌜목록에서는 LOT 마다 세게 되므로
    *  기본은 끈다⌝ 라 적었고, 끈 요청에는 키 자체가 없다. `lotView()` 는 이 칸을 만들지 않고
    *  부르는 쪽(`lot.service.ts`)이 얹는다. */
@@ -90,12 +90,12 @@ export interface LotDetail {
  */
 export const LOT_VIEW_RELATIONS = {
   inbound_lot: { select: { inbound_lot_no: true } },
-  package_uom: { select: { uom_code: true } },
+  package_uom: { select: { uom_code: true, uom_name: true } },
 } as const;
 
 type LotViewRow = LotRow & {
   inbound_lot?: { inbound_lot_no: string } | null;
-  package_uom?: { uom_code: string } | null;
+  package_uom?: { uom_code: string; uom_name: string } | null;
 };
 
 export function lotView(row: LotViewRow): LotView {
@@ -123,6 +123,7 @@ export function lotView(row: LotViewRow): LotView {
     package: row.package_uom_id === null || row.package_count === null || row.qty_per_package === null ? null : {
       uomId: Number(row.package_uom_id),
       uomCode: row.package_uom?.uom_code ?? '',
+      uomName: row.package_uom?.uom_name ?? '',
       count: row.package_count,
       qtyPerPackage: Number(row.qty_per_package),
     },

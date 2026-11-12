@@ -28,7 +28,7 @@ interface LotSummary {
   lotId: number;
   lotNo: string;
   lotQty: number;
-  package: { uomId: number; uomCode: string; count: number; qtyPerPackage: number } | null;
+  package: { uomId: number; uomCode: string; uomName: string; count: number; qtyPerPackage: number } | null;
   supplierLotNo: string | null;
   lifecycleStatusCode: string;
   statusCode: string;
@@ -106,6 +106,10 @@ describe('피처 005 S3 — 자재 관리 LOT 발행 (e2e)', () => {
       lifecycleStatusCode: 'WAITING', inboundLotId: null, inboundLotNo: null,
       package: { uomId: Number(ids.box), uomCode: 'BOX', count: 10, qtyPerPackage: 100 },
     });
+    // 패키징 단위 이름(표시용 · G1 잔여) — 발행 응답·Lot 응답 모두.
+    const box = await prisma.uom.findUniqueOrThrow({ where: { uom_id: ids.box }, select: { uom_name: true } });
+    expect(lots.map((lot) => lot.package?.uomName)).toEqual([box.uom_name, box.uom_name, box.uom_name]);
+    expect(detail.body.lot.package.uomName).toBe(box.uom_name);
   });
 
   it('US1-3 패키징 없이 1 × 5 — 단위는 품목 기본 단위(KG), 패키징 null', async () => {

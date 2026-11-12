@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
+import { INBOUND_LOT_TARGET, iqcDefectLotIdWithin } from '../inspection/iqc-inbound-lot-result';
 import { DefectRecordView, defectRecordView } from './defect-view';
 
 /** 계약 `DefectRecordCreate`(장부 P-42). 두 공정은 IQC 원천일 때만 생략할 수 있다. */
@@ -204,10 +205,11 @@ export class DefectRecordWriteService {
     if (input.inspectionResultId == null) return requested;
     const result = await this.prisma.inspection_result.findUnique({
       where: { inspection_result_id: BigInt(input.inspectionResultId) },
-      select: { inspection_request: { select: { lot_id: true, work_order_id: true } } },
+      select: { inspection_request: { select: { lot_id: true, work_order_id: true, target_type_code: true, inbound_lot_id: true } } },
     });
     if (result === null) throw one('inspectionResultId', ERROR_CODE.INVALID, '없는 검사 결과입니다.');
     const own = result.inspection_request;
+    if (own.lot_id === null && own.target_type_code === INBOUND_LOT_TARGET) return this.inboundLotTarget(input, own.inbound_lot_id, requested);
     if (requested.lotId !== null && own.lot_id !== null && requested.lotId !== own.lot_id) {
       throw one('lotId', ERROR_CODE.INVALID, '이 검사 결과의 LOT 이 아닙니다.');
     }
@@ -215,6 +217,22 @@ export class DefectRecordWriteService {
       throw one('workOrderId', ERROR_CODE.INVALID, '이 검사 결과의 MES W/O 가 아닙니다.');
     }
     return { lotId: own.lot_id ?? requested.lotId, workOrderId: own.work_order_id ?? requested.workOrderId };
+  }
+
+  /**
+   * 입하 LOT 검사 결과의 불량(R-10 · R12-1) — LOT 은 그 결과에 매칭된 LOT 이 하나일 때만 그 LOT, 아니면 NULL(결과 연결로 찾는다).
+   * 요청에 LOT 을 실었으면 그 입하 LOT 소속이어야 한다.
+   */
+  private async inboundLotTarget(
+    input: DefectRecordCreate,
+    inboundLotId: bigint | null,
+    requested: { lotId: bigint | null; workOrderId: bigint | null },
+  ): Promise<{ lotId: bigint | null; workOrderId: bigint | null }> {
+    if (requested.lotId !== null) {
+      const owned = await this.prisma.lot.count({ where: { lot_id: requested.lotId, inbound_lot_id: inboundLotId ?? -1n } });
+      if (owned === 0) throw one('lotId', ERROR_CODE.INVALID, '이 검사 결과의 LOT 이 아닙니다.');
+    }
+    return { lotId: await iqcDefectLotIdWithin(this.prisma, BigInt(input.inspectionResultId as number)), workOrderId: requested.workOrderId };
   }
 
   private async resolveProcesses(input: DefectRecordCreate): Promise<{ occurrence: bigint; detection: bigint }> {

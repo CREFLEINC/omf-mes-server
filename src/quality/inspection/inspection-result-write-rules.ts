@@ -12,6 +12,12 @@ import {
 } from './inspection-result-write-input';
 import { AQL_VERSION_SELECT, acceptanceNumberOf, aqlPlanOf } from './inspection-aql-plan';
 import { JudgmentQuantities, assertJudgmentChangeReason } from './inspection-rules';
+import {
+  INBOUND_LOT_TARGET,
+  assertInboundLotResultCreate,
+  inboundLotReinspectStatus,
+  nextResultSequence,
+} from './iqc-inbound-lot-result';
 
 /**
  * 검사 결과 쓰기의 **판정** — 쓰기 서비스에서 떼어 냈다(#337 ⓒ · #320 m-4).
@@ -95,6 +101,8 @@ export async function assertReferences(
       version_no: true,
       inspection_type_code: true,
       status_code: true,
+      target_type_code: true,
+      inbound_lot_id: true,
       lot: { select: { status_code: true } },
     },
   });
@@ -112,6 +120,14 @@ export async function assertReferences(
   }
   if ((await prisma.uom.count({ where: { uom_id: body.uomId } })) === 0) {
     throw one(field('uomId', ERROR_CODE.INVALID, '없는 단위입니다.'));
+  }
+  if (request.target_type_code === INBOUND_LOT_TARGET) {
+    // 재검사(회차) 시도면 처분 전 불량 LOT 가드가 먼저다 — 새 흐름의 재검사는 확정 취소·재작업 재열기 뒤 결과를 더하는 것이다(R-10·R-15).
+    if (body.previousResultId !== undefined) {
+      assertIqcReinspectable(request.inspection_type_code, await inboundLotReinspectStatus(prisma, request.inbound_lot_id));
+    }
+    assertInboundLotResultCreate(request, body);
+    return nextResultSequence(prisma, request.inspection_request_id);
   }
   if (body.previousResultId === undefined) return 1;
 

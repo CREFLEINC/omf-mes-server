@@ -184,6 +184,9 @@ describe('피처 005 S4 — PDA 입하 받기·해제·공급사 LOT (e2e)', () 
     expect(again.body.rejectedLots.map((lot: { index: number; reasonCode: string }) => [lot.index, lot.reasonCode])).toEqual([
       [1, 'ALREADY_RECEIVED'], [2, 'VOIDED'],
     ]);
+    // 이미 등록된 LOT 은 속한 입하 LOT 번호·상태를 싣는다(G1 잔여) — 폐기된 대기 LOT 은 입하 LOT 이 없다.
+    expect(again.body.rejectedLots.map((lot: { inboundLotNo: string | null; inboundLotStatusCode: string | null }) =>
+      [lot.inboundLotNo, lot.inboundLotStatusCode])).toEqual([[saLot.inboundLotNo, 'RECEIVING'], [null, null]]);
     const untouched = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(waiting[0].lotId) } });
     expect(untouched).toMatchObject({ lifecycle_status_code: 'WAITING', inbound_lot_id: null, source_type_code: 'MATERIAL_LOT_BATCH' });
     const line = await lineOf(saLot.inboundLotId);

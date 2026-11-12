@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { InspectionRequestEventLine, inspectionRequestEventLines } from './iqc-request-events';
 
 /** 이력 한 줄의 종류 — 전달(의뢰 생성) · 결과 저장 · 결과 확정 · LOT 상태 전이. */
 export type InspectionHistoryEventCode = 'REQUESTED' | 'RESULT_SAVED' | 'RESULT_CONFIRMED' | 'LOT_STATUS_CHANGED';
@@ -29,6 +30,8 @@ export interface InspectionHistory {
   /** 앞 단계가 넘긴 문서 — IQC 입하(LOT·입하 번호) · PQC 작업지시 · OQC 출하 지시. */
   source: { targetTypeCode: string; targetId: number; documentNo?: string; lotNo?: string };
   events: InspectionHistoryEvent[];
+  /** 입하 LOT 검사의 변경 이력(피처 005 R-11) — 입하 LOT 가 없는 요청은 빈 배열. */
+  requestEvents: InspectionRequestEventLine[];
 }
 
 const INSPECTION_RESULT = 'INSPECTION_RESULT';
@@ -50,7 +53,7 @@ export class InspectionHistoryService {
       where: { inspection_request_id: BigInt(inspectionRequestId) },
       select: {
         inspection_request_id: true, inspection_request_no: true, inspection_type_code: true,
-        target_type_code: true, target_id: true, requested_at: true,
+        target_type_code: true, target_id: true, requested_at: true, inbound_lot_id: true,
         lot: { select: { lot_no: true, inbound_receipt_line: { select: { inbound_receipt: { select: { inbound_receipt_no: true } } }, take: 1 } } },
         // 입하 LOT 요청(`lot_id` 없음)의 입하번호는 입하 LOT 의 줄에서 읽는다(피처 005).
         inbound_lot: { select: { inbound_receipt_line: { select: { inbound_receipt: { select: { inbound_receipt_no: true } } } } } },
@@ -120,6 +123,7 @@ export class InspectionHistoryService {
         ...(request.lot === null ? {} : { lotNo: request.lot.lot_no }),
       },
       events,
+      requestEvents: (request.inbound_lot_id ?? null) === null ? [] : await inspectionRequestEventLines(this.prisma, request),
     };
   }
 

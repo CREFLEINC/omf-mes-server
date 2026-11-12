@@ -42,12 +42,15 @@ export class DefectRecordService {
     // 검사 결과 하나로 좁히면 기간이 필요 없다 — 한 결과의 불량은 많아야 몇 줄이다(P-42 · 완화).
     if (query.inspectionResultId === undefined) assertDetectedPeriodRequired(query);
     const page = pageRequest(query);
+    // 단말 범위는 LOT 의 공장으로 거르므로 LOT 이 빈 기록이 어차피 빠진다 — 결과 연결로 넓히는 것은 단말 밖에서만.
+    const viaResult = scope === undefined && query.lotId !== undefined;
     const where: Prisma.defect_recordWhereInput = {
-      ...buildDefectRecordWhere(query),
+      ...buildDefectRecordWhere(viaResult ? { ...query, lotId: undefined } : query),
       ...(scope === undefined ? {} : { lot: { plant_id: scope.plantId } }),
       // 한 결과로 좁힌 조회는 작성중 회차의 사유도 돌려준다 — 판정 화면이 임시 저장한 사유를 되살린다(#122).
       ...(query.inspectionResultId === undefined ? CONFIRMED_INSPECTION_ONLY : {}),
-      ...LATEST_RESULT_ONLY,
+      // LOT 조건은 `OR` 이라 위 `OR` 과 부딪히지 않게 `AND` 로 함께 둔다.
+      AND: [...(LATEST_RESULT_ONLY.AND as Prisma.defect_recordWhereInput[]), ...(viaResult ? [lotWhere(query.lotId as number)] : [])],
     };
     // 기본 정렬 detected_at DESC 고정 — 계약에 sort 질의가 없다. 동률은 defect_record_id 로
     // 깬다(R-10 자리) — 안 그러면 반환 순서가 보장되지 않는다(I-24 선례).
@@ -59,6 +62,31 @@ export class DefectRecordService {
     ]);
     return pagedResponse(rows.map(defectRecordView), total, page);
   }
+}
+
+/**
+ * 그 LOT 의 불량 — LOT 이 적힌 기록과, 입하 LOT 검사 결과에 걸려 LOT 이 비어 있는 IQC 기록(R-10 · 결과 연결로 찾는다):
+ * 결과에 매칭이 있으면 매칭된 LOT 들, 없으면 그 입하 LOT 의 자재 관리 LOT 전부다.
+ */
+function lotWhere(lotId: number): Prisma.defect_recordWhereInput {
+  const lot = BigInt(lotId);
+  return {
+    OR: [
+      { lot_id: lot },
+      {
+        lot_id: null,
+        source_type_code: 'IQC',
+        inspection_result: {
+          is: {
+            OR: [
+              { inspection_result_lot: { some: { lot_id: lot } } },
+              { inspection_result_lot: { none: {} }, inspection_request: { target_type_code: 'INBOUND_LOT', inbound_lot: { lot: { some: { lot_id: lot } } } } },
+            ],
+          },
+        },
+      },
+    ],
+  };
 }
 
 export function buildDefectRecordWhere(query: DefectRecordListQuery): Prisma.defect_recordWhereInput {

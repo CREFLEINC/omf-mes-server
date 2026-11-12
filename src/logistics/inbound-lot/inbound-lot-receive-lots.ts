@@ -39,6 +39,8 @@ interface LotFacts {
   source_type_code: string;
   source_id: bigint;
   lifecycle_status_code: string | null;
+  inbound_lot_no: string | null;
+  inbound_lot_status_code: string | null;
 }
 
 /** 트랜잭션 밖에서 보는 형식 — 라벨 형식(P-3)·공급사 LOT 길이·같은 값 두 번. */
@@ -110,14 +112,16 @@ async function readLots(
 ): Promise<LotFacts[]> {
   const ids = entries.flatMap((entry) => (entry.lotId === undefined ? [] : [Prisma.sql`${BigInt(entry.lotId)}::bigint`]));
   const nos = entries.flatMap((entry) => (entry.lotNo === undefined ? [] : [entry.lotNo]));
-  const byId = ids.length === 0 ? Prisma.sql`false` : Prisma.sql`lot_id IN (${Prisma.join(ids)})`;
-  const byNo = nos.length === 0 ? Prisma.sql`false` : Prisma.sql`(plant_id = ${plantId} AND lot_no IN (${Prisma.join(nos)}))`;
+  const byId = ids.length === 0 ? Prisma.sql`false` : Prisma.sql`l.lot_id IN (${Prisma.join(ids)})`;
+  const byNo = nos.length === 0 ? Prisma.sql`false` : Prisma.sql`(l.plant_id = ${plantId} AND l.lot_no IN (${Prisma.join(nos)}))`;
   return db.$queryRaw<LotFacts[]>`
-    SELECT lot_id, lot_no, plant_id, item_id, initial_qty, lot_type_code, source_type_code, source_id, lifecycle_status_code
-      FROM trace.lot
+    SELECT l.lot_id, l.lot_no, l.plant_id, l.item_id, l.initial_qty, l.lot_type_code, l.source_type_code, l.source_id,
+           l.lifecycle_status_code, il.inbound_lot_no, il.status_code AS inbound_lot_status_code
+      FROM trace.lot l
+      LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = l.inbound_lot_id
      WHERE ${byId} OR ${byNo}
-     ORDER BY lot_id
-     ${lock ? Prisma.sql`FOR UPDATE` : Prisma.empty}`;
+     ORDER BY l.lot_id
+     ${lock ? Prisma.sql`FOR UPDATE OF l` : Prisma.empty}`;
 }
 
 /** 시스템에 없는 라벨 — 라벨의 품목·공급사 코드가 MES 에 있어야 한다(P-3). 수량은 라벨의 수량 칸이다. */
@@ -149,11 +153,17 @@ async function resolveLabels(
   return resolved;
 }
 
-/** 대기(미리 만든 자재 관리 LOT)가 아니면 줄마다 까닭을 달아 409 — 하나라도 있으면 아무것도 등록하지 않는다. */
+/**
+ * 대기(미리 만든 자재 관리 LOT)가 아니면 줄마다 까닭을 달아 409 — 하나라도 있으면 아무것도 등록하지 않는다.
+ * 이미 등록된 LOT 은 속한 입하 LOT 의 번호·상태를 함께 싣는다 — 화면이 그 카드 없이 「어느 입하 LOT 에 이미 있는지」를 그린다.
+ */
 function rejectNotWaiting(found: { index: number; row: LotFacts }[]): void {
   const rejected = found.flatMap(({ index, row }) => {
     const reasonCode = rejectionOf(row);
-    return reasonCode === null ? [] : [{ index, lotId: Number(row.lot_id), lotNo: row.lot_no, reasonCode }];
+    return reasonCode === null ? [] : [{
+      index, lotId: Number(row.lot_id), lotNo: row.lot_no, reasonCode,
+      inboundLotNo: row.inbound_lot_no, inboundLotStatusCode: row.inbound_lot_status_code,
+    }];
   });
   if (rejected.length === 0) return;
   throw new ContractException(HttpStatus.CONFLICT, rejected.map((lot) => field(

@@ -9,6 +9,7 @@ import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../
 import { InspectionAqlPlanView, inspectionAqlPlan } from './inspection-aql-plan';
 import { InspectionGuideView, inspectionGuides } from './inspection-guide';
 import { FOUR_M_CHANGE_INCLUDE, InspectionRequestView, inspectionRequestView } from './inspection-request-view';
+import { InboundLotRequestDetailView, inboundLotRequestDetail, inboundLotSummaries } from './iqc-request-detail';
 
 /** 조회 2건(I-19 PR ②). */
 export interface InspectionRequestListQuery {
@@ -18,6 +19,8 @@ export interface InspectionRequestListQuery {
   itemId?: number;
   supplierId?: number;
   lotId?: number;
+  /** 입하 LOT(피처 005 §8) — 그 입하 LOT 의 IQC 요청(마감 취소로 무효가 된 옛 요청 포함). */
+  inboundLotId?: number;
   /** LOT 의 공장(omf-all-around#211 · 장부 P-155) — 부품 공장 IQC 화면이 OA 공장 LOT 을 빼고 본다. */
   plantId?: number;
   workOrderId?: number;
@@ -42,11 +45,11 @@ const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
   { inspection_request_id: 'asc' },
 ];
 
-/** 상세 조회 — 목록 줄에 안내 문구(omf-all-around#252) · AQL 시료 계획(#264)을 더한다. */
+/** 상세 조회 — 목록 줄에 안내 문구(omf-all-around#252) · AQL 시료 계획(#264)과 입하 LOT 검사의 LOT·결과 목록(피처 005 §8)을 더한다. */
 export type InspectionRequestDetailView = InspectionRequestView & {
   inspectionGuides?: InspectionGuideView[];
   aqlPlan?: InspectionAqlPlanView;
-};
+} & Partial<InboundLotRequestDetailView>;
 
 @Injectable()
 export class InspectionRequestService {
@@ -61,8 +64,8 @@ export class InspectionRequestService {
       }),
       this.prisma.inspection_request.count({ where }),
     ]);
-    const levels = await iqcInspectionLevels(this.prisma, rows);
-    return pagedResponse(rows.map((row, index) => inspectionRequestView(row, levels[index])), total, page);
+    const [levels, inboundLots] = await Promise.all([iqcInspectionLevels(this.prisma, rows), inboundLotSummaries(this.prisma, rows)]);
+    return pagedResponse(rows.map((row, index) => inspectionRequestView(row, levels[index], inboundLots[index])), total, page);
   }
 
   async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestDetailView> {
@@ -72,16 +75,19 @@ export class InspectionRequestService {
       include: FOUR_M_CHANGE_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
-    const [level] = await iqcInspectionLevels(this.prisma, [row]);
+    const [[level], [inboundLot], inbound] = await Promise.all([
+      iqcInspectionLevels(this.prisma, [row]), inboundLotSummaries(this.prisma, [row]), inboundLotRequestDetail(this.prisma, row),
+    ]);
     // 안내 문구는 상세에만 싣는다 — 목록 줄마다 기준을 읽지 않는다(omf-all-around#252).
     const [guides, aqlPlan] = await Promise.all([
       inspectionGuides(this.prisma, row),
       inspectionAqlPlan(this.prisma, row),
     ]);
     return {
-      ...inspectionRequestView(row, level),
+      ...inspectionRequestView(row, level, inboundLot),
       ...(guides.length === 0 ? {} : { inspectionGuides: guides }),
       ...(aqlPlan === null ? {} : { aqlPlan }),
+      ...inbound,
     };
   }
 }
@@ -116,6 +122,7 @@ function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_reques
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
     ...filter('item_id', query.itemId),
     ...filter('work_order_id', query.workOrderId),
+    ...filter('inbound_lot_id', query.inboundLotId),
     // 상태(`AND`)·공급사·공장(둘 다 `lot`) 조건은 펼치면 서로 덮는다 — AND 하나로 묶는다.
     AND: [
       lotWhere(query.lotId),

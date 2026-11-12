@@ -26,6 +26,12 @@ jest.mock('./inspection-rejection-defects', () => ({
   prepareRejectionDefects: jest.fn().mockResolvedValue(null),
   prepareDraftDefects: jest.fn().mockResolvedValue(undefined),
 }));
+// 입하 LOT 검사 분기(피처 005 S8)는 옛 요청 모양에서 「해당 없음」이다.
+jest.mock('./iqc-inbound-lot-result', () => ({
+  ...jest.requireActual('./iqc-inbound-lot-result'),
+  prepareInboundLotWrite: jest.fn().mockResolvedValue(null),
+  prepareInboundLotWriteOfResult: jest.fn().mockResolvedValue(null),
+}));
 jest.mock('./oqc-serials', () => ({ prepareOqcSerials: jest.fn().mockResolvedValue(null) }));
 jest.mock('./iqc-nonconformance', () => ({ allocateIqcNonconformanceNo: jest.fn() }));
 jest.mock('./inspection-result-view', () => ({ INSPECTION_RESULT_JOIN: {}, inspectionResultView: jest.fn((row: unknown) => row) }));

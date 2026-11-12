@@ -102,7 +102,8 @@ describe('계약 커버리지', () => {
     // 자재 관리 LOT 발행·대기 목록·폐기 4 · 공급사·품목 기본 정보 4 오퍼레이션(피처 005): 600 → 608.
     // 입하 LOT 조회 2·받기·해제·공급사 LOT 3 오퍼레이션(피처 005 S4): 608 → 613.
     // 입하 마감·마감 취소 2 오퍼레이션(피처 005 S5): 613 → 615.
-    expect(registry.size).toBe(615);
+    // IQC 결과 삭제 1 오퍼레이션(피처 005 S8): 615 → 616.
+    expect(registry.size).toBe(616);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

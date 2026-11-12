@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import { fourMChangeView } from './four-m-change';
+import type { InboundLotSummary } from './iqc-request-detail';
 
 /** 계약 `InspectionRequest`(17칸) 매퍼 — 결손 0, 물리와 1:1(§2-1). */
 export type InspectionRequestRow = Prisma.inspection_requestGetPayload<object> & {
@@ -17,7 +18,7 @@ export const FOUR_M_CHANGE_INCLUDE = {
 export type InspectionRequestView = ReturnType<typeof inspectionRequestView>;
 
 /** `inspectionLevelCode` — IQC 검사 수준(#64 · 장부 P-87). 고르는 규칙은 `iqcInspectionLevels` 가 갖는다. */
-export function inspectionRequestView(row: InspectionRequestRow, inspectionLevelCode?: string) {
+export function inspectionRequestView(row: InspectionRequestRow, inspectionLevelCode?: string, inboundLot?: InboundLotSummary) {
   return omitEmpty({
     inspectionRequestId: Number(row.inspection_request_id),
     inspectionRequestNo: row.inspection_request_no,
@@ -43,5 +44,9 @@ export function inspectionRequestView(row: InspectionRequestRow, inspectionLevel
     versionNo: row.version_no,
     fourMChange: fourMChangeView(row.lot?.lot_four_m_change),
     inspectionLevelCode,
+    ...inboundLot,
+    overallJudgmentCode: row.overall_judgment_code ?? undefined,
+    confirmedAt: row.confirmed_at?.toISOString(),
+    confirmCycle: inboundLot === undefined ? undefined : row.confirm_cycle,
   });
 }

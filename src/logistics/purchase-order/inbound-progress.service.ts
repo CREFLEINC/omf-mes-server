@@ -122,7 +122,7 @@ export class InboundProgressService {
         select: {
           lot_id: true, lot_no: true, initial_qty: true, status_code: true, uom: { select: { uom_code: true } },
           inbound_lot_id: true, inbound_lot: { select: { inbound_lot_no: true } },
-          package_uom_id: true, package_count: true, qty_per_package: true, package_uom: { select: { uom_code: true } },
+          package_uom_id: true, package_count: true, qty_per_package: true, package_uom: { select: { uom_code: true, uom_name: true } },
         },
         orderBy: { lot_id: 'asc' },
       }),

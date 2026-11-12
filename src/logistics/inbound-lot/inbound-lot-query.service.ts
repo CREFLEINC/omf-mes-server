@@ -112,7 +112,7 @@ export class InboundLotQueryService {
         where: { inbound_lot_id: id },
         select: {
           lot_id: true, lot_no: true, initial_qty: true, lifecycle_status_code: true, status_code: true, created_at: true,
-          package_uom_id: true, package_count: true, qty_per_package: true, package_uom: { select: { uom_code: true } },
+          package_uom_id: true, package_count: true, qty_per_package: true, package_uom: { select: { uom_code: true, uom_name: true } },
           lot_external_identifier: {
             where: { identifier_type_code: SUPPLIER_LOT }, select: { external_identifier: true },
             orderBy: { lot_external_identifier_id: 'asc' }, take: 1,

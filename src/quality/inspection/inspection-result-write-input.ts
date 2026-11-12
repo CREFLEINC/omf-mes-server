@@ -57,6 +57,8 @@ export interface InspectionResultCreate {
    * `quality.oqc_serial_result` 에 한 줄로 남는다(`oqc-serials.ts`).
    */
   serials?: OqcSerialJudgmentInput[];
+  /** 입하 LOT 검사 결과의 자재 관리 LOT 매칭(피처 005 R-10) — 그 입하 LOT 소속만, 한 결과에 같은 LOT 한 번. */
+  matchedLotIds?: number[];
 }
 
 /**
@@ -85,6 +87,8 @@ export interface InspectionResultUpdate {
    * 값이면 그 의뢰 LOT 의 한 줄을 갈아 끼운다. 자재 LOT 이 있는 IQC 에만.
    */
   fourMChange?: FourMChangeInput | null;
+  /** 입하 LOT 검사 결과의 매칭 — 실으면 통째로 갈아 끼우고(빈 배열 = 매칭 없음), 생략하면 손대지 않는다. */
+  matchedLotIds?: number[];
 }
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 `POST` 에서 **선택**이고 `PUT` 에서 필수다. */
