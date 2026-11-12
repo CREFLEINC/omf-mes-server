@@ -1,6 +1,6 @@
 # flowtrack ↔ MES 연동 제안 — OA(PL13)
 
-상태: 제안 · 안 B 로 정함 · API 는 flowtrack 구현(`flowtrack_backend/docs/mes-integration.md` · `mes-dev` 2026-11-09)에 맞춤 · 결정 모두 정함 (2026-11-12)
+상태: 제안 · 안 B 로 정함 · API 는 flowtrack 구현(`flowtrack_backend/docs/mes-integration.md` · `mes-dev` 2026-11-09)에 맞춤 · flowtrack 회신 반영 · 남은 결정 2(§1-2) (2026-11-12)
 
 OA 사업부는 MES 에서 생산계획을 세우지 않는다. ERP W/O 를 그대로 쓰고, 창고·IQC 는 MES 를 쓴다. 조립·검사·포장·출하 스캔은 flowtrack(`flowtrack_swarm/flowtrack_backend`, FastAPI)이 한다.
 
@@ -37,6 +37,13 @@ OA 사업부는 MES 에서 생산계획을 세우지 않는다. ERP W/O 를 그�
 | 18 | ERP W/O 에 창고(SL_CD)가 없거나 MES 에 없는 창고 | 포장 입고이동·마감 보고를 거절한다 | 사용자 2026-11-12 |
 | 19 | 시리얼 품목의 수동 마감 | flowtrack 이 입고이동 뒤 마감 보고(`qty` 0)를 보내고 MES 가 그 W/O 를 마감한다(§3-5 · §5) | 사용자 2026-11-12 |
 | 20 | 업무일자 | flowtrack 이 모든 본문에 `businessDate` 를 더한다(공유계약 C-8 · §5) | 사용자 2026-11-12 |
+
+### 1-2. 남은 것
+
+| # | 정할 것 | 권하는 안 | 다른 안 |
+|---|---|---|---|
+| 1 | 도입 전 재고의 시리얼 — flowtrack 은 도입 전 재고를 제품별 가짜 W/O `STOCK-<품목코드>` 의 투입으로 넣는다. MES 에 그 W/O 가 없어 입고이동이 4xx, 그 시리얼의 출고도 4xx 다. 재고 조정은 LOT 을 만들지 않고, 시리얼은 LOT 이 있어야 등록된다(`trace.serial_number.lot_id` NOT NULL) | 기초 재고 API — flowtrack 이 `STOCK-` W/O 의 포장을 입고이동 대신 `POST /integration/tracking-system/opening-stocks`(창고·품목·시리얼)로 보낸다. MES 는 실적·자재 차감 없이 기초 재고 LOT 을 만들고 시리얼을 그 LOT 에 넣는다. 새 LOT 원천이 필요하다(지금 넷: 입하 줄·재생재·W/O·LOT 분할). 출하는 다른 시리얼과 같다 | 수량만 — MES 가 재고 조정으로 품목별 수량을 넣고(LOT 없는 재고), flowtrack 은 `STOCK-` 시리얼을 입고이동·출고에서 빼고 수량 출고로 보낸다. 그 시리얼은 MES 에 남지 않고 출하 하나가 두 전송으로 갈린다 |
+| 2 | 미달 마감 — 마감은 미달이면 잔량 처분(이월·소멸)과 사유가 필수다(`close-rules.ts`). 수동 마감 보고에는 둘 다 없다 | 잔량은 소멸 · 사유 `OTHER`(기타) · 비고 「flowtrack 수동 마감」. 실적이 0 이면 마감하지 않고 취소한다(LOT 폐번 — §1-1 의 11 과 같다) | 이월 — 남은 수량으로 새 MES W/O 가 생기고 flowtrack 이 그 W/O 를 받는다 |
 
 ## 2. 흐름
 
@@ -88,6 +95,8 @@ flowtrack 은 `open=true&page=&size=100` 을 끝까지 읽는다. 쓰는 칸 —
 | `TRACKING_SYSTEM` 토큰은 PL13 W/O 를 공정 매핑 없이 읽는다 | 단말 읽기 범위(`src/auth/terminal-read-policy.ts`)에 이 유형을 더한다. POP 는 공정 매핑으로 좁히고 `open=true` 만 받는다 |
 | 닫힌 W/O(`COMPLETED` · `CLOSED` · `CANCELLED`)도 읽는다 | `updatedSince` 로 읽으면 닫힌 W/O 도 실린다 |
 | 변경분 조회 `updatedSince=<시각>` | 질의를 더하고 응답에 `updatedAt` 을 싣는다. `production.work_order.updated_at` 은 있다 |
+
+- flowtrack 은 `open=true` 로 열린 W/O 를 읽고, `updatedSince=<마지막 받기 − 10분>` 으로 닫힌 W/O 만 옮긴다(회신 2026-11-12). 두 응답은 같은 칸이다. `updatedAt` 은 flowtrack 이 쓰지 않는다.
 
 ### 3-3. 포장 입고이동 — `POST /integration/tracking-system/stock-moves`
 
@@ -205,16 +214,18 @@ flowtrack 은 3-2 로 받아 둔 W/O 를 품목코드로 찾는다. MES 목록 �
 - **제품 입고** — ERP W/O 의 창고 `SYS-WHOLE`. 적치 지시를 만들지 않는다(`receipt-posting.ts` 의 `putawayNos` 에 `null` — 긴급 직행 출하와 같다).
 - **화면** — 연동 전송 목록(실패·미차감 정리). 클라이언트 작업.
 
-## 5. flowtrack 쪽에 요청할 것
+## 5. flowtrack 쪽에 요청한 것
 
-flowtrack 저장소(`mes-dev`)의 일이다. 이 저장소에서 하지 않는다.
+flowtrack 저장소(`mes-dev`)의 일이다. 회신: 2026-11-12 · `bb31e61`(push 전) · `MES_ENABLED` 는 꺼 둔 채.
 
-- 모든 전송 본문에 `businessDate`(공장 시간대의 업무일자)를 더한다(§1-1 의 20).
-- 공정 순서 판정을 「막음」(ENFORCE)으로 운영한다(§1-1 의 12). ⚠ 판정은 사용 중인 라인에 없는 제품을 건너뛴다(`app/services/flow_gate.py`) — OA 제품을 모두 사용 중인 라인에 둔다.
-- 시리얼 품목 W/O 를 수동 마감하면 입고이동 뒤에 마감 보고(`qty` 0)를 보낸다(§1-1 의 19).
-- S410(데스크탑 #274) — 품목코드로 W/O 를 찾아 골라 마감 → 마감 보고 · 출하 전 재고 조회 · 수량 출고. 같은 전송 대기열과 응답 규칙.
-- S410 품목 11개(§7-3 의 6)를 flowtrack 품목으로 둔다 — flowtrack 은 `code_prefix` 가 MES `itemCode` 와 같은 W/O 만 받는다. flowtrack 저장소 자료(시드·검사표)에는 그중 A63GF80007 만 나온다.
-- `packing_logs.product_sno` 중복 막기 — 지금은 색인만 있다. 같은 시리얼이 두 번 가면 MES 가 그 입고이동을 거절한다.
+| 요청 | flowtrack 회신 |
+|---|---|
+| 모든 전송 본문에 `businessDate`(§1-1 의 20) | 반영 — 입고이동·출고·마감 보고. 전송을 쌓은 때의 공장(UTC+7) 날짜. 다시 보내도 바뀌지 않는다 |
+| 공정 순서 판정 「막음」(ENFORCE)(§1-1 의 12) | 코드 변경 없음 · 전환 시점은 OA 가 정한다. 사용 중인 라인에 없는 제품: ZU-609(P81) `A63GP81` · RU-513(P81) `A87JP81` · 시험 제품 — 두 품목은 MES 에 있고 PL13 ERP W/O 는 0건 |
+| 시리얼 품목 수동 마감 → 마감 보고 `qty` 0(§1-1 의 19) | 반영 — 그 W/O 의 입고이동이 모두 받아진 뒤. 포장이 없어도 보낸다. 오더수량에 닿은 W/O 는 MES 가 이미 마감했으므로 보내지 않는다 |
+| S410 화면(데스크탑 #274) | #274 에서 따로. API 셋은 받은 형식대로 |
+| S410 품목 11개 등록 | #274 에서 정한다 — 시리얼이 없는 품목이라 flowtrack 제품 기준정보 설계가 필요하다 |
+| `packing_logs.product_sno` 중복 막기 | 반영 — 지우지 않은 포장은 S/NO 당 1건(부분 UNIQUE) · 다시 포장하면 409 |
 
 ## 6. 지금 데이터에서 본 사실
 
