@@ -32,6 +32,7 @@ export async function reopenStatesOf(db: Prisma.TransactionClient, inboundLotIds
       lot: { select: { lot_id: true } },
       inspection_request: {
         where: { inspection_type_code: 'IQC' },
+        orderBy: { inspection_request_id: 'desc' },
         select: { status_code: true, skip_basis_code: true, _count: { select: { inspection_result: true } } },
       },
     },

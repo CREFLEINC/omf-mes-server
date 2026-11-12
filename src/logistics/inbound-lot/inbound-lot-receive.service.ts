@@ -113,7 +113,11 @@ export class InboundLotReceiveService {
       } catch (error) {
         const numbersNeeded = error instanceof NumbersNeeded || error instanceof IqcRequestNoNeeded;
         if (attempt >= RETRY || !(numbersNeeded || isDuplicateLotNo(error))) throw error;
-        if (numbersNeeded) ctx.numbers = await this.numbersFor(plantId, groupKeys(preview), body.businessDate, new Set(groupKeys(preview)));
+        if (numbersNeeded) {
+          // 그사이 열리거나 닫힌 입하 LOT 을 다시 본다 — 필요한 묶음에만 번호를 뽑아 결번을 줄인다.
+          const again = await this.unopenedGroups(plantId, preview, ctx.localDay);
+          ctx.numbers = await this.numbersFor(plantId, again.keys, body.businessDate, again.stale);
+        }
       }
     }
   }

@@ -123,12 +123,14 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect(Number(iqc.target_qty)).toBe(lots.reduce((sum, lot) => sum + lot.lotQty, 0));
     // LOT 은 검사 대기 그대로 — 마감은 품질을 옮기지 않는다.
     expect((await prisma.lot.findMany({ where: { inbound_lot_id: row.inbound_lot_id } })).every((lot) => lot.status_code === 'INSPECTION_PENDING')).toBe(true);
-    const header = await prisma.inbound_receipt_line.findUniqueOrThrow({ where: { inbound_receipt_line_id: row.inbound_receipt_line_id } });
+    const header = await prisma.inbound_receipt_line.findUniqueOrThrow({
+      where: { inbound_receipt_line_id: row.inbound_receipt_line_id }, select: { inbound_receipt: { select: { inbound_receipt_no: true } } },
+    });
     const alerts = await prisma.notification_event.findMany({
-      where: { event_type_code: 'IQC_INSPECTION_REQUESTED', aggregate_type_code: 'INBOUND_RECEIPT', aggregate_id: header.inbound_receipt_id },
+      where: { event_type_code: 'IQC_INSPECTION_REQUESTED', aggregate_type_code: 'INBOUND_RECEIPT', aggregate_id: (await lineOf(closed.inboundLotId)).inbound_receipt_id },
     });
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].payload).toMatchObject({ receipt_no: closed.inboundLotNo, lot_count: 3 });
+    expect(alerts[0].payload).toMatchObject({ receipt_no: header.inbound_receipt.inbound_receipt_no, lot_count: 3 });
     const event = await prisma.inbound_lot_event.findFirstOrThrow({ where: { inbound_lot_id: row.inbound_lot_id, event_type_code: 'RECEIPT_CLOSED' } });
     expect(event).toMatchObject({ actor_worker_id: ids.worker, summary: expect.objectContaining({ auto: false, unallocatedQty: '500' }) });
 
@@ -393,7 +395,8 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect(iqc).toMatchObject({ status_code: 'REQUESTED', created_by: null });
     const line = await lineOf(stale.inboundLotId);
     const alert = await prisma.notification_event.findFirstOrThrow({ where: { event_type_code: 'IQC_INSPECTION_REQUESTED', aggregate_id: line.inbound_receipt_id } });
-    expect(alert.payload).toMatchObject({ receipt_no: `${stale.inboundLotNo} (자동 마감)` });
+    const receipt = await prisma.inbound_receipt.findUniqueOrThrow({ where: { inbound_receipt_id: line.inbound_receipt_id } });
+    expect(alert.payload).toMatchObject({ receipt_no: `${receipt.inbound_receipt_no} (자동 마감)` });
     const listed = await get(`${LOTS}?plantId=${String(ids.plant)}&closedAutomatically=true`).expect(200);
     expect((listed.body.items as Row[]).map((item) => item.inboundLotId)).toEqual([stale.inboundLotId]);
   });
@@ -622,7 +625,9 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     const receipts = `SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`;
     const requests = `SELECT inspection_request_id FROM quality.inspection_request WHERE item_id IN (${items})`;
     const results = `SELECT inspection_result_id FROM quality.inspection_result WHERE inspection_request_id IN (${requests})`;
-    const events = `SELECT notification_event_id FROM app.notification_event WHERE aggregate_type_code = 'INBOUND_RECEIPT' AND aggregate_id IN (${receipts})`;
+    const events = `SELECT notification_event_id FROM app.notification_event
+      WHERE (aggregate_type_code = 'INBOUND_RECEIPT' AND aggregate_id IN (${receipts}))
+         OR (aggregate_type_code = 'INSPECTION_REQUEST' AND aggregate_id IN (${requests}))`;
     const users = `SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${PREFIX}%'`;
     const roles = `SELECT role_id FROM app.role WHERE role_code LIKE '${PREFIX}%'`;
     const keyList = [...keys].map((key) => `'${key}'`).join(',');

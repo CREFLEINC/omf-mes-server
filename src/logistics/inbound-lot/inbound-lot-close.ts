@@ -125,7 +125,7 @@ export class InboundLotCloseService {
     if (lotCount === 0) throw stateLocked('자재 관리 LOT 이 없는 입하 LOT 은 마감할 수 없습니다.');
     const line = await tx.inbound_receipt_line.findUniqueOrThrow({
       where: { inbound_receipt_line_id: locked.inbound_receipt_line_id },
-      select: { received_qty: true, inspection_required: true, inbound_receipt: { select: { inbound_receipt_id: true } } },
+      select: { received_qty: true, inspection_required: true, inbound_receipt: { select: { inbound_receipt_id: true, inbound_receipt_no: true } } },
     });
     const iqc = await iqcRecordOf(tx, locked.item_id, line.inspection_required, input.effectiveDate);
     if (iqc !== null && input.iqcRequestNo === null) throw new IqcRequestNoNeeded();
@@ -151,7 +151,8 @@ export class InboundLotCloseService {
       },
     });
     const iqcRequestId = iqc === null ? null : await this.createIqcRequest(tx, locked, input, {
-      ...iqc, requestNo: input.iqcRequestNo as string, qty: line.received_qty, lotCount, inboundReceiptId: line.inbound_receipt.inbound_receipt_id,
+      ...iqc, requestNo: input.iqcRequestNo as string, qty: line.received_qty, lotCount,
+      inboundReceiptId: line.inbound_receipt.inbound_receipt_id, inboundReceiptNo: line.inbound_receipt.inbound_receipt_no,
     });
     await recordInboundLotEvent(tx, locked.inbound_lot_id, 'RECEIPT_CLOSED', input.actor, {
       auto: input.auto,
@@ -170,7 +171,7 @@ export class InboundLotCloseService {
   /** 입하 LOT 요청 — 대상은 자재 관리 LOT 전부(`lot_id` 없음 · 「요청의 LOT 들」), 수량은 그 합(= 줄 수량). */
   private async createIqcRequest(
     tx: Prisma.TransactionClient, locked: LockedForClose, input: CloseInboundLotInput,
-    iqc: IqcRecord & { requestNo: string; qty: Prisma.Decimal; lotCount: number; inboundReceiptId: bigint },
+    iqc: IqcRecord & { requestNo: string; qty: Prisma.Decimal; lotCount: number; inboundReceiptId: bigint; inboundReceiptNo: string },
   ): Promise<bigint> {
     const skipped = iqc.statusCode === 'SKIPPED';
     const request = await tx.inspection_request.create({
@@ -190,8 +191,9 @@ export class InboundLotCloseService {
     }
     if (!skipped) {
       await this.iqcNotices.notify(tx, {
+        // ⚠ 알림은 aggregate 당 한 번이라 마감 취소 뒤 다시 마감하면 다시 알리지 않는다 — 대상 유형은 계약 enum·클라 이동과 묶여 있다.
         aggregateTypeCode: 'INBOUND_RECEIPT', aggregateId: iqc.inboundReceiptId, plantId: locked.plant_id,
-        receiptNo: input.auto ? `${locked.inbound_lot_no} (자동 마감)` : locked.inbound_lot_no,
+        receiptNo: input.auto ? `${iqc.inboundReceiptNo} (자동 마감)` : iqc.inboundReceiptNo,
         lotCount: iqc.lotCount, inboundReceiptId: iqc.inboundReceiptId,
       });
     }
