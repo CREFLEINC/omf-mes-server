@@ -22,6 +22,7 @@ import {
 import { PrismaModule } from '../prisma/prisma.module';
 import { LogisticsHandoverNotifier } from './logistics-handover';
 import { InboundLotController } from './inbound-lot/inbound-lot.controller';
+import { INBOUND_LOT_AUTO_CLOSE_LEASE, InboundLotAutoCloseRunner } from './inbound-lot/inbound-lot-auto-close.runner';
 import { InboundLotCloseService } from './inbound-lot/inbound-lot-close';
 import { InboundLotReopenService } from './inbound-lot/inbound-lot-reopen.service';
 import { InboundLotLotsService } from './inbound-lot/inbound-lot-lots.service';
@@ -232,6 +233,24 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
           prisma,
           new SyncLease(prisma, REPLENISHMENT_LEASE),
           new ReplenishmentCreator(documentState, pickingNotices),
+          numbering,
+        ),
+    },
+    // 입하 LOT 날짜 자동 마감(피처 005 · research R-21) — FR-045 가 늘 켜짐을 요구해 값이 없으면 돈다. 'false' 일 때만 끈다.
+    {
+      provide: InboundLotAutoCloseRunner,
+      inject: [ConfigService, PrismaService, InboundLotCloseService, NumberingService],
+      useFactory: (
+        config: ConfigService,
+        prisma: PrismaService,
+        closer: InboundLotCloseService,
+        numbering: NumberingService,
+      ): InboundLotAutoCloseRunner =>
+        new InboundLotAutoCloseRunner(
+          config.get<string>('INBOUND_LOT_AUTO_CLOSE_ENABLED') !== 'false',
+          prisma,
+          new SyncLease(prisma, INBOUND_LOT_AUTO_CLOSE_LEASE),
+          closer,
           numbering,
         ),
     },
