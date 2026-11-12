@@ -26398,6 +26398,7 @@
     "required": [
      "uomId",
      "uomCode",
+     "uomName",
      "count",
      "qtyPerPackage"
     ],
@@ -26411,6 +26412,11 @@
      "uomCode": {
       "type": "string",
       "example": "BOX"
+     },
+     "uomName": {
+      "type": "string",
+      "example": "상자",
+      "description": "패키징 단위 이름(표시용)"
      },
      "count": {
       "type": "integer",
@@ -27503,7 +27509,9 @@
         "index",
         "lotId",
         "lotNo",
-        "reasonCode"
+        "reasonCode",
+        "inboundLotNo",
+        "inboundLotStatusCode"
        ],
        "properties": {
         "index": {
@@ -27525,6 +27533,20 @@
           "NOT_MATERIAL_LOT"
          ],
          "description": "ALREADY_RECEIVED = 이미 입하된 LOT(다른·같은 입하 LOT 에 등록됨, 또는 이전 데이터) · VOIDED = 폐기된 대기 LOT · NOT_MATERIAL_LOT = 자재 관리 LOT 이 아님(생산 LOT 등)"
+        },
+        "inboundLotNo": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "그 LOT 이 이미 속한 입하 LOT 번호 — 없으면(폐기·이전 데이터·자재 관리 LOT 아님) null. 화면이 「{입하 LOT}(입하 중|입하 완료)에 이미 등록된 LOT」을 그 카드 없이 그린다"
+        },
+        "inboundLotStatusCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "그 입하 LOT 의 상태(INBOUND_LOT_STATUS — RECEIVING·RECEIVED·FINALIZED·VOIDED). 입하 LOT 이 없으면 null"
         }
        }
       }

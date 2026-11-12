@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export interface MaterialPackageView {
   uomId: number;
   uomCode: string;
+  uomName: string;
   count: number;
   qtyPerPackage: number;
 }
@@ -36,7 +37,7 @@ export const MATERIAL_LOT_SUMMARY_SELECT = {
   lot_id: true, lot_no: true, initial_qty: true, lifecycle_status_code: true, status_code: true,
   source_type_code: true, source_id: true, created_at: true, created_by: true,
   package_uom_id: true, package_count: true, qty_per_package: true, inbound_lot_id: true,
-  package_uom: { select: { uom_code: true } },
+  package_uom: { select: { uom_code: true, uom_name: true } },
   inbound_lot: { select: { inbound_lot_no: true } },
   lot_external_identifier: {
     where: { identifier_type_code: SUPPLIER_LOT },
@@ -56,12 +57,13 @@ export type MaterialLotSummaryRow = Prisma.lotGetPayload<{ select: typeof MATERI
 
 export function packageView(row: {
   package_uom_id: bigint | null; package_count: number | null; qty_per_package: Prisma.Decimal | null;
-  package_uom: { uom_code: string } | null;
+  package_uom: { uom_code: string; uom_name: string } | null;
 }): MaterialPackageView | null {
   if (row.package_uom_id === null || row.package_count === null || row.qty_per_package === null) return null;
   return {
     uomId: Number(row.package_uom_id),
     uomCode: row.package_uom?.uom_code ?? '',
+    uomName: row.package_uom?.uom_name ?? '',
     count: row.package_count,
     qtyPerPackage: Number(row.qty_per_package),
   };

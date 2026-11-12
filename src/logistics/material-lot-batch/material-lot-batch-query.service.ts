@@ -84,7 +84,7 @@ export interface WaitingMaterialLotGroupView {
 const BATCH_INCLUDE = {
   supplier: { select: { partner_code: true, partner_name: true } },
   item: { select: { item_code: true, item_name: true, base_uom_id: true, uom: { select: { uom_code: true } } } },
-  package_uom: { select: { uom_code: true } },
+  package_uom: { select: { uom_code: true, uom_name: true } },
 } as const;
 
 /** 자재 관리 LOT 발행 묶음 목록·공급사·품목별 대기 목록(계약 §1). */

@@ -45,7 +45,7 @@ const VERSION_CONFLICT = 'VERSION_CONFLICT';
 const ROW_INCLUDE = {
   supplier: { select: { partner_code: true, partner_name: true } },
   item: { select: { item_code: true, item_name: true, base_uom_id: true, uom: { select: { uom_code: true } } } },
-  package_uom: { select: { uom_code: true } },
+  package_uom: { select: { uom_code: true, uom_name: true } },
 } satisfies Prisma.supplier_item_defaultInclude;
 
 type Row = Prisma.supplier_item_defaultGetPayload<{ include: typeof ROW_INCLUDE }>;
@@ -241,6 +241,7 @@ function view(row: Row, updatedByName: string | null) {
         : {
             uomId: Number(row.package_uom_id),
             uomCode: row.package_uom?.uom_code ?? '',
+            uomName: row.package_uom?.uom_name ?? '',
             count: row.package_count,
             qtyPerPackage: row.qty_per_package.toNumber(),
           },

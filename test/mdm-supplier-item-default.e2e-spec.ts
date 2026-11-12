@@ -138,6 +138,8 @@ describe('공급사·품목 기본 정보 W-06-25 (e2e · 피처 005)', () => {
       versionNo: 1,
       updatedByName: '기본정보 W-06-25',
     });
+    // 패키징 단위 이름(표시용 · G1 잔여).
+    expect(created.body.package.uomName).toBe('BAG');
     main = created.body as Row;
 
     const plain = await send('post', PATH, body({ supplierId: Number(ids.S2), itemId: Number(ids.I2), lotQty: 50, package: null, remarks: null })).expect(201);
