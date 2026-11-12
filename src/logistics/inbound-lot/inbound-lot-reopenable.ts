@@ -31,7 +31,7 @@ export async function reopenStatesOf(db: Prisma.TransactionClient, inboundLotIds
       inbound_lot_id: true, plant_id: true, supplier_id: true, item_id: true, status_code: true, erp_send_mode_code: true,
       lot: { select: { lot_id: true } },
       inspection_request: {
-        where: { inspection_type_code: 'IQC' },
+        where: { inspection_type_code: 'IQC', status_code: { not: 'CANCELLED' } },
         orderBy: { inspection_request_id: 'desc' },
         select: { status_code: true, skip_basis_code: true, _count: { select: { inspection_result: true } } },
       },

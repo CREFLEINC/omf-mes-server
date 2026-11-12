@@ -31,6 +31,7 @@ const BLOCKER_MESSAGE: Record<ReopenBlockerCode, string> = {
   OPEN_RECEIPT_EXISTS: '같은 공급사·품목에 입하 중인 입하 LOT 이 있습니다 — 먼저 마감하세요',
 };
 const REQUEST_COLUMN = 'quality.inspection_request.status_code';
+const CANCELLED = 'CANCELLED';
 
 /**
  * 입하 마감 취소(`:reopen-receipt` · R-5a) — 다음 단계 전에만. 배정 해제·받은 양 감소(P/O 부모 오름차순 잠금) → `RECEIVING`·
@@ -88,8 +89,7 @@ export class InboundLotReopenService {
   }
 
   /**
-   * IQC 요청을 `CANCELLED` 로 — 행은 남긴다. ⚠ `inbound_lot_id` 는 비운다: `uq_iqc_inspection_request_inbound_lot` 가 입하 LOT 당
-   * IQC 요청 하나라 다시 마감할 새 요청이 들어갈 자리다. 입하 LOT 과의 연결은 `target_type_code`·`target_id` 가 그대로 갖는다.
+   * IQC 요청을 `CANCELLED` 로 — 행과 입하 LOT 칸은 남긴다(유일 색인은 취소된 요청을 빼므로 다시 마감하면 새 요청이 선다).
    * 긴급 생략 실행 건(`SKIPPED`·`APPROVAL`)은 LOT 을 검사 대기로 되돌리고(C30) 검사 대기 보류를 다시 건다.
    */
   private async cancelRequest(
@@ -97,7 +97,7 @@ export class InboundLotReopenService {
     actor: LogisticsWriteActor, at: Date,
   ): Promise<bigint | null> {
     const request = await tx.inspection_request.findFirst({
-      where: { inbound_lot_id: inboundLotId, inspection_type_code: 'IQC' },
+      where: { inbound_lot_id: inboundLotId, inspection_type_code: 'IQC', status_code: { not: CANCELLED } },
       select: { inspection_request_id: true, status_code: true, skip_basis_code: true },
     });
     if (request === null) return null;
@@ -120,7 +120,7 @@ export class InboundLotReopenService {
     await tx.inspection_request.update({
       where: { inspection_request_id: request.inspection_request_id },
       data: {
-        status_code: to, inbound_lot_id: null, version_no: { increment: 1 },
+        status_code: to, version_no: { increment: 1 },
         updated_by: actor.appUserId === undefined ? null : BigInt(actor.appUserId),
       },
     });

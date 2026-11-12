@@ -222,7 +222,11 @@ export class InboundProgressService {
   private async inspections(lotIds: bigint[]): Promise<Map<bigint, InspectionView>> {
     const requests = await this.prisma.inspection_request.findMany({
       where: {
-        OR: [{ lot_id: { in: lotIds } }, { lot_id: null, inbound_lot: { lot: { some: { lot_id: { in: lotIds } } } } }],
+        // 입하 LOT 요청은 마감 취소로 CANCELLED 가 된 옛 요청을 뺀다(다시 마감하면 새 요청이 «현재»다).
+        OR: [
+          { lot_id: { in: lotIds } },
+          { lot_id: null, status_code: { not: 'CANCELLED' }, inbound_lot: { lot: { some: { lot_id: { in: lotIds } } } } },
+        ],
         inspection_type_code: 'IQC',
       },
       orderBy: [{ requested_at: 'desc' }, { inspection_request_id: 'desc' }],
