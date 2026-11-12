@@ -1,4 +1,5 @@
 import { PrismaService } from '../../prisma/prisma.service';
+import { NumberingService } from '../../core/numbering';
 import { InspectionPlanService, InspectionPlanWrite } from './inspection-plan.service';
 
 /** omf-all-around#215 — 품목 전용 IQC 기준의 「기본 생략」을 저장하면 품목 「수입검사 대상」이 반대로 맞춰진다. */
@@ -18,13 +19,14 @@ function harness() {
     // 다시 사용 전 「제품당 PQC 하나」 검사가 읽는다 — IQC 라 그 검사는 그냥 지나간다.
     inspection_plan: { findUnique: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', item_id: 40n }) },
   } as unknown as PrismaService;
-  const service = new InspectionPlanService(prisma);
+  const numbering = { next: jest.fn().mockResolvedValue('QP-20261111-0001') };
+  const service = new InspectionPlanService(prisma, numbering as unknown as NumberingService);
   // 검증·조회는 이 스위트가 보지 않는다 — 저장 트랜잭션 안의 연동만 본다.
   const internals = service as unknown as Record<string, unknown>;
   internals.assertWritable = jest.fn().mockResolvedValue(undefined);
   internals.assertExists = jest.fn().mockResolvedValue(undefined);
   internals.get = jest.fn().mockResolvedValue({});
-  return { service, tx, itemUpdateMany };
+  return { service, tx, itemUpdateMany, numbering };
 }
 
 const plan = (overrides: Partial<InspectionPlanWrite>): InspectionPlanWrite => ({
@@ -34,6 +36,22 @@ const plan = (overrides: Partial<InspectionPlanWrite>): InspectionPlanWrite => (
   itemId: 40,
   defaultSkip: true,
   ...overrides,
+});
+
+describe('검사 기준 등록 — 기준코드 자동 등록 (omf-all-around#262)', () => {
+  it('기준코드를 비우면 QP 번호를 붙이고, 넣으면 앞뒤 빈칸만 걷어 쓴다', async () => {
+    const { service, tx, numbering } = harness();
+
+    await service.create(plan({ inspectionPlanCode: '  ' }));
+    await service.create(plan({ inspectionPlanCode: ' IQC-9 ' }));
+
+    expect(numbering.next).toHaveBeenCalledTimes(1);
+    expect(numbering.next).toHaveBeenCalledWith('INSPECTION_PLAN', null, expect.any(String));
+    expect(tx.inspection_plan.create.mock.calls.map((call) => call[0].data.inspection_plan_code)).toEqual([
+      'QP-20261111-0001',
+      'IQC-9',
+    ]);
+  });
 });
 
 describe('검사 기준 저장 — 품목 「수입검사 대상」 연동 (omf-all-around#215)', () => {
@@ -175,7 +193,7 @@ describe('검사 기준 저장 — 제품당 PQC 기준 하나', () => {
   const guard = (other: { inspection_plan_code: string } | null, stored: { item_id: bigint | null } | null = null) => {
     const findFirst = jest.fn().mockResolvedValue(other);
     const prisma = { inspection_plan: { findFirst, findUnique: jest.fn().mockResolvedValue(stored) } } as unknown as PrismaService;
-    const service = new InspectionPlanService(prisma) as unknown as {
+    const service = new InspectionPlanService(prisma, {} as NumberingService) as unknown as {
       assertSinglePqc: (target: { inspection_type_code: string; item_id: number | null | undefined }, self: number | null) => Promise<void>;
     };
     return { service, findFirst };

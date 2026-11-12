@@ -386,7 +386,7 @@ describe('검사기준 버전 (e2e)', () => {
     );
   });
 
-  it('⭐ 폐기는 확정에서만 되고 되돌아오지 않는다', async () => {
+  it('⭐ 사용 중지는 확정에서만 되고, 재사용(omf-all-around#258)으로만 확정에 돌아온다', async () => {
     const versionId = await createVersion(await createPlan());
     await putItems(versionId, [item(versionId, 1, 'A')]);
 
@@ -412,6 +412,21 @@ describe('검사기준 버전 (e2e)', () => {
         .set('Idempotency-Key', key())
         .expect(400);
     }
+
+    const reactivated = await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${versionId}:reactivate`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(200);
+    expect(reactivated.body.statusCode).toBe(REVISION_STATUS.CONFIRMED);
+
+    // 확정 버전은 재사용할 수 없다 — 사용 중지된 버전만.
+    const again = await request(app.getHttpServer())
+      .post(`/api/quality/inspection-plan-versions/${versionId}:reactivate`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(400);
+    expect(again.body.errors[0].code).toBe('STATE_LOCKED');
   });
 
   it('⭐ 작성중 버전 취소가 버전과 항목을 지우고, 다시 신규 버전을 발행할 수 있다', async () => {
