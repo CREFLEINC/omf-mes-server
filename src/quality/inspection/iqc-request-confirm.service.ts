@@ -12,10 +12,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { recordIqcInspectionLevelWithin } from '../inspection-level/inspection-level-switch';
 import { InspectionConfirmService } from './inspection-confirm.service';
 import { recordInspectionRequestEvent } from './inspection-request-event';
-import { INBOUND_LOT_TARGET } from './iqc-inbound-lot-result';
+import { INBOUND_LOT_TARGET, judgedResultsOf } from './iqc-inbound-lot-result';
 import { confirmCancelBlockers, confirmMadeNonconformanceIds, loadConfirmCancelFacts } from './iqc-confirm-cancel';
 import { createIqcNonconformanceWithin } from './iqc-nonconformance';
-import { iqcOverallJudgment } from './iqc-overall-judgment';
+import { iqcOverallJudgment, nonconformanceSourceResult } from './iqc-overall-judgment';
 import { IqcRejectedHandoverNotifier } from './iqc-rejected-handover';
 
 /** 계약 `InspectionRequestConfirm`. */
@@ -149,13 +149,18 @@ export class IqcRequestConfirmService {
     if (!OPEN_STATUSES.includes(request.status_code)) {
       throw new ConflictException('user', '판정 확정됐거나 끝난 검사입니다.', { code: INVALID_STATE });
     }
-    // 재작업 재열기가 남긴 앞 확정의 결과(CONFIRMED)는 판정 근거로만 남는다 — 기록 중인 결과로 판정한다(R-15).
-    const results = await tx.inspection_result.findMany({
+    // 확정은 기록 중인 결과를 확정으로 바꾼다 — 그 결과들이 CHECK(판정·수량 합)를 지나야 한다. 재작업 재열기가 남긴 앞 확정의
+    // 결과(CONFIRMED)는 이미 지났고, 판정에는 LOT별 마지막 결과로 함께 쓰인다(2026-11-12 · R-10 「판정 규칙」).
+    const drafts = await tx.inspection_result.findMany({
       where: { inspection_request_id: id, status_code: 'DRAFT' }, orderBy: { inspection_round: 'asc' },
       select: { inspection_result_id: true, inspection_round: true, overall_judgment_code: true, inspected_qty: true, accepted_qty: true, rejected_qty: true, held_qty: true },
     });
-    assertConfirmable(results);
-    const judgment = iqcOverallJudgment(results.map((result) => ({ overallJudgmentCode: result.overall_judgment_code }))).judgmentCode as string;
+    assertConfirmable(drafts);
+    const results = await judgedResultsOf(tx, [id]);
+    const judgment = iqcOverallJudgment(results).judgmentCode;
+    if (judgment === null) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('results', ERROR_CODE.REQUIRED, '자재 관리 LOT를 매칭한 결과가 없습니다 — 결과에 LOT를 고르세요.')]);
+    }
     if (judgment === REJECTED && nonconformanceNo === undefined) throw new NonconformanceNoNeeded();
 
     const at = new Date();
@@ -173,10 +178,9 @@ export class IqcRequestConfirmService {
     await this.confirms.moveTargetLots(tx, lots.map((lot) => lot.lot_id), judgment, ACTION_BY_JUDGMENT[judgment], context);
     let nonconformanceId: bigint | null = null;
     if (judgment === REJECTED) {
-      const firstRejected = results.find((result) => result.overall_judgment_code === REJECTED);
       nonconformanceId = await createIqcNonconformanceWithin(tx, {
         nonconformanceNo: nonconformanceNo as string,
-        inspectionResultId: (firstRejected ?? results[0]).inspection_result_id,
+        inspectionResultId: (nonconformanceSourceResult(results) ?? results[0]).resultId,
         inspectionRequestId: id,
         request: { inspection_type_code: 'IQC', lot_id: null, inbound_lot_id: request.inbound_lot_id, item_id: request.item_id, uom_id: request.uom_id, work_order_id: request.work_order_id },
         lotIds: lots.map((lot) => lot.lot_id),
@@ -190,18 +194,18 @@ export class IqcRequestConfirmService {
     await recordInspectionRequestEvent(tx, {
       inspectionRequestId: id, eventTypeCode: 'CONFIRMED', actor: { appUserId }, at,
       summaryAfter: {
-        overallJudgmentCode: judgment, resultIds: results.map((result) => Number(result.inspection_result_id)),
+        overallJudgmentCode: judgment, resultIds: drafts.map((result) => Number(result.inspection_result_id)),
         nonconformanceId: nonconformanceId === null ? null : Number(nonconformanceId),
       },
     });
   }
 
-  /** 지금 결과 중 불합격이 있으면 부적합 번호를 미리 받는다. 확정 순간 판정이 달라지면 `confirmWithin` 이 다시 받게 한다. */
+  /** 지금 결과로 불합격이면 부적합 번호를 미리 받는다. 확정 순간 판정이 달라지면 `confirmWithin` 이 다시 받게 한다. */
   private async nonconformanceNoIfRejected(id: bigint): Promise<string | undefined> {
-    const rejected = await this.prisma.inspection_result.count({
-      where: { inspection_request_id: id, status_code: 'DRAFT', overall_judgment_code: REJECTED, inspection_request: { target_type_code: INBOUND_LOT_TARGET } },
-    });
-    return rejected === 0 ? undefined : this.numbering.next('NONCONFORMANCE', null, new Date().toISOString().slice(0, 10));
+    const head = await this.prisma.inspection_request.findUnique({ where: { inspection_request_id: id }, select: { target_type_code: true } });
+    if (head?.target_type_code !== INBOUND_LOT_TARGET) return undefined;
+    const rejected = iqcOverallJudgment(await judgedResultsOf(this.prisma, [id])).judgmentCode === REJECTED;
+    return rejected ? this.numbering.next('NONCONFORMANCE', null, new Date().toISOString().slice(0, 10)) : undefined;
   }
 
   private async cancelNonconformance(tx: Tx, nonconformanceId: bigint, at: Date, by: bigint): Promise<void> {

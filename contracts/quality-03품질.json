@@ -1279,7 +1279,7 @@
      "quality"
     ],
     "summary": "IQC 판정 확정(검사 단위)",
-    "description": "입하 LOT 검사(새 흐름 — targetTypeCode=INBOUND_LOT)의 결과 전부로 판정을 한 번에 확정한다(R-12). 재작업 처분이 다시 연 요청(이력 REOPENED_BY_REWORK)은 앞 확정의 결과가 확정(CONFIRMED) 그대로 판정 근거로 남고, 기록 중(DRAFT)인 재검사 결과로만 판정한다(R-15 — 재검사 결과가 없으면 400 results). 결과가 1건 이상이고 모든 결과에 판정이 있고 각 결과의 합격·불합격·보류 수량 합이 검사 수량과 같아야 한다(아니면 400 — field 는 results 또는 results[n].overallJudgmentCode·results[n].inspectedQty, n 은 순번). 한 트랜잭션: 결과 전부 CONFIRMED, 종합 판정 = 불합격 > 보류 > 합격, 요청 COMPLETED·overallJudgmentCode·confirmedAt·confirmedBy, 검사 수준 기록 1회, 자재 관리 LOT 전부 이동(합격 — 검사 대기 보류를 닫고 C4, 다른 열린 보류가 남은 LOT 은 이동 안 함 / 보류 — C5 / 불합격 — C6, LOT 상태 이력 원천 INSPECTION_REQUEST), 불합격이면 부적합 1건(PENDING_DECISION · LOT 전부를 대상 LOT 으로 · 수량은 각 LOT 초기 수량 · 결과 연결은 첫 불합격 결과 · 이미 열린 부적합이 있는 LOT 은 뺀다)과 불합격 인계 알림(입하 LOT 당 1회), 변경 이력 CONFIRMED. 4M 변경품은 결과 저장 때 이미 LOT 전부에 적혀 있다. 대기·진행 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청(대상 LOT)·PQC·OQC 는 409 INVALID_STATE 「이전 데이터 검사는 결과 단위로 확정합니다」(결과 단위 :confirm 을 쓴다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-12",
+    "description": "입하 LOT 검사(새 흐름 — targetTypeCode=INBOUND_LOT)의 결과 전부로 판정을 한 번에 확정한다(R-12). 판정 규칙(2026-11-12): 자재 관리 LOT 마다 그 LOT 를 매칭한 결과 중 순번이 가장 큰 결과의 판정이 LOT 판정이고(확정 차수·결과 상태와 상관없다 — 재작업 처분이 다시 연 요청(이력 REOPENED_BY_REWORK)의 앞 확정 결과(CONFIRMED)도 다시 매칭되지 않은 LOT 의 판정으로 쓰인다), 종합 판정 = LOT별 판정 중 가장 나쁜 것(불합격 > 보류 > 합격), 매칭된 결과가 없는 LOT 는 계산에서 빠진다 — 상세 previewJudgmentCode·lotJudgments 와 같은 계산이다. 기록 중(DRAFT)인 결과가 1건 이상이고 모든 기록 중 결과에 판정이 있고 각 결과의 합격·불합격·보류 수량 합이 검사 수량과 같아야 한다(아니면 400 — field 는 results 또는 results[n].overallJudgmentCode·results[n].inspectedQty, n 은 순번 · 재열기 뒤 재검사 결과가 없으면 400 results). 자재 관리 LOT 를 매칭한 결과가 하나도 없으면 400 results(REQUIRED). 한 트랜잭션: 기록 중 결과 전부 CONFIRMED, 요청 COMPLETED·overallJudgmentCode·confirmedAt·confirmedBy, 검사 수준 기록 1회, 자재 관리 LOT 전부 이동(합격 — 검사 대기 보류를 닫고 C4, 다른 열린 보류가 남은 LOT 은 이동 안 함 / 보류 — C5 / 불합격 — C6, LOT 상태 이력 원천 INSPECTION_REQUEST), 불합격이면 부적합 1건(PENDING_DECISION · LOT 전부를 대상 LOT 으로 · 수량은 각 LOT 초기 수량 · 결과 연결은 LOT 판정에 쓰인 불합격 결과 중 순번이 가장 작은 것 · 이미 열린 부적합이 있는 LOT 은 뺀다)과 불합격 인계 알림(입하 LOT 당 1회), 변경 이력 CONFIRMED. 4M 변경품은 결과 저장 때 이미 LOT 전부에 적혀 있다. 대기·진행 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청(대상 LOT)·PQC·OQC 는 409 INVALID_STATE 「이전 데이터 검사는 결과 단위로 확정합니다」(결과 단위 :confirm 을 쓴다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-12",
     "parameters": [
      {
       "name": "inspectionRequestId",
@@ -1685,7 +1685,7 @@
      "quality"
     ],
     "summary": "검사 결과 저장",
-    "description": "임시 저장(statusCode=작성중)과 즉시 확정(=확정)을 한 경로로 받는다. ⭐ 오프라인 큐는 언제나 확정으로 온다 — 임시 저장은 단말에 남는다. 재검이면 previousResultId 를 실으면 서버가 회차를 +1 한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: W-01-01 §5-2 · P-02-13 §5-9 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다. ⭐ 입하 LOT 검사(요청 targetTypeCode=INBOUND_LOT · 피처 005 §8): 결과는 순번(최대 + 1)·작성중으로만 서고 matchedLotIds 를 받는다. previousResultId·reinspectionReasonCode·statusCode=CONFIRMED 는 400, 요청이 대기·진행(REQUESTED·IN_PROGRESS)이 아니면 409 INVALID_STATE. 첫 결과가 요청을 IN_PROGRESS 로 옮기고 변경 이력 RESULT_ADDED 를 남긴다. 이전된 옛 요청(대상 LOT)은 지금 동작 그대로다.",
+    "description": "임시 저장(statusCode=작성중)과 즉시 확정(=확정)을 한 경로로 받는다. ⭐ 오프라인 큐는 언제나 확정으로 온다 — 임시 저장은 단말에 남는다. 재검이면 previousResultId 를 실으면 서버가 회차를 +1 한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: W-01-01 §5-2 · P-02-13 §5-9 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다. ⭐ 입하 LOT 검사(요청 targetTypeCode=INBOUND_LOT · 피처 005 §8): 결과는 순번(최대 + 1)·작성중으로만 서고 matchedLotIds 를 1개 이상 받는다(빼거나 빈 배열이면 400 MATCHED_LOT_REQUIRED · 2026-11-12). 이 결과가 매칭한 LOT 의 바로 앞 결과(그 LOT 를 매칭한 결과 중 순번이 가장 큰 것) 판정을 불합격 → 보류·합격, 보류 → 합격으로 바꾸면 reinspectionReasonCode 가 필수다(없으면 400 REINSPECTION_REASON_REQUIRED). previousResultId·statusCode=CONFIRMED 는 400, 요청이 대기·진행(REQUESTED·IN_PROGRESS)이 아니면 409 INVALID_STATE. 첫 결과가 요청을 IN_PROGRESS 로 옮기고 변경 이력 RESULT_ADDED 를 남긴다. 이전된 옛 요청(대상 LOT)은 지금 동작 그대로다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2109,7 +2109,7 @@
      "quality"
     ],
     "summary": "검사 결과 수정",
-    "description": "작성중인 것만 고친다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다. 근거: 공유계약 B-10 · W-01-01 §5-3 ⭐ 입하 LOT 검사 결과는 matchedLotIds 도 고치고, 요청이 판정 확정 전(대기·진행)일 때만이다 — 그 밖은 409 INVALID_STATE. 변경 이력 RESULT_UPDATED(전·후 요약). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
+    "description": "작성중인 것만 고친다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다. 근거: 공유계약 B-10 · W-01-01 §5-3 ⭐ 입하 LOT 검사 결과는 matchedLotIds·reinspectionReasonCode 도 고치고(matchedLotIds 를 빼면 지금 매칭 그대로, 빈 배열은 400 MATCHED_LOT_REQUIRED), 고친 뒤의 판정·매칭(본문에 없으면 저장값)이 그 결과 순번 기준 바로 앞 결과의 불합격·보류를 덮으면 재검 사유(본문에 없으면 저장값)가 필수다 — 없으면 400 REINSPECTION_REASON_REQUIRED(2026-11-12). 요청이 판정 확정 전(대기·진행)일 때만이다 — 그 밖은 409 INVALID_STATE. 변경 이력 RESULT_UPDATED(전·후 요약). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
     "parameters": [
      {
       "name": "inspectionResultId",
@@ -6734,12 +6734,19 @@
       },
       "description": "상세 조회·새 흐름 요청만 — 결과 목록(순번 순). 결과마다 매칭한 자재 관리 LOT"
      },
+     "lotJudgments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionRequestLotJudgment"
+      },
+      "description": "상세 조회·새 흐름 요청만 — 입하 LOT 의 자재 관리 LOT 전부(LOT 번호 순)의 판정 근거(2026-11-12). previewJudgmentCode·:confirm 과 같은 계산"
+     },
      "previewJudgmentCode": {
       "type": [
        "string",
        "null"
       ],
-      "description": "새 흐름 요청(targetTypeCode=INBOUND_LOT)만 — 목록 행·상세 모두. 지금 결과로 판정 확정하면 나올 종합 판정(불합격 > 보류 > 합격). 결과가 없거나 판정이 빈 결과가 있으면 null. 미리 보기일 뿐 LOT 상태는 그대로다. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8).",
+      "description": "새 흐름 요청(targetTypeCode=INBOUND_LOT)만 — 목록 행·상세 모두. 지금 결과로 판정 확정하면 나올 종합 판정 — 자재 관리 LOT별 마지막 결과(순번 최대)의 판정 중 가장 나쁜 것(불합격 > 보류 > 합격 · 2026-11-12). 판정에 쓸 결과가 없거나(결과 0건·매칭된 LOT 없음) 판정이 빈 결과가 있으면 null. 미리 보기일 뿐 LOT 상태는 그대로다. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8).",
       "example": "REJECTED"
      },
      "splitFromInboundLotNo": {
@@ -6794,7 +6801,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "상세·새 흐름 요청만 — 불합격 확정으로 생긴 부적합(취소된 것 제외), 없으면 null. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+      "description": "상세·새 흐름 요청만 — 지금 판정 확정이 만든 부적합(취소된 것 제외 · 그 확정 시각 이후에 열린 것). 확정 전이거나 그 확정이 부적합을 만들지 않았으면 null(재작업 뒤 합격으로 다시 확정하면 앞의 닫힌 부적합이 아니라 null). 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
      },
      "nonconformanceNo": {
       "type": [
@@ -7110,7 +7117,7 @@
       "type": "string",
       "example": "값",
       "x-code-key": "CD-REINSPECTION-REASON",
-      "description": "재검사 사유 — 왜 회차를 더 돌리는가. ⭐ 번복은 「수정」이 아니라 «재검사 회차»라 이 사유가 그 회차의 근거다(W-04-03 §5). ⭐ 고객이 늘릴 수 있다 — 계약이 값을 닫지 않는다. 값 목록은 GET /mdm/code-values?codeGroupCode=REINSPECTION_REASON 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⛔ 입하 LOT 검사(새 흐름)에는 싣지 않는다 — 400 INVALID"
+      "description": "재검사 사유 — 왜 회차를 더 돌리는가. ⭐ 번복은 「수정」이 아니라 «재검사 회차»라 이 사유가 그 회차의 근거다(W-04-03 §5). ⭐ 고객이 늘릴 수 있다 — 계약이 값을 닫지 않는다. 값 목록은 GET /mdm/code-values?codeGroupCode=REINSPECTION_REASON 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 입하 LOT 검사(새 흐름 · 2026-11-12): 이 결과가 어떤 자재 관리 LOT 의 판정을 불합격 → 보류·합격, 보류 → 합격으로 바꿀 때 필수(없으면 400 REINSPECTION_REASON_REQUIRED), 그 밖에는 실리면 저장한다"
      },
      "measurements": {
       "type": "array",
@@ -7175,7 +7182,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "입하 LOT 검사(targetTypeCode=INBOUND_LOT)의 결과만 — 이 결과가 본 자재 관리 LOT. 그 입하 LOT 소속만(아니면 400 INVALID), 한 결과에 같은 LOT 두 번은 400, 다른 결과와 겹치는 것은 된다. 빼거나 빈 배열이면 매칭 없음. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10"
+      "description": "입하 LOT 검사(targetTypeCode=INBOUND_LOT)의 결과만 — 이 결과가 본 자재 관리 LOT. 그 입하 LOT 소속만(아니면 400 INVALID), 한 결과에 같은 LOT 두 번은 400, 다른 결과와 겹치는 것은 된다. 1개 이상 필수 — 빼거나 빈 배열이면 400 MATCHED_LOT_REQUIRED(2026-11-12). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10"
      }
     },
     "required": [
@@ -7273,7 +7280,13 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "입하 LOT 검사 결과만 — 실으면 매칭을 통째로 갈아 끼운다(빈 배열 = 매칭 없음), 빼면 그대로. 규칙은 POST 와 같다. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254"
+      "description": "입하 LOT 검사 결과만 — 실으면 매칭을 통째로 갈아 끼운다(빈 배열은 400 MATCHED_LOT_REQUIRED · 2026-11-12), 빼면 그대로. 규칙은 POST 와 같다. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254"
+     },
+     "reinspectionReasonCode": {
+      "type": "string",
+      "example": "값",
+      "x-code-key": "CD-REINSPECTION-REASON",
+      "description": "입하 LOT 검사 결과만 — 재검 사유(공통코드 REINSPECTION_REASON · 열린 그룹이라 값은 대조하지 않는다). 빼면 저장값 그대로. 고친 뒤의 판정·매칭이 그 LOT 의 바로 앞 결과(이 결과보다 순번이 작은 것 중 가장 큰 것) 판정을 불합격 → 보류·합격, 보류 → 합격으로 바꾸면 필수(본문·저장값 모두 없으면 400 REINSPECTION_REASON_REQUIRED). 입하 LOT 검사가 아닌 결과에 실으면 400 INVALID. 근거: 피처 005 §8 판정 규칙 변경(2026-11-12)"
      }
     },
     "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",
@@ -10055,6 +10068,8 @@
      "inspectorName",
      "matchedLotIds",
      "matchedLotNos",
+     "reinspectionReasonCode",
+     "reinspectionReasonName",
      "versionNo",
      "defectNames"
     ],
@@ -10125,7 +10140,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "매칭한 자재 관리 LOT — 0 개 이상, 다른 결과와 겹쳐도 된다"
+      "description": "매칭한 자재 관리 LOT — 다른 결과와 겹쳐도 된다. 2026-11-12 부터 1개 이상 필수(그 전에 만든 결과는 0 개일 수 있다)"
      },
      "matchedLotNos": {
       "type": "array",
@@ -10134,11 +10149,115 @@
       },
       "description": "matchedLotIds 와 같은 순서의 LOT 번호"
      },
+     "reinspectionReasonCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-code-key": "CD-REINSPECTION-REASON",
+      "description": "재검 사유(불합격·보류를 덮는 결과 · 2026-11-12), 없으면 null"
+     },
+     "reinspectionReasonName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "재검 사유 이름(공통코드 REINSPECTION_REASON 의 이름 — 코드가 마스터에 없으면 null)"
+     },
      "versionNo": {
       "type": "integer",
       "description": "PUT·DELETE 의 If-Match"
      }
     }
+   },
+   "InspectionRequestLotJudgment": {
+    "type": "object",
+    "required": [
+     "lotId",
+     "lotNo",
+     "judgmentCode",
+     "resultId",
+     "resultSeqNo",
+     "superseded",
+     "reinspectionReasonCode",
+     "reinspectionReasonName"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "judgmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-code-key": "CD-INSPECTION-OVERALL-JUDGMENT",
+      "description": "이 자재 관리 LOT 의 판정 — 이 LOT 를 매칭한 결과 중 순번이 가장 큰 결과의 판정(확정 차수·결과 상태와 상관없다). 매칭된 결과가 없거나 그 결과에 판정이 없으면 null"
+     },
+     "resultId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "판정에 쓰인 결과(inspectionResultId), 매칭된 결과가 없으면 null"
+     },
+     "resultSeqNo": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "판정에 쓰인 결과의 순번(results[].seqNo), 매칭된 결과가 없으면 null"
+     },
+     "superseded": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "resultId",
+        "resultSeqNo",
+        "judgmentCode"
+       ],
+       "properties": {
+        "resultId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "resultSeqNo": {
+         "type": "integer"
+        },
+        "judgmentCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "x-code-key": "CD-INSPECTION-OVERALL-JUDGMENT"
+        }
+       }
+      },
+      "description": "이 LOT 에서 대체된 앞 결과들(이 LOT 를 매칭한, 판정에 쓰인 결과보다 순번이 작은 결과) — 순번 오름차순. 화면은 「LOT n: 결과 a 불합격 → 결과 b 합격(사유)」로 그린다"
+     },
+     "reinspectionReasonCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-code-key": "CD-REINSPECTION-REASON",
+      "description": "판정에 쓰인 결과의 재검 사유, 없으면 null"
+     },
+     "reinspectionReasonName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "그 재검 사유 이름, 없으면 null"
+     }
+    },
+    "description": "입하 LOT 검사의 자재 관리 LOT 하나의 판정 근거(피처 005 §8 판정 규칙 변경 · 2026-11-12)"
    },
    "InspectionRequestEvent": {
     "type": "object",
