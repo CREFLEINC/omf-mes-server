@@ -290,6 +290,8 @@ describe('DocumentStateService', () => {
         'disposition-scrap',
         'disposition-sort',
         'disposition-sort-defect',
+        // 판정 확정 취소(C29 · 피처 005 R-13)가 불합격 확정을 검사 대기로 되돌린다.
+        'iqc-confirm-cancelled',
         'stock-reinstate',
       ]);
       // ⭐ I-23 이 셋으로 넓혔다 — 코어가 `from` 밖을 «던지지 않고 skip» 해서, 좁으면 400 이
@@ -420,6 +422,8 @@ describe('DocumentStateService', () => {
       expect(Object.keys(TRANSITIONS[NONCONFORMANCE_STATUS])).toEqual([
         'nonconformance-request-disposition',
         'nonconformance-decide',
+        // 판정 확정 취소가 그 확정이 만든 부적합을 CANCELLED 로 닫는다(피처 005 R-13) — 판정 완료로 돌아오는 전이는 아니다.
+        'iqc-confirm-cancelled',
       ]);
     });
 
@@ -428,7 +432,7 @@ describe('DocumentStateService', () => {
         (transition) => transition.transitionCode,
       );
 
-      expect(codes).toEqual([undefined, undefined]);
+      expect(codes).toEqual([undefined, undefined, undefined]);
     });
   });
 
@@ -598,7 +602,8 @@ describe('DocumentStateService', () => {
       // +1 — 자재 관리 LOT 폐기 L5(피처 005 · omf-all-around#254).
       // +3 — 자재 관리 LOT 받기 L4 · 등록 해제 L6·C31(피처 005 S4).
       // +2 — 입하 마감 취소의 생략 무효 C30 · IQC 요청 취소(피처 005 S5).
-      expect(service.registered()).toHaveLength(70);
+      // +3 — 판정 확정 취소의 LOT C29 · IQC 결과 CONFIRMED→DRAFT · 부적합 CANCELLED(피처 005 S9).
+      expect(service.registered()).toHaveLength(73);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {
