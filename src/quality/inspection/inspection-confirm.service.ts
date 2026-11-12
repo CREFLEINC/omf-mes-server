@@ -24,7 +24,7 @@ import { DefectRecordWriteService, InspectionDefectInput } from '../defect/defec
 import { recordIqcInspectionLevelWithin } from '../inspection-level/inspection-level-switch';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { assertAccountWorker, assertJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
+import { assertAccountWorker, assertJudgmentChange, assertPqcAfterProduction, storedJudgedMeasurements } from './inspection-result-write-rules';
 import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-rejection-defects';
 import { CONFIRMED, assertConfirmedShape, remarksWithJudgmentChange } from './inspection-rules';
 import { type FourMChangeInput, prepareFourMChangeOfResult, writeFourMChangeWithin } from './four-m-change';
@@ -184,6 +184,7 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         judgment: judgment as string,
         reason: body.judgmentChangeReason,
+        measurements: () => storedJudgedMeasurements(tx, resultId),
       });
       const remarks =
         changeReason === undefined ? body.remarks : remarksWithJudgmentChange(changeReason, body.remarks ?? result.remarks);
