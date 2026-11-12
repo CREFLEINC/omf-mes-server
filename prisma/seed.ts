@@ -1358,10 +1358,14 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // 번복은 「수정」이 아니라 «재검사 회차» — 이 사유가 그 회차의 근거다.
+    // 번복은 「수정」이 아니라 «재검사 회차» — 이 사유가 그 회차의 근거다. 입하 LOT IQC 는 불합격·보류를 덮는 결과에 필수(피처 005
+    // FR-023a). 기본값 둘은 마이그 `20261113090000_reinspection_reason_defaults` 에도 같은 줄이 있다 — 열린 그룹이라 고객사가 더한다.
     groupCode: 'REINSPECTION_REASON',
     groupName: '재검사 사유',
-    values: [],
+    values: [
+      { code: 'REMEASURE', codeName: '재측정', order: 10 },
+      { code: 'REWORK_REINSPECT', codeName: '재작업 후 재검', order: 20 },
+    ],
   },
   {
     // OA 제품 검사표를 쓰는 공장 코드(omf-all-around#89 · 장부 P-102 · 담당자 결정 2026-10-21) — 사업부가 부품·OA 를 함께
