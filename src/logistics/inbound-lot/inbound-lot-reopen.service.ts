@@ -13,6 +13,7 @@ import { recordInspectionRequestEvent } from '../../quality/inspection/inspectio
 import { markIqcSkipVoided } from '../../trace/lot/lot-iqc-skip-execute.service';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { recordInboundLotEvent } from './inbound-lot-event';
+import { assertInboundLotMutable } from './inbound-lot-finalizable';
 import { ReopenBlockerCode, reopenStatesOf } from './inbound-lot-reopenable';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 
@@ -55,6 +56,7 @@ export class InboundLotReopenService {
       SELECT status_code, version_no, inbound_receipt_line_id, plant_id FROM trace.inbound_lot WHERE inbound_lot_id = ${id} FOR UPDATE`;
     if (inboundLot === undefined) throw new NotFoundException('없는 입하 LOT 입니다.');
     assertUpdated(inboundLot.version_no === body.versionNo ? 1 : 0);
+    await assertInboundLotMutable(tx, id);
     const state = (await reopenStatesOf(tx, [id])).get(id);
     if (state === undefined) {
       throw new ContractException(HttpStatus.CONFLICT, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '마감된 입하 LOT 만 마감을 취소할 수 있습니다.' }]);
@@ -78,6 +80,8 @@ export class InboundLotReopenService {
       },
     }).catch(openReceiptRace);
     const iqcRequestId = await this.cancelRequest(tx, id, lotIds, locked, actor, at);
+    // 승인됐지만 아직 실행하지 않은 생략 결재도 무효다 — 남기면 다시 마감한 뒤 새 IQC 요청에 옛 승인으로 생략이 실행된다(R-5a·R-16).
+    await markIqcSkipVoided(tx, id, at);
     await recordInboundLotEvent(tx, id, 'RECEIPT_REOPENED', actor, {
       releasedAllocations: released, iqcRequestId: iqcRequestId === null ? null : String(iqcRequestId),
     }, at, body.reason?.trim() || null);
@@ -111,7 +115,6 @@ export class InboundLotReopenService {
       await this.holds.holdWithin(tx, locked,
         lotIds.map((lotId) => ({ lotId, reasonCode: INSPECTION_HOLD_REASON, targetLotStatusCode: INITIAL_LOT_STATUS })),
         actor.appUserId === undefined ? { at, workerId: actor.workerId } : { at, by: BigInt(actor.appUserId) });
-      await markIqcSkipVoided(tx, inboundLotId, at);
       await recordInspectionRequestEvent(tx, {
         inspectionRequestId: request.inspection_request_id, eventTypeCode: 'SKIP_VOIDED', actor: person, at,
         summaryBefore: { statusCode: request.status_code, skipBasisCode: request.skip_basis_code },

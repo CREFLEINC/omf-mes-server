@@ -5,6 +5,7 @@ import { PagedResponse, pagedResponse, pageRequest } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import { packageView, type MaterialPackageView } from '../material-lot-batch/material-lot-view';
 import { lastRegistrations } from './inbound-lot-event';
+import { LotFinalizeFacts, finalizableIds, finalizeFactsOf } from './inbound-lot-finalizable';
 import { onlyOpenReceiptBlocks, reopenStatesOf } from './inbound-lot-reopenable';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 
@@ -16,6 +17,8 @@ export interface InboundLotQuery {
   closable?: boolean | string;
   reopenable?: boolean | string;
   closedAutomatically?: boolean | string;
+  finalizable?: boolean | string;
+  erpSendModeCode?: string;
   receivingDateFrom?: string;
   receivingDateTo?: string;
   q?: string;
@@ -34,6 +37,8 @@ export interface InboundLotMaterialLotView {
   statusCode: string;
   registeredAt: string;
   fromSupplierLabel: boolean;
+  goodsReceived: boolean;
+  dispositionStatusCode: 'IN_PROGRESS' | 'RETURNED' | 'DISPOSED' | null;
 }
 
 export interface InboundLotEventView {
@@ -63,6 +68,7 @@ export class InboundLotQueryService {
       ...(query.supplierId === undefined ? {} : { supplier_id: query.supplierId }),
       ...(query.itemId === undefined ? {} : { item_id: query.itemId }),
       ...(statuses === undefined ? {} : { status_code: { in: statuses } }),
+      ...(query.erpSendModeCode === undefined ? {} : { erp_send_mode_code: query.erpSendModeCode }),
       ...(query.receivingDateFrom === undefined && query.receivingDateTo === undefined ? {} : {
         receiving_date: {
           ...(query.receivingDateFrom === undefined ? {} : { gte: new Date(`${query.receivingDateFrom}T00:00:00Z`) }),
@@ -74,12 +80,17 @@ export class InboundLotQueryService {
     const closable = flag(query.closable);
     const reopenable = flag(query.reopenable);
     const closedAutomatically = flag(query.closedAutomatically);
+    const finalizable = flag(query.finalizable);
     const and: Prisma.inbound_lotWhereInput[] = [];
     if (closable !== undefined) and.push(closable ? { status_code: 'RECEIVING' } : { status_code: { not: 'RECEIVING' } });
     if (closedAutomatically !== undefined) and.push({ closed_automatically: closedAutomatically });
     if (reopenable !== undefined) {
       const ids = await this.reopenableIds(query.plantId);
       and.push({ inbound_lot_id: reopenable ? { in: ids } : { notIn: ids } });
+    }
+    if (finalizable !== undefined) {
+      const ids = await finalizableIds(this.prisma, { ...where, ...(and.length > 0 ? { AND: [...and] } : {}) });
+      and.push({ inbound_lot_id: finalizable ? { in: ids } : { notIn: ids } });
     }
     if (and.length > 0) where.AND = and;
     const [total, items] = await Promise.all([
@@ -107,7 +118,7 @@ export class InboundLotQueryService {
     const id = BigInt(inboundLotId);
     const [view] = await loadInboundLotViews(this.prisma, { inbound_lot_id: id });
     if (view === undefined) throw new NotFoundException('없는 입하 LOT 입니다.');
-    const [lots, registered, events] = await Promise.all([
+    const [lots, registered, events, facts] = await Promise.all([
       this.prisma.lot.findMany({
         where: { inbound_lot_id: id },
         select: {
@@ -126,7 +137,9 @@ export class InboundLotQueryService {
         select: { event_type_code: true, occurred_at: true, actor_user: { select: { user_name: true } }, actor_worker: { select: { worker_name: true } } },
         orderBy: [{ occurred_at: 'asc' }, { inbound_lot_event_id: 'asc' }],
       }),
+      finalizeFactsOf(this.prisma, [id]),
     ]);
+    const lotFacts = facts.get(id)?.lots ?? new Map<string, LotFinalizeFacts>();
     return {
       ...view,
       lots: lots.map((lot) => {
@@ -138,6 +151,7 @@ export class InboundLotQueryService {
           lifecycleStatusCode: lot.lifecycle_status_code ?? 'ACTIVE', statusCode: lot.status_code,
           registeredAt: (registration?.at ?? lot.created_at).toISOString(),
           fromSupplierLabel: registration?.fromSupplierLabel ?? false,
+          ...lotFinalizeView(lotFacts.get(String(lot.lot_id))),
         };
       }),
       events: events.map((event) => ({
@@ -146,6 +160,13 @@ export class InboundLotQueryService {
       })),
     };
   }
+}
+
+function lotFinalizeView(facts: LotFinalizeFacts | undefined): Pick<InboundLotMaterialLotView, 'goodsReceived' | 'dispositionStatusCode'> {
+  if (facts === undefined) return { goodsReceived: false, dispositionStatusCode: null };
+  const disposition = facts.inDisposition ? 'IN_PROGRESS' : facts.returned ? 'RETURNED' : facts.statusCode === 'SCRAPPED' ? 'DISPOSED' : null;
+  // 취소 요청 중인 입고도 아직 살아 있다(반려되면 남는다).
+  return { goodsReceived: facts.posted || facts.cancelPending, dispositionStatusCode: disposition };
 }
 
 function flag(value: boolean | string | undefined): boolean | undefined {

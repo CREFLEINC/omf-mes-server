@@ -179,6 +179,22 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect(await prisma.notification_event.count({ where: { event_type_code: 'IQC_INSPECTION_REQUESTED', aggregate_id: line.inbound_receipt_id } })).toBe(0);
   });
 
+  it('US2-7 iqcDefaultSkipApplies — 검사 불필요·기본 생략 기준 있음 true, 기준 없음 false(마감해도 IQC 요청 없음), 검사 필요 false — 받기 카드·목록·상세', async () => {
+    const cases = [[ids.supplierL1, ids.itemN, true], [ids.supplierL2, ids.itemO, false], [ids.supplierL3, ids.itemA, false]] as const;
+    for (const [supplier, item, applies] of cases) {
+      const { inboundLot } = await issueAndReceive(fx, batch(supplier, item, 1, 5));
+      expect(inboundLot).toMatchObject({ iqcDefaultSkipApplies: applies });
+      const list = await sessionGet(`${LOTS}?plantId=${String(ids.plant)}&closable=true&supplierId=${String(supplier)}`, closerCookie).expect(200);
+      expectShape(schemaOf('/logistics/inbound-lots', 'get', 200), list.body);
+      expect((list.body.items as { iqcDefaultSkipApplies: boolean }[]).map((row) => row.iqcDefaultSkipApplies)).toEqual([applies]);
+      const detail = await sessionGet(`${LOTS}/${String(inboundLot.inboundLotId)}`, closerCookie).expect(200);
+      expect(detail.body).toMatchObject({ iqcDefaultSkipApplies: applies });
+      // 마감이 같은 판단을 쓴다 — 검사 불필요에서 true 면 생략 기록, false 면 요청 없음.
+      const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
+      if (item !== ids.itemA) expect(closed.iqcRequestId === null).toBe(!applies);
+    }
+  });
+
   it('US2-10 M-01-03 — closable=true 목록(입하 중만)·건별 해제·마감, 마감 뒤 해제는 409 STATE_LOCKED', async () => {
     const { inboundLot, lots } = await issueAndReceive(fx, batch(ids.supplierV, ids.itemA, 3, 10));
     const list = await sessionGet(`${LOTS}?plantId=${String(ids.plant)}&closable=true&supplierId=${String(ids.supplierV)}`, closerCookie).expect(200);
@@ -590,7 +606,7 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     })).plant_id;
     ids.ea = (await prisma.uom.findFirstOrThrow({ where: { uom_code: 'EA' } })).uom_id;
     ids.box = (await prisma.uom.findFirstOrThrow({ where: { uom_code: 'BOX' } })).uom_id;
-    for (const [name, code, required] of [['itemA', 'A', true], ['itemN', 'N', false]] as const) {
+    for (const [name, code, required] of [['itemA', 'A', true], ['itemN', 'N', false], ['itemO', 'O', false]] as const) {
       ids[name] = (await prisma.item.create({
         data: { item_code: `${PREFIX}-${code}`, item_name: `입하마감자재${code}`, item_type_code: 'RAW_MATERIAL', base_uom_id: ids.ea,
           lot_controlled: true, inspection_required: required },
@@ -604,7 +620,7 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
       data: { inspection_plan_id: plan.inspection_plan_id, plan_version: 1, effective_from: new Date('2026-01-01T00:00:00.000Z'),
         sampling_method_code: 'FULL', inspection_frequency_code: 'EVERY_LOT', status_code: 'CONFIRMED' },
     });
-    for (const code of ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Z2', 'Z3', 'Z4', 'Z5', 'R', 'Q', 'P', 'O', 'N', 'M']) {
+    for (const code of ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Z2', 'Z3', 'Z4', 'Z5', 'R', 'Q', 'P', 'O', 'N', 'M', 'L1', 'L2', 'L3']) {
       ids[`supplier${code}`] = (await prisma.partner.create({ data: { partner_code: `${PREFIX}-${code}`, partner_name: `${PREFIX} 공급사 ${code}` } })).partner_id;
     }
     ids.worker = (await prisma.worker.create({

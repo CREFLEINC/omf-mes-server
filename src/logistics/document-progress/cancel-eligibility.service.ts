@@ -4,14 +4,19 @@ import { Prisma } from '@prisma/client';
 import { ERROR_CODE } from '../../common/errors';
 import { INBOUND_RECEIPT_LINE_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
+import { INBOUND_LOT_FINALIZED, finalizedLotNosOf } from '../inbound-lot/inbound-lot-finalizable';
 import { DOCUMENT_TYPES, LogisticsDocumentType } from './document-type-registry';
 
 export type Tx = Prisma.TransactionClient | PrismaService;
 
-/** `CD-CANCEL-BLOCKED-REASON` 5값 — 실행 오류 코드에서 «같은 문자열»을 가져온다(plan.md §5 규칙 6). */
+/**
+ * `CD-CANCEL-BLOCKED-REASON` 6값 — 실행 오류 코드에서 «같은 문자열»을 가져온다(plan.md §5 규칙 6). `INBOUND_LOT_FINALIZED` 는
+ * 요청·실행 409 의 코드와 같다(피처 005 R-24).
+ */
 export type CancelBlockedReason =
   | typeof ERROR_CODE.SUCCESSOR_EXISTS | typeof ERROR_CODE.ALREADY_CANCELLED
-  | typeof ERROR_CODE.CANCEL_IN_PROGRESS | typeof ERROR_CODE.STATE_LOCKED | typeof ERROR_CODE.TYPE_NOT_CANCELABLE;
+  | typeof ERROR_CODE.CANCEL_IN_PROGRESS | typeof ERROR_CODE.STATE_LOCKED | typeof ERROR_CODE.TYPE_NOT_CANCELABLE
+  | typeof INBOUND_LOT_FINALIZED;
 
 /** `CD-DOCUMENT-SUCCESSOR-TYPE` 5값. */
 export type DocumentSuccessorType =
@@ -34,6 +39,11 @@ export interface CancelEligibility {
   cancelApprovalRequestId?: bigint;
   /** ⚠ 취소 경로가 없는 6종은 «대상 행을 안 읽어» 키가 없다 — 호출자가 자기 행에서 채운다(§4-4). */
   statusCode?: string;
+  /**
+   * 이 문서의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속(R-24) — 있으면 취소 불가(사유 5값 안의 `STATE_LOCKED`)이고,
+   * 요청·실행은 409 `INBOUND_LOT_FINALIZED` 다. 비면 키가 없다.
+   */
+  finalizedLotNos?: string[];
 }
 
 const CANCELLED = 'CANCELLED';
@@ -52,7 +62,7 @@ const OPEN_STATUSES = ['REGISTERED', 'POSTED'];
 
 // 계약이 5값의 우선순위를 안 줬다 — 싼 판정부터(§2 2단계 기준 5) · G-3 안내 순서와 같다(I-5.md §4-4)
 const BLOCK_ORDER: readonly CancelBlockedReason[] = [ERROR_CODE.TYPE_NOT_CANCELABLE,
-  ERROR_CODE.ALREADY_CANCELLED, ERROR_CODE.CANCEL_IN_PROGRESS, ERROR_CODE.STATE_LOCKED, ERROR_CODE.SUCCESSOR_EXISTS];
+  ERROR_CODE.ALREADY_CANCELLED, ERROR_CODE.CANCEL_IN_PROGRESS, INBOUND_LOT_FINALIZED, ERROR_CODE.STATE_LOCKED, ERROR_CODE.SUCCESSOR_EXISTS];
 
 /**
  * 「이 문서가 만든 LOT」이 있는 유형. ⛔ `GOODS_ISSUE` 에는 LOT 축을 걸지 않는다 — 출고 라인의 LOT 은
@@ -112,6 +122,9 @@ export class CancelEligibilityService {
     // ⭐ successorCount 는 9종 전건 센다 — 순위 1 조기 종료는 cancellable·사유 코드에만 걸린다.
     //    「후속」 열은 취소 게이트가 아니라 진행현황 열이고 계약이 9종 required 로 뒀다(R-6 ⓐ).
     const found = await this.countSuccessors(tx, typeCode, documentId, opts?.withSuccessorRows === true);
+    const finalizedLotNos = mapping.cancelable && LOT_SOURCE_TYPES.includes(typeCode)
+      ? await finalizedLotNosOf(tx, await this.lotIds(tx, typeCode, documentId))
+      : [];
 
     const hit: Record<CancelBlockedReason, boolean> = {
       TYPE_NOT_CANCELABLE: !mapping.cancelable,
@@ -119,6 +132,7 @@ export class CancelEligibilityService {
       // 상태가 CANCEL_REQUESTED 인데 반려돼 열린 요청이 없는 경우가 실재한다 — 그때도 막는다
       // (되돌릴 경로가 없어 잠긴 문서다 · I-5.md §4-4 · 문의 033).
       CANCEL_IN_PROGRESS: statusCode === CANCEL_REQUESTED || cancelApprovalRequestId !== undefined,
+      INBOUND_LOT_FINALIZED: finalizedLotNos.length > 0,
       STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment,
       SUCCESSOR_EXISTS: found.count > 0,
     };
@@ -131,6 +145,7 @@ export class CancelEligibilityService {
       ...(blocked === undefined ? {} : { cancelBlockedReasonCode: blocked }),
       ...(cancelApprovalRequestId === undefined ? {} : { cancelApprovalRequestId }),
       ...(statusCode === undefined ? {} : { statusCode }),
+      ...(finalizedLotNos.length === 0 ? {} : { finalizedLotNos }),
     };
   }
 

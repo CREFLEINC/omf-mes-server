@@ -78,6 +78,8 @@ export interface ApprovalTargetView {
   openable: boolean;
   /** IQC 생략(대상 입하 LOT)만 — 실행 경로에 쓸 자재 관리 LOT id(피처 005). */
   targetLotId?: number | null;
+  /** IQC 생략만 — 입하 마감 취소가 이 승인을 무효로 만들었다(실행할 수 없음, 피처 005 R-5a · G2 L7). */
+  targetVoided?: boolean;
 }
 
 /**
@@ -139,11 +141,21 @@ export function toApprovalRequest(
     requestedAt: row.requested_at.toISOString(),
     statusCode: row.status_code,
     reason: row.reason,
-    target: toApprovalTarget(row.target_type_code, row.target_id, target),
+    target: {
+      ...toApprovalTarget(row.target_type_code, row.target_id, target),
+      ...(row.approval_type_code === IQC_SKIP ? { targetVoided: voidedByReopen(row.target_summary) } : {}),
+    },
     currentStepNo: derived.currentStepNo,
     totalStepNo: row.approval_step.length,
     isMyTurn: derived.isMyTurn,
   };
+}
+
+const IQC_SKIP = 'IQC_SKIP';
+
+/** 입하 마감 취소가 남긴 무효 표시(`target_summary.voidedAt` — `markIqcSkipVoided`). */
+function voidedByReopen(summary: Prisma.JsonValue): boolean {
+  return typeof summary === 'object' && summary !== null && !Array.isArray(summary) && summary.voidedAt != null;
 }
 
 function actorName(accountName: string | undefined, workerName: string | undefined): string {

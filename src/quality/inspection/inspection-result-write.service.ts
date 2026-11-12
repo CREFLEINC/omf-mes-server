@@ -47,6 +47,7 @@ import {
   prepareInboundLotWrite,
   prepareInboundLotWriteOfResult,
   recordInboundLotUpdate,
+  reinspectionReasonOf,
   replaceMatchedLotsWithin,
   resultSummaryWithin,
 } from './iqc-inbound-lot-result';
@@ -204,9 +205,10 @@ export class InspectionResultWriteService {
           });
         }
         if (inbound !== null) {
+          const summaryAfter = await resultSummaryWithin(tx, created.inspection_result_id);
           await recordInspectionRequestEvent(tx, {
             inspectionRequestId: BigInt(body.inspectionRequestId), eventTypeCode: 'RESULT_ADDED', inspectionResultId: created.inspection_result_id,
-            actor: eventActor(context, inspectorId), at: new Date(), summaryAfter: await resultSummaryWithin(tx, created.inspection_result_id),
+            actor: eventActor(context, inspectorId), at: new Date(), summaryAfter, reason: reinspectionReasonOf(summaryAfter),
           });
         }
         if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
@@ -264,7 +266,11 @@ export class InspectionResultWriteService {
         assertUpdated(0, 'user', { code: VERSION_CONFLICT, currentVersion });
       }
       if (current.status_code === CONFIRMED) {
-        throw new ConflictException('user', '확정된 검사 결과는 고칠 수 없습니다 — 번복은 재검 회차입니다.', { code: INVALID_STATE });
+        // 입하 LOT 검사는 회차가 아니라 확정 취소로 되돌린다(R-13) — 재작업 재열기 뒤 앞 확정 결과도 같다(R-15).
+        const message = inbound === null
+          ? '확정된 검사 결과는 고칠 수 없습니다 — 번복은 재검 회차입니다.'
+          : '판정 확정된 결과입니다 — 확정을 취소한 뒤 고치세요(재작업으로 다시 연 검사는 새 결과를 더하세요).';
+        throw new ConflictException('user', message, { code: INVALID_STATE });
       }
       const before = inbound === null ? undefined : await lockOpenInboundLotRequest(tx, current.inspection_request_id, inspectionResultId);
       // ⛔ 수량 합을 강제하지 않는다 — 작성중이라 M-e ⓑ 뒤 DB 도 안 잡는다(§5-2). 확정으로 넘어갈 때

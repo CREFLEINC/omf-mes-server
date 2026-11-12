@@ -1,7 +1,8 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { currentTerminal } from '../../auth/terminal-context';
+import { logisticsAppUserId } from '../../auth/terminal-logistics-scope';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -10,7 +11,11 @@ import { logisticsWriteActorOf } from '../logistics-write-actor';
 import {
   InboundLotLotsService, InboundLotSupplierLotResult, InboundLotSupplierLotSet, InboundLotUnregister,
 } from './inbound-lot-lots.service';
+import {
+  InboundLotAllocationCandidateView, InboundLotAllocationService, InboundLotPoAllocationReplace,
+} from './inbound-lot-allocation.service';
 import { InboundLotCloseReceipt, InboundLotCloseService, InboundLotClosedView } from './inbound-lot-close';
+import { InboundLotFinalize, InboundLotFinalizeService } from './inbound-lot-finalize.service';
 import { InboundLotDetailView, InboundLotQuery, InboundLotQueryService } from './inbound-lot-query.service';
 import { InboundLotReopenReceipt, InboundLotReopenService } from './inbound-lot-reopen.service';
 import { InboundLotReceive, InboundLotReceiveResult, InboundLotReceiveService } from './inbound-lot-receive.service';
@@ -25,8 +30,9 @@ const SUPPLIER_LOT_NO = 'PATCH /logistics/inbound-lots/{inboundLotId}/lots/suppl
 const CLOSE_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:close-receipt';
 const REOPEN_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt';
 const SPLIT_LOTS = 'POST /logistics/inbound-lots/{inboundLotId}:split-lots';
+const FINALIZE = 'POST /logistics/inbound-lots/{inboundLotId}:finalize';
 
-/** 입하 LOT — 조회(§2)·PDA 받기·해제·공급사 LOT·마감·마감 취소·자재 관리 LOT 분리(§3). 피처 005 · 화면 M-01-01·M-01-03·W-01-16·W-01-01. */
+/** 입하 LOT — 조회(§2)·PDA 받기·해제·공급사 LOT·마감·마감 취소·자재 관리 LOT 분리(§3)·W-01-16 배정 수정·최종 마감(§5). 피처 005 · 화면 M-01-01·M-01-03·W-01-16·W-01-01. */
 @Controller('logistics')
 export class InboundLotController {
   constructor(
@@ -36,6 +42,8 @@ export class InboundLotController {
     private readonly closer: InboundLotCloseService,
     private readonly reopener: InboundLotReopenService,
     private readonly splitter: InboundLotSplitService,
+    private readonly allocations: InboundLotAllocationService,
+    private readonly finalizer: InboundLotFinalizeService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -124,5 +132,33 @@ export class InboundLotController {
     @Body() body: InboundLotSplitLots,
   ): Promise<InboundLotSplitResultView> {
     return this.splitter.split(request, inboundLotId, body, logisticsWriteActorOf(request, SPLIT_LOTS));
+  }
+
+  @Get('inbound-lots/:inboundLotId/allocation-candidates')
+  @Contract('GET /logistics/inbound-lots/{inboundLotId}/allocation-candidates')
+  async allocationCandidates(@Param('inboundLotId', ParseIntPipe) inboundLotId: number): Promise<{ items: InboundLotAllocationCandidateView[] }> {
+    return { items: await this.allocations.candidates(inboundLotId) };
+  }
+
+  @Put('inbound-lots/:inboundLotId/po-allocations')
+  @Contract('PUT /logistics/inbound-lots/{inboundLotId}/po-allocations')
+  replaceAllocations(
+    @Req() request: Request,
+    @Param('inboundLotId', ParseIntPipe) inboundLotId: number,
+    @Body() body: InboundLotPoAllocationReplace,
+  ): Promise<InboundLotDetailView> {
+    return this.allocations.replace(inboundLotId, body, logisticsAppUserId(request));
+  }
+
+  @Post('inbound-lots/:inboundLotId\\:finalize')
+  @HttpCode(HttpStatus.OK)
+  @Contract(FINALIZE)
+  finalize(
+    @Req() request: Request,
+    @Param('inboundLotId', ParseIntPipe) inboundLotId: number,
+    @Body() body: InboundLotFinalize,
+  ): Promise<InboundLotView> {
+    const appUserId = logisticsAppUserId(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) => this.finalizer.finalize(tx, inboundLotId, body, appUserId));
   }
 }

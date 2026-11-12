@@ -232,7 +232,7 @@ describe('피처 005 S11 자재 관리 LOT 분리·선별 (e2e)', () => {
     expect(JSON.stringify(refused.body)).toContain(REMAIN);
   });
 
-  it('US7-3 선별로 생긴 부적합의 재작업 → 새 입하 LOT 의 IQC 가 다시 열림 → 재검 합격으로 다시 확정', async () => {
+  it('US7-3 선별로 생긴 부적합의 재작업 → 새 입하 LOT 의 IQC 가 다시 열림 → 재검 합격으로 다시 확정 · 정상·선별은 400', async () => {
     const nc = await rejectedIqc();
     const sorted = await decide(nc.nonconformanceId, { dispositionTypeCode: 'SORT', lotIds: [nc.lots[2].lotId], reason: '선별' }, 201);
     const splitNc = BigInt(sorted.body.newNonconformanceId as number);
@@ -240,6 +240,12 @@ describe('피처 005 S11 자재 관리 LOT 분리·선별 (e2e)', () => {
     const reopened = await prisma.inspection_request.findFirstOrThrow({ where: { inbound_lot_id: BigInt(sorted.body.newInboundLotId as number) } });
     expect(reopened).toMatchObject({ status_code: 'IN_PROGRESS', confirm_cycle: 2, confirmed_at: null });
     expect(await lotStatus(nc.lots[2].lotId)).toBe('INSPECTION_PENDING');
+
+    // 선별로 생긴 부적합은 폐기·재작업·특채만(FR-041) — 정상·선별은 400.
+    const other = await rejectedIqc();
+    const child = BigInt((await decide(other.nonconformanceId, { dispositionTypeCode: 'SORT', lotIds: [other.lots[1].lotId, other.lots[2].lotId], reason: '선별' }, 201)).body.newNonconformanceId as number);
+    await decide(child, { dispositionTypeCode: 'NORMAL', decisionQty: 20, uomId: Number(ids.ea), reason: '정상' }, 400);
+    await decide(child, { dispositionTypeCode: 'SORT', lotIds: [other.lots[2].lotId], reason: '선별' }, 400);
 
     await addResult(Number(reopened.inspection_request_id), { inspectedQty: 10, acceptedQty: 10, matchedLotIds: [nc.lots[2].lotId], reinspectionReasonCode: `${PREFIX}-RT` });
     const confirmed = await confirm(Number(reopened.inspection_request_id));

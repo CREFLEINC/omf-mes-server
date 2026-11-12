@@ -1,5 +1,8 @@
 import { Prisma } from '@prisma/client';
 
+import { localDate } from '../../planning/production-plan/plan-window';
+import { FinalizeBlocker, LotProgress, finalizeFactsOf } from './inbound-lot-finalizable';
+import { iqcSkipRecorded } from './inbound-lot-iqc-skip-default';
 import { onlyOpenReceiptBlocks, reopenStatesOf } from './inbound-lot-reopenable';
 
 /** 계약 `InboundLotIqcSummary`. */
@@ -18,9 +21,10 @@ export interface InboundLotPoAllocationView {
   orderDate: string;
   erpPurchaseOrderNo: string | null;
   qty: number;
+  excessQty: number;
 }
 
-/** 계약 `InboundLot` — 입하 LOT 한 행. 최종 마감 칸(`finalizable`)은 S12 가 채우기 전까지 false 다. */
+/** 계약 `InboundLot` — 입하 LOT 한 행. */
 export interface InboundLotView {
   inboundLotId: number;
   inboundLotNo: string;
@@ -42,26 +46,32 @@ export interface InboundLotView {
   unallocatedQty: number;
   iqc: InboundLotIqcView | null;
   inspectionRequired: boolean;
+  /** 검사 불필요로 받았고 마감하면 IQC 가 「검사 생략」으로 남는가(G2 L15) — 검사 필요면 false. */
+  iqcDefaultSkipApplies: boolean;
   firstRegisteredAt: string | null;
   receivedClosedAt: string | null;
   closedAutomatically: boolean;
   finalizedAt: string | null;
+  finalizedByName: string | null;
   reopenable: boolean;
   reopenReasonCode: string | null;
   reopenBlockerCode: 'OPEN_RECEIPT_EXISTS' | null;
   openInboundLotNo: string | null;
   reopened: boolean;
   finalizable: boolean;
+  finalizeBlockers: FinalizeBlocker[];
+  lotProgress: LotProgress;
   erpSendModeCode: string;
   versionNo: number;
 }
 
 const INBOUND_LOT_SELECT = {
   inbound_lot_id: true, inbound_lot_no: true, plant_id: true, supplier_id: true, item_id: true, status_code: true,
-  receiving_date: true, received_closed_at: true, closed_automatically: true, finalized_at: true,
+  receiving_date: true, received_closed_at: true, closed_automatically: true, finalized_at: true, finalized_by: true,
   erp_send_mode_code: true, version_no: true,
   supplier: { select: { partner_code: true, partner_name: true } },
   item: { select: { item_code: true, item_name: true } },
+  plant: { select: { timezone_code: true } },
   uom: { select: { uom_code: true } },
   inbound_receipt_line: {
     select: {
@@ -71,7 +81,7 @@ const INBOUND_LOT_SELECT = {
         select: {
           purchase_order_line_id: true, allocated_qty: true,
           purchase_order_line: {
-            select: { line_no: true, purchase_order: { select: { purchase_order_no: true, order_date: true, erp_purchase_order_no: true } } },
+            select: { line_no: true, ordered_qty: true, received_qty: true, purchase_order: { select: { purchase_order_no: true, order_date: true, erp_purchase_order_no: true } } },
           },
         },
       },
@@ -91,7 +101,8 @@ export async function loadInboundLotViews(
   const rows = await db.inbound_lot.findMany({ where, select: INBOUND_LOT_SELECT, ...page });
   if (rows.length === 0) return [];
   const ids = rows.map((row) => row.inbound_lot_id);
-  const [counts, received, requests, firsts, reopenedEvents, reopenStates] = await Promise.all([
+  const finalizers = [...new Set(rows.flatMap((row) => (row.finalized_by === null ? [] : [row.finalized_by])))];
+  const [counts, received, requests, firsts, reopenedEvents, reopenStates, finalizeFacts, users] = await Promise.all([
     db.lot.groupBy({ by: ['inbound_lot_id'], where: { inbound_lot_id: { in: ids } }, _count: { _all: true } }),
     db.$queryRaw<{ inbound_lot_id: bigint; qty: Prisma.Decimal }[]>`
       SELECT l.inbound_lot_id, sum(grl.receipt_qty) AS qty
@@ -113,7 +124,12 @@ export async function loadInboundLotViews(
       where: { inbound_lot_id: { in: ids }, event_type_code: 'RECEIPT_REOPENED' }, select: { inbound_lot_id: true }, distinct: ['inbound_lot_id'],
     }),
     reopenStatesOf(db, ids),
+    // 입하 중은 입고·처분 전이라 판정할 것이 없다 — PDA 받기 응답마다 도는 길이라 건너뛴다(진행 0·막힘 없음).
+    finalizeFactsOf(db, rows.filter((row) => row.status_code !== 'RECEIVING').map((row) => row.inbound_lot_id)),
+    finalizers.length === 0 ? [] : db.app_user.findMany({ where: { app_user_id: { in: finalizers } }, select: { app_user_id: true, user_name: true } }),
   ]);
+  const userName = new Map(users.map((user) => [user.app_user_id, user.user_name]));
+  const skipApplies = await iqcSkipAppliesOf(db, rows);
   const reopened = new Set(reopenedEvents.map((row) => row.inbound_lot_id));
   const countOf = new Map(counts.map((row) => [row.inbound_lot_id, row._count._all]));
   const receivedOf = new Map(received.map((row) => [row.inbound_lot_id, Number(row.qty)]));
@@ -125,6 +141,7 @@ export async function loadInboundLotViews(
     const iqc = iqcOf.get(row.inbound_lot_id);
     const reopen = reopenStates.get(row.inbound_lot_id);
     const openBlocked = reopen !== undefined && onlyOpenReceiptBlocks(reopen.blockers);
+    const finalize = finalizeFacts.get(row.inbound_lot_id)?.state;
     return {
       inboundLotId: Number(row.inbound_lot_id), inboundLotNo: row.inbound_lot_no, plantId: Number(row.plant_id),
       supplierId: Number(row.supplier_id), supplierCode: row.supplier.partner_code, supplierName: row.supplier.partner_name,
@@ -141,13 +158,16 @@ export async function loadInboundLotViews(
         statusCode: iqc.status_code, overallJudgmentCode: iqc.overall_judgment_code,
       },
       inspectionRequired: line.inspection_required,
+      iqcDefaultSkipApplies: skipApplies.has(row.inbound_lot_id),
       firstRegisteredAt: firstOf.get(row.inbound_lot_id)?.toISOString() ?? null,
       receivedClosedAt: row.received_closed_at?.toISOString() ?? null,
       closedAutomatically: row.closed_automatically,
       finalizedAt: row.finalized_at?.toISOString() ?? null,
+      finalizedByName: row.finalized_by === null ? null : (userName.get(row.finalized_by) ?? null),
       reopenable: reopen !== undefined && reopen.blockers.length === 0, reopenReasonCode: reopen?.reasonCode ?? null,
       reopenBlockerCode: openBlocked ? 'OPEN_RECEIPT_EXISTS' : null, openInboundLotNo: openBlocked ? reopen.openInboundLotNo : null,
-      reopened: reopened.has(row.inbound_lot_id), finalizable: false,
+      reopened: reopened.has(row.inbound_lot_id), finalizable: finalize?.finalizable ?? false,
+      finalizeBlockers: finalize?.blockers ?? [], lotProgress: finalize?.progress ?? NO_PROGRESS,
       erpSendModeCode: row.erp_send_mode_code, versionNo: row.version_no,
     };
   });
@@ -155,12 +175,34 @@ export async function loadInboundLotViews(
 
 type AllocationRow = Prisma.inbound_lotGetPayload<{ select: typeof INBOUND_LOT_SELECT }>['inbound_receipt_line']['inbound_receipt_po_allocation'][number];
 
+/** 검사 불필요 입하 LOT 중 마감하면 「검사 생략」이 남는 것 — 품목·공장 현지 오늘마다 한 번 판단한다. */
+async function iqcSkipAppliesOf(
+  db: Db, rows: { inbound_lot_id: bigint; item_id: bigint; plant: { timezone_code: string }; inbound_receipt_line: { inspection_required: boolean } }[],
+): Promise<Set<bigint>> {
+  const now = new Date();
+  const decided = new Map<string, boolean>();
+  const applies = new Set<bigint>();
+  for (const row of rows.filter((candidate) => !candidate.inbound_receipt_line.inspection_required)) {
+    const day = localDate(now, row.plant.timezone_code);
+    const key = `${String(row.item_id)}:${day}`;
+    if (!decided.has(key)) decided.set(key, await iqcSkipRecorded(db, row.item_id, day));
+    if (decided.get(key) === true) applies.add(row.inbound_lot_id);
+  }
+  return applies;
+}
+
+const NO_PROGRESS: LotProgress = { received: 0, inIqc: 0, inDisposition: 0, disposed: 0, returned: 0 };
+
+/** 초과 = 이 배정 − 그 라인 잔량(발주 − 이 입하 LOT 몫을 뺀 받은 양), 음수면 0(W-01-16 「(초과 n)」). */
 function allocationView(row: AllocationRow): InboundLotPoAllocationView {
   const order = row.purchase_order_line.purchase_order;
+  const line = row.purchase_order_line;
+  const room = Prisma.Decimal.max(ZERO, line.ordered_qty.minus(line.received_qty.minus(row.allocated_qty)));
   return {
     purchaseOrderLineId: Number(row.purchase_order_line_id), purchaseOrderNo: order.purchase_order_no,
     lineNo: row.purchase_order_line.line_no, orderDate: order.order_date.toISOString().slice(0, 10),
     erpPurchaseOrderNo: order.erp_purchase_order_no, qty: Number(row.allocated_qty),
+    excessQty: Number(Prisma.Decimal.max(ZERO, row.allocated_qty.minus(room))),
   };
 }
 

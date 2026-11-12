@@ -15,6 +15,8 @@ const LIVE_RECEIPT_STATUSES = ['POSTED', 'CANCEL_REQUESTED'];
 const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 /** 선별의 선별을 따라가는 깊이 — `inboundLineOfLot` 과 같다. */
 const MAX_DEPTH = 10;
+/** 입하 LOT 의 ERP 전송 방식 — 새 흐름은 최종 마감 때 입하 LOT 당 한 번(R-25). */
+const NEW_FLOW = 'ON_FINALIZE';
 /** 입고 취소 묶음의 대상 — 그 입고로 보낸 행마다 취소 행(C)이 간다. */
 export const RECEIPT_CANCEL_TARGET = 'GOODS_RECEIPT_CANCEL';
 
@@ -42,6 +44,8 @@ export interface ReceiptLineRef {
  *   MES 발주에만 다 배정된 줄은 가지 않는다. 선별로 떼어 낸 LOT 은 조상의 입하 줄을 따른다(P-56).
  * - 특채(한도승인)가 적용된 LOT 은 가지 않는다 — ERP G/R 은 합격품 한정이다(QA #1 · W-01-10 §5-5).
  *   처분 '정상'으로 풀린 LOT 은 합격으로 본다.
+ * - 새 흐름(`ON_FINALIZE`) 입하 LOT 의 줄은 가지 않는다 — 입하 LOT 마다 최종 마감 때 한 번 간다(R-25 · 그 송신은 #265).
+ *   그래서 줄이 모두 새 흐름인 입고는 묶음을 세우지 않고, 입고 취소의 C 행도 새 흐름 몫에는 생기지 않는다.
  */
 export async function erpInboundLines(db: Db, lines: readonly ReceiptLineRef[]): Promise<(bigint | null)[]> {
   const concessions = await db.concession.findMany({
@@ -61,6 +65,7 @@ export async function erpInboundLines(db: Db, lines: readonly ReceiptLineRef[]):
             where: { inbound_receipt_line_id: inboundLineId },
             select: {
               received_qty: true,
+              inbound_lot: { select: { erp_send_mode_code: true } },
               inbound_receipt_po_allocation: {
                 select: { allocated_qty: true, purchase_order_line: { select: { purchase_order: { select: { erp_purchase_order_no: true } } } } },
               },
@@ -68,6 +73,7 @@ export async function erpInboundLines(db: Db, lines: readonly ReceiptLineRef[]):
           });
     const toErp =
       inbound !== null &&
+      inbound.inbound_lot?.erp_send_mode_code !== NEW_FLOW &&
       (inbound.inbound_receipt_po_allocation.some((row) => row.purchase_order_line.purchase_order.erp_purchase_order_no !== null) ||
         unallocatedQtyOf(inbound.received_qty, inbound.inbound_receipt_po_allocation).greaterThan(0));
     found.push(toErp ? inboundLineId : null);

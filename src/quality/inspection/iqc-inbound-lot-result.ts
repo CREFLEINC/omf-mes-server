@@ -184,11 +184,16 @@ export async function syncIqcDefectLotWithin(tx: Prisma.TransactionClient, inspe
 }
 
 /** 이력(`inspection_request_event`)의 전·후 요약 — 화면이 「무엇이 바뀌었나」를 그린다. */
+/** 결과 이력의 사유 칸 — 재검 사유 코드(FR-023a 「사유는 결과 이력에 남는다」). */
+export function reinspectionReasonOf(summary: Prisma.InputJsonObject): string | null {
+  return typeof summary.reinspectionReasonCode === 'string' ? summary.reinspectionReasonCode : null;
+}
+
 export async function resultSummaryWithin(tx: Prisma.TransactionClient, inspectionResultId: bigint): Promise<Prisma.InputJsonObject> {
   const row = await tx.inspection_result.findUniqueOrThrow({
     where: { inspection_result_id: inspectionResultId },
     select: {
-      inspection_result_no: true, inspection_round: true, overall_judgment_code: true,
+      inspection_result_no: true, inspection_round: true, overall_judgment_code: true, reinspection_reason_code: true,
       inspected_qty: true, accepted_qty: true, rejected_qty: true, held_qty: true,
       inspection_result_lot: { select: { lot: { select: { lot_id: true, lot_no: true } } }, orderBy: { lot_id: 'asc' } },
     },
@@ -204,6 +209,7 @@ export async function resultSummaryWithin(tx: Prisma.TransactionClient, inspecti
     heldQty: Number(row.held_qty),
     matchedLotIds: lots.map((lot) => Number(lot.lot_id)),
     matchedLotNos: lots.map((lot) => lot.lot_no),
+    reinspectionReasonCode: row.reinspection_reason_code,
   };
 }
 
@@ -231,9 +237,10 @@ export async function recordInboundLotUpdate(
   const result = await tx.inspection_result.findUniqueOrThrow({
     where: { inspection_result_id: inspectionResultId }, select: { inspection_request_id: true },
   });
+  const after = await resultSummaryWithin(tx, inspectionResultId);
   await recordInspectionRequestEvent(tx, {
     inspectionRequestId: result.inspection_request_id, eventTypeCode: 'RESULT_UPDATED', inspectionResultId, actor, at: new Date(),
-    summaryBefore: before, summaryAfter: await resultSummaryWithin(tx, inspectionResultId),
+    summaryBefore: before, summaryAfter: after, reason: reinspectionReasonOf(after),
   });
 }
 

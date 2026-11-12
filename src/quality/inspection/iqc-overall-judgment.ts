@@ -45,7 +45,7 @@ export function iqcOverallJudgment(results: readonly IqcJudgedResult[]): { judgm
 }
 
 /** 불합격 → 보류·합격, 보류 → 합격 — 앞 판정을 «가볍게» 덮는다(FR-023a). */
-function lightens(previous: string | null, next: string | null): boolean {
+export function lightens(previous: string | null, next: string | null): boolean {
   if (previous === null || next === null) return false;
   return (previous === REJECTED || previous === 'HELD') && (WEIGHT[next] ?? 0) < (WEIGHT[previous] ?? 0);
 }

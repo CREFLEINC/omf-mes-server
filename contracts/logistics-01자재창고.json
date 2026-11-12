@@ -4019,7 +4019,7 @@
      "logistics"
     ],
     "summary": "입고 처리",
-    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다).",
+    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다). ⭐ ERP 구매입고(IF-GR-SEND, 입고번호 키)는 입고 줄의 LOT 이 모두 새 흐름(erp_send_mode_code=ON_FINALIZE) 입하 LOT 소속이면 적재하지 않는다 — 새 흐름은 입하 LOT 마다 최종 마감 때 한 번 간다(피처 005 §6 · R-25, 그 송신은 #265). 이전 데이터(PER_RECEIPT)와 섞이면 적재하고 보낼 때 새 흐름 줄을 뺀다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -12172,11 +12172,11 @@
       }
      },
      "409": {
-      "description": "입하 마감된(RECEIVED) 입하 LOT 이 아니다 — 입하 중이면 먼저 입하 마감한다. 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
+      "description": "입하 마감된(RECEIVED) 입하 LOT 이 아니다 — 입하 중이면 먼저 입하 마감한다(errors[].code = INBOUND_LOT_RECEIVING). 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -12215,11 +12215,11 @@
     ],
     "responses": {
      "200": {
-      "description": "생략 실행됨 — 실행 뒤 LOT 상세",
+      "description": "생략 실행됨 — 실행 뒤 LOT 상세 + 입하 LOT 번호·자재 관리 LOT 수",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/LotDetailResponse"
+         "$ref": "#/components/schemas/IqcSkipExecuted"
         }
        }
       }
@@ -12409,7 +12409,7 @@
      "logistics"
     ],
     "summary": "물류 문서 취소 요청",
-    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n근거: W-01-13 §5-1·§5-4·§5-5",
+    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n⭐ 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 409(code=INBOUND_LOT_FINALIZED — 메시지에 LOT 번호) — 최종 마감 뒤 입하 LOT 은 바뀌지 않는다(피처 005 §6 · R-24). 조회의 cancelBlockedReasonCode 도 INBOUND_LOT_FINALIZED 다. 새 흐름 입고는 ERP 로 간 적이 없어 취소해도 ERP 취소 행(C)이 생기지 않는다(R-25).\n\n근거: W-01-13 §5-1·§5-4·§5-5",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -12485,11 +12485,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "저장 충돌(다시 읽어 오면 풀린다) · INBOUND_LOT_FINALIZED(최종 마감된 입하 LOT 의 자재 관리 LOT 이 있음 — 풀리지 않는다)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -12529,7 +12536,7 @@
      "logistics"
     ],
     "summary": "물류 문서 취소 실행",
-    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n근거: W-01-13 §5-1·§5-4",
+    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n⭐ 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 409(code=INBOUND_LOT_FINALIZED — 메시지에 LOT 번호) — 최종 마감 뒤 입하 LOT 은 바뀌지 않는다(피처 005 §6 · R-24). 조회의 cancelBlockedReasonCode 도 INBOUND_LOT_FINALIZED 다. 새 흐름 입고는 ERP 로 간 적이 없어 취소해도 ERP 취소 행(C)이 생기지 않는다(R-25).\n\n근거: W-01-13 §5-1·§5-4",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -12595,11 +12602,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "저장 충돌(다시 읽어 오면 풀린다) · INBOUND_LOT_FINALIZED(최종 마감된 입하 LOT 의 자재 관리 LOT 이 있음 — 풀리지 않는다)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -14208,7 +14222,7 @@
      "logistics"
     ],
     "summary": "입하 LOT 목록",
-    "description": "피처 005 §2. 정렬: 입하 날짜 최근 → 입하 LOT 번호. finalizable·erpSendModeCode 조건은 최종 마감(S12)과 함께 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
+    "description": "피처 005 §2. 정렬: 입하 날짜 최근 → 입하 LOT 번호. W-01-16 은 erpSendModeCode=ON_FINALIZE 로 부른다(이전 데이터 제외) — 「마감 승인 대기」 finalizable=true, 「진행 중」 statusCode=RECEIVING,RECEIVED&finalizable=false, 「최종 마감」 statusCode=FINALIZED. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
     "parameters": [
      {
       "name": "plantId",
@@ -14281,6 +14295,26 @@
        "type": "boolean"
       },
       "description": "true = 날짜 자동 마감된 것(§4 관찰), false = 그 밖"
+     },
+     {
+      "name": "finalizable",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "true = 「마감 승인 대기」(행 finalizable 이 true — RECEIVED·ON_FINALIZE 이고 자재 관리 LOT 이 모두 끝남, R-24), false = 그 밖(입하 중·최종 마감·폐기·이전 데이터 포함 — 상태 조건과 함께 쓴다)"
+     },
+     {
+      "name": "erpSendModeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "PER_RECEIPT",
+        "ON_FINALIZE"
+       ]
+      },
+      "description": "ERP 전송 방식 — W-01-16 은 ON_FINALIZE(새 흐름)만 부른다. PER_RECEIPT 은 이전 데이터"
      },
      {
       "name": "receivingDateFrom",
@@ -14401,7 +14435,7 @@
      "logistics"
     ],
     "summary": "입하 LOT 상세",
-    "description": "피처 005 §2 — 행 + 자재 관리 LOT(lots[])·이력(events[]). finalizeBlockers 는 최종 마감(S12)과 함께 더한다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
+    "description": "피처 005 §2 — 행 + 자재 관리 LOT(lots[] — 입고 여부·처분 상태 포함)·이력(events[]). 최종 마감 막힘(finalizeBlockers)은 행에도 있다. 근거: M-01-01 · M-01-03 · W-01-16 · W-01-01",
     "parameters": [
      {
       "name": "inboundLotId",
@@ -15122,7 +15156,7 @@
       }
      },
      "409": {
-      "description": "저장 충돌(conflictCause — versionNo 가 다름) · 상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님)",
+      "description": "저장 충돌(conflictCause — versionNo 가 다름) · 상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님) 최종 마감(FINALIZED)이면 INBOUND_LOT_FINALIZED(미리 보기·실행 같음).",
       "content": {
        "application/json": {
         "schema": {
@@ -15228,11 +15262,303 @@
       }
      },
      "409": {
-      "description": "상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님)",
+      "description": "상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님) 최종 마감(FINALIZED)이면 INBOUND_LOT_FINALIZED(미리 보기·실행 같음).",
       "content": {
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots/{inboundLotId}/allocation-candidates": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 LOT P/O 배정 후보",
+    "description": "피처 005 §5 · R-22·R-23 — 같은 공장·공급사·품목·단위의 미마감 P/O 라인(P/O 가 CLOSED·CANCELLED 아님, 라인 취소 안 됨) + 이 입하 LOT 에 이미 배정된 라인, 발주일·P/O 번호·라인 번호 순. 응답 봉투 items(C6 정함). 근거: W-01-16",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "후보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/InboundLotAllocationCandidate"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-01-16 가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots/{inboundLotId}/po-allocations": {
+   "put": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 LOT P/O 배정 수정",
+    "description": "피처 005 §5 · R-23 — 배정 전체 교체. RECEIVED·ON_FINALIZE 만(마감 승인 대기가 아니어도 된다 — 마감 취소하면 고친 배정은 사라진다). 판 번호가 다르면 409 VERSION_CONFLICT(먼저 본다 — 동시 수정·최종 마감의 뒤쪽), 최종 마감이면 409 INBOUND_LOT_FINALIZED, 이전 데이터(PER_RECEIPT)면 409 LEGACY_INBOUND_LOT, 그 밖 상태면 409 STATE_LOCKED. 라인마다 후보여야 하고(아니면 400 INVALID) 같은 라인은 한 번(400 INVALID), 0 < qty ≤ maxQty(400 RANGE · details{purchaseOrderLineId, maxQty}), Σqty ≤ 입하 수량(400 RANGE · details{receivedQty, allocatedQty}) — 나머지가 P/O 없음. 효과(한 트랜잭션): 입하 LOT 잠금 → 부모 P/O 오름차순 잠금 → 라인마다 새 값과 지금 몫의 차이만큼 received_qty 증감 → 배정 행 교체 → 이벤트 ALLOCATION_EDITED(summary.before·after) → versionNo + 1. 재고·자재 관리 LOT·입고는 바뀌지 않는다. 근거: W-01-16",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundLotPoAllocationReplace"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "고침 — 입하 LOT 상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 후보 아님·같은 라인 두 번(INVALID), 라인 한도·합 초과(RANGE · details)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotWorkRecordError"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-01-16 가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌(conflictCause · code=VERSION_CONFLICT) · INBOUND_LOT_FINALIZED(최종 마감) · LEGACY_INBOUND_LOT(이전 데이터) · STATE_LOCKED(입하 마감 상태가 아님)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots/{inboundLotId}:finalize": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 LOT 최종 마감",
+    "description": "피처 005 §5 · R-24 — 「마감 승인 대기」(행 finalizable)일 때만. 판 번호가 다르면 409 VERSION_CONFLICT, 이전 데이터면 409 LEGACY_INBOUND_LOT, 이미 최종 마감이면 409 INBOUND_LOT_FINALIZED, RECEIVED 가 아니면 409 STATE_LOCKED, 마감 승인 대기가 아니면 409 InboundLotFinalizeBlocked(blockers[]). P/O 없음 > 0 인데 acknowledgeUnallocated 가 true 가 아니면 400 UNALLOCATED_REMAINS(details.unallocatedQty). 효과: FINALIZED·최종 마감 시각·사람, 이벤트 RECEIPT_FINALIZED, versionNo + 1. 그 뒤 입하 LOT 은 바뀌지 않는다 — 그 자재 관리 LOT 의 입고 취소(요청·실행)·마감 취소·배정 수정·자재 관리 LOT 분리·선별·IQC 확정 취소가 409 INBOUND_LOT_FINALIZED. 출고·이동 등 입고 뒤 재고 업무는 막지 않는다. ⛔ ERP 구매입고 묶음은 적재하지 않는다(§6 — 최종 마감 때 적재와 응답의 ERP 칸은 #265). 근거: W-01-16",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT"
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundLotFinalize"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "최종 마감됨 — 입하 LOT 행",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLot"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — UNALLOCATED_REMAINS(P/O 없음이 남았는데 확인이 없음 · details.unallocatedQty)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotWorkRecordError"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-01-16 가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌(conflictCause · code=VERSION_CONFLICT) · 거부(InboundLotFinalizeBlocked — INBOUND_LOT_FINALIZED · LEGACY_INBOUND_LOT · STATE_LOCKED · 마감 승인 대기 아님(blockers))",
+      "content": {
+       "application/json": {
+        "schema": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/InboundLotFinalizeBlocked"
+          }
+         ]
         }
        }
       }
@@ -15698,7 +16024,7 @@
        "string",
        "null"
       ],
-      "description": "cancellable 이 «거짓인 이유» — 후속 문서가 있다 · 이미 취소됐다 · 취소 진행 중이다 · 상태가 잠겼다 · 이 문서 유형에 취소 경로가 없다(`TYPE_NOT_CANCELABLE` — 취소 실행 경로가 있는 것은 입하·입고·출고 3종뿐이다). ⭐ 화면이 이 값으로 안내 문구와 다음 경로를 가른다(G-3). ⛔ 서버가 판정한다 — 화면이 조건을 따로 조합하면 화면마다 갈린다\n\n서버 구현 기준: 출하가 소유한 하위 입고·출고 전표의 개별 취소 차단도 현재 STATE_LOCKED로 반환한다(통보 217).",
+      "description": "cancellable 이 «거짓인 이유» — 후속 문서가 있다 · 이미 취소됐다 · 취소 진행 중이다 · 상태가 잠겼다 · 이 문서 유형에 취소 경로가 없다(`TYPE_NOT_CANCELABLE` — 취소 실행 경로가 있는 것은 입하·입고·출고 3종뿐이다). ⭐ 화면이 이 값으로 안내 문구와 다음 경로를 가른다(G-3). ⛔ 서버가 판정한다 — 화면이 조건을 따로 조합하면 화면마다 갈린다\n\n서버 구현 기준: 출하가 소유한 하위 입고·출고 전표의 개별 취소 차단도 현재 STATE_LOCKED로 반환한다(통보 217).\n\n피처 005 R-24: 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 INBOUND_LOT_FINALIZED — 요청·실행 409 의 코드와 같다.",
       "example": "SUCCESSOR_EXISTS",
       "x-code-key": "CD-CANCEL-BLOCKED-REASON",
       "enum": [
@@ -15706,7 +16032,8 @@
        "ALREADY_CANCELLED",
        "CANCEL_IN_PROGRESS",
        "STATE_LOCKED",
-       "TYPE_NOT_CANCELABLE"
+       "TYPE_NOT_CANCELABLE",
+       "INBOUND_LOT_FINALIZED"
       ]
      },
      "cancelApprovalRequestId": {
@@ -27188,7 +27515,7 @@
    },
    "InboundLot": {
     "type": "object",
-    "description": "입하 LOT 한 행(피처 005 §2). 받기(PDA)가 만든다 — 사람이 만들거나 고르지 않는다. 「(C2 정함)」 칸은 클라이언트 화면이 먼저 정한 칸이다. P/O 배정(poAllocations)은 입하 마감이 채운다. finalizable 은 아직 늘 false 이고, lotProgress·처분 상태는 최종 마감(S12)과 함께 더한다",
+    "description": "입하 LOT 한 행(피처 005 §2). 받기(PDA)가 만든다 — 사람이 만들거나 고르지 않는다. 「(C2 정함)」·「(C6 정함)」 칸은 클라이언트 화면이 먼저 정한 칸이다. P/O 배정(poAllocations)은 입하 마감이 채우고 W-01-16 이 고친다(§5)",
     "required": [
      "inboundLotId",
      "inboundLotNo",
@@ -27214,14 +27541,18 @@
      "receivedClosedAt",
      "closedAutomatically",
      "finalizedAt",
+     "finalizedByName",
      "reopenable",
      "reopenReasonCode",
      "reopenBlockerCode",
      "openInboundLotNo",
      "reopened",
      "finalizable",
+     "lotProgress",
+     "finalizeBlockers",
      "erpSendModeCode",
-     "versionNo"
+     "versionNo",
+     "iqcDefaultSkipApplies"
     ],
     "properties": {
      "inboundLotId": {
@@ -27319,6 +27650,11 @@
       "type": "boolean",
       "description": "검사 필요 품목인가(C2 정함). 새 흐름은 입하 LOT 이 생길 때 품목 수입검사 대상이고 IQC 기준이 기본 생략이 아니면 참 — 그 입하 LOT 의 LOT 들이 같은 값을 따른다. 이전 데이터는 입하 줄의 값"
      },
+     "iqcDefaultSkipApplies": {
+      "type": "boolean",
+      "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 품목이 검사 대상이거나 품목 기준이 기본 생략일 때만 true. 아니면 마감해도 IQC 요청이 생기지 않는다(US2-7). 검사 필요 입하 LOT 은 false. 판단 날짜는 공장 현지 오늘(받기는 스캔 날짜). M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
+      "example": false
+     },
      "firstRegisteredAt": {
       "type": [
        "string",
@@ -27345,6 +27681,13 @@
        "null"
       ],
       "format": "date-time"
+     },
+     "finalizedByName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "최종 마감한 사람 이름(C6 정함 — W-01-16 「최종 마감 {시각} · {사람}」). 최종 마감 전 null"
      },
      "reopenable": {
       "type": "boolean",
@@ -27387,7 +27730,17 @@
      },
      "finalizable": {
       "type": "boolean",
-      "description": "「마감 승인 대기」 — 최종 마감(S12)과 함께 채운다. 지금은 늘 false"
+      "description": "「마감 승인 대기」(R-24 · 저장 안 함) — RECEIVED·ON_FINALIZE 이고 자재 관리 LOT 마다 끝남(전기된 자재 입고가 덮고 입고 취소 요청 중이 아님, 또는 폐기 처분(LOT SCRAPPED)·공급사 반품 출고(SUPPLIER_RETURN·POSTED)로 끝남), IQC 요청이 기록 중(REQUESTED·IN_PROGRESS)이 아니고, 열린 부적합(판정 대기·처분 진행)이 없을 때 true"
+     },
+     "finalizeBlockers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InboundLotFinalizeBlocker"
+      },
+      "description": "최종 마감을 막는 것(R-24) — RECEIVED·ON_FINALIZE 이고 마감 승인 대기가 아닐 때만 찬다. 입하 중·최종 마감·폐기·이전 데이터·마감 승인 대기면 빈 배열(C6 — 「진행 중」 목록의 이유 칸)"
+     },
+     "lotProgress": {
+      "$ref": "#/components/schemas/InboundLotLotProgress"
      },
      "erpSendModeCode": {
       "type": "string",
@@ -27414,7 +27767,9 @@
      "lifecycleStatusCode",
      "statusCode",
      "registeredAt",
-     "fromSupplierLabel"
+     "fromSupplierLabel",
+     "goodsReceived",
+     "dispositionStatusCode"
     ],
     "properties": {
      "lotId": {
@@ -27459,6 +27814,23 @@
      "fromSupplierLabel": {
       "type": "boolean",
       "description": "공급사 사전부착 라벨로 받기 때 만든 LOT 인가(C2 정함) — 그 LOT 을 담은 마지막 LOTS_REGISTERED 이벤트가 이 받기에서 만들었다고 적었으면 참. 해제 뒤 다시 받은 LOT 은 거짓"
+     },
+     "goodsReceived": {
+      "type": "boolean",
+      "description": "살아 있는(취소 아닌 — 취소 요청 중 포함) 자재 입고가 이 LOT 을 덮는가(C6 정함 — W-01-16 「입고됨」)"
+     },
+     "dispositionStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "IN_PROGRESS",
+       "RETURNED",
+       "DISPOSED",
+       null
+      ],
+      "description": "처분 상태(C6 정함) — IN_PROGRESS(열린 부적합에 담김) · RETURNED(공급사 반품 출고 POSTED) · DISPOSED(폐기 처분 — LOT SCRAPPED). 처분 없음 null"
      }
     }
    },
@@ -27625,7 +27997,8 @@
         "inboundReceiptNo",
         "receivedQty",
         "lotCount",
-        "lots"
+        "lots",
+        "iqcDefaultSkipApplies"
        ],
        "properties": {
         "inboundLotId": {
@@ -27645,6 +28018,11 @@
           "null"
          ],
          "description": "스캔 때 자동 마감한 지난 날짜 입하 LOT 번호 — 없으면 null"
+        },
+        "iqcDefaultSkipApplies": {
+         "type": "boolean",
+         "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 품목이 검사 대상이거나 품목 기준이 기본 생략일 때만 true. 아니면 마감해도 IQC 요청이 생기지 않는다(US2-7). 검사 필요 입하 LOT 은 false. 판단 날짜는 공장 현지 오늘(받기는 스캔 날짜). M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
+         "example": false
         },
         "inboundReceiptNo": {
          "type": "string"
@@ -27850,9 +28228,10 @@
      "lineNo",
      "orderDate",
      "erpPurchaseOrderNo",
-     "qty"
+     "qty",
+     "excessQty"
     ],
-    "description": "입하 LOT(= 입하 줄)의 P/O 배정 한 행(피처 005 §2 · R-7). 새 흐름은 입하 마감 때 자동 배정(R-22)으로만 생기고 마감 취소 때 지워진다. 정렬: 발주일·P/O 번호·라인 번호",
+    "description": "입하 LOT(= 입하 줄)의 P/O 배정 한 행(피처 005 §2 · R-7). 새 흐름은 입하 마감 때 자동 배정(R-22)으로 생기고 W-01-16 배정 수정(§5)이 바꾸며 마감 취소 때 지워진다. 정렬: 발주일·P/O 번호·라인 번호",
     "properties": {
      "purchaseOrderLineId": {
       "type": "integer",
@@ -27878,6 +28257,10 @@
      "qty": {
       "type": "number",
       "description": "배정 수량(품목 기본 단위)"
+     },
+     "excessQty": {
+      "type": "number",
+      "description": "이 배정이 그 라인 잔량(발주 − 이 입하 LOT 몫을 뺀 받은 양)을 넘은 양 — 초과 허용치로 받은 몫(C6 정함 — W-01-16 「(초과 n)」). 넘지 않으면 0"
      }
     }
    },
@@ -28225,6 +28608,273 @@
       "description": "생략하면 정상이 될 자재 관리 LOT 수(그 입하 LOT 의 전부)"
      }
     }
+   },
+   "InboundLotFinalizeBlocker": {
+    "type": "object",
+    "required": [
+     "code",
+     "lotNos"
+    ],
+    "description": "최종 마감 막힘 한 줄(피처 005 §2 · R-24). 자재 관리 LOT 하나는 한 코드에만 든다 — 처분 진행·입고 취소 요청이 먼저, 검사 대기 LOT 은 IQC 쪽",
+    "properties": {
+     "code": {
+      "type": "string",
+      "enum": [
+       "IQC_IN_PROGRESS",
+       "DISPOSITION_IN_PROGRESS",
+       "RECEIPT_CANCEL_PENDING",
+       "NOT_RECEIVED"
+      ],
+      "description": "IQC_IN_PROGRESS(IQC 요청이 기록 중 — 검사 대기 LOT) · DISPOSITION_IN_PROGRESS(열린 부적합에 담긴 LOT) · RECEIPT_CANCEL_PENDING(입고 취소 요청 중인 입고에 든 LOT) · NOT_RECEIVED(입고·폐기·반품으로 끝나지 않은 LOT). 이 순서로 싣는다"
+     },
+     "lotNos": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "걸린 자재 관리 LOT 번호(번호 순)"
+     }
+    }
+   },
+   "InboundLotLotProgress": {
+    "type": "object",
+    "required": [
+     "received",
+     "inIqc",
+     "inDisposition",
+     "disposed",
+     "returned"
+    ],
+    "description": "자재 관리 LOT 진행(W-01-16 · FR-048) — LOT 수. 한 LOT 이 둘 이상에 셀 수 있다(예: 입고 뒤 반품)",
+    "properties": {
+     "received": {
+      "type": "integer",
+      "description": "전기된(POSTED) 자재 입고가 덮는 LOT"
+     },
+     "inIqc": {
+      "type": "integer",
+      "description": "IQC 요청이 기록 중이고 검사 대기(INSPECTION_PENDING)인 LOT"
+     },
+     "inDisposition": {
+      "type": "integer",
+      "description": "열린 부적합(판정 대기·처분 진행)에 담긴 LOT"
+     },
+     "disposed": {
+      "type": "integer",
+      "description": "폐기 처분된(LOT SCRAPPED) LOT"
+     },
+     "returned": {
+      "type": "integer",
+      "description": "공급사 반품 출고(SUPPLIER_RETURN·POSTED)로 나간 LOT"
+     }
+    }
+   },
+   "InboundLotAllocationCandidate": {
+    "type": "object",
+    "description": "W-01-16 매칭 후보 P/O 라인 한 줄(피처 005 §5 · R-22·R-23). 칸 이름은 이전 데이터 줄 축 후보를 따른다",
+    "required": [
+     "purchaseOrderLineId",
+     "purchaseOrderId",
+     "purchaseOrderNo",
+     "lineNo",
+     "orderDate",
+     "erpPurchaseOrderNo",
+     "orderedQty",
+     "receivedQty",
+     "toleranceQty",
+     "thisLotQty",
+     "maxQty",
+     "openedAfterReceiptClose"
+    ],
+    "properties": {
+     "purchaseOrderLineId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "purchaseOrderId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "purchaseOrderNo": {
+      "type": "string"
+     },
+     "lineNo": {
+      "type": "integer"
+     },
+     "orderDate": {
+      "type": "string",
+      "format": "date"
+     },
+     "erpPurchaseOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "ERP 발주 번호 — MES 발주면 null"
+     },
+     "orderedQty": {
+      "type": "number",
+      "description": "발주량(품목 기본 단위)"
+     },
+     "receivedQty": {
+      "type": "number",
+      "description": "이 라인에 지금까지 오른 받은 양 — 이 입하 LOT 몫(thisLotQty) 포함"
+     },
+     "toleranceQty": {
+      "type": "number",
+      "description": "초과 허용치(C6 정함)"
+     },
+     "thisLotQty": {
+      "type": "number",
+      "description": "이 입하 LOT 의 지금 배정 몫 — 없으면 0"
+     },
+     "maxQty": {
+      "type": "number",
+      "description": "이 라인에 배정할 수 있는 최대 = 발주 + 초과 허용치 − (받은 양 − 이 입하 LOT 몫). 자동 배정·지금 입하의 넘침 한도와 같은 기준"
+     },
+     "openedAfterReceiptClose": {
+      "type": "boolean",
+      "description": "이 입하 LOT 의 입하 마감 뒤에 생긴 라인인가(C6 정함 — 비고 「초과분 발주 · 마감 뒤 생김」)"
+     }
+    }
+   },
+   "InboundLotPoAllocationReplace": {
+    "type": "object",
+    "required": [
+     "versionNo",
+     "allocations"
+    ],
+    "description": "P/O 배정 전체 교체(피처 005 §5 · R-23). 0 인 라인은 싣지 않는다 — 빠진 라인의 배정은 없어진다",
+    "properties": {
+     "versionNo": {
+      "type": "integer",
+      "description": "입하 LOT 의 versionNo"
+     },
+     "allocations": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+       "type": "object",
+       "required": [
+        "purchaseOrderLineId",
+        "qty"
+       ],
+       "properties": {
+        "purchaseOrderLineId": {
+         "type": "integer",
+         "format": "int64",
+         "description": "후보 라인(GET …/allocation-candidates)"
+        },
+        "qty": {
+         "type": "number",
+         "description": "배정 수량 — 0 < qty ≤ 그 라인 maxQty"
+        }
+       }
+      }
+     }
+    }
+   },
+   "InboundLotFinalize": {
+    "type": "object",
+    "required": [
+     "versionNo"
+    ],
+    "description": "최종 마감(피처 005 §5 · R-24)",
+    "properties": {
+     "versionNo": {
+      "type": "integer",
+      "description": "입하 LOT 의 versionNo"
+     },
+     "acknowledgeUnallocated": {
+      "type": "boolean",
+      "description": "P/O 없음이 남았을 때 「그 수량은 ERP 로 가지 않는다」를 확인했다 — P/O 없음 > 0 인데 true 가 아니면 400 UNALLOCATED_REMAINS"
+     }
+    }
+   },
+   "InboundLotFinalizeBlocked": {
+    "type": "object",
+    "required": [
+     "errors"
+    ],
+    "description": "최종 마감 409 의 오류 봉투 — errors[].code 가 거부 코드다(scope=screen). 마감 승인 대기가 아니면 코드가 막힘 코드(여럿이면 모두 · lotNos 에 LOT 번호 — 확정 취소 막힘과 같은 모양)이고 blockers 가 같은 내용을 행의 finalizeBlockers 모양으로 싣는다. INBOUND_LOT_FINALIZED·LEGACY_INBOUND_LOT·STATE_LOCKED 는 blockers 가 없다",
+    "properties": {
+     "errors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErrorItem"
+      }
+     },
+     "blockers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InboundLotFinalizeBlocker"
+      },
+      "description": "마감 승인 대기가 아닐 때만 — 막힘 코드와 LOT 번호"
+     }
+    }
+   },
+   "InboundLotWorkRecordError": {
+    "type": "object",
+    "required": [
+     "errors"
+    ],
+    "description": "W-01-16 쓰기의 400 — ErrorResponse 에 details 를 더한다. RANGE(라인 한도 초과) 면 details{purchaseOrderLineId, maxQty}(첫 라인), 배정 합 > 입하 수량이면 details{receivedQty, allocatedQty}, UNALLOCATED_REMAINS 면 details{unallocatedQty}",
+    "properties": {
+     "errors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErrorItem"
+      }
+     },
+     "details": {
+      "type": "object",
+      "properties": {
+       "purchaseOrderLineId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "maxQty": {
+        "type": "number"
+       },
+       "receivedQty": {
+        "type": "number"
+       },
+       "allocatedQty": {
+        "type": "number"
+       },
+       "unallocatedQty": {
+        "type": "number"
+       }
+      }
+     }
+    }
+   },
+   "IqcSkipExecuted": {
+    "description": "IQC 생략 실행 응답 — 실행 뒤 LOT 상세 + 생략이 걸린 입하 LOT(피처 005 §11 · FR-032).",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/LotDetailResponse"
+     },
+     {
+      "type": "object",
+      "required": [
+       "inboundLotNo",
+       "lotCount"
+      ],
+      "properties": {
+       "inboundLotNo": {
+        "type": "string",
+        "description": "생략이 걸린 입하 LOT 번호",
+        "example": "IL-20261112-0001"
+       },
+       "lotCount": {
+        "type": "integer",
+        "description": "그 입하 LOT 의 자재 관리 LOT 수(모두 정상으로 옮겼다)",
+        "example": 3
+       }
+      }
+     }
+    ]
    }
   },
   "securitySchemes": {

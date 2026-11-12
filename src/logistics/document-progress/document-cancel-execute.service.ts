@@ -9,6 +9,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { omitEmpty } from '../../common/http/omit-empty';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
+import { inboundLotFinalized } from '../inbound-lot/inbound-lot-finalizable';
 import { CancelEligibilityService } from './cancel-eligibility.service';
 import { enqueueReceiptCancel } from '../goods-receipt/erp-receipt';
 import { cancelInboundReceipt } from './adapters/inbound-receipt-cancel.adapter';
@@ -90,7 +91,9 @@ export class DocumentCancelExecuteService {
 
       // ⭐ J-8 재판정 — 승인 대기 중에 후속이 생겼을 수 있다. ⛔ `cancellable` 이 아니라
       //    `successorCount` 다: 나머지 사유 넷은 「지금 승인된 이 요청」자신을 가리킨다(§6-3).
-      const { successorCount } = await this.eligibility.evaluate(tx, typeCode, documentId);
+      const { successorCount, finalizedLotNos } = await this.eligibility.evaluate(tx, typeCode, documentId);
+      // 최종 마감된 입하 LOT 은 불변이다(R-24) — 승인이 있어도 되돌리지 않는다.
+      if (finalizedLotNos !== undefined) throw inboundLotFinalized(finalizedLotNos);
       if (successorCount > 0) {
         // 걸리면 흔적을 «아무것도» 안 남긴다 — 승인도 문서 상태도 그대로다(계약 J-8).
         throw screenError(ERROR_CODE.SUCCESSOR_EXISTS, '후속 문서가 있어 취소할 수 없습니다.');
