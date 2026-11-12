@@ -6506,10 +6506,9 @@
     "type": "object",
     "required": [
      "scopeCode",
-     "guideTextKo",
-     "guideTextVi"
+     "guideText"
     ],
-    "description": "검사 안내 한 벌(omf-all-around#252). 문구는 기준 버전의 guideTextKo · guideTextVi 그대로다.",
+    "description": "검사 안내 한 벌(omf-all-around#252). 문구는 기준 버전의 검사 지시문(guideText) 그대로다 — 한 칸(#261).",
     "properties": {
      "scopeCode": {
       "type": "string",
@@ -6519,18 +6518,8 @@
       ],
       "description": "COMMON = 전 품목 공통 기준의 안내, ITEM = 품목 전용 기준의 안내"
      },
-     "guideTextKo": {
-      "type": [
-       "string",
-       "null"
-      ],
-      "maxLength": 3000
-     },
-     "guideTextVi": {
-      "type": [
-       "string",
-       "null"
-      ],
+     "guideText": {
+      "type": "string",
       "maxLength": 3000
      }
     }
@@ -6802,6 +6791,9 @@
        "null"
       ],
       "description": "상세·새 흐름 요청만 — 그 부적합 번호. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "aqlPlan": {
+      "$ref": "#/components/schemas/InspectionAqlPlan"
      }
     },
     "required": [
@@ -7018,7 +7010,7 @@
      "judgmentChangeReason": {
       "type": "string",
       "maxLength": 500,
-      "description": "⭐ IQC·OQC 판정 변경 사유. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
+      "description": "⭐ IQC·OQC 판정 변경 사유. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. AQL 샘플링 버전이면 합격판정개수 자리에 의뢰 수량으로 표에서 낸 합격 판정 수(Ac)를 쓰고, 수치(NUMERIC) 항목 중 불합격 시료 수가 그 항목의 합격판정개수(없으면 버전의 합격판정개수, 그것도 없으면 0)를 넘는 항목이 있으면 수량과 상관없이 REJECTED 다(omf-all-around#264). 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
       "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
      },
      "fourMChange": {
@@ -7134,7 +7126,7 @@
      "judgmentChangeReason": {
       "type": "string",
       "maxLength": 500,
-      "description": "⭐ IQC·OQC 판정 변경 사유 — statusCode=CONFIRMED 저장(오프라인 큐)에만 본다(작성중이면 무시). `:confirm` 과 같은 규칙이다. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
+      "description": "⭐ IQC·OQC 판정 변경 사유 — statusCode=CONFIRMED 저장(오프라인 큐)에만 본다(작성중이면 무시). `:confirm` 과 같은 규칙이다. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. AQL 샘플링 버전이면 합격판정개수 자리에 의뢰 수량으로 표에서 낸 합격 판정 수(Ac)를 쓰고, 수치(NUMERIC) 항목 중 불합격 시료 수가 그 항목의 합격판정개수(없으면 버전의 합격판정개수, 그것도 없으면 0)를 넘는 항목이 있으면 수량과 상관없이 REJECTED 다(omf-all-around#264). 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
       "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
      },
      "fourMChange": {
@@ -10289,6 +10281,58 @@
        "type": "string"
       },
       "description": "막힘에 걸린 자재 관리 LOT 번호(번호 순)"
+     }
+    }
+   },
+   "InspectionAqlPlan": {
+    "type": "object",
+    "required": [
+     "aqlValue",
+     "aqlInspectionLevelCode",
+     "codeLetter",
+     "sampleSize",
+     "acceptanceNumber",
+     "rejectionNumber"
+    ],
+    "description": "AQL 시료 계획(omf-all-around#264) — KS Q ISO 2859-1 보통 검사 1회 샘플링 표준값. 의뢰 수량을 LOT 크기로 본다. 불량 수가 acceptanceNumber 이하면 합격, rejectionNumber 이상이면 불합격이다.",
+    "properties": {
+     "aqlValue": {
+      "type": "number",
+      "example": 0.4
+     },
+     "aqlInspectionLevelCode": {
+      "type": "string",
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4"
+      ],
+      "example": "G-II"
+     },
+     "codeLetter": {
+      "type": "string",
+      "description": "표 1 의 시료 문자(A~R) — 화살표로 다른 칸의 계획을 써도 처음 문자다.",
+      "example": "J"
+     },
+     "sampleSize": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "검사할 수. 표의 시료 수가 의뢰 수량 이상이면 의뢰 수량(전수)이다.",
+      "example": 125
+     },
+     "acceptanceNumber": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 1
+     },
+     "rejectionNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "example": 2
      }
     }
    }

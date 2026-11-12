@@ -6,6 +6,7 @@ import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
+import { InspectionAqlPlanView, inspectionAqlPlan } from './inspection-aql-plan';
 import { InspectionGuideView, inspectionGuides } from './inspection-guide';
 import { FOUR_M_CHANGE_INCLUDE, InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 import { InboundLotRequestDetailView, inboundLotRequestDetail, inboundLotSummaries } from './iqc-request-detail';
@@ -44,8 +45,11 @@ const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
   { inspection_request_id: 'asc' },
 ];
 
-/** 상세 조회 — 목록 줄에 안내 문구(omf-all-around#252)와 입하 LOT 검사의 LOT·결과 목록(피처 005 §8)을 더한다. */
-export type InspectionRequestDetailView = InspectionRequestView & { inspectionGuides?: InspectionGuideView[] } & Partial<InboundLotRequestDetailView>;
+/** 상세 조회 — 목록 줄에 안내 문구(omf-all-around#252) · AQL 시료 계획(#264)과 입하 LOT 검사의 LOT·결과 목록(피처 005 §8)을 더한다. */
+export type InspectionRequestDetailView = InspectionRequestView & {
+  inspectionGuides?: InspectionGuideView[];
+  aqlPlan?: InspectionAqlPlanView;
+} & Partial<InboundLotRequestDetailView>;
 
 @Injectable()
 export class InspectionRequestService {
@@ -75,8 +79,16 @@ export class InspectionRequestService {
       iqcInspectionLevels(this.prisma, [row]), inboundLotSummaries(this.prisma, [row]), inboundLotRequestDetail(this.prisma, row),
     ]);
     // 안내 문구는 상세에만 싣는다 — 목록 줄마다 기준을 읽지 않는다(omf-all-around#252).
-    const guides = await inspectionGuides(this.prisma, row);
-    return { ...inspectionRequestView(row, level, inboundLot), ...(guides.length === 0 ? {} : { inspectionGuides: guides }), ...inbound };
+    const [guides, aqlPlan] = await Promise.all([
+      inspectionGuides(this.prisma, row),
+      inspectionAqlPlan(this.prisma, row),
+    ]);
+    return {
+      ...inspectionRequestView(row, level, inboundLot),
+      ...(guides.length === 0 ? {} : { inspectionGuides: guides }),
+      ...(aqlPlan === null ? {} : { aqlPlan }),
+      ...inbound,
+    };
   }
 }
 
