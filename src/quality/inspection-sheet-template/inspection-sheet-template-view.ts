@@ -27,6 +27,9 @@ export interface InspectionSheetTemplateView {
   itemCode: string;
   itemName: string;
   templateVersion: number;
+  /** 관리용 기준코드 · 기준명(omf-all-around#260) — 그 전에 등록한 기준은 비어 있다. */
+  templateCode: string | null;
+  templateName: string | null;
   businessUnitId: number;
   formLayoutCode: string;
   statusCode: string;
@@ -66,6 +69,8 @@ export function templateSummaryView(row: SummaryRow): InspectionSheetTemplateVie
     itemCode: row.item.item_code,
     itemName: row.item.item_name,
     templateVersion: row.template_version,
+    templateCode: row.template_code,
+    templateName: row.template_name,
     businessUnitId: Number(row.business_unit_id),
     formLayoutCode: row.form_layout_code,
     statusCode: row.status_code,

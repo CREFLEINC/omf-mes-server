@@ -3790,7 +3790,7 @@ model inspection_plan_version {
   aql_value                   Decimal?               @db.Decimal(9, 4)
   acceptance_number           Int?
   rejection_number            Int?
-  inspection_frequency_code   String                 @db.VarChar(50)
+  inspection_frequency_code   String?                @db.VarChar(50)
   frequency_interval_value    Decimal?               @db.Decimal(18, 6)
   frequency_interval_uom_code String?                @db.VarChar(50)
   status_code                 String                 @db.VarChar(50)
@@ -3802,6 +3802,8 @@ model inspection_plan_version {
   sampling_ratio              Decimal?               @db.Decimal(9, 6)
   guide_text_ko               String?                @db.VarChar(3000)
   guide_text_vi               String?                @db.VarChar(3000)
+  guide_text                  String?                @db.VarChar(3000)
+  aql_inspection_level_code   String?                @db.VarChar(50)
   inspection_item_spec        inspection_item_spec[]
   inspection_plan             inspection_plan        @relation(fields: [inspection_plan_id], references: [inspection_plan_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_request          inspection_request[]
@@ -3940,6 +3942,8 @@ model inspection_sheet_template {
   power_text                                                 String?                                  @db.VarChar(200)
   motor_text                                                 String?                                  @db.VarChar(200)
   remarks                                                    String?                                  @db.VarChar(500)
+  template_code                                              String?                                  @db.VarChar(50)
+  template_name                                              String?                                  @db.VarChar(200)
   confirmed_by                                               BigInt?
   confirmed_at                                               DateTime?                                @db.Timestamptz(6)
   created_at                                                 DateTime                                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)

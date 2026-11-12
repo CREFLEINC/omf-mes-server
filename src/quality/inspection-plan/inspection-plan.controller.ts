@@ -25,6 +25,7 @@ import { InspectionPlanCopy, InspectionPlanCopyService } from './inspection-plan
 import {
   InspectionPlanQuery,
   InspectionPlanService,
+  InspectionPlanCreate,
   InspectionPlanWrite,
 } from './inspection-plan.service';
 
@@ -57,7 +58,7 @@ export class InspectionPlanController {
 
   @Post()
   @Contract('POST /quality/inspection-plans')
-  create(@Req() request: Request, @Body() body: InspectionPlanWrite): Promise<unknown> {
+  create(@Req() request: Request, @Body() body: InspectionPlanCreate): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
       this.plans.create(body),
     );

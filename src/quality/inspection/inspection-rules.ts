@@ -226,17 +226,19 @@ export function assertJudgmentChangeReason(
   judgment: string,
   acceptanceNumber: number | null,
   reason: string | undefined,
+  /** AQL 기준에서 치수 항목이 불합격이면 수량과 상관없이 불합격이다(omf-all-around#264 · 사용자 결정 2026-11-12). */
+  dimensionRejected = false,
 ): string | undefined {
-  const expected = expectedJudgment(qty, acceptanceNumber);
+  const expected =
+    dimensionRejected && acceptanceNumber !== null ? 'REJECTED' : expectedJudgment(qty, acceptanceNumber);
   if (expected === null || acceptanceNumber === null || judgment === expected) return undefined;
   const trimmed = reason?.trim() ?? '';
   if (trimmed !== '') return trimmed;
+  const basis = dimensionRejected
+    ? '치수 항목이 불합격이라 자동 판정은 불합격입니다.'
+    : expectedJudgmentBasis(expected, acceptanceNumber);
   throw one(
-    field(
-      JUDGMENT_CHANGE_REASON,
-      ERROR_CODE.REQUIRED,
-      `${expectedJudgmentBasis(expected, acceptanceNumber)} 다른 판정으로 확정하려면 변경 사유가 필요합니다.`,
-    ),
+    field(JUDGMENT_CHANGE_REASON, ERROR_CODE.REQUIRED, `${basis} 다른 판정으로 확정하려면 변경 사유가 필요합니다.`),
   );
 }
 
