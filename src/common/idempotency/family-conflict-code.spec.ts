@@ -120,7 +120,7 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     expect(extra).toEqual([]);
   });
 
-  it('넘긴 호출부가 59건이다 — 작업 세션 강제 종료까지 계열 전건', () => {
+  it('넘긴 호출부가 60건이다 — 작업 세션 강제 종료까지 계열 전건', () => {
     // ⭐ I-23 이 `POST /logistics/shipments` 를 더했다. 이 슬라이스는 계열 오퍼레이션이 넷
     //    더 온다(`:confirm`·`:request-cancel`·`:cancel`·재등록) ⇒ 그때마다 여기가 먼저 빨개진다.
     //    ⛔ 그것이 이 표의 뜻이다 — 넘기는 것을 잊으면 409 봉투에서 required `code` 가 빠지고
@@ -139,7 +139,8 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     // 작업 세션 강제 종료 1건(장부 P-108): 56 → 57.
     // 계획 제안 확정 1건 — 번호를 트랜잭션 밖에서 뽑아 서비스가 멱등 문맥을 직접 만든다: 57 → 58.
     // IQC 결과 삭제 1건(피처 005 S8): 58 → 59.
-    expect(sites.filter((site) => site.passes)).toHaveLength(59);
+    // IQC 판정 확정 1건(피처 005 S9): 59 → 60. 확정 취소는 409 가 막힘 봉투와 oneOf 라 계열이 아니다.
+    expect(sites.filter((site) => site.passes)).toHaveLength(60);
   });
 
   it('⭐ 두 값이 계열 네 enum «전부»에 있다 — 계약에서 직접 읽는다', () => {
