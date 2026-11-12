@@ -294,7 +294,8 @@ UPDATE quality.inspection_request r
  WHERE r.inspection_request_id = last.inspection_request_id
    AND r.inspection_type_code = 'IQC' AND r.inbound_lot_id IS NOT NULL AND r.status_code = 'COMPLETED';
 
--- 4-4. 열린 IQC_SKIP 결재의 대상 id 는 옮기지 않는다 — 지금 생략 코드가 대상을 LOT id 로 읽는다(설계 문의 중).
+-- 4-4. 열린 IQC_SKIP 결재의 대상 id 는 여기서 옮기지 않는다 — 지금 생략 코드가 대상을 LOT id 로 읽는다.
+--      생략을 입하 LOT 단위로 바꾸는 S10 이 그 시점 열린 결재를 같은 PR 에서 옮긴다(총괄 결정 2026-11-12).
 
 -- 4-5. IQC 결과에서 온 부적합에 요청.
 UPDATE quality.nonconformance n
