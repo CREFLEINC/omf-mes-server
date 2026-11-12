@@ -50,7 +50,7 @@ export const SCOPED_NC_CTE = Prisma.sql`scoped_nc AS (
 
 /**
  * IQC 선별 처분(omf-all-around#251) — 처분일이 누계 구간인 선별(SORT) 처분마다 한 줄, 대상은 «원래» IQC 검사 LOT 이다.
- * 선별이 떼어 낸 LOT 의 부적합도 같은 검사 결과를 물려받으므로(disposition-sort.ts) 검사 의뢰의 LOT 으로 세면 재선별이 LOT 을 늘리지 않는다.
+ * 선별이 떼어 낸 LOT 의 부적합도 같은 검사 결과를 물려받으므로(옛 수량 분할 선별 — FR-038 로 삭제) 검사 의뢰의 LOT 으로 세면 재선별이 LOT 을 늘리지 않는다.
  */
 export function iqcSortedCte(period: DashboardPeriod): Prisma.Sql {
   return Prisma.sql`iqc_sorted AS (

@@ -1,9 +1,8 @@
 /**
  * 처분 «선별»(SORT) — 생산 LOT · BOM · 재고 (e2e · omf-all-around#108 · 장부 P-53).
  *
- * BOM 이 붙은 생산 LOT(재고 한 위치)을 양품 70 / 불량 30 으로 나눈다 — 자식 LOT 은 `bom_id`·`bom_version` 을 «함께»
- * 옮기고(ck_lot_bom_snapshot), 원장이 같은 위치에서 30 을 옮기고, 불량분이 새 부적합(판정 대기)으로 선다.
- * IQC 자재 LOT(BOM·재고 없음)의 선별은 quality-iqc-rejection-flow 경로 ② 가 본다.
+ * 수량으로 LOT 을 나누는 선별은 없어졌다(피처 005 FR-038) — 입하 LOT 이 없는 부적합(반품·OQC·생산 LOT)에는 선별이 없어 400 이고
+ * 아무것도 갈리지 않는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -53,48 +52,19 @@ describe('처분 선별 — 생산 LOT (e2e)', () => {
     await app.close();
   });
 
-  it('⭐ 선별 — BOM 있는 생산 LOT 의 불량분이 BOM 을 그대로 가진 자식 LOT 으로 갈리고 재고·부적합이 따라간다', async () => {
-    const { lotId, lotNo } = await productionLot(100, 'DEFECTIVE', { stock: 100 });
+  it('⛔ R14a-1 선별 — 생산 LOT 부적합에는 선별이 없어 400 이고 아무것도 갈리지 않는다(FR-038)', async () => {
+    const { lotId } = await productionLot(100, 'DEFECTIVE', { stock: 100 });
     const nc = await nonconformance(lotId, 100, 'DEFECTIVE');
 
     const response = await decide(nc, {
       dispositionTypeCode: 'SORT', decisionQty: 100, acceptedQty: 70, rejectedQty: 30, businessDate: DAY,
-    }).expect(201);
+    }).expect(400);
 
-    const child = await prisma.lot.findFirstOrThrow({ where: { parent_lot_id: lotId } });
-    expect(response.body.sortResult).toMatchObject({ splitLotId: Number(child.lot_id), splitLotNo: `${lotNo}-S1` });
-    // ⭐ ck_lot_bom_snapshot — id 와 버전이 짝으로 옮겨 간다(41eab06).
-    expect(child).toMatchObject({
-      lot_no: `${lotNo}-S1`, bom_id: ids.bom, bom_version: ids.bomVersion, status_code: 'DEFECTIVE',
-      source_type_code: 'LOT_SPLIT', source_id: lotId,
-    });
-    expect(await lotStatus(lotId)).toBe('NORMAL');
-
-    // 같은 위치에서 30 이 원 LOT → 자식 LOT 으로 — 위치 합은 그대로 100 이다.
-    expect(await onHand(lotId)).toBe(70);
-    expect(await onHand(child.lot_id)).toBe(30);
-    const relation = await prisma.lot_relation.findFirstOrThrow({ where: { source_lot_id: lotId, target_lot_id: child.lot_id } });
-    expect(relation).toMatchObject({ relation_type_code: 'SPLIT' });
-    expect(Number(relation.relation_qty)).toBe(30);
-
-    const transitions = await prisma.lot_status_event.findMany({
-      where: { lot_id: { in: [lotId, child.lot_id] }, transition_code: { in: ['C23', 'C24'] } },
-      select: { lot_id: true, transition_code: true },
-    });
-    expect(transitions).toEqual(expect.arrayContaining([
-      { lot_id: lotId, transition_code: 'C23' },
-      { lot_id: child.lot_id, transition_code: 'C24' },
-    ]));
-
-    // 불량분은 새 부적합(판정 대기)으로 — 다음 처분이 원 LOT(양품)을 건드리지 않는다.
-    const split = await prisma.nonconformance_lot.findFirstOrThrow({
-      where: { lot_id: child.lot_id }, select: { affected_qty: true, nonconformance: { select: { status_code: true, nonconformance_id: true } } },
-    });
-    expect(split.nonconformance.status_code).toBe('PENDING_DECISION');
-    expect(Number(split.affected_qty)).toBe(30);
-    expect(response.body.sortResult.splitNonconformanceId).toBe(Number(split.nonconformance.nonconformance_id));
-    // 원 부적합은 다 판정돼 닫힌다.
-    expect((await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: nc } })).status_code).toBe('DECIDED');
+    expect(JSON.stringify(response.body)).toContain('선별이 없습니다');
+    expect(await prisma.lot.count({ where: { parent_lot_id: lotId } })).toBe(0);
+    expect(await lotStatus(lotId)).toBe('DEFECTIVE');
+    expect(await onHand(lotId)).toBe(100);
+    expect((await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: nc } })).status_code).not.toBe('DECIDED');
   });
 
   it('⛔ 선별 — 양품 + 불량 ≠ 판정 수량이면 400 이고 아무것도 갈리지 않는다', async () => {
@@ -118,7 +88,7 @@ describe('처분 선별 — 생산 LOT (e2e)', () => {
       dispositionTypeCode: 'SORT', decisionQty: 60, acceptedQty: 40, rejectedQty: 20, businessDate: DAY,
     }).expect(400);
 
-    expect(JSON.stringify(response.body)).toContain('남은 수량 전체');
+    expect(JSON.stringify(response.body)).toContain('선별이 없습니다');
     expect(await prisma.lot.count({ where: { parent_lot_id: lotId } })).toBe(0);
     expect(await lotStatus(lotId)).toBe('DEFECTIVE');
     expect(await onHand(lotId)).toBe(100);

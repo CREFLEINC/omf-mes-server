@@ -5,18 +5,16 @@ import { ConflictException, ContractException, ERROR_CODE, field, one } from '..
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { LotHoldService, LotQualityStatusService, Tx } from '../../core/lot';
-import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { reopenIqcRequestForReworkWithin } from '../inspection/inspection-request-reopen';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
 import { dispositionByIdQuery } from './disposition-query';
-import { assertSortFitsTarget, assertSortShape, DispositionSortService, SORT, type SortQuantities, type SortResult } from './disposition-sort';
 import { releaseInspectionHoldsWithin } from './disposition-hold-release';
 import { dispositionProgressCode, remainingSummary } from './disposition-rollup';
 import { DispositionDecisionRow, DispositionDecisionView, dispositionDecisionView } from './disposition-view';
 
 /** 계약 `DispositionDecisionCreate` — required 4 · 프로퍼티 4(**전건 필수**). */
-export interface DispositionDecisionCreate extends SortQuantities {
+export interface DispositionDecisionCreate {
   dispositionTypeCode: string;
   decisionQty: number;
   uomId: number;
@@ -33,6 +31,7 @@ const MOVE_ACTION: Readonly<Record<string, string>> = { REWORK: 'disposition-rew
 const SOURCE_TYPE = 'DISPOSITION_DECISION';
 const STATUS_COLUMN = 'quality.nonconformance.status_code';
 const DECIDED = 'DECIDED';
+const SORT = 'SORT';
 
 /** 잠금 «안»에서 한 번에 읽는 판정의 원천. */
 interface Target {
@@ -60,8 +59,6 @@ export class DispositionWriteService {
     private readonly prisma: PrismaService,
     private readonly documentState: DocumentStateService,
     private readonly lots: LotQualityStatusService,
-    private readonly sorts: DispositionSortService,
-    private readonly numbering: NumberingService,
     private readonly holds: LotHoldService,
   ) {}
 
@@ -77,28 +74,20 @@ export class DispositionWriteService {
     version: number,
     body: DispositionDecisionCreate,
     appUserId: number,
-  ): Promise<{ view: DispositionDecisionView & { sortResult?: SortResult | null }; versionNo: number }> {
+  ): Promise<{ view: DispositionDecisionView; versionNo: number }> {
     const id = BigInt(nonconformanceId);
     const decidedAt = new Date();
-    const isSort = body.dispositionTypeCode === SORT;
-    // 형식 검사가 채번 «앞»이다 — 400 이 될 저장에 번호를 태우지 않는다(#108 리뷰 m4).
-    if (isSort) assertSortShape(body);
-    // ⛔ 채번은 트랜잭션을 «열기 전»이다(코어 규약) — 선별 불량분이 열 부적합의 번호다.
-    const splitNonconformanceNo = isSort && (body.rejectedQty ?? 0) > 0
-      ? await this.numbering.next('NONCONFORMANCE', null, decidedAt.toISOString().slice(0, 10))
-      : null;
+    if (body.dispositionTypeCode === SORT) await this.refuseSort(id);
     return this.prisma.$transaction(async (tx) => {
       const locked = await lockNonconformance(tx, id);
       const target = await readTarget(tx, id);
       // ⛔ `decisionQty > 0` 과 `dispositionTypeCode` enum 은 **계약 가드가 이미** 400 을 낸다(R-15).
       assertShape(body, target);
-      if (isSort) assertSortFitsTarget(body, target.lotIds.length, target.uomScale);
       // 계약 「409 는 둘이다 — 남은 수량을 넘길 때, 그리고 이미 닫힌 부적합일 때」.
       if (locked.status_code === DECIDED) {
         throw new ConflictException('user', '이미 종결된 부적합이라 판정을 저장할 수 없습니다.', { code: INVALID_STATE });
       }
       assertWithinRemaining(body, target);
-      if (isSort) assertSortWholeRemaining(body, target);
 
       // ⛔ `decidedBy`·`decidedAt` 은 서버가 채운다(B-6). `approval_request_id` 는 비운다(결재 0).
       const decision = await tx.disposition_decision.create({
@@ -117,13 +106,7 @@ export class DispositionWriteService {
       // ⭐ **이 부적합의 `nonconformance_lot` 전건**을 옮긴다. 부분 처분이면 매 판정마다 돌아
       //    **마지막 판정의 도착 상태가 남는다**(§0 판정 #2).
       // ⛔ `ctx.transitionCode` 를 안 넘긴다 — 전이표가 코드를 가진 자리라 죽은 인자다(R-1 ⓑ).
-      const sortResult = isSort
-        ? await this.sorts.applyWithin(tx, body, {
-          nonconformanceId: id, decisionId: decision.disposition_decision_id, lotIds: target.lotIds,
-          decisionQty: body.decisionQty, uomId: target.uomId, uomScale: target.uomScale, reason: body.reason,
-          appUserId, decidedAt, splitNonconformanceNo,
-        })
-        : await this.moveLots(tx, id, target.lotIds, body, decision.disposition_decision_id, appUserId, decidedAt);
+      await this.moveLots(tx, id, target.lotIds, body, decision.disposition_decision_id, appUserId, decidedAt);
       // ⭐ 종결 판정이 전이 «뒤»다 — LOT 이 못 움직이면 부적합을 닫지 않는다. 「남은 수량 0」의
       //    정의도 조회와 한 함수다(계약 `dispositionProgressCode.COMPLETED`).
       const closing = dispositionProgressCode(
@@ -149,11 +132,26 @@ export class DispositionWriteService {
       const built = dispositionByIdQuery(Number(decision.disposition_decision_id));
       const rows = await tx.$queryRawUnsafe<DispositionDecisionRow[]>(built.sql, ...built.params);
       const view = dispositionDecisionView(rows[0]).view;
-      return { view: isSort ? { ...view, sortResult } : view, versionNo: locked.version_no + 1 };
+      return { view, versionNo: locked.version_no + 1 };
     });
   }
 
-  /** 정상·재작업·폐기 — 부적합의 LOT 전부를 처분 전이로 옮긴다. 선별은 `DispositionSortService` 가 맡는다. */
+  /**
+   * 수량으로 LOT 을 나누는 선별은 없어졌다(FR-038 · R-14a). 반품·OQC 부적합(입하 LOT 없음)에는 선별이 없다. 자재 입하 IQC 부적합의
+   * 선별(불량 자재 관리 LOT 분리 — R-14b)은 아직 열지 않았다. 존재(404)를 먼저 본다.
+   */
+  private async refuseSort(id: bigint): Promise<never> {
+    const nc = await this.prisma.nonconformance.findUnique({
+      where: { nonconformance_id: id }, select: { inspection_request: { select: { inspection_type_code: true } } },
+    });
+    if (nc === null) throw new NotFoundException('없는 부적합입니다.');
+    const message = nc.inspection_request?.inspection_type_code === 'IQC'
+      ? '수량으로 LOT 을 나누는 선별은 지원하지 않습니다.'
+      : '반품·OQC 부적합에는 선별이 없습니다.';
+    throw new ContractException(HttpStatus.BAD_REQUEST, [field('dispositionTypeCode', ERROR_CODE.INVALID, message)]);
+  }
+
+  /** 정상·재작업·폐기 — 부적합의 LOT 전부를 처분 전이로 옮긴다. */
   private async moveLots(
     tx: Tx, nonconformanceId: bigint, lotIds: bigint[], body: DispositionDecisionCreate, decisionId: bigint,
     appUserId: number, decidedAt: Date,
@@ -259,18 +257,6 @@ function assertShape(body: DispositionDecisionCreate, target: Target): void {
  * 파싱하지 않는다」라 못 박아 구조화 칸으로 내린다(`W-03-10` §6). ⭐ 기준값이
  * `remainingSummary()` 가 낸 «그 값»이라 화면이 보는 수와 거절 기준이 한 자리에서 나온다.
  */
-/**
- * 선별은 부적합의 «남은 수량 전체»일 때만 한다(#108 리뷰 m3 · 담당자 결정 (a) · 장부 P-53). 일부만 선별하면
- * 원 LOT 이 정상(C23)으로 가면서 남은 판정 대상까지 정상이 된다 — LOT 하나를 수량으로 나눠 판정할 축이 없다.
- */
-function assertSortWholeRemaining(body: DispositionDecisionCreate, target: Target): void {
-  const { remainingQty } = remainingSummary(target.affectedQtyTotal, target.decidedQtyTotal, target.uomId);
-  if (new Prisma.Decimal(body.decisionQty).equals(remainingQty)) return;
-  throw new ContractException(HttpStatus.BAD_REQUEST, [
-    field('decisionQty', ERROR_CODE.INVALID, `선별은 부적합의 남은 수량 전체(${String(remainingQty)})로만 판정할 수 있습니다.`),
-  ]);
-}
-
 function assertWithinRemaining(body: DispositionDecisionCreate, target: Target): void {
   const summary = remainingSummary(target.affectedQtyTotal, target.decidedQtyTotal, target.uomId);
   if (new Prisma.Decimal(body.decisionQty).lessThanOrEqualTo(summary.remainingQty)) return;

@@ -159,7 +159,7 @@
      "quality"
     ],
     "summary": "특채 요청",
-    "description": "부적합의 불합격 LOT 을 조건부로 쓰겠다고 결재를 올린다. 특채(PENDING)와 결재 요청(approvalTypeCode=CONCESSION · 대상 NONCONFORMANCE)을 한 번에 만든다 — 승인은 W-03-09(POST /app/approval-requests/{id}:approve), 적용은 :apply 다. 사용 가능 수량은 그 부적합의 남은 수량 이하. 결재선이 없으면 400 ROUTE_NOT_FOUND. 근거: omf-all-around#84 (서버 선행 · 장부 P-79)",
+    "description": "부적합의 불합격 LOT 을 조건부로 쓰겠다고 결재를 올린다. 특채(PENDING)와 결재 요청(approvalTypeCode=CONCESSION · 대상 NONCONFORMANCE — 결재는 늘 1건)을 한 번에 만든다 — 승인은 W-03-09(POST /app/approval-requests/{id}:approve), 적용은 :apply 다. 사용 가능 수량은 그 부적합의 남은 수량과 같아야 한다(일부 특채 제거 — FR-038). lotId 를 비우면 부적합 LOT 마다 특채 행(lot_id = 그 LOT · approvedQty = 그 LOT 의 부적합 수량)이 같은 결재로 묶여 선다(D-14). 응답은 첫 행 + concessionIds(묶음 전부)·approvalRequestId. 결재선이 없으면 400 ROUTE_NOT_FOUND. 근거: omf-all-around#84 (서버 선행 · 장부 P-79) · 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -182,7 +182,7 @@
     ],
     "responses": {
      "201": {
-      "description": "요청됨",
+      "description": "요청됨 — 첫 특채 행 + concessionIds",
       "content": {
        "application/json": {
         "schema": {
@@ -241,7 +241,7 @@
      "quality"
     ],
     "summary": "특채 적용",
-    "description": "승인된 특채를 적용한다 — 한 트랜잭션에서 특채 APPROVED · 부적합에 처분 판정(CONCESSION) 1건 · LOT 정상(C25) · 수입검사 대기 보류 해제(CONCESSION_APPROVED). ⭐ 일부 특채(승인 수량 < 부적합의 남은 수량)면 LOT 을 나눈다 — 나머지는 선별처럼 자식 LOT(불량 · C24) + 새 부적합(판정 대기)으로 떼고, 판정 수량은 남은 수량 전체라 원 부적합이 닫힌다. 원 LOT 에 재고가 있으면 같은 위치에서 원장으로 나누므로 businessDate 가 필요하다(없으면 400 businessDate). LOT 이 여럿인 부적합 · 재고가 여러 위치인 LOT 은 일부 특채를 400 STATE_LOCKED 로 막는다. 결재가 진행 중이면 400 APPROVAL_IN_PROGRESS, 반려면 특채를 REJECTED 로 닫고 200(statusCode=REJECTED · LOT 은 그대로). 이미 적용·반려된 특채는 400 STATE_LOCKED. 근거: omf-all-around#84 · #207 (장부 P-79)",
+    "description": "승인된 특채를 적용한다 — 묶음(같은 부적합 · 같은 결재) 중 어느 행으로 불러도 묶음의 PENDING 행 «전부»를 한 트랜잭션에서: 행마다 APPROVED · 부적합에 처분 판정(CONCESSION) 1건(수량 = 행 합계 = 남은 수량) · 묶음 LOT 전부 정상(C25 · 원천은 그 LOT 의 특채 행) · 수입검사 대기 보류 해제(CONCESSION_APPROVED) · 부적합 닫힘. 승인 수량 합이 적용 시점의 남은 수량보다 크면(요청 뒤 다른 처분이 먼저 수량을 씀) 400 approvedQty, 작으면(일부 수량으로 요청한 옛 특채) 409 「일부 특채는 지원하지 않습니다」 — 반려한 뒤 남은 수량 전체로 다시 요청한다(R-14a). 나머지를 자식 LOT 으로 떼는 동작은 없어졌다(splitResult 는 늘 null). 결재가 진행 중이면 400 APPROVAL_IN_PROGRESS, 반려면 묶음을 REJECTED 로 닫고 200(statusCode=REJECTED · LOT 은 그대로). 이미 적용·반려된 특채(묶음의 두 번째 적용 포함)는 409. 근거: omf-all-around#84 · #207 (장부 P-79) · 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
     "parameters": [
      {
       "name": "concessionId",
@@ -274,7 +274,7 @@
     ],
     "responses": {
      "200": {
-      "description": "적용됨",
+      "description": "적용됨 — 그 행 + concessionIds(적용한 묶음)",
       "content": {
        "application/json": {
         "schema": {
@@ -284,7 +284,7 @@
       }
      },
      "400": {
-      "description": "검증 실패 · 승인 전 · 이미 적용·반려됨",
+      "description": "검증 실패 · 승인 전 · 남은 수량 초과",
       "content": {
        "application/json": {
         "schema": {
@@ -315,6 +315,16 @@
      },
      "404": {
       "description": "없는 특채",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "이미 적용·반려된 특채(STATE_LOCKED) · 일부 수량 특채(옛 요청 — STATE_LOCKED 「일부 특채는 지원하지 않습니다」). 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
       "content": {
        "application/json": {
         "schema": {
@@ -3569,7 +3579,7 @@
      "quality"
     ],
     "summary": "처분 판정 저장",
-    "description": "W-03-10 「판정 저장」. 부적합 하나를 수량으로 갈라 여러 번 부를 수 있다 — 일부 재작업 · 일부 폐기가 성립한다. ⭐ 판정 저장과 Lot Status 전이는 한 트랜잭션이다(공유계약 B-8) — 처분만 남고 LOT 이 안 바뀌면 다음 화면이 잘못된 대상을 집는다. 근거: W-03-10 §5-1·§5-2 · DR-008 확정 3-A ⭐ 도착 상태는 처분에 따라 갈린다 — 재작업 → INSPECTION_PENDING(검사 대기) · 폐기 → SCRAPPED(폐기) · 정상 → NORMAL(정상). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 가 갖는다. ⭐ If-Match 값은 이 경로의 GET 이 아니라 부적합 상세(GET /quality/nonconformances/{nonconformanceId} · 제품출하 계약)의 ETag 를 담는다 — 잠그는 대상이 처분 결정 한 건이 아니라 부적합이기 때문이다. ⛔ 이 경로의 목록 GET 에는 ETag 가 없다.",
+    "description": "W-03-10 「판정 저장」. 부적합 하나를 수량으로 갈라 여러 번 부를 수 있다 — 일부 재작업 · 일부 폐기가 성립한다. ⭐ 판정 저장과 Lot Status 전이는 한 트랜잭션이다(공유계약 B-8) — 처분만 남고 LOT 이 안 바뀌면 다음 화면이 잘못된 대상을 집는다. 근거: W-03-10 §5-1·§5-2 · DR-008 확정 3-A ⭐ 도착 상태는 처분에 따라 갈린다 — 재작업 → INSPECTION_PENDING(검사 대기) · 폐기 → SCRAPPED(폐기) · 정상 → NORMAL(정상). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 가 갖는다. ⭐ If-Match 값은 이 경로의 GET 이 아니라 부적합 상세(GET /quality/nonconformances/{nonconformanceId} · 제품출하 계약)의 ETag 를 담는다 — 잠그는 대상이 처분 결정 한 건이 아니라 부적합이기 때문이다. ⛔ 이 경로의 목록 GET 에는 ETag 가 없다. ⭐ 판정 하나가 부적합의 LOT 전부(자재 입하 IQC 부적합이면 입하 LOT 의 자재 관리 LOT 전부)를 옮긴다(FR-031). ⛔ SORT 는 400(dispositionTypeCode INVALID) — 옛 수량 분할 선별 본문(acceptedQty·rejectedQty·businessDate)은 없어졌고(FR-038), 반품·OQC 부적합에는 선별이 없다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5598,13 +5608,12 @@
     "type": "object",
     "required": [
      "nonconformanceId",
-     "lotId",
      "approvedQty",
      "uomId",
      "validFrom",
      "reason"
     ],
-    "description": "특채 요청 본문(서버 선행 · 장부 P-79 · omf-all-around#84).",
+    "description": "특채 요청 본문(서버 선행 · 장부 P-79 · omf-all-around#84). 특채는 부적합의 남은 수량 «전부»다(일부 특채 제거 — FR-038). 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
     "properties": {
      "nonconformanceId": {
       "type": "integer",
@@ -5613,12 +5622,12 @@
      "lotId": {
       "type": "integer",
       "format": "int64",
-      "description": "그 부적합의 LOT 이어야 한다."
+      "description": "비우면 부적합 LOT 전부 — 부적합 LOT 마다 특채 행 하나(approvedQty 는 그 LOT 의 부적합 수량)를 같은 결재로 묶어 만든다. 주면 그 부적합의 LOT 이어야 하고 LOT 이 하나인 부적합만(여럿이면 400 lotId). LOT 이 여럿인데 처분 판정이 이미 있으면(LOT 마다 나눌 근거가 없음) 400 STATE_LOCKED. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254"
      },
      "approvedQty": {
       "type": "number",
       "exclusiveMinimum": 0,
-      "description": "사용 가능 수량 — 그 부적합의 남은 수량 이하."
+      "description": "사용 가능 수량 — 그 부적합의 남은 수량과 같아야 한다(다르면 400 approvedQty — 일부 특채는 지원하지 않는다). 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254"
      },
      "uomId": {
       "type": "integer",
@@ -5667,12 +5676,12 @@
    },
    "ConcessionApply": {
     "type": "object",
-    "description": "특채 적용 본문(선택 · omf-all-around#207).",
+    "description": "특채 적용 본문(선택). businessDate 는 일부 특채가 없어져(FR-038) 쓰지 않는다 — 보내도 형식만 본다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
     "properties": {
      "businessDate": {
       "type": "string",
       "format": "date",
-      "description": "원장 영업일(C-8) — 일부 특채로 재고가 있는 LOT 을 나눌 때만 쓴다. 화면은 늘 보낸다.",
+      "description": "쓰지 않는다(옛 화면 호환 — 날짜 형식만 본다). 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
       "example": "2026-11-03"
      }
     }
@@ -5787,7 +5796,7 @@
        "object",
        "null"
       ],
-      "description": "적용(:apply) «응답»에만 — 일부 특채로 LOT 을 나눴을 때 떼어 낸 자식 LOT 과 새 부적합. 나누지 않았으면 null. 조회 응답에는 없다. 근거: omf-all-around#207",
+      "description": "적용(:apply) «응답»에만 — 늘 null 이다(일부 특채·나머지 분리 삭제, FR-038). 옛 화면 호환으로 남긴다. 조회 응답에는 없다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
       "required": [
        "splitLotId",
        "splitLotNo",
@@ -5810,6 +5819,14 @@
         "type": "string"
        }
       }
+     },
+     "concessionIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "요청(POST)·적용(:apply) «응답»에만 — 같은 요청으로 태어난 묶음(같은 nonconformanceId + 같은 approvalRequestId)의 특채 id 전부(오름차순). LOT 이 하나인 부적합이면 [concessionId]. 조회 응답에는 없다 — 묶음은 approvalRequestId 로 알아본다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254"
      }
     },
     "required": [
@@ -6191,7 +6208,7 @@
        "object",
        "null"
       ],
-      "description": "SORT 판정 «등록 응답»에만 — 불량분이 없으면 null. 서버 선행 P-53",
+      "description": "내지 않는다 — 수량 분할 선별이 없어졌다(FR-038). 옛 화면 호환으로 남긴다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
       "required": [
        "splitLotId",
        "splitLotNo",
@@ -6273,7 +6290,7 @@
     "properties": {
      "dispositionTypeCode": {
       "type": "string",
-      "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31)",
+      "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31) ⛔ SORT(선별)는 지금 400 이다 — 수량으로 LOT 을 나누는 옛 선별은 없어졌고(FR-038), 반품·OQC 부적합에는 선별이 없다. 자재 입하 IQC 부적합의 선별(불량 자재 관리 LOT 분리 — R-14b)은 뒤 단계에서 연다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
       "enum": [
        "REWORK",
        "SCRAP",
@@ -6301,21 +6318,6 @@
       "minLength": 1,
       "description": "⭐ 비울 수 없다 — 남이 읽고 판단할 자유 텍스트라 화면이 필수로 만든다. 왜 그렇게 정했는지가 근거로 남는다. 공백만 있는 문자열도 받지 않는다(공유계약 A-12 — 같은 계약의 NonconformanceCreate.description 과 같은 처리)",
       "example": "변형 손상이 커 재작업으로 회복되지 않는다"
-     },
-     "acceptedQty": {
-      "type": "number",
-      "minimum": 0,
-      "description": "SORT 만 — 양품 수량. acceptedQty + rejectedQty = decisionQty. 서버 선행 P-53"
-     },
-     "rejectedQty": {
-      "type": "number",
-      "minimum": 0,
-      "description": "SORT 만 — 불량 수량. 0 보다 크면 원 LOT 에서 자식 LOT(원번호-S{n})을 떼어 불량으로 보내고 그 수량으로 새 부적합(판정 대기)을 연다. 서버 선행 P-53"
-     },
-     "businessDate": {
-      "type": "string",
-      "format": "date",
-      "description": "SORT 만 — 불량분 재고를 옮기는 원장의 업무 일자(공유계약 C-8 — 클라이언트가 보낸다). 서버 선행 P-53"
      }
     },
     "required": [
