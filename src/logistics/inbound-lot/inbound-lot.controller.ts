@@ -14,6 +14,9 @@ import { InboundLotCloseReceipt, InboundLotCloseService, InboundLotClosedView } 
 import { InboundLotDetailView, InboundLotQuery, InboundLotQueryService } from './inbound-lot-query.service';
 import { InboundLotReopenReceipt, InboundLotReopenService } from './inbound-lot-reopen.service';
 import { InboundLotReceive, InboundLotReceiveResult, InboundLotReceiveService } from './inbound-lot-receive.service';
+import {
+  InboundLotSplitLots, InboundLotSplitPreviewView, InboundLotSplitResultView, InboundLotSplitService,
+} from './inbound-lot-split.service';
 import { InboundLotView } from './inbound-lot-view';
 
 const RECEIVE = 'POST /logistics/inbound-lots:receive';
@@ -21,8 +24,9 @@ const UNREGISTER = 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots'
 const SUPPLIER_LOT_NO = 'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no';
 const CLOSE_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:close-receipt';
 const REOPEN_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt';
+const SPLIT_LOTS = 'POST /logistics/inbound-lots/{inboundLotId}:split-lots';
 
-/** 입하 LOT — 조회(§2)·PDA 받기·해제·공급사 LOT·마감·마감 취소(§3). 피처 005 · 화면 M-01-01·M-01-03·W-01-16·W-01-01. */
+/** 입하 LOT — 조회(§2)·PDA 받기·해제·공급사 LOT·마감·마감 취소·자재 관리 LOT 분리(§3). 피처 005 · 화면 M-01-01·M-01-03·W-01-16·W-01-01. */
 @Controller('logistics')
 export class InboundLotController {
   constructor(
@@ -31,6 +35,7 @@ export class InboundLotController {
     private readonly queries: InboundLotQueryService,
     private readonly closer: InboundLotCloseService,
     private readonly reopener: InboundLotReopenService,
+    private readonly splitter: InboundLotSplitService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -99,5 +104,25 @@ export class InboundLotController {
   ): Promise<InboundLotView> {
     const actor = logisticsWriteActorOf(request, REOPEN_RECEIPT);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) => this.reopener.reopen(tx, inboundLotId, body, actor));
+  }
+
+  @Get('inbound-lots/:inboundLotId/split-preview')
+  @Contract('GET /logistics/inbound-lots/{inboundLotId}/split-preview')
+  splitPreview(
+    @Param('inboundLotId', ParseIntPipe) inboundLotId: number,
+    @Query('lotIds') lotIds: unknown,
+  ): Promise<InboundLotSplitPreviewView> {
+    // 계약 검사가 쉼표 목록·반복 키를 정수 배열로 이미 맞췄다.
+    return this.splitter.preview(inboundLotId, [lotIds].flat().map(Number));
+  }
+
+  @Post('inbound-lots/:inboundLotId\\:split-lots')
+  @Contract(SPLIT_LOTS)
+  splitLots(
+    @Req() request: Request,
+    @Param('inboundLotId', ParseIntPipe) inboundLotId: number,
+    @Body() body: InboundLotSplitLots,
+  ): Promise<InboundLotSplitResultView> {
+    return this.splitter.split(request, inboundLotId, body, logisticsWriteActorOf(request, SPLIT_LOTS));
   }
 }
