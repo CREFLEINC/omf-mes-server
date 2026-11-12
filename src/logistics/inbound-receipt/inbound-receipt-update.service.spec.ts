@@ -383,6 +383,29 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
       code: ERROR_CODE.QTY_EXCEEDS_ORDERED,
     });
   });
+
+  describe('SC-003 입하 LOT 에 속한 줄 — 수량은 받기·해제로만 바뀐다(피처 005 R-5a)', () => {
+    const inLot = (index: number) => ({ ...EXISTING[index], inbound_lot: { inbound_lot_id: 7n } });
+
+    it('SC-003 수량을 바꾸면 409 STATE_LOCKED 이고 P/O 받은 수량을 건드리지 않는다', async () => {
+      const { service, recorded } = fake({ existing: [inLot(0)] as unknown as typeof EXISTING });
+
+      const error = await thrown(() => service.replaceLines(500, 1, [item({ receivedQty: 12 })], 99));
+
+      expect((error as ContractException).getStatus()).toBe(409);
+      expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.STATE_LOCKED });
+      expect(recorded.increments).toEqual([]);
+    });
+
+    it('SC-003 지워도 409 STATE_LOCKED 다', async () => {
+      const { service, recorded } = fake({ existing: [EXISTING[0], inLot(1)] as unknown as typeof EXISTING });
+
+      const error = await thrown(() => service.replaceLines(500, 1, [item()], 99));
+
+      expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.STATE_LOCKED });
+      expect(recorded.deleted).toEqual([]);
+    });
+  });
 });
 
 const thrown = (run: () => Promise<unknown>): Promise<unknown> =>

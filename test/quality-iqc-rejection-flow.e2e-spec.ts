@@ -1,7 +1,8 @@
 /**
  * IQC 불합격 → 처분(재작업) → 재검사 → 입고 (e2e · omf-all-around#106).
  *
- * 실제 API 로 잇는다 — LOT 등록(P-01-01) · 판정(W-01-01) · 처분(W-03-10) · 입고(W-01-10).
+ * 실제 API 로 잇는다 — 자재 관리 LOT 발행(W-01-14) · 받기(M-01-01) · 입하 마감(→ 입하 LOT IQC 요청) · 판정(W-01-01) ·
+ * 처분(W-03-10) · 입고(W-01-10). 옛 LOT 등록(`POST /trace/lots`)은 닫혔다(피처 005 FR-036).
  *
  * 걸리는 규칙: #100(합격 전 입고 차단 · 불합격은 불량창고로만) · #106(불합격 사유 필수 · 부적합 자동 등록 P-41 ·
  * 재작업이 의뢰를 다시 연다 P-43 · 처분 전 재검사 차단) · #121(확정이 사유를 갈아 끼운다 P-47) · #122(임시 저장이 사유를 남긴다 P-48).
@@ -16,6 +17,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
+import { Authorize, InboundLotFixture, closeInboundLotFixture, issueAndReceive } from './support/inbound-lot-fixture';
 
 const LOGIN_ID = 'e2e-iqc-flow';
 const PASSWORD = 'IQC-흐름-비밀번호';
@@ -25,7 +27,8 @@ const SUPPLIER_CODE = 'IQCFLOW-SUP';
 const DEFECT_CODE = 'IQCFLOW-DEF';
 const ROLE = 'E2E_IQC_FLOW';
 // W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스). W-04-11 — 재고 재등록(#108 리뷰 M1).
-const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06', 'W-04-11'];
+// W-01-14·M-01-01 — 입하 LOT 픽스처의 자재 관리 LOT 발행·받기(피처 005).
+const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06', 'W-04-11', 'W-01-14', 'M-01-01'];
 const DAY = '2026-10-16';
 // 특채(#84 · 장부 P-79) — 요청·적용은 W-03-10, 결재는 W-03-09 를 가진 «다른» 계정이 한다.
 const APPROVER_LOGIN_ID = 'e2e-iqc-flow-approver';
@@ -47,8 +50,12 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   let defectWarehouseId: number;
   let defectLocationId: number;
   let defectCodeId: number;
+  let supplierId: number;
+  /** 가장 최근 `registerIqcLot` 의 입하 — 받기가 입하를 스스로 세운다. */
   let inboundReceiptId: bigint;
-  let lineNo = 0;
+  let legacySeq = 0;
+  let fx: InboundLotFixture;
+  const keys = new Set<string>();
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -60,6 +67,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     await makeMasters();
     await makeUser();
     await makeApprover();
+    const asUser: Authorize = (test) => test.set('Cookie', cookie);
+    fx = { app, issuer: asUser, receiver: asUser, businessDate: DAY, keys, inspector: asUser, prisma };
   });
 
   afterAll(async () => {
@@ -252,7 +261,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   });
 
   it('⭐ 재작업 → 검사 대기(보류 유지) → 재검 회차 합격 → 보류 해제 → 입고', async () => {
-    const { lotId, lineId, requestId, resultId } = await rejectedLot(10);
+    const { lotId, lineId, requestId, resultId } = await rejectedLot(10, true);
     const nc = await openNonconformance(lotId);
 
     expect(await requestStatus(requestId)).toBe('COMPLETED');
@@ -308,7 +317,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /* #122 · 장부 P-48 — 임시 저장이 사유를 그 회차의 불량 기록으로 갈아 끼우고, 확정 전 기록은 집계·기간 목록에 안 잡힌다. */
   it('⭐ 임시 저장한 불합격 사유가 다시 읽히고, 사유 없이 확정하면 그 사유로 확정된다', async () => {
-    const { lotId, requestId } = await registerIqcLot(10);
+    const { lotId, requestId } = await legacyIqcLot(10);
     const created = await request(app.getHttpServer())
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
@@ -377,7 +386,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /* #106 · 3단계 검증 — 처분(재작업) 없이 불합격 LOT 을 재검사하지 못한다. 작성중·확정 어느 쪽으로도 회차가 생기지 않는다. */
   it('⛔ 처분 전 불합격 LOT 에는 재검사 회차를 만들 수 없다 — LOT 은 불량 그대로, 의뢰도 완료 그대로', async () => {
-    const { lotId, requestId, resultId } = await rejectedLot(10);
+    const { lotId, requestId, resultId } = await rejectedLot(10, true);
     const reinspect = (statusCode: 'DRAFT' | 'CONFIRMED') =>
       request(app.getHttpServer())
         .post('/api/quality/inspection-results')
@@ -600,52 +609,72 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     return (response.body.items as { dispositionDecisionId: number }[]).map((row) => row.dispositionDecisionId);
   }
 
-  async function rejectedLot(qty: number) {
-    const lot = await registerIqcLot(qty);
+  async function rejectedLot(qty: number, legacy = false) {
+    const lot = legacy ? await legacyIqcLot(qty) : await registerIqcLot(qty);
     const resultId = await draft(lot.requestId, { acceptedQty: 0, rejectedQty: qty });
     await recordReason(resultId, qty);
     await confirm(resultId, 'REJECTED').expect(200);
     return { ...lot, resultId };
   }
 
-  /** IQC 대상 입하 라인 + LOT 등록(실제 API) — 검사기준이 없어도 기준 빈 의뢰가 선다(#101). */
+  /**
+   * IQC 대상 자재 관리 LOT 하나 — 발행 → 받기 → 입하 마감(실제 API). 마감이 입하 LOT 단위 IQC 요청을 세운다
+   * (검사기준이 없어도 기준 빈 요청이 선다 · #101). 줄은 그 LOT 의 원천 입하 줄이다.
+   */
   async function registerIqcLot(qty: number): Promise<{ lotId: number; lineId: number; requestId: number }> {
-    lineNo += 1;
-    const line = await prisma.inbound_receipt_line.create({
+    const { inboundLot, lots } = await issueAndReceive(fx, { plantId, supplierId, itemId, lotQty: qty, lotCount: 1 });
+    const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
+    if (closed.iqcRequestId === null) throw new Error('입하 마감이 IQC 요청을 세우지 않았다 — 검사 필요 품목이어야 한다');
+    const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lots[0].lotId) }, select: { source_id: true } });
+    const line = await prisma.inbound_receipt_line.findUniqueOrThrow({
+      where: { inbound_receipt_line_id: lot.source_id }, select: { inbound_receipt_id: true },
+    });
+    inboundReceiptId = line.inbound_receipt_id;
+    return { lotId: lots[0].lotId, lineId: Number(lot.source_id), requestId: closed.iqcRequestId };
+  }
+
+  /**
+   * 옛 LOT 등록(이제 닫힘 · FR-036)이 쓰던 이전 데이터 모양 — 입하 줄 + 검사 대기 LOT + 수입검사 대기 보류 + LOT 단위 IQC 요청 + 줄 `lot_id`.
+   * ⚠ 재작업의 요청 다시 열기·불량 기록의 LOT·처분 전 재검사 가드가 아직 요청의 `lot_id` 로만 걸려 입하 LOT 단위 요청(`lot_id` 없음)에는
+   * 서지 않는다 — 그 셋을 보는 시험만 이 모양으로 잰다(입하 LOT 요청으로 옮기는 일은 S9 · D-10·D-11).
+   */
+  async function legacyIqcLot(qty: number): Promise<{ lotId: number; lineId: number; requestId: number }> {
+    legacySeq += 1;
+    const at = new Date(`${DAY}T02:00:00.000Z`);
+    const receipt = await prisma.inbound_receipt.create({
       data: {
-        inbound_receipt_id: inboundReceiptId,
-        line_no: lineNo,
-        item_id: BigInt(itemId),
-        received_qty: qty,
-        uom_id: BigInt(uomId),
-        supplier_lot_label_attached: false,
-        inspection_required: true,
+        inbound_receipt_no: `${PREFIX}-IR-L${legacySeq}`, supplier_id: BigInt(supplierId), plant_id: BigInt(plantId), receipt_datetime: at,
         status_code: 'REGISTERED',
       },
     });
-    const created = await request(app.getHttpServer())
-      .post('/api/trace/lots')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({
-        itemId,
-        lotTypeCode: 'MATERIAL',
-        plantId,
-        initialQty: qty,
-        uomId,
-        sourceTypeCode: 'INBOUND_RECEIPT_LINE',
-        sourceId: Number(line.inbound_receipt_line_id),
-        numberSourceCode: 'MES',
-        businessDate: DAY,
-        occurredAt: `${DAY}T02:00:00.000Z`,
-      })
-      .expect(201);
-    const lotId = created.body.lot.lotId as number;
-    const iqc = await prisma.inspection_request.findFirstOrThrow({
-      where: { lot_id: BigInt(lotId), inspection_type_code: 'IQC' },
-      select: { inspection_request_id: true },
+    const line = await prisma.inbound_receipt_line.create({
+      data: {
+        inbound_receipt_id: receipt.inbound_receipt_id, line_no: 1, item_id: BigInt(itemId), received_qty: qty, uom_id: BigInt(uomId),
+        supplier_lot_label_attached: false, inspection_required: true, status_code: 'REGISTERED',
+      },
     });
-    return { lotId, lineId: Number(line.inbound_receipt_line_id), requestId: Number(iqc.inspection_request_id) };
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LEGACY-${legacySeq}`, item_id: BigInt(itemId), lot_type_code: 'MATERIAL', plant_id: BigInt(plantId), initial_qty: qty,
+        uom_id: BigInt(uomId), source_type_code: 'INBOUND_RECEIPT_LINE', source_id: line.inbound_receipt_line_id, status_code: 'INSPECTION_PENDING',
+      },
+    });
+    const user = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID }, select: { app_user_id: true } });
+    await prisma.lot_hold.create({
+      data: {
+        lot_id: lot.lot_id, reason_code: 'INCOMING_INSPECTION_WAIT', status_code: 'HELD', target_lot_status_code: 'INSPECTION_PENDING',
+        held_by: user.app_user_id, held_at: new Date(),
+      },
+    });
+    const iqc = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}-IQC-L${legacySeq}`, inspection_type_code: 'IQC', target_type_code: 'LOT', target_id: lot.lot_id,
+        item_id: BigInt(itemId), lot_id: lot.lot_id, target_qty: qty, uom_id: BigInt(uomId), status_code: 'REQUESTED', requested_at: at,
+      },
+    });
+    await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: line.inbound_receipt_line_id }, data: { lot_id: lot.lot_id } });
+    inboundReceiptId = receipt.inbound_receipt_id;
+    return { lotId: Number(lot.lot_id), lineId: Number(line.inbound_receipt_line_id), requestId: Number(iqc.inspection_request_id) };
   }
 
   async function draft(
@@ -857,13 +886,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     });
     defectLocationId = Number(defectLocation.location_id);
     const supplier = await prisma.partner.create({ data: { partner_code: SUPPLIER_CODE, partner_name: 'IQC흐름공급사' } });
-    const receipt = await prisma.inbound_receipt.create({
-      data: {
-        inbound_receipt_no: `${PREFIX}-IR`, supplier_id: supplier.partner_id, plant_id: plant.plant_id,
-        receipt_datetime: new Date(`${DAY}T02:00:00.000Z`), status_code: 'REGISTERED',
-      },
-    });
-    inboundReceiptId = receipt.inbound_receipt_id;
+    supplierId = Number(supplier.partner_id);
     const code = await prisma.defect_code.create({ data: { defect_code: DEFECT_CODE, defect_name: 'IQC흐름불량' } });
     defectCodeId = Number(code.defect_code_id);
     // 수입검사 공정은 시드가 세운다(`seedSystemProcesses`) — 없으면 불량 기록이 400 이다.
@@ -954,7 +977,15 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /** ⛔ 원장은 트리거가 행 삭제를 막아 TRUNCATE 뿐이다 — 재고 스위트들과 같은 이유다. */
   async function cleanup(): Promise<void> {
-    const lotsOfPlant = `SELECT lot_id FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
+    const plants = `SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`;
+    const lotsOfPlant = `SELECT lot_id FROM trace.lot WHERE plant_id IN (${plants})`;
+    // 입하 LOT 요청은 `lot_id` 가 비어 있다 — 품목으로 찾는다.
+    const requests = `SELECT inspection_request_id FROM quality.inspection_request WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code = '${ITEM_CODE}')`;
+    const receipts = `SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`;
+    const events = `SELECT notification_event_id FROM app.notification_event
+      WHERE (aggregate_type_code = 'INBOUND_RECEIPT' AND aggregate_id IN (${receipts}))
+         OR (aggregate_type_code = 'INSPECTION_REQUEST' AND aggregate_id IN (${requests}))
+         OR (aggregate_type_code = 'LOT' AND aggregate_id IN (${lotsOfPlant}))`;
     await prisma.$executeRawUnsafe(`TRUNCATE inventory.inventory_transaction_line, inventory.inventory_transaction CASCADE`);
     // 특채 결재(#84) — 특채가 결재 요청을 잡으므로 아래 목록보다 «먼저» 지운다.
     await prisma.$executeRawUnsafe(`DELETE FROM quality.concession WHERE lot_id IN (${lotsOfPlant})`);
@@ -979,6 +1010,9 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       await prisma.role.delete({ where: { role_id: approverRole.role_id } });
     }
     for (const sql of [
+      `DELETE FROM app.zalo_delivery WHERE notification_event_id IN (${events})`,
+      `DELETE FROM app.notification WHERE notification_event_id IN (${events})`,
+      `DELETE FROM app.notification_event WHERE notification_event_id IN (${events})`,
       `DELETE FROM logistics.stock_transfer_line WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM logistics.stock_transfer WHERE disposition_decision_id IN (SELECT disposition_decision_id FROM quality.disposition_decision WHERE nonconformance_id IN (SELECT nonconformance_id FROM quality.nonconformance_lot WHERE lot_id IN (${lotsOfPlant})))`,
       `DELETE FROM logistics.putaway_task WHERE lot_id IN (${lotsOfPlant})`,
@@ -989,15 +1023,23 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       `DELETE FROM quality.nonconformance_lot WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM quality.nonconformance WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code = '${ITEM_CODE}')`,
       `DELETE FROM quality.defect_record WHERE defect_code_id IN (SELECT defect_code_id FROM quality.defect_code WHERE defect_code = '${DEFECT_CODE}')`,
-      `DELETE FROM quality.inspection_result WHERE inspection_request_id IN (SELECT inspection_request_id FROM quality.inspection_request WHERE lot_id IN (${lotsOfPlant}))`,
-      `DELETE FROM quality.inspection_request WHERE lot_id IN (${lotsOfPlant})`,
+      `DELETE FROM quality.inspection_request_event WHERE inspection_request_id IN (${requests})`,
+      `DELETE FROM quality.inspection_result_lot WHERE inspection_result_id IN (SELECT inspection_result_id FROM quality.inspection_result WHERE inspection_request_id IN (${requests}))`,
+      `DELETE FROM quality.inspection_result WHERE inspection_request_id IN (${requests})`,
+      `DELETE FROM quality.inspection_request WHERE inspection_request_id IN (${requests})`,
+      `DELETE FROM trace.inbound_lot_event WHERE inbound_lot_id IN (SELECT inbound_lot_id FROM trace.inbound_lot WHERE plant_id IN (${plants}))`,
+      `DELETE FROM trace.lot_lifecycle_history WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM trace.lot_status_event WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM trace.lot_hold WHERE lot_id IN (${lotsOfPlant})`,
+      `DELETE FROM trace.lot_external_identifier WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM trace.lot_relation WHERE source_lot_id IN (${lotsOfPlant}) OR target_lot_id IN (${lotsOfPlant})`,
       `UPDATE logistics.inbound_receipt_line SET lot_id = NULL WHERE lot_id IN (${lotsOfPlant})`,
-      `DELETE FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`,
-      `DELETE FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%')`,
-      `DELETE FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%'`,
+      `DELETE FROM trace.lot WHERE plant_id IN (${plants})`,
+      `DELETE FROM trace.inbound_lot WHERE plant_id IN (${plants})`,
+      `DELETE FROM logistics.inbound_receipt_po_allocation WHERE inbound_receipt_line_id IN (SELECT inbound_receipt_line_id FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (${receipts}))`,
+      `DELETE FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (${receipts})`,
+      `DELETE FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`,
+      `DELETE FROM trace.material_lot_batch WHERE plant_id IN (${plants})`,
       `DELETE FROM quality.defect_code WHERE defect_code = '${DEFECT_CODE}'`,
       `DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.partner WHERE partner_code = '${SUPPLIER_CODE}'`,

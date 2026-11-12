@@ -53,6 +53,7 @@ export interface SupplierLabelCount {
 }
 
 const CANCEL_STATUSES = ['CANCELLED', 'CANCEL_REQUESTED'];
+const NEW_FLOW = 'ON_FINALIZE';
 const LABEL_TYPE = 'MATERIAL_LOT_LABEL';
 
 const LINE_SELECT = {
@@ -152,8 +153,17 @@ export class InboundReceiptLineListService {
   }
 }
 
+/**
+ * 새 흐름 줄(`ON_FINALIZE` 입하 LOT)은 뺀다 — 자재 관리 LOT 이 발행 묶음에서 라벨과 함께 서서 라벨 대기가 없다(피처 005 계약 §7).
+ * 이전 데이터 줄은 입하 LOT 이 없거나 마이그레이션이 붙인 `PER_RECEIPT` 입하 LOT 이다.
+ */
+const LEGACY_LINE: Prisma.inbound_receipt_lineWhereInput = {
+  OR: [{ inbound_lot: { is: null } }, { inbound_lot: { is: { erp_send_mode_code: { not: NEW_FLOW } } } }],
+};
+
 function whereOf(query: InboundReceiptLineListQuery): Prisma.inbound_receipt_lineWhereInput {
   return {
+    AND: [LEGACY_LINE],
     inbound_receipt: {
       status_code: { notIn: CANCEL_STATUSES },
       ...(query.supplierId === undefined ? {} : { supplier_id: query.supplierId }),

@@ -88,7 +88,7 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
       expect(rows[0].inspection).toMatchObject({ statusCode: 'REQUESTED', judgmentCode: null });
     });
 
-    it('D2-1 입하 상세·줄 목록·라벨 대기 목록이 500 없이 줄을 보인다', async () => {
+    it('D2-1 입하 상세·줄 목록이 500 없이 줄을 보이고, 새 흐름 줄은 라벨 대기 목록에서 빠진다(FR-036 · 계약 §7)', async () => {
       const detail = await get(`/api/logistics/inbound-receipts/${String(ids.receipt)}`).expect(200);
       const line = (detail.body.lines as { inboundReceiptLineId: number; lotId: number | null }[]).find(
         (row) => row.inboundReceiptLineId === Number(shape.lineId),
@@ -96,12 +96,10 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
       expect(line?.lotId).toBe(Number(shape.lotIds[0]));
 
       await get(`/api/logistics/inbound-receipts/${String(ids.receipt)}/lines`).expect(200);
-      // 라벨 발행 기록이 없는 LOT 이라 대기 목록에 온다 — 줄은 대표 자재 관리 LOT(가장 작은 id)을 싣는다.
+      // 라벨 발행 기록이 없어도 새 흐름(ON_FINALIZE) 줄은 라벨 대기가 아니다 — 자재 관리 LOT 은 발행 묶음이 라벨과 함께 세운다.
       const pending = await get('/api/logistics/inbound-receipt-lines').query({ labelIssued: 'false', q: PREFIX }).expect(200);
-      const row = (pending.body.items as { inboundReceiptLineId: number; lotId: number | null; lotNo: string | null }[]).find(
-        (item) => item.inboundReceiptLineId === Number(shape.lineId),
-      );
-      expect(row).toMatchObject({ lotId: Number(shape.lotIds[0]), lotNo: shape.lotNos[0] });
+      const row = (pending.body.items as { inboundReceiptLineId: number }[]).find((item) => item.inboundReceiptLineId === Number(shape.lineId));
+      expect(row).toBeUndefined();
     });
 
     it('D2-1 배정 화면·취소 판정·계보 조회가 500 없이 돈다', async () => {
@@ -341,24 +339,35 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
     return { lineId, inboundLotId: inboundLot.inbound_lot_id, lotIds, lotNos, requestId: req.inspection_request_id };
   }
 
-  /** 옛 경로(`POST /trace/lots`)로 LOT·IQC 요청을 만든다. `migrated` 면 마이그레이션 데이터 이전과 같은 칸을 채운다. */
+  /**
+   * 옛 경로(`POST /trace/lots` — 이제 닫힘 · FR-036)가 쓰던 모양 그대로 LOT·IQC 요청을 넣는다: 검사 대기 LOT + 수입검사 대기 보류 +
+   * LOT 단위 IQC 요청 + 줄 `lot_id`. `migrated` 면 마이그레이션 데이터 이전과 같은 칸을 채운다.
+   */
   async function oldShape(qty: number, migrated: boolean) {
     const lineId = await inboundLine(qty, false);
-    const created = await request(app.getHttpServer())
-      .post('/api/trace/lots')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({
-        itemId: Number(ids.item), lotTypeCode: 'MATERIAL', plantId: Number(ids.plant), initialQty: qty, uomId: Number(ids.uom),
-        sourceTypeCode: 'INBOUND_RECEIPT_LINE', sourceId: Number(lineId), numberSourceCode: 'MES',
-        businessDate: DAY, occurredAt: `${DAY}T02:00:00.000Z`,
-      })
-      .expect(201);
-    const lotId = created.body.lot.lotId as number;
-    const req = await prisma.inspection_request.findFirstOrThrow({
-      where: { lot_id: BigInt(lotId), inspection_type_code: 'IQC' },
+    seq += 1;
+    const at = new Date(`${DAY}T02:00:00.000Z`);
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-O${seq}`, item_id: ids.item, lot_type_code: 'MATERIAL', plant_id: ids.plant, initial_qty: qty, uom_id: ids.uom,
+        source_type_code: 'INBOUND_RECEIPT_LINE', source_id: lineId, status_code: 'INSPECTION_PENDING', created_by: userId,
+      },
+    });
+    const lotId = Number(lot.lot_id);
+    await prisma.lot_hold.create({
+      data: {
+        lot_id: lot.lot_id, reason_code: 'INCOMING_INSPECTION_WAIT', status_code: 'HELD', target_lot_status_code: 'INSPECTION_PENDING',
+        held_by: userId, held_at: at, created_by: userId,
+      },
+    });
+    const req = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}-IQC-${seq}`, inspection_type_code: 'IQC', target_type_code: 'LOT', target_id: lot.lot_id,
+        item_id: ids.item, lot_id: lot.lot_id, target_qty: qty, uom_id: ids.uom, status_code: 'REQUESTED', requested_at: at, created_by: userId,
+      },
       select: { inspection_request_id: true },
     });
+    await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: lineId }, data: { lot_id: lot.lot_id } });
     if (migrated) {
       const inboundLot = await prisma.inbound_lot.create({
         data: {

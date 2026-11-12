@@ -1,4 +1,7 @@
+import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+
+import { ContractException, ERROR_CODE } from '../../common/errors';
 
 /**
  * 입하 줄 ↔ 자재 LOT(피처 005). 새 흐름은 줄 하나에 LOT 이 여럿이고 `inbound_receipt_line.lot_id` 를 비운다 —
@@ -59,4 +62,15 @@ export function representativeLot<T>(lots: readonly T[] | undefined): T | null {
 export function inboundLineLotSql(lotAlias: string, lineAlias: string): string {
   return `(${lineAlias}.lot_id = ${lotAlias}.lot_id OR (${lineAlias}.lot_id IS NULL
     AND ${lotAlias}.source_type_code = '${INBOUND_RECEIPT_LINE_SOURCE}' AND ${lotAlias}.source_id = ${lineAlias}.inbound_receipt_line_id))`;
+}
+
+/**
+ * 옛 입하 쓰기(`POST /logistics/inbound-receipts`·`:split`·`:per-line`·입하 원천 `POST /trace/lots`)는 닫혔다 — 남겨 두면
+ * 「입하 줄 1 = LOT 1」 데이터가 계속 생긴다(피처 005 FR-036 · R-6). 멱등 처리 «안»에서 던진다: 닫기 전에 성공한 요청의
+ * 재전송(PDA 대기 전송)은 저장된 응답을 그대로 받는다.
+ */
+export function legacyInboundWriteClosed(): ContractException {
+  return new ContractException(HttpStatus.CONFLICT, [
+    { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '옛 입하 등록은 닫혔습니다. 입하 LOT 받기를 쓰세요.' },
+  ]);
 }

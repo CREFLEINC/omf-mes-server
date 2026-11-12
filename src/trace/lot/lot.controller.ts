@@ -22,6 +22,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { INBOUND_RECEIPT_LINE_SOURCE, legacyInboundWriteClosed } from '../../core/lot';
 import { LotComplete, LotCompleteService } from './lot-complete.service';
 import {
   LotExternalIdentifierService,
@@ -116,7 +117,7 @@ export class LotController {
   create(@Req() request: Request, @Body() body: LotCreate): Promise<unknown> {
     const actor = lotWriteActorOf(request, 'POST /trace/lots');
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.lots.create(body, actor),
+      body.sourceTypeCode === INBOUND_RECEIPT_LINE_SOURCE ? Promise.reject(legacyInboundWriteClosed()) : this.lots.create(body, actor),
     );
   }
 

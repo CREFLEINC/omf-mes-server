@@ -1,5 +1,4 @@
 import { logisticsAppUserId } from '../../auth/terminal-logistics-scope';
-import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
@@ -17,6 +16,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { Contract, ContractAlias } from '../../common/contract';
+import { legacyInboundWriteClosed } from '../../core/lot';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
@@ -26,24 +26,20 @@ import {
   InboundReceiptQuery,
   InboundReceiptQueryService,
 } from './inbound-receipt-query.service';
-import { InboundReceiptCreateInput, InboundReceiptLineWriteInput } from './inbound-receipt-rules';
+import { InboundReceiptLineWriteInput } from './inbound-receipt-rules';
 import {
   InboundReceiptLineListItem,
   InboundReceiptLineListQuery,
   InboundReceiptLineListService,
   SupplierLabelCount,
 } from './inbound-receipt-line-list.service';
-import { InboundReceiptPerLineService } from './inbound-receipt-per-line.service';
-import { InboundReceiptSplitInput, InboundReceiptSplitService } from './inbound-receipt-split.service';
 import { InboundReceiptUpdateInput, InboundReceiptUpdateService } from './inbound-receipt-update.service';
 import { InboundReceiptDetail, InboundReceiptLineView, InboundReceiptView } from './inbound-receipt-view';
-import { InboundReceiptService } from './inbound-receipt.service';
 
-/** 입하 조회 3 + 등록 1 + 수정 2 — 화면 `W-01-03`·`M-01-06`·`P-01-01`(조회) · `M-01-01`. */
+/** 입하 조회 3 + 수정 2 — 화면 `W-01-03`·`M-01-06`·`P-01-01`(조회). 등록은 닫혔다(`legacyInboundWriteClosed`). */
 @Controller('logistics/inbound-receipts')
 export class InboundReceiptController {
   constructor(
-    private readonly inboundReceipts: InboundReceiptService,
     private readonly queries: InboundReceiptQueryService,
     private readonly updates: InboundReceiptUpdateService,
     private readonly idempotency: IdempotencyService,
@@ -77,20 +73,8 @@ export class InboundReceiptController {
 
   @Post()
   @Contract('POST /logistics/inbound-receipts')
-  async create(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-    @Body() body: InboundReceiptCreateInput,
-  ): Promise<InboundReceiptDetail> {
-    // ⛔ `runVersioned` 가 아니다 — 계약의 `If-Match` 는 «선택»이고 새 자원을 만드는
-    //    POST 라 대조할 버전이 없다. 값이 실려 와도 무시한다(오프라인 큐는 토큰을 안
-    //    싣는다 · 공유계약 C-9 · I-3.md §6-3).
-    const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts');
-    const result = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.inboundReceipts.create(body, actor),
-    );
-    setEtag(response, result.versionNo);
-    return result.detail;
+  create(@Req() request: Request): Promise<never> {
+    return closed(this.idempotency, request);
   }
 
   @Put(':inboundReceiptId')
@@ -136,40 +120,24 @@ export class InboundReceiptController {
  */
 @Controller('logistics')
 export class InboundReceiptSplitController {
-  constructor(
-    private readonly splits: InboundReceiptSplitService,
-    private readonly idempotency: IdempotencyService,
-  ) {}
+  constructor(private readonly idempotency: IdempotencyService) {}
 
   @Post('inbound-receipts\\:split')
   @Contract('POST /logistics/inbound-receipts:split')
-  create(
-    @Req() request: Request,
-    @Body() body: InboundReceiptSplitInput,
-  ): Promise<{ created: InboundReceiptView[] }> {
-    // ⛔ `If-Match` 가 아예 없다 — 계약이 등록과 달리 이 경로에 파라미터를 안 걸었다(§6-3).
-    //    ETag 도 안 내린다(응답 헤더 선언 0건).
-    const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts:split');
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.splits.create(body, actor),
-    );
+  create(@Req() request: Request): Promise<never> {
+    return closed(this.idempotency, request);
   }
 }
 
-/** 줄마다 입하 한 건(장부 P-117) — 본문·권한·단말 범위는 입하 등록과 같다. */
+/** 줄마다 입하 한 건(장부 P-117) — 닫혔다. */
 @Controller('logistics')
 export class InboundReceiptPerLineController {
-  constructor(
-    private readonly perLine: InboundReceiptPerLineService,
-    private readonly idempotency: IdempotencyService,
-  ) {}
+  constructor(private readonly idempotency: IdempotencyService) {}
 
   @Post('inbound-receipts\\:per-line')
   @Contract('POST /logistics/inbound-receipts:per-line')
-  create(@Req() request: Request, @Body() body: InboundReceiptCreateInput): Promise<{ created: InboundReceiptDetail[] }> {
-    // 단말 감사·작업자 판정은 입하 등록 오퍼레이션 이름으로 남긴다 — 같은 화면·같은 권한이다.
-    const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts');
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.perLine.create(body, actor));
+  create(@Req() request: Request): Promise<never> {
+    return closed(this.idempotency, request);
   }
 }
 
@@ -192,6 +160,10 @@ export class InboundReceiptLineListController {
   supplierCounts(@Req() request: Request, @Query() query: InboundReceiptLineListQuery): Promise<{ items: SupplierLabelCount[] }> {
     return this.lineList.supplierCounts(plantQuery(query, request));
   }
+}
+
+function closed(idempotency: IdempotencyService, request: Request): Promise<never> {
+  return runIdempotent(idempotency, request, HttpStatus.CREATED, () => Promise.reject(legacyInboundWriteClosed()));
 }
 
 function userOf(request: Request): number {
