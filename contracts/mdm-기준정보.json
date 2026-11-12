@@ -8382,8 +8382,8 @@
     "tags": [
      "quality"
     ],
-    "summary": "버전 폐기",
-    "description": "확정 → 폐기. 폐기 후에는 되돌릴 수 없다. 상태≠확정이면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1 「폐기」 ⛔ 마지막 확정 버전을 폐기하면 「신규 버전」이 복사할 원본이 없어진다 — 그 화면 버튼은 항상 켜져 있으나 부를 경로가 없다. 되돌아오는 길은 아직 정해지지 않았다.",
+    "summary": "버전 사용 중지",
+    "description": "확정 → 사용 중지(상태값 OBSOLETE · 화면 이름 「사용 중지」). 재사용(`:reactivate`)으로 확정에 되돌린다(omf-all-around#258). 상태≠확정이면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -8396,7 +8396,7 @@
     ],
     "responses": {
      "200": {
-      "description": "폐기됨",
+      "description": "사용 중지됨",
       "content": {
        "application/json": {
         "schema": {
@@ -8407,6 +8407,78 @@
      },
      "400": {
       "description": "상태가 확정이 아님(code=STATE_LOCKED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/quality/inspection-plan-versions/{inspectionPlanVersionId}:reactivate": {
+   "parameters": [
+    {
+     "name": "inspectionPlanVersionId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "버전 재사용",
+    "description": "사용 중지 → 확정(omf-all-around#258). 다른 확정 버전은 그대로 둔다(확정과 같은 규칙). 내용은 사용 중지 때 그대로라 확정 전 검사를 다시 하지 않는다. 상태≠사용 중지이면 400(code=STATE_LOCKED). 같은 기준에 더 새 확정 버전이 있으면 다시 써도 검사에 쓰이지 않아 400(code=STATE_LOCKED · 그 버전 번호를 알린다). 그 사이 상태가 바뀌었으면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "재사용됨(확정)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InspectionPlanVersion"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "상태가 사용 중지가 아님(code=STATE_LOCKED)",
       "content": {
        "application/json": {
         "schema": {
@@ -22433,7 +22505,6 @@
     "x-source-table": "quality.inspection_plan",
     "type": "object",
     "required": [
-     "inspectionPlanCode",
      "inspectionPlanName",
      "inspectionTypeCode"
     ],
@@ -22443,7 +22514,7 @@
       "x-source-column": "inspection_plan_code",
       "type": "string",
       "maxLength": 50,
-      "description": "uq — 전역 유일",
+      "description": "uq — 전역 유일 ⭐ 비우면(생략 · 빈 글) 서버가 `QP-{YYYYMMDD}-{SEQ4}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262).",
       "example": "STANDARD",
       "x-no-code-key": "코드 그룹이 아니다 — InspectionPlan 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
      },
@@ -22688,8 +22759,8 @@
      "samplingMethodCode",
      "inspectionFrequencyCode",
      "statusCode",
-     "guideTextKo",
-     "guideTextVi"
+     "guideText",
+     "aqlInspectionLevelCode"
     ],
     "description": "샘플 비율(%)이 정본이다(samplingRatio) — 확정 문구가 「샘플 비율(%)」이고 수량은 로트 크기를 알아야 나오는 파생값이라 두지 않는다(A-8). 2026-08-30 되살림.",
     "properties": {
@@ -22742,7 +22813,7 @@
        "number",
        "null"
       ],
-      "description": "AQL·허용불량수",
+      "description": "AQL(합격 품질 한계, %). 검사 방식이 AQL 이면 필수이고 표준값(0.01 · 0.015 · 0.025 · 0.04 · 0.065 · 0.1 · 0.15 · 0.25 · 0.4 · 0.65 · 1 · 1.5 · 2.5 · 4 · 6.5 · 10) 중 하나다 — 그때 시료 수 · 합격/불합격 판정 수는 의뢰 수량으로 표에서 정한다(omf-all-around#264). 다른 방식이면 표시용이다.",
       "example": 1.0,
       "x-internal-note": "SQL 1766 주석"
      },
@@ -22768,9 +22839,12 @@
      },
      "inspectionFrequencyCode": {
       "x-source-column": "inspection_frequency_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
-      "description": "공통코드 — 값 = WORK_ORDER·PRODUCTION_LOT·MATERIAL_LOT·SHIFT·TIME_INTERVAL·QUANTITY_INTERVAL·EQUIPMENT_MOLD_CHANGE·USER_REQUEST (2026-09-03 코드 사전 등재) — ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "공통코드 — 값 = WORK_ORDER·PRODUCTION_LOT·MATERIAL_LOT·SHIFT·TIME_INTERVAL·QUANTITY_INTERVAL·EQUIPMENT_MOLD_CHANGE·USER_REQUEST (2026-09-03 코드 사전 등재) — ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 기록용 — 관리웹은 받지 않는다(사용자 결정 2026-11-11 · omf-all-around#263). 비워 둘 수 있다.",
       "example": "WORK_ORDER",
       "x-code-key": "CD-INSPECTION-FREQUENCY"
      },
@@ -22826,25 +22900,34 @@
       "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
       "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
      },
-     "guideTextKo": {
-      "x-source-column": "guide_text_ko",
+     "guideText": {
+      "x-source-column": "guide_text",
       "type": [
        "string",
        "null"
       ],
       "maxLength": 3000,
-      "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "description": "검사 지시문 — 한 칸(한/베 두 칸을 걷었다 · 사용자 결정 2026-11-11 · omf-all-around#261). 검사 화면이 기준 정보 바로 아래에 보인다(#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
      },
-     "guideTextVi": {
-      "x-source-column": "guide_text_vi",
+     "aqlInspectionLevelCode": {
+      "x-source-column": "aql_inspection_level_code",
       "type": [
        "string",
        "null"
       ],
-      "maxLength": 3000,
-      "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
-      "example": "Đeo găng tay trước khi kiểm tra."
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4",
+       null
+      ],
+      "description": "AQL 검사 수준(KS Q ISO 2859-1 일반 G-I~G-III · 특별 S-1~S-4 · omf-all-around#264). 검사 방식이 AQL 이면 필수다. ⛔ 품목별 IQC 검사 수준(무검사 · 수월 · 보통 · 엄격)과 다른 축이다. `:new-revision` · 복사가 그대로 옮긴다.",
+      "example": "G-II"
      }
     },
     "x-internal-note": "미착지 셋: PQC 생략 허용·생략 근거·검사기준 미비 시 단순 선택 허용 — #64"
@@ -22855,8 +22938,7 @@
     "required": [
      "inspectionPlanId",
      "effectiveFrom",
-     "samplingMethodCode",
-     "inspectionFrequencyCode"
+     "samplingMethodCode"
     ],
     "description": "검사기준 버전 최초 등록(버전 1) 요청 — 기준에 버전이 하나도 없을 때만 쓴다. planVersion 은 서버가 항상 1로, statusCode 는 항상 작성중으로 채운다. 근거: W-06-02 §4-B·§5-1",
     "properties": {
@@ -22895,7 +22977,8 @@
        "number",
        "null"
       ],
-      "example": 1.0
+      "example": 1.0,
+      "description": "AQL(합격 품질 한계, %). 검사 방식이 AQL 이면 필수이고 표준값(0.01 · 0.015 · 0.025 · 0.04 · 0.065 · 0.1 · 0.15 · 0.25 · 0.4 · 0.65 · 1 · 1.5 · 2.5 · 4 · 6.5 · 10) 중 하나다 — 그때 시료 수 · 합격/불합격 판정 수는 의뢰 수량으로 표에서 정한다(omf-all-around#264). 다른 방식이면 표시용이다."
      },
      "acceptanceNumber": {
       "x-source-column": "acceptance_number",
@@ -22917,10 +23000,13 @@
      },
      "inspectionFrequencyCode": {
       "x-source-column": "inspection_frequency_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
       "example": "WORK_ORDER",
-      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 기록용 — 관리웹은 받지 않는다(사용자 결정 2026-11-11 · omf-all-around#263). 비워 둘 수 있다.",
       "x-code-key": "CD-INSPECTION-FREQUENCY"
      },
      "frequencyIntervalValue": {
@@ -22965,25 +23051,34 @@
       "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
       "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
      },
-     "guideTextKo": {
-      "x-source-column": "guide_text_ko",
+     "guideText": {
+      "x-source-column": "guide_text",
       "type": [
        "string",
        "null"
       ],
       "maxLength": 3000,
-      "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "description": "검사 지시문 — 한 칸(한/베 두 칸을 걷었다 · 사용자 결정 2026-11-11 · omf-all-around#261). 검사 화면이 기준 정보 바로 아래에 보인다(#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
      },
-     "guideTextVi": {
-      "x-source-column": "guide_text_vi",
+     "aqlInspectionLevelCode": {
+      "x-source-column": "aql_inspection_level_code",
       "type": [
        "string",
        "null"
       ],
-      "maxLength": 3000,
-      "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
-      "example": "Đeo găng tay trước khi kiểm tra."
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4",
+       null
+      ],
+      "description": "AQL 검사 수준(KS Q ISO 2859-1 일반 G-I~G-III · 특별 S-1~S-4 · omf-all-around#264). 검사 방식이 AQL 이면 필수다. ⛔ 품목별 IQC 검사 수준(무검사 · 수월 · 보통 · 엄격)과 다른 축이다. `:new-revision` · 복사가 그대로 옮긴다.",
+      "example": "G-II"
      }
     }
    },
@@ -22992,8 +23087,7 @@
     "type": "object",
     "required": [
      "effectiveFrom",
-     "samplingMethodCode",
-     "inspectionFrequencyCode"
+     "samplingMethodCode"
     ],
     "description": "검사기준 버전 수정 요청. 상태=작성중일 때만 허용한다. inspectionPlanId·planVersion·statusCode 는 이 요청에 포함하지 않는다. 근거: W-06-02 §4-B·§5-4",
     "properties": {
@@ -23026,7 +23120,8 @@
        "number",
        "null"
       ],
-      "example": 1.0
+      "example": 1.0,
+      "description": "AQL(합격 품질 한계, %). 검사 방식이 AQL 이면 필수이고 표준값(0.01 · 0.015 · 0.025 · 0.04 · 0.065 · 0.1 · 0.15 · 0.25 · 0.4 · 0.65 · 1 · 1.5 · 2.5 · 4 · 6.5 · 10) 중 하나다 — 그때 시료 수 · 합격/불합격 판정 수는 의뢰 수량으로 표에서 정한다(omf-all-around#264). 다른 방식이면 표시용이다."
      },
      "acceptanceNumber": {
       "x-source-column": "acceptance_number",
@@ -23048,10 +23143,13 @@
      },
      "inspectionFrequencyCode": {
       "x-source-column": "inspection_frequency_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
       "example": "WORK_ORDER",
-      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 기록용 — 관리웹은 받지 않는다(사용자 결정 2026-11-11 · omf-all-around#263). 비워 둘 수 있다.",
       "x-code-key": "CD-INSPECTION-FREQUENCY"
      },
      "frequencyIntervalValue": {
@@ -23096,25 +23194,34 @@
       "description": "샘플 개수. 샘플링 방식이면 샘플 비율(%)과 둘 중 하나만 지정한다 — 1 이상 정수. 검사 수량은 이 개수이되 로트(지시) 수량보다 크면 그 수량이다. 전수검사에는 넣지 않는다.",
       "x-internal-note": "⭐ 선행 구현(P-141 · omf-all-around#201) — 2026-08-18 「비율(%)만」을 사용자 결정 2026-10-28 이 「비율 또는 개수 중 하나」로 바꿨다. 고객사 검사기준서(TCKT)는 샘플을 개수(n=5)로 적는다. 물리 sampling_qty 를 그대로 쓴다(스키마 변경 없음)."
      },
-     "guideTextKo": {
-      "x-source-column": "guide_text_ko",
+     "guideText": {
+      "x-source-column": "guide_text",
       "type": [
        "string",
        "null"
       ],
       "maxLength": 3000,
-      "description": "검사 안내 문구(한국어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
+      "description": "검사 지시문 — 한 칸(한/베 두 칸을 걷었다 · 사용자 결정 2026-11-11 · omf-all-around#261). 검사 화면이 기준 정보 바로 아래에 보인다(#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
       "example": "검사 전 장갑을 착용하세요."
      },
-     "guideTextVi": {
-      "x-source-column": "guide_text_vi",
+     "aqlInspectionLevelCode": {
+      "x-source-column": "aql_inspection_level_code",
       "type": [
        "string",
        "null"
       ],
-      "maxLength": 3000,
-      "description": "검사 안내 문구(베트남어) — 검사 화면이 기준 정보 바로 아래에 보인다(omf-all-around#252). 작성중 버전에서만 고치고, `:new-revision` 이 새 버전에 복사한다. 공백만이면 비운다(null).",
-      "example": "Đeo găng tay trước khi kiểm tra."
+      "enum": [
+       "G-I",
+       "G-II",
+       "G-III",
+       "S-1",
+       "S-2",
+       "S-3",
+       "S-4",
+       null
+      ],
+      "description": "AQL 검사 수준(KS Q ISO 2859-1 일반 G-I~G-III · 특별 S-1~S-4 · omf-all-around#264). 검사 방식이 AQL 이면 필수다. ⛔ 품목별 IQC 검사 수준(무검사 · 수월 · 보통 · 엄격)과 다른 축이다. `:new-revision` · 복사가 그대로 옮긴다.",
+      "example": "G-II"
      }
     }
    },
@@ -23324,7 +23431,6 @@
     "required": [
      "inspectionPlanVersionId",
      "sequenceNo",
-     "inspectionItemCode",
      "inspectionItemName",
      "dataTypeCode",
      "measurementCount",
@@ -23356,7 +23462,7 @@
       "x-source-column": "inspection_item_code",
       "type": "string",
       "maxLength": 50,
-      "description": "⚠ 버전 내 유일 제약이 없다 — 같은 코드를 두 줄에 넣을 수 있다 §8-3",
+      "description": "⚠ 버전 내 유일 제약이 없다 — 같은 코드를 두 줄에 넣을 수 있다 §8-3 ⭐ 비우면(생략 · 빈 글) 서버가 `ITEM-{순서 3자리}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262).",
       "example": "STANDARD",
       "x-no-code-key": "코드 그룹이 아니다 — 개체 «식별자»다(공유계약 A-16 「가르는 물음 넷」 · 2026-09-02 판정). 검사항목 «자기 행»의 코드다 — 산문이 「버전 내 유일 제약이 없다 §8-3」이라 적어 코드값 집합이 아님을 스스로 증언한다. ⛔ 코드 사전 키를 붙이지 않는다 — 붙이면 «값의 목록»을 공통코드가 갖는다는 뜻이 되어, 실제로는 마스터 표가 갖는 행 목록과 두 벌이 된다(L-2-1)."
      },
@@ -28893,6 +28999,8 @@
      "itemCode",
      "itemName",
      "templateVersion",
+     "templateCode",
+     "templateName",
      "businessUnitId",
      "formLayoutCode",
      "statusCode",
@@ -28924,6 +29032,24 @@
      },
      "templateVersion": {
       "type": "integer"
+     },
+     "templateCode": {
+      "x-source-column": "template_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다. 그 전에 등록한 기준은 null."
+     },
+     "templateName": {
+      "x-source-column": "template_name",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "description": "관리용 기준명(omf-all-around#260). 그 전에 등록한 기준은 null."
      },
      "businessUnitId": {
       "type": "integer",
@@ -29138,6 +29264,7 @@
    "InspectionSheetTemplateCreate": {
     "type": "object",
     "required": [
+     "templateName",
      "itemId",
      "businessUnitId",
      "formLayoutCode",
@@ -29147,6 +29274,17 @@
     ],
     "description": "검사표 기준 등록 — 같은 모델의 다음 판(최댓값 + 1)을 작성중으로 세운다. 서버 선행(omf-all-around#89 · 장부 P-102) — 설계 사본에 «우리가» 먼저 적었다.",
     "properties": {
+     "templateCode": {
+      "type": "string",
+      "maxLength": 50,
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 같은 품목의 다른 판과 코드가 다르면 400 INVALID. 검사 기준(InspectionPlan)의 코드와는 따로 본다. ⭐ 비우면(생략 · 빈 글) 그 품목이 쓰던 기준코드, 없으면 서버가 `QS-{YYYYMMDD}-{SEQ4}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262)."
+     },
+     "templateName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "관리용 기준명(omf-all-around#260). 공백만이면 400 REQUIRED."
+     },
      "itemId": {
       "type": "integer",
       "format": "int64",
@@ -29239,6 +29377,18 @@
     ],
     "description": "검사표 기준 수정 — 작성중(DRAFT) 판만. 단계·항목·LOT 칸은 통째로 갈아 끼운다. 단계는 양식(OP·PP)이 칸을 가진 것만 받는다. 서버 선행(omf-all-around#89 · 장부 P-102) — 설계 사본에 «우리가» 먼저 적었다.",
     "properties": {
+     "templateCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50,
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 같은 품목의 다른 판과 코드가 다르면 400 INVALID. 검사 기준(InspectionPlan)의 코드와는 따로 본다. 빼거나 공백만이면 그대로 둔다."
+     },
+     "templateName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "관리용 기준명(omf-all-around#260). 빼면 그대로 둔다. 공백만이면 400 REQUIRED."
+     },
      "materialText": {
       "type": [
        "string",

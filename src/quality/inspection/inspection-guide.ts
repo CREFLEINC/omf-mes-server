@@ -4,19 +4,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 /** 계약 `InspectionGuide` 와 동형(omf-all-around#252). */
 export interface InspectionGuideView {
   scopeCode: 'COMMON' | 'ITEM';
-  guideTextKo: string | null;
-  guideTextVi: string | null;
+  guideText: string;
 }
 
-type GuideSource = { guide_text_ko: string | null; guide_text_vi: string | null };
+type GuideSource = { guide_text: string | null };
 
-const hasText = (row: GuideSource): boolean =>
-  (row.guide_text_ko ?? '').trim() !== '' || (row.guide_text_vi ?? '').trim() !== '';
+const hasText = (row: GuideSource): boolean => (row.guide_text ?? '').trim() !== '';
 
 const guideOf = (scopeCode: InspectionGuideView['scopeCode'], row: GuideSource): InspectionGuideView => ({
   scopeCode,
-  guideTextKo: row.guide_text_ko,
-  guideTextVi: row.guide_text_vi,
+  guideText: row.guide_text ?? '',
 });
 
 /**
@@ -32,8 +29,7 @@ export async function inspectionGuides(
   const version = await prisma.inspection_plan_version.findUnique({
     where: { inspection_plan_version_id: request.inspection_plan_version_id },
     select: {
-      guide_text_ko: true,
-      guide_text_vi: true,
+      guide_text: true,
       inspection_plan: { select: { item_id: true, inspection_type_code: true } },
     },
   });
@@ -48,7 +44,7 @@ export async function inspectionGuides(
       OR: [{ effective_to: null }, { effective_to: { gte: date } }],
       inspection_plan: { item_id: null, inspection_type_code: version.inspection_plan.inspection_type_code, is_active: true },
     },
-    select: { inspection_plan_id: true, plan_version: true, guide_text_ko: true, guide_text_vi: true },
+    select: { inspection_plan_id: true, plan_version: true, guide_text: true },
   }));
   return [
     ...(commons.length === 1 && hasText(commons[0]) ? [guideOf('COMMON', commons[0])] : []),

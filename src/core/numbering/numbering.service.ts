@@ -38,6 +38,9 @@ const DEFAULT_PREFIX: Record<string, string> = {
    */
   INSPECTION_RESULT: 'IRS',
   INSPECTION_REQUEST: 'IRQ',
+  /** 규칙 미등재 — 검사 기준 · 검사표 기준 코드를 비우고 등록하면 붙는다(omf-all-around#262). */
+  INSPECTION_PLAN: 'QP',
+  INSPECTION_SHEET_TEMPLATE: 'QS',
   /** 규칙 미등재 — `ST-{YYYYMMDD}-{SEQ4}`. 계약 example `ST-2026-000260` 은 접두어만 준다(I-13 §4-3). */
   STOCK_TRANSFER: 'ST',
   /** 규칙 미등재 — `IA-{YYYYMMDD}-{SEQ4}` · 계약 example `IA-2026-000031` 은 형식만 준다.

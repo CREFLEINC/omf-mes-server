@@ -45,4 +45,28 @@ describe('assertSamplingRatio', () => {
   it('샘플 방식 + 비율은 통과한다', () => {
     expect(fieldOf(() => assertSamplingRatio({ samplingMethodCode: 'SAMPLE_BY_LOT', samplingRatio: 10 }))).toBeUndefined();
   });
+
+  /* omf-all-around#264 — AQL 샘플링은 시료 수를 표로 정한다. */
+  describe('AQL 샘플링', () => {
+    const aql = { samplingMethodCode: 'AQL', aqlValue: 0.4, aqlInspectionLevelCode: 'G-II' };
+
+    it('표준 AQL 값 + AQL 검사 수준이면 통과한다', () => {
+      expect(fieldOf(() => assertSamplingRatio(aql))).toBeUndefined();
+    });
+
+    it('AQL 값이 없으면 REQUIRED, 표에 없는 값이면 INVALID 다', () => {
+      expect(fieldOf(() => assertSamplingRatio({ ...aql, aqlValue: null }))).toMatchObject({ field: 'aqlValue', code: 'REQUIRED' });
+      expect(fieldOf(() => assertSamplingRatio({ ...aql, aqlValue: 0 }))).toMatchObject({ field: 'aqlValue', code: 'INVALID' });
+    });
+
+    it('AQL 검사 수준이 없으면 REQUIRED, 모르는 값이면 INVALID 다', () => {
+      expect(fieldOf(() => assertSamplingRatio({ ...aql, aqlInspectionLevelCode: null }))).toMatchObject({ field: 'aqlInspectionLevelCode', code: 'REQUIRED' });
+      expect(fieldOf(() => assertSamplingRatio({ ...aql, aqlInspectionLevelCode: 'NORMAL' }))).toMatchObject({ field: 'aqlInspectionLevelCode', code: 'INVALID' });
+    });
+
+    it('샘플 비율 · 개수를 함께 넣으면 INVALID 다', () => {
+      expect(fieldOf(() => assertSamplingRatio({ ...aql, samplingRatio: 10 }))).toMatchObject({ field: 'samplingRatio', code: 'INVALID' });
+      expect(fieldOf(() => assertSamplingRatio({ ...aql, samplingQty: 5 }))).toMatchObject({ field: 'samplingQty', code: 'INVALID' });
+    });
+  });
 });
