@@ -67,9 +67,10 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     await app.close();
   });
 
+  // 새 흐름(입하 LOT 요청)은 검사 단위로 확정한다(피처 005 D-11) — 결과 단위 확정과 그 판정 변경 사유는 이전된 옛 요청(대상 LOT)에 남는다(FR-051).
   describe(':confirm', () => {
     it('⛔ 합격판정개수 5 · 불합격 10 + 합격 · 사유 없음 → 400 judgmentChangeReason REQUIRED · LOT 그대로', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 90, rejectedQty: 10 });
 
       const response = await confirm(resultId, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
@@ -81,7 +82,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⛔ 공백만인 사유는 없는 것이다 → 400', async () => {
-      const { requestId } = await registerIqcLot(itemWithAn);
+      const { requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 90, rejectedQty: 10 });
 
       await confirm(resultId, { overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: '   ' }).expect(400);
@@ -90,7 +91,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⭐ 사유가 있으면 200 · 비고 맨 앞에 사유 · LOT 정상', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 90, rejectedQty: 10 });
 
       const response = await confirm(resultId, {
@@ -105,7 +106,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⭐ 본문 비고가 없으면 저장된 비고를 사유 다음 줄에 둔다', async () => {
-      const { requestId } = await registerIqcLot(itemWithAn);
+      const { requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 90, rejectedQty: 10, remarks: '임시 저장 비고' });
 
       await confirm(resultId, { overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: REASON }).expect(200);
@@ -114,7 +115,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⭐ 불합격 3(≤5) + 합격 → 사유 없이 200 · 실린 사유는 버린다', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 97, rejectedQty: 3 });
 
       await confirm(resultId, { overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: REASON }).expect(200);
@@ -126,7 +127,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⛔ 불합격 3(≤5) + 합격 · 합계가 불합격 수량과 다르면 INVALID · LOT·결과 그대로', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 97, rejectedQty: 3, defects: [] });
 
       const mismatched = await confirm(resultId, {
@@ -141,7 +142,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⭐ 불합격 10 + 불합격 + 불량 사유 → 200 · LOT 불량', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 90, rejectedQty: 10 });
 
       await confirm(resultId, {
@@ -154,7 +155,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⛔ 보류 2 · 불합격 3(≤5) + 합격 · 사유 없음 → 400 (자동 판정 보류)', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
       const resultId = await draft(requestId, { acceptedQty: 95, rejectedQty: 3, heldQty: 2 });
 
       const response = await confirm(resultId, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
@@ -165,7 +166,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⭐ 합격판정개수가 없는 기준이면 규칙이 없다 — 불합격 10 + 합격 → 200(종전 그대로)', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithoutAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithoutAn);
       const resultId = await draft(requestId, { acceptedQty: 90, rejectedQty: 10 });
 
       await confirm(resultId, { overallJudgmentCode: 'ACCEPTED' }).expect(200);

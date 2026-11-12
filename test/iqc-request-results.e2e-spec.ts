@@ -263,13 +263,15 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     await sendDefect({ inspectionResultId: single.inspectionResultId, lotId: other.lots[0].lotId }).expect(400);
   });
 
-  it('판정 확정된 요청(결과 단위 확정 — S8 까지 열림)에는 결과 추가·수정·삭제가 409 INVALID_STATE', async () => {
+  it('판정 확정된 요청(검사 단위 확정 — S9)에는 결과 추가·수정·삭제가 409 INVALID_STATE', async () => {
     const iqc = await iqcLot(1);
-    const draft = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
-    const toConfirm = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
-    await request(app.getHttpServer()).post(`${RESULTS}/${String(toConfirm.inspectionResultId)}:confirm`).set('Cookie', cookie)
-      .set('Idempotency-Key', idempotencyKey(fx)).set('If-Match', `W/"${String(toConfirm.versionNo)}"`).send({ overallJudgmentCode: 'ACCEPTED' }).expect(200);
+    const created = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
+    await post(resultBody(iqc.requestId)).expect(201);
+    const { version_no: versionNo } = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(iqc.requestId) } });
+    await request(app.getHttpServer()).post(`${REQUESTS}/${String(iqc.requestId)}:confirm`).set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey(fx)).send({ versionNo }).expect(200);
     expect(await requestStatus(iqc.requestId)).toBe('COMPLETED');
+    const draft = { ...created, versionNo: (await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(created.inspectionResultId) } })).version_no };
 
     expect((await post(resultBody(iqc.requestId)).expect(409)).body).toMatchObject({ code: 'INVALID_STATE' });
     expect((await put(draft.inspectionResultId, draft.versionNo, { remarks: '늦음' }).expect(409)).body).toMatchObject({ code: 'INVALID_STATE' });

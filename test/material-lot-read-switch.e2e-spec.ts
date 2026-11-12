@@ -137,9 +137,10 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
       expect(history.body.source).toMatchObject({ targetTypeCode: 'INBOUND_LOT', documentNo: `${PREFIX}-IR` });
     });
 
-    it('D2-2 결과 단위 불합격 확정이 LOT 전부를 옮기고 부적합 하나·LOT 마다 인계 알림 — 요청에 종합 판정이 남는다', async () => {
+    // 새 흐름은 검사 단위로 확정하고 불합격 알림은 입하 LOT 당 한 번이다(피처 005 S9 · D-11 · R-12 ④).
+    it('D2-2 불합격 판정 확정(검사 단위)이 LOT 전부를 옮기고 부적합 하나·인계 알림 입하 LOT 당 1회 — 요청에 종합 판정이 남는다', async () => {
       const resultId = await draft(shape.requestId, 10, { rejectedQty: 10 });
-      await confirm(resultId, 'REJECTED').expect(200);
+      await confirmRequest(shape.requestId);
 
       const lots = await prisma.lot.findMany({ where: { lot_id: { in: shape.lotIds } }, select: { status_code: true } });
       expect(lots.map((lot) => lot.status_code)).toEqual(['DEFECTIVE', 'DEFECTIVE']);
@@ -159,11 +160,8 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
         where: { event_type_code: 'IQC_INSPECTION_REJECTED', aggregate_type_code: 'LOT', aggregate_id: { in: shape.lotIds } },
         select: { payload: true },
       });
-      expect(events).toHaveLength(2);
-      expect(events.map((event) => (event.payload as { receipt_no?: string; supplier?: string }).receipt_no)).toEqual([
-        `${PREFIX}-IR`,
-        `${PREFIX}-IR`,
-      ]);
+      expect(events).toHaveLength(1);
+      expect(events.map((event) => (event.payload as { receipt_no?: string; supplier?: string }).receipt_no)).toEqual([`${PREFIX}-IR`]);
     });
   });
 
@@ -177,7 +175,8 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
       // 앞 묶음의 판정도 같은 공장에 있다 — 늘어난 만큼만 본다.
       before = await iqcBlock();
       rejected = await newShape([3]);
-      await confirm(await draft(rejected.requestId, 3, { rejectedQty: 3 }), 'REJECTED').expect(200);
+      await draft(rejected.requestId, 3, { rejectedQty: 3 });
+      await confirmRequest(rejected.requestId);
       // 확정 취소 뒤 재검사(주기 2)로 합격한 요청 — 확정 취소 경로는 S9 라 결과를 직접 둔다.
       rechecked = await newShape([8]);
       rechecks = [
@@ -394,9 +393,21 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
       .send({
         inspectionRequestId: Number(requestId), inspectedQty: qty, acceptedQty: qty - rejectedQty, rejectedQty, heldQty: 0,
         uomId: Number(ids.uom), inspectedAt: `${DAY}T03:00:00.000Z`, statusCode: 'DRAFT',
+        overallJudgmentCode: rejectedQty > 0 ? 'REJECTED' : 'ACCEPTED',
       })
       .expect(201);
     return response.body.inspectionResultId as number;
+  }
+
+  /** 새 흐름(입하 LOT 요청)의 판정 확정 — 검사 단위(피처 005 S9 · D-11). */
+  async function confirmRequest(requestId: bigint): Promise<void> {
+    const { version_no: versionNo } = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: requestId } });
+    await request(app.getHttpServer())
+      .post(`/api/quality/inspection-requests/${String(requestId)}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ versionNo })
+      .expect(200);
   }
 
   function confirm(resultId: number, judgment: string): request.Test {

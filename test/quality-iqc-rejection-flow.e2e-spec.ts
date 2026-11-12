@@ -28,7 +28,7 @@ const DEFECT_CODE = 'IQCFLOW-DEF';
 const ROLE = 'E2E_IQC_FLOW';
 // W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스). W-04-11 — 재고 재등록(#108 리뷰 M1).
 // W-01-14·M-01-01 — 입하 LOT 픽스처의 자재 관리 LOT 발행·받기(피처 005).
-const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06', 'W-04-11', 'W-01-14', 'M-01-01'];
+const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-01-15', 'W-03-10', 'W-01-10', 'W-CO-06', 'W-04-11', 'W-01-14', 'M-01-01'];
 const DAY = '2026-10-16';
 // 특채(#84 · 장부 P-79) — 요청·적용은 W-03-10, 결재는 W-03-09 를 가진 «다른» 계정이 한다.
 const APPROVER_LOGIN_ID = 'e2e-iqc-flow-approver';
@@ -80,8 +80,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     const { lotId, lineId, requestId } = await registerIqcLot(10);
     await receive(lotId, lineId, 10).expect(400);
 
-    const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10 });
-    await confirm(resultId, 'REJECTED').expect(200);
+    const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10, judgment: 'REJECTED' });
+    await confirmRequest(requestId);
 
     expect(await lotStatus(lotId)).toBe('DEFECTIVE');
     const nc = await openNonconformance(lotId);
@@ -285,7 +285,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /* #121 · 장부 P-47 — 사유를 `:confirm` 에 실으면 확정과 한 트랜잭션에서 그 회차의 기록을 갈아 끼운다. */
   it('⭐ 불합격 확정 재시도에도 그 회차의 사유는 확정 시점 입력 1벌이다', async () => {
-    const { requestId } = await registerIqcLot(10);
+    // 결과 단위 확정은 이전된 옛 요청에만 남는다(피처 005 D-11 · FR-051).
+    const { requestId } = await legacyIqcLot(10);
     const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10 });
     const reason = (description: string) => ({ overallJudgmentCode: 'REJECTED', defects: [{ defectCodeId, defectQty: 10, defectDescription: description }] });
 
@@ -303,7 +304,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   });
 
   it('⭐ 불합격 사유를 남긴 뒤 합격으로 확정하면 그 회차의 불량 기록이 지워진다 · 합격에 사유를 실으면 400', async () => {
-    const { lotId, requestId } = await registerIqcLot(10);
+    // 결과 단위 확정은 이전된 옛 요청에만 남는다(피처 005 D-11 · FR-051).
+    const { lotId, requestId } = await legacyIqcLot(10);
     const resultId = await draft(requestId, { acceptedQty: 10, rejectedQty: 0 });
     await recordReason(resultId, 1);
 
@@ -317,7 +319,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /* #122 · 장부 P-48 — 임시 저장이 사유를 그 회차의 불량 기록으로 갈아 끼우고, 확정 전 기록은 집계·기간 목록에 안 잡힌다. */
   it('⭐ 임시 저장한 불합격 사유가 다시 읽히고, 사유 없이 확정하면 그 사유로 확정된다', async () => {
-    const { lotId, requestId } = await registerIqcLot(10);
+    // 결과 단위 확정은 이전된 옛 요청에만 남는다(피처 005 D-11 · FR-051).
+    const { lotId, requestId } = await legacyIqcLot(10);
     const created = await request(app.getHttpServer())
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
@@ -611,9 +614,11 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   async function rejectedLot(qty: number, legacy = false) {
     const lot = legacy ? await legacyIqcLot(qty) : await registerIqcLot(qty);
-    const resultId = await draft(lot.requestId, { acceptedQty: 0, rejectedQty: qty });
+    const resultId = await draft(lot.requestId, { acceptedQty: 0, rejectedQty: qty, ...(legacy ? {} : { judgment: 'REJECTED' }) });
     await recordReason(resultId, qty);
-    await confirm(resultId, 'REJECTED').expect(200);
+    // 입하 LOT 검사는 검사 단위로 확정한다(피처 005 D-11) — 옛 요청은 결과 단위 그대로.
+    if (legacy) await confirm(resultId, 'REJECTED').expect(200);
+    else await confirmRequest(lot.requestId);
     return { ...lot, resultId };
   }
 
@@ -679,7 +684,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   async function draft(
     requestId: number,
-    qty: { acceptedQty: number; rejectedQty: number; previousResultId?: number },
+    qty: { acceptedQty: number; rejectedQty: number; previousResultId?: number; judgment?: string },
   ): Promise<number> {
     const response = await request(app.getHttpServer())
       .post('/api/quality/inspection-results')
@@ -695,6 +700,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
         inspectedAt: `${DAY}T03:00:00.000Z`,
         statusCode: 'DRAFT',
         ...(qty.previousResultId === undefined ? {} : { previousResultId: qty.previousResultId }),
+        ...(qty.judgment === undefined ? {} : { overallJudgmentCode: qty.judgment }),
       })
       .expect(201);
     return response.body.inspectionResultId as number;
@@ -707,6 +713,17 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', 'W/"1"')
       .send({ overallJudgmentCode: judgment });
+  }
+
+  /** 입하 LOT 검사의 판정 확정(검사 단위 · W-01-15 · 피처 005 S9). */
+  async function confirmRequest(requestId: number): Promise<void> {
+    const { version_no: versionNo } = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(requestId) } });
+    await request(app.getHttpServer())
+      .post(`/api/quality/inspection-requests/${requestId}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ versionNo })
+      .expect(200);
   }
 
   function confirmWith(resultId: number, body: Record<string, unknown>, version: number): request.Test {
