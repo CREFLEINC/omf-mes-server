@@ -44,6 +44,8 @@ export function inspectionResultView(row: InspectionResultRow) {
     itemId: Number(request.item_id),
     lotId: request.lot_id === null ? undefined : Number(request.lot_id),
     inspectionRound: row.inspection_round,
+    // 입하 LOT 검사 결과만 — 1 = 처음, 2 이상 = 재검사(확정 취소·재작업 재열기 뒤 · R-10). 옛 IQC·PQC·OQC 는 null(키는 싣는다).
+    confirmCycle: row.confirm_cycle,
     inspectedQty: Number(row.inspected_qty),
     acceptedQty: Number(row.accepted_qty),
     rejectedQty: Number(row.rejected_qty),

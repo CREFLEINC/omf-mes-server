@@ -12106,7 +12106,7 @@
      "trace"
     ],
     "summary": "긴급 IQC 생략 요청",
-    "description": "입하돼 수입검사 대기인 LOT 에 대해 현장이 검사 생략을 요청한다. 요청을 만들기만 하고 한도는 승인자가 정한다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 근거: M-01-13 §5-A · 공유계약 J-4",
+    "description": "입하돼 수입검사 대기인 LOT 에 대해 현장이 검사 생략을 요청한다 — 대상은 그 LOT 의 «입하 LOT» 이다(결재 targetTypeCode=INBOUND_LOT · targetId = 입하 LOT id, 피처 005 FR-032 · R-16). 입하 마감된(RECEIVED) 입하 LOT 만 — 입하 중·최종 마감이면 409. 입하 LOT 의 자재 관리 LOT 이 모두 입하 원천(아니면 400 INVALID)·수입검사 대기(아니면 400 STATE_LOCKED)여야 한다. 같은 입하 LOT 에 진행 중 요청이 있으면 400 APPROVAL_IN_PROGRESS. 요청을 만들기만 하고 한도는 승인자가 정한다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 응답에 그 입하 LOT 의 번호·자재 관리 LOT 수. 근거: M-01-13 §5-A · 공유계약 J-4 · 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -12136,7 +12136,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ApprovalRequestRef"
+         "$ref": "#/components/schemas/IqcSkipRequested"
         }
        }
       }
@@ -12172,7 +12172,7 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "입하 마감된(RECEIVED) 입하 LOT 이 아니다 — 입하 중이면 먼저 입하 마감한다. 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
       "content": {
        "application/json": {
         "schema": {
@@ -12202,7 +12202,7 @@
      "trace"
     ],
     "summary": "승인된 IQC 생략 실행",
-    "description": "긴급 IQC 생략 요청이 **승인된** 입하 LOT 의 수입검사를 생략한다 — 열린 IQC 의뢰를 `SKIPPED` 로 닫고, 수입검사 대기 보류를 `INCOMING_INSPECTION_SKIPPED` 사유로 해제하고, 다른 열린 보류가 없으면 LOT 을 `NORMAL` 로 옮긴다(전이 C22). ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 승인된 요청이 없거나 LOT 이 수입검사 대기가 아니면 400(code=STATE_LOCKED). 근거: W-01-02 · omf-all-around#105 (서버 선행 · 장부 P-36)",
+    "description": "긴급 IQC 생략 요청이 **승인된** 입하 LOT 의 수입검사를 생략한다 — 경로의 LOT 은 그 «입하 LOT» 을 가리킨다(결재 W-01-02 는 결재 대상의 targetLotId 를 싣는다 · 피처 005 FR-032). 입하 LOT 의 열린 IQC 의뢰(입하 LOT 요청 · 이전된 옛 LOT 요청)를 `SKIPPED` 로 닫고(변경 이력 SKIPPED), 자재 관리 LOT «전부»의 수입검사 대기 보류를 `INCOMING_INSPECTION_SKIPPED` 사유로 해제하고, 다른 열린 보류가 없으면 LOT 전부를 `NORMAL` 로 옮긴다(전이 C22 — 하나라도 다른 보류가 남으면 400 이고 아무것도 바뀌지 않는다). ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 승인된 요청이 없거나(입하 마감 취소가 무효로 만든 승인 포함) LOT 이 수입검사 대기가 아니거나 열린 IQC 의뢰가 없으면 400(code=STATE_LOCKED). 근거: W-01-02 · omf-all-around#105 (서버 선행 · 장부 P-36) · 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -27755,6 +27755,39 @@
        "null"
       ],
       "description": "OPEN_RECEIPT_EXISTS 일 때 같은 조합의 입하 중 입하 LOT 번호(먼저 마감할 것), 그 밖 null. 판정 뒤 동시 받기와 겹친 OPEN_RECEIPT_EXISTS 는 번호를 못 읽어 null"
+     }
+    }
+   },
+   "IqcSkipRequested": {
+    "type": "object",
+    "description": "IQC 생략 요청 접수 — 결재와 그 대상 입하 LOT. 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
+    "required": [
+     "approvalRequestId",
+     "inboundLotId",
+     "inboundLotNo",
+     "lotCount"
+    ],
+    "properties": {
+     "approvalRequestId": {
+      "x-source-column": "approval_request_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "inboundLotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 31,
+      "description": "결재 대상 입하 LOT(결재 targetId)"
+     },
+     "inboundLotNo": {
+      "type": "string",
+      "example": "IL-20261112-0001"
+     },
+     "lotCount": {
+      "type": "integer",
+      "example": 3,
+      "description": "생략하면 정상이 될 자재 관리 LOT 수(그 입하 LOT 의 전부)"
      }
     }
    }

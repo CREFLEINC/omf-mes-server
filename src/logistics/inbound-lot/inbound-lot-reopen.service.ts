@@ -111,7 +111,7 @@ export class InboundLotReopenService {
       await this.holds.holdWithin(tx, locked,
         lotIds.map((lotId) => ({ lotId, reasonCode: INSPECTION_HOLD_REASON, targetLotStatusCode: INITIAL_LOT_STATUS })),
         actor.appUserId === undefined ? { at, workerId: actor.workerId } : { at, by: BigInt(actor.appUserId) });
-      await markIqcSkipVoided(tx, lotIds, at);
+      await markIqcSkipVoided(tx, inboundLotId, at);
       await recordInspectionRequestEvent(tx, {
         inspectionRequestId: request.inspection_request_id, eventTypeCode: 'SKIP_VOIDED', actor: person, at,
         summaryBefore: { statusCode: request.status_code, skipBasisCode: request.skip_basis_code },

@@ -14,7 +14,7 @@ import { PrismaService } from '../../prisma/prisma.service';
  */
 const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 const POSTED = 'POSTED';
-/** 처분 선별이 원 LOT 재고를 자식 LOT 으로 옮기는 원장(`disposition-sort.ts`) — 그만큼은 이미 재고라 입고 대상이 아니다. */
+/** 옛 처분 선별(수량 분할 — FR-038 로 삭제)이 원 LOT 재고를 자식 LOT 으로 옮긴 원장 — 그만큼은 이미 재고라 입고 대상이 아니다. */
 const SORT_LEDGER = 'DISPOSITION_DECISION';
 /** 계보를 거슬러 오르는 상한 — 선별의 선별 정도면 충분하다. 순환이 생겨도 멈춘다. */
 const MAX_DEPTH = 10;

@@ -119,3 +119,14 @@ describe('InspectionResult 뷰', () => {
     expect(neither).not.toHaveProperty('processName');
   });
 });
+
+describe('InspectionResult 뷰 — 확정 주기(피처 005 D-18)', () => {
+  it('D18-1 입하 LOT IQC 결과는 confirmCycle 을 싣고, 옛 IQC·PQC·OQC 는 null 을 싣는다(키 생략이 아니다)', () => {
+    expect(inspectionResultView(resultRow({ confirm_cycle: 3 })).confirmCycle).toBe(3);
+    for (const type of ['IQC', 'PQC', 'OQC']) {
+      const row = resultRow();
+      const view = inspectionResultView({ ...row, inspection_request: { ...row.inspection_request, inspection_type_code: type } });
+      expect(view).toHaveProperty('confirmCycle', null);
+    }
+  });
+});

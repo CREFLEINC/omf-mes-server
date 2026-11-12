@@ -51,8 +51,6 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   let defectLocationId: number;
   let defectCodeId: number;
   let supplierId: number;
-  /** 가장 최근 `registerIqcLot` 의 입하 — 받기가 입하를 스스로 세운다. */
-  let inboundReceiptId: bigint;
   let legacySeq = 0;
   let fx: InboundLotFixture;
   const keys = new Set<string>();
@@ -137,84 +135,23 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     await receive(lotId, lineId, 10).expect(201);
   });
 
-  it('⭐ 경로 ② 선별 → 양품분(원 LOT) 정상·보류 해제 → 양품 수량 입고 · 불량분은 새 LOT 불량', async () => {
-    const { lotId, lineId } = await rejectedLot(10);
+  it('⛔ R14a-1 경로 ② 수량 분할 선별은 400 — LOT 은 불량·보류 그대로, 아무것도 갈리지 않는다(FR-038)', async () => {
+    const { lotId } = await rejectedLot(10);
     const nc = await openNonconformance(lotId);
 
-    await decide(nc.nonconformance_id, {
+    const refused = await decide(nc.nonconformance_id, {
       dispositionTypeCode: 'SORT',
       decisionQty: 10,
       acceptedQty: 7,
       rejectedQty: 3,
       businessDate: DAY,
-    }).expect(201);
+    }).expect(400);
 
-    expect(await lotStatus(lotId)).toBe('NORMAL');
-    expect(await openInspectionHolds(lotId)).toBe(0);
-    const children = await prisma.lot_relation.findMany({ where: { source_lot_id: BigInt(lotId) }, select: { target_lot_id: true } });
-    expect(children).toHaveLength(1);
-    const childLotId = Number(children[0].target_lot_id);
-    expect(await lotStatus(childLotId)).toBe('DEFECTIVE');
-
-    // 장부 P-56 — 입고 화면은 입고 가능 수량(양품 7)과 선별 불량분(-S1 3)을 받는다.
-    const lines = await request(app.getHttpServer())
-      .get(`/api/logistics/inbound-receipts/${String(inboundReceiptId)}/lines`)
-      .set('Cookie', cookie)
-      .expect(200);
-    const line = (lines.body.items as { inboundReceiptLineId: number; receivableQty: number; splitLots: unknown[] }[])
-      .find((row) => row.inboundReceiptLineId === lineId);
-    expect(line).toMatchObject({
-      receivableQty: 7,
-      splitLots: [expect.objectContaining({ lotId: childLotId, statusCode: 'DEFECTIVE', receivableQty: 3 })],
-    });
-
-    // ⛔ 입하 수량(10)으로는 입고되지 않는다 — 떼어 낸 불량분 3 이 빠진다.
-    await receive(lotId, lineId, 10).expect(400);
-    await receive(lotId, lineId, 7).expect(201);
-    await receive(lotId, lineId, 1).expect(400);
-    // 선별 불량분은 조상의 입하 라인을 따라 불량창고로만 입고된다(P-45).
-    await receive(childLotId, lineId, 3).expect(400);
-    await receive(childLotId, lineId, 3, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
-  });
-
-  /* #108 리뷰 C1 — 불량창고에 입고한 «뒤» 선별하면 불량분 재고는 원장 이동으로 생긴다. 입고 화면이 다시 입고하게 두지 않는다. */
-  it('⭐ 경로 ②-b 불량창고 입고 → 선별 → 원 LOT·불량분 모두 입고 가능 0 · 재입고 400', async () => {
-    const { lotId, lineId } = await rejectedLot(10);
-    await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
-    const nc = await openNonconformance(lotId);
-
-    await decide(nc.nonconformance_id, {
-      dispositionTypeCode: 'SORT',
-      decisionQty: 10,
-      acceptedQty: 7,
-      rejectedQty: 3,
-      businessDate: DAY,
-    }).expect(201);
-
-    const children = await prisma.lot_relation.findMany({ where: { source_lot_id: BigInt(lotId) }, select: { target_lot_id: true } });
-    expect(children).toHaveLength(1);
-    const childLotId = Number(children[0].target_lot_id);
-    // 불량분 3 은 같은 불량창고 위치로 이미 옮겨져 있다.
-    const childStock = await prisma.inventory_balance.aggregate({ where: { lot_id: BigInt(childLotId) }, _sum: { on_hand_qty: true } });
-    expect(Number(childStock._sum.on_hand_qty)).toBe(3);
-
-    const lines = await request(app.getHttpServer())
-      .get(`/api/logistics/inbound-receipts/${String(inboundReceiptId)}/lines`)
-      .set('Cookie', cookie)
-      .expect(200);
-    const line = (lines.body.items as { inboundReceiptLineId: number; receivableQty: number; splitLots: unknown[] }[])
-      .find((row) => row.inboundReceiptLineId === lineId);
-    expect(line).toMatchObject({
-      receivableQty: 0,
-      splitLots: [expect.objectContaining({ lotId: childLotId, receivableQty: 0 })],
-    });
-
-    await receive(childLotId, lineId, 3, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(400);
-    await receive(lotId, lineId, 1, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(400);
-    const total = await prisma.inventory_balance.aggregate({
-      where: { lot_id: { in: [BigInt(lotId), BigInt(childLotId)] } }, _sum: { on_hand_qty: true },
-    });
-    expect(Number(total._sum.on_hand_qty)).toBe(10);
+    expect(JSON.stringify(refused.body)).toContain('선별은 지원하지 않습니다');
+    expect(await lotStatus(lotId)).toBe('DEFECTIVE');
+    expect(await openInspectionHolds(lotId)).toBe(1);
+    expect(await prisma.lot_relation.count({ where: { source_lot_id: BigInt(lotId) } })).toBe(0);
+    expect(await prisma.disposition_decision.count({ where: { nonconformance_id: nc.nonconformance_id } })).toBe(0);
   });
 
   /* #108 리뷰 M1 · 담당자 결정 (a) — 불량창고에 이미 입고된 LOT 은 처분 정상이 보류를 닫지 않는다. 재고 재등록(W-04-11)이 닫으며 옮긴다. */
@@ -261,7 +198,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   });
 
   it('⭐ 재작업 → 검사 대기(보류 유지) → 재검 회차 합격 → 보류 해제 → 입고', async () => {
-    const { lotId, lineId, requestId, resultId } = await rejectedLot(10, true);
+    const { lotId, lineId, requestId } = await rejectedLot(10);
     const nc = await openNonconformance(lotId);
 
     expect(await requestStatus(requestId)).toBe('COMPLETED');
@@ -273,9 +210,10 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(await requestStatus(requestId)).toBe('IN_PROGRESS');
     expect(await pendingQueueIds()).toContain(requestId);
 
-    const second = await draft(requestId, { acceptedQty: 10, rejectedQty: 0, previousResultId: resultId });
+    // 입하 LOT 검사는 재검사 결과를 더해 검사 단위로 다시 확정한다(R-15 · D-10·D-11 — 회차 사슬 없음).
+    await draft(requestId, { acceptedQty: 10, rejectedQty: 0, judgment: 'ACCEPTED' });
     expect(await requestStatus(requestId)).toBe('IN_PROGRESS');
-    await confirm(second, 'ACCEPTED').expect(200);
+    await confirmRequest(requestId);
     expect(await requestStatus(requestId)).toBe('COMPLETED');
 
     expect(await lotStatus(lotId)).toBe('NORMAL');
@@ -417,8 +355,9 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       const { lotId, lineId } = await rejectedLot(10);
       const nc = await openNonconformance(lotId);
 
-      const created = await requestConcession(nc.nonconformance_id, lotId, 6, '외관 경미 — 조건부 사용').expect(201);
-      expect(created.body).toMatchObject({ statusCode: 'PENDING', approvedQty: 6, remarks: '외관 경미 — 조건부 사용' });
+      // 특채는 남은 수량 전부다(FR-038 — 일부 특채 제거).
+      const created = await requestConcession(nc.nonconformance_id, lotId, 10, '외관 경미 — 조건부 사용').expect(201);
+      expect(created.body).toMatchObject({ statusCode: 'PENDING', approvedQty: 10, remarks: '외관 경미 — 조건부 사용' });
       const concessionId = created.body.concessionId as number;
       const approvalRequestId = created.body.approvalRequestId as number;
 
@@ -429,24 +368,15 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
       await decideApproval(approvalRequestId, 'approve');
       const applied = await applyConcession(concessionId, { businessDate: DAY }).expect(200);
-      expect(applied.body).toMatchObject({ statusCode: 'APPROVED', approvedQty: 6, usable: true });
+      expect(applied.body).toMatchObject({ statusCode: 'APPROVED', approvedQty: 10, usable: true, splitResult: null });
 
       expect(await lotStatus(lotId)).toBe('NORMAL');
       expect(await openInspectionHolds(lotId)).toBe(0);
-      // #207 — 승인 안 된 4 는 자식 LOT(불량) + 새 부적합으로 떼어 낸다. 판정 수량은 남은 수량 전체라 원 부적합이 닫힌다.
-      const childLotId = await childLotOf(lotId);
-      expect(await lotStatus(childLotId)).toBe('DEFECTIVE');
-      expect(applied.body.splitResult).toMatchObject({ splitLotId: childLotId, splitNonconformanceNo: expect.any(String) });
       const decisions = await prisma.disposition_decision.findMany({ where: { nonconformance_id: nc.nonconformance_id } });
       expect(decisions).toHaveLength(1);
       expect(decisions[0]).toMatchObject({ disposition_type_code: 'CONCESSION', approval_request_id: BigInt(approvalRequestId) });
       expect(decisions[0].decision_qty.toNumber()).toBe(10);
       expect((await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: nc.nonconformance_id } })).status_code).toBe('DECIDED');
-      const split = await prisma.nonconformance_lot.findFirstOrThrow({
-        where: { lot_id: BigInt(childLotId) }, select: { affected_qty: true, nonconformance: { select: { nonconformance_id: true, status_code: true } } },
-      });
-      expect(split.affected_qty.toNumber()).toBe(4);
-      expect(split.nonconformance).toMatchObject({ nonconformance_id: BigInt(applied.body.splitResult.splitNonconformanceId as number), status_code: 'PENDING_DECISION' });
 
       // 승인자·승인 일시는 결재 상세(W-03-09 화면), 사유·사용 가능 수량은 특채 상세가 낸다.
       const approval = await request(app.getHttpServer()).get(`/api/app/approval-requests/${approvalRequestId}`).set('Cookie', approverCookie).expect(200);
@@ -454,38 +384,24 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       expect(approval.body.steps[0]).toMatchObject({ approverId: Number(approverUserId), decisionCode: 'APPROVED' });
       expect(approval.body.steps[0].decisionAt).toEqual(expect.any(String));
       const detail = await request(app.getHttpServer()).get(`/api/quality/concessions/${concessionId}`).set('Cookie', cookie).expect(200);
-      expect(detail.body).toMatchObject({ approvedQty: 6, consumedQty: 0, remarks: '외관 경미 — 조건부 사용', lotId });
+      expect(detail.body).toMatchObject({ approvedQty: 10, consumedQty: 0, remarks: '외관 경미 — 조건부 사용', lotId });
 
-      // 특채 LOT 은 승인 수량(6)까지만 일반 창고로 입고되고, 떼어 낸 4 는 불량창고로만 입고된다(장부 P-56).
-      await receive(lotId, lineId, 10).expect(400);
-      await receive(lotId, lineId, 6).expect(201);
-      await receive(childLotId, lineId, 4).expect(400);
-      await receive(childLotId, lineId, 4, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
-      // #207 — 입고 전 특채는 원 LOT 이 불량창고 재고가 없어 W-04-11 목록에 나오지 않는다(불량으로 남은 LOT 은 새 부적합이 처분한다).
+      // 특채 LOT 은 승인 수량(10)까지 일반 창고로 입고된다(장부 P-56).
+      await receive(lotId, lineId, 11).expect(400);
+      await receive(lotId, lineId, 10).expect(201);
+      // 입고 전 특채는 원 LOT 이 불량창고 재고가 없어 W-04-11 목록에 나오지 않는다.
       expect(await reinstatableOf(nc.nonconformance_id)).toEqual([]);
     });
 
-    it('⭐ 불량창고 입고 뒤 일부 특채 — 같은 위치에서 재고를 나누고 원 LOT 6 · 자식 LOT 4 가 남는다(#207)', async () => {
+    it('⛔ R14a-1 일부 수량 특채 요청은 400 — 특채·결재가 서지 않는다(FR-038)', async () => {
       const { lotId, lineId } = await rejectedLot(10);
       await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
       const nc = await openNonconformance(lotId);
-      const created = await requestConcession(nc.nonconformance_id, lotId, 6, '불량창고 일부 특채').expect(201);
-      await decideApproval(created.body.approvalRequestId as number, 'approve');
+      const refused = await requestConcession(nc.nonconformance_id, lotId, 6, '불량창고 일부 특채').expect(400);
+      expect(JSON.stringify(refused.body)).toContain('approvedQty');
 
-      // ⛔ 재고가 있는 LOT 을 나누려면 원장 영업일이 필요하다 — 없으면 400 이고 아무것도 바뀌지 않는다.
-      const refused = await applyConcession(created.body.concessionId as number).expect(400);
-      expect(JSON.stringify(refused.body)).toContain('businessDate');
+      expect(await prisma.concession.count({ where: { nonconformance_id: nc.nonconformance_id } })).toBe(0);
       expect(await lotStatus(lotId)).toBe('DEFECTIVE');
-
-      await applyConcession(created.body.concessionId as number, { businessDate: DAY }).expect(200);
-      const childLotId = await childLotOf(lotId);
-      const stock = async (id: number) => prisma.inventory_balance.findMany({
-        where: { lot_id: BigInt(id), on_hand_qty: { gt: 0 } }, select: { on_hand_qty: true, location_id: true, quality_status_code: true },
-      });
-      expect((await stock(lotId)).map((row) => [row.on_hand_qty.toNumber(), Number(row.location_id)])).toEqual([[6, defectLocationId]]);
-      expect((await stock(childLotId)).map((row) => [row.on_hand_qty.toNumber(), Number(row.location_id)])).toEqual([[4, defectLocationId]]);
-      expect(await lotStatus(lotId)).toBe('NORMAL');
-      expect(await lotStatus(childLotId)).toBe('DEFECTIVE');
     });
 
     it('⛔ 반려면 적용이 특채를 REJECTED 로 닫고 LOT 은 불량 그대로다', async () => {
@@ -560,10 +476,10 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     it('⛔ 요청 뒤 다른 처분이 수량을 먼저 쓰면 적용이 400(approvedQty)이고 특채·LOT·판정은 그대로다', async () => {
       const { lotId } = await rejectedLot(10);
       const nc = await openNonconformance(lotId);
-      const created = await requestConcession(nc.nonconformance_id, lotId, 6, '적용 전 처분 선행').expect(201);
+      const created = await requestConcession(nc.nonconformance_id, lotId, 10, '적용 전 처분 선행').expect(201);
       await decideApproval(created.body.approvalRequestId as number, 'approve');
 
-      // 처분 정상 6 이 먼저 확정됐다 — 남은 수량 4 < 승인 6.
+      // 처분 정상 6 이 먼저 확정됐다 — 남은 수량 4 < 승인 10.
       await decide(nc.nonconformance_id, { dispositionTypeCode: 'NORMAL', decisionQty: 6 }).expect(201);
       const refused = await applyConcession(created.body.concessionId as number).expect(400);
       expect(JSON.stringify(refused.body)).toContain('approvedQty');
@@ -575,16 +491,16 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       })).toBe(0);
     });
 
-    it('⛔ 같은 부적합에 승인된 특채 2건 — 첫 적용은 200(나머지 분리·종결), 두 번째 적용은 400', async () => {
+    it('⛔ 같은 부적합에 승인된 특채 2건 — 첫 적용은 200(종결), 두 번째 적용은 400', async () => {
       const { lotId } = await rejectedLot(10);
       const nc = await openNonconformance(lotId);
       // ⚠ 결재 코어가 같은 부적합에 «진행 중» 결재를 둘 두지 않는다 — 첫 결재가 끝난 뒤 둘째를 올린다.
-      const first = await requestConcession(nc.nonconformance_id, lotId, 6, '특채 1').expect(201);
+      const first = await requestConcession(nc.nonconformance_id, lotId, 10, '특채 1').expect(201);
       await decideApproval(first.body.approvalRequestId as number, 'approve');
-      const second = await requestConcession(nc.nonconformance_id, lotId, 6, '특채 2').expect(201);
+      const second = await requestConcession(nc.nonconformance_id, lotId, 10, '특채 2').expect(201);
       await decideApproval(second.body.approvalRequestId as number, 'approve');
 
-      // #207 — 첫 적용이 나머지 4 를 떼어 원 부적합을 닫으므로 두 번째는 종결된 부적합이라 400 이다.
+      // 첫 적용이 남은 수량 전부로 원 부적합을 닫으므로 두 번째는 종결된 부적합이라 400 이다.
       await applyConcession(first.body.concessionId as number, { businessDate: DAY }).expect(200);
       const refused = await applyConcession(second.body.concessionId as number, { businessDate: DAY }).expect(400);
       expect(JSON.stringify(refused.body)).toContain('STATE_LOCKED');
@@ -631,17 +547,12 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
     if (closed.iqcRequestId === null) throw new Error('입하 마감이 IQC 요청을 세우지 않았다 — 검사 필요 품목이어야 한다');
     const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lots[0].lotId) }, select: { source_id: true } });
-    const line = await prisma.inbound_receipt_line.findUniqueOrThrow({
-      where: { inbound_receipt_line_id: lot.source_id }, select: { inbound_receipt_id: true },
-    });
-    inboundReceiptId = line.inbound_receipt_id;
     return { lotId: lots[0].lotId, lineId: Number(lot.source_id), requestId: closed.iqcRequestId };
   }
 
   /**
    * 옛 LOT 등록(이제 닫힘 · FR-036)이 쓰던 이전 데이터 모양 — 입하 줄 + 검사 대기 LOT + 수입검사 대기 보류 + LOT 단위 IQC 요청 + 줄 `lot_id`.
-   * ⚠ 재작업의 요청 다시 열기가 아직 요청의 `lot_id` 로만 걸려 입하 LOT 단위 요청(`lot_id` 없음)에는 서지 않는다 — 그것을 보는
-   * 시험만 이 모양으로 잰다(입하 LOT 요청으로 옮기는 일은 S10 · R-15).
+   * 결과 단위 확정·회차 사슬은 이전된 옛 요청에만 남는다(FR-051) — 그것을 보는 시험만 이 모양으로 잰다.
    */
   async function legacyIqcLot(qty: number): Promise<{ lotId: number; lineId: number; requestId: number }> {
     legacySeq += 1;
@@ -678,7 +589,6 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       },
     });
     await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: line.inbound_receipt_line_id }, data: { lot_id: lot.lot_id } });
-    inboundReceiptId = receipt.inbound_receipt_id;
     return { lotId: Number(lot.lot_id), lineId: Number(line.inbound_receipt_line_id), requestId: Number(iqc.inspection_request_id) };
   }
 
@@ -928,12 +838,6 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key());
     return body === undefined ? call : call.send(body);
-  }
-
-  async function childLotOf(lotId: number): Promise<number> {
-    const children = await prisma.lot_relation.findMany({ where: { source_lot_id: BigInt(lotId) }, select: { target_lot_id: true } });
-    expect(children).toHaveLength(1);
-    return Number(children[0].target_lot_id);
   }
 
   /** 결재(200 까지 본다) — 상세의 ETag 로 판을 맞춘다. 반려는 사유가 필수다. */

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { MaterialPackageView, packageView } from '../../logistics/material-lot-batch/material-lot-view';
 import { PrismaService } from '../../prisma/prisma.service';
 import { INBOUND_LOT_TARGET, nextResultSequence } from './iqc-inbound-lot-result';
-import { iqcOverallJudgment } from './iqc-overall-judgment';
+import { iqcOverallJudgment, judgedResults } from './iqc-overall-judgment';
 
 /**
  * 입하 LOT 를 가진 IQC 요청의 목록·상세 칸(피처 005 §8). 칸 이름은 클라이언트 C3 이 먼저 정한 것(forward-contract)을 따른다.
@@ -95,9 +95,12 @@ export async function inboundLotSummaries(prisma: PrismaService, rows: readonly 
       distinct: ['inbound_lot_id'],
       select: { inbound_lot_id: true, occurred_at: true, actor_worker_id: true },
     }),
-    newFlow.length === 0 ? Promise.resolve([] as { inspection_request_id: bigint; overall_judgment_code: string | null }[]) : prisma.inspection_result.findMany({
-      where: { inspection_request_id: { in: newFlow } }, select: { inspection_request_id: true, overall_judgment_code: true },
-    }),
+    newFlow.length === 0
+      ? Promise.resolve([] as { inspection_request_id: bigint; overall_judgment_code: string | null; status_code: string; confirmed_at: Date | null }[])
+      : prisma.inspection_result.findMany({
+        where: { inspection_request_id: { in: newFlow } },
+        select: { inspection_request_id: true, overall_judgment_code: true, status_code: true, confirmed_at: true },
+      }),
   ]);
   const lotOf = new Map(lots.map((lot) => [lot.inbound_lot_id, lot]));
   const countOf = new Map(counts.map((count) => [count.inbound_lot_id, count._count._all]));
@@ -112,7 +115,7 @@ export async function inboundLotSummaries(prisma: PrismaService, rows: readonly 
     };
     if (row.target_type_code !== INBOUND_LOT_TARGET) return base;
     const first = firstOf.get(row.inbound_lot_id);
-    const results = judgments.filter((result) => result.inspection_request_id === row.inspection_request_id);
+    const results = judgedResults(judgments.filter((result) => result.inspection_request_id === row.inspection_request_id));
     return {
       ...base,
       // 결과가 없으면 null — 판정이 빈 결과가 끼어도 null(확정할 수 없음).

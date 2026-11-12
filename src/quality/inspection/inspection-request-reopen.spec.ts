@@ -73,3 +73,40 @@ describe('reopenIqcRequestForReworkWithin', () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe('reopenIqcRequestForReworkWithin — 입하 LOT 검사(R-15)', () => {
+  const inbound = (status: string) => ({
+    inspection_request_id: 8n, inspection_type_code: 'IQC', target_type_code: 'INBOUND_LOT', lot_id: null, status_code: status,
+    overall_judgment_code: 'REJECTED', confirmed_at: new Date('2026-11-12T01:00:00Z'),
+  });
+  const txOf = (request: ReturnType<typeof inbound>) => {
+    const update = jest.fn().mockResolvedValue({});
+    const create = jest.fn().mockResolvedValue({});
+    const findUnique = jest.fn().mockResolvedValue({ inspection_request: request, inspection_result: null });
+    const tx = { inspection_request: { update }, inspection_request_event: { create }, nonconformance: { findUnique } } as unknown as Tx;
+    return { tx, update, create };
+  };
+
+  it('R15-1 부적합의 inspection_request_id 로 요청을 다시 연다 — IN_PROGRESS·확정 칸 비움·주기 + 1·이력 REOPENED_BY_REWORK', async () => {
+    const { tx, update, create } = txOf(inbound('COMPLETED'));
+
+    await reopenIqcRequestForReworkWithin(tx, 11n, [47n, 48n], 3);
+
+    expect(update).toHaveBeenCalledWith({
+      where: { inspection_request_id: 8n },
+      data: expect.objectContaining({
+        status_code: 'IN_PROGRESS', overall_judgment_code: null, confirmed_at: null, confirmed_by: null, confirm_cycle: { increment: 1 },
+      }),
+    });
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ inspection_request_id: 8n, event_type_code: 'REOPENED_BY_REWORK' }) });
+  });
+
+  it('R15-1 이미 다시 열린(진행) 요청은 그대로다', async () => {
+    const { tx, update, create } = txOf(inbound('IN_PROGRESS'));
+
+    await reopenIqcRequestForReworkWithin(tx, 11n, [47n], 3);
+
+    expect(update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+});

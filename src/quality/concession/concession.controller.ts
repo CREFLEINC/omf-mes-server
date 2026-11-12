@@ -23,8 +23,7 @@ import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConcessionFilters, concessionByIdQuery, concessionCountQuery, concessionRowsQuery, todayUtc } from './concession-query';
 import { ConcessionRow, ConcessionView, assertUsableInvariant, concessionView } from './concession-view';
-import type { SortResult } from '../disposition/disposition-sort';
-import { ConcessionApply, ConcessionCreate, ConcessionWriteService } from './concession-write.service';
+import { ConcessionApply, ConcessionBatch, ConcessionCreate, ConcessionWriteService } from './concession-write.service';
 
 export interface ConcessionListQuery extends ConcessionFilters {
   page?: number;
@@ -47,18 +46,23 @@ export class ConcessionController {
     private readonly idempotency: IdempotencyService,
   ) {}
 
-  /** 특채 요청(omf-all-around#84 · 장부 P-79) — 특채(PENDING)와 결재 요청을 함께 만든다. */
+  /**
+   * 특채 요청(omf-all-around#84 · 장부 P-79) — 특채(PENDING)와 결재 요청을 함께 만든다. LOT 이 여럿인 부적합은 LOT 마다 행이 서고
+   * 응답은 첫 행 + 묶음 id(`concessionIds`)다(피처 005 D-14).
+   */
   @Post('concessions')
   @Contract('POST /quality/concessions')
-  create(@Req() request: Request, @Body() body: ConcessionCreate): Promise<ConcessionView> {
+  create(@Req() request: Request, @Body() body: ConcessionCreate): Promise<ConcessionView & ConcessionBatch> {
     const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () =>
-      this.get(await this.writes.request(body, appUserId)));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
+      const batch = await this.writes.request(body, appUserId);
+      return { ...(await this.get(batch.concessionIds[0])), ...batch };
+    });
   }
 
   /**
-   * 특채 적용 — 승인됐으면 LOT 을 정상으로 열고, 반려됐으면 특채를 닫는다. 일부 특채면 나머지를 자식 LOT 으로
-   * 떼어 `splitResult` 로 알린다(«적용 응답»에만 · omf-all-around#207).
+   * 특채 적용 — 승인됐으면 묶음의 LOT 전부를 정상으로 열고, 반려됐으면 묶음을 닫는다. 일부 특채가 없어져(FR-038)
+   * `splitResult` 는 늘 null 이다(옛 화면 호환).
    */
   @Post('concessions/:concessionId\\:apply')
   @Contract('POST /quality/concessions/{concessionId}:apply')
@@ -67,11 +71,11 @@ export class ConcessionController {
     @Req() request: Request,
     @Param('concessionId', ParseIntPipe) concessionId: number,
     @Body() body: ConcessionApply | undefined,
-  ): Promise<ConcessionView & { splitResult: SortResult | null }> {
+  ): Promise<ConcessionView & ConcessionBatch & { splitResult: null }> {
     const appUserId = userOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      const splitResult = await this.writes.apply(concessionId, appUserId, body ?? {});
-      return { ...(await this.get(concessionId)), splitResult };
+      const batch = await this.writes.apply(concessionId, appUserId, body ?? {});
+      return { ...(await this.get(concessionId)), ...batch, splitResult: null };
     });
   }
 

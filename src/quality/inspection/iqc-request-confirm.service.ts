@@ -121,7 +121,7 @@ export class IqcRequestConfirmService {
         rehold.map((lotId) => ({ lotId, reasonCode: INSPECTION_HOLD_REASON, targetLotStatusCode: INITIAL_LOT_STATUS })), { at, by });
     }
     for (const nonconformanceId of nonconformanceIds) await this.cancelNonconformance(tx, nonconformanceId, at, by);
-    await this.reopenResults(tx, request.inspection_request_id, appUserId);
+    await this.reopenResults(tx, request.inspection_request_id, request.confirmed_at, appUserId);
     await tx.inspection_request.update({
       where: { inspection_request_id: request.inspection_request_id },
       data: {
@@ -149,8 +149,9 @@ export class IqcRequestConfirmService {
     if (!OPEN_STATUSES.includes(request.status_code)) {
       throw new ConflictException('user', '판정 확정됐거나 끝난 검사입니다.', { code: INVALID_STATE });
     }
+    // 재작업 재열기가 남긴 앞 확정의 결과(CONFIRMED)는 판정 근거로만 남는다 — 기록 중인 결과로 판정한다(R-15).
     const results = await tx.inspection_result.findMany({
-      where: { inspection_request_id: id }, orderBy: { inspection_round: 'asc' },
+      where: { inspection_request_id: id, status_code: 'DRAFT' }, orderBy: { inspection_round: 'asc' },
       select: { inspection_result_id: true, inspection_round: true, overall_judgment_code: true, inspected_qty: true, accepted_qty: true, rejected_qty: true, held_qty: true },
     });
     assertConfirmable(results);
@@ -198,7 +199,7 @@ export class IqcRequestConfirmService {
   /** 지금 결과 중 불합격이 있으면 부적합 번호를 미리 받는다. 확정 순간 판정이 달라지면 `confirmWithin` 이 다시 받게 한다. */
   private async nonconformanceNoIfRejected(id: bigint): Promise<string | undefined> {
     const rejected = await this.prisma.inspection_result.count({
-      where: { inspection_request_id: id, overall_judgment_code: REJECTED, inspection_request: { target_type_code: INBOUND_LOT_TARGET } },
+      where: { inspection_request_id: id, status_code: 'DRAFT', overall_judgment_code: REJECTED, inspection_request: { target_type_code: INBOUND_LOT_TARGET } },
     });
     return rejected === 0 ? undefined : this.numbering.next('NONCONFORMANCE', null, new Date().toISOString().slice(0, 10));
   }
@@ -212,10 +213,11 @@ export class IqcRequestConfirmService {
     });
   }
 
-  private async reopenResults(tx: Tx, id: bigint, appUserId: number): Promise<void> {
+  /** 이 확정의 결과만 되돌린다 — 재작업 재열기 앞 확정의 결과(더 이른 확정 시각)는 그 판정의 근거로 남는다(R-15). */
+  private async reopenResults(tx: Tx, id: bigint, confirmedAt: Date, appUserId: number): Promise<void> {
     const to = this.states.assertTransition('quality.inspection_result.status_code', 'iqc-confirm-cancelled', 'CONFIRMED').to;
     await tx.inspection_result.updateMany({
-      where: { inspection_request_id: id, status_code: 'CONFIRMED' },
+      where: { inspection_request_id: id, status_code: 'CONFIRMED', confirmed_at: confirmedAt },
       data: { status_code: to, confirmed_at: null, updated_by: appUserId, version_no: { increment: 1 } },
     });
   }

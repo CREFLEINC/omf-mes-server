@@ -13,9 +13,17 @@ import { SOURCE_LOT_SELECT, SourceCode, sourceCodeOf } from './nonconformance-so
 export const NONCONFORMANCE_INCLUDE = {
   nonconformance_lot: {
     orderBy: { nonconformance_lot_id: 'asc' },
-    include: { lot: { select: { lot_no: true, ...SOURCE_LOT_SELECT } } },
+    include: { lot: { select: { lot_no: true, inbound_lot: { select: { inbound_lot_no: true } }, ...SOURCE_LOT_SELECT } } },
   },
   disposition_decision: { select: { decision_qty: true } },
+  // 입하 LOT 판정 확정이 만든 부적합(피처 005) — 입하 LOT 번호와 LOT 별 불합격 결과 수(참고)를 낸다.
+  inspection_request: {
+    select: {
+      target_type_code: true,
+      inbound_lot: { select: { inbound_lot_no: true } },
+      inspection_result: { where: { overall_judgment_code: 'REJECTED' }, select: { inspection_result_lot: { select: { lot_id: true } } } },
+    },
+  },
   // ⭐ PR 리뷰 Minor-3 — `lots` 가 0행이면 `uomId` 를 고를 데가 없다(DB 는 그 상태를 막지 않는다 —
   //   `minItems:1` 는 등록 API 가드뿐이고 PR ⑥ 이전엔 그 가드조차 없다). 대상 품목의 기준 단위로 접는다.
   item: { select: { base_uom_id: true } },
@@ -31,6 +39,8 @@ export interface NonconformanceLotView {
   uomId: number;
   qualityStatusBeforeCode: string;
   qualityStatusAfterCode: string;
+  /** 입하 LOT 검사 부적합만 — 이 LOT 에 매칭된 불합격 결과 수(참고). 그 밖은 null. */
+  rejectedResultCount: number | null;
 }
 
 /** 계약 `Nonconformance` 와 동형(required 12 / 프로퍼티 21). */
@@ -40,6 +50,9 @@ export interface NonconformanceView {
   itemId: number;
   workOrderId?: number;
   inspectionResultId: number | null;
+  /** 입하 LOT 판정 확정이 만든 부적합의 검사 요청(피처 005). */
+  inspectionRequestId: number | null;
+  inboundLotNo: string | null;
   sourceCode: SourceCode;
   severityCode: string;
   description: string;
@@ -79,6 +92,7 @@ export function nonconformanceView(row: NonconformanceRow): NonconformanceView {
   // 판정). ⛔ 오늘은 그 가드가 없어 DB 가 0행·단위 혼합을 막지 않는다(PR 리뷰 Major-3·Minor-3)
   // — 0행이면 대상 품목의 기준 단위로 접는다(위 `item` 조인).
   const uomId = lots.length > 0 ? Number(lots[0].uom_id) : Number(row.item.base_uom_id);
+  const counts = rejectedCounts(row);
 
   return omitEmpty({
     nonconformanceId: Number(row.nonconformance_id),
@@ -86,6 +100,8 @@ export function nonconformanceView(row: NonconformanceRow): NonconformanceView {
     itemId: Number(row.item_id),
     workOrderId: row.work_order_id === null ? undefined : Number(row.work_order_id),
     inspectionResultId: row.inspection_result_id === null ? null : Number(row.inspection_result_id),
+    inspectionRequestId: row.inspection_request_id === null ? null : Number(row.inspection_request_id),
+    inboundLotNo: row.inspection_request?.inbound_lot?.inbound_lot_no ?? lots[0]?.lot.inbound_lot?.inbound_lot_no ?? null,
     sourceCode: sourceCodeOf(lots),
     severityCode: row.severity_code,
     description: row.description,
@@ -100,11 +116,22 @@ export function nonconformanceView(row: NonconformanceRow): NonconformanceView {
     affectedQtyTotal,
     uomId,
     dispositionProgressCode: dispositionProgressCodeOf(decidedQtyTotalDecimal, affectedQtyTotalDecimal),
-    lots: lots.map(nonconformanceLotView),
+    lots: lots.map((lot) => nonconformanceLotView(lot, counts)),
   });
 }
 
-function nonconformanceLotView(row: NonconformanceRow['nonconformance_lot'][number]): NonconformanceLotView {
+/** 입하 LOT 검사 부적합의 LOT 별 불합격 결과 수 — 결과 ↔ LOT 매칭(R-10)으로 센다. 입하 LOT 검사가 아니면 `null`. */
+function rejectedCounts(row: NonconformanceRow): Map<bigint, number> | null {
+  const request = row.inspection_request;
+  if (request === null || request.target_type_code !== 'INBOUND_LOT') return null;
+  const counts = new Map<bigint, number>();
+  for (const result of request.inspection_result) {
+    for (const match of result.inspection_result_lot) counts.set(match.lot_id, (counts.get(match.lot_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function nonconformanceLotView(row: NonconformanceRow['nonconformance_lot'][number], counts: Map<bigint, number> | null): NonconformanceLotView {
   return omitEmpty({
     nonconformanceLotId: Number(row.nonconformance_lot_id),
     lotId: Number(row.lot_id),
@@ -113,6 +140,7 @@ function nonconformanceLotView(row: NonconformanceRow['nonconformance_lot'][numb
     uomId: Number(row.uom_id),
     qualityStatusBeforeCode: row.quality_status_before_code,
     qualityStatusAfterCode: row.quality_status_after_code,
+    rejectedResultCount: counts === null ? null : (counts.get(row.lot_id) ?? 0),
   });
 }
 

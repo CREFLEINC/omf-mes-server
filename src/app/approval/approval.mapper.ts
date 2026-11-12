@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
+import type { ApprovalTargetInfo } from './approval-target-name';
 
 /** 계약 `ApprovalRoute` 와 동형. `stepCount`·`inProgressCount` 는 파생(호출자가 센다). */
 export interface ApprovalRouteView {
@@ -75,6 +76,8 @@ export interface ApprovalTargetView {
   targetId: number;
   displayName: string;
   openable: boolean;
+  /** IQC 생략(대상 입하 LOT)만 — 실행 경로에 쓸 자재 관리 LOT id(피처 005). */
+  targetLotId?: number | null;
 }
 
 /**
@@ -83,13 +86,14 @@ export interface ApprovalTargetView {
  * `screenId` 원천도 없어 키를 생략하고(`omitEmpty`) `openable` 은 항상 거짓이다
  * (설계 미정 — 문의 019, I-1.md §6-2).
  */
-export function toApprovalTarget(targetTypeCode: string, targetId: bigint, name?: string): ApprovalTargetView {
+export function toApprovalTarget(targetTypeCode: string, targetId: bigint, info?: ApprovalTargetInfo): ApprovalTargetView {
   const id = Number(targetId);
   return {
     targetTypeCode,
     targetId: id,
-    displayName: name ?? `${targetTypeCode} #${id}`,
+    displayName: info?.name ?? `${targetTypeCode} #${id}`,
     openable: false,
+    ...(info?.targetLotId === undefined ? {} : { targetLotId: info.targetLotId }),
   };
 }
 
@@ -123,7 +127,7 @@ type RequestRow = Prisma.approval_requestGetPayload<{
 export function toApprovalRequest(
   row: RequestRow,
   derived: { currentStepNo: number | null; isMyTurn: boolean },
-  targetName?: string,
+  target?: ApprovalTargetInfo,
 ): ApprovalRequestView {
   return {
     approvalRequestId: Number(row.approval_request_id),
@@ -135,7 +139,7 @@ export function toApprovalRequest(
     requestedAt: row.requested_at.toISOString(),
     statusCode: row.status_code,
     reason: row.reason,
-    target: toApprovalTarget(row.target_type_code, row.target_id, targetName),
+    target: toApprovalTarget(row.target_type_code, row.target_id, target),
     currentStepNo: derived.currentStepNo,
     totalStepNo: row.approval_step.length,
     isMyTurn: derived.isMyTurn,

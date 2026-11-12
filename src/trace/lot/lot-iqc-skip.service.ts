@@ -1,16 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 
-import { ERROR_CODE, field, one } from '../../common/errors';
+import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertWorkerNoPresent } from '../../common/master';
 import { ApprovalService } from '../../core/approval';
 import { INITIAL_LOT_STATUS, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 
-/** 승인 다형 축 — 계약 `x-internal-note` 가 이 둘을 서버 몫으로 못 박았다. */
-const IQC_SKIP_TYPE = 'IQC_SKIP';
-const IQC_SKIP_TARGET_TYPE = 'INBOUND_LOT';
+/** 승인 다형 축 — 계약 `x-internal-note` 가 이 둘을 서버 몫으로 못 박았다. 대상 id 는 입하 LOT id 다(피처 005 FR-032). */
+export const IQC_SKIP_TYPE = 'IQC_SKIP';
+export const IQC_SKIP_TARGET_TYPE = 'INBOUND_LOT';
+/** 생략은 입하 마감된 입하 LOT 만 요청한다(R-16) — 입하 중이면 LOT 이 더 붙을 수 있다. */
+const RECEIVED = 'RECEIVED';
 /** 계약 「**입하돼** 수입검사 대기인 LOT」의 앞 절반 — `:complete` 의 「생산 LOT 만」의 거울이다. */
 const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 
@@ -18,6 +20,14 @@ const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 export interface LotQualification {
   source_type_code: string;
   status_code: string;
+}
+
+/** 계약 `IqcSkipRequested`. */
+export interface IqcSkipRequested {
+  approvalRequestId: number;
+  inboundLotId: number;
+  inboundLotNo: string;
+  lotCount: number;
 }
 
 /** 본문 밖에서 오는 것. ⚠ 주체는 세션 계정이다 — 사번은 읽고 버린다(`plan.md` §5 규칙 9). */
@@ -50,16 +60,17 @@ export class LotIqcSkipService {
     lotId: number,
     reason: string,
     context: IqcSkipContext,
-  ): Promise<{ approvalRequestId: number }> {
+  ): Promise<IqcSkipRequested> {
     assertWorkerNoPresent(context.workerNo);
-    // 존재·자격을 채번 «전»에 한 번 거른다 — 400 이 될 LOT 에 AP 번호를 태우면 결번만 남는다
+    // 존재·자격을 채번 «전»에 한 번 거른다 — 400·409 가 될 LOT 에 AP 번호를 태우면 결번만 남는다
     // (I-5 R-12). 잠근 뒤 재검사가 경합 몫이다(형제 `goods-issue-update.service.ts:176-178`).
     const current = await this.prisma.lot.findUnique({
       where: { lot_id: lotId },
-      select: { source_type_code: true, status_code: true },
+      select: { source_type_code: true, status_code: true, inbound_lot: { select: { status_code: true } } },
     });
     if (current === null) throw new NotFoundException('없는 LOT 입니다.');
     assertSkippable(current);
+    assertReceived(current.inbound_lot?.status_code);
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»이다 — 열린 트랜잭션 안에서 부르면 이 요청이 커넥션을
     //    둘 쥐고, 동시 요청이 풀을 채우면 P2024 로 죽는다(I-2 R-2 · `purchase-order.service.ts:288`).
@@ -71,16 +82,15 @@ export class LotIqcSkipService {
       new Date().toISOString().slice(0, 10),
     );
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const locked = await lockLot(tx, lotId);
-      assertSkippable(locked);
+    return this.prisma.$transaction(async (tx) => {
+      const target = await lockSkipTarget(tx, lotId);
       // 「진행 중인 요청은 하나」·결재선 선택·단계 전개를 코어가 한 번에 한다 — 여기서 다시
       // 부르지 않고, 코어가 던지는 `ROUTE_NOT_FOUND`·`APPROVAL_IN_PROGRESS` 를 감싸지도 않는다.
       const approval = await this.approvals.request(tx, {
         approvalRequestNo,
         approvalTypeCode: IQC_SKIP_TYPE,
         targetTypeCode: IQC_SKIP_TARGET_TYPE,
-        targetId: BigInt(lotId),
+        targetId: target.inboundLotId,
         // ⚠ 9 상신자 중 P/O 만 전표 값을 준다 — LOT 에는 사업부 축이 없다(문의 022).
         businessUnitId: null,
         ...(context.appUserId === undefined ? {} : { requestedBy: BigInt(context.appUserId) }),
@@ -91,9 +101,11 @@ export class LotIqcSkipService {
         actor: context.terminalAudit, targetTypeCode: 'APPROVAL_REQUEST',
         targetId: approval.approvalRequestId, eventTypeCode: 'CREATED',
       });
-      return approval;
+      return {
+        approvalRequestId: Number(approval.approvalRequestId), inboundLotId: Number(target.inboundLotId),
+        inboundLotNo: target.inboundLotNo, lotCount: target.lotIds.length,
+      };
     });
-    return { approvalRequestId: Number(created.approvalRequestId) };
   }
 }
 
@@ -119,16 +131,37 @@ export function assertSkippable(lot: LotQualification, action: 'request' | 'exec
   }
 }
 
+function assertReceived(statusCode: string | undefined): void {
+  if (statusCode === RECEIVED) return;
+  throw new ConflictException('user', '입하 마감된 입하 LOT 만 IQC 생략을 요청할 수 있습니다.');
+}
+
+export interface SkipTarget {
+  inboundLotId: bigint;
+  inboundLotNo: string;
+  /** 입하 LOT 의 자재 관리 LOT 전부 — 오름차순으로 잠갔다. */
+  lotIds: bigint[];
+}
+
 /**
+ * 스캔한 LOT 의 입하 LOT 을 잠근다 — 자재 관리 LOT 전부(오름차순) 다음 입하 LOT(받기·마감 취소와 같은 순서).
  * ⛔ 잠금이 «필수»다 — 코어의 `assertNoOpenRequest` 는 조회만 하므로 같은 순간의 상신 둘이 다
  * 통과한다(`approval.service.ts:98-100` 이 「호출자가 트랜잭션 첫 문장에서 대상 행을 잠근다」).
+ * 자격(입하 원천·수입검사 대기)은 입하 LOT 의 자재 관리 LOT «전부»에 건다 — 생략이 그 전부를 옮긴다.
  */
-async function lockLot(tx: Tx, lotId: number): Promise<LotQualification> {
-  const rows = await tx.$queryRaw<LotQualification[]>`
-    SELECT source_type_code, status_code
-      FROM trace.lot
-     WHERE lot_id = ${BigInt(lotId)}
-       FOR UPDATE`;
-  if (rows.length === 0) throw new NotFoundException('없는 LOT 입니다.');
-  return rows[0];
+export async function lockSkipTarget(tx: Tx, lotId: number, action: 'request' | 'execute' = 'request'): Promise<SkipTarget> {
+  const scanned = await tx.lot.findUnique({ where: { lot_id: lotId }, select: { inbound_lot_id: true, source_type_code: true, status_code: true } });
+  if (scanned === null) throw new NotFoundException('없는 LOT 입니다.');
+  if (scanned.inbound_lot_id === null) {
+    assertSkippable(scanned, action);
+    throw one(field('lotId', ERROR_CODE.INVALID, '입하 LOT 이 없는 LOT 입니다.'));
+  }
+  const lots = await tx.$queryRaw<(LotQualification & { lot_id: bigint })[]>`
+    SELECT lot_id, source_type_code, status_code FROM trace.lot
+     WHERE inbound_lot_id = ${scanned.inbound_lot_id} ORDER BY lot_id FOR UPDATE`;
+  for (const lot of lots) assertSkippable(lot, action);
+  const [inbound] = await tx.$queryRaw<{ inbound_lot_no: string; status_code: string }[]>`
+    SELECT inbound_lot_no, status_code FROM trace.inbound_lot WHERE inbound_lot_id = ${scanned.inbound_lot_id} FOR UPDATE`;
+  if (action === 'request') assertReceived(inbound.status_code);
+  return { inboundLotId: scanned.inbound_lot_id, inboundLotNo: inbound.inbound_lot_no, lotIds: lots.map((lot) => lot.lot_id) };
 }

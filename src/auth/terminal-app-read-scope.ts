@@ -30,8 +30,8 @@ const RENDITION_DOCUMENT_TYPES: readonly string[] = [
 ];
 
 export type TerminalApprovalListScope =
-  | { plantId: bigint; lotId: bigint; workerId?: never }
-  | { plantId: bigint; workerId: bigint; lotId?: never };
+  | { plantId: bigint; inboundLotId: bigint; workerId?: never }
+  | { plantId: bigint; workerId: bigint; inboundLotId?: never };
 const APPROVAL_SCOPE = Symbol('terminalApprovalListScope');
 export function currentTerminalApprovalListScope(request: Request): TerminalApprovalListScope | undefined {
   return (request as Request & { [APPROVAL_SCOPE]?: TerminalApprovalListScope })[APPROVAL_SCOPE];
@@ -61,14 +61,15 @@ export async function assertTerminalAppReadScope(
         if (!worker) throw denied();
         scope = { plantId: terminal.plantId, workerId: worker.worker_id };
       } else {
-        const lotId = positiveId(query.targetId);
-        if (query.targetTypeCode !== 'INBOUND_LOT' || lotId === null
+        // 생략 결재의 대상은 입하 LOT 이다(피처 005 FR-032) — `targetId` 는 단말 공장의 입하 LOT id.
+        const inboundLotId = positiveId(query.targetId);
+        if (query.targetTypeCode !== 'INBOUND_LOT' || inboundLotId === null
           || !(query.pendingOnly === 'true' || query.pendingOnly === true)
           || query.requestedByMe !== undefined || size > 1) throw denied();
-        const lot = await prisma.lot.findFirst({ where: { lot_id: lotId, plant_id: terminal.plantId,
-          source_type_code: 'INBOUND_RECEIPT_LINE' }, select: { lot_id: true } });
-        if (!lot) throw denied();
-        scope = { plantId: terminal.plantId, lotId };
+        const inboundLot = await prisma.inbound_lot.findFirst({ where: { inbound_lot_id: inboundLotId, plant_id: terminal.plantId },
+          select: { inbound_lot_id: true } });
+        if (!inboundLot) throw denied();
+        scope = { plantId: terminal.plantId, inboundLotId };
       }
       Object.defineProperty(request, APPROVAL_SCOPE, { value: scope, configurable: true });
       break;
