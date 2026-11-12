@@ -34,10 +34,11 @@ export function aqlPlanOf(version: AqlVersion | null, targetQty: Prisma.Decimal)
 
 /** 자동 판정의 합격판정개수 — AQL 버전이면 표의 Ac, 아니면 버전에 적은 값(omf-all-around#125 · #264). */
 export function acceptanceNumberOf(
-  version: (AqlVersion & { acceptance_number: number | null }) | null,
-  targetQty: Prisma.Decimal,
+  version: { acceptance_number: number | null } | null,
+  /** 같은 의뢰 수량으로 낸 `aqlPlanOf` 결과 — 표 계산을 두 번 하지 않게 받는다. */
+  plan: InspectionAqlPlanView | null,
 ): number | null {
-  return aqlPlanOf(version, targetQty)?.acceptanceNumber ?? version?.acceptance_number ?? null;
+  return plan?.acceptanceNumber ?? version?.acceptance_number ?? null;
 }
 
 /** 의뢰 상세의 AQL 시료 계획(omf-all-around#264). */

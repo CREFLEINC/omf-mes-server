@@ -8455,7 +8455,7 @@
      "quality"
     ],
     "summary": "버전 재사용",
-    "description": "사용 중지 → 확정(omf-all-around#258). 다른 확정 버전은 그대로 둔다(확정과 같은 규칙). 내용은 사용 중지 때 그대로라 확정 전 검사를 다시 하지 않는다. 상태≠사용 중지이면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1",
+    "description": "사용 중지 → 확정(omf-all-around#258). 다른 확정 버전은 그대로 둔다(확정과 같은 규칙). 내용은 사용 중지 때 그대로라 확정 전 검사를 다시 하지 않는다. 상태≠사용 중지이면 400(code=STATE_LOCKED). 같은 기준에 더 새 확정 버전이 있으면 다시 써도 검사에 쓰이지 않아 400(code=STATE_LOCKED · 그 버전 번호를 알린다). 그 사이 상태가 바뀌었으면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -28614,13 +28614,13 @@
      "templateCode": {
       "type": "string",
       "maxLength": 50,
-      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다. ⭐ 비우면(생략 · 빈 글) 그 품목이 쓰던 기준코드, 없으면 서버가 `QS-{YYYYMMDD}-{SEQ4}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262)."
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 같은 품목의 다른 판과 코드가 다르면 400 INVALID. 검사 기준(InspectionPlan)의 코드와는 따로 본다. ⭐ 비우면(생략 · 빈 글) 그 품목이 쓰던 기준코드, 없으면 서버가 `QS-{YYYYMMDD}-{SEQ4}` 로 붙인다(사용자 결정 2026-11-11 · omf-all-around#262)."
      },
      "templateName": {
       "type": "string",
       "minLength": 1,
       "maxLength": 200,
-      "description": "관리용 기준명(omf-all-around#260)."
+      "description": "관리용 기준명(omf-all-around#260). 공백만이면 400 REQUIRED."
      },
      "itemId": {
       "type": "integer",
@@ -28718,13 +28718,13 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 50,
-      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 검사 기준(InspectionPlan)의 코드와는 따로 본다. 빼면 그대로 둔다."
+      "description": "관리용 기준코드(omf-all-around#260) — 같은 품목의 버전끼리 같고, 다른 품목의 검사표와는 겹치지 않는다(겹치면 400 UNIQUE_VIOLATION). 같은 품목의 다른 판과 코드가 다르면 400 INVALID. 검사 기준(InspectionPlan)의 코드와는 따로 본다. 빼거나 공백만이면 그대로 둔다."
      },
      "templateName": {
       "type": "string",
       "minLength": 1,
       "maxLength": 200,
-      "description": "관리용 기준명(omf-all-around#260). 빼면 그대로 둔다."
+      "description": "관리용 기준명(omf-all-around#260). 빼면 그대로 둔다. 공백만이면 400 REQUIRED."
      },
      "materialText": {
       "type": [
