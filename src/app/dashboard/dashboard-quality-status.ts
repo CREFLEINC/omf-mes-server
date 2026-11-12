@@ -122,7 +122,16 @@ export function lotSupplierName(lotId: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`(SELECT p.partner_name FROM logistics.inbound_receipt_line irl
     JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
     JOIN mdm.partner p ON p.partner_id = rc.supplier_id
-    WHERE irl.lot_id = ${lotId} ORDER BY irl.inbound_receipt_line_id LIMIT 1)`;
+    WHERE ${lineOfLot(Prisma.sql`irl`, lotId)} ORDER BY irl.inbound_receipt_line_id LIMIT 1)`;
+}
+
+/**
+ * 「LOT 의 입하 줄」 — 줄의 `lot_id` 이거나 LOT 원천이 그 줄이다. 새 흐름 자재 관리 LOT 은 줄의 `lot_id` 에 실리지 않는다
+ * (피처 005). 원천 쪽은 `lot_id` 가 빈 줄만 본다 — 옛 줄은 `lot_id` 만 믿는다(원천이 어긋난 옛 시험 데이터가 있다).
+ */
+export function lineOfLot(line: Prisma.Sql, lotId: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(${line}.lot_id = ${lotId} OR (${line}.lot_id IS NULL AND ${line}.inbound_receipt_line_id = (
+    SELECT src.source_id FROM trace.lot src WHERE src.lot_id = ${lotId} AND src.source_type_code = 'INBOUND_RECEIPT_LINE')))`;
 }
 
 /** PQC 호기 — W/O 의 계획 설비, 없으면 그 W/O 의 마지막 작업세션 설비. */

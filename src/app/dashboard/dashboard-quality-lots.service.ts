@@ -16,6 +16,7 @@ import {
   heldWhere,
   iqcSortedCte,
   lotRecordCountSql,
+  lineOfLot,
   lotSupplierName,
   pqcEquipmentCode,
 } from './dashboard-quality-status';
@@ -155,7 +156,7 @@ function listSql(
           FROM (SELECT DISTINCT ON (lot_id) * FROM receipt_hold ORDER BY lot_id, held_at, lot_hold_id) h
           JOIN mdm.item i ON i.item_id = h.item_id
           LEFT JOIN mdm.uom hu ON hu.uom_id = h.uom_id
-          LEFT JOIN LATERAL (SELECT * FROM logistics.inbound_receipt_line x WHERE x.lot_id = h.lot_id
+          LEFT JOIN LATERAL (SELECT * FROM logistics.inbound_receipt_line x WHERE ${lineOfLot(Prisma.sql`x`, Prisma.sql`h.lot_id`)}
             ORDER BY x.inbound_receipt_line_id LIMIT 1) irl ON true
           LEFT JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
           LEFT JOIN mdm.uom ru ON ru.uom_id = irl.uom_id

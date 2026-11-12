@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { lotsOfInboundLines, representativeLot } from '../../core/lot';
 import { IF_GOODS_RECEIPT, OutboxService } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOCATION_TARGET, allocationMessageKey, erpReceiptLinesOf } from '../goods-receipt/erp-receipt';
@@ -92,7 +93,12 @@ export class InboundAllocationService {
       include: UNALLOCATED_LINE_INCLUDE,
       orderBy: { inbound_receipt_line_id: 'asc' },
     });
-    return pagedResponse(rows.map(unallocatedLineView), Number(total), page);
+    const lotsOf = await lotsOfInboundLines(this.prisma, rows, { lot_no: true });
+    return pagedResponse(
+      rows.map((row) => unallocatedLineView(row, representativeLot(lotsOf.get(row.inbound_receipt_line_id)))),
+      Number(total),
+      page,
+    );
   }
 
   /**

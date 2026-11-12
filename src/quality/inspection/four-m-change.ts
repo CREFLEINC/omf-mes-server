@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
+import { requestLotIds } from './inspection-request-lots';
 
 /**
  * 4M 변경품(omf-all-around#63 · 장부 P-86) — IQC 판정 때 자재 LOT 하나에 «변경품»과 변경 종류·비고를 적는다.
@@ -19,6 +20,8 @@ export interface FourMChangeInput {
 
 export interface PreparedFourMChange {
   lotId: bigint;
+  /** 입하 LOT 요청의 자재 관리 LOT 이 둘 이상일 때만 — 그 밖은 `lotId` 하나다(피처 005). */
+  lotIds?: bigint[];
   inspectionRequestId: bigint;
   value: FourMChangeInput | null;
 }
@@ -34,11 +37,12 @@ export async function prepareFourMChange(
   if (input === undefined) return undefined;
   const request = await prisma.inspection_request.findUnique({
     where: { inspection_request_id: inspectionRequestId },
-    select: { inspection_type_code: true, lot_id: true },
+    select: { inspection_type_code: true, lot_id: true, inbound_lot_id: true },
   });
   // 없는 의뢰는 결과 쓰기 자체가 404 로 막는다 — 여기서 먼저 다른 봉투를 내지 않는다.
   if (request === null) return undefined;
-  if (request.inspection_type_code !== 'IQC' || request.lot_id === null) {
+  const lotIds = request.inspection_type_code === 'IQC' ? await requestLotIds(prisma, request) : [];
+  if (lotIds.length === 0) {
     throw one(field('fourMChange', ERROR_CODE.INVALID, '4M 변경품은 자재 LOT 이 있는 IQC 검사에만 적을 수 있습니다.'));
   }
   if (input !== null) {
@@ -51,7 +55,7 @@ export async function prepareFourMChange(
       ]);
     }
   }
-  return { lotId: request.lot_id, inspectionRequestId, value: input };
+  return { lotId: lotIds[0], ...(lotIds.length > 1 ? { lotIds } : {}), inspectionRequestId, value: input };
 }
 
 /** 결과 id 만 아는 경로(`PUT`·`:confirm`)가 의뢰를 찾는다. 없는 결과는 각 경로가 404 로 막는다. */
@@ -74,16 +78,27 @@ export async function writeFourMChangeWithin(
   appUserId: number | undefined,
 ): Promise<void> {
   if (prepared === undefined) return;
+  const lotIds = prepared.lotIds ?? [prepared.lotId];
   if (prepared.value === null) {
-    await tx.lot_four_m_change.deleteMany({ where: { lot_id: prepared.lotId } });
+    await tx.lot_four_m_change.deleteMany({ where: { lot_id: lotIds.length === 1 ? prepared.lotId : { in: lotIds } } });
     return;
   }
-  const remarks = prepared.value.remarks.trim();
-  const changeTypeCode = prepared.value.changeTypeCode ?? null;
+  for (const lotId of lotIds) await upsertFourMChange(tx, lotId, prepared, appUserId);
+}
+
+async function upsertFourMChange(
+  tx: Prisma.TransactionClient,
+  lotId: bigint,
+  prepared: PreparedFourMChange,
+  appUserId: number | undefined,
+): Promise<void> {
+  const value = prepared.value as FourMChangeInput;
+  const remarks = value.remarks.trim();
+  const changeTypeCode = value.changeTypeCode ?? null;
   await tx.lot_four_m_change.upsert({
-    where: { lot_id: prepared.lotId },
+    where: { lot_id: lotId },
     create: {
-      lot_id: prepared.lotId,
+      lot_id: lotId,
       inspection_request_id: prepared.inspectionRequestId,
       change_type_code: changeTypeCode,
       remarks,

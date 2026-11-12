@@ -132,7 +132,12 @@ export class InspectionResultQueryService {
 }
 
 /** 최종 회차를 접는 데 필요한 칸 셋. 뷰 조인 없이 좁게 읽어야 스코프가 넓어도 견딘다. */
-export const FINAL_ROUND_SELECT = { inspection_result_id: true, inspection_request_id: true, inspection_round: true } as const;
+export const FINAL_ROUND_SELECT = {
+  inspection_result_id: true,
+  inspection_request_id: true,
+  inspection_round: true,
+  confirm_cycle: true,
+} as const;
 
 /** 목록·집계 3건이 **같은 필터 축**(§1-2)을 쓴다 — 두 벌로 짜면 조용히 갈린다. */
 export function buildInspectionResultWhere(

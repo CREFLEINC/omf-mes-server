@@ -115,10 +115,15 @@ function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_reques
   return {
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
     ...filter('item_id', query.itemId),
-    ...filter('lot_id', query.lotId),
     ...filter('work_order_id', query.workOrderId),
     // 상태(`AND`)·공급사·공장(둘 다 `lot`) 조건은 펼치면 서로 덮는다 — AND 하나로 묶는다.
-    AND: [statusWhere(query), supplierWhere(query.supplierId), plantWhere(query.plantId), requestedAtWhere(query)],
+    AND: [
+      lotWhere(query.lotId),
+      statusWhere(query),
+      supplierWhere(query.supplierId),
+      plantWhere(query.plantId),
+      requestedAtWhere(query),
+    ],
     // ⛔ 범위는 `inspection_request_no` «하나»다 — 공급사·품목은 훑지 않는다(계약).
     ...(query.q === undefined ? {} : { inspection_request_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } }),
   };
@@ -144,11 +149,31 @@ function statusWhere(query: InspectionRequestListQuery): Prisma.inspection_reque
  */
 function supplierWhere(supplierId: number | undefined): Prisma.inspection_requestWhereInput {
   if (supplierId === undefined) return {};
-  return { lot: { inbound_receipt_line: { some: { inbound_receipt: { supplier_id: supplierId } } } } };
+  return {
+    OR: [
+      { lot: { inbound_receipt_line: { some: { inbound_receipt: { supplier_id: supplierId } } } } },
+      // 입하 LOT 요청(`lot_id` 없음)은 입하 LOT 이 공급사를 갖는다(피처 005).
+      { inbound_lot: { supplier_id: supplierId } },
+    ],
+  };
 }
 
 function plantWhere(plantId: number | undefined): Prisma.inspection_requestWhereInput {
-  return plantId === undefined ? {} : { lot: { plant_id: plantId } };
+  return plantId === undefined ? {} : { OR: [{ lot: { plant_id: plantId } }, { inbound_lot: { plant_id: plantId } }] };
+}
+
+/**
+ * 「그 LOT 의 요청」 — 옛 요청은 `lot_id`, 입하 LOT 요청은 그 입하 LOT 의 자재 관리 LOT 에 든 것(피처 005).
+ * ⛔ 두 번째 갈래는 `lot_id` 가 빈 요청만 — 이전된 옛 요청까지 입하 LOT 로 찾으면 옛 선별 자식 LOT 이 부모의 요청을 끌어온다.
+ */
+function lotWhere(lotId: number | undefined): Prisma.inspection_requestWhereInput {
+  if (lotId === undefined) return {};
+  return {
+    OR: [
+      { lot_id: BigInt(lotId) },
+      { lot_id: null, inbound_lot: { lot: { some: { lot_id: BigInt(lotId) } } } },
+    ],
+  };
 }
 
 function requestedAtWhere(query: InspectionRequestListQuery): Prisma.inspection_requestWhereInput {

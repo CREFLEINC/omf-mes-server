@@ -52,6 +52,8 @@ export class InspectionHistoryService {
         inspection_request_id: true, inspection_request_no: true, inspection_type_code: true,
         target_type_code: true, target_id: true, requested_at: true,
         lot: { select: { lot_no: true, inbound_receipt_line: { select: { inbound_receipt: { select: { inbound_receipt_no: true } } }, take: 1 } } },
+        // 입하 LOT 요청(`lot_id` 없음)의 입하번호는 입하 LOT 의 줄에서 읽는다(피처 005).
+        inbound_lot: { select: { inbound_receipt_line: { select: { inbound_receipt: { select: { inbound_receipt_no: true } } } } } },
         work_order: { select: { work_order_no: true } },
         inspection_result: {
           orderBy: { inspection_round: 'asc' },
@@ -126,9 +128,12 @@ export class InspectionHistoryService {
     target_type_code: string;
     target_id: bigint;
     lot: { inbound_receipt_line: { inbound_receipt: { inbound_receipt_no: string } }[] } | null;
+    inbound_lot?: { inbound_receipt_line: { inbound_receipt: { inbound_receipt_no: string } } } | null;
     work_order: { work_order_no: string } | null;
   }): Promise<{ documentNo?: string }> {
-    const inbound = request.lot?.inbound_receipt_line[0]?.inbound_receipt.inbound_receipt_no;
+    const inbound =
+      request.lot?.inbound_receipt_line[0]?.inbound_receipt.inbound_receipt_no ??
+      request.inbound_lot?.inbound_receipt_line.inbound_receipt.inbound_receipt_no;
     if (inbound !== undefined) return { documentNo: inbound };
     if (request.work_order !== null) return { documentNo: request.work_order.work_order_no };
     if (request.target_type_code === 'SHIPMENT_REQUEST') {

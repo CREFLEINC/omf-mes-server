@@ -5,6 +5,10 @@ import { NotificationEmitter, formatQty } from '../../core/notification';
 
 type Tx = Prisma.TransactionClient;
 
+const RECEIPT_SELECT = {
+  inbound_receipt: { select: { inbound_receipt_no: true, partner: { select: { partner_name: true } } } },
+} satisfies Prisma.inbound_receipt_lineSelect;
+
 /** 알림 끝에 붙이는 다음 할 일 — 불합격 LOT 실물은 관리웹 입하 처리로 불량 창고에 넣는다. */
 export const IQC_REJECTED_NEXT_STEP = '불량 창고로 입하 처리';
 
@@ -30,11 +34,14 @@ export class IqcRejectedHandoverNotifier {
           inbound_receipt_line: {
             take: 1,
             orderBy: { inbound_receipt_line_id: 'asc' },
-            select: { inbound_receipt: { select: { inbound_receipt_no: true, partner: { select: { partner_name: true } } } } },
+            select: RECEIPT_SELECT,
           },
+          // 새 흐름 자재 관리 LOT 은 입하 줄의 `lot_id` 에 실리지 않는다 — 입하 LOT 으로 찾는다(피처 005).
+          inbound_lot: { select: { inbound_receipt_line: { select: RECEIPT_SELECT } } },
         },
       });
-      const receipt = lot.inbound_receipt_line[0]?.inbound_receipt;
+      const receipt =
+        lot.inbound_receipt_line[0]?.inbound_receipt ?? lot.inbound_lot?.inbound_receipt_line.inbound_receipt;
       await this.emitter.emitHandover(tx, {
         alertTypeCode: 'IQC_INSPECTION_REJECTED',
         plantId: lot.plant_id,

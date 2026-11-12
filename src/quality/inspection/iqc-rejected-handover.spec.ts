@@ -59,7 +59,9 @@ describe('IqcRejectedHandoverNotifier', () => {
 describe('IQC 확정 → 검사 불합격 인계 알림', () => {
   async function confirm(inspectionTypeCode: string, judgment: string, lotId: bigint | null) {
     const tx = {
-      inspection_request: { update: jest.fn().mockResolvedValue({
+      inspection_request: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', inbound_lot_id: null }),
+        update: jest.fn().mockResolvedValue({
         lot_id: lotId, work_order_id: null, inspection_type_code: inspectionTypeCode, inspection_plan_version: null,
       }) },
       $queryRaw: jest.fn().mockResolvedValue([]),

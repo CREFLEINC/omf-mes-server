@@ -1,3 +1,4 @@
+import { inboundLineLotSql } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RECEIPT_CANCELLED, SHIPMENT_CANCELLED } from './flow-sql';
 
@@ -115,13 +116,14 @@ export async function materialSides(prisma: PrismaService, lotIds: readonly bigi
       partner_id: bigint; partner_code: string; partner_name: string; supplier_lot_no: string | null;
     }[]>(
       // 한 LOT 에 입하 줄이 여럿이면(같은 공급사 LOT 재입하) 처음 것을 보인다.
-      `SELECT DISTINCT ON (irl.lot_id) irl.lot_id, ir.inbound_receipt_id, ir.inbound_receipt_no, ir.receipt_datetime,
+      `SELECT DISTINCT ON (lt.lot_id) lt.lot_id, ir.inbound_receipt_id, ir.inbound_receipt_no, ir.receipt_datetime,
               sp.partner_id, sp.partner_code, sp.partner_name, irl.supplier_lot_no
-         FROM logistics.inbound_receipt_line irl
+         FROM trace.lot lt
+         JOIN logistics.inbound_receipt_line irl ON ${inboundLineLotSql('lt', 'irl')}
          JOIN logistics.inbound_receipt ir ON ir.inbound_receipt_id = irl.inbound_receipt_id
          JOIN mdm.partner sp ON sp.partner_id = ir.supplier_id
-        WHERE irl.lot_id = ANY($1::bigint[])
-        ORDER BY irl.lot_id, ir.receipt_datetime, irl.inbound_receipt_line_id`, [...lotIds],
+        WHERE lt.lot_id = ANY($1::bigint[])
+        ORDER BY lt.lot_id, ir.receipt_datetime, irl.inbound_receipt_line_id`, [...lotIds],
     ),
   ]);
   const inboundOf = new Map(inbound.map((row) => [row.lot_id, {
