@@ -237,8 +237,9 @@ export async function assertJudgmentChange(
   });
   if (request === null || !JUDGMENT_RULE_TYPES.has(request.inspection_type_code)) return undefined;
   // AQL 샘플링 버전은 의뢰 수량으로 표에서 낸 합격 판정 수(Ac)로 잰다(omf-all-around#264).
-  const acceptanceNumber = acceptanceNumberOf(request.inspection_plan_version, request.target_qty);
-  const isAql = aqlPlanOf(request.inspection_plan_version, request.target_qty) !== null;
+  const plan = aqlPlanOf(request.inspection_plan_version, request.target_qty);
+  const acceptanceNumber = acceptanceNumberOf(request.inspection_plan_version, plan);
+  const isAql = plan !== null;
   const dimensionRejected =
     isAql && input.measurements !== undefined
       ? await hasRejectedDimension(
@@ -248,6 +249,18 @@ export async function assertJudgmentChange(
         )
       : false;
   return assertJudgmentChangeReason(input, input.judgment, acceptanceNumber, input.reason, dimensionRejected);
+}
+
+/** `:confirm` 은 본문에 측정값이 없다 — 저장된 측정값으로 판정한다(omf-all-around#264). */
+export async function storedJudgedMeasurements(
+  tx: Pick<PrismaService, 'inspection_measurement'> | Prisma.TransactionClient,
+  inspectionResultId: bigint,
+): Promise<JudgedMeasurement[]> {
+  const rows = await tx.inspection_measurement.findMany({
+    where: { inspection_result_id: inspectionResultId },
+    select: { inspection_item_spec_id: true, judgment_code: true },
+  });
+  return rows.map((m) => ({ inspectionItemSpecId: m.inspection_item_spec_id, judgmentCode: m.judgment_code }));
 }
 
 /** 판정에 쓰는 측정값 두 칸. */

@@ -65,7 +65,10 @@ function harness(row: { status_code: string; business_unit_id: bigint } | null =
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findMany: jest.fn().mockResolvedValue([]),
       delete: jest.fn(),
+      /* 기준코드 규칙 — 기본은 다른 품목 · 같은 품목의 다른 판이 걸리지 않는다(#260). */
+      findFirst: jest.fn().mockResolvedValue(null),
     },
+    $executeRaw: jest.fn().mockResolvedValue(1),
     inspection_sheet_template_lot_source: { createMany: jest.fn(), deleteMany: jest.fn() },
     inspection_sheet_template_step: { create: jest.fn(), deleteMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     inspection_sheet_template_item: { deleteMany: jest.fn() },
@@ -144,15 +147,38 @@ describe('InspectionSheetTemplateService', () => {
   });
 
   it('다른 품목의 검사표가 쓰는 기준코드면 400 UNIQUE_VIOLATION 이고 만들지 않는다', async () => {
-    const { service, prisma, tx } = harness();
-    prisma.inspection_sheet_template.findFirst.mockResolvedValue({ item: { item_code: 'BBB' } });
+    const { service, tx } = harness();
+    tx.inspection_sheet_template.findFirst.mockResolvedValue({ item: { item_code: 'BBB' } });
 
     const error = await service.create(input(), ACTOR).catch((e: unknown) => e);
 
-    expect(prisma.inspection_sheet_template.findFirst).toHaveBeenCalledWith(
+    expect(tx.$executeRaw).toHaveBeenCalled();
+    expect(tx.inspection_sheet_template.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { template_code: 'SHEET-A', item_id: { not: 5 } } }),
     );
     expect(failure(error).errors[0]).toMatchObject({ field: 'templateCode', code: 'UNIQUE_VIOLATION' });
+    expect(tx.inspection_sheet_template.create).not.toHaveBeenCalled();
+  });
+
+  /* PR #1025 리뷰 — 같은 품목의 판끼리는 기준코드가 같다. */
+  it('같은 품목의 다른 판과 다른 기준코드면 400 INVALID 이고 만들지 않는다', async () => {
+    const { service, tx } = harness();
+    tx.inspection_sheet_template.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ template_code: 'SHEET-OLD', template_version: 1 });
+
+    const error = await service.create(input(), ACTOR).catch((e: unknown) => e);
+
+    expect(failure(error).errors[0]).toMatchObject({ field: 'templateCode', code: 'INVALID' });
+    expect(tx.inspection_sheet_template.create).not.toHaveBeenCalled();
+  });
+
+  it('공백만인 기준명은 400 REQUIRED 다 — 빈 문자열로 저장하지 않는다', async () => {
+    const { service, tx } = harness();
+
+    const error = await service.create(input({ templateName: '   ' }), ACTOR).catch((e: unknown) => e);
+
+    expect(failure(error).errors[0]).toMatchObject({ field: 'templateName', code: 'REQUIRED' });
     expect(tx.inspection_sheet_template.create).not.toHaveBeenCalled();
   });
 
@@ -213,6 +239,17 @@ describe('InspectionSheetTemplateService', () => {
     );
     expect(tx.inspection_sheet_template_step.deleteMany).toHaveBeenCalled();
     expect(tx.inspection_sheet_template_step.create).toHaveBeenCalledTimes(1);
+  });
+
+  /* PR #1025 리뷰 — 공백만인 기준코드는 「그대로 둔다」로 읽는다(빈 문자열로 저장하지 않는다 · #262). */
+  it('수정에서 기준코드를 비우면 코드는 건드리지 않는다', async () => {
+    const { service, tx } = harness({ status_code: 'DRAFT', business_unit_id: 2n });
+
+    await service.update(11, 3, input({ templateCode: '  ' }), ACTOR);
+
+    const data = tx.inspection_sheet_template.updateMany.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).not.toHaveProperty('template_code');
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('잠금 버전이 다르면 409 다', async () => {

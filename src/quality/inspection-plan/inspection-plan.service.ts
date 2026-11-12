@@ -48,7 +48,7 @@ interface InspectionPlanView {
 }
 
 export interface InspectionPlanWrite {
-  /** 등록 · 복사는 비우면(생략 · 공백) 서버가 `QP-{YYYYMMDD}-{SEQ4}` 로 붙인다(omf-all-around#262). 수정은 필수. */
+  /** 수정은 필수. 등록 · 복사는 `InspectionPlanCreate` — 비울 수 있다. */
   inspectionPlanCode: string;
   inspectionPlanName: string;
   nameKo?: string | null;
@@ -61,6 +61,9 @@ export interface InspectionPlanWrite {
   /** 호환용 — `defaultSkip` 이 없을 때만 그 값으로 쓴다. */
   pqcSkipAllowed?: boolean;
 }
+
+/** 등록 · 복사는 기준코드를 비우면(생략 · 공백) 서버가 `QP-{YYYYMMDD}-{SEQ4}` 로 붙인다(omf-all-around#262). */
+export type InspectionPlanCreate = Omit<InspectionPlanWrite, 'inspectionPlanCode'> & { inspectionPlanCode?: string };
 
 export interface InspectionPlanQuery extends ReferenceQuery {
   inspectionTypeCode?: string;
@@ -132,7 +135,7 @@ export class InspectionPlanService {
     };
   }
 
-  async create(body: InspectionPlanWrite): Promise<InspectionPlanView> {
+  async create(body: InspectionPlanCreate): Promise<InspectionPlanView> {
     // 번호는 트랜잭션을 열기 «전»에 뽑는다(NumberingService 규약).
     const input = { ...body, inspectionPlanCode: await this.codeOrNext(body.inspectionPlanCode) };
     await this.assertWritable(input, null);
