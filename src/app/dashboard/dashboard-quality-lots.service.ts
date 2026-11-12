@@ -195,10 +195,10 @@ function listSql(
           WHERE ${OPEN_NC_WHERE}
         ) open_nc ${tail}`;
     case 'IQC_SORTED':
-      // 줄 = 선별 처분 하나 — 떼어 낸 불량분을 다시 선별했으면 같은 원래 LOT 으로 한 줄 더 선다(LOT 수는 그대로).
+      // 줄 = 옛 선별은 처분 하나(떼어 낸 불량분을 다시 선별했으면 같은 원래 LOT 으로 한 줄 더 — LOT 수는 그대로), 새 선별은 분리한 LOT 하나.
       return Prisma.sql`WITH ${scope}, ${iqcSortedCte(period)}
         SELECT * FROM (
-          SELECT 'SORT-' || s.disposition_decision_id AS key, s.lot_no, i.item_code, i.item_name,
+          SELECT 'SORT-' || s.row_key AS key, s.lot_no, i.item_code, i.item_name,
             s.decision_qty::text AS qty, u.uom_code AS unit_code, s.decided_at AS occurred_at,
             s.nonconformance_no AS ref_no, 'IQC' AS inspection_type,
             ${lotSupplierName(Prisma.sql`s.lot_id`)} AS counterpart_name, NULL AS equipment_code,

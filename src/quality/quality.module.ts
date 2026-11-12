@@ -22,6 +22,7 @@ import { DefectRecordService } from './defect/defect-record.service';
 import { DefectRecordWriteService } from './defect/defect-record-write.service';
 import { DispositionController } from './disposition/disposition.controller';
 import { DispositionWriteService } from './disposition/disposition-write.service';
+import { DispositionSortService } from './disposition/disposition-sort';
 import { ReworkWorkOrderService } from './disposition/rework-work-order.service';
 import { InspectionLevelController } from './inspection-level/inspection-level.controller';
 import { InspectionLevelService } from './inspection-level/inspection-level.service';
@@ -146,6 +147,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     NonconformanceQueryService,
     NonconformanceWriteService,
     DispositionWriteService,
+    DispositionSortService,
     ConcessionWriteService,
     ReworkWorkOrderService,
     InspectionLevelService,

@@ -144,6 +144,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 입하 LOT 조회(피처 005 §2) — PDA 두 화면, 입하/입고 작업 기록 W-01-16, 관리웹 입하 LOT 상태 표시(W-01-01)가 읽는다.
   'GET /logistics/inbound-lots': ['M-01-01', 'M-01-03', 'W-01-16', 'W-01-01'],
   'GET /logistics/inbound-lots/{inboundLotId}': ['M-01-01', 'M-01-03', 'W-01-16', 'W-01-01'],
+  // 자재 관리 LOT 분리(피처 005 §3 · FR-040) — IQC 판정 화면(W-01-01)이 판정 확정 전에 불량 LOT 을 새 입하 LOT 으로 뗀다.
+  'POST /logistics/inbound-lots/{inboundLotId}:split-lots': ['W-01-01'],
+  'GET /logistics/inbound-lots/{inboundLotId}/split-preview': ['W-01-01'],
   // 외부 식별자 치환 — 계약이 이 자식 자원의 조회에 「근거: M-01-02 §4」라 적었고, 요구서가
   // 「부모의 화면이 곧 이 오퍼레이션의 화면」이라 답했다(`plan-uiux.md:852`). 부모를 소유한
   // 화면 하나만 적는다.

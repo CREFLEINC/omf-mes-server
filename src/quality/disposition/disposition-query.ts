@@ -65,7 +65,7 @@ const FROM = `${FROM_CORE}
 
 const SELECT_COLUMNS = `
       d.disposition_decision_id, d.nonconformance_id, d.disposition_type_code, d.decision_qty,
-      d.uom_id, d.reason, d.decided_by, d.decided_at, d.approval_request_id,
+      d.uom_id, d.reason, d.decided_by, d.decided_at, d.approval_request_id, d.sort_good_qty, d.sort_defect_qty,
       nc.nonconformance_no, nc.item_id, i.item_code, i.item_name, u.user_name AS decided_by_name,
       lotinfo.lot_id, lotinfo.lot_no, fu.posted_qty,
       ${CONCESSION_DEFECT_STOCK} AS concession_defect_stock`;

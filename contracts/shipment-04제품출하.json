@@ -3957,6 +3957,53 @@
       "example": "IL-20261112-0001",
       "description": "입하 LOT 번호 — 검사 요청의 입하 LOT, 없으면 첫 대상 LOT 의 입하 LOT. 없으면 null. 근거: 피처 005 §10 · omf-all-around#254"
      },
+     "inboundLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "입하 LOT 검사 부적합만 — 검사 요청의 입하 LOT. 그 밖은 null. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
+     },
+     "inspectionRequestNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "입하 LOT 검사 부적합만 — IQC 검사 번호. 그 밖은 null. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
+     },
+     "supplierName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "입하 LOT 검사 부적합만 — 입하 LOT 의 공급사 이름. 그 밖은 null. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
+     },
+     "sortedFromNonconformanceId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "처분 단계 선별로 떼어 낸 불량 LOT 의 부적합이면 원래 부적합(source_nonconformance_id). 그 밖은 null. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
+     },
+     "sortedFromNonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "원래 부적합 번호. 그 밖은 null. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
+     },
+     "unmatchedResults": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "$ref": "#/components/schemas/NonconformanceIqcResultRef"
+      },
+      "description": "입하 LOT 검사 부적합만 — 어느 자재 관리 LOT 에도 매칭되지 않은 결과(참고). 그 밖은 null. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
+     },
      "sourceCode": {
       "type": "string",
       "description": "부적합 원천 — 제품(PRODUCT) · 반품(RETURN). 서버가 대상 LOT 의 입고 유형으로 파생한다",
@@ -4179,6 +4226,16 @@
       ],
       "example": 2,
       "description": "입하 LOT 검사 부적합만 — 이 자재 관리 LOT 에 매칭된 불합격 결과 수(참고용 · 결과 ↔ LOT 매칭 R-10). 그 밖 부적합은 null. 근거: 피처 005 §10 · omf-all-around#254"
+     },
+     "matchedResults": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "$ref": "#/components/schemas/NonconformanceIqcResultRef"
+      },
+      "description": "입하 LOT 검사 부적합만 — 이 자재 관리 LOT 에 매칭된 결과(순번 순, 참고). 그 밖은 null. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
      }
     },
     "required": [
@@ -4189,6 +4246,40 @@
      "qualityStatusBeforeCode",
      "qualityStatusAfterCode"
     ]
+   },
+   "NonconformanceIqcResultRef": {
+    "type": "object",
+    "required": [
+     "inspectionResultId",
+     "seqNo",
+     "overallJudgmentCode",
+     "defectSummary"
+    ],
+    "properties": {
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "seqNo": {
+      "type": "integer",
+      "description": "결과 순번(「결과 n」)"
+     },
+     "overallJudgmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "INSPECTION_RESULT_OVERALL_JUDGMENT 값"
+     },
+     "defectSummary": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "그 결과 불량 기록의 불량 코드 이름(중복 없이 쉼표로) — 없으면 null"
+     }
+    },
+    "description": "입하 LOT 검사 결과 한 건 — 부적합 화면(W-03-10)의 참고 표시. 근거: 피처 005 §10 · FR-041 · W-03-10 · omf-all-around#254"
    },
    "NonconformanceLotCreate": {
     "type": "object",

@@ -28,6 +28,7 @@ import { InboundLotReopenService } from './inbound-lot/inbound-lot-reopen.servic
 import { InboundLotLotsService } from './inbound-lot/inbound-lot-lots.service';
 import { InboundLotQueryService } from './inbound-lot/inbound-lot-query.service';
 import { InboundLotReceiveService } from './inbound-lot/inbound-lot-receive.service';
+import { InboundLotSplitService } from './inbound-lot/inbound-lot-split.service';
 import { MaterialLotBatchController } from './material-lot-batch/material-lot-batch.controller';
 import { MaterialLotBatchQueryService } from './material-lot-batch/material-lot-batch-query.service';
 import { MaterialLotBatchService } from './material-lot-batch/material-lot-batch.service';
@@ -196,6 +197,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundLotQueryService,
     InboundLotCloseService,
     InboundLotReopenService,
+    InboundLotSplitService,
     LogisticsHandoverNotifier,
     PickingHandoverNotifier,
     MaterialIssueReleaser,

@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
@@ -10,16 +10,23 @@ import { reopenIqcRequestForReworkWithin } from '../inspection/inspection-reques
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
 import { dispositionByIdQuery } from './disposition-query';
 import { releaseInspectionHoldsWithin } from './disposition-hold-release';
+import { DispositionSortCreated, DispositionSortService } from './disposition-sort';
 import { dispositionProgressCode, remainingSummary } from './disposition-rollup';
 import { DispositionDecisionRow, DispositionDecisionView, dispositionDecisionView } from './disposition-view';
 
-/** 계약 `DispositionDecisionCreate` — required 4 · 프로퍼티 4(**전건 필수**). */
+/** 계약 `DispositionDecisionCreate` — 정상·폐기·재작업은 `decisionQty`·`uomId` 필수, 선별은 `lotIds`(+정보 수량)를 받는다(R-14b). */
 export interface DispositionDecisionCreate {
   dispositionTypeCode: string;
-  decisionQty: number;
-  uomId: number;
+  decisionQty?: number;
+  uomId?: number;
   reason: string;
+  lotIds?: number[];
+  goodQty?: number;
+  defectQty?: number;
 }
+
+/** 수량 판정(정상·폐기·재작업)이 쓰는 모양 — `assertShape` 가 두 칸을 확인한 뒤다. */
+type QtyDecision = DispositionDecisionCreate & { decisionQty: number; uomId: number };
 
 /** 계약 `QualityConflictResponse.code` enum 6값 중 이 오퍼레이션이 쓰는 셋. */
 const VERSION_CONFLICT = 'VERSION_CONFLICT';
@@ -62,6 +69,9 @@ export class DispositionWriteService {
     private readonly holds: LotHoldService,
   ) {}
 
+  // 생성자를 넓히지 않으려고 속성으로 받는다 — 생성자 자리를 채워 만드는 단위 시험이 있다.
+  @Inject(DispositionSortService) private readonly sorts!: DispositionSortService;
+
   /**
    * 201 + ETag(부적합의 **새** `version_no`). ⭐ **갈래 순서가 판정이다**(§3-4): 존재(404) → 본문
    * 형식(400) → 종결(409 `INVALID_STATE`) → 잔량(409 `DISPOSITION_QTY_EXCEEDED`) → 전이 0건
@@ -74,28 +84,32 @@ export class DispositionWriteService {
     version: number,
     body: DispositionDecisionCreate,
     appUserId: number,
-  ): Promise<{ view: DispositionDecisionView; versionNo: number }> {
+  ): Promise<{ view: DispositionDecisionView & Partial<DispositionSortCreated>; versionNo: number }> {
     const id = BigInt(nonconformanceId);
     const decidedAt = new Date();
-    if (body.dispositionTypeCode === SORT) await this.refuseSort(id);
+    if (body.dispositionTypeCode === SORT) {
+      // 옛 수량 분할 본문(`lotIds` 없음)은 지금처럼 막는다(FR-038).
+      if (body.lotIds === undefined) await this.refuseSort(id);
+      return this.sorts.create(nonconformanceId, version, { ...body, lotIds: body.lotIds as number[] }, appUserId);
+    }
     return this.prisma.$transaction(async (tx) => {
       const locked = await lockNonconformance(tx, id);
       const target = await readTarget(tx, id);
       // ⛔ `decisionQty > 0` 과 `dispositionTypeCode` enum 은 **계약 가드가 이미** 400 을 낸다(R-15).
-      assertShape(body, target);
+      const qty = assertShape(body, target);
       // 계약 「409 는 둘이다 — 남은 수량을 넘길 때, 그리고 이미 닫힌 부적합일 때」.
       if (locked.status_code === DECIDED) {
         throw new ConflictException('user', '이미 종결된 부적합이라 판정을 저장할 수 없습니다.', { code: INVALID_STATE });
       }
-      assertWithinRemaining(body, target);
+      assertWithinRemaining(qty, target);
 
       // ⛔ `decidedBy`·`decidedAt` 은 서버가 채운다(B-6). `approval_request_id` 는 비운다(결재 0).
       const decision = await tx.disposition_decision.create({
         data: {
           nonconformance_id: id,
           disposition_type_code: body.dispositionTypeCode,
-          decision_qty: new Prisma.Decimal(body.decisionQty),
-          uom_id: BigInt(body.uomId),
+          decision_qty: new Prisma.Decimal(qty.decisionQty),
+          uom_id: BigInt(qty.uomId),
           reason: body.reason,
           decided_by: BigInt(appUserId),
           decided_at: decidedAt,
@@ -112,7 +126,7 @@ export class DispositionWriteService {
       const closing = dispositionProgressCode(
         target.decisionCount + 1,
         target.affectedQtyTotal,
-        target.decidedQtyTotal.plus(body.decisionQty),
+        target.decidedQtyTotal.plus(qty.decisionQty),
       );
       const decided = closing === 'COMPLETED' ? this.assertDecidable(locked.status_code) : undefined;
 
@@ -138,7 +152,7 @@ export class DispositionWriteService {
 
   /**
    * 수량으로 LOT 을 나누는 선별은 없어졌다(FR-038 · R-14a). 반품·OQC 부적합(입하 LOT 없음)에는 선별이 없다. 자재 입하 IQC 부적합의
-   * 선별(불량 자재 관리 LOT 분리 — R-14b)은 아직 열지 않았다. 존재(404)를 먼저 본다.
+   * 선별(불량 자재 관리 LOT 분리 — R-14b)은 `lotIds` 본문으로 `disposition-sort.ts` 가 한다. 존재(404)를 먼저 본다.
    */
   private async refuseSort(id: bigint): Promise<never> {
     const nc = await this.prisma.nonconformance.findUnique({
@@ -242,14 +256,20 @@ async function readTarget(tx: Tx, id: bigint): Promise<Target> {
  * ⓒ `reason` 이 **공백만**이면 `REQUIRED` — `minLength:1` 이 통과시킨다(빈 문자열은 가드가
  * `RANGE` 로 막아 **두 갈래의 코드가 다르다** · A-12).
  */
-function assertShape(body: DispositionDecisionCreate, target: Target): void {
-  if (body.uomId !== target.uomId) {
+function assertShape(body: DispositionDecisionCreate, target: Target): QtyDecision {
+  // 선별 본문이 따로 있어 계약이 두 칸을 필수로 두지 못했다 — 수량 판정은 여기서 필수다.
+  for (const name of ['decisionQty', 'uomId'] as const) {
+    if (body[name] === undefined) throw one(field(name, ERROR_CODE.REQUIRED, `${name} 칸이 빠졌습니다. 값을 채워 보내세요.`));
+  }
+  const qty = body as QtyDecision;
+  if (qty.uomId !== target.uomId) {
     throw one(field('uomId', ERROR_CODE.INVALID, '부적합의 단위와 같아야 합니다.'));
   }
-  assertQtyPrecision('decisionQty', body.decisionQty, target.uomScale);
+  assertQtyPrecision('decisionQty', qty.decisionQty, target.uomScale);
   if (body.reason.trim() === '') {
     throw one(field('reason', ERROR_CODE.REQUIRED, '판정 사유를 공백만으로 채울 수 없습니다.'));
   }
+  return qty;
 }
 
 /**
@@ -257,7 +277,7 @@ function assertShape(body: DispositionDecisionCreate, target: Target): void {
  * 파싱하지 않는다」라 못 박아 구조화 칸으로 내린다(`W-03-10` §6). ⭐ 기준값이
  * `remainingSummary()` 가 낸 «그 값»이라 화면이 보는 수와 거절 기준이 한 자리에서 나온다.
  */
-function assertWithinRemaining(body: DispositionDecisionCreate, target: Target): void {
+function assertWithinRemaining(body: QtyDecision, target: Target): void {
   const summary = remainingSummary(target.affectedQtyTotal, target.decidedQtyTotal, target.uomId);
   if (new Prisma.Decimal(body.decisionQty).lessThanOrEqualTo(summary.remainingQty)) return;
   throw new ConflictException('user', `남은 수량을 넘습니다. (남은 수량 ${summary.remainingQty})`, {

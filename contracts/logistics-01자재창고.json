@@ -15032,6 +15032,213 @@
      }
     }
    }
+  },
+  "/logistics/inbound-lots/{inboundLotId}:split-lots": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 분리(IQC 단계)",
+    "description": "W-01-01 IQC 판정 화면. 마감된(RECEIVED) 입하 LOT 의 자재 관리 LOT 를 골라(전부는 아님) 같은 공장·품목·공급사의 새 입하 LOT(RECEIVED · splitFromInboundLotId · erpSendModeCode·receivingDate·마감 칸 이어받기 · 번호는 입하 LOT 채번)으로 옮긴다. 원래 IQC 요청이 판정 확정 전(REQUESTED·IN_PROGRESS)일 때만 — 확정·생략·IQC 없음은 409 STATE_LOCKED(확정 뒤에는 확정 취소 뒤 분리). 효과(한 트랜잭션): 같은 입하 헤더에 새 입하 줄(수량 = 옮긴 LOT 합)·원래 줄 감소, 옮긴 LOT 의 입하 LOT·원천(새 줄) 변경(LOT 번호·라벨 그대로), P/O 배정 이전 — 옮긴 수량만큼 원래 줄의 「P/O 없음」부터, 그다음 채움 역순(마지막에 채운 라인부터) 떼어 같은 P/O 라인으로 새 줄에 배정(P/O 라인 받은 양 합 불변 · W-01-16 에서 고친다), 새 입하 LOT 에 새 IQC 요청(옮길 결과가 있으면 IN_PROGRESS, 아니면 REQUESTED · 응답 inspectionRequestId), 옮긴 LOT 에만 매칭된 결과는 새 요청으로 옮기고 순번을 1부터 다시 매긴다, 다른 LOT 와 함께 매칭된 결과는 남기고 옮긴 LOT 매칭만 지운다(불량 기록의 LOT 도 매칭대로 다시 맞춤), 두 요청 대상 수량 갱신, 이력 — 입하 LOT 이벤트 SPLIT(양쪽) · 요청 이벤트 SPLIT_OUT(원래)·SPLIT_IN(새). 두 입하 LOT 은 각각 판정 확정한다. 400: lotIds 비었음·중복·다른 입하 LOT 의 LOT·LOT 전부(「원래 입하 LOT에 자재 관리 LOT가 하나 이상 남아야 합니다」). 409: versionNo 다름(conflictCause) · 마감(RECEIVED)이 아님 · IQC 확정 전이 아님(STATE_LOCKED). 최종 마감(FINALIZED)은 409 — S12 부터 INBOUND_LOT_FINALIZED. 근거: 피처 005 §3 · FR-039·FR-040 · R-14b · omf-all-around#254",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "원래 입하 LOT"
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboundLotSplitLots"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "분리됨 — 새 입하 LOT 행 + 새 IQC 요청 + 옮긴 LOT·결과·배정",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotSplitResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — lotIds 비었음·중복·다른 입하 LOT 의 LOT·LOT 전부(원래 입하 LOT 에 하나 이상 남아야 한다)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-01-01 이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌(conflictCause — versionNo 가 다름) · 상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/inbound-lots/{inboundLotId}/split-preview": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 분리 미리 보기",
+    "description": "W-01-01. :split-lots 를 실행하면 무엇이 옮겨지는지 — 옮길·남을 LOT 수·수량, 새 검사가 진행 중으로 생기는지, 옮겨질 결과(순번 새로)·매칭만 지워질 결과·그대로 남을 결과, 옮겨질 P/O 배정(「P/O 없음」은 purchaseOrderLineId null). 실행과 같은 계산이다. 400·404·409 는 :split-lots 와 같다(잠그지 않는다). 근거: 피처 005 §3 · FR-039·FR-040 · R-14b · omf-all-around#254",
+    "parameters": [
+     {
+      "name": "inboundLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "원래 입하 LOT"
+     },
+     {
+      "name": "lotIds",
+      "in": "query",
+      "required": true,
+      "style": "form",
+      "explode": false,
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "maxItems": 500,
+       "items": {
+        "type": "integer",
+        "format": "int64",
+        "minimum": 1
+       }
+      },
+      "description": "옮길 자재 관리 LOT — 여럿은 쉼표로 잇거나 키를 반복한다"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "미리 보기",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotSplitPreview"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — lotIds 중복·다른 입하 LOT 의 LOT·LOT 전부",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-01-01 이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 입하 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -27735,6 +27942,234 @@
       "description": "마감 취소 사유(이벤트 RECEIPT_REOPENED 에 남는다)"
      }
     }
+   },
+   "InboundLotSplitLots": {
+    "type": "object",
+    "required": [
+     "lotIds",
+     "versionNo"
+    ],
+    "properties": {
+     "lotIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "새 입하 LOT 으로 옮길 자재 관리 LOT — 이 입하 LOT 소속, 전부는 아님"
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "원래 입하 LOT 의 versionNo"
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 500,
+      "description": "분리 사유(이력 SPLIT·SPLIT_OUT·SPLIT_IN 에 남는다)"
+     }
+    }
+   },
+   "InboundLotSplitMovedAllocation": {
+    "type": "object",
+    "required": [
+     "purchaseOrderLineId",
+     "purchaseOrderNo",
+     "lineNo",
+     "qty"
+    ],
+    "properties": {
+     "purchaseOrderLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "null = 「P/O 없음」"
+     },
+     "purchaseOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "lineNo": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "qty": {
+      "type": "number",
+      "format": "double"
+     }
+    },
+    "description": "새 입하 LOT 으로 옮겨지는 P/O 배정 — 「P/O 없음」부터, 그다음 마지막에 채운 라인부터"
+   },
+   "InboundLotSplitPreview": {
+    "type": "object",
+    "required": [
+     "movedLotCount",
+     "movedQty",
+     "remainingLotCount",
+     "remainingQty",
+     "newInspectionInProgress",
+     "movedResults",
+     "unmatchedResults",
+     "keptResults",
+     "movedAllocations"
+    ],
+    "properties": {
+     "movedLotCount": {
+      "type": "integer"
+     },
+     "movedQty": {
+      "type": "number",
+      "format": "double"
+     },
+     "remainingLotCount": {
+      "type": "integer"
+     },
+     "remainingQty": {
+      "type": "number",
+      "format": "double"
+     },
+     "newInspectionInProgress": {
+      "type": "boolean",
+      "description": "옮길 결과가 있으면 새 검사가 IN_PROGRESS 로 생긴다"
+     },
+     "movedResults": {
+      "type": "array",
+      "description": "옮긴 LOT 에만 매칭된 결과 — 새 검사로 옮겨지고 순번을 1부터 다시 매긴다(seqNo 는 지금 순번)",
+      "items": {
+       "type": "object",
+       "required": [
+        "inspectionResultId",
+        "seqNo",
+        "overallJudgmentCode"
+       ],
+       "properties": {
+        "inspectionResultId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "seqNo": {
+         "type": "integer"
+        },
+        "overallJudgmentCode": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "unmatchedResults": {
+      "type": "array",
+      "description": "다른 LOT 와 함께 매칭돼 남고 removedLotIds 매칭만 지워지는 결과",
+      "items": {
+       "type": "object",
+       "required": [
+        "inspectionResultId",
+        "seqNo",
+        "removedLotIds"
+       ],
+       "properties": {
+        "inspectionResultId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "seqNo": {
+         "type": "integer"
+        },
+        "removedLotIds": {
+         "type": "array",
+         "items": {
+          "type": "integer",
+          "format": "int64"
+         }
+        }
+       }
+      }
+     },
+     "keptResults": {
+      "type": "array",
+      "description": "그대로 남는 결과",
+      "items": {
+       "type": "object",
+       "required": [
+        "inspectionResultId",
+        "seqNo"
+       ],
+       "properties": {
+        "inspectionResultId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "seqNo": {
+         "type": "integer"
+        }
+       }
+      }
+     },
+     "movedAllocations": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InboundLotSplitMovedAllocation"
+      }
+     }
+    },
+    "description": "자재 관리 LOT 분리 미리 보기(피처 005 §3)"
+   },
+   "InboundLotSplitResult": {
+    "type": "object",
+    "required": [
+     "inboundLot",
+     "inspectionRequestId",
+     "movedLotIds",
+     "movedResultIds",
+     "movedAllocations"
+    ],
+    "properties": {
+     "inboundLot": {
+      "$ref": "#/components/schemas/InboundLot",
+      "description": "새 입하 LOT 행"
+     },
+     "inspectionRequestId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "새 입하 LOT 의 IQC 요청"
+     },
+     "movedLotIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     "movedResultIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "새 요청으로 옮긴 결과"
+     },
+     "movedAllocations": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InboundLotSplitMovedAllocation"
+      }
+     }
+    },
+    "description": "자재 관리 LOT 분리 결과(피처 005 §3)"
    },
    "InboundLotReopenBlocked": {
     "type": "object",
