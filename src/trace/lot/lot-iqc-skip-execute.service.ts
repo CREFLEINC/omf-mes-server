@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { INSPECTION_HOLD_REASON, LotHoldService, LotQualityStatusService, Tx } from '../../core/lot';
@@ -99,4 +100,19 @@ async function lockLot(tx: Tx, lotId: number): Promise<LotQualification> {
        FOR UPDATE`;
   if (rows.length === 0) throw new NotFoundException('없는 LOT 입니다.');
   return rows[0];
+}
+
+/**
+ * 입하 마감 취소가 생략을 무효로 만들었다는 표시 — 결재 상태 값에 「무효」가 없어(PENDING·APPROVED·REJECTED) 대상 요약에 남긴다
+ * (피처 005 R-5a). ⚠ 대상은 아직 LOT id 다 — S10 이 입하 LOT id 로 옮기면 여기도 바꾼다.
+ */
+export async function markIqcSkipVoided(tx: Tx, lotIds: bigint[], at: Date): Promise<void> {
+  if (lotIds.length === 0) return;
+  await tx.$executeRaw`
+    UPDATE app.approval_request
+       SET target_summary = COALESCE(target_summary, '{}'::jsonb)
+                            || jsonb_build_object('voidedAt', ${at.toISOString()}::text, 'voidedBy', 'RECEIPT_REOPENED'),
+           updated_at = clock_timestamp(), version_no = version_no + 1
+     WHERE approval_type_code = ${IQC_SKIP_TYPE} AND target_type_code = ${IQC_SKIP_TARGET_TYPE}
+       AND status_code = ${APPROVED} AND target_id IN (${Prisma.join(lotIds)})`;
 }

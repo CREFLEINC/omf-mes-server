@@ -89,13 +89,3 @@ export async function createInboundLotWithin(tx: Prisma.TransactionClient, input
   await tx.inbound_receipt.delete({ where: { inbound_receipt_id: header.inbound_receipt_id } });
   return null;
 }
-
-/**
- * 찾은 입하 LOT 이 지난 날짜(`open_since_date < 공장 현지 오늘`)면 먼저 자동 마감할 자리(R-21). 마감한 입하 LOT 번호를 돌려준다.
- * ⚠ S4 단독에서는 마감하지 않고 그대로 붙인다(새로 만들면 `uq_inbound_lot_open` 위반) — S5 가 여기서 `closeInboundLot`(시스템, 자동)을
- * 부르고 번호를 돌려준 뒤 호출자가 새 입하 LOT 을 연다(T042). S4·S5 는 G1 전에 함께 병합한다.
- */
-export function closeStaleInboundLot(open: OpenInboundLot, today: string): string | null {
-  if (open.openSinceDate >= today) return null;
-  return null;
-}

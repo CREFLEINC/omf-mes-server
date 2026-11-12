@@ -28,6 +28,8 @@ const HOLD = 'POST /quality/lot-holds';
 const RELEASE = 'POST /quality/lot-holds/{lotHoldId}:release';
 /** 처분 판정 저장 — LOT 축 전이 3 과 부적합 축 전이 1 을 «한 트랜잭션»에서 연다(I-21 · B-8). */
 const DECIDE = 'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions';
+/** 입하 마감 취소 — 생략 무효(C30)와 IQC 요청 취소를 «한 트랜잭션»에서 연다(피처 005). */
+const REOPEN_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt';
 
 /**
  * 전이표. **데이터로 둔다** — 코드에 상태 문자열을 박으면 값이 확정될 때 찾아 고칠 수 없다
@@ -202,6 +204,15 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
+   * IQC 요청 진행 — 지금은 입하 마감 취소가 여는 취소 하나만 등록한다(피처 005). 결과 추가·확정·생략은 전이표 밖에서
+   * 서비스가 옮긴다(`inspection-confirm.service.ts` `completeRequest` 머리 주석).
+   * ⭐ 출발이 둘이다 — 결과가 없는 요청(`REQUESTED`)과 기본·긴급 생략(`SKIPPED`)만 마감 취소가 무효로 만든다.
+   */
+  'quality.inspection_request.status_code': {
+    'inbound-receipt-reopened': { from: ['REQUESTED', 'SKIPPED'], to: 'CANCELLED', sourceOperation: REOPEN_RECEIPT },
+  },
+
+  /**
    * LOT 품질 판정 축. 값은 시드 `LOT_STATUS` 4값이고 전이 코드는 시드
    * `LOT_STATUS_TRANSITION`(C4~C15)이 갖는다 — 코드는 `trace.lot_status_event.transition_code`
    * (NOT NULL)에 그대로 들어간다. 생명주기 축과 «한 필드에 섞지 않는다»(`02-SW설계사양서` §4.2).
@@ -280,6 +291,10 @@ export const TRANSITIONS: TransitionRegistry = {
     // (검사 대기)로 되돌린다. 다시 받으면 C21 이 다시 돈다. ⛔ C29(판정 확정 취소)와 섞지 않는다.
     'material-inbound-unregistered-quality-reset': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
       transitionCode: 'C31', sourceOperation: 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots' },
+    // 입하 마감 취소(피처 005 R-5a) — 긴급 생략을 실행한(C22) 입하 LOT 를 입고 전에 다시 열면 생략이 무효가 되어 검사 대기로
+    // 돌아간다. 검사 대기 보류는 호출자가 다시 건다.
+    'iqc-skip-voided': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
+      transitionCode: 'C30', sourceOperation: REOPEN_RECEIPT },
 
     // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
     // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.

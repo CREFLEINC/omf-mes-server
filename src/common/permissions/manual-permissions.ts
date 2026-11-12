@@ -138,6 +138,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/inbound-lots:receive': ['M-01-01'],
   'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots': ['M-01-01', 'M-01-03'],
   'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no': ['M-01-01'],
+  // 입하 마감은 스캔 화면 카드(M-01-01)와 입하 마감 화면(M-01-03) 둘 다, 마감 취소는 입하 마감 화면만 한다(피처 005 §3 · R-19).
+  'POST /logistics/inbound-lots/{inboundLotId}:close-receipt': ['M-01-01', 'M-01-03'],
+  'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt': ['M-01-03'],
   // 입하 LOT 조회(피처 005 §2) — PDA 두 화면, 입하/입고 작업 기록 W-01-16, 관리웹 입하 LOT 상태 표시(W-01-01)가 읽는다.
   'GET /logistics/inbound-lots': ['M-01-01', 'M-01-03', 'W-01-16', 'W-01-01'],
   'GET /logistics/inbound-lots/{inboundLotId}': ['M-01-01', 'M-01-03', 'W-01-16', 'W-01-01'],

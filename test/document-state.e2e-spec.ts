@@ -69,6 +69,8 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     // 같은 표의 생명주기 축과 «다른 그룹»이다 — 한 필드에 섞지 말라고 설계가 못박은 자리.
     'trace.lot.status_code': 'LOT_STATUS',
     'quality.inspection_result.status_code': 'INSPECTION_RESULT_STATUS',
+    // IQC 요청 — 입하 마감 취소의 요청 취소(피처 005 S5).
+    'quality.inspection_request.status_code': 'INSPECTION_REQUEST_STATUS',
     // 부적합 처리 진행 — 판정 대기까지는 W-04-07 이, 판정 완료는 W-03-10 이 올린다(I-21 PR ④).
     'quality.nonconformance.status_code': 'NONCONFORMANCE_STATUS',
     // ⛔⛔ 출하는 물류 전표 4값과 «다른» 그룹이다 — 자기 3값(UNCONFIRMED·CONFIRMED·CANCELLED)을
@@ -96,8 +98,8 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     // 가릴 표식이 데이터에 없다 — 지어내지 않는다(F-6 · 미발행 · I-19 §9-2 후보 8).
     // 피처 005(omf-all-around#254) — 코드값은 마이그레이션(S1)이 먼저 넣고, 전이는 그것을 여는 경로와 함께 등록한다
     // (C29 판정 확정 취소 · C30 마감 취소의 생략 무효 · C31 등록 해제). 경로가 생기면 여기서 뺀다.
-    // C31 은 `:unregister-lots` 와 함께 열었다.
-    'trace.lot.status_code': ['C15', 'C29', 'C30'],
+    // C31 은 `:unregister-lots` 와, C30 은 `:reopen-receipt` 와 함께 열었다.
+    'trace.lot.status_code': ['C15', 'C29'],
   };
 
   it('⭐ 전이표가 쓰는 상태가 축마다의 코드 그룹에 전부 있다', async () => {

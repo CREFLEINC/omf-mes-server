@@ -1,13 +1,17 @@
 /**
- * 피처 005 입하 LOT 시험 도우미(T040) — 자재 관리 LOT 발행 묶음(실제 API) → 스캔마다 `:receive` 한 번(PDA 와 같다).
- * S5 에서 `:close-receipt` 를, S7 에서 옛 경로로 입하·LOT 을 만들던 기존 e2e 를 이리로 옮긴다.
+ * 피처 005 입하 LOT 시험 도우미(T040) — 자재 관리 LOT 발행 묶음(실제 API) → 스캔마다 `:receive` 한 번(PDA 와 같다) → `:close-receipt`.
+ * S7 에서 옛 경로로 입하·LOT 을 만들던 기존 e2e 를 이리로 옮긴다.
  */
 import type { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 
+import type { PrismaService } from '../../src/prisma/prisma.service';
+
 const BATCHES = '/api/logistics/material-lot-batches';
 const RECEIVE = '/api/logistics/inbound-lots:receive';
+const INBOUND_LOTS = '/api/logistics/inbound-lots';
+const RESULTS = '/api/quality/inspection-results';
 
 /** 요청에 인증을 싣는다 — 단말(토큰 + 작업자 사번) 또는 계정(세션 쿠키). */
 export type Authorize = (test: request.Test) => request.Test;
@@ -58,6 +62,24 @@ export interface InboundLotFixture {
   businessDate: string;
   /** 보낸 멱등 키 — 시험이 정리할 때 쓴다. */
   keys?: Set<string>;
+  /** 마감하는 쪽 — MOBILE 단말 또는 M-01-01·M-01-03 계정. 없으면 `receiver`. */
+  closer?: Authorize;
+  /** IQC 결과를 기록·확정하는 계정(W-01-01) — `passInboundLotIqc` 가 쓴다. */
+  inspector?: Authorize;
+  /** `passInboundLotIqc` 가 결과 단위와 확정 효과를 읽는다. */
+  prisma?: PrismaService;
+}
+
+/** 계약 `InboundLotClosed` 중 시험이 읽는 칸. */
+export interface ClosedInboundLot {
+  inboundLotId: number;
+  inboundLotNo: string;
+  statusCode: string;
+  receivedQty: number;
+  unallocatedQty: number;
+  poAllocations: { purchaseOrderLineId: number; purchaseOrderNo: string; lineNo: number; qty: number }[];
+  iqcRequestId: number | null;
+  versionNo: number;
 }
 
 export function idempotencyKey(fixture: Pick<InboundLotFixture, 'keys'>): string {
@@ -105,15 +127,51 @@ export async function issueAndReceive(fixture: InboundLotFixture, body: Material
   return { lots, inboundLot: results[results.length - 1] };
 }
 
+/** 입하 마감(`:close-receipt`) — 지금 `versionNo` 를 읽어 보낸다. 200 이어야 한다. */
+export async function closeInboundLotFixture(fixture: InboundLotFixture, inboundLotId: number, occurredAt = `${fixture.businessDate}T05:00:00.000Z`): Promise<ClosedInboundLot> {
+  const closer = fixture.closer ?? fixture.receiver;
+  const current = await closer(request(fixture.app.getHttpServer()).get(`${INBOUND_LOTS}/${String(inboundLotId)}`)).expect(200);
+  const response = await closer(request(fixture.app.getHttpServer()).post(`${INBOUND_LOTS}/${String(inboundLotId)}:close-receipt`))
+    .set('Idempotency-Key', idempotencyKey(fixture))
+    .send({ versionNo: (current.body as { versionNo: number }).versionNo, occurredAt })
+    .expect(200);
+  return response.body as ClosedInboundLot;
+}
+
 /**
  * IQC 합격 자재 관리 LOT 만들기(T040) — 입고·피킹처럼 합격 LOT 이 필요한 시험이 쓰는 하나뿐인 자리.
- * 순서: 받기 → 입하 마감(`:close-receipt` → 입하 LOT IQC 요청) → 그 요청에 합격 결과 → 결과 `:confirm`(S5~S8) — 도우미 안에서
+ * 순서: (입하 중이면) 입하 마감(`:close-receipt` → 입하 LOT IQC 요청) → 그 요청에 합격 결과 → 결과 `:confirm`(S5~S8) — 도우미 안에서
  * LOT 전부 정상·요청 `COMPLETED`·`overall_judgment_code`·`confirmed_at` 을 단언한다. S9 에서 요청 단위 `:confirm` 으로 바꾼다
- * (바꾸는 곳은 여기 하나). 검사 불필요 품목으로 돌리는 우회는 쓰지 않는다.
- * ⚠ S4 에는 입하 마감(`:close-receipt`, S5)이 없어 입하 LOT IQC 요청이 생기지 않는다 — 지금은 만들 수 없어 던진다.
+ * (바꾸는 곳은 여기 하나). 검사 불필요 품목으로 돌리는 우회는 쓰지 않는다 — 검사 필요 품목이 아니면 던진다.
  */
-export function passInboundLotIqc(fixture: InboundLotFixture, inboundLotId: number): Promise<IssuedMaterialLot[]> {
-  return Promise.reject(new Error(
-    `passInboundLotIqc(${String(inboundLotId)}): 입하 마감(:close-receipt)이 S5 에서 생긴다 — ${String(fixture.businessDate)} 의 입하 LOT 을 아직 IQC 로 넘길 수 없다`,
-  ));
+export async function passInboundLotIqc(fixture: InboundLotFixture, inboundLotId: number): Promise<IssuedMaterialLot[]> {
+  const { inspector, prisma } = fixture;
+  if (inspector === undefined || prisma === undefined) throw new Error('passInboundLotIqc: fixture.inspector(W-01-01)·fixture.prisma 가 필요하다');
+  const id = BigInt(inboundLotId);
+  const inbound = await prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: id }, select: { status_code: true } });
+  if (inbound.status_code === 'RECEIVING') await closeInboundLotFixture(fixture, inboundLotId);
+  const iqc = await prisma.inspection_request.findFirst({
+    where: { inbound_lot_id: id, inspection_type_code: 'IQC' }, select: { inspection_request_id: true, target_qty: true, uom_id: true, status_code: true },
+  });
+  if (iqc === null || iqc.status_code !== 'REQUESTED') throw new Error(`passInboundLotIqc(${String(inboundLotId)}): 검사할 IQC 요청이 없다 — 검사 필요 품목이어야 한다`);
+  const qty = Number(iqc.target_qty);
+  const created = await inspector(request(fixture.app.getHttpServer()).post(RESULTS))
+    .set('Idempotency-Key', idempotencyKey(fixture))
+    .send({
+      inspectionRequestId: Number(iqc.inspection_request_id), inspectedQty: qty, acceptedQty: qty, rejectedQty: 0, heldQty: 0,
+      uomId: Number(iqc.uom_id), inspectedAt: `${fixture.businessDate}T06:00:00.000Z`, statusCode: 'DRAFT',
+    })
+    .expect(201);
+  const resultId = (created.body as { inspectionResultId: number }).inspectionResultId;
+  await inspector(request(fixture.app.getHttpServer()).post(`${RESULTS}/${String(resultId)}:confirm`))
+    .set('Idempotency-Key', idempotencyKey(fixture)).set('If-Match', 'W/"1"')
+    .send({ overallJudgmentCode: 'ACCEPTED' })
+    .expect(200);
+
+  const confirmed = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: iqc.inspection_request_id } });
+  expect(confirmed).toMatchObject({ status_code: 'COMPLETED', overall_judgment_code: 'ACCEPTED' });
+  expect(confirmed.confirmed_at).not.toBeNull();
+  const lots = await prisma.lot.findMany({ where: { inbound_lot_id: id }, select: { lot_id: true, lot_no: true, initial_qty: true, status_code: true }, orderBy: { lot_no: 'asc' } });
+  expect(lots.map((lot) => lot.status_code)).toEqual(lots.map(() => 'NORMAL'));
+  return lots.map((lot) => ({ lotId: Number(lot.lot_id), lotNo: lot.lot_no, lotQty: Number(lot.initial_qty) }));
 }

@@ -45,6 +45,8 @@ const ADJUSTMENT_STATUS = 'inventory.inventory_adjustment.status_code';
 const PICKING_ORDER_STATUS = 'logistics.picking_order.status_code';
 /** PICK-ISSUE-01(P-16 · 문의 046)이 여는 축 — 전 라인이 다 나가면 요청이 닫힌다. */
 const MATERIAL_ISSUE_REQUEST_STATUS = 'logistics.material_issue_request.status_code';
+/** 피처 005 S5 가 여는 축 — 입하 마감 취소의 IQC 요청 취소 하나뿐이다. */
+const INSPECTION_REQUEST_STATUS = 'quality.inspection_request.status_code';
 
 /**
  * ⭐ **등록된 축 전건.** 위 상수 하나하나가 「어느 슬라이스가 열었나」를 달고 있다 — 그 목록이
@@ -59,6 +61,7 @@ const REGISTERED_AXES = [
   GOODS_ISSUE_STATUS,
   GOODS_RECEIPT_STATUS,
   INBOUND_RECEIPT_STATUS,
+  INSPECTION_REQUEST_STATUS,
   INSPECTION_RESULT_STATUS,
   LIFECYCLE,
   LOT_QUALITY_STATUS,
@@ -551,6 +554,7 @@ describe('DocumentStateService', () => {
           GOODS_ISSUE_STATUS,
           GOODS_RECEIPT_STATUS,
           INBOUND_RECEIPT_STATUS,
+          INSPECTION_REQUEST_STATUS,
           INSPECTION_RESULT_STATUS,
           LIFECYCLE,
           LOT_QUALITY_STATUS,
@@ -593,7 +597,8 @@ describe('DocumentStateService', () => {
       // +3 — 자재 출고요청 미룸·취소 · 피킹 지시 취소(피처 003 · omf-all-around#66).
       // +1 — 자재 관리 LOT 폐기 L5(피처 005 · omf-all-around#254).
       // +3 — 자재 관리 LOT 받기 L4 · 등록 해제 L6·C31(피처 005 S4).
-      expect(service.registered()).toHaveLength(68);
+      // +2 — 입하 마감 취소의 생략 무효 C30 · IQC 요청 취소(피처 005 S5).
+      expect(service.registered()).toHaveLength(70);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

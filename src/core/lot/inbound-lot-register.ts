@@ -14,11 +14,8 @@ import { MATERIAL_LOT_BATCH_SOURCE } from './lot-source';
 export const INBOUND_LOT_DOCUMENT = 'INBOUND_LOT';
 /** 입하 중 — 받기·해제·공급사 LOT 입력은 이 상태에서만(마감 이상은 구성 고정, `VOIDED` 는 빈 자리). */
 export const INBOUND_LOT_RECEIVING = 'RECEIVING';
-/**
- * 등록 해제가 닫는 보류의 해제 사유. ⚠ 시드 `LOT_HOLD_RELEASE_REASON` 에 「등록 해제」 값이 없다 — 코드값을 더하려면
- * 마이그레이션이 필요해 S4 는 가장 가까운 기존 값을 쓴다(해제는 사람이 화면에서 직접 하는 일이다).
- */
-const UNREGISTER_RELEASE_REASON = 'MANAGER_OVERRIDE';
+/** 등록 해제가 닫는 보류의 해제 사유(`LOT_HOLD_RELEASE_REASON`) — 사람이 직권으로 푼 보류(`MANAGER_OVERRIDE`)와 이력에서 가른다. */
+const UNREGISTER_RELEASE_REASON = 'LOT_UNREGISTERED';
 
 export type InboundLotActor = { appUserId: number; workerId?: never } | { appUserId?: never; workerId: bigint };
 

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { LOT_SPLIT_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { receivableQtyOf } from '../goods-receipt/lot-receivable';
+import { MaterialPackageView, packageView } from '../material-lot-batch/material-lot-view';
 import { BlockedReason, InboundNextActionCode, InboundStageCode, labelStage, lotStage } from './inbound-stage';
 
 type InspectionView = {
@@ -34,6 +35,10 @@ export interface InboundLotProgress {
   /** LOT·상태·입고 가능 수량은 라벨 대기 줄(`LABEL_PENDING`)에서 비어 있다. */
   lotId: number | null;
   lotNo: string | null;
+  /** LOT 의 입하 LOT(피처 005 §12) — 라벨 대기 줄은 null. */
+  inboundLotId: number | null;
+  inboundLotNo: string | null;
+  package: MaterialPackageView | null;
   receivedQty: number;
   /** 이 입하 줄에서 이 발주(의 라인들)에 배정된 합 — `receivedQty` 는 줄·LOT 전체라 발주 둘에 걸치면 그 발주 몫이 아니다. 선별 자식 LOT 은 조상 줄의 몫. */
   allocatedQty: number;
@@ -114,7 +119,11 @@ export class InboundProgressService {
     const [lots, receivable, inspections, holds, receipts] = await Promise.all([
       this.prisma.lot.findMany({
         where: { lot_id: { in: lotIds } },
-        select: { lot_id: true, lot_no: true, initial_qty: true, status_code: true, uom: { select: { uom_code: true } } },
+        select: {
+          lot_id: true, lot_no: true, initial_qty: true, status_code: true, uom: { select: { uom_code: true } },
+          inbound_lot_id: true, inbound_lot: { select: { inbound_lot_no: true } },
+          package_uom_id: true, package_count: true, qty_per_package: true, package_uom: { select: { uom_code: true } },
+        },
         orderBy: { lot_id: 'asc' },
       }),
       receivableQtyOf(this.prisma, lotIds),
@@ -145,6 +154,9 @@ export class InboundProgressService {
         ...lineFields(line),
         lotId: Number(lot.lot_id),
         lotNo: lot.lot_no,
+        inboundLotId: lot.inbound_lot_id === null ? null : Number(lot.inbound_lot_id),
+        inboundLotNo: lot.inbound_lot?.inbound_lot_no ?? null,
+        package: packageView(lot),
         receivedQty: lot.initial_qty.toNumber(),
         receivableQty: receivableQty.toNumber(),
         uomCode: lot.uom.uom_code,
@@ -386,6 +398,9 @@ function labelRow(line: LabelLine, wanted: ReadonlySet<bigint>): InboundLotRow[]
     ...lineFields(line),
     lotId: null,
     lotNo: null,
+    inboundLotId: null,
+    inboundLotNo: null,
+    package: null,
     receivedQty: line.received_qty.toNumber(),
     receivableQty: null,
     uomCode: line.uom.uom_code,

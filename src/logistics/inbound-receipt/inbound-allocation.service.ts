@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ERROR_CODE, field, one } from '../../common/errors';
+import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { lotsOfInboundLines, representativeLot } from '../../core/lot';
 import { IF_GOODS_RECEIPT, OutboxService } from '../../core/outbox';
@@ -30,6 +30,8 @@ const BODY_FIELDS: AllocationFields = { target: 'purchaseOrderLineId', qty: 'qty
 /** 취소했거나 취소 요청 중인 입하 — 배정을 더하지도 빼지도 않는다. 취소가 받은 수량을 되돌린다. */
 const CANCEL_STATUSES = ['CANCELLED', 'CANCEL_REQUESTED'];
 const TRANSACTION_OPTIONS = { timeout: 15_000, maxWait: 5_000 };
+/** 새 흐름 입하 LOT(피처 005) — 배정은 입하 마감의 자동 배정과 W-01-16 이 맡는다. 줄 축 배정 API 는 이전 데이터(`PER_RECEIPT`) 줄만(R-7). */
+const NEW_FLOW = 'ON_FINALIZE';
 
 export interface AllocationAddInput {
   inboundReceiptLineId: bigint;
@@ -73,6 +75,8 @@ export class InboundAllocationService {
         ON a.inbound_receipt_line_id = l.inbound_receipt_line_id
      WHERE r.status_code NOT IN (${Prisma.join(CANCEL_STATUSES)})
        AND l.received_qty > COALESCE(a.allocated, 0)
+       AND NOT EXISTS (SELECT 1 FROM trace.inbound_lot il
+                        WHERE il.inbound_receipt_line_id = l.inbound_receipt_line_id AND il.erp_send_mode_code = ${NEW_FLOW})
        ${query.plantId === undefined ? Prisma.empty : Prisma.sql`AND r.plant_id = ${query.plantId}`}
        ${query.supplierId === undefined ? Prisma.empty : Prisma.sql`AND r.supplier_id = ${query.supplierId}`}
        ${query.itemId === undefined ? Prisma.empty : Prisma.sql`AND l.item_id = ${query.itemId}`}
@@ -112,7 +116,7 @@ export class InboundAllocationService {
     });
     if (line === null) throw new NotFoundException('없는 입하 줄입니다.');
     const unallocated = unallocatedQtyOf(line.received_qty, line.inbound_receipt_po_allocation);
-    if (unallocated.lessThanOrEqualTo(0)) return [];
+    if (unallocated.lessThanOrEqualTo(0) || (await isNewFlowLine(this.prisma, inboundReceiptLineId))) return [];
     const rows = await this.prisma.purchase_order_line.findMany({
       where: {
         item_id: line.item_id,
@@ -140,6 +144,7 @@ export class InboundAllocationService {
   ): Promise<InboundAllocationView> {
     const id = await this.prisma.$transaction(async (tx) => {
       await lockReceiptOf(tx, inboundReceiptLineId);
+      await assertLegacyLine(tx, inboundReceiptLineId);
       const created = await this.add(tx, { inboundReceiptLineId, purchaseOrderLineId, qty, appUserId });
       return created.inbound_receipt_po_allocation_id;
     }, TRANSACTION_OPTIONS);
@@ -155,6 +160,7 @@ export class InboundAllocationService {
   async removeFromLine(inboundReceiptLineId: bigint, allocationId: bigint, appUserId: number): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await lockReceiptOf(tx, inboundReceiptLineId);
+      await assertLegacyLine(tx, inboundReceiptLineId);
       const row = await tx.inbound_receipt_po_allocation.findUnique({
         where: { inbound_receipt_po_allocation_id: allocationId },
         select: { inbound_receipt_line_id: true },
@@ -257,6 +263,20 @@ async function lockReceiptOf(tx: Prisma.TransactionClient, inboundReceiptLineId:
   if (CANCEL_STATUSES.includes(receipt.status_code)) {
     throw one(field('inboundReceiptLineId', ERROR_CODE.STATE_LOCKED, '취소했거나 취소 요청 중인 입하입니다.'));
   }
+}
+
+async function isNewFlowLine(db: Pick<Prisma.TransactionClient, 'inbound_lot'>, inboundReceiptLineId: bigint): Promise<boolean> {
+  const inboundLot = await db.inbound_lot.findUnique({
+    where: { inbound_receipt_line_id: inboundReceiptLineId }, select: { erp_send_mode_code: true },
+  });
+  return inboundLot?.erp_send_mode_code === NEW_FLOW;
+}
+
+async function assertLegacyLine(tx: Prisma.TransactionClient, inboundReceiptLineId: bigint): Promise<void> {
+  if (!(await isNewFlowLine(tx, inboundReceiptLineId))) return;
+  throw new ContractException(HttpStatus.CONFLICT, [{
+    scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '입하 LOT 의 P/O 배정은 W-01-16 에서 조정하세요.',
+  }]);
 }
 
 /** 부모 P/O 를 `FOR UPDATE` 로 잡고 라인을 다시 읽는다 — `received_qty` 를 쓰는 모든 경로의 불변식이다. */

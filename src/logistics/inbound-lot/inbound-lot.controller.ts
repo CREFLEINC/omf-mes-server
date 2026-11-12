@@ -10,21 +10,27 @@ import { logisticsWriteActorOf } from '../logistics-write-actor';
 import {
   InboundLotLotsService, InboundLotSupplierLotResult, InboundLotSupplierLotSet, InboundLotUnregister,
 } from './inbound-lot-lots.service';
+import { InboundLotCloseReceipt, InboundLotCloseService, InboundLotClosedView } from './inbound-lot-close';
 import { InboundLotDetailView, InboundLotQuery, InboundLotQueryService } from './inbound-lot-query.service';
+import { InboundLotReopenReceipt, InboundLotReopenService } from './inbound-lot-reopen.service';
 import { InboundLotReceive, InboundLotReceiveResult, InboundLotReceiveService } from './inbound-lot-receive.service';
 import { InboundLotView } from './inbound-lot-view';
 
 const RECEIVE = 'POST /logistics/inbound-lots:receive';
 const UNREGISTER = 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots';
 const SUPPLIER_LOT_NO = 'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no';
+const CLOSE_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:close-receipt';
+const REOPEN_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt';
 
-/** 입하 LOT — 조회(§2)·PDA 받기·해제·공급사 LOT(§3). 피처 005 · 화면 M-01-01·M-01-03·W-01-16·W-01-01. */
+/** 입하 LOT — 조회(§2)·PDA 받기·해제·공급사 LOT·마감·마감 취소(§3). 피처 005 · 화면 M-01-01·M-01-03·W-01-16·W-01-01. */
 @Controller('logistics')
 export class InboundLotController {
   constructor(
     private readonly receives: InboundLotReceiveService,
     private readonly lots: InboundLotLotsService,
     private readonly queries: InboundLotQueryService,
+    private readonly closer: InboundLotCloseService,
+    private readonly reopener: InboundLotReopenService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -70,5 +76,28 @@ export class InboundLotController {
   ): Promise<InboundLotSupplierLotResult> {
     const actor = logisticsWriteActorOf(request, SUPPLIER_LOT_NO);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) => this.lots.setSupplierLotNo(tx, inboundLotId, body, actor));
+  }
+
+  @Post('inbound-lots/:inboundLotId\\:close-receipt')
+  @HttpCode(HttpStatus.OK)
+  @Contract(CLOSE_RECEIPT)
+  closeReceipt(
+    @Req() request: Request,
+    @Param('inboundLotId', ParseIntPipe) inboundLotId: number,
+    @Body() body: InboundLotCloseReceipt,
+  ): Promise<InboundLotClosedView> {
+    return this.closer.close(request, inboundLotId, body, logisticsWriteActorOf(request, CLOSE_RECEIPT));
+  }
+
+  @Post('inbound-lots/:inboundLotId\\:reopen-receipt')
+  @HttpCode(HttpStatus.OK)
+  @Contract(REOPEN_RECEIPT)
+  reopenReceipt(
+    @Req() request: Request,
+    @Param('inboundLotId', ParseIntPipe) inboundLotId: number,
+    @Body() body: InboundLotReopenReceipt,
+  ): Promise<InboundLotView> {
+    const actor = logisticsWriteActorOf(request, REOPEN_RECEIPT);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) => this.reopener.reopen(tx, inboundLotId, body, actor));
   }
 }

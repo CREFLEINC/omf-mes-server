@@ -318,6 +318,9 @@ describe('피처 005 S4 — PDA 입하 받기·해제·공급사 LOT (e2e)', () 
     const held = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(inspected) }, include: { lot_hold: true } });
     expect(held).toMatchObject({ lifecycle_status_code: 'WAITING', status_code: 'INSPECTION_PENDING', inbound_lot_id: null });
     expect(held.lot_hold.every((hold) => hold.released_at !== null)).toBe(true);
+    // 해제가 닫은 검사 대기 보류는 해제 사유 「입하 등록 해제」다(직권 해제 MANAGER_OVERRIDE 가 아니다).
+    expect(held.lot_hold.filter((hold) => hold.reason_code === 'INCOMING_INSPECTION_WAIT').map((hold) => hold.release_reason_code))
+      .toEqual(['LOT_UNREGISTERED']);
     expect(await prisma.lot_status_event.count({ where: { lot_id: held.lot_id, transition_code: 'C31' } })).toBe(0);
     saLotIds = saLotIds.filter((lotId) => lotId !== inspected);
   });

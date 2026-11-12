@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 
+import { reopenStatesOf } from './inbound-lot-reopenable';
+
 /** 계약 `InboundLotIqcSummary`. */
 export interface InboundLotIqcView {
   requestId: number;
@@ -8,7 +10,17 @@ export interface InboundLotIqcView {
   overallJudgmentCode: string | null;
 }
 
-/** 계약 `InboundLot` — 입하 LOT 한 행. 마감 취소·최종 마감 칸은 S5·S12 가 채우기 전까지 false/null 이다. */
+/** 계약 `InboundLotPoAllocation`. */
+export interface InboundLotPoAllocationView {
+  purchaseOrderLineId: number;
+  purchaseOrderNo: string;
+  lineNo: number;
+  orderDate: string;
+  erpPurchaseOrderNo: string | null;
+  qty: number;
+}
+
+/** 계약 `InboundLot` — 입하 LOT 한 행. 최종 마감 칸(`finalizable`)은 S12 가 채우기 전까지 false 다. */
 export interface InboundLotView {
   inboundLotId: number;
   inboundLotNo: string;
@@ -26,6 +38,7 @@ export interface InboundLotView {
   lotCount: number;
   receivedQty: number;
   goodsReceivedQty: number;
+  poAllocations: InboundLotPoAllocationView[];
   unallocatedQty: number;
   iqc: InboundLotIqcView | null;
   inspectionRequired: boolean;
@@ -52,7 +65,14 @@ const INBOUND_LOT_SELECT = {
     select: {
       received_qty: true, inspection_required: true,
       inbound_receipt: { select: { inbound_receipt_no: true } },
-      inbound_receipt_po_allocation: { select: { allocated_qty: true } },
+      inbound_receipt_po_allocation: {
+        select: {
+          purchase_order_line_id: true, allocated_qty: true,
+          purchase_order_line: {
+            select: { line_no: true, purchase_order: { select: { purchase_order_no: true, order_date: true, erp_purchase_order_no: true } } },
+          },
+        },
+      },
     },
   },
 } satisfies Prisma.inbound_lotSelect;
@@ -69,7 +89,7 @@ export async function loadInboundLotViews(
   const rows = await db.inbound_lot.findMany({ where, select: INBOUND_LOT_SELECT, ...page });
   if (rows.length === 0) return [];
   const ids = rows.map((row) => row.inbound_lot_id);
-  const [counts, received, requests, firsts] = await Promise.all([
+  const [counts, received, requests, firsts, reopenedEvents, reopenStates] = await Promise.all([
     db.lot.groupBy({ by: ['inbound_lot_id'], where: { inbound_lot_id: { in: ids } }, _count: { _all: true } }),
     db.$queryRaw<{ inbound_lot_id: bigint; qty: Prisma.Decimal }[]>`
       SELECT l.inbound_lot_id, sum(grl.receipt_qty) AS qty
@@ -86,7 +106,12 @@ export async function loadInboundLotViews(
     db.inbound_lot_event.groupBy({
       by: ['inbound_lot_id'], where: { inbound_lot_id: { in: ids }, event_type_code: 'LOTS_REGISTERED' }, _min: { occurred_at: true },
     }),
+    db.inbound_lot_event.findMany({
+      where: { inbound_lot_id: { in: ids }, event_type_code: 'RECEIPT_REOPENED' }, select: { inbound_lot_id: true }, distinct: ['inbound_lot_id'],
+    }),
+    reopenStatesOf(db, ids),
   ]);
+  const reopened = new Set(reopenedEvents.map((row) => row.inbound_lot_id));
   const countOf = new Map(counts.map((row) => [row.inbound_lot_id, row._count._all]));
   const receivedOf = new Map(received.map((row) => [row.inbound_lot_id, Number(row.qty)]));
   const iqcOf = new Map(requests.map((row) => [row.inbound_lot_id, row]));
@@ -95,6 +120,7 @@ export async function loadInboundLotViews(
     const line = row.inbound_receipt_line;
     const allocated = line.inbound_receipt_po_allocation.reduce((sum, allocation) => sum.plus(allocation.allocated_qty), ZERO);
     const iqc = iqcOf.get(row.inbound_lot_id);
+    const reopen = reopenStates.get(row.inbound_lot_id);
     return {
       inboundLotId: Number(row.inbound_lot_id), inboundLotNo: row.inbound_lot_no, plantId: Number(row.plant_id),
       supplierId: Number(row.supplier_id), supplierCode: row.supplier.partner_code, supplierName: row.supplier.partner_name,
@@ -104,6 +130,7 @@ export async function loadInboundLotViews(
       lotCount: countOf.get(row.inbound_lot_id) ?? 0,
       receivedQty: Number(line.received_qty),
       goodsReceivedQty: receivedOf.get(row.inbound_lot_id) ?? 0,
+      poAllocations: line.inbound_receipt_po_allocation.map(allocationView).sort(byOrderAge),
       unallocatedQty: Number(line.received_qty.minus(allocated)),
       iqc: iqc === undefined ? null : {
         requestId: Number(iqc.inspection_request_id), requestNo: iqc.inspection_request_no,
@@ -114,8 +141,25 @@ export async function loadInboundLotViews(
       receivedClosedAt: row.received_closed_at?.toISOString() ?? null,
       closedAutomatically: row.closed_automatically,
       finalizedAt: row.finalized_at?.toISOString() ?? null,
-      reopenable: false, reopenReasonCode: null, reopened: false, finalizable: false,
+      reopenable: reopen !== undefined && reopen.blockers.length === 0, reopenReasonCode: reopen?.reasonCode ?? null,
+      reopened: reopened.has(row.inbound_lot_id), finalizable: false,
       erpSendModeCode: row.erp_send_mode_code, versionNo: row.version_no,
     };
   });
+}
+
+type AllocationRow = Prisma.inbound_lotGetPayload<{ select: typeof INBOUND_LOT_SELECT }>['inbound_receipt_line']['inbound_receipt_po_allocation'][number];
+
+function allocationView(row: AllocationRow): InboundLotPoAllocationView {
+  const order = row.purchase_order_line.purchase_order;
+  return {
+    purchaseOrderLineId: Number(row.purchase_order_line_id), purchaseOrderNo: order.purchase_order_no,
+    lineNo: row.purchase_order_line.line_no, orderDate: order.order_date.toISOString().slice(0, 10),
+    erpPurchaseOrderNo: order.erp_purchase_order_no, qty: Number(row.allocated_qty),
+  };
+}
+
+/** 자동 배정 순서(발주일·P/O 번호·라인 번호)로 보인다. */
+function byOrderAge(left: InboundLotPoAllocationView, right: InboundLotPoAllocationView): number {
+  return left.orderDate.localeCompare(right.orderDate) || left.purchaseOrderNo.localeCompare(right.purchaseOrderNo) || left.lineNo - right.lineNo;
 }

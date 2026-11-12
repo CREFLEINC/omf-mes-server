@@ -17,7 +17,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { assertDay, assertInstant, isDuplicateLotNo } from '../../trace/lot/lot-rules';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { RegisteredLotSummary, recordInboundLotEvent } from './inbound-lot-event';
-import { OpenInboundLot, closeStaleInboundLot, createInboundLotWithin, lockOpenInboundLot } from './inbound-lot-open';
+import { InboundLotCloseService, IqcRequestNoNeeded } from './inbound-lot-close';
+import { OpenInboundLot, createInboundLotWithin, lockOpenInboundLot } from './inbound-lot-open';
 import {
   InboundLotReceiveEntry, ResolvedReceiveLot, assertReceiveEntries, resolveReceiveLots,
 } from './inbound-lot-receive-lots';
@@ -47,7 +48,8 @@ export interface InboundLotReceiveResult {
   inboundLots: InboundLotReceivedView[];
 }
 
-interface Numbers { inboundReceiptNo: string; inboundLotNo: string }
+/** 새 입하 LOT 을 열 묶음의 번호. 지난 날짜 입하 LOT 을 먼저 자동 마감할 묶음은 IQC 요청 번호도 함께 뽑는다. */
+interface Numbers { inboundReceiptNo: string; inboundLotNo: string; iqcRequestNo?: string }
 interface ReceiveContext {
   body: InboundLotReceive;
   plantId: bigint;
@@ -80,6 +82,7 @@ export class InboundLotReceiveService {
     private readonly lifecycle: LotLifecycleService,
     private readonly quality: LotQualityStatusService,
     private readonly holds: LotHoldService,
+    private readonly closer: InboundLotCloseService,
   ) {}
 
   async receive(request: Request, body: InboundLotReceive, actor: LogisticsWriteActor, terminalPlantId?: bigint): Promise<InboundLotReceiveResult> {
@@ -101,14 +104,16 @@ export class InboundLotReceiveService {
     };
     // 거부(400·409)를 채번 «전»에 낸다 — 같은 판정을 트랜잭션 안에서 잠그고 한 번 더 한다.
     const preview = await resolveReceiveLots(this.prisma as unknown as Prisma.TransactionClient, plantId, body.lots, false);
-    ctx.numbers = await this.numbersFor(plantId, await this.unopenedGroups(plantId, preview), body.businessDate);
+    const unopened = await this.unopenedGroups(plantId, preview, ctx.localDay);
+    ctx.numbers = await this.numbersFor(plantId, unopened.keys, body.businessDate, unopened.stale);
     for (let attempt = 1; ; attempt += 1) {
       try {
         const outcome = await this.idempotency.run(context, (tx) => this.receiveWithin(tx, ctx), TRANSACTION_OPTIONS);
         return outcome.body;
       } catch (error) {
-        if (attempt >= RETRY || !(error instanceof NumbersNeeded || isDuplicateLotNo(error))) throw error;
-        if (error instanceof NumbersNeeded) ctx.numbers = await this.numbersFor(plantId, groupKeys(preview), body.businessDate);
+        const numbersNeeded = error instanceof NumbersNeeded || error instanceof IqcRequestNoNeeded;
+        if (attempt >= RETRY || !(numbersNeeded || isDuplicateLotNo(error))) throw error;
+        if (numbersNeeded) ctx.numbers = await this.numbersFor(plantId, groupKeys(preview), body.businessDate, new Set(groupKeys(preview)));
       }
     }
   }
@@ -125,22 +130,26 @@ export class InboundLotReceiveService {
       : field('plantId', ERROR_CODE.INVALID, '공장을 정할 수 없습니다 — plantId 를 보내세요.')]);
   }
 
-  private async unopenedGroups(plantId: bigint, lots: ResolvedReceiveLot[]): Promise<string[]> {
+  /** 새로 열 묶음 — 열린 입하 LOT 이 없거나, 있어도 지난 날짜라 먼저 자동 마감할 것(`stale`). */
+  private async unopenedGroups(plantId: bigint, lots: ResolvedReceiveLot[], today: string): Promise<{ keys: string[]; stale: Set<string> }> {
     const keys = groupKeys(lots);
     const open = await this.prisma.inbound_lot.findMany({
       where: { plant_id: plantId, status_code: 'RECEIVING', OR: keys.map((key) => keyWhere(key)) },
-      select: { supplier_id: true, item_id: true },
+      select: { supplier_id: true, item_id: true, open_since_date: true },
     });
-    const opened = new Set(open.map((row) => `${String(row.supplier_id)}:${String(row.item_id)}`));
-    return keys.filter((key) => !opened.has(key));
+    const keyOf = (row: { supplier_id: bigint; item_id: bigint }): string => `${String(row.supplier_id)}:${String(row.item_id)}`;
+    const stale = new Set(open.filter((row) => isStale(row.open_since_date?.toISOString().slice(0, 10) ?? today, today)).map(keyOf));
+    const fresh = new Set(open.map(keyOf).filter((key) => !stale.has(key)));
+    return { keys: keys.filter((key) => !fresh.has(key)), stale };
   }
 
-  private async numbersFor(plantId: bigint, keys: string[], businessDate: string): Promise<Map<string, Numbers>> {
+  private async numbersFor(plantId: bigint, keys: string[], businessDate: string, stale: Set<string>): Promise<Map<string, Numbers>> {
     const numbers = new Map<string, Numbers>();
     for (const key of keys) {
       numbers.set(key, {
         inboundReceiptNo: await this.numbering.next('INBOUND_RECEIPT', plantId, businessDate),
         inboundLotNo: await this.numbering.next('INBOUND_LOT', plantId, businessDate),
+        ...(stale.has(key) ? { iqcRequestNo: await this.numbering.next('INSPECTION_REQUEST', plantId, businessDate) } : {}),
       });
     }
     return numbers;
@@ -169,7 +178,16 @@ export class InboundLotReceiveService {
     const qty = group.reduce((sum, lot) => sum.plus(lot.qty), new Prisma.Decimal(0));
     const item = await tx.item.findUniqueOrThrow({ where: { item_id: lotKey.itemId }, select: { base_uom_id: true, inspection_required: true } });
     let open = await lockOpenInboundLot(tx, lotKey);
-    const autoClosedInboundLotNo = open === null ? null : closeStaleInboundLot(open, ctx.localDay);
+    let autoClosedInboundLotNo: string | null = null;
+    if (open !== null && isStale(open.openSinceDate, ctx.localDay)) {
+      // 지난 날짜(공장 현지)에 연 입하 LOT — 같은 트랜잭션에서 시스템이 먼저 마감하고 새로 연다(R-21).
+      await this.closer.closeInboundLot(tx, {
+        inboundLotId: open.inboundLotId, actor: null, auto: true, at: ctx.at, effectiveDate: ctx.localDay,
+        iqcRequestNo: ctx.numbers.get(key)?.iqcRequestNo ?? null,
+      });
+      autoClosedInboundLotNo = open.inboundLotNo;
+      open = null;
+    }
     let created = false;
     for (let attempt = 1; open === null; attempt += 1) {
       const numbers = ctx.numbers.get(key);
@@ -274,6 +292,11 @@ async function inspectionNeeded(tx: Prisma.TransactionClient, itemId: bigint, re
   if (!required) return false;
   const version = await findInspectionPlanVersion(tx, 'IQC', Number(itemId), businessDate);
   return version === null || !(await planDefaultSkip(tx, version));
+}
+
+/** 입하 중이 된 날(`open_since_date`)이 공장 현지 오늘보다 앞이면 날짜 자동 마감 대상이다(R-21). */
+function isStale(openSinceDate: string, today: string): boolean {
+  return openSinceDate < today;
 }
 
 function groupKeys(lots: ResolvedReceiveLot[]): string[] {
