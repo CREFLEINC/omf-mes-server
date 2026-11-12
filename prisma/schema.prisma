@@ -106,6 +106,8 @@ model app_user {
   inspection_sheet_ng_updated_byToapp_user inspection_sheet_ng[] @relation("inspection_sheet_ng_updated_byToapp_user")
   inspection_sheet_event_acted_byToapp_user inspection_sheet_event[] @relation("inspection_sheet_event_acted_byToapp_user")
 
+  inbound_lot_event inbound_lot_event[]
+  inspection_request_event inspection_request_event[]
   @@index([department_id], map: "ix_app_user_department")
   @@schema("app")
 }
@@ -1073,6 +1075,7 @@ model inbound_receipt_line {
   inbound_receipt_po_allocation inbound_receipt_po_allocation[]
   purchase_order             purchase_order[]
 
+  inbound_lot inbound_lot?
   @@unique([inbound_receipt_id, line_no], map: "uq_inbound_receipt_line")
   @@index([purchase_order_line_id], map: "ix_inbound_line_po")
   @@index([lot_id], map: "ix_inbound_line_lot")
@@ -2115,6 +2118,9 @@ model item {
   replenishment_item                                   replenishment_item[]
   replenishment_run_line                               replenishment_run_line[]
 
+  inbound_lot inbound_lot[]
+  material_lot_batch material_lot_batch[]
+  supplier_item_default supplier_item_default[]
   @@index([item_type_code, is_active], map: "ix_item_type")
   @@schema("mdm")
 }
@@ -2353,6 +2359,9 @@ model partner {
   concession                                                    concession[]
   lot_external_identifier                                       lot_external_identifier[]
 
+  inbound_lot inbound_lot[]
+  material_lot_batch material_lot_batch[]
+  supplier_item_default supplier_item_default[]
   @@schema("mdm")
 }
 
@@ -2412,6 +2421,9 @@ model plant {
   shipment_request          shipment_request[]
   item_resource_map         item_resource_map[]
 
+  inbound_lot inbound_lot[]
+  material_lot_batch material_lot_batch[]
+  supplier_item_default supplier_item_default[]
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")
 }
@@ -2648,10 +2660,14 @@ model uom {
   nonconformance_lot                                            nonconformance_lot[]
   repair_result                                                 repair_result[]
   sorting_result                                                sorting_result[]
-  lot                                                           lot[]
+  lot                                                           lot[] @relation("lot_uom_idTouom")
   lot_hold                                                      lot_hold[]
   lot_relation                                                  lot_relation[]
 
+  lot_package lot[] @relation("lot_package_uom_idTouom")
+  inbound_lot inbound_lot[]
+  material_lot_batch material_lot_batch[]
+  supplier_item_default supplier_item_default[]
   @@schema("mdm")
 }
 
@@ -2762,6 +2778,8 @@ model worker {
   inspection_sheet_ng_recheck_worker_idToworker inspection_sheet_ng[] @relation("inspection_sheet_ng_recheck_worker_idToworker")
   inspection_sheet_event_acted_worker_idToworker inspection_sheet_event[] @relation("inspection_sheet_event_acted_worker_idToworker")
 
+  inbound_lot_event inbound_lot_event[]
+  inspection_request_event inspection_request_event[]
   @@index([department_id], map: "ix_worker_department")
   @@schema("mdm")
 }
@@ -3640,6 +3658,8 @@ model disposition_decision {
   sorting_result          sorting_result[]
   stock_transfer          stock_transfer[]
 
+  sort_good_qty   Decimal? @db.Decimal(20, 6)
+  sort_defect_qty Decimal? @db.Decimal(20, 6)
   @@index([nonconformance_id], map: "ix_disposition_decision_nonconformance")
   @@schema("quality")
 }
@@ -3825,6 +3845,17 @@ model inspection_request {
   lot_four_m_change          lot_four_m_change[]
   item_inspection_level_history item_inspection_level_history[]
 
+  inbound_lot_id                   BigInt?
+  split_from_inspection_request_id BigInt?
+  overall_judgment_code            String?   @db.VarChar(50)
+  confirm_cycle                    Int       @default(1)
+  confirmed_at                     DateTime? @db.Timestamptz(6)
+  confirmed_by                     BigInt?
+  inbound_lot                      inbound_lot?        @relation(fields: [inbound_lot_id], references: [inbound_lot_id], onDelete: NoAction, onUpdate: NoAction)
+  split_from_inspection_request    inspection_request? @relation("inspection_request_split", fields: [split_from_inspection_request_id], references: [inspection_request_id], onDelete: NoAction, onUpdate: NoAction)
+  split_inspection_requests        inspection_request[] @relation("inspection_request_split")
+  inspection_request_event         inspection_request_event[]
+  nonconformance                   nonconformance[]
   @@schema("quality")
 }
 
@@ -4171,6 +4202,8 @@ model inspection_result {
   oqc_serial_results         oqc_serial_result[]
   inspection_sheet_step_result inspection_sheet_step_result[]
 
+  confirm_cycle Int?
+  inspection_result_lot inspection_result_lot[]
   @@unique([inspection_request_id, inspection_round], map: "uq_inspection_round")
   @@schema("quality")
 }
@@ -4207,7 +4240,13 @@ model nonconformance {
   work_order_nonconformance_work_order_idTowork_order                   work_order?            @relation("nonconformance_work_order_idTowork_order", fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   nonconformance_lot                                                    nonconformance_lot[]
 
+  inspection_request_id    BigInt?
+  source_nonconformance_id BigInt?
+  inspection_request       inspection_request? @relation(fields: [inspection_request_id], references: [inspection_request_id], onDelete: NoAction, onUpdate: NoAction)
+  source_nonconformance    nonconformance?     @relation("nonconformance_source", fields: [source_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction)
+  derived_nonconformances  nonconformance[]    @relation("nonconformance_source")
   @@index([responsible_department_id], map: "ix_nonconformance_responsible_department")
+  @@index([inspection_request_id], map: "ix_nonconformance_inspection_request")
   @@schema("quality")
 }
 
@@ -4345,7 +4384,7 @@ model lot {
   parent_lot                                       lot?                                 @relation("lotTolot", fields: [parent_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   child_lots                                       lot[]                                @relation("lotTolot")
   plant                                            plant                                @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  uom                                              uom                                  @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                              uom                                  @relation("lot_uom_idTouom", fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   lot_external_identifier                          lot_external_identifier[]
   lot_hold                                         lot_hold[]
   lot_lifecycle_history                            lot_lifecycle_history[]
@@ -4355,10 +4394,18 @@ model lot {
   serial_number                                    serial_number[]
   inspection_sheet inspection_sheet[]
 
+  inbound_lot_id  BigInt?
+  package_uom_id  BigInt?
+  package_count   Int?
+  qty_per_package Decimal?             @db.Decimal(20, 6)
+  inbound_lot     inbound_lot?         @relation(fields: [inbound_lot_id], references: [inbound_lot_id], onDelete: NoAction, onUpdate: NoAction)
+  package_uom     uom?                 @relation("lot_package_uom_idTouom", fields: [package_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  inspection_result_lot inspection_result_lot[]
   @@unique([plant_id, lot_no], map: "uq_lot")
   @@index([item_id, created_at(sort: Desc)], map: "ix_lot_item")
   @@index([bom_id], map: "ix_lot_bom")
   @@index([source_type_code, source_id], map: "ix_lot_source")
+  @@index([inbound_lot_id], map: "ix_lot_inbound_lot")
   @@schema("trace")
 }
 
@@ -6038,4 +6085,151 @@ model replenishment_run_line {
 
   @@index([replenishment_run_id], map: "ix_replenishment_run_line_run")
   @@schema("logistics")
+}
+
+/// 자재 관리 LOT 발행 묶음(피처 005) — 공급사·품목별로 미리 만든 대기 LOT 의 원천(`MATERIAL_LOT_BATCH`).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model material_lot_batch {
+  material_lot_batch_id BigInt   @id @default(autoincrement())
+  plant_id              BigInt
+  item_id               BigInt
+  supplier_id           BigInt
+  lot_qty               Decimal  @db.Decimal(20, 6)
+  package_uom_id        BigInt?
+  package_count         Int?
+  qty_per_package       Decimal? @db.Decimal(20, 6)
+  supplier_lot_no       String?  @db.VarChar(100)
+  lot_count             Int
+  created_channel_code  String   @db.VarChar(50)
+  created_at            DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  created_worker_id     BigInt?
+  plant                 plant    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  item                  item     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  supplier              partner  @relation(fields: [supplier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
+  package_uom           uom?     @relation(fields: [package_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("trace")
+}
+
+/// 입하 LOT(피처 005) — 공장·공급사·품목 하나의 한 번 입하. 자재 관리 LOT 를 1:N 으로 묶고 입하 줄과 1:1.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inbound_lot {
+  inbound_lot_id            BigInt                @id @default(autoincrement())
+  inbound_lot_no            String                @db.VarChar(50)
+  plant_id                  BigInt
+  item_id                   BigInt
+  supplier_id               BigInt
+  uom_id                    BigInt
+  status_code               String                @db.VarChar(50)
+  receiving_date            DateTime              @db.Date
+  open_since_date           DateTime?             @db.Date
+  received_closed_at        DateTime?             @db.Timestamptz(6)
+  received_closed_by        BigInt?
+  closed_automatically      Boolean               @default(false)
+  finalized_at              DateTime?             @db.Timestamptz(6)
+  finalized_by              BigInt?
+  erp_send_mode_code        String                @db.VarChar(50)
+  inbound_receipt_line_id   BigInt                @unique(map: "uq_inbound_lot_line")
+  split_from_inbound_lot_id BigInt?
+  remarks                   String?
+  created_at                DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  updated_at                DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                BigInt?
+  version_no                Int                   @default(1)
+  plant                     plant                 @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  item                      item                  @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  supplier                  partner               @relation(fields: [supplier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                       uom                   @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  inbound_receipt_line      inbound_receipt_line  @relation(fields: [inbound_receipt_line_id], references: [inbound_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
+  split_from_inbound_lot    inbound_lot?          @relation("inbound_lot_split", fields: [split_from_inbound_lot_id], references: [inbound_lot_id], onDelete: NoAction, onUpdate: NoAction)
+  split_inbound_lots        inbound_lot[]         @relation("inbound_lot_split")
+  lot                       lot[]
+  inbound_lot_event         inbound_lot_event[]
+  inspection_request        inspection_request[]
+
+  @@unique([plant_id, inbound_lot_no], map: "uq_inbound_lot")
+  @@index([plant_id, status_code, received_closed_at], map: "ix_inbound_lot_status")
+  @@index([split_from_inbound_lot_id], map: "ix_inbound_lot_split_from")
+  @@schema("trace")
+}
+
+/// 입하 LOT 이력(피처 005). 행위자가 둘 다 NULL 이면 시스템(`summary.auto`).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inbound_lot_event {
+  inbound_lot_event_id BigInt      @id @default(autoincrement())
+  inbound_lot_id       BigInt
+  event_type_code      String      @db.VarChar(50)
+  summary              Json?
+  reason               String?
+  occurred_at          DateTime    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  actor_user_id        BigInt?
+  actor_worker_id      BigInt?
+  inbound_lot          inbound_lot @relation(fields: [inbound_lot_id], references: [inbound_lot_id], onDelete: NoAction, onUpdate: NoAction)
+  actor_user           app_user?   @relation(fields: [actor_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  actor_worker         worker?     @relation(fields: [actor_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([inbound_lot_id, occurred_at], map: "ix_inbound_lot_event_lot")
+  @@schema("trace")
+}
+
+/// 공급사·품목 기본 정보(W-06-25 · 피처 005) — 자재 관리 LOT 발행 화면의 기본값.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model supplier_item_default {
+  supplier_item_default_id BigInt   @id @default(autoincrement())
+  plant_id                 BigInt
+  supplier_id              BigInt
+  item_id                  BigInt
+  lot_qty                  Decimal  @db.Decimal(20, 6)
+  package_uom_id           BigInt?
+  package_count            Int?
+  qty_per_package          Decimal? @db.Decimal(20, 6)
+  remarks                  String?
+  created_at               DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by               BigInt?
+  updated_at               DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by               BigInt?
+  version_no               Int      @default(1)
+  plant                    plant    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  supplier                 partner  @relation(fields: [supplier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
+  item                     item     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  package_uom              uom?     @relation(fields: [package_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([plant_id, supplier_id, item_id], map: "uq_supplier_item_default")
+  @@schema("mdm")
+}
+
+/// IQC 결과 ↔ 자재 관리 LOT 매칭(피처 005).
+model inspection_result_lot {
+  inspection_result_lot_id BigInt            @id @default(autoincrement())
+  inspection_result_id     BigInt
+  lot_id                   BigInt
+  inspection_result        inspection_result @relation(fields: [inspection_result_id], references: [inspection_result_id], onDelete: Cascade, onUpdate: NoAction)
+  lot                      lot               @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([inspection_result_id, lot_id], map: "uq_inspection_result_lot")
+  @@index([lot_id], map: "ix_inspection_result_lot_lot")
+  @@schema("quality")
+}
+
+/// IQC(입하 LOT) 변경 이력(피처 005). `inspection_result_id` 는 지운 결과도 남기려고 FK 가 없다.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_request_event {
+  inspection_request_event_id BigInt             @id @default(autoincrement())
+  inspection_request_id       BigInt
+  event_type_code             String             @db.VarChar(50)
+  inspection_result_id        BigInt?
+  summary_before              Json?
+  summary_after               Json?
+  reason                      String?
+  occurred_at                 DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  actor_user_id               BigInt?
+  actor_worker_id             BigInt?
+  inspection_request          inspection_request @relation(fields: [inspection_request_id], references: [inspection_request_id], onDelete: NoAction, onUpdate: NoAction)
+  actor_user                  app_user?          @relation(fields: [actor_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  actor_worker                worker?            @relation(fields: [actor_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([inspection_request_id, occurred_at], map: "ix_inspection_request_event_request")
+  @@schema("quality")
 }
