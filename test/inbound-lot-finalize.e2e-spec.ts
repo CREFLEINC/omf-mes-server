@@ -281,7 +281,7 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     expect(await inboundLotRow(waiting.inboundLotId)).toMatchObject({ status_code: 'RECEIVED', version_no: version, finalized_at: null });
   });
 
-  it('US8-5 SC-011 최종 마감 뒤 입고 취소 요청·실행, :reopen-receipt, PUT po-allocations, :cancel-confirm 모두 409 INBOUND_LOT_FINALIZED — 출고·이동은 된다', async () => {
+  it('US8-5 SC-011 최종 마감 뒤 입고 취소 요청·실행, :reopen-receipt, PUT po-allocations, :split-lots, :cancel-confirm 모두 409 INBOUND_LOT_FINALIZED — 출고·이동은 된다', async () => {
     const id = full.inboundLotId;
     const receipt = await prisma.goods_receipt.findUniqueOrThrow({ where: { goods_receipt_id: BigInt(full.goodsReceiptId) } });
     const cancelPath = `/api/logistics/document-progress/GOODS_RECEIPT/${String(full.goodsReceiptId)}`;
@@ -303,6 +303,10 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     const edited = await put(allocationsPath(id)).send({ versionNo: await versionOf(id), allocations: [] }).expect(409);
     expect(edited.body.errors).toEqual([expect.objectContaining({ code: 'INBOUND_LOT_FINALIZED' })]);
     expect(await receivedOf(fullOrderLine)).toBe(20);
+    // 분리·선별이 함께 쓰는 코어(splitInboundLot)가 막는다 — 선별은 열린 부적합이 있으면 최종 마감이 안 되므로 분리로 본다.
+    const split = await post(`${LOTS}/${String(id)}:split-lots`).send({ versionNo: await versionOf(id), lotIds: [full.lots[0].lotId] }).expect(409);
+    expect(split.body.errors).toEqual([expect.objectContaining({ code: 'INBOUND_LOT_FINALIZED' })]);
+    expect(await prisma.lot.count({ where: { inbound_lot_id: BigInt(id) } })).toBe(full.lots.length);
     const iqc = await prisma.inspection_request.findFirstOrThrow({ where: { inbound_lot_id: BigInt(id), status_code: { not: 'CANCELLED' } } });
     const cancelled = await post(`/api/quality/inspection-requests/${String(iqc.inspection_request_id)}:cancel-confirm`)
       .send({ versionNo: iqc.version_no }).expect(409);

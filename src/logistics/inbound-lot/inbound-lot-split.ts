@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { INBOUND_RECEIPT_LINE_SOURCE, type InboundLotActor } from '../../core/lot';
 import { recordInboundLotEvent } from './inbound-lot-event';
+import { assertInboundLotMutable } from './inbound-lot-finalizable';
 
 type Db = Prisma.TransactionClient;
 const ZERO = new Prisma.Decimal(0);
@@ -186,7 +187,7 @@ export async function splitInboundLot(tx: Db, input: SplitInboundLotInput): Prom
   const [locked] = await tx.$queryRaw<{ version_no: number }[]>`
     SELECT version_no FROM trace.inbound_lot WHERE inbound_lot_id = ${input.inboundLotId} FOR UPDATE`;
   if (locked === undefined) throw new NotFoundException('없는 입하 LOT 입니다.');
-  // INBOUND_LOT_FINALIZED — 최종 마감(S12)의 `assertInboundLotMutable(input.inboundLotId)` 이 이 자리에서 막는다.
+  await assertInboundLotMutable(tx, input.inboundLotId);
   if (input.versionNo !== undefined) assertUpdated(locked.version_no === input.versionNo ? 1 : 0);
   const plan = await planInboundLotSplit(tx, input.inboundLotId, input.lotIds);
   const source = plan.inboundLot;
