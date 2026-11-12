@@ -13,7 +13,7 @@ import { recordIqcInspectionLevelWithin } from '../inspection-level/inspection-l
 import { InspectionConfirmService } from './inspection-confirm.service';
 import { recordInspectionRequestEvent } from './inspection-request-event';
 import { INBOUND_LOT_TARGET, judgedResultsOf } from './iqc-inbound-lot-result';
-import { confirmCancelBlockers, confirmMadeNonconformanceIds, loadConfirmCancelFacts } from './iqc-confirm-cancel';
+import { confirmCancelBlockers, confirmMadeNonconformanceIds, finalizedBlocker, loadConfirmCancelFacts } from './iqc-confirm-cancel';
 import { createIqcNonconformanceWithin } from './iqc-nonconformance';
 import { iqcOverallJudgment, nonconformanceSourceResult } from './iqc-overall-judgment';
 import { IqcRejectedHandoverNotifier } from './iqc-rejected-handover';
@@ -96,11 +96,11 @@ export class IqcRequestConfirmService {
     if (request.status_code !== COMPLETED || request.confirmed_at === null) {
       throw new ConflictException('user', '판정 확정된 검사만 확정을 취소할 수 있습니다.', { code: INVALID_STATE });
     }
-    // INBOUND_LOT_FINALIZED — 최종 마감(S12)의 `assertInboundLotMutable` 이 여기서 막는다.
     const nonconformanceIds = await confirmMadeNonconformanceIds(tx, request.inspection_request_id, request.confirmed_at);
-    const blockers = confirmCancelBlockers(await loadConfirmCancelFacts(tx, {
+    const finalized = await finalizedBlocker(tx, request.inbound_lot_id, lots.map((lot) => lot.lot_no));
+    const blockers = [...(finalized === null ? [] : [finalized]), ...confirmCancelBlockers(await loadConfirmCancelFacts(tx, {
       inspectionRequestId: request.inspection_request_id, lots, confirmedAt: request.confirmed_at, nonconformanceIds,
-    }));
+    }))];
     if (blockers.length > 0) throw new ContractException(HttpStatus.CONFLICT, blockers);
 
     const at = new Date();

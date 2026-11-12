@@ -55,7 +55,11 @@ export class LotIqcSkipExecuteService {
         orderBy: { approval_request_id: 'desc' },
       });
       const approval = approved.find((row) => !isVoided(row.target_summary));
-      if (approval === undefined) throw stateLocked('승인된 IQC 생략 요청이 없습니다.');
+      if (approval === undefined) {
+        throw stateLocked(approved.length > 0
+          ? '입하 마감 취소로 무효가 된 IQC 생략 승인입니다 — 다시 생략을 요청하세요.'
+          : '승인된 IQC 생략 요청이 없습니다.');
+      }
 
       const changedAt = new Date();
       const by = BigInt(appUserId);
@@ -85,7 +89,7 @@ export class LotIqcSkipExecuteService {
 
 /**
  * 입하 마감 취소가 생략을 무효로 만들었다는 표시 — 결재 상태 값에 「무효」가 없어(PENDING·APPROVED·REJECTED) 대상 요약에 남긴다
- * (피처 005 R-5a). 대상은 입하 LOT 이다(FR-032).
+ * (피처 005 R-5a). 대상은 입하 LOT 이다(FR-032). 실행한 승인·실행 전 승인 모두 — 이미 무효인 것은 처음 시각을 둔다.
  */
 export async function markIqcSkipVoided(tx: Tx, inboundLotId: bigint, at: Date): Promise<void> {
   await tx.$executeRaw`
@@ -94,5 +98,6 @@ export async function markIqcSkipVoided(tx: Tx, inboundLotId: bigint, at: Date):
                             || jsonb_build_object('voidedAt', ${at.toISOString()}::text, 'voidedBy', 'RECEIPT_REOPENED'),
            updated_at = clock_timestamp(), version_no = version_no + 1
      WHERE approval_type_code = ${IQC_SKIP_TYPE} AND target_type_code = ${IQC_SKIP_TARGET_TYPE}
-       AND status_code = ${APPROVED} AND target_id = ${inboundLotId}`;
+       AND status_code = ${APPROVED} AND target_id = ${inboundLotId}
+       AND (target_summary ->> 'voidedAt') IS NULL`;
 }

@@ -7,6 +7,7 @@ import { NumberingService } from '../../core/numbering';
 import { ContractException } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
+import { inboundLotFinalized } from '../inbound-lot/inbound-lot-finalizable';
 import { CancelEligibilityService } from './cancel-eligibility.service';
 import { DOCUMENT_SCHEMA, DOCUMENT_TYPES, DocumentTypeMapping, LogisticsDocumentType } from './document-type-registry';
 
@@ -80,6 +81,7 @@ export class DocumentCancelService {
 
       // 조회 2건이 미리 보여 준 것과 «같은 함수»다 — 화면 안내와 실행 결과가 갈리지 않는다(§4-1).
       const verdict = await this.eligibility.evaluate(tx, typeCode, documentId);
+      if (verdict.finalizedLotNos !== undefined) throw inboundLotFinalized(verdict.finalizedLotNos);
       if (!verdict.cancellable) {
         // ⛔ 전건 400 이다 — 409 는 If-Match 저장 충돌 전용이고 `CANCEL_IN_PROGRESS` 도
         //    여기서는 400 이다(계약이 400 설명에 넷을 나란히 적었다 · I-5.md R-9).

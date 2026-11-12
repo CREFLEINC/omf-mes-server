@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ERROR_CODE } from '../../common/errors';
 import { INBOUND_RECEIPT_LINE_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
+import { finalizedLotNosOf } from '../inbound-lot/inbound-lot-finalizable';
 import { DOCUMENT_TYPES, LogisticsDocumentType } from './document-type-registry';
 
 export type Tx = Prisma.TransactionClient | PrismaService;
@@ -34,6 +35,11 @@ export interface CancelEligibility {
   cancelApprovalRequestId?: bigint;
   /** ⚠ 취소 경로가 없는 6종은 «대상 행을 안 읽어» 키가 없다 — 호출자가 자기 행에서 채운다(§4-4). */
   statusCode?: string;
+  /**
+   * 이 문서의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속(R-24) — 있으면 취소 불가(사유 5값 안의 `STATE_LOCKED`)이고,
+   * 요청·실행은 409 `INBOUND_LOT_FINALIZED` 다. 비면 키가 없다.
+   */
+  finalizedLotNos?: string[];
 }
 
 const CANCELLED = 'CANCELLED';
@@ -112,6 +118,9 @@ export class CancelEligibilityService {
     // ⭐ successorCount 는 9종 전건 센다 — 순위 1 조기 종료는 cancellable·사유 코드에만 걸린다.
     //    「후속」 열은 취소 게이트가 아니라 진행현황 열이고 계약이 9종 required 로 뒀다(R-6 ⓐ).
     const found = await this.countSuccessors(tx, typeCode, documentId, opts?.withSuccessorRows === true);
+    const finalizedLotNos = mapping.cancelable && LOT_SOURCE_TYPES.includes(typeCode)
+      ? await finalizedLotNosOf(tx, await this.lotIds(tx, typeCode, documentId))
+      : [];
 
     const hit: Record<CancelBlockedReason, boolean> = {
       TYPE_NOT_CANCELABLE: !mapping.cancelable,
@@ -119,7 +128,7 @@ export class CancelEligibilityService {
       // 상태가 CANCEL_REQUESTED 인데 반려돼 열린 요청이 없는 경우가 실재한다 — 그때도 막는다
       // (되돌릴 경로가 없어 잠긴 문서다 · I-5.md §4-4 · 문의 033).
       CANCEL_IN_PROGRESS: statusCode === CANCEL_REQUESTED || cancelApprovalRequestId !== undefined,
-      STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment,
+      STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment || finalizedLotNos.length > 0,
       SUCCESSOR_EXISTS: found.count > 0,
     };
     const blocked = BLOCK_ORDER.find((code) => hit[code]);
@@ -131,6 +140,7 @@ export class CancelEligibilityService {
       ...(blocked === undefined ? {} : { cancelBlockedReasonCode: blocked }),
       ...(cancelApprovalRequestId === undefined ? {} : { cancelApprovalRequestId }),
       ...(statusCode === undefined ? {} : { statusCode }),
+      ...(finalizedLotNos.length === 0 ? {} : { finalizedLotNos }),
     };
   }
 

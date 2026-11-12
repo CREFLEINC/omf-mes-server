@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 
 type Tx = Prisma.TransactionClient;
 
-/** 계약 `InspectionConfirmCancelBlocker.code` — `INBOUND_LOT_FINALIZED` 는 최종 마감이 생기는 S12 가 낸다. */
+/** 계약 `InspectionConfirmCancelBlocker.code`. */
 export type ConfirmCancelBlockerCode = 'INBOUND_LOT_FINALIZED' | 'GOODS_RECEIVED' | 'DISPOSITION_STARTED' | 'CONCESSION_EXISTS' | 'LOT_STATUS_CHANGED';
 
 export interface ConfirmCancelBlocker {
@@ -44,6 +44,18 @@ export function confirmCancelBlockers(facts: ConfirmCancelFacts): ConfirmCancelB
       const sorted = [...new Set(lotNos)].sort();
       return { scope: 'screen' as const, code, message: `${MESSAGE[code]} — ${sorted.join(', ')}`, lotNos: sorted };
     });
+}
+
+/**
+ * 최종 마감(R-24)된 입하 LOT 의 검사는 확정을 되돌리지 않는다 — 막힘 맨 앞에 LOT 전부로 싣는다. 입하 LOT 행을 `FOR SHARE` 로 잡아
+ * 동시 최종 마감(`FOR UPDATE`)과 줄을 세운다.
+ */
+export async function finalizedBlocker(tx: Tx, inboundLotId: bigint, lotNos: readonly string[]): Promise<ConfirmCancelBlocker | null> {
+  const [row] = await tx.$queryRaw<{ status_code: string }[]>`
+    SELECT status_code FROM trace.inbound_lot WHERE inbound_lot_id = ${inboundLotId} FOR SHARE`;
+  if (row?.status_code !== 'FINALIZED') return null;
+  const sorted = [...new Set(lotNos)].sort();
+  return { scope: 'screen', code: 'INBOUND_LOT_FINALIZED', message: `최종 마감된 입하 LOT 이라 확정을 취소할 수 없습니다 — ${sorted.join(', ')}`, lotNos: sorted };
 }
 
 /** 그 확정이 만든 부적합 — 확정 시각에 태어났고 아직 취소되지 않은 것. 앞 주기(재작업 재검사 전)의 부적합은 뺀다. */
