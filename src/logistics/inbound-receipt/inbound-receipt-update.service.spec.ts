@@ -77,7 +77,7 @@ function fake(options: Options = {}) {
       }));
 
   const receipt = {
-    findUnique: async () => ({ status_code: options.statusCode ?? 'REGISTERED' }),
+    findUnique: async () => ({ status_code: options.statusCode ?? 'REGISTERED', supplier_id: 10n }),
     updateMany: async ({ data }: { data: Args }) => {
       recorded.calls.push('bump');
       recorded.headerData = data;

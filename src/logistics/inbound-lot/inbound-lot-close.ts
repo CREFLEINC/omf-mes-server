@@ -191,10 +191,10 @@ export class InboundLotCloseService {
     }
     if (!skipped) {
       await this.iqcNotices.notify(tx, {
-        // ⚠ 알림은 aggregate 당 한 번이라 마감 취소 뒤 다시 마감하면 다시 알리지 않는다 — 대상 유형은 계약 enum·클라 이동과 묶여 있다.
+        // 마감 취소 뒤 다시 마감하면 같은 입하에 새 IQC 요청이 서므로 첫 마감과 같은 알림을 다시 낸다.
         aggregateTypeCode: 'INBOUND_RECEIPT', aggregateId: iqc.inboundReceiptId, plantId: locked.plant_id,
         receiptNo: input.auto ? `${iqc.inboundReceiptNo} (자동 마감)` : iqc.inboundReceiptNo,
-        lotCount: iqc.lotCount, inboundReceiptId: iqc.inboundReceiptId,
+        lotCount: iqc.lotCount, inboundReceiptId: iqc.inboundReceiptId, repeatable: true,
       });
     }
     return request.inspection_request_id;

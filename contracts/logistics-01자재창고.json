@@ -4996,7 +4996,7 @@
      "logistics"
     ],
     "summary": "입하 헤더 수정",
-    "description": "작성중 상태에서만 허용한다. 근거: 공유계약 B-1 · G-1",
+    "description": "작성중 상태에서만 허용한다. 근거: 공유계약 B-1 · G-1 ⭐ 입하 LOT 받기로 만든 입하(줄의 입하 LOT 이 ON_FINALIZE)는 공급사(supplierId)를 바꿀 수 없다 — 409 STATE_LOCKED(공급사는 입하 LOT 의 축). 이전 데이터(PER_RECEIPT)는 그대로",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5071,11 +5071,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "저장 충돌(conflictCause — 다시 읽어 오면 풀린다) 또는 상태 잠김(errors[].code=STATE_LOCKED — 입하 LOT 받기로 만든 입하의 공급사 변경)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -14006,7 +14013,7 @@
      "logistics"
     ],
     "summary": "대기 자재 관리 LOT — 공급사·품목별",
-    "description": "대기(WAITING) 자재 관리 LOT 을 공급사·품목별로 모은다(FR-004 · 피처 005 §1). 정렬: 공급사 코드·품목 코드. 근거: P-01-01 · W-01-14",
+    "description": "대기(WAITING) 자재 관리 LOT 을 공급사·품목별로 모은다(FR-004 · 피처 005 §1). 조합 = 발행 이력이 있거나 공급사·품목 기본 정보가 있거나 그 공장의 미마감 P/O 라인(헤더 CLOSED·CANCELLED 아님 · 라인 취소 아님 · 받은 양 < 발주 수량)이 있는 공급사·품목 — 대기가 없으면 waitingCount 0 행. 정렬: 공급사 코드·품목 코드. 근거: P-01-01 · W-01-14",
     "parameters": [
      {
       "name": "plantId",
@@ -26790,7 +26797,7 @@
    },
    "WaitingMaterialLotGroup": {
     "type": "object",
-    "description": "공급사·품목별 대기 자재 관리 LOT. 조합 = 발행 이력이 있거나 공급사·품목 기본 정보가 있는 것. batches = 대기가 남았거나 최근 7일의 묶음. lots = 대기 전부 + 그 묶음들의 폐기 + 열린(RECEIVING) 입하 LOT 에 든 것(라벨 다시 인쇄 대상)",
+    "description": "공급사·품목별 대기 자재 관리 LOT. 조합 = 발행 이력이 있거나 공급사·품목 기본 정보가 있거나 그 공장의 미마감 P/O 라인이 있는 것. batches = 대기가 남았거나 최근 7일의 묶음. lots = 대기 전부 + 그 묶음들의 폐기 + 열린(RECEIVING) 입하 LOT 에 든 것(라벨 다시 인쇄 대상)",
     "required": [
      "supplierId",
      "supplierCode",

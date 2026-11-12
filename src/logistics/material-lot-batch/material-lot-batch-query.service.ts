@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { MATERIAL_LOT_BATCH_SOURCE } from '../../core/lot';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CLOSED_ORDER_STATUSES, openLineWhere } from '../purchase-order/purchase-order-receipt';
 import { invalidQuery } from './material-lot-batch.service';
 import { loadMaterialLotSummaries, packageView, type MaterialLotSummaryView, type MaterialPackageView } from './material-lot-view';
 
@@ -146,12 +147,25 @@ export class MaterialLotBatchQueryService {
       ...(query.supplierId === undefined ? {} : { supplier_id: query.supplierId }),
       ...(query.itemId === undefined ? {} : { item_id: query.itemId }),
     };
-    // 목록에 서는 조합 = 발행 이력이 있거나 기본 정보(W-06-25)가 있는 공급사·품목.
-    const [issued, defaults] = await Promise.all([
+    // 목록에 서는 조합 = 발행 이력이 있거나 기본 정보(W-06-25)가 있거나 그 공장의 미마감 P/O 라인이 있는 공급사·품목.
+    const [issued, defaults, ordered] = await Promise.all([
       this.prisma.material_lot_batch.groupBy({ by: ['supplier_id', 'item_id'], where: filter, _max: { created_at: true } }),
       this.prisma.supplier_item_default.findMany({ where: filter, select: { supplier_id: true, item_id: true } }),
+      this.prisma.purchase_order_line.findMany({
+        where: {
+          ...openLineWhere(this.prisma),
+          ...(query.itemId === undefined ? {} : { item_id: query.itemId }),
+          purchase_order: { plant_id: query.plantId, status_code: { notIn: CLOSED_ORDER_STATUSES },
+            ...(query.supplierId === undefined ? {} : { supplier_id: query.supplierId }) },
+        },
+        select: { item_id: true, purchase_order: { select: { supplier_id: true } } },
+        distinct: ['purchase_order_id', 'item_id'],
+      }),
     ]);
     const combos = new Map<string, { supplierId: bigint; itemId: bigint; lastIssuedAt: Date | null }>();
+    for (const row of ordered) {
+      combos.set(key(row.purchase_order.supplier_id, row.item_id), { supplierId: row.purchase_order.supplier_id, itemId: row.item_id, lastIssuedAt: null });
+    }
     for (const row of defaults) combos.set(key(row.supplier_id, row.item_id), { supplierId: row.supplier_id, itemId: row.item_id, lastIssuedAt: null });
     for (const row of issued) combos.set(key(row.supplier_id, row.item_id), { supplierId: row.supplier_id, itemId: row.item_id, lastIssuedAt: row._max.created_at });
     if (combos.size === 0) return { items: [] };

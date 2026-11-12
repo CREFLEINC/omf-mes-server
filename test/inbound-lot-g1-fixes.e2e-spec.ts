@@ -206,7 +206,68 @@ describe('피처 005 G1 관문 고칠 것 (e2e)', () => {
     expect((after.body.items as { receivingInboundLots: unknown[] }[]).every((row) => row.receivingInboundLots.length === 0)).toBe(true);
   });
 
+  // ── G1 2차 ─────────────────────────────────────────────────────
+
+  it('G1-2-1 POP 단말이 GET /mdm/items/{itemId}/uom-conversions 를 읽는다(200) — MOBILE 401', async () => {
+    const path = `/api/mdm/items/${String(ids.itemA)}/uom-conversions`;
+    const own = await terminalGet(path, tokens.pop).expect(200);
+    expectShape(schemaOf('mdm', '/mdm/items/{itemId}/uom-conversions', 'get', 200), own.body);
+    await terminalGet(path, tokens.mobile).expect(401);
+  });
+
+  it('G1-2-2 대기 목록 후보에 미마감 P/O 라인만 있는 공급사·품목이 대기 0개 행으로 선다 — 마감된 P/O 는 아니다', async () => {
+    await makeOrder(ids.supplierG, ids.itemA, [100]);
+    const closedOrder = await makeOrder(ids.supplierG, ids.itemN, [100]);
+    await prisma.purchase_order.updateMany({
+      where: { purchase_order_line: { some: { purchase_order_line_id: closedOrder.lineIds[0] } } }, data: { status_code: 'CLOSED' },
+    });
+    const response = await terminalGet('/api/logistics/waiting-material-lots', tokens.pop)
+      .query({ plantId: Number(ids.plant), supplierId: Number(ids.supplierG) }).expect(200);
+    expectShape(schemaOf('logistics', '/logistics/waiting-material-lots', 'get', 200), response.body);
+    expect(response.body.items).toEqual([expect.objectContaining({
+      supplierId: Number(ids.supplierG), itemId: Number(ids.itemA), waitingCount: 0, waitingQty: 0, lastIssuedAt: null, batches: [], lots: [],
+    })]);
+  });
+
+  it('G1-2-3 마감 → 마감 취소 → 다시 마감하면 IQC_INSPECTION_REQUESTED 인계 알림이 같은 입하에 2건', async () => {
+    const first = await closedLot(ids.supplierH, ids.itemA);
+    await webSend('post', `${LOTS}/${String(first.inboundLotId)}:reopen-receipt`, { versionNo: first.versionNo }).expect(200);
+    await closeInboundLotFixture(fx, first.inboundLotId);
+    const row = await prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: BigInt(first.inboundLotId) }, include: { inbound_receipt_line: true } });
+    const events = await prisma.notification_event.findMany({
+      where: { event_type_code: 'IQC_INSPECTION_REQUESTED', aggregate_type_code: 'INBOUND_RECEIPT', aggregate_id: row.inbound_receipt_line.inbound_receipt_id },
+    });
+    expect(events).toHaveLength(2);
+  });
+
+  it('G1-2-6 입고 줄 목록의 기간 누락 400 문구에 입하 LOT 번호·입하 LOT 이 들어 있다', async () => {
+    const rejected = await webGet('/api/logistics/goods-receipt-lines?receiptTypeCode=MATERIAL').expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'receiptDateFrom', code: 'REQUIRED' });
+    expect(rejected.body.errors[0].message).toContain('입하 LOT 번호(inboundLotNo), 입하 LOT(inboundLotId)');
+  });
+
+  it('G1-2-7 헤더 PUT — 새 흐름 입하의 공급사 변경은 409 STATE_LOCKED, 공급사 그대로면 200, 이전 데이터는 공급사도 바꿀 수 있다', async () => {
+    const { inboundLot } = await issueAndReceive(fx, batch(ids.supplierI, ids.itemA, 1));
+    const row = await prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: BigInt(inboundLot.inboundLotId) }, include: { inbound_receipt_line: true } });
+    const receiptId = Number(row.inbound_receipt_line.inbound_receipt_id);
+    const header = (supplier: bigint) => ({ supplierId: Number(supplier), receiptDatetime: `${DAY}T03:00:00.000Z`, remarks: '관문' });
+
+    const locked = await putHeader(receiptId, header(ids.supplierJ), 409);
+    expectShape(schemaOf('logistics', '/logistics/inbound-receipts/{inboundReceiptId}', 'put', 409), locked.body);
+    expect(locked.body.errors).toEqual([expect.objectContaining({ code: 'STATE_LOCKED' })]);
+    expect((await prisma.inbound_receipt.findUniqueOrThrow({ where: { inbound_receipt_id: BigInt(receiptId) } })).supplier_id).toBe(ids.supplierI);
+    await putHeader(receiptId, header(ids.supplierI), 200);
+
+    const legacy = await makeLegacyReceipt(ids.supplierI, ids.itemA, 10);
+    await putHeader(legacy.receiptId, header(ids.supplierJ), 200);
+  });
+
   // ── 도우미 ─────────────────────────────────────────────────────
+
+  async function putHeader(receiptId: number, body: object, status: number): Promise<request.Response> {
+    const etag = await receiptEtag(receiptId);
+    return webSend('put', `/api/logistics/inbound-receipts/${String(receiptId)}`, body).set('If-Match', etag).expect(status);
+  }
 
   function webGet(path: string): request.Test {
     return request(app.getHttpServer()).get(path).set('Cookie', cookie);
@@ -298,7 +359,7 @@ describe('피처 005 G1 관문 고칠 것 (e2e)', () => {
           lot_controlled: true, inspection_required: required },
       })).item_id;
     }
-    for (const code of ['A', 'B', 'C', 'D', 'E', 'F']) {
+    for (const code of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
       ids[`supplier${code}`] = (await prisma.partner.create({ data: { partner_code: `${PREFIX}-${code}`, partner_name: `${PREFIX} 공급사 ${code}` } })).partner_id;
     }
     await prisma.worker.create({

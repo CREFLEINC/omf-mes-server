@@ -85,10 +85,16 @@ export class InboundLotAutoCloseRunner implements OnApplicationBootstrap, OnAppl
         select: { inbound_lot_id: true, plant_id: true, item_id: true, inbound_receipt_line: { select: { inspection_required: true } } },
         orderBy: { inbound_lot_id: 'asc' },
       });
+      let plantClosed = 0;
+      let halted = false;
       for (const lot of stale) {
-        if (this.stopping || !(await this.keepLease())) return closed;
-        if (await this.closeOne(lot, today, now)) closed += 1;
+        halted = this.stopping || !(await this.keepLease());
+        if (halted) break;
+        if (await this.closeOne(lot, today, now)) plantClosed += 1;
       }
+      if (plantClosed > 0) this.logger.log(`날짜 자동 마감 — 공장 ${String(plant.plant_id)}: ${String(plantClosed)}건`);
+      closed += plantClosed;
+      if (halted) break;
     }
     return closed;
   }

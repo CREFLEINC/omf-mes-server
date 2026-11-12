@@ -72,10 +72,21 @@ export class InboundReceiptUpdateService {
   ): Promise<{ inboundReceipt: InboundReceiptView; versionNo: number }> {
     const current = await this.prisma.inbound_receipt.findUnique({
       where: { inbound_receipt_id: inboundReceiptId },
-      select: { status_code: true },
+      select: { status_code: true, supplier_id: true },
     });
     if (!current) throw new NotFoundException('없는 입하입니다.');
     assertRegistered(current.status_code, '수정할');
+    // 새 흐름 입하의 공급사는 입하 LOT(공장·공급사·품목)의 축이다 — 헤더만 바꾸면 입하 LOT·P/O 배정과 어긋난다.
+    if (current.supplier_id !== BigInt(input.supplierId)) {
+      const newFlow = await this.prisma.inbound_receipt_line.count({
+        where: { inbound_receipt_id: inboundReceiptId, inbound_lot: { erp_send_mode_code: 'ON_FINALIZE' } },
+      });
+      if (newFlow > 0) {
+        throw new ContractException(HttpStatus.CONFLICT, [
+          banner(ERROR_CODE.STATE_LOCKED, '입하 LOT 받기로 만든 입하는 공급사를 바꿀 수 없습니다.'),
+        ]);
+      }
+    }
     if (Number.isNaN(Date.parse(input.receiptDatetime))) {
       throw one(field('receiptDatetime', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
     }

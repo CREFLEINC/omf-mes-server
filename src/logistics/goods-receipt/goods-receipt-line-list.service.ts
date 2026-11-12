@@ -76,7 +76,7 @@ export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today: s
     { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' },
     query.lotNo !== undefined || query.inboundReceiptNo !== undefined || query.workOrderNo !== undefined
       || query.inboundLotId !== undefined || query.inboundLotNo !== undefined,
-    'LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo)', today);
+    'LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo), 입하 LOT 번호(inboundLotNo), 입하 LOT(inboundLotId)', today);
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
   const and = period === undefined ? [] : [localPeriodSql('gr.receipt_datetime', 'p.timezone_code', period, bind)];

@@ -166,7 +166,7 @@ describe('입고 줄·출하 줄 현황 (e2e)', () => {
       const missing = await get('goods-receipt-lines', { q: PREFIX }).expect(400);
       expect(missing.body.errors).toEqual([{
         scope: 'field', field: 'receiptDateFrom', code: 'REQUIRED',
-        message: '조회 기간이 없습니다. 입고일 시작(receiptDateFrom)을 넣거나 LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo) 중 하나를 넣어 다시 조회하세요. 기간은 최대 366일입니다.',
+        message: '조회 기간이 없습니다. 입고일 시작(receiptDateFrom)을 넣거나 LOT 번호(lotNo), 입하 번호(inboundReceiptNo), W/O 번호(workOrderNo), 입하 LOT 번호(inboundLotNo), 입하 LOT(inboundLotId) 중 하나를 넣어 다시 조회하세요. 기간은 최대 366일입니다.',
       }]);
       const tooLong = await get('goods-receipt-lines', { receiptDateFrom: '2025-01-01', receiptDateTo: '2026-01-02' }).expect(400);
       expect(tooLong.body.errors[0]).toMatchObject({ field: 'receiptDateTo', code: 'RANGE' });

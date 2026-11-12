@@ -10,12 +10,14 @@ import { currentTerminal, type TerminalContext } from './terminal-context';
 /**
  * 자재 관리 LOT 발행(POP P-01-01 · 피처 005 §1). 공장 범위 — 질의·본문의 `plantId` 는 단말 공장이어야 하고,
  * 폐기할 LOT 은 모두 단말 공장의 것이어야 한다. 쓰기는 활성 작업자(`X-Worker-No`)와 멱등 키가 필요하다.
- * 발행 화면이 공급사·품목 기본 정보(W-06-25 마스터)를 읽어 수량·포장을 채우므로 그 목록도 읽기로 연다.
+ * 발행 화면이 공급사·품목 기본 정보(W-06-25 마스터)와 품목 단위 환산(보관 단위의 패키징당 수량)을 읽어 수량·포장을 채우므로 둘도 읽기로 연다.
+ * 품목 단위 환산은 공장 축이 없는 마스터라 품목 조회(`terminal-read-policy.ts`)처럼 범위를 묻지 않는다.
  */
 export const TERMINAL_MATERIAL_LOT_OPERATIONS: Readonly<Record<string, readonly 'POP'[]>> = {
   'GET /logistics/material-lot-batches': ['POP'],
   'GET /logistics/waiting-material-lots': ['POP'],
   'GET /mdm/supplier-item-defaults': ['POP'],
+  'GET /mdm/items/{itemId}/uom-conversions': ['POP'],
   'POST /logistics/material-lot-batches': ['POP'],
   'POST /trace/lots:void': ['POP'],
 };

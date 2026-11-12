@@ -60,6 +60,8 @@ export interface HandoverEmitInput {
    * 그대로 바로 쓴다. 주지 않으면 지금과 같다(바로).
    */
   zaloNotBefore?: Date;
+  /** 같은 (종류, 대상)에 이미 알림이 있어도 다시 쓴다 — 같은 대상에 일이 새로 서는 경로만(입하 LOT 마감 취소 뒤 다시 마감의 새 IQC 요청). */
+  repeatable?: boolean;
 }
 
 interface WriteInput {
@@ -176,7 +178,7 @@ export class NotificationEmitter {
   }
 
   private async writeHandover(tx: Tx, input: HandoverEmitInput, title: string): Promise<EmitResult> {
-    const existing = await tx.notification_event.findFirst({
+    const existing = input.repeatable === true ? null : await tx.notification_event.findFirst({
       where: {
         event_type_code: input.alertTypeCode,
         aggregate_type_code: input.aggregateTypeCode,
