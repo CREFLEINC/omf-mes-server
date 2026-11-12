@@ -18,3 +18,14 @@ export function iqcOverallJudgment(results: readonly { overallJudgmentCode: stri
   const judgmentCode = codes.reduce((worst, code) => ((WEIGHT[code] ?? 0) > (WEIGHT[worst] ?? 0) ? code : worst));
   return { judgmentCode, blockers: [] };
 }
+
+/**
+ * 판정 대상 결과(R-15) — 기록 중(DRAFT)인 결과가 있으면 그것, 없으면 마지막 확정의 결과. 재작업 재열기는 앞 확정의 결과를 확정 그대로
+ * 남기고(그 판정의 근거) 재검사로 더한 결과만으로 다시 판정한다. 확정 취소는 그 확정의 결과를 DRAFT 로 되돌리므로 다시 판정 대상이 된다.
+ */
+export function judgedResults<T extends { status_code: string; confirmed_at: Date | null }>(results: readonly T[]): T[] {
+  const drafts = results.filter((result) => result.status_code === 'DRAFT');
+  if (drafts.length > 0) return drafts;
+  const last = Math.max(...results.map((result) => result.confirmed_at?.getTime() ?? 0));
+  return results.filter((result) => (result.confirmed_at?.getTime() ?? 0) === last);
+}

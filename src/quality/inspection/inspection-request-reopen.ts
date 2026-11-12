@@ -1,4 +1,6 @@
 import { Tx } from '../../core/lot';
+import { recordInspectionRequestEvent } from './inspection-request-event';
+import { INBOUND_LOT_TARGET } from './iqc-inbound-lot-result';
 
 const IQC = 'IQC';
 const REQUESTED = 'REQUESTED';
@@ -42,8 +44,11 @@ export async function startInspectionRequestWithin(
 }
 
 /**
- * 처분 재작업으로 검사 대기가 된 LOT 의 «IQC» 의뢰를 다시 연다. 부적합 → 원 검사 결과 → 의뢰를 따라가
- * 그 의뢰의 LOT 이 이번에 옮겨진 경우만이다.
+ * 처분 재작업으로 검사 대기가 된 LOT 의 «IQC» 의뢰를 다시 연다. 부적합의 `inspection_request_id`(입하 LOT 판정 확정이 만든 부적합)를
+ * 먼저 보고, 없으면 원 검사 결과 → 의뢰를 따라간다.
+ * - 입하 LOT 검사(R-15): 재작업 판정이 자재 관리 LOT 전부를 검사 대기로 옮겼다 — 의뢰 `IN_PROGRESS`·확정 칸 비움·확정 주기 + 1·이력
+ *   `REOPENED_BY_REWORK`. 앞 확정의 결과는 확정 그대로 판정 근거로 남고, 재검사 결과를 더해 다시 확정하면 그 결과로 LOT 전부를 옮긴다.
+ * - 옛 LOT 검사: 그 의뢰의 LOT 이 이번에 옮겨진 경우만 `COMPLETED → IN_PROGRESS`(재검 회차를 쓴다).
  * ⛔ PQC·제품 LOT 재작업(재작업 W/O · #47)은 건드리지 않는다 — 의뢰가 W/O 대상이고 재검사가 그 W/O 를 탄다.
  */
 export async function reopenIqcRequestForReworkWithin(
@@ -52,20 +57,37 @@ export async function reopenIqcRequestForReworkWithin(
   movedLotIds: readonly bigint[],
   appUserId: number,
 ): Promise<void> {
+  const select = {
+    inspection_request_id: true, inspection_type_code: true, target_type_code: true, lot_id: true, status_code: true,
+    overall_judgment_code: true, confirmed_at: true,
+  } as const;
   const source = await tx.nonconformance.findUnique({
     where: { nonconformance_id: nonconformanceId },
-    select: {
-      inspection_result: {
-        select: {
-          inspection_request: {
-            select: { inspection_request_id: true, inspection_type_code: true, lot_id: true },
-          },
-        },
-      },
+    select: { inspection_request: { select }, inspection_result: { select: { inspection_request: { select } } } },
+  });
+  const request = source?.inspection_request ?? source?.inspection_result?.inspection_request;
+  if (request === undefined || request === null || request.inspection_type_code !== IQC) return;
+  if (request.target_type_code !== INBOUND_LOT_TARGET) {
+    if (request.lot_id === null || !movedLotIds.includes(request.lot_id)) return;
+    await reopenInspectionRequestWithin(tx, request.inspection_request_id, appUserId);
+    return;
+  }
+  if (movedLotIds.length === 0 || request.status_code !== COMPLETED) return;
+  const at = new Date();
+  await tx.inspection_request.update({
+    where: { inspection_request_id: request.inspection_request_id },
+    data: {
+      // 검사 수준은 다시 확정할 때 그때의 품목 수준으로 적는다(확정 취소와 같다).
+      status_code: IN_PROGRESS, overall_judgment_code: null, confirmed_at: null, confirmed_by: null, inspection_level_code: null,
+      confirm_cycle: { increment: 1 }, updated_by: appUserId, version_no: { increment: 1 },
     },
   });
-  const request = source?.inspection_result?.inspection_request;
-  if (request === undefined || request.inspection_type_code !== IQC || request.lot_id === null) return;
-  if (!movedLotIds.includes(request.lot_id)) return;
-  await reopenInspectionRequestWithin(tx, request.inspection_request_id, appUserId);
+  await recordInspectionRequestEvent(tx, {
+    inspectionRequestId: request.inspection_request_id, eventTypeCode: 'REOPENED_BY_REWORK', actor: { appUserId }, at,
+    summaryBefore: {
+      statusCode: request.status_code, overallJudgmentCode: request.overall_judgment_code,
+      confirmedAt: request.confirmed_at?.toISOString() ?? null, nonconformanceId: Number(nonconformanceId),
+    },
+    summaryAfter: { statusCode: IN_PROGRESS },
+  });
 }
