@@ -175,9 +175,10 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
   });
 
+  // 새 흐름(입하 LOT 요청)은 태어날 때 확정을 받지 않는다(피처 005 R10-3 · D-10) — 오프라인 큐 확정은 이전된 옛 요청(대상 LOT)에 남는다(FR-051).
   describe('POST statusCode=CONFIRMED (오프라인 큐)', () => {
     it('⛔ 합격판정개수 5 · 불합격 10 + 합격 · 사유 없음 → 400 · 결과가 안 생긴다', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
 
       const response = await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
 
@@ -187,7 +188,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⭐ 사유가 있으면 201 · 비고 맨 앞에 사유 · LOT 정상', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
 
       const response = await postConfirmed(
         requestId,
@@ -200,7 +201,7 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⭐ 불합격 3 + 합격 → 사유 없이 201', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithAn);
 
       await postConfirmed(requestId, { acceptedQty: 97, rejectedQty: 3 }, { overallJudgmentCode: 'ACCEPTED' }).expect(201);
 
@@ -208,13 +209,13 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     });
 
     it('⛔ 보류 2 + 합격 · 사유 없음 → 400', async () => {
-      const { requestId } = await registerIqcLot(itemWithAn);
+      const { requestId } = await migratedIqcLot(itemWithAn);
 
       await postConfirmed(requestId, { acceptedQty: 98, rejectedQty: 0, heldQty: 2 }, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
     });
 
     it('⭐ 합격판정개수가 없으면 불합격 10 + 합격 → 201(종전 그대로)', async () => {
-      const { lotId, requestId } = await registerIqcLot(itemWithoutAn);
+      const { lotId, requestId } = await migratedIqcLot(itemWithoutAn);
 
       await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'ACCEPTED' }).expect(201);
 
@@ -243,6 +244,18 @@ describe('IQC 판정 변경 사유 (e2e · #125)', () => {
     expect(Number(iqc.inspection_request_id)).toBe(closed.iqcRequestId);
     expect(iqc.inspection_plan_version_id).not.toBeNull();
     return { lotId: lots[0].lotId, requestId: Number(iqc.inspection_request_id) };
+  }
+
+  /** 이전된 옛 IQC 요청 모양(데이터 이전 3) — 대상 LOT·`lot_id` 있음·`inbound_lot_id` 만 채움·`PER_RECEIPT`. 기준 버전은 마감이 붙인 것 그대로. */
+  async function migratedIqcLot(itemId: number): Promise<{ lotId: number; requestId: number }> {
+    const iqc = await registerIqcLot(itemId);
+    const request = await prisma.inspection_request.update({
+      where: { inspection_request_id: BigInt(iqc.requestId) },
+      data: { target_type_code: 'LOT', target_id: BigInt(iqc.lotId), lot_id: BigInt(iqc.lotId) },
+      select: { inbound_lot_id: true },
+    });
+    await prisma.inbound_lot.update({ where: { inbound_lot_id: request.inbound_lot_id as bigint }, data: { erp_send_mode_code: 'PER_RECEIPT' } });
+    return iqc;
   }
 
   async function terminalToken(type: 'POP' | 'MOBILE'): Promise<string> {

@@ -317,7 +317,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /* #122 · 장부 P-48 — 임시 저장이 사유를 그 회차의 불량 기록으로 갈아 끼우고, 확정 전 기록은 집계·기간 목록에 안 잡힌다. */
   it('⭐ 임시 저장한 불합격 사유가 다시 읽히고, 사유 없이 확정하면 그 사유로 확정된다', async () => {
-    const { lotId, requestId } = await legacyIqcLot(10);
+    const { lotId, requestId } = await registerIqcLot(10);
     const created = await request(app.getHttpServer())
       .post('/api/quality/inspection-results')
       .set('Cookie', cookie)
@@ -386,7 +386,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /* #106 · 3단계 검증 — 처분(재작업) 없이 불합격 LOT 을 재검사하지 못한다. 작성중·확정 어느 쪽으로도 회차가 생기지 않는다. */
   it('⛔ 처분 전 불합격 LOT 에는 재검사 회차를 만들 수 없다 — LOT 은 불량 그대로, 의뢰도 완료 그대로', async () => {
-    const { lotId, requestId, resultId } = await rejectedLot(10, true);
+    const { lotId, requestId, resultId } = await rejectedLot(10);
     const reinspect = (statusCode: 'DRAFT' | 'CONFIRMED') =>
       request(app.getHttpServer())
         .post('/api/quality/inspection-results')
@@ -635,8 +635,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   /**
    * 옛 LOT 등록(이제 닫힘 · FR-036)이 쓰던 이전 데이터 모양 — 입하 줄 + 검사 대기 LOT + 수입검사 대기 보류 + LOT 단위 IQC 요청 + 줄 `lot_id`.
-   * ⚠ 재작업의 요청 다시 열기·불량 기록의 LOT·처분 전 재검사 가드가 아직 요청의 `lot_id` 로만 걸려 입하 LOT 단위 요청(`lot_id` 없음)에는
-   * 서지 않는다 — 그 셋을 보는 시험만 이 모양으로 잰다(입하 LOT 요청으로 옮기는 일은 S9 · D-10·D-11).
+   * ⚠ 재작업의 요청 다시 열기가 아직 요청의 `lot_id` 로만 걸려 입하 LOT 단위 요청(`lot_id` 없음)에는 서지 않는다 — 그것을 보는
+   * 시험만 이 모양으로 잰다(입하 LOT 요청으로 옮기는 일은 S10 · R-15).
    */
   async function legacyIqcLot(qty: number): Promise<{ lotId: number; lineId: number; requestId: number }> {
     legacySeq += 1;

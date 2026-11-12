@@ -497,6 +497,9 @@ describe('피처 005 S2 — 입하 LOT 읽기 전환·결과 불변 (e2e)', () =
       `DELETE FROM quality.nonconformance WHERE nonconformance_id IN (${ncs})`,
       `DELETE FROM quality.defect_record WHERE inspection_result_id IN (${results})`,
       `DELETE FROM quality.item_inspection_level_history WHERE inspection_request_id IN (${requests})`,
+      // 입하 LOT 요청의 결과 매칭·변경 이력(피처 005 S8)이 결과·요청을 잡는다.
+      `DELETE FROM quality.inspection_result_lot WHERE inspection_result_id IN (${results})`,
+      `DELETE FROM quality.inspection_request_event WHERE inspection_request_id IN (${requests})`,
       `DELETE FROM quality.inspection_result WHERE inspection_request_id IN (${requests})`,
       `DELETE FROM quality.inspection_request WHERE inspection_request_id IN (${requests})`,
       `DELETE FROM trace.lot_status_event WHERE lot_id IN (${lots})`,

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -35,6 +36,7 @@ import {
 } from './inspection-result-write-input';
 import { InspectionResultWriteService } from './inspection-result-write.service';
 import { InspectionResultView } from './inspection-result-view';
+import { deleteInboundLotResultWithin } from './iqc-result-delete';
 
 /**
  * 검사 결과 조회 2건(I-19 PR ②b) + 저장(PR ③b)·수정(PR ③c)·**확정(PR ④)**.
@@ -101,6 +103,20 @@ export class InspectionResultController {
     const context = await this.contextOf(request);
     return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', (version) =>
       this.writes.update(inspectionResultId, version, body, context), FAMILY_CONFLICT_CODE);
+  }
+
+  /** 입하 LOT 검사의 작성중 결과 삭제(피처 005 R-10) — 측정치·초안 불량·매칭을 함께 지우고 이력을 남긴다. */
+  @Delete(':inspectionResultId')
+  @Contract('DELETE /quality/inspection-results/{inspectionResultId}')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Req() request: Request, @Param('inspectionResultId', ParseIntPipe) inspectionResultId: number): Promise<void> {
+    const appUserId = userOf(request);
+    const version = ifMatchVersion(request);
+    if (version === undefined) throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+    await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async (tx) => {
+      await deleteInboundLotResultWithin(tx, BigInt(inspectionResultId), version, { appUserId });
+      return undefined;
+    }, FAMILY_CONFLICT_CODE);
   }
 
   /**

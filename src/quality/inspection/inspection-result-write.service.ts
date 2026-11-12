@@ -38,6 +38,17 @@ import {
   remarksWithJudgmentChange,
 } from './inspection-rules';
 import { reopenInspectionRequestWithin, startInspectionRequestWithin } from './inspection-request-reopen';
+import { recordInspectionRequestEvent } from './inspection-request-event';
+import {
+  eventActor,
+  iqcDefectLotIdWithin,
+  lockOpenInboundLotRequest,
+  prepareInboundLotWrite,
+  prepareInboundLotWriteOfResult,
+  recordInboundLotUpdate,
+  replaceMatchedLotsWithin,
+  resultSummaryWithin,
+} from './iqc-inbound-lot-result';
 import { prepareOqcSerials, recordOqcSerialsWithin } from './oqc-serials';
 
 /** 채번 문서 유형 — `DEFAULT_PREFIX` 의 `IRS`(규칙 미등재 · §1-5). */
@@ -71,6 +82,7 @@ export class InspectionResultWriteService {
     assertMeasurementValues(body.measurements);
     const inspectorId = await resolveInspector(this.prisma, context);
     const round = await assertReferences(this.prisma, body, context.version);
+    const inbound = await prepareInboundLotWrite(this.prisma, BigInt(body.inspectionRequestId), body.matchedLotIds);
     // PQC 는 실적이 먼저이고, 작성중 1회차가 있으면 새로 만들지 않고 그 회차를 덮는다(장부 P-49).
     const draftResultId = await preparePqcWrite(this.prisma, body, round);
     const inspectedAt = new Date(body.inspectedAt);
@@ -115,6 +127,7 @@ export class InspectionResultWriteService {
             inspection_result_no: resultNo,
             inspection_request_id: BigInt(body.inspectionRequestId),
             inspection_round: round,
+            ...optional('confirm_cycle', inbound?.confirmCycle),
             inspected_qty: body.inspectedQty,
             accepted_qty: body.acceptedQty,
             rejected_qty: body.rejectedQty,
@@ -139,6 +152,7 @@ export class InspectionResultWriteService {
           select: { inspection_result_id: true },
         });
         await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
+        if (inbound !== null) await replaceMatchedLotsWithin(tx, created.inspection_result_id, inbound.matchedLotIds ?? []);
         // 작성중 회차를 쓰면 대기 의뢰가 «진행»이고(계약 · #164), 재검사 회차면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-43).
         // 확정으로 태어나면 아래가 닫는다.
         if (born === undefined) {
@@ -152,7 +166,12 @@ export class InspectionResultWriteService {
           await this.defects.writeInspectionDefectsWithin(
             tx,
             defectTarget.prepared,
-            { ...defectTarget.target, inspectionResultId: created.inspection_result_id, detectedAt: inspectedAt },
+            {
+              ...defectTarget.target,
+              ...(inbound === null ? {} : { lotId: await iqcDefectLotIdWithin(tx, created.inspection_result_id) }),
+              inspectionResultId: created.inspection_result_id,
+              detectedAt: inspectedAt,
+            },
             { appUserId: context.appUserId, workerId: inspectorId },
           );
         }
@@ -175,6 +194,12 @@ export class InspectionResultWriteService {
             rejectedQty: body.rejectedQty,
             inspectedQty: body.inspectedQty,
             nonconformanceNo,
+          });
+        }
+        if (inbound !== null) {
+          await recordInspectionRequestEvent(tx, {
+            inspectionRequestId: BigInt(body.inspectionRequestId), eventTypeCode: 'RESULT_ADDED', inspectionResultId: created.inspection_result_id,
+            actor: eventActor(context, inspectorId), at: new Date(), summaryAfter: await resultSummaryWithin(tx, created.inspection_result_id),
           });
         }
         if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
@@ -210,6 +235,7 @@ export class InspectionResultWriteService {
       context.terminalId === null && context.appUserId !== undefined
         ? await assertAccountWorker(this.prisma, context.appUserId)
         : null;
+    const inbound = await prepareInboundLotWriteOfResult(this.prisma, BigInt(inspectionResultId), body.matchedLotIds);
     const draftDefects = await prepareDraftDefects(this.prisma, this.defects, inspectionResultId, body);
     const fourMChange = await prepareFourMChangeOfResult(this.prisma, BigInt(inspectionResultId), body.fourMChange);
     // 불량 기록을 쓰는 저장만 귀속 작업자를 POST 와 같이 푼다(단말은 사번 헤더 · #122 리뷰 m3). 사유 없는 PUT 은 종전 그대로다.
@@ -229,6 +255,7 @@ export class InspectionResultWriteService {
       if (current.status_code === CONFIRMED) {
         throw new ConflictException('user', '확정된 검사 결과는 고칠 수 없습니다 — 번복은 재검 회차입니다.', { code: INVALID_STATE });
       }
+      const before = inbound === null ? undefined : await lockOpenInboundLotRequest(tx, current.inspection_request_id, inspectionResultId);
       // ⛔ 수량 합을 강제하지 않는다 — 작성중이라 M-e ⓑ 뒤 DB 도 안 잡는다(§5-2). 확정으로 넘어갈 때
       //    `:confirm`(PR ④)이 잡는다. ⛔ `statusCode` 를 안 바꾼다 — 계약 본문에 그 칸이 없다.
       const updated = await tx.inspection_result.updateMany({
@@ -247,6 +274,7 @@ export class InspectionResultWriteService {
       });
       // 위 대조를 지난 뒤 같은 행을 누가 옮겼을 때의 둘째 그물 — 조건부 UPDATE 가 0행이면 그것이다.
       assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT, currentVersion });
+      if (inbound?.matchedLotIds !== undefined) await replaceMatchedLotsWithin(tx, BigInt(inspectionResultId), inbound.matchedLotIds);
       // 작성중 회차를 다시 저장해도 대기 의뢰는 «진행»이다 — POST 이전에 만든 작성중 회차도 여기서 옮겨진다(#164).
       await startInspectionRequestWithin(tx, current.inspection_request_id, context.appUserId);
       // ⭐ **치환**이다 — 실으면 그 결과의 측정치 전건을 갈아 끼우고, **생략하면 손대지 않는다**
@@ -264,6 +292,7 @@ export class InspectionResultWriteService {
         });
       }
       await writeFourMChangeWithin(tx, fourMChange, context.appUserId);
+      if (inbound !== null) await recordInboundLotUpdate(tx, inbound, BigInt(inspectionResultId), before, eventActor(context, workerId));
       return { view: await this.reread(tx, BigInt(inspectionResultId)), versionNo: current.version_no + 1 };
     });
   }

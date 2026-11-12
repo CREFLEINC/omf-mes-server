@@ -16,8 +16,15 @@ export const FOUR_M_CHANGE_INCLUDE = {
 
 export type InspectionRequestView = ReturnType<typeof inspectionRequestView>;
 
+/** 입하 LOT 를 가진 IQC 요청의 목록 칸(피처 005 §8) — `inboundLotSummaries` 가 모은다. */
+export interface InboundLotSummary {
+  inboundLotId: number;
+  inboundLotNo: string;
+  lotCount: number;
+}
+
 /** `inspectionLevelCode` — IQC 검사 수준(#64 · 장부 P-87). 고르는 규칙은 `iqcInspectionLevels` 가 갖는다. */
-export function inspectionRequestView(row: InspectionRequestRow, inspectionLevelCode?: string) {
+export function inspectionRequestView(row: InspectionRequestRow, inspectionLevelCode?: string, inboundLot?: InboundLotSummary) {
   return omitEmpty({
     inspectionRequestId: Number(row.inspection_request_id),
     inspectionRequestNo: row.inspection_request_no,
@@ -43,5 +50,11 @@ export function inspectionRequestView(row: InspectionRequestRow, inspectionLevel
     versionNo: row.version_no,
     fourMChange: fourMChangeView(row.lot?.lot_four_m_change),
     inspectionLevelCode,
+    inboundLotId: inboundLot?.inboundLotId,
+    inboundLotNo: inboundLot?.inboundLotNo,
+    lotCount: inboundLot?.lotCount,
+    overallJudgmentCode: row.overall_judgment_code ?? undefined,
+    confirmedAt: row.confirmed_at?.toISOString(),
+    confirmCycle: inboundLot === undefined ? undefined : row.confirm_cycle,
   });
 }

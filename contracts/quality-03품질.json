@@ -1022,6 +1022,16 @@
       }
      },
      {
+      "name": "inboundLotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "입하 LOT — 그 입하 LOT 의 IQC 요청(입하 마감 취소로 CANCELLED 가 된 옛 요청 포함). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254"
+     },
+     {
       "name": "plantId",
       "in": "query",
       "schema": {
@@ -1153,7 +1163,7 @@
      "quality"
     ],
     "summary": "검사 대상 이력",
-    "description": "한 검사 의뢰가 앞 단계에서 넘어온 문서(source)와, 전달(의뢰 생성) · 회차 저장·확정 · 그 회차가 일으킨 LOT 상태 전이를 시간순으로 낸다. 새로 쌓지 않고 의뢰·회차·LOT 상태 이력을 엮는다. 근거: omf-all-around#61 (서버 선행 · 장부 P-55)",
+    "description": "한 검사 의뢰가 앞 단계에서 넘어온 문서(source)와, 전달(의뢰 생성) · 회차 저장·확정 · 그 회차가 일으킨 LOT 상태 전이를 시간순으로 낸다. 새로 쌓지 않고 의뢰·회차·LOT 상태 이력을 엮는다. 근거: omf-all-around#61 (서버 선행 · 장부 P-55) 입하 LOT 검사는 변경 이력(quality.inspection_request_event — 결과 추가·수정·삭제 등, 전·후 요약)을 함께 낸다(피처 005 R-11).",
     "security": [
      {
       "omfSession": []
@@ -1456,7 +1466,7 @@
      "quality"
     ],
     "summary": "검사 결과 저장",
-    "description": "임시 저장(statusCode=작성중)과 즉시 확정(=확정)을 한 경로로 받는다. ⭐ 오프라인 큐는 언제나 확정으로 온다 — 임시 저장은 단말에 남는다. 재검이면 previousResultId 를 실으면 서버가 회차를 +1 한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: W-01-01 §5-2 · P-02-13 §5-9 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다.",
+    "description": "임시 저장(statusCode=작성중)과 즉시 확정(=확정)을 한 경로로 받는다. ⭐ 오프라인 큐는 언제나 확정으로 온다 — 임시 저장은 단말에 남는다. 재검이면 previousResultId 를 실으면 서버가 회차를 +1 한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: W-01-01 §5-2 · P-02-13 §5-9 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다. ⭐ 입하 LOT 검사(요청 targetTypeCode=INBOUND_LOT · 피처 005 §8): 결과는 순번(최대 + 1)·작성중으로만 서고 matchedLotIds 를 받는다. previousResultId·reinspectionReasonCode·statusCode=CONFIRMED 는 400, 요청이 대기·진행(REQUESTED·IN_PROGRESS)이 아니면 409 INVALID_STATE. 첫 결과가 요청을 IN_PROGRESS 로 옮기고 변경 이력 RESULT_ADDED 를 남긴다. 이전된 옛 요청(대상 LOT)은 지금 동작 그대로다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1880,7 +1890,7 @@
      "quality"
     ],
     "summary": "검사 결과 수정",
-    "description": "작성중인 것만 고친다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다. 근거: 공유계약 B-10 · W-01-01 §5-3",
+    "description": "작성중인 것만 고친다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다. 근거: 공유계약 B-10 · W-01-01 §5-3 ⭐ 입하 LOT 검사 결과는 matchedLotIds 도 고치고, 요청이 판정 확정 전(대기·진행)일 때만이다 — 그 밖은 409 INVALID_STATE. 변경 이력 RESULT_UPDATED(전·후 요약). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
     "parameters": [
      {
       "name": "inspectionResultId",
@@ -1967,6 +1977,81 @@
      },
      "409": {
       "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QualityConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사 결과 삭제",
+    "description": "입하 LOT 검사(새 흐름)의 작성중 결과를 지운다 — 측정치·초안 불량 기록·LOT 매칭을 함께 지우고 변경 이력 RESULT_DELETED(전 요약)를 남긴다. 지운 순번은 다시 쓰지 않는다. IQC 입하 LOT 검사·작성중·요청이 대기·진행일 때만 — 그 밖(확정된 결과·확정된 요청·이전된 옛 요청·PQC·OQC)은 409 INVALID_STATE, 불량 기록에 수리 이력이 있어도 409. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10",
+    "parameters": [
+     {
+      "name": "inspectionResultId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "지웠다"
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-01-01(IQC 검사). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 검사 결과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "지울 수 없는 상태 — INVALID_STATE, 또는 버전 충돌 VERSION_CONFLICT",
       "content": {
        "application/json": {
         "schema": {
@@ -5253,9 +5338,20 @@
        "REQUESTED",
        "RESULT_SAVED",
        "RESULT_CONFIRMED",
-       "LOT_STATUS_CHANGED"
+       "LOT_STATUS_CHANGED",
+       "RESULT_ADDED",
+       "RESULT_UPDATED",
+       "RESULT_DELETED",
+       "CONFIRMED",
+       "CONFIRM_CANCELLED",
+       "REOPENED_BY_REWORK",
+       "SKIPPED",
+       "SKIP_VOIDED",
+       "SPLIT_OUT",
+       "SPLIT_IN",
+       "CANCELLED_BY_REOPEN"
       ],
-      "description": "전달(의뢰 생성) · 회차 저장 · 회차 확정 · LOT 상태 전이"
+      "description": "전달(의뢰 생성) · 회차 저장 · 회차 확정 · LOT 상태 전이 · 입하 LOT 검사의 변경 이력(INSPECTION_REQUEST_EVENT_TYPE — 결과 추가·수정·삭제·판정 확정·확정 취소·재작업 재열기·생략·생략 무효·분리·마감 취소로 무효). 근거: 피처 005 R-11"
      },
      "actorName": {
       "type": "string"
@@ -5289,6 +5385,23 @@
      },
      "lotNo": {
       "type": "string"
+     },
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "변경 이력 줄의 대상 결과 — 지운 결과도 id 를 남긴다"
+     },
+     "summaryBefore": {
+      "type": "object",
+      "description": "변경 이력 줄의 바뀌기 전 요약(결과면 순번·판정·수량·매칭 LOT)"
+     },
+     "summaryAfter": {
+      "type": "object",
+      "description": "변경 이력 줄의 바뀐 뒤 요약"
+     },
+     "reason": {
+      "type": "string",
+      "description": "변경 이력 줄의 사유"
      }
     }
    },
@@ -6370,6 +6483,73 @@
       "items": {
        "$ref": "#/components/schemas/InspectionGuide"
       }
+     },
+     "inboundLotId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "입하 LOT 를 가진 IQC 요청만(새 흐름 · 이전된 옛 요청). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
+      "example": 1001
+     },
+     "inboundLotNo": {
+      "type": "string",
+      "description": "입하 LOT 번호 — inboundLotId 와 함께",
+      "example": "IL-20261112-0001"
+     },
+     "lotCount": {
+      "type": "integer",
+      "description": "요청의 자재 관리 LOT 수 — 새 흐름은 입하 LOT 의 자재 관리 LOT 수, 이전된 옛 요청(lotId 있음)은 1. inboundLotId 와 함께",
+      "example": 3
+     },
+     "overallJudgmentCode": {
+      "type": "string",
+      "description": "판정 확정의 종합 판정(ACCEPTED·REJECTED·HELD) — 확정 전·입하 LOT 없는 요청은 칸이 없다",
+      "example": "ACCEPTED",
+      "x-code-key": "CD-INSPECTION-RESULT-OVERALL-JUDGMENT"
+     },
+     "confirmedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "판정 확정 시각 — 확정 전은 칸이 없다",
+      "example": "2026-11-12T10:22:00+07:00"
+     },
+     "confirmCycle": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "확정 주기(1 = 처음 검사) — 확정 취소·재작업 재열기 때 +1. inboundLotId 와 함께",
+      "example": 1
+     },
+     "lots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionRequestLot"
+      },
+      "description": "상세 조회·새 흐름 요청(targetTypeCode=INBOUND_LOT)만 — 입하 LOT 의 자재 관리 LOT 전부(LOT 번호 순)"
+     },
+     "poAllocations": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionRequestPoAllocation"
+      },
+      "description": "상세 조회·새 흐름 요청만 — 입하 LOT 의 P/O 배정(참고)"
+     },
+     "unallocatedQty": {
+      "type": "number",
+      "description": "상세 조회·새 흐름 요청만 — P/O 에 배정되지 않은 양(「P/O 없음」 · 참고)"
+     },
+     "results": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionRequestResultSummary"
+      },
+      "description": "상세 조회·새 흐름 요청만 — 결과 목록(순번 순). 결과마다 매칭한 자재 관리 LOT"
+     },
+     "previewJudgmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "상세 조회·새 흐름 요청만 — 지금 결과로 판정 확정하면 나올 종합 판정(불합격 > 보류 > 합격). 결과가 없거나 판정이 빈 결과가 있으면 null. 미리 보기일 뿐 LOT 상태는 그대로다",
+      "example": "REJECTED"
      }
     },
     "required": [
@@ -6655,7 +6835,7 @@
      },
      "statusCode": {
       "type": "string",
-      "description": "임시 저장이면 DRAFT, 즉시 확정이면 CONFIRMED 를 보낸다. ⭐ 오프라인 큐는 언제나 CONFIRMED 로 보낸다 — 임시 저장은 단말에 남고 서버로 오지 않는다. 임시저장(DRAFT) · 확정(CONFIRMED). ⛔ **코드 문자열은 영문이다**(§G — 확정된 뜻을 영문 대문자 SNAKE 로 옮긴다). 2026-09-02 이전에는 이 자리에 한국어 enum 「작성중」·「확정」이 박혀 있었고, 계약 7벌에서 «유일한» 한국어 enum 이었다. ⛔ enum 으로 못박지 않는다 — 표시명이 한국어·베트남어 2개국어라 enum 이면 화면이 표시명을 갖게 된다(INSPECTION_REQUEST_STATUS 선례 · K-5). ⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서 이 값을 편집하면 안 된다. 확정이면 Lot Status 전이와 보류 해제가 따른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_RESULT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "임시 저장이면 DRAFT, 즉시 확정이면 CONFIRMED 를 보낸다. ⭐ 오프라인 큐는 언제나 CONFIRMED 로 보낸다 — 임시 저장은 단말에 남고 서버로 오지 않는다. 임시저장(DRAFT) · 확정(CONFIRMED). ⛔ **코드 문자열은 영문이다**(§G — 확정된 뜻을 영문 대문자 SNAKE 로 옮긴다). 2026-09-02 이전에는 이 자리에 한국어 enum 「작성중」·「확정」이 박혀 있었고, 계약 7벌에서 «유일한» 한국어 enum 이었다. ⛔ enum 으로 못박지 않는다 — 표시명이 한국어·베트남어 2개국어라 enum 이면 화면이 표시명을 갖게 된다(INSPECTION_REQUEST_STATUS 선례 · K-5). ⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서 이 값을 편집하면 안 된다. 확정이면 Lot Status 전이와 보류 해제가 따른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_RESULT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⛔ 입하 LOT 검사(새 흐름)는 DRAFT 만 — CONFIRMED 는 400 INVALID(태어날 때 확정 금지 · 판정 확정은 검사 단위 · R10-3)",
       "example": "DRAFT",
       "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 3단계 §3-2",
       "x-code-key": "CD-INSPECTION-RESULT-STATUS"
@@ -6663,14 +6843,14 @@
      "previousResultId": {
       "type": "integer",
       "format": "int64",
-      "description": "재검이면 앞 회차를 가리킨다. 회차는 서버가 +1 한다. 근거: 공유계약 B-10",
+      "description": "재검이면 앞 회차를 가리킨다. 회차는 서버가 +1 한다. 근거: 공유계약 B-10 ⛔ 입하 LOT 검사(새 흐름)에는 싣지 않는다 — 400 INVALID(회차 없음 · 재검사는 확정 취소 뒤 결과를 더한다). 처분 전 불합격 LOT 의 재검사 시도는 그보다 먼저 400 STATE_LOCKED",
       "example": 1001
      },
      "reinspectionReasonCode": {
       "type": "string",
       "example": "값",
       "x-code-key": "CD-REINSPECTION-REASON",
-      "description": "재검사 사유 — 왜 회차를 더 돌리는가. ⭐ 번복은 「수정」이 아니라 «재검사 회차»라 이 사유가 그 회차의 근거다(W-04-03 §5). ⭐ 고객이 늘릴 수 있다 — 계약이 값을 닫지 않는다. 값 목록은 GET /mdm/code-values?codeGroupCode=REINSPECTION_REASON 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+      "description": "재검사 사유 — 왜 회차를 더 돌리는가. ⭐ 번복은 「수정」이 아니라 «재검사 회차»라 이 사유가 그 회차의 근거다(W-04-03 §5). ⭐ 고객이 늘릴 수 있다 — 계약이 값을 닫지 않는다. 값 목록은 GET /mdm/code-values?codeGroupCode=REINSPECTION_REASON 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⛔ 입하 LOT 검사(새 흐름)에는 싣지 않는다 — 400 INVALID"
      },
      "measurements": {
       "type": "array",
@@ -6728,6 +6908,14 @@
        "$ref": "#/components/schemas/InspectionSerialJudgmentInput"
       },
       "description": "시리얼 OQC — 출하작업지시 OQC 를 statusCode=CONFIRMED 로 저장할 때만 싣는다(다른 유형·작성중이면 400 serials·INVALID). 시리얼마다 결과와 같은 트랜잭션으로 한 줄씩 남는다. 막는 것(모두 400 serials·INVALID): 없는 시리얼 · 다른 품목 · 이 출하작업지시가 피킹하지 않은 LOT · 같은 시리얼 두 번 · 시리얼 수 > 검사 수량 · NG 수 > 불합격 수량. 이미 기록된 시리얼이면 1차는 그대로 두고 최종만 바꾼다 — 1차 OK 를 NG 로는 못 바꾼다(400 serials·INVALID). 하나라도 막히면 결과째 저장되지 않는다. ⚠ 한계: 시리얼당 한 줄이다 — 재검 회차가 같은 줄을 고치므로 회차별 이력은 남지 않는다. 1차 판정은 처음 기록한 값 그대로이고, 최종 판정과 마지막으로 쓴 회차만 바뀐다. 서버 선행(omf-all-around#68 · 장부 P-101)."
+     },
+     "matchedLotIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT 검사(targetTypeCode=INBOUND_LOT)의 결과만 — 이 결과가 본 자재 관리 LOT. 그 입하 LOT 소속만(아니면 400 INVALID), 한 결과에 같은 LOT 두 번은 400, 다른 결과와 겹치는 것은 된다. 빼거나 빈 배열이면 매칭 없음. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10"
      }
     },
     "required": [
@@ -6818,6 +7006,14 @@
        "remarks"
       ],
       "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86·P-105 · omf-all-around#63·#133"
+     },
+     "matchedLotIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 LOT 검사 결과만 — 실으면 매칭을 통째로 갈아 끼운다(빈 배열 = 매칭 없음), 빼면 그대로. 규칙은 POST 와 같다. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254"
      }
     },
     "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",
@@ -9462,6 +9658,197 @@
      "createdAt": {
       "type": "string",
       "format": "date-time"
+     }
+    }
+   },
+   "InspectionRequestLot": {
+    "type": "object",
+    "required": [
+     "lotId",
+     "lotNo",
+     "lotQty",
+     "package",
+     "statusCode"
+    ],
+    "description": "입하 LOT 검사의 자재 관리 LOT 한 개. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "lotQty": {
+      "type": "number",
+      "description": "초기 수량(품목 기본 단위)"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackage"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "패키징 — 없으면 null"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "LOT 품질 상태(LOT_STATUS)",
+      "x-code-key": "CD-LOT-STATUS"
+     }
+    }
+   },
+   "MaterialPackage": {
+    "type": "object",
+    "required": [
+     "uomId",
+     "uomCode",
+     "uomName",
+     "count",
+     "qtyPerPackage"
+    ],
+    "description": "패키징 — lotQty = count × qtyPerPackage(logistics 계약 MaterialPackage 와 같은 모양). 근거: 피처 005 R-4",
+    "properties": {
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "패키징 단위"
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "BOX"
+     },
+     "uomName": {
+      "type": "string",
+      "description": "패키징 단위 이름(표시용)"
+     },
+     "count": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "qtyPerPackage": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "패키징 하나에 든 수량(품목 기본 단위)"
+     }
+    }
+   },
+   "InspectionRequestPoAllocation": {
+    "type": "object",
+    "required": [
+     "purchaseOrderLineId",
+     "purchaseOrderNo",
+     "lineNo",
+     "qty"
+    ],
+    "description": "입하 LOT 의 P/O 배정 한 줄(참고)",
+    "properties": {
+     "purchaseOrderLineId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "purchaseOrderNo": {
+      "type": "string"
+     },
+     "lineNo": {
+      "type": "integer"
+     },
+     "qty": {
+      "type": "number"
+     }
+    }
+   },
+   "InspectionRequestResultSummary": {
+    "type": "object",
+    "required": [
+     "inspectionResultId",
+     "inspectionResultNo",
+     "inspectionRound",
+     "confirmCycle",
+     "statusCode",
+     "overallJudgmentCode",
+     "inspectedQty",
+     "acceptedQty",
+     "rejectedQty",
+     "heldQty",
+     "inspectedAt",
+     "inspectorName",
+     "matchedLotIds",
+     "matchedLotNos",
+     "versionNo"
+    ],
+    "description": "입하 LOT 검사의 결과 한 줄. 회차가 아니라 순번이다(inspectionRound = 결과 순번, 지운 번호는 다시 쓰지 않는다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10",
+    "properties": {
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inspectionResultNo": {
+      "type": "string"
+     },
+     "inspectionRound": {
+      "type": "integer",
+      "description": "결과 순번(1, 2, …)"
+     },
+     "confirmCycle": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "결과를 기록한 확정 주기(1 = 처음, 2 이상 = 확정 취소·재작업 뒤 재검사)"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "DRAFT | CONFIRMED",
+      "x-code-key": "CD-INSPECTION-RESULT-STATUS"
+     },
+     "overallJudgmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-code-key": "CD-INSPECTION-RESULT-OVERALL-JUDGMENT"
+     },
+     "inspectedQty": {
+      "type": "number"
+     },
+     "acceptedQty": {
+      "type": "number"
+     },
+     "rejectedQty": {
+      "type": "number"
+     },
+     "heldQty": {
+      "type": "number"
+     },
+     "inspectedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "inspectorName": {
+      "type": "string"
+     },
+     "matchedLotIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "매칭한 자재 관리 LOT — 0 개 이상, 다른 결과와 겹쳐도 된다"
+     },
+     "matchedLotNos": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "matchedLotIds 와 같은 순서의 LOT 번호"
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "PUT·DELETE 의 If-Match"
      }
     }
    }

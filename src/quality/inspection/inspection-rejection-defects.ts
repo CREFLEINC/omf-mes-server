@@ -9,6 +9,7 @@ import {
   PreparedInspectionDefects,
 } from '../defect/defect-record-write.service';
 import type { InspectionResultCreate } from './inspection-result-write-input';
+import { iqcDefectLotIdWithin } from './iqc-inbound-lot-result';
 
 const IQC = 'IQC';
 const NO_REJECTION = '불량 내역은 불합격 수량이 있거나 불합격 판정일 때만 보낼 수 있습니다.';
@@ -209,7 +210,8 @@ async function replaceIqcDefectsWithin(
     input.prepared,
     {
       inspectionResultId: input.inspectionResultId,
-      lotId: request.lot_id,
+      // 입하 LOT 요청(`lot_id` 없음)은 매칭이 하나일 때만 그 LOT(R-10).
+      lotId: request.lot_id ?? (await iqcDefectLotIdWithin(tx, input.inspectionResultId)),
       workOrderId: request.work_order_id,
       detectedAt: input.detectedAt,
     },
