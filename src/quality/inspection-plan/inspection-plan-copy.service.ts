@@ -3,12 +3,12 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionPlanVersionService } from './inspection-plan-version.service';
-import { InspectionPlanService, InspectionPlanWrite } from './inspection-plan.service';
+import { InspectionPlanCreate, InspectionPlanService } from './inspection-plan.service';
 
-export interface InspectionPlanCopy extends InspectionPlanWrite {
+export type InspectionPlanCopy = InspectionPlanCreate & {
   /** 내용(버전 설정 · 검사 항목)을 가져올 원본 기준의 버전 */
   sourceVersionId: number;
-}
+};
 
 export interface InspectionPlanCopyResult {
   inspectionPlanId: number;
@@ -58,8 +58,8 @@ export class InspectionPlanCopyService {
           inspectionFrequencyCode: source.inspectionFrequencyCode,
           frequencyIntervalValue: source.frequencyIntervalValue,
           frequencyIntervalUomCode: source.frequencyIntervalUomCode,
-          guideTextKo: source.guideTextKo,
-          guideTextVi: source.guideTextVi,
+          guideText: source.guideText,
+          aqlInspectionLevelCode: source.aqlInspectionLevelCode,
         },
         { allowMissingRatio: true },
         actorId,
