@@ -15,6 +15,8 @@ export interface LotStatusListQuery {
   itemId?: number;
   warehouseId?: number;
   locationId?: number;
+  inboundLotId?: number;
+  inboundLotNo?: string;
   heldOnly?: boolean;
   excludeFullyHeld?: boolean;
   transitionFrom?: string;

@@ -21,6 +21,9 @@ export interface MaterialInputLineListQuery {
   inboundReceiptNo?: string;
   /** 투입한 LOT 이 들어온 입하의 공급사. */
   supplierId?: number;
+  /** 투입한 LOT 의 입하 LOT(피처 005 FR-035) — id 정확·번호 일치. */
+  inboundLotId?: number;
+  inboundLotNo?: string;
   q?: string;
   page?: number;
   size?: number;
@@ -42,6 +45,9 @@ export interface MaterialInputLineListItem {
   inputQty: number;
   uomId: number;
   uomCode: string;
+  /** 투입한 LOT 의 입하 LOT — 입하 LOT 이 없는 LOT 은 null. */
+  inboundLotId: number | null;
+  inboundLotNo: string | null;
 }
 
 const FROM = `
@@ -56,7 +62,8 @@ const FROM = `
  */
 export function materialInputLineWhere(query: MaterialInputLineListQuery, today: string): BuiltSql {
   const period = periodUnlessPinned(query.inputDateFrom, query.inputDateTo, { from: 'inputDateFrom', to: 'inputDateTo', label: '투입일' },
-    query.lotNo !== undefined || query.workOrderNo !== undefined || query.inboundReceiptNo !== undefined,
+    query.lotNo !== undefined || query.workOrderNo !== undefined || query.inboundReceiptNo !== undefined
+      || query.inboundLotId !== undefined || query.inboundLotNo !== undefined,
     'LOT 번호(lotNo), W/O 번호(workOrderNo), 입하 번호(inboundReceiptNo)', today);
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
@@ -66,6 +73,11 @@ export function materialInputLineWhere(query: MaterialInputLineListQuery, today:
   if (query.itemId !== undefined) and.push(`mc.item_id = ${bind(query.itemId)}::bigint`);
   if (query.lotNo !== undefined) and.push(`lt.lot_no = ${bind(query.lotNo)}`);
   if (query.workOrderNo !== undefined) and.push(`wo.work_order_no = ${bind(query.workOrderNo)}`);
+  if (query.inboundLotId !== undefined) and.push(`lt.inbound_lot_id = ${bind(query.inboundLotId)}::bigint`);
+  if (query.inboundLotNo !== undefined) {
+    and.push(`EXISTS (SELECT 1 FROM trace.inbound_lot qil
+      WHERE qil.inbound_lot_id = lt.inbound_lot_id AND qil.inbound_lot_no = ${bind(query.inboundLotNo)})`);
+  }
   const inbound: string[] = [];
   if (query.inboundReceiptNo !== undefined) inbound.push(`ir.inbound_receipt_no = ${bind(query.inboundReceiptNo)}`);
   if (query.supplierId !== undefined) inbound.push(`ir.supplier_id = ${bind(query.supplierId)}::bigint`);
@@ -99,6 +111,8 @@ interface LineRow {
   input_qty: unknown;
   uom_id: bigint;
   uom_code: string;
+  inbound_lot_id: bigint | null;
+  inbound_lot_no: string | null;
 }
 
 @Injectable()
@@ -111,10 +125,11 @@ export class MaterialInputLineListService {
     return historyLinePage<LineRow, MaterialInputLineListItem>(this.prisma, {
       select: `mc.material_consumption_id, mc.consumption_no, mc.occurred_at, mc.status_code, mc.consumption_type_code,
                mc.corrects_consumption_id, lt.plant_id, wo.work_order_id, wo.work_order_no, i.item_id, i.item_code, i.item_name,
-               lt.lot_id, lt.lot_no, mc.input_qty, u.uom_id, u.uom_code`,
+               lt.lot_id, lt.lot_no, mc.input_qty, u.uom_id, u.uom_code, il.inbound_lot_id, il.inbound_lot_no`,
       from: `${FROM}
         JOIN mdm.item i ON i.item_id = mc.item_id
-        JOIN mdm.uom u ON u.uom_id = mc.uom_id`,
+        JOIN mdm.uom u ON u.uom_id = mc.uom_id
+        LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = lt.inbound_lot_id`,
       qtyColumn: 'mc.input_qty',
       uomColumn: 'mc.uom_id',
       orderBy: 'mc.occurred_at DESC, mc.material_consumption_id DESC',
@@ -138,5 +153,7 @@ function itemOf(row: LineRow): MaterialInputLineListItem {
     inputQty: Number(row.input_qty),
     uomId: Number(row.uom_id),
     uomCode: row.uom_code,
+    inboundLotId: row.inbound_lot_id === null ? null : Number(row.inbound_lot_id),
+    inboundLotNo: row.inbound_lot_no,
   };
 }
