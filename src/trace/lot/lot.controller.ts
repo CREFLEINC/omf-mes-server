@@ -221,8 +221,8 @@ export class LotController {
   skipIqc(@Req() request: Request, @Param('lotId', ParseIntPipe) lotId: number): Promise<unknown> {
     const appUserId = userOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.iqcSkipExecutes.execute(lotId, appUserId);
-      return (await this.lots.get(lotId, false)).detail;
+      const executed = await this.iqcSkipExecutes.execute(lotId, appUserId);
+      return { ...(await this.lots.get(lotId, false)).detail, ...executed };
     });
   }
 }

@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 
-import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
+import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertWorkerNoPresent } from '../../common/master';
 import { ApprovalService } from '../../core/approval';
 import { INITIAL_LOT_STATUS, Tx } from '../../core/lot';
@@ -133,7 +133,10 @@ export function assertSkippable(lot: LotQualification, action: 'request' | 'exec
 
 function assertReceived(statusCode: string | undefined): void {
   if (statusCode === RECEIVED) return;
-  throw new ConflictException('user', '입하 마감된 입하 LOT 만 IQC 생략을 요청할 수 있습니다.');
+  // 업무 코드를 싣는다 — 코드 없는 409 는 클라가 「다른 사용자가 먼저 고침」으로 읽는다(M-01-13·W-01-02).
+  throw new ContractException(HttpStatus.CONFLICT, [{
+    scope: 'screen', code: 'INBOUND_LOT_RECEIVING', message: '입하 마감된 입하 LOT 만 IQC 생략을 요청할 수 있습니다. 먼저 입하 마감하세요.',
+  }]);
 }
 
 export interface SkipTarget {

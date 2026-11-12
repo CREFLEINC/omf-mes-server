@@ -4,15 +4,19 @@ import { Prisma } from '@prisma/client';
 import { ERROR_CODE } from '../../common/errors';
 import { INBOUND_RECEIPT_LINE_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
-import { finalizedLotNosOf } from '../inbound-lot/inbound-lot-finalizable';
+import { INBOUND_LOT_FINALIZED, finalizedLotNosOf } from '../inbound-lot/inbound-lot-finalizable';
 import { DOCUMENT_TYPES, LogisticsDocumentType } from './document-type-registry';
 
 export type Tx = Prisma.TransactionClient | PrismaService;
 
-/** `CD-CANCEL-BLOCKED-REASON` 5값 — 실행 오류 코드에서 «같은 문자열»을 가져온다(plan.md §5 규칙 6). */
+/**
+ * `CD-CANCEL-BLOCKED-REASON` 6값 — 실행 오류 코드에서 «같은 문자열»을 가져온다(plan.md §5 규칙 6). `INBOUND_LOT_FINALIZED` 는
+ * 요청·실행 409 의 코드와 같다(피처 005 R-24).
+ */
 export type CancelBlockedReason =
   | typeof ERROR_CODE.SUCCESSOR_EXISTS | typeof ERROR_CODE.ALREADY_CANCELLED
-  | typeof ERROR_CODE.CANCEL_IN_PROGRESS | typeof ERROR_CODE.STATE_LOCKED | typeof ERROR_CODE.TYPE_NOT_CANCELABLE;
+  | typeof ERROR_CODE.CANCEL_IN_PROGRESS | typeof ERROR_CODE.STATE_LOCKED | typeof ERROR_CODE.TYPE_NOT_CANCELABLE
+  | typeof INBOUND_LOT_FINALIZED;
 
 /** `CD-DOCUMENT-SUCCESSOR-TYPE` 5값. */
 export type DocumentSuccessorType =
@@ -58,7 +62,7 @@ const OPEN_STATUSES = ['REGISTERED', 'POSTED'];
 
 // 계약이 5값의 우선순위를 안 줬다 — 싼 판정부터(§2 2단계 기준 5) · G-3 안내 순서와 같다(I-5.md §4-4)
 const BLOCK_ORDER: readonly CancelBlockedReason[] = [ERROR_CODE.TYPE_NOT_CANCELABLE,
-  ERROR_CODE.ALREADY_CANCELLED, ERROR_CODE.CANCEL_IN_PROGRESS, ERROR_CODE.STATE_LOCKED, ERROR_CODE.SUCCESSOR_EXISTS];
+  ERROR_CODE.ALREADY_CANCELLED, ERROR_CODE.CANCEL_IN_PROGRESS, INBOUND_LOT_FINALIZED, ERROR_CODE.STATE_LOCKED, ERROR_CODE.SUCCESSOR_EXISTS];
 
 /**
  * 「이 문서가 만든 LOT」이 있는 유형. ⛔ `GOODS_ISSUE` 에는 LOT 축을 걸지 않는다 — 출고 라인의 LOT 은
@@ -128,7 +132,8 @@ export class CancelEligibilityService {
       // 상태가 CANCEL_REQUESTED 인데 반려돼 열린 요청이 없는 경우가 실재한다 — 그때도 막는다
       // (되돌릴 경로가 없어 잠긴 문서다 · I-5.md §4-4 · 문의 033).
       CANCEL_IN_PROGRESS: statusCode === CANCEL_REQUESTED || cancelApprovalRequestId !== undefined,
-      STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment || finalizedLotNos.length > 0,
+      INBOUND_LOT_FINALIZED: finalizedLotNos.length > 0,
+      STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment,
       SUCCESSOR_EXISTS: found.count > 0,
     };
     const blocked = BLOCK_ORDER.find((code) => hit[code]);

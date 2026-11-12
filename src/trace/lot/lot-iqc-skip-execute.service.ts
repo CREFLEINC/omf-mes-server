@@ -34,8 +34,8 @@ export class LotIqcSkipExecuteService {
     private readonly qualities: LotQualityStatusService,
   ) {}
 
-  async execute(lotId: number, appUserId: number): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+  async execute(lotId: number, appUserId: number): Promise<{ inboundLotNo: string; lotCount: number }> {
+    return this.prisma.$transaction(async (tx) => {
       const target = await lockSkipTarget(tx, lotId, 'execute');
       // 이전된 옛 요청은 LOT 대상(`lot_id`)이고 입하 LOT 칸이 빈 것도 있다 — 둘 다 이 입하 LOT 의 요청이다.
       const requestWhere = {
@@ -83,6 +83,7 @@ export class LotIqcSkipExecuteService {
         if (openAfter > 0) throw stateLocked('다른 보류가 남아 있어 정상으로 옮기지 못했습니다. 그 보류를 먼저 해제하세요.');
       }
       await this.qualities.moveWithin(tx, target.lotIds, 'iqc-skipped', { changedBy: by, changedAt });
+      return { inboundLotNo: target.inboundLotNo, lotCount: target.lotIds.length };
     });
   }
 }

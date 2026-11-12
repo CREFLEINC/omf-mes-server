@@ -5,7 +5,7 @@ import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { INBOUND_RECEIPT_LINE_SOURCE, type InboundLotActor } from '../../core/lot';
 import { recordInboundLotEvent } from './inbound-lot-event';
-import { assertInboundLotMutable } from './inbound-lot-finalizable';
+import { assertInboundLotMutable, inboundLotFinalized } from './inbound-lot-finalizable';
 
 type Db = Prisma.TransactionClient;
 const ZERO = new Prisma.Decimal(0);
@@ -113,6 +113,7 @@ export async function planInboundLotSplit(db: Db, inboundLotId: bigint, lotIds: 
     },
   });
   if (inboundLot === null) throw new NotFoundException('없는 입하 LOT 입니다.');
+  if (inboundLot.status_code === 'FINALIZED') throw inboundLotFinalized();
   if (inboundLot.status_code !== RECEIVED) {
     throw new ContractException(HttpStatus.CONFLICT, [{
       scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '마감된 입하 LOT 만 자재 관리 LOT 을 분리할 수 있습니다.',

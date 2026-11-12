@@ -296,7 +296,7 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     expect(executed.body.errors).toEqual([expect.objectContaining({ code: 'INBOUND_LOT_FINALIZED' })]);
     await prisma.goods_receipt.update({ where: { goods_receipt_id: receipt.goods_receipt_id }, data: { status_code: 'POSTED' } });
     const progress = await get(cancelPath).expect(200);
-    expect(progress.body.progress).toMatchObject({ cancellable: false, cancelBlockedReasonCode: 'STATE_LOCKED' });
+    expect(progress.body.progress).toMatchObject({ cancellable: false, cancelBlockedReasonCode: 'INBOUND_LOT_FINALIZED' });
 
     const reopened = await post(`${LOTS}/${String(id)}:reopen-receipt`).send({ versionNo: await versionOf(id) }).expect(409);
     expect((reopened.body.errors as { code: string }[]).map((error) => error.code)).toEqual(['INBOUND_LOT_FINALIZED']);
@@ -306,6 +306,8 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     // 분리·선별이 함께 쓰는 코어(splitInboundLot)가 막는다 — 선별은 열린 부적합이 있으면 최종 마감이 안 되므로 분리로 본다.
     const split = await post(`${LOTS}/${String(id)}:split-lots`).send({ versionNo: await versionOf(id), lotIds: [full.lots[0].lotId] }).expect(409);
     expect(split.body.errors).toEqual([expect.objectContaining({ code: 'INBOUND_LOT_FINALIZED' })]);
+    const preview = await get(`${LOTS}/${String(id)}/split-preview?lotIds=${String(full.lots[0].lotId)}`).expect(409);
+    expect(preview.body.errors).toEqual([expect.objectContaining({ code: 'INBOUND_LOT_FINALIZED' })]);
     expect(await prisma.lot.count({ where: { inbound_lot_id: BigInt(id) } })).toBe(full.lots.length);
     const iqc = await prisma.inspection_request.findFirstOrThrow({ where: { inbound_lot_id: BigInt(id), status_code: { not: 'CANCELLED' } } });
     const cancelled = await post(`/api/quality/inspection-requests/${String(iqc.inspection_request_id)}:cancel-confirm`)

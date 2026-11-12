@@ -3623,7 +3623,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
+      "description": "검증 실패. 고쳐야 풀린다 선별로 생긴 부적합(sortedFromNonconformanceId 있음)에 정상·선별 판정이면 400 INVALID(dispositionTypeCode) — 폐기·재작업·특채만(FR-041).",
       "content": {
        "application/json": {
         "schema": {

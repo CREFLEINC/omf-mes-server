@@ -12172,11 +12172,11 @@
       }
      },
      "409": {
-      "description": "입하 마감된(RECEIVED) 입하 LOT 이 아니다 — 입하 중이면 먼저 입하 마감한다. 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
+      "description": "입하 마감된(RECEIVED) 입하 LOT 이 아니다 — 입하 중이면 먼저 입하 마감한다(errors[].code = INBOUND_LOT_RECEIVING). 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -12215,11 +12215,11 @@
     ],
     "responses": {
      "200": {
-      "description": "생략 실행됨 — 실행 뒤 LOT 상세",
+      "description": "생략 실행됨 — 실행 뒤 LOT 상세 + 입하 LOT 번호·자재 관리 LOT 수",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/LotDetailResponse"
+         "$ref": "#/components/schemas/IqcSkipExecuted"
         }
        }
       }
@@ -12409,7 +12409,7 @@
      "logistics"
     ],
     "summary": "물류 문서 취소 요청",
-    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n⭐ 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 409(code=INBOUND_LOT_FINALIZED — 메시지에 LOT 번호) — 최종 마감 뒤 입하 LOT 은 바뀌지 않는다(피처 005 §6 · R-24). 조회의 cancelBlockedReasonCode 는 STATE_LOCKED 로 보인다. 새 흐름 입고는 ERP 로 간 적이 없어 취소해도 ERP 취소 행(C)이 생기지 않는다(R-25).\n\n근거: W-01-13 §5-1·§5-4·§5-5",
+    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n⭐ 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 409(code=INBOUND_LOT_FINALIZED — 메시지에 LOT 번호) — 최종 마감 뒤 입하 LOT 은 바뀌지 않는다(피처 005 §6 · R-24). 조회의 cancelBlockedReasonCode 도 INBOUND_LOT_FINALIZED 다. 새 흐름 입고는 ERP 로 간 적이 없어 취소해도 ERP 취소 행(C)이 생기지 않는다(R-25).\n\n근거: W-01-13 §5-1·§5-4·§5-5",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -12536,7 +12536,7 @@
      "logistics"
     ],
     "summary": "물류 문서 취소 실행",
-    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n⭐ 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 409(code=INBOUND_LOT_FINALIZED — 메시지에 LOT 번호) — 최종 마감 뒤 입하 LOT 은 바뀌지 않는다(피처 005 §6 · R-24). 조회의 cancelBlockedReasonCode 는 STATE_LOCKED 로 보인다. 새 흐름 입고는 ERP 로 간 적이 없어 취소해도 ERP 취소 행(C)이 생기지 않는다(R-25).\n\n근거: W-01-13 §5-1·§5-4",
+    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n⭐ 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 409(code=INBOUND_LOT_FINALIZED — 메시지에 LOT 번호) — 최종 마감 뒤 입하 LOT 은 바뀌지 않는다(피처 005 §6 · R-24). 조회의 cancelBlockedReasonCode 도 INBOUND_LOT_FINALIZED 다. 새 흐름 입고는 ERP 로 간 적이 없어 취소해도 ERP 취소 행(C)이 생기지 않는다(R-25).\n\n근거: W-01-13 §5-1·§5-4",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -15156,7 +15156,7 @@
       }
      },
      "409": {
-      "description": "저장 충돌(conflictCause — versionNo 가 다름) · 상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님)",
+      "description": "저장 충돌(conflictCause — versionNo 가 다름) · 상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님) 최종 마감(FINALIZED)이면 INBOUND_LOT_FINALIZED(미리 보기·실행 같음).",
       "content": {
        "application/json": {
         "schema": {
@@ -15262,7 +15262,7 @@
       }
      },
      "409": {
-      "description": "상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님)",
+      "description": "상태 잠김(STATE_LOCKED — 마감된 입하 LOT 이 아니거나 IQC 가 판정 확정 전이 아님) 최종 마감(FINALIZED)이면 INBOUND_LOT_FINALIZED(미리 보기·실행 같음).",
       "content": {
        "application/json": {
         "schema": {
@@ -16024,7 +16024,7 @@
        "string",
        "null"
       ],
-      "description": "cancellable 이 «거짓인 이유» — 후속 문서가 있다 · 이미 취소됐다 · 취소 진행 중이다 · 상태가 잠겼다 · 이 문서 유형에 취소 경로가 없다(`TYPE_NOT_CANCELABLE` — 취소 실행 경로가 있는 것은 입하·입고·출고 3종뿐이다). ⭐ 화면이 이 값으로 안내 문구와 다음 경로를 가른다(G-3). ⛔ 서버가 판정한다 — 화면이 조건을 따로 조합하면 화면마다 갈린다\n\n서버 구현 기준: 출하가 소유한 하위 입고·출고 전표의 개별 취소 차단도 현재 STATE_LOCKED로 반환한다(통보 217).",
+      "description": "cancellable 이 «거짓인 이유» — 후속 문서가 있다 · 이미 취소됐다 · 취소 진행 중이다 · 상태가 잠겼다 · 이 문서 유형에 취소 경로가 없다(`TYPE_NOT_CANCELABLE` — 취소 실행 경로가 있는 것은 입하·입고·출고 3종뿐이다). ⭐ 화면이 이 값으로 안내 문구와 다음 경로를 가른다(G-3). ⛔ 서버가 판정한다 — 화면이 조건을 따로 조합하면 화면마다 갈린다\n\n서버 구현 기준: 출하가 소유한 하위 입고·출고 전표의 개별 취소 차단도 현재 STATE_LOCKED로 반환한다(통보 217).\n\n피처 005 R-24: 그 문서(입하·입고)의 자재 관리 LOT 중 최종 마감된 입하 LOT 소속이 있으면 INBOUND_LOT_FINALIZED — 요청·실행 409 의 코드와 같다.",
       "example": "SUCCESSOR_EXISTS",
       "x-code-key": "CD-CANCEL-BLOCKED-REASON",
       "enum": [
@@ -16032,7 +16032,8 @@
        "ALREADY_CANCELLED",
        "CANCEL_IN_PROGRESS",
        "STATE_LOCKED",
-       "TYPE_NOT_CANCELABLE"
+       "TYPE_NOT_CANCELABLE",
+       "INBOUND_LOT_FINALIZED"
       ]
      },
      "cancelApprovalRequestId": {
@@ -28835,6 +28836,33 @@
       }
      }
     }
+   },
+   "IqcSkipExecuted": {
+    "description": "IQC 생략 실행 응답 — 실행 뒤 LOT 상세 + 생략이 걸린 입하 LOT(피처 005 §11 · FR-032).",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/LotDetailResponse"
+     },
+     {
+      "type": "object",
+      "required": [
+       "inboundLotNo",
+       "lotCount"
+      ],
+      "properties": {
+       "inboundLotNo": {
+        "type": "string",
+        "description": "생략이 걸린 입하 LOT 번호",
+        "example": "IL-20261112-0001"
+       },
+       "lotCount": {
+        "type": "integer",
+        "description": "그 입하 LOT 의 자재 관리 LOT 수(모두 정상으로 옮겼다)",
+        "example": 3
+       }
+      }
+     }
+    ]
    }
   },
   "securitySchemes": {

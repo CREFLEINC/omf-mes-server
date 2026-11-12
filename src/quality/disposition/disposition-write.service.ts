@@ -48,6 +48,8 @@ interface Target {
   decisionCount: number;
   uomId: number;
   uomScale: number;
+  /** 선별로 떼어 낸 불량에서 생긴 부적합이다(`source_nonconformance_id`). */
+  sortedChild: boolean;
 }
 
 /**
@@ -96,6 +98,10 @@ export class DispositionWriteService {
       const locked = await lockNonconformance(tx, id);
       const target = await readTarget(tx, id);
       // ⛔ `decisionQty > 0` 과 `dispositionTypeCode` enum 은 **계약 가드가 이미** 400 을 낸다(R-15).
+      // 선별로 생긴 부적합은 폐기·재작업·특채로만 처분한다(FR-041).
+      if (target.sortedChild && body.dispositionTypeCode === 'NORMAL') {
+        throw one(field('dispositionTypeCode', ERROR_CODE.INVALID, '선별로 생긴 부적합에는 정상 판정을 할 수 없습니다 — 폐기·재작업·특채로 처분하세요.'));
+      }
       const qty = assertShape(body, target);
       // 계약 「409 는 둘이다 — 남은 수량을 넘길 때, 그리고 이미 닫힌 부적합일 때」.
       if (locked.status_code === DECIDED) {
@@ -230,6 +236,7 @@ async function readTarget(tx: Tx, id: bigint): Promise<Target> {
   const nc = await tx.nonconformance.findUniqueOrThrow({
     where: { nonconformance_id: id },
     select: {
+      source_nonconformance_id: true,
       item: { select: { base_uom_id: true } },
       nonconformance_lot: { orderBy: { nonconformance_lot_id: 'asc' }, select: { lot_id: true, affected_qty: true, uom_id: true } },
       disposition_decision: { select: { decision_qty: true } },
@@ -247,6 +254,7 @@ async function readTarget(tx: Tx, id: bigint): Promise<Target> {
     // ⛔ 컬럼 한계(6)로 다시 접지 않는다 — `CHECK (decimal_scale BETWEEN 0 AND 6)` 가 baseline
     //    마이그(`:328`)에 이미 있어 죽은 절이 된다(R-15 · 되돌려도 안 깨진다).
     uomScale: uom.decimal_scale,
+    sortedChild: (nc.source_nonconformance_id ?? null) !== null,
   };
 }
 

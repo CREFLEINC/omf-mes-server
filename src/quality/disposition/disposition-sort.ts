@@ -188,6 +188,7 @@ async function sortSourceOf(prisma: PrismaService, id: bigint): Promise<SortSour
   const nc = await prisma.nonconformance.findUnique({
     where: { nonconformance_id: id },
     select: {
+      source_nonconformance_id: true,
       inspection_request: {
         select: {
           inspection_request_id: true, inspection_type_code: true, target_type_code: true,
@@ -197,6 +198,10 @@ async function sortSourceOf(prisma: PrismaService, id: bigint): Promise<SortSour
     },
   });
   if (nc === null) throw new NotFoundException('없는 부적합입니다.');
+  // 선별로 생긴 부적합은 폐기·재작업·특채로만 처분한다(FR-041).
+  if (nc.source_nonconformance_id !== null) {
+    throw one(field('dispositionTypeCode', ERROR_CODE.INVALID, '선별로 생긴 부적합은 다시 선별할 수 없습니다 — 폐기·재작업·특채로 처분하세요.'));
+  }
   const request = nc.inspection_request;
   if (request?.inspection_type_code !== 'IQC') throw one(field('dispositionTypeCode', ERROR_CODE.INVALID, '반품·OQC 부적합에는 선별이 없습니다.'));
   if (request.target_type_code !== 'INBOUND_LOT' || request.inbound_lot === null) {

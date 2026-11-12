@@ -277,7 +277,8 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
   it('R16-1 IQC 생략 — 입하 중 409 · 마감된 입하 LOT 단위 결재(대상 입하 LOT) · 실행하면 LOT 전부 C22·요청 SKIPPED', async () => {
     const supplier = await newSupplier();
     const { inboundLot, lots } = await issueAndReceive(fx, { plantId: Number(ids.plant), supplierId: supplier, itemId: Number(ids.item), lotQty: 10, lotCount: 3 });
-    await requestSkip(lots[1].lotId).expect(409);
+    const receiving = await requestSkip(lots[1].lotId).expect(409);
+    expect(receiving.body.errors).toEqual([expect.objectContaining({ code: 'INBOUND_LOT_RECEIVING' })]);
 
     const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
     const accepted = await requestSkip(lots[2].lotId).expect(202);
@@ -293,8 +294,10 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
 
     await decideApproval(approvalRequestId, 'approve');
     const minLotId = Math.min(...lots.map((lot) => lot.lotId));
-    await request(app.getHttpServer()).post(`/api/trace/lots/${String(minLotId)}:skip-iqc`).set('Cookie', cookie)
+    const executed = await request(app.getHttpServer()).post(`/api/trace/lots/${String(minLotId)}:skip-iqc`).set('Cookie', cookie)
       .set('Idempotency-Key', idempotencyKey(fx)).send({}).expect(200);
+    expectShape(schemaOf('logistics', '/trace/lots/{lotId}:skip-iqc', 'post', 200), executed.body);
+    expect(executed.body).toMatchObject({ inboundLotNo: inboundLot.inboundLotNo, lotCount: 3 });
 
     const after = await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(inboundLot.inboundLotId) }, include: { lot_hold: { where: { released_at: null } } } });
     expect(after.map((lot) => [lot.status_code, lot.lot_hold.length])).toEqual([['NORMAL', 0], ['NORMAL', 0], ['NORMAL', 0]]);
