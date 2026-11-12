@@ -1,6 +1,6 @@
 # flowtrack ↔ MES 연동 제안 — OA(PL13)
 
-상태: 제안 · 안 B 로 정함 · API 는 flowtrack 구현(`flowtrack_backend/docs/mes-integration.md` · `mes-dev` 2026-11-09)에 맞춤 · flowtrack 회신 반영 · 남은 결정 1(§1-2) · 미룬 것 1(§1-3) (2026-11-12)
+상태: 제안 · 안 B 로 정함 · API 는 flowtrack 구현(`flowtrack_backend/docs/mes-integration.md` · `mes-dev` 2026-11-09)에 맞춤 · flowtrack 회신 반영 · 미룬 것 1(§1-2) (2026-11-12)
 
 OA 사업부는 MES 에서 생산계획을 세우지 않는다. ERP W/O 를 그대로 쓰고, 창고·IQC 는 MES 를 쓴다. 조립·검사·포장·출하 스캔은 flowtrack(`flowtrack_swarm/flowtrack_backend`, FastAPI)이 한다.
 
@@ -10,7 +10,7 @@ OA 사업부는 MES 에서 생산계획을 세우지 않는다. ERP W/O 를 그�
 | 포장 scan 완료 → 제품 완성 · BOM 만큼 생산창고 자재 차감 | flowtrack → MES |
 | 출하 scan 완료 → 완제품 창고에서 제품 차감 | flowtrack → MES |
 | S410 품목(시리얼 없음) — 품목코드로 W/O 를 찾아 골라 마감 → 제품 완성 · 자재 차감. 출하는 품목·수량 | flowtrack → MES |
-| MES 에서 W/O 조기 마감 → flowtrack 도 그 W/O 를 닫는다 | MES → flowtrack |
+| W/O 조기 마감 — 남은 수량 처리·사유를 골라 마감 → MES W/O 마감 | flowtrack → MES |
 
 ## 1. 결정
 
@@ -36,16 +36,10 @@ OA 사업부는 MES 에서 생산계획을 세우지 않는다. ERP W/O 를 그�
 | 16 | 자재 차감이 모자랄 때 | 있는 만큼 빼고 모자란 몫은 「미차감」으로 남겨 화면에서 정리한다. 제품 입고는 막지 않는다 | 사용자 2026-11-12 |
 | 17 | 마감 전이 | 연동 마감이 `RELEASED` 에서 바로 마감하는 전이를 연다(§7-3 의 4) | 사용자 2026-11-12 |
 | 18 | ERP W/O 에 창고(SL_CD)가 없거나 MES 에 없는 창고 | 포장 입고이동·마감 보고를 거절한다 | 사용자 2026-11-12 |
-| 19 | 조기 마감 | flowtrack 은 수동 마감하지 않는다(S410 의 지시수량 마감 보고는 그대로). MES 관리웹에서 조기 마감하고 — 남은 수량 처리·사유는 마감하는 사람이 고른다 — flowtrack 은 `updatedSince` 로 닫힌 W/O 를 받아 투입을 막는다(§7-3 의 4 · §5) | 사용자 2026-11-12 |
+| 19 | 조기 마감 | flowtrack 이 수동 마감하고, 그 W/O 의 포장을 모두 보낸 뒤 마감 보고(3-5)에 남은 수량 처리·사유·비고를 싣는다. 사유 목록은 MES 공통코드 조회로 받는다. 양품 합이 0 이면 MES 는 마감하지 않고 취소한다. MES 관리웹은 OA 자동 W/O 를 마감하지 않는다(§7-3 의 4 · §5) | 사용자 2026-11-12 |
 | 20 | 업무일자 | flowtrack 이 모든 본문에 `businessDate` 를 더한다(공유계약 C-8 · §5) | 사용자 2026-11-12 |
 
-### 1-2. 남은 것
-
-| # | 정할 것 | 권하는 안 | 다른 안 |
-|---|---|---|---|
-| 1 | 포장을 보내는 때 — flowtrack 은 포장 수가 지시수량에 닿을 때 · 출하 완료 전에 보낸다. 조기 마감할 W/O 의 포장은 출하 전까지 MES 에 오지 않아, MES 에 진행 수가 보이지 않고 마감 뒤에 오면 거절된다(§1-1 의 10) | flowtrack 이 포장을 짧은 간격으로 모아 보낸다 — 형식은 그대로, 간격은 flowtrack 이 정한다. 마감과 거의 같은 때 찍힌 포장만 거절되어 flowtrack 실패 목록에 남는다 | 마감 뒤 오는 포장도 받는다 — §1-1 의 10 을 바꾼다. 마감하기 전 MES 에 진행 수가 보이지 않는 것은 그대로다 |
-
-### 1-3. 미룬 것
+### 1-2. 미룬 것
 
 | 무엇 | 지금 | 살펴본 안 | 언제 |
 |---|---|---|---|
@@ -62,22 +56,23 @@ ERP ──(중계 표 15분)──▶ MES ERP W/O (PL13)
 
 시리얼 품목
    투입 스캔 → 시리얼을 W/O 에 붙인다
-   포장 스캔 → 포장 수가 지시수량에 닿음 · 출하 완료 전
+   포장 스캔 → 포장 수가 지시수량에 닿음 · 조기 마감 전 · 출하 완료 전
         ─▶ POST /integration/tracking-system/stock-moves (W/O 하나 · 시리얼 목록)
              ├ 실적(양품 = 시리얼 수 · 작업자 없음) → 「검사 없는 실적」으로 LOT NORMAL
              ├ 시리얼 등록(flowtrack 번호 그대로 · 그 LOT)
              ├ 제품 입고 → ERP W/O 의 창고 `SYS-WHOLE` · 적치 지시 없음
              ├ 자재 차감 → PL13 BOM × 수량 · S530 · LOT 선입선출
              └ 양품 합이 지시수량에 닿으면 마감
-   MES 관리웹 조기 마감(남은 수량 처리·사유를 고른다)
-        ─▶ flowtrack 이 updatedSince 로 CLOSED 를 받아 투입을 막는다
+   조기 마감(남은 수량 처리·사유를 고른다)
+        ─▶ POST /integration/tracking-system/work-order-closes (qty 0)
+             └ 마감 · 양품 합이 0 이면 취소
    출하 완료(컨테이너)
         ─▶ POST /integration/tracking-system/stock-issues (D/O 별 시리얼)
              └ 제품 출고 → 시리얼 → LOT → 그 자리
 
 S410 품목(시리얼 없음)
    품목코드로 W/O 를 찾아 골라 마감
-        ─▶ POST /integration/tracking-system/work-order-closes (qty = 지시수량)
+        ─▶ POST /integration/tracking-system/work-order-closes (qty = 만든 수 · 적으면 남은 수량 처리·사유)
              └ 실적 · 제품 입고(S410) · 자재 차감 · 마감
    출하
         ─▶ GET  /integration/tracking-system/stocks (S410 재고 확인)
@@ -92,7 +87,7 @@ S410 품목(시리얼 없음)
 - 단말 유형 `TRACKING_SYSTEM` 을 더한다. 지금 단말 유형은 `POP` · `MOBILE` 뿐이다.
 - 이 유형에 토큰을 발급한다(`POST /mdm/terminals/{id}:issue-token`).
 - 공장 PL13 고정 · `X-Worker-No` 없음 · 행위자는 연동 계정.
-- 허용 오퍼레이션: W/O 목록 · 3-3 · 3-4 · 3-5 의 셋.
+- 허용 오퍼레이션: W/O 목록 · 공통코드 조회(`GET /mdm/code-values` — 마감 사유) · 3-3 · 3-4 · 3-5 의 셋.
 
 ### 3-2. W/O 조회 — `GET /production/work-orders`
 
@@ -127,7 +122,7 @@ Idempotency-Key: <transmissionId>
 }
 ```
 
-- flowtrack 은 W/O 포장 수가 지시수량에 닿을 때 · 출하 완료 전(그 컨테이너의 아직 안 보낸 포장) 보낸다. 보내는 때는 §1-2 의 1.
+- flowtrack 은 W/O 포장 수가 지시수량에 닿을 때 · 조기 마감 전 · 출하 완료 전(그 컨테이너의 아직 안 보낸 포장) 보낸다.
 - `businessDate` 는 더해 달라는 칸이다(§1-1 의 20).
 - `mesWorkOrderId` 가 `null` 이면 `workOrderNo` 로 찾는다.
 - 처리 — 한 트랜잭션: 실적(양품 `qty`) · 시리얼 등록 · 제품 입고 · 자재 차감 · 양품 합이 지시수량에 닿으면 마감.
@@ -156,7 +151,7 @@ Idempotency-Key: <transmissionId>
 - 거절(4xx): MES 에 없는 시리얼 · 이미 출고된 시리얼 · 줄의 품목 ≠ 시리얼의 품목 · 줄 `qty` ≠ 시리얼 수 · 머리 `qty` ≠ 줄 합.
 - `POST /logistics/shipments`(출하지시·LOT 배분 필수)는 쓰지 않는다.
 
-### 3-5. S410 품목(시리얼 없음)
+### 3-5. 마감 보고 · S410 품목(시리얼 없음)
 
 flowtrack 은 3-2 로 받아 둔 W/O 를 품목코드로 찾는다. MES 목록 질의 `q` 는 W/O 번호만 찾으므로, MES 에서 바로 찾으려면 `itemCode` 질의를 더한다.
 
@@ -173,10 +168,29 @@ flowtrack 은 3-2 로 받아 둔 W/O 를 품목코드로 찾는다. MES 목록 �
 }
 ```
 
-- `qty` — 시리얼 없이 올릴 양품 수. S410 은 지시수량(flowtrack 2.6 「오더수량 전체 마감」). 시리얼 품목은 보내지 않는다(§1-1 의 19).
-- 처리 — 한 트랜잭션: `qty` 만큼 실적 · 제품 입고(ERP W/O 의 창고) · 자재 차감 → 마감.
-- 그 W/O 의 입고이동이 모두 `SENT` 가 된 뒤에 보낸다.
-- 거절(4xx): 모르는 W/O · 품목이 W/O 와 다름 · 취소·마감된 W/O · 양품 합이 지시수량을 넘음 · ERP W/O 에 창고(SL_CD)가 없거나 MES 에 없는 창고.
+시리얼 품목의 조기 마감:
+
+```json
+{
+  "transmissionId": "d41a…",
+  "workOrderNo": "WO-2611-0012",
+  "mesWorkOrderId": 1001,
+  "itemCode": "A4F3WY7",
+  "qty": 0,
+  "remainderDispositionCode": "WRITE_OFF",
+  "reasonCode": "PLAN_CHANGE",
+  "remarks": "flowtrack 마감: <관리자>",
+  "businessDate": "2026-11-12"
+}
+```
+
+- `qty` — 시리얼 없이 올릴 양품 수. S410 은 만든 수 — 다 만들면 지시수량(flowtrack 2.6), 적게 끝내면 그 수(#274). 시리얼 품목은 0 — 시리얼은 입고이동(3-3)으로 이미 왔다.
+- `remainderDispositionCode`(`CARRY_OVER` 이월 · `WRITE_OFF` 소멸) · `reasonCode` — 양품 합이 지시수량보다 적으면 둘 다 필수, 지시수량에 닿으면 둘 다 비운다(`close-rules.ts` · 관리웹 마감과 같다). 이월은 표시만 하고 새 W/O 를 만들지 않는다.
+- 사유 목록 — `GET /mdm/code-values?codeGroupCode=WORK_ORDER_COMPLETION_VARIANCE_REASON`. `OVER_PRODUCTION` 은 초과 마감용이다.
+- `remarks` — 선택. flowtrack 마감자를 싣는다. MES 의 마감자는 연동 계정이다.
+- 처리 — 한 트랜잭션: `qty` 만큼 실적 · 제품 입고(ERP W/O 의 창고) · 자재 차감 → 마감. 양품 합이 0 이면 마감하지 않고 취소한다(LOT 폐번 · §1-1 의 11 과 같다).
+- 그 W/O 의 입고이동이 모두 `SENT` 가 된 뒤에 보낸다. 지시수량에 닿은 W/O 는 MES 가 이미 마감했으므로 보내지 않는다.
+- 거절(4xx): 모르는 W/O · 품목이 W/O 와 다름 · 취소·마감된 W/O · 양품 합이 지시수량을 넘음 · 미달인데 처분·사유가 없음 · 모르는 사유 코드 · ERP W/O 에 창고(SL_CD)가 없거나 MES 에 없는 창고.
 
 **재고 조회 — `GET /integration/tracking-system/stocks?warehouseCode=S410&itemCode=`**
 
@@ -230,7 +244,7 @@ flowtrack 저장소(`mes-dev`)의 일이다. 회신: 2026-11-12 · `bb31e61`(pus
 |---|---|
 | 모든 전송 본문에 `businessDate`(§1-1 의 20) | 반영 — 입고이동·출고·마감 보고. 전송을 쌓은 때의 공장(UTC+7) 날짜. 다시 보내도 바뀌지 않는다 |
 | 공정 순서 판정 「막음」(ENFORCE)(§1-1 의 12) | 코드 변경 없음 · 전환 시점은 OA 가 정한다. 사용 중인 라인에 없는 제품: ZU-609(P81) `A63GP81` · RU-513(P81) `A87JP81` · 시험 제품 — 두 품목은 MES 에 있고 PL13 ERP W/O 는 0건 |
-| 시리얼 품목 수동 마감 → 마감 보고 `qty` 0 | 반영 — 그 W/O 의 입고이동이 모두 받아진 뒤. 포장이 없어도 보낸다. 오더수량에 닿은 W/O 는 MES 가 이미 마감했으므로 보내지 않는다. ⇒ 되돌린다(§1-1 의 19 · 아래 다음 요청) |
+| 시리얼 품목 수동 마감 → 마감 보고 `qty` 0 | 반영 — 그 W/O 의 입고이동이 모두 받아진 뒤. 포장이 없어도 보낸다. 오더수량에 닿은 W/O 는 MES 가 이미 마감했으므로 보내지 않는다. ⇒ 남은 수량 처리·사유·비고를 더한다(§1-1 의 19 · 아래 다음 요청) |
 | S410 화면(데스크탑 #274) | #274 에서 따로. API 셋은 받은 형식대로 |
 | S410 품목 11개 등록 | #274 에서 정한다 — 시리얼이 없는 품목이라 flowtrack 제품 기준정보 설계가 필요하다 |
 | `packing_logs.product_sno` 중복 막기 | 반영 — 지우지 않은 포장은 S/NO 당 1건(부분 UNIQUE) · 다시 포장하면 409 |
@@ -239,9 +253,9 @@ flowtrack 저장소(`mes-dev`)의 일이다. 회신: 2026-11-12 · `bb31e61`(pus
 
 | 요청 | flowtrack 회신 |
 |---|---|
-| 시리얼 품목의 수동 마감과 그 마감 보고(`qty` 0)를 뺀다(§1-1 의 19) | |
-| 포장을 짧은 간격으로 모아 보낸다(§1-2 의 1) | |
-| `STOCK-` W/O 는 지금대로 둔다(§1-3) | |
+| 수동 마감에서 남은 수량 처리(이월·소멸)·사유를 고르고 비고와 함께 마감 보고에 싣는다. 사유 목록은 `GET /mdm/code-values` 로 받는다(§1-1 의 19 · §3-5) | |
+| S410 을 지시수량보다 적게 마감할 때 만든 수와 같은 칸을 싣는다(#274) | |
+| `STOCK-` W/O 는 지금대로 둔다(§1-2) | |
 
 ## 6. 지금 데이터에서 본 사실
 
@@ -324,7 +338,7 @@ flowtrack 저장소(`mes-dev`)의 일이다. 회신: 2026-11-12 · `bb31e61`(pus
    - 전이 — 지금 마감은 `COMPLETED`·`IN_PROGRESS`·`SUSPENDED` 에서만 되고 `IN_PROGRESS` 는 단말 작업 세션으로만 된다. 연동 마감은 `RELEASED` 에서 바로 마감한다(§1-1 의 17).
    - 마감 뒤 그 W/O 에 더 오는 포장은 거절한다(사용자 2026-11-05). 마감한 W/O 는 고칠 수 없다(트리거 `trg_work_order_closed_immutable`).
    - 마감 뒤 포장 취소는 막는다(사용자 2026-11-05). flowtrack 도 보낸 포장의 삭제를 막는다.
-   - 조기 마감 — 관리웹 마감(`POST /production/work-orders/{id}:close`)이 실적이 있는 OA 자동 W/O 를 `RELEASED` 에서도 마감한다. OA 자동 W/O 는 작업 세션이 없어 `IN_PROGRESS` 가 되지 않는다. 실적이 없으면 지금처럼 취소로 안내한다(§1-1 의 19).
+   - 조기 마감 — flowtrack 마감 보고(3-5)로만 한다. 관리웹 마감(`POST /production/work-orders/{id}:close`)은 OA 자동 W/O 를 막고 「OA W/O 는 flowtrack 에서 마감합니다」로 안내한다. 지금도 `RELEASED` 라 막히지만 문구가 취소를 권한다(§1-1 의 19).
    - 마감은 ERP 생산입고 송신(`IF_WO_CLOSE`)을 쌓는다 — ERP 가 범위 밖이므로 PL13 은 쌓지 않는다.
 5. ERP W/O 취소 — **정함: MES W/O 도 취소한다.** 지금 ERP 의 변경·취소는 사람 확인 흐름(W-02-06)으로 가는데, PL13 은 ERP 받기가 MES W/O 취소까지 한다. 취소는 쓰고 있는 LOT 까지 폐번하므로, 실적이 없으면 자동으로 취소하고 실적이 있으면 취소하지 않고 사람 확인 목록(W-02-06)에 남긴다(사용자 2026-11-05).
 6. S410 품목 — **정함(사용자 2026-11-05 · 11-12): flowtrack 이 처리하고 MES 도 자동 처리한다. 시리얼이 없어 flowtrack 이 품목코드로 W/O 를 찾아 골라 마감한다(3-5).** 제품은 ERP W/O 의 창고(S410)에 넣는다. 개발 DB 에서 ERP W/O 의 창고가 S410 인 13건의 품목 11개:
@@ -355,10 +369,10 @@ flowtrack 저장소(`mes-dev`)의 일이다. 회신: 2026-11-12 · `bb31e61`(pus
 | 4 | 운영 정책 코드 둘 · PL13 라우팅 자동 생성(`OA-ASSY` 1줄) | |
 | 5 | PL13 자동 계획·확정·배포 · 라인·기본 위치 없이 배포 · PL13 BOM 고르기 | planning → production 경계를 넘는다 |
 | 6 | 실적 작업자 널 허용 · 결과 원천 · 연동 전송 표 · 원장 원천 | 마이그레이션 선행 커밋 |
-| 7 | 포장 입고이동(3-3) → 실적 · 시리얼 · 제품 입고 · 마감 · 관리웹 조기 마감(`RELEASED`) | 자재 차감 빼고 |
+| 7 | 포장 입고이동(3-3) → 실적 · 시리얼 · 제품 입고 · 마감 | 자재 차감 빼고 |
 | 8 | 자재 차감(백플러시) | 코어 전용 PR ≤ 200줄 |
 | 9 | 출하 출고(3-4) | |
-| 10 | S410 — 마감 보고 · 재고 조회 · 수량 출고(3-5) | |
+| 10 | 마감 보고(조기 마감 · S410) · 재고 조회 · 수량 출고(3-5) · 관리웹 마감의 OA 안내 | |
 | 11 | ERP W/O 취소 → MES W/O 취소(7-3 의 5) | |
 | 별개 | 배포 검사에서 폐기·FG 위치 빼기(7-3 의 1-2) | OA 와 별개 |
 
