@@ -23,6 +23,8 @@ function harness(
   );
   const tx = {
     inspection_request: {
+      // 입하 LOT 요청이 아니다 — 종합 판정 칸을 채우지 않는다(피처 005).
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', inbound_lot_id: null }),
       update: jest.fn().mockResolvedValue({
         lot_id: options.lotId ?? null,
         item_id: 77n,

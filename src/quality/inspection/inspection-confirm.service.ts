@@ -30,6 +30,7 @@ import { CONFIRMED, assertConfirmedShape, remarksWithJudgmentChange } from './in
 import { type FourMChangeInput, prepareFourMChangeOfResult, writeFourMChangeWithin } from './four-m-change';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
 import { IqcRejectedHandoverNotifier } from './iqc-rejected-handover';
+import { requestLotIds } from './inspection-request-lots';
 
 /** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 4. 판정을 비우면 저장된 값을 쓴다. */
 export interface InspectionResultConfirm {
@@ -241,7 +242,7 @@ export class InspectionConfirmService {
     if (action === undefined) {
       throw one(field('overallJudgmentCode', ERROR_CODE.INVALID, '값 목록 밖의 종합 판정입니다.'));
     }
-    const request = await this.completeRequest(tx, input.inspectionRequestId, input.appUserId);
+    const request = await this.completeRequest(tx, input);
     const actor = input.appUserId !== undefined
       ? { changedBy: BigInt(input.appUserId) }
       : terminalAudit !== undefined
@@ -258,16 +259,19 @@ export class InspectionConfirmService {
       inspectionTypeCode: request.inspection_type_code,
       itemId: request.item_id,
     });
-    await this.moveTargetLot(tx, request, input.judgment, action, moveContext);
-    if (request.inspection_type_code === IQC && input.judgment === REJECTED && request.lot_id !== null) {
-      await this.rejectedNotices.rejected(tx, request.lot_id);
+    const lotIds = await requestLotIds(tx, request);
+    await this.moveTargetLots(tx, lotIds, input.judgment, action, moveContext);
+    if (request.inspection_type_code === IQC && input.judgment === REJECTED) {
+      for (const lotId of lotIds) await this.rejectedNotices.rejected(tx, lotId);
     }
     await this.movePickedOqcLots(tx, request, input.judgment, moveContext);
-    if (input.nonconformanceNo !== undefined && needsIqcNonconformance(request.inspection_type_code, input.judgment, request.lot_id)) {
+    if (input.nonconformanceNo !== undefined && needsIqcNonconformance(request.inspection_type_code, input.judgment, request)) {
       await createIqcNonconformanceWithin(tx, {
         nonconformanceNo: input.nonconformanceNo,
         inspectionResultId: input.inspectionResultId,
+        inspectionRequestId: input.inspectionRequestId,
         request,
+        lotIds,
         qty: input.rejectedQty > 0 ? input.rejectedQty : (input.inspectedQty ?? input.rejectedQty),
         appUserId: input.appUserId,
         at: input.changedAt,
@@ -333,13 +337,32 @@ export class InspectionConfirmService {
    * ⚠ 전이표 «밖»이다 — 계약이 「`:confirm` 이 `COMPLETED` 로 옮긴다」를 **부수 효과**로 적었고
    * 출발이 `REQUESTED`·`IN_PROGRESS` 둘이라 액션 하나로 못 묶는다. 자기 스키마(`quality`)라
    * 서비스가 직접 UPDATE 한다(§7-3 의 유일한 예외).
+   * ⭐ 입하 LOT 를 가진 IQC 요청(이전된 옛 요청 포함)은 종합 판정·확정 시각·사람도 같은 문장에서 채운다 —
+   *    `ck_inspection_request_iqc_confirmed` 가 `COMPLETED` 와 함께 요구한다(피처 005 R-9).
    */
-  private completeRequest(tx: Tx, inspectionRequestId: bigint, appUserId: number | undefined) {
+  private async completeRequest(tx: Tx, input: ConfirmEffectsInput) {
+    const before = await tx.inspection_request.findUniqueOrThrow({
+      where: { inspection_request_id: input.inspectionRequestId },
+      select: { inspection_type_code: true, inbound_lot_id: true },
+    });
+    const confirms = before.inspection_type_code === IQC && before.inbound_lot_id !== null;
     return tx.inspection_request.update({
-      where: { inspection_request_id: inspectionRequestId },
-      data: { status_code: REQUEST_COMPLETED, updated_by: appUserId ?? null, version_no: { increment: 1 } },
+      where: { inspection_request_id: input.inspectionRequestId },
+      data: {
+        status_code: REQUEST_COMPLETED,
+        ...(confirms
+          ? {
+              overall_judgment_code: input.judgment,
+              confirmed_at: input.changedAt,
+              confirmed_by: input.appUserId === undefined ? null : BigInt(input.appUserId),
+            }
+          : {}),
+        updated_by: input.appUserId ?? null,
+        version_no: { increment: 1 },
+      },
       select: {
         lot_id: true,
+        inbound_lot_id: true,
         item_id: true,
         uom_id: true,
         work_order_id: true,
@@ -352,41 +375,45 @@ export class InspectionConfirmService {
   }
 
   /**
-   * 대상 LOT — ⭐ **`targetTypeCode` 로 가르지 않는다. `lot_id` 가 있으면 그 1건**(R-10 ·
-   * `W-04-03` §5-2·§4-A). 없으면 **전이 없이 확정만** 한다(400 을 내지 않는다 — 계약이
-   * 요구하지 않는다 · 미발행 · I-19 §9-2 후보 6).
+   * 대상 LOT — ⭐ **`targetTypeCode` 로 가르지 않는다. 「요청의 LOT 들」**(`lot_id` 가 있으면 그 1건, 없으면
+   * 입하 LOT 의 자재 관리 LOT 전부 · 피처 005)(R-10 · `W-04-03` §5-2·§4-A). 없으면 **전이 없이 확정만**
+   * 한다(400 을 내지 않는다 — 계약이 요구하지 않는다 · 미발행 · I-19 §9-2 후보 6).
    *
    * ⭐ 합격은 «다른 열린 보류»가 남아 있으면 `NORMAL` 로 **안 올린다**(R-11) — 중복 보류가
    * 허용되므로(`W-03-02` §4-B) 수입검사 보류만 닫고 올리면 의심자재 보류가 열린 채 출고가 풀린다.
    * ⛔ 불합격·보류 판정은 보류를 **닫지 않는다** — `W-01-01` §5-1 「불합격 = Hold 유지 → 반품」.
    */
-  private async moveTargetLot(
+  private async moveTargetLots(
     tx: Tx,
-    request: { lot_id: bigint | null },
+    lotIds: bigint[],
     judgment: string,
     action: string,
     context: LotQualityMoveContext,
   ): Promise<void> {
-    const lotId = request.lot_id;
-    if (lotId === null) return;
+    if (lotIds.length === 0) return;
     // ⭐⭐ R-5 — 보류 해제도 그 뒤의 재계수도 이 잠금 «안»이어야 한다(코어가 표식으로 강제한다).
     // ⚠ 판정과 무관하게 «먼저» 잡는다 — 합격 갈래 안으로 옮기면 나머지 갈래의 잠금이
     //    `moveWithin` 안으로 숨어, 뒤에 그 갈래에 보류 읽기를 더하는 사람이 잠금 밖에서 읽는다.
-    const locked = await this.holds.lockLotsWithin(tx, [lotId]);
+    const locked = await this.holds.lockLotsWithin(tx, lotIds);
+    let movable = lotIds;
     if (judgment === ACCEPTED) {
-      // 입하 LOT 이 태어날 때 걸린 보류만 닫는다. `status_code` 는 코어가 안 건드린다(문의 13).
-      const { openAfter } = await this.holds.releaseWithin(
-        tx,
-        locked,
-        { lotId, reasonCode: INSPECTION_HOLD_REASON },
-        { releaseReasonCode: HOLD_RELEASE_REASON },
-        context.changedBy !== undefined
-          ? { by: context.changedBy, at: context.changedAt }
-          : { workerId: context.changedWorkerId as bigint, at: context.changedAt },
-      );
-      if (openAfter > 0) return;
+      movable = [];
+      for (const lotId of lotIds) {
+        // 입하 LOT 이 태어날 때 걸린 보류만 닫는다. `status_code` 는 코어가 안 건드린다(문의 13).
+        const { openAfter } = await this.holds.releaseWithin(
+          tx,
+          locked,
+          { lotId, reasonCode: INSPECTION_HOLD_REASON },
+          { releaseReasonCode: HOLD_RELEASE_REASON },
+          context.changedBy !== undefined
+            ? { by: context.changedBy, at: context.changedAt }
+            : { workerId: context.changedWorkerId as bigint, at: context.changedAt },
+        );
+        if (openAfter === 0) movable.push(lotId);
+      }
+      if (movable.length === 0) return;
     }
-    const { movedLotIds } = await this.lots.moveWithin(tx, [lotId], action, context);
+    const { movedLotIds } = await this.lots.moveWithin(tx, movable, action, context);
     // ⭐ 코어는 `from` 밖이면 건너뛴다(R-7 — C14 가 집합이라 그렇다). 단건 대상에서 「안
     //    옮겨졌다」를 조용히 200 으로 내면 판정과 LOT 상태가 갈린다(결정 10 「상태 이중 보유
     //    없음」) ⇒ 400 `STATE_LOCKED`. §3-2 ⑥ 이 `SCRAPPED` 에 이미 그 값을 적었다.

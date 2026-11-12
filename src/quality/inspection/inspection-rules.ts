@@ -40,14 +40,23 @@ export function assertPeriodRequired(query: { inspectedFrom?: string; inspectedT
  * `groupBy` 로 그룹을 «전건» 뽑고 그 수만큼 `(의뢰, 회차)` AND 절을 OR 로 폈다 — 스코프가
  * 넓어질수록 OR 가 그대로 늘었다. 좁은 칸 셋만 읽어 메모리에서 접으면 뒤 질의가 id `in` 하나다.
  */
-export function finalRoundOf<T extends { inspection_request_id: bigint; inspection_round: number }>(rows: T[]): T[] {
+export function finalRoundOf<T extends { inspection_request_id: bigint; inspection_round: number; confirm_cycle?: number | null }>(
+  rows: T[],
+): T[] {
   const best = new Map<string, T>();
+  // 입하 LOT IQC 결과(확정 주기가 있음 · 피처 005)는 회차 사슬이 없다 — 「최종」 = 요청의 마지막 주기 결과 전부.
+  const lastCycle = new Map<string, number>();
   for (const row of rows) {
     const key = row.inspection_request_id.toString();
+    if (row.confirm_cycle !== undefined && row.confirm_cycle !== null) {
+      lastCycle.set(key, Math.max(lastCycle.get(key) ?? 0, row.confirm_cycle));
+      continue;
+    }
     const kept = best.get(key);
     if (kept === undefined || row.inspection_round > kept.inspection_round) best.set(key, row);
   }
-  return [...best.values()];
+  const cycled = rows.filter((row) => row.confirm_cycle != null && row.confirm_cycle === lastCycle.get(row.inspection_request_id.toString()));
+  return [...best.values(), ...cycled];
 }
 
 /** 계약 `inspectedTo` 설명 — inspectedFrom 과 한 쌍. 한쪽만 오면 400 PAIR(L-3 하한 없는 구멍 방지). */

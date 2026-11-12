@@ -19,6 +19,7 @@ import {
   PQC_PENDING_CTE,
   QualityLotStatus,
   RECEIPT_HOLD_CTE,
+  lineOfLot,
   lotRecordCountSql,
   lotSupplierName,
   pqcEquipmentCode,
@@ -181,7 +182,7 @@ export class DashboardQualityService {
         JOIN LATERAL (
           SELECT rc.supplier_id FROM logistics.inbound_receipt_line irl
           JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
-          WHERE irl.lot_id = fr.lot_id AND rc.status_code <> 'CANCELLED'
+          WHERE ${lineOfLot(Prisma.sql`irl`, Prisma.sql`fr.lot_id`)} AND rc.status_code <> 'CANCELLED'
           ORDER BY irl.inbound_receipt_line_id LIMIT 1
         ) supplier ON TRUE
         JOIN mdm.partner p ON p.partner_id = supplier.supplier_id

@@ -9,7 +9,9 @@ import { InspectionConfirmService } from './inspection-confirm.service';
 import { IqcRejectedHandoverNotifier } from './iqc-rejected-handover';
 
 it('uses the real terminal worker for IQC LOT transition and hold release', async () => {
-  const tx = { inspection_request: { update: jest.fn().mockResolvedValue({
+  const tx = { inspection_request: {
+    findUniqueOrThrow: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', inbound_lot_id: null }),
+    update: jest.fn().mockResolvedValue({
     lot_id: 3n, work_order_id: null, inspection_type_code: 'IQC', inspection_plan_version: null,
   }) },
   // 검사 수준 미설정 품목(#64) — 수준 셈은 아무것도 하지 않는다.
