@@ -17623,6 +17623,364 @@
     }
    }
   },
+  "/mdm/supplier-item-defaults": {
+   "get": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "공급사·품목 기본 정보 목록",
+    "description": "공장의 공급사·품목별 자재 관리 LOT 기본값. 정렬 = 공급사 코드 → 품목 코드. 발행 화면은 supplierId·itemId 로 한 건을 읽는다. 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장"
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사·품목 코드·이름(부분 일치)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/SupplierItemDefault"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-06-25(공급사·품목 기본 정보) · P-01-01·W-01-14(자재 관리 LOT 발행 화면 기본값 읽기). 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "공급사·품목 기본 정보 추가",
+    "description": "같은 공장·공급사·품목이 있으면 409 DUPLICATE. package 를 주면 lotQty = count × qtyPerPackage 여야 한다(400 lotQty INVALID). 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SupplierItemDefaultCreate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "추가됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SupplierItemDefault"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "RANGE(lotQty·패키징 수·패키징당 수량) · INVALID(공장·공급사·품목·패키징 단위 없음·사용 중지, 패키징 곱 불일치)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-06-25(공급사·품목 기본 정보). 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "DUPLICATE — 이 공장에 같은 공급사·품목의 기본 정보가 이미 있다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/supplier-item-defaults/{supplierItemDefaultId}": {
+   "parameters": [
+    {
+     "name": "supplierItemDefaultId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "put": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "공급사·품목 기본 정보 수정",
+    "description": "LOT 당 수량·패키징·비고를 통째로 바꾼다(package 를 빼거나 null 이면 패키징을 비운다). 공장·공급사·품목은 바꾸지 않는다(지우고 다시 넣는다). versionNo 가 다르면 409 VERSION_CONFLICT. 이미 만든 묶음·자재 관리 LOT 는 바뀌지 않는다. 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SupplierItemDefaultUpdate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "바뀐 기본 정보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SupplierItemDefault"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "RANGE · INVALID(패키징 단위, 패키징 곱 불일치)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-06-25(공급사·품목 기본 정보). 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 기본 정보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "VERSION_CONFLICT — 저장 충돌(다시 읽으면 풀림)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SupplierItemDefaultConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "공급사·품목 기본 정보 삭제",
+    "description": "행을 지운다. 이미 만든 묶음·자재 관리 LOT 에는 영향이 없다. 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "지웠다"
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-06-25(공급사·품목 기본 정보). 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 기본 정보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/quality/inspection-sheet-templates": {
    "get": {
     "tags": [
@@ -28220,6 +28578,306 @@
       "description": "비고"
      }
     }
+   },
+   "MaterialPackage": {
+    "type": "object",
+    "required": [
+     "uomId",
+     "uomCode",
+     "count",
+     "qtyPerPackage"
+    ],
+    "description": "패키징 — lotQty = count × qtyPerPackage. 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "properties": {
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "x-source-column": "package_uom_id",
+      "description": "패키징 단위"
+     },
+     "count": {
+      "type": "integer",
+      "minimum": 1,
+      "x-source-column": "package_count",
+      "description": "패키징 수"
+     },
+     "qtyPerPackage": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "x-source-column": "qty_per_package",
+      "description": "패키징당 수량(품목 기본 단위)"
+     },
+     "uomCode": {
+      "type": "string",
+      "description": "패키징 단위 코드"
+     }
+    }
+   },
+   "MaterialPackageInput": {
+    "type": "object",
+    "required": [
+     "uomId",
+     "count",
+     "qtyPerPackage"
+    ],
+    "description": "쓰기 본문의 패키징 — 단위 코드는 서버가 채운다. 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "properties": {
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "x-source-column": "package_uom_id",
+      "description": "패키징 단위"
+     },
+     "count": {
+      "type": "integer",
+      "minimum": 1,
+      "x-source-column": "package_count",
+      "description": "패키징 수"
+     },
+     "qtyPerPackage": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "x-source-column": "qty_per_package",
+      "description": "패키징당 수량(품목 기본 단위)"
+     }
+    }
+   },
+   "SupplierItemDefault": {
+    "x-source-table": "mdm.supplier_item_default",
+    "type": "object",
+    "required": [
+     "supplierItemDefaultId",
+     "plantId",
+     "supplierId",
+     "supplierCode",
+     "supplierName",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "uomId",
+     "uomCode",
+     "lotQty",
+     "package",
+     "remarks",
+     "versionNo",
+     "updatedAt",
+     "updatedByName"
+    ],
+    "description": "공급사·품목 기본 정보 — 자재 관리 LOT 발행 화면의 기본값일 뿐이다. 바꿔도 이미 만든 묶음·자재 관리 LOT 는 그대로다. 공장 단위(같은 공장·공급사·품목에 하나). 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "properties": {
+     "supplierItemDefaultId": {
+      "type": "integer",
+      "format": "int64",
+      "x-source-column": "supplier_item_default_id"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "x-source-column": "plant_id",
+      "description": "공장"
+     },
+     "supplierId": {
+      "type": "integer",
+      "format": "int64",
+      "x-source-column": "supplier_id",
+      "description": "공급사(거래처)"
+     },
+     "supplierCode": {
+      "type": "string"
+     },
+     "supplierName": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "x-source-column": "item_id",
+      "description": "품목"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목 기본 단위 — lotQty·qtyPerPackage 의 단위"
+     },
+     "uomCode": {
+      "type": "string",
+      "description": "품목 기본 단위 코드"
+     },
+     "lotQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "x-source-column": "lot_qty",
+      "description": "자재 관리 LOT 당 재고 수량(품목 기본 단위). 패키징이 있으면 count × qtyPerPackage 와 같다"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackage"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "패키징(없으면 null)"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-source-column": "remarks",
+      "description": "비고"
+     },
+     "versionNo": {
+      "type": "integer",
+      "x-source-column": "version_no",
+      "description": "수정 본문의 versionNo 로 그대로 보낸다"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "x-source-column": "updated_at",
+      "description": "마지막 수정 시각"
+     },
+     "updatedByName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "마지막으로 바꾼 사용자 이름(없으면 null)"
+     }
+    }
+   },
+   "SupplierItemDefaultCreate": {
+    "type": "object",
+    "required": [
+     "plantId",
+     "supplierId",
+     "itemId",
+     "lotQty"
+    ],
+    "description": "같은 공장·공급사·품목이 있으면 409 DUPLICATE. 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "공장"
+     },
+     "supplierId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "공급사(거래처)"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목"
+     },
+     "lotQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "x-source-column": "lot_qty",
+      "description": "자재 관리 LOT 당 재고 수량(품목 기본 단위). 패키징이 있으면 count × qtyPerPackage 와 같다"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackageInput"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "패키징. 빼거나 null 이면 패키징 없음"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-source-column": "remarks",
+      "description": "비고"
+     }
+    }
+   },
+   "SupplierItemDefaultUpdate": {
+    "type": "object",
+    "required": [
+     "versionNo",
+     "lotQty"
+    ],
+    "description": "공장·공급사·품목은 바꾸지 않는다. 안 보낸 package·remarks 는 「비우라」다(통째로 바꾸는 편집). 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "properties": {
+     "versionNo": {
+      "type": "integer",
+      "description": "목록이 낸 versionNo — 다르면 409 VERSION_CONFLICT"
+     },
+     "lotQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "x-source-column": "lot_qty",
+      "description": "자재 관리 LOT 당 재고 수량(품목 기본 단위). 패키징이 있으면 count × qtyPerPackage 와 같다"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/MaterialPackageInput"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "패키징. 빼거나 null 이면 패키징 없음"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-source-column": "remarks",
+      "description": "비고"
+     }
+    }
+   },
+   "SupplierItemDefaultConflictResponse": {
+    "type": "object",
+    "required": [
+     "conflictCause",
+     "message"
+    ],
+    "description": "저장 충돌 — 다시 읽으면 풀린다. 근거: 피처 005 자재 LOT 재구성 · omf-all-around#254 · W-06-25",
+    "properties": {
+     "code": {
+      "type": "string",
+      "enum": [
+       "VERSION_CONFLICT"
+      ],
+      "description": "저장 충돌이면 VERSION_CONFLICT. 멱등 키 충돌(같은 키·다른 본문, 처리 중)의 409 는 이 칸 없이 conflictCause·message 만 낸다"
+     },
+     "message": {
+      "type": "string"
+     },
+     "currentVersion": {
+      "type": "string",
+      "description": "서버의 현재 version_no"
+     },
+     "conflictCause": {
+      "type": "string",
+      "enum": [
+       "user",
+       "erpSync",
+       "workerLease"
+      ],
+      "description": "충돌 원인. 이 자원은 사람만 고쳐 언제나 user"
+     }
+    },
+    "x-internal-note": "code 를 required 로 두지 않는다 — 계열 봉투(FAMILY_CONFLICT_CODE, 멱등 409 에 DUPLICATE_KEY·INVALID_STATE 를 싣는 것)가 아니라 mdm ConflictResponse 에 저장 충돌 사유만 더한 것이다"
    },
    "InspectionSheetTemplate": {
     "x-source-table": "quality.inspection_sheet_template",
