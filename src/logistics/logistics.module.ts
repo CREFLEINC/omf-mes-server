@@ -22,6 +22,8 @@ import {
 import { PrismaModule } from '../prisma/prisma.module';
 import { LogisticsHandoverNotifier } from './logistics-handover';
 import { InboundLotController } from './inbound-lot/inbound-lot.controller';
+import { InboundLotCloseService } from './inbound-lot/inbound-lot-close';
+import { InboundLotReopenService } from './inbound-lot/inbound-lot-reopen.service';
 import { InboundLotLotsService } from './inbound-lot/inbound-lot-lots.service';
 import { InboundLotQueryService } from './inbound-lot/inbound-lot-query.service';
 import { InboundLotReceiveService } from './inbound-lot/inbound-lot-receive.service';
@@ -191,6 +193,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundLotReceiveService,
     InboundLotLotsService,
     InboundLotQueryService,
+    InboundLotCloseService,
+    InboundLotReopenService,
     LogisticsHandoverNotifier,
     PickingHandoverNotifier,
     MaterialIssueReleaser,

@@ -33,8 +33,9 @@ describe('ContractRegistry', () => {
   // 검사기준 버전 재사용 1건(omf-all-around#258): 600.
   // 자재 관리 LOT 발행·대기 목록·폐기 4건 · 공급사·품목 기본 정보 4건(피처 005 · omf-all-around#254): 608.
   // 입하 LOT 조회 2·받기·해제·공급사 LOT 3건(피처 005 S4): 613.
-  it('계약 7파일에서 오퍼레이션 613건을 적재한다', () => {
-    expect(registry.size).toBe(613);
+  // 입하 마감·마감 취소 2건(피처 005 S5): 615.
+  it('계약 7파일에서 오퍼레이션 615건을 적재한다', () => {
+    expect(registry.size).toBe(615);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

@@ -26,11 +26,13 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/goods-issues/{goodsIssueId}': ['POP'],
   'GET /logistics/goods-issues/{goodsIssueId}/lines': ['POP', 'MOBILE'],
   'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['MOBILE'],
-  // 입하 LOT 조회·받기·해제·공급사 LOT(피처 005 §2·§3) — PDA M-01-01·M-01-03.
+  // 입하 LOT 조회·받기·해제·공급사 LOT·마감·마감 취소(피처 005 §2·§3) — PDA M-01-01·M-01-03.
   'GET /logistics/inbound-lots': ['MOBILE'],
   'GET /logistics/inbound-lots/{inboundLotId}': ['MOBILE'],
   'POST /logistics/inbound-lots:receive': ['MOBILE'],
   'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots': ['MOBILE'],
+  'POST /logistics/inbound-lots/{inboundLotId}:close-receipt': ['MOBILE'],
+  'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt': ['MOBILE'],
   'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no': ['MOBILE'],
   'GET /logistics/inbound-receipts': ['POP', 'MOBILE'],
   'GET /logistics/inbound-receipts/{inboundReceiptId}/lines': ['POP', 'MOBILE'],
@@ -156,6 +158,8 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/inbound-receipts/{inboundReceiptId}/lines': await inbound(p.inboundReceiptId); break;
     case 'GET /logistics/inbound-lots/{inboundLotId}':
     case 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots':
+    case 'POST /logistics/inbound-lots/{inboundLotId}:close-receipt':
+    case 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt':
     case 'PATCH /logistics/inbound-lots/{inboundLotId}/lots/supplier-lot-no': await inboundLot(p.inboundLotId); break;
     // 본문에 공장이 없다(단말 공장) — `lots[].lotId` 는 아래 본문 자원 검사가 공장을 본다.
     case 'POST /logistics/inbound-lots:receive': break;

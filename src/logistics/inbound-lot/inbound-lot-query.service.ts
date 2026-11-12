@@ -5,6 +5,7 @@ import { PagedResponse, pagedResponse, pageRequest } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import { packageView, type MaterialPackageView } from '../material-lot-batch/material-lot-view';
 import { lastRegistrations } from './inbound-lot-event';
+import { reopenStatesOf } from './inbound-lot-reopenable';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 
 export interface InboundLotQuery {
@@ -12,6 +13,9 @@ export interface InboundLotQuery {
   supplierId?: number;
   itemId?: number;
   statusCode?: string[] | string;
+  closable?: boolean | string;
+  reopenable?: boolean | string;
+  closedAutomatically?: boolean | string;
   receivingDateFrom?: string;
   receivingDateTo?: string;
   q?: string;
@@ -67,6 +71,17 @@ export class InboundLotQueryService {
       }),
       ...(q ? { OR: [{ inbound_lot_no: { contains: q, mode: 'insensitive' } }, { item: { item_code: { contains: q, mode: 'insensitive' } } }] } : {}),
     };
+    const closable = flag(query.closable);
+    const reopenable = flag(query.reopenable);
+    const closedAutomatically = flag(query.closedAutomatically);
+    const and: Prisma.inbound_lotWhereInput[] = [];
+    if (closable !== undefined) and.push(closable ? { status_code: 'RECEIVING' } : { status_code: { not: 'RECEIVING' } });
+    if (closedAutomatically !== undefined) and.push({ closed_automatically: closedAutomatically });
+    if (reopenable !== undefined) {
+      const ids = await this.reopenableIds(query.plantId);
+      and.push({ inbound_lot_id: reopenable ? { in: ids } : { notIn: ids } });
+    }
+    if (and.length > 0) where.AND = and;
     const [total, items] = await Promise.all([
       this.prisma.inbound_lot.count({ where }),
       loadInboundLotViews(this.prisma, where, {
@@ -74,6 +89,15 @@ export class InboundLotQueryService {
       }),
     ]);
     return pagedResponse(items, total, page);
+  }
+
+  /** 마감 취소 가능 입하 LOT — 판정이 집계(IQC 결과·입고·결재·같은 조합)라 SQL 조건으로 못 적어 후보(새 흐름 마감)를 모아 가른다. */
+  private async reopenableIds(plantId: number): Promise<bigint[]> {
+    const candidates = await this.prisma.inbound_lot.findMany({
+      where: { plant_id: plantId, status_code: 'RECEIVED', erp_send_mode_code: 'ON_FINALIZE' }, select: { inbound_lot_id: true },
+    });
+    const states = await reopenStatesOf(this.prisma, candidates.map((row) => row.inbound_lot_id));
+    return [...states].filter(([, state]) => state.blockers.length === 0).map(([id]) => id);
   }
 
   async get(inboundLotId: number): Promise<InboundLotDetailView> {
@@ -119,4 +143,9 @@ export class InboundLotQueryService {
       })),
     };
   }
+}
+
+function flag(value: boolean | string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  return value === true || value === 'true';
 }

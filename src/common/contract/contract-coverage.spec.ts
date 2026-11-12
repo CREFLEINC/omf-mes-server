@@ -101,7 +101,8 @@ describe('계약 커버리지', () => {
     // 검사기준 버전 재사용(omf-all-around#258) 1 오퍼레이션: 599 → 600.
     // 자재 관리 LOT 발행·대기 목록·폐기 4 · 공급사·품목 기본 정보 4 오퍼레이션(피처 005): 600 → 608.
     // 입하 LOT 조회 2·받기·해제·공급사 LOT 3 오퍼레이션(피처 005 S4): 608 → 613.
-    expect(registry.size).toBe(613);
+    // 입하 마감·마감 취소 2 오퍼레이션(피처 005 S5): 613 → 615.
+    expect(registry.size).toBe(615);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
