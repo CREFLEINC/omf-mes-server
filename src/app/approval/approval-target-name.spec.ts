@@ -4,7 +4,7 @@ import { toApprovalTarget } from './approval.mapper';
 /** 승인 대상 이름 — 「INBOUND_LOT #19」 같은 내부 코드 대신 업무 번호를 낸다. */
 describe('approvalTargetNames', () => {
   const prisma = {
-    lot: { findMany: jest.fn().mockResolvedValue([{ lot_id: 19n, lot_no: 'IL-20261028-0001' }]) },
+    inbound_lot: { findMany: jest.fn().mockResolvedValue([{ inbound_lot_id: 19n, inbound_lot_no: 'IL-20261028-0001', lot: [{ lot_id: 41n }] }]) },
     nonconformance: { findMany: jest.fn().mockResolvedValue([{ nonconformance_id: 1n, nonconformance_no: 'NC-20261028-001' }]) },
     shipment_request: { findMany: jest.fn().mockResolvedValue([]) },
   };
@@ -20,6 +20,9 @@ describe('approvalTargetNames', () => {
       toApprovalTarget(type, id, names.get(targetKey(type, id))).displayName;
 
     expect(name('INBOUND_LOT', 19n)).toBe('입하 LOT · IL-20261028-0001');
+    // FR-032 — IQC 생략 대상(입하 LOT)은 실행에 쓸 자재 관리 LOT id 를 함께 낸다.
+    expect(toApprovalTarget('INBOUND_LOT', 19n, names.get(targetKey('INBOUND_LOT', 19n))).targetLotId).toBe(41);
+    expect(toApprovalTarget('NONCONFORMANCE', 1n, names.get(targetKey('NONCONFORMANCE', 1n)))).not.toHaveProperty('targetLotId');
     expect(name('NONCONFORMANCE', 1n)).toBe('부적합 · NC-20261028-001');
     expect(name('SHIPMENT_REQUEST', 7n)).toBe('SHIPMENT_REQUEST #7');
     expect(name('PRODUCTION_RESULT', 5n)).toBe('PRODUCTION_RESULT #5');
@@ -28,7 +31,7 @@ describe('approvalTargetNames', () => {
   it('대상이 없는 유형은 조회하지 않는다', async () => {
     jest.clearAllMocks();
     await approvalTargetNames(prisma as never, [{ target_type_code: 'NONCONFORMANCE', target_id: 1n }]);
-    expect(prisma.lot.findMany).not.toHaveBeenCalled();
+    expect(prisma.inbound_lot.findMany).not.toHaveBeenCalled();
     expect(prisma.shipment_request.findMany).not.toHaveBeenCalled();
   });
 });

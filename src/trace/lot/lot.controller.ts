@@ -32,7 +32,7 @@ import { LotHoldListService } from './lot-hold-list.service';
 import { LotIqcSkipExecuteService } from './lot-iqc-skip-execute.service';
 import { InputMaterials, LotGenealogyQueryService, UsedSerials } from './lot-genealogy-query.service';
 import { LotImpactService, type AffectedProductionLots } from './lot-impact.service';
-import { LotIqcSkipService } from './lot-iqc-skip.service';
+import { IqcSkipRequested, LotIqcSkipService } from './lot-iqc-skip.service';
 import { bool } from './lot-rules';
 import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
 import { LotCreate, LotQuery, LotService, LotUpdate } from './lot.service';
@@ -198,7 +198,7 @@ export class LotController {
     @Req() request: Request,
     @Param('lotId', ParseIntPipe) lotId: number,
     @Body() body: { reason: string },
-  ): Promise<{ approvalRequestId: number }> {
+  ): Promise<IqcSkipRequested> {
     // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:96`) — 사번의 필수 판정은 서비스 몫이다.
     const workerNo = request.headers['x-worker-no'];
     const actor = lotWriteActorOf(request, 'POST /trace/lots/{lotId}:request-iqc-skip');

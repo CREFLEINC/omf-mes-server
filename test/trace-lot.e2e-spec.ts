@@ -22,7 +22,7 @@ import { PostingEndpoint } from '../src/core/inventory-posting/posting.types';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
-import { InboundLotFixture, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
+import { InboundLotFixture, closeInboundLotFixture, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
 
 const LOGIN_ID = 'e2e-lot-probe';
 const NOPERM_ID = 'e2e-lot-noperm';
@@ -60,6 +60,7 @@ const key = (): string => randomUUID();
 interface LotBody {
   lotId: number;
   lotNo: string;
+  inboundLotId?: number | null;
   statusCode: string;
   held: boolean;
   initialQty: number;
@@ -556,8 +557,9 @@ describe('LOT (e2e)', () => {
   });
 
   it('⭐ IQC 생략 요청은 202 다 — 다형 축 세 칸이 서고 LOT 은 그대로다', async () => {
-    // 이전 데이터 LOT(버전 1) — 새 흐름 LOT 은 받기 전이(L4)가 버전을 올려 「그대로」를 버전 1 로 잴 수 없다. 입하 LOT 단위 생략은 S10(FR-032).
-    const lot = await legacyLot();
+    // 대상은 그 LOT 의 입하 LOT 이고 입하 마감된 것만 요청한다(FR-032).
+    const lot = await closedLot();
+    const versionBefore = (await prisma.lot.findUniqueOrThrow({ where: { lot_id: lot.lotId } })).version_no;
 
     const accepted = await requestIqcSkip(lot.lotId).expect(202);
     const validate = validator('POST /trace/lots/{lotId}:request-iqc-skip', 202);
@@ -570,20 +572,20 @@ describe('LOT (e2e)', () => {
     expect(row).toMatchObject({
       approval_type_code: 'IQC_SKIP',
       target_type_code: 'INBOUND_LOT',
-      target_id: BigInt(lot.lotId),
+      target_id: BigInt(lot.inboundLotId as number),
       status_code: 'PENDING',
       requested_by: probeUserId,
     });
     // ⛔ 대상 행에 아무것도 안 쓴다 — 승인 FK 칸이 없고 202 에 ETag 도 없다.
     const after = await prisma.lot.findUniqueOrThrow({ where: { lot_id: lot.lotId } });
-    expect(after.version_no).toBe(1);
+    expect(after.version_no).toBe(versionBefore);
     // ⛔ 「진행 중 요청은 하나」 — 코어가 두 번째 상신을 막는다.
     const twice = await requestIqcSkip(lot.lotId).expect(400);
     expect(twice.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
   });
 
   it('⛔ 사번 헤더가 없으면 400 REQUIRED · 결재선이 없으면 400 ROUTE_NOT_FOUND 다', async () => {
-    const lot = await newLot();
+    const lot = await closedLot();
 
     const noWorker = await requestIqcSkip(lot.lotId, { workerNo: null }).expect(400);
     expect(noWorker.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
@@ -719,25 +721,14 @@ describe('LOT (e2e)', () => {
     return (await detailOf(lotId)).lot;
   }
 
-  /** 옛 등록 경로(이제 닫힘 · FR-036)가 쓰던 이전 데이터 모양 — 검사 대기 LOT(버전 1) + 수입검사 대기 보류 + 줄 `lot_id`. */
-  async function legacyLot(): Promise<LotBody> {
-    const lineId = await newLine(10, true);
-    const at = new Date(`${DAY}T02:00:00.000Z`);
-    const lot = await prisma.lot.create({
-      data: {
-        lot_no: `${PREFIX}-LEGACY-${lineId}`, item_id: BigInt(itemId), lot_type_code: 'MATERIAL', plant_id: BigInt(plantId), initial_qty: 10,
-        uom_id: BigInt(uomId), source_type_code: 'INBOUND_RECEIPT_LINE', source_id: BigInt(lineId), status_code: 'INSPECTION_PENDING',
-        created_by: probeUserId,
-      },
-    });
-    await prisma.lot_hold.create({
-      data: {
-        lot_id: lot.lot_id, reason_code: 'INCOMING_INSPECTION_WAIT', status_code: 'HELD', target_lot_status_code: 'INSPECTION_PENDING',
-        held_by: probeUserId, held_at: at, created_by: probeUserId,
-      },
-    });
-    await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: BigInt(lineId) }, data: { lot_id: lot.lot_id } });
-    return (await detailOf(Number(lot.lot_id))).lot;
+  /** 입하 마감된 입하 LOT 의 자재 관리 LOT — IQC 생략은 마감된 입하 LOT 만 요청한다(FR-032). */
+  async function closedLot(): Promise<LotBody> {
+    // 앞 시험의 LOT 들이 붙은 입하 중 입하 LOT 을 먼저 마감한다 — 이 LOT 하나만의 입하 LOT 을 세운다.
+    const open = await prisma.inbound_lot.findFirst({ where: { supplier_id: BigInt(supplierId), item_id: BigInt(itemId), status_code: 'RECEIVING' } });
+    if (open !== null) await closeInboundLotFixture(fx, Number(open.inbound_lot_id));
+    const lot = await newLot();
+    await closeInboundLotFixture(fx, lot.inboundLotId as number);
+    return (await detailOf(lot.lotId)).lot;
   }
 
   async function countsOfPlant(): Promise<number[]> {

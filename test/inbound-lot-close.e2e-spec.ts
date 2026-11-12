@@ -508,22 +508,22 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     return { orderId: order.purchase_order_id, lineIds };
   }
 
-  /** 긴급 생략 «실행»의 흔적 — 입하 LOT 요청 생략 실행 경로는 S10 이 연다. 그 뒤 상태(요청 SKIPPED·APPROVAL, LOT 정상·보류 해제, 결재 승인)를 그대로 세운다. */
+  /** 긴급 생략 «실행»의 흔적 — 그 뒤 상태(요청 SKIPPED·APPROVAL, LOT 정상·보류 해제, 결재 승인)를 그대로 세운다. */
   async function simulateSkipExecuted(closed: ClosedInboundLot): Promise<bigint[]> {
     const lotIds = (await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(closed.inboundLotId) }, select: { lot_id: true } })).map((lot) => lot.lot_id);
     await prisma.inspection_request.update({ where: { inspection_request_id: BigInt(closed.iqcRequestId as number) }, data: { status_code: 'SKIPPED', skip_basis_code: 'APPROVAL' } });
     await prisma.lot_hold.updateMany({ where: { lot_id: { in: lotIds }, released_at: null }, data: { released_at: new Date(), released_by: ids.user, release_reason_code: 'INCOMING_INSPECTION_SKIPPED' } });
     await prisma.lot.updateMany({ where: { lot_id: { in: lotIds } }, data: { status_code: 'NORMAL' } });
-    await makeSkipApproval(closed.inboundLotId, 'APPROVED', lotIds[0]);
+    await makeSkipApproval(closed.inboundLotId, 'APPROVED');
     return lotIds;
   }
 
-  async function makeSkipApproval(inboundLotId: number, status: string, lotId?: bigint): Promise<void> {
-    const target = lotId ?? (await prisma.lot.findFirstOrThrow({ where: { inbound_lot_id: BigInt(inboundLotId) } })).lot_id;
+  /** IQC 생략 결재 — 대상은 입하 LOT 이다(FR-032). */
+  async function makeSkipApproval(inboundLotId: number, status: string): Promise<void> {
     await prisma.approval_request.create({
       data: {
         approval_request_no: `${PREFIX}-SKIP-${String(inboundLotId)}`, approval_type_code: 'IQC_SKIP', target_type_code: 'INBOUND_LOT',
-        target_id: target, requested_by: ids.user, requested_at: new Date(), status_code: status, reason: '긴급 생산',
+        target_id: BigInt(inboundLotId), requested_by: ids.user, requested_at: new Date(), status_code: status, reason: '긴급 생산',
       },
     });
   }

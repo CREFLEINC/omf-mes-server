@@ -176,15 +176,15 @@ describe('POP app read scope', () => {
 describe('MOBILE approval list scope', () => {
   const mobile = { ...terminal, terminalTypeCode: 'MOBILE' };
   const prisma = {
-    lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 43n }) },
+    inbound_lot: { findFirst: jest.fn().mockResolvedValue({ inbound_lot_id: 43n }) },
     worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 9n }) },
   } as unknown as PrismaService;
 
   it('binds the pending query to an inbound LOT in the terminal plant', async () => {
     const req = request({ targetTypeCode: 'INBOUND_LOT', targetId: '43', pendingOnly: 'true', size: '1' });
     await assertTerminalAppReadScope(prisma, req, 'GET /app/approval-requests', mobile);
-    expect(currentTerminalApprovalListScope(req)).toEqual({ plantId: 3n, lotId: 43n });
-    (prisma.lot.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    expect(currentTerminalApprovalListScope(req)).toEqual({ plantId: 3n, inboundLotId: 43n });
+    (prisma.inbound_lot.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(assertTerminalAppReadScope(prisma, request({ targetTypeCode: 'INBOUND_LOT', targetId: '44', pendingOnly: 'true', size: '1' }),
       'GET /app/approval-requests', mobile)).rejects.toMatchObject({ status: 401 });
   });

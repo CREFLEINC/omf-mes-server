@@ -12,7 +12,7 @@ import {
   toApprovalRequest,
   toApprovalStep,
 } from './approval.mapper';
-import { approvalTargetNames, targetKey } from './approval-target-name';
+import { ApprovalTargetInfo, approvalTargetNames, targetKey } from './approval-target-name';
 
 export interface ApprovalRequestQuery {
   assignedToMe?: boolean;
@@ -92,15 +92,15 @@ export class ApprovalRequestService {
     return pagedResponse(sliced.map((row) => this.toView(row, actorId, names)), mine.length, page);
   }
 
-  /** 모바일 IQC 상신 조회는 계정 세션 대신 검증된 LOT 또는 현장 작업자로 한정한다. */
+  /** 모바일 IQC 상신 조회는 계정 세션 대신 검증된 입하 LOT 또는 현장 작업자로 한정한다. 생략 결재의 대상은 입하 LOT 이다(FR-032). */
   async listForTerminal(
     query: ApprovalRequestQuery,
     scope: TerminalApprovalListScope,
   ): Promise<PagedResponse<ApprovalRequestView>> {
     const page = pageRequest(query);
-    let lotIds: bigint[];
-    if (scope.lotId !== undefined) {
-      lotIds = [scope.lotId];
+    let inboundLotIds: bigint[];
+    if (scope.inboundLotId !== undefined) {
+      inboundLotIds = [scope.inboundLotId];
     } else {
       const ownTargets = await this.prisma.approval_request.findMany({
         where: {
@@ -111,21 +111,17 @@ export class ApprovalRequestService {
         select: { target_id: true },
         distinct: ['target_id'],
       });
-      const lots = ownTargets.length === 0 ? [] : await this.prisma.lot.findMany({
-        where: {
-          lot_id: { in: ownTargets.map((row) => row.target_id) },
-          plant_id: scope.plantId,
-          source_type_code: 'INBOUND_RECEIPT_LINE',
-        },
-        select: { lot_id: true },
+      const inboundLots = ownTargets.length === 0 ? [] : await this.prisma.inbound_lot.findMany({
+        where: { inbound_lot_id: { in: ownTargets.map((row) => row.target_id) }, plant_id: scope.plantId },
+        select: { inbound_lot_id: true },
       });
-      lotIds = lots.map((lot) => lot.lot_id);
+      inboundLotIds = inboundLots.map((row) => row.inbound_lot_id);
     }
     const where: Prisma.approval_requestWhereInput = {
       approval_type_code: 'IQC_SKIP',
       target_type_code: 'INBOUND_LOT',
-      target_id: { in: lotIds },
-      ...(scope.lotId !== undefined ? { status_code: 'PENDING' } : { requested_worker_id: scope.workerId }),
+      target_id: { in: inboundLotIds },
+      ...(scope.inboundLotId !== undefined ? { status_code: 'PENDING' } : { requested_worker_id: scope.workerId }),
     };
     const [rows, total] = await Promise.all([
       this.prisma.approval_request.findMany({
@@ -243,7 +239,7 @@ export class ApprovalRequestService {
     return { stepNo: current?.stepNo ?? null, approverId: current ? Number(current.approverId) : null };
   }
 
-  private toView(row: RequestRow, actorId: number, names: Map<string, string>): ApprovalRequestView {
+  private toView(row: RequestRow, actorId: number, names: Map<string, ApprovalTargetInfo>): ApprovalRequestView {
     const info = this.currentStepInfo(row);
     return toApprovalRequest(
       row,
