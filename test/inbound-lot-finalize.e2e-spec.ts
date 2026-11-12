@@ -400,6 +400,9 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     await post(`${LOTS}/${String(inboundLot.inboundLotId)}:reopen-receipt`).send({ versionNo: await versionOf(inboundLot.inboundLotId) }).expect(200);
     const voided = await prisma.approval_request.findUniqueOrThrow({ where: { approval_request_id: approval.approval_request_id } });
     expect(voided).toMatchObject({ status_code: 'APPROVED', target_summary: expect.objectContaining({ voidedBy: 'RECEIPT_REOPENED' }) });
+    // W-01-02 가 [실행]을 감추도록 결재 상세 대상에 무효 표시(G2 L7).
+    const detail = await get(`/api/app/approval-requests/${String(approval.approval_request_id)}`).expect(200);
+    expect(detail.body.request.target).toMatchObject({ targetTypeCode: 'INBOUND_LOT', targetVoided: true });
 
     await closeInboundLotFixture(fx, inboundLot.inboundLotId);
     const skipped = await post(`/api/trace/lots/${String(lots[0].lotId)}:skip-iqc`).send({}).expect(400);

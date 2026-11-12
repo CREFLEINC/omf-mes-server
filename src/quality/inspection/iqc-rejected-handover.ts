@@ -11,6 +11,8 @@ const RECEIPT_SELECT = {
 
 /** 알림 끝에 붙이는 다음 할 일 — 불합격 LOT 실물은 관리웹 입하 처리로 불량 창고에 넣는다. */
 export const IQC_REJECTED_NEXT_STEP = '불량 창고로 입하 처리';
+/** 입하 LOT 검사 불합격 — 입하 LOT 부적합을 W-03-10 에서 처분한다(피처 005 R-14). */
+export const IQC_REJECTED_INBOUND_LOT_NEXT_STEP = '부적합 처분(W-03-10)에서 처분 판정';
 
 /**
  * 인계 작업 「검사 불합격(IQC)」 — 불합격 확정된 LOT 1건에 한 번. 공장 = LOT 공장.
@@ -74,7 +76,7 @@ export class IqcRejectedHandoverNotifier {
           lot_no: inbound?.lotNo ?? lot.lot_no,
           supplier: receipt?.partner.partner_name,
           qty: formatQty(inbound?.qty ?? lot.initial_qty, lot.uom.uom_code),
-          next_step: IQC_REJECTED_NEXT_STEP,
+          next_step: inbound === undefined ? IQC_REJECTED_NEXT_STEP : IQC_REJECTED_INBOUND_LOT_NEXT_STEP,
         },
       });
     }, undefined);

@@ -97,7 +97,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     try {
       expect(events).toHaveLength(1);
       const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId) }, select: { lot_no: true } });
-      expect(events[0].payload).toMatchObject({ lot_no: lot.lot_no, qty: expect.stringMatching(/^10\b/), next_step: '불량 창고로 입하 처리' });
+      expect(events[0].payload).toMatchObject({ lot_no: lot.lot_no, qty: expect.stringMatching(/^10\b/), next_step: '부적합 처분(W-03-10)에서 처분 판정' });
       expect((events[0].payload as { receipt_no?: string }).receipt_no).toEqual(expect.any(String));
     } finally {
       await prisma.notification_event.deleteMany({ where });
@@ -475,7 +475,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     });
 
     it('⛔ 요청 뒤 다른 처분이 수량을 먼저 쓰면 적용이 400(approvedQty)이고 특채·LOT·판정은 그대로다', async () => {
-      const { lotId } = await rejectedLot(10);
+      // 일부 수량 처분은 이전 데이터 부적합에만 남는다 — 입하 LOT 검사 부적합은 남은 수량 전부로만 판정한다(FR-038 · G2 M3).
+      const { lotId } = await rejectedLot(10, true);
       const nc = await openNonconformance(lotId);
       const created = await requestConcession(nc.nonconformance_id, lotId, 10, '적용 전 처분 선행').expect(201);
       await decideApproval(created.body.approvalRequestId as number, 'approve');

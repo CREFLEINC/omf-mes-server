@@ -18,6 +18,7 @@ export const INSPECTION_RESULT_JOIN = {
       item_id: true,
       lot_id: true,
       lot: { select: { lot_no: true } },
+      inbound_lot: { select: { inbound_lot_no: true } },
       work_order: { select: { routing_operation: { select: { process: { select: { process_id: true, process_name: true } } } } } },
       inspection_plan_version: {
         select: { inspection_plan: { select: { process: { select: { process_id: true, process_name: true } } } } },
@@ -68,6 +69,8 @@ export function inspectionResultView(row: InspectionResultRow) {
     // ⭐ 계약 `[type,null]` 파생 3칸 — §5-7 기본(값 없으면 키 생략, 널 금지)을 따른다. 같은
     // 슬라이스의 `inspection-request-view.ts` 도 같은 선택 — 저장소 선례가 갈린 자리(#294 M-1)다.
     lotNo: request.lot?.lot_no ?? undefined,
+    // 입하 LOT 검사(대상이 입하 LOT 이라 `lotNo` 가 없다)의 W-03-05 「LOT 번호」 자리(G2 L4).
+    inboundLotNo: request.inbound_lot?.inbound_lot_no ?? undefined,
     processId: process === null ? undefined : Number(process.process_id),
     processName: process?.process_name ?? undefined,
   });

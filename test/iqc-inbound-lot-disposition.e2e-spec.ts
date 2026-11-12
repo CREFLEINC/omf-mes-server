@@ -242,7 +242,8 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     // 앞 확정 결과는 확정 그대로 — 고치기·지우기 409.
     const kept = await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(first) } });
     expect(kept.status_code).toBe('CONFIRMED');
-    await resultCall('put', first, kept.version_no).send({ remarks: '고침' }).expect(409);
+    const locked = await resultCall('put', first, kept.version_no).send({ remarks: '고침' }).expect(409);
+    expect(JSON.stringify(locked.body)).toContain('확정을 취소한 뒤');
     await resultCall('delete', first, kept.version_no).expect(409);
     expect(await detailOf(iqc.requestId)).toMatchObject({ statusCode: 'IN_PROGRESS', nonconformanceId: null, nonconformanceNo: null });
 
@@ -255,6 +256,8 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     expect((preview.lotJudgments as { lotId: number; judgmentCode: string; resultId: number; superseded: { resultId: number }[] }[])
       .map((lot) => [lot.lotId, lot.judgmentCode, lot.resultId, lot.superseded.map((result) => result.resultId)]))
       .toEqual([[l1, 'ACCEPTED', retest, [first]], [l2, 'ACCEPTED', retest, [first]], [l3, 'REJECTED', first, []]]);
+    // 사유는 불합격을 덮은 LOT 에만(G2 L5).
+    expect((preview.lotJudgments as { reinspectionReasonCode: string | null }[]).map((lot) => lot.reinspectionReasonCode)).toEqual([REASON, REASON, null]);
 
     const reconfirmed = await confirm(iqc.requestId);
     expect(reconfirmed.body).toMatchObject({ statusCode: 'COMPLETED', overallJudgmentCode: 'REJECTED' });
@@ -272,6 +275,38 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     expect(accepted.body).toMatchObject({ statusCode: 'COMPLETED', overallJudgmentCode: 'ACCEPTED' });
     expect(await lotStatuses(iqc)).toEqual(['NORMAL', 'NORMAL', 'NORMAL']);
     expect(await detailOf(iqc.requestId)).toMatchObject({ statusCode: 'COMPLETED', previewJudgmentCode: 'ACCEPTED', nonconformanceId: null, nonconformanceNo: null });
+  });
+
+  it('G2 입하 LOT 검사 부적합의 일부 수량 판정 400·변경 이력 내용(확정·확정 취소·재검 사유)·W-03-05 행의 입하 LOT 번호', async () => {
+    const nc = await rejectedIqc(3);
+    for (const type of ['NORMAL', 'SCRAP', 'REWORK']) await decide(nc.nonconformanceId, { dispositionTypeCode: type, decisionQty: 10 }, 400);
+    expect(await lotStatuses(nc)).toEqual(['DEFECTIVE', 'DEFECTIVE', 'DEFECTIVE']);
+    expect(await prisma.disposition_decision.count({ where: { nonconformance_id: nc.nonconformanceId } })).toBe(0);
+
+    const iqc = await iqcLot(2);
+    const [l1, l2] = lotIdsOf(iqc);
+    await addResult(iqc.requestId, { inspectedQty: 20, acceptedQty: 0, heldQty: 20, overallJudgmentCode: 'HELD', matchedLotIds: [l1, l2] });
+    await confirm(iqc.requestId);
+    const { version_no: versionNo } = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(iqc.requestId) } });
+    await request(app.getHttpServer()).post(`${REQUESTS}/${String(iqc.requestId)}:cancel-confirm`).set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey(fx)).send({ versionNo, reason: '재검 필요' }).expect(200);
+    await addResult(iqc.requestId, { inspectedQty: 20, acceptedQty: 20, matchedLotIds: [l1, l2], reinspectionReasonCode: REASON });
+    await confirm(iqc.requestId);
+
+    const history = await request(app.getHttpServer()).get(`${REQUESTS}/${String(iqc.requestId)}/history`).set('Cookie', cookie).expect(200);
+    const events = history.body.requestEvents as { eventCode: string; detail: string | null; reason: string | null; summaryAfter: Record<string, unknown> | null }[];
+    const details = events.map((event) => [event.eventCode, event.detail]);
+    expect(details).toEqual(expect.arrayContaining([
+      ['CONFIRMED', '보류 — 자재 관리 LOT 2개 보류'],
+      ['CONFIRM_CANCELLED', '이전 확정: 보류 (사유: 재검 필요)'],
+      ['CONFIRMED', '합격 — 자재 관리 LOT 2개 정상'],
+    ]));
+    const retest = events.filter((event) => event.eventCode === 'RESULT_ADDED').at(-1);
+    expect(retest).toMatchObject({ reason: REASON, summaryAfter: expect.objectContaining({ reinspectionReasonCode: REASON }) });
+    expect(retest?.detail).toContain(`재검 사유 ${REASON}`);
+
+    const rows = await request(app.getHttpServer()).get(RESULTS).query({ inspectionRequestId: iqc.requestId }).set('Cookie', cookie).expect(200);
+    expect((rows.body.items as { inboundLotNo?: string }[]).map((row) => row.inboundLotNo)).toEqual([await inboundLotNoOf(iqc), await inboundLotNoOf(iqc)]);
   });
 
   it('R16-1 IQC 생략 — 입하 중 409 · 마감된 입하 LOT 단위 결재(대상 입하 LOT) · 실행하면 LOT 전부 C22·요청 SKIPPED', async () => {

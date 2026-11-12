@@ -50,6 +50,8 @@ interface Target {
   uomScale: number;
   /** 선별로 떼어 낸 불량에서 생긴 부적합이다(`source_nonconformance_id`). */
   sortedChild: boolean;
+  /** 새 흐름 입하 LOT IQC 부적합 — 판정 하나가 LOT 전부를 옮기므로 일부 수량 판정이 없다(FR-038). */
+  inboundLotIqc: boolean;
 }
 
 /**
@@ -237,6 +239,7 @@ async function readTarget(tx: Tx, id: bigint): Promise<Target> {
     where: { nonconformance_id: id },
     select: {
       source_nonconformance_id: true,
+      inspection_request: { select: { target_type_code: true } },
       item: { select: { base_uom_id: true } },
       nonconformance_lot: { orderBy: { nonconformance_lot_id: 'asc' }, select: { lot_id: true, affected_qty: true, uom_id: true } },
       disposition_decision: { select: { decision_qty: true } },
@@ -255,6 +258,7 @@ async function readTarget(tx: Tx, id: bigint): Promise<Target> {
     //    마이그(`:328`)에 이미 있어 죽은 절이 된다(R-15 · 되돌려도 안 깨진다).
     uomScale: uom.decimal_scale,
     sortedChild: (nc.source_nonconformance_id ?? null) !== null,
+    inboundLotIqc: nc.inspection_request?.target_type_code === 'INBOUND_LOT',
   };
 }
 
@@ -287,7 +291,12 @@ function assertShape(body: DispositionDecisionCreate, target: Target): QtyDecisi
  */
 function assertWithinRemaining(body: QtyDecision, target: Target): void {
   const summary = remainingSummary(target.affectedQtyTotal, target.decidedQtyTotal, target.uomId);
-  if (new Prisma.Decimal(body.decisionQty).lessThanOrEqualTo(summary.remainingQty)) return;
+  const qty = new Prisma.Decimal(body.decisionQty);
+  // 입하 LOT IQC 부적합은 판정 하나가 LOT 전부를 옮긴다 — 남은 수량 전부가 아니면 LOT 상태와 부적합 상태가 어긋난다(FR-038).
+  if (target.inboundLotIqc && qty.lessThan(summary.remainingQty)) {
+    throw one(field('decisionQty', ERROR_CODE.INVALID, `입하 LOT 검사 부적합은 남은 수량 전부(${String(summary.remainingQty)})로 판정합니다.`));
+  }
+  if (qty.lessThanOrEqualTo(summary.remainingQty)) return;
   throw new ConflictException('user', `남은 수량을 넘습니다. (남은 수량 ${summary.remainingQty})`, {
     code: QTY_EXCEEDED,
     remainingQty: summary.remainingQty,

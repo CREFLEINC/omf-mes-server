@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { MaterialPackageView, packageView } from '../../logistics/material-lot-batch/material-lot-view';
 import { PrismaService } from '../../prisma/prisma.service';
 import { INBOUND_LOT_TARGET, judgedResultsOf, nextResultSequence } from './iqc-inbound-lot-result';
-import { IqcJudgedResult, iqcLotJudgments, iqcOverallJudgment } from './iqc-overall-judgment';
+import { IqcJudgedResult, iqcLotJudgments, iqcOverallJudgment, lightens } from './iqc-overall-judgment';
 
 /**
  * 입하 LOT 를 가진 IQC 요청의 목록·상세 칸(피처 005 §8). 칸 이름은 클라이언트 C3 이 먼저 정한 것(forward-contract)을 따른다.
@@ -247,14 +247,17 @@ function lotJudgmentViews(
   return lots.map((lot) => {
     const judgment = byLot.get(lot.lot_id);
     const used = judgment?.used;
+    // 사유는 그 LOT 의 판정을 불합격·보류에서 가볍게 바꾼 경우에만 싣는다(FR-023a) — 대체가 없거나 같은 판정이면 null.
+    const previous = judgment?.superseded.at(-1);
+    const reasonCode = used !== undefined && previous !== undefined && lightens(previous.judgmentCode, used.judgmentCode) ? used.reasonCode : null;
     return {
       lotId: Number(lot.lot_id), lotNo: lot.lot_no,
       judgmentCode: used?.judgmentCode ?? null,
       resultId: used === undefined ? null : Number(used.resultId),
       resultSeqNo: used?.seqNo ?? null,
       superseded: (judgment?.superseded ?? []).map((result) => ({ resultId: Number(result.resultId), resultSeqNo: result.seqNo, judgmentCode: result.judgmentCode })),
-      reinspectionReasonCode: used?.reasonCode ?? null,
-      reinspectionReasonName: used?.reasonCode == null ? null : (reasonNames.get(used.reasonCode) ?? null),
+      reinspectionReasonCode: reasonCode,
+      reinspectionReasonName: reasonCode === null ? null : (reasonNames.get(reasonCode) ?? null),
     };
   });
 }

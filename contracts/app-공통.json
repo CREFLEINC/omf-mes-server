@@ -6361,10 +6361,18 @@
       "example": true
      },
      "targetLotId": {
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "example": 5001,
       "description": "IQC 생략(approvalTypeCode=IQC_SKIP · targetTypeCode=INBOUND_LOT — targetId 는 입하 LOT id)만 싣는다 — 그 입하 LOT 의 가장 작은 자재 관리 LOT id(서버 계산, 자재 관리 LOT 이 없으면 null). W-01-02 가 실행 경로 POST /trace/lots/{lotId}:skip-iqc 에 이 값을 쓴다 — targetId 를 lotId 로 쓰지 않는다. 다른 유형은 키가 없다. 근거: 피처 005 §11 · omf-all-around#254"
+     },
+     "targetVoided": {
+      "type": "boolean",
+      "description": "IQC 생략(IQC_SKIP) 결재만 — 입하 마감 취소가 이 승인을 무효로 만들었다(실행하면 400 STATE_LOCKED). 다른 결재 유형은 키 없음(피처 005 R-5a · G2 L7)",
+      "example": false
      }
     }
    },
@@ -6460,7 +6468,10 @@
     ],
     "properties": {
      "requestedWorkerId": {
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
      },
@@ -6499,7 +6510,10 @@
      },
      "requestedBy": {
       "x-source-column": "requested_by",
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "example": 1001,
       "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."
@@ -6660,7 +6674,10 @@
     ],
     "properties": {
      "issuedWorkerId": {
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
      },
@@ -6733,7 +6750,10 @@
       "example": "인쇄 실패"
      },
      "issuedBy": {
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "example": 3101,
       "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."

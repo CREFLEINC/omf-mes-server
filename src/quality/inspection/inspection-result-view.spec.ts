@@ -36,6 +36,7 @@ function resultRow(overrides: Partial<InspectionResultRow> = {}): InspectionResu
       item_id: 41n,
       lot_id: 51n,
       lot: { lot_no: 'LOT-0001' },
+      inbound_lot: null,
       work_order: null,
       inspection_plan_version: null,
     },

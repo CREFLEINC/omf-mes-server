@@ -195,7 +195,9 @@ export class IqcRequestConfirmService {
       inspectionRequestId: id, eventTypeCode: 'CONFIRMED', actor: { appUserId }, at,
       summaryAfter: {
         overallJudgmentCode: judgment, resultIds: drafts.map((result) => Number(result.inspection_result_id)),
+        lotCount: lots.length,
         nonconformanceId: nonconformanceId === null ? null : Number(nonconformanceId),
+        nonconformanceNo: nonconformanceId === null ? null : (nonconformanceNo ?? null),
       },
     });
   }
