@@ -3940,6 +3940,23 @@
       "description": "검사에서 나온 부적합이면 가리킨다. 검사 결과는 03 품질 계약이 소유한다",
       "example": 1001
      },
+     "inspectionRequestId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "입하 LOT 판정 확정(검사 단위)이 만든 부적합이면 그 IQC 검사 요청(03 품질 계약). 재작업 처분이 이 요청을 다시 연다(R-15). 그 밖은 null. 근거: 피처 005 §10 · omf-all-around#254"
+     },
+     "inboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "IL-20261112-0001",
+      "description": "입하 LOT 번호 — 검사 요청의 입하 LOT, 없으면 첫 대상 LOT 의 입하 LOT. 없으면 null. 근거: 피처 005 §10 · omf-all-around#254"
+     },
      "sourceCode": {
       "type": "string",
       "description": "부적합 원천 — 제품(PRODUCT) · 반품(RETURN). 서버가 대상 LOT 의 입고 유형으로 파생한다",
@@ -3987,7 +4004,7 @@
      },
      "statusCode": {
       "type": "string",
-      "description": "부적합 건의 진행 상태 — 의뢰 전(NOT_REQUESTED) · 판정 대기(PENDING_DECISION) · 판정 완료(DECIDED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 이 값이 처분 판정 화면의 진입 목록을 가른다(W-04-07 §3 · W-03-10 §5-5). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "부적합 건의 진행 상태 — 의뢰 전(NOT_REQUESTED) · 판정 대기(PENDING_DECISION) · 판정 완료(DECIDED) · 취소(CANCELLED — IQC 판정 확정 취소로 무효, closedAt 채움 · 피처 005 R-13). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 이 값이 처분 판정 화면의 진입 목록을 가른다(W-04-07 §3 · W-03-10 §5-5). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "NOT_REQUESTED",
       "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 04 계약 1단계 §3. 값 목록 확정 추적은 W-03-10 §8 이 갖는다.",
       "x-code-key": "CD-NONCONFORMANCE-STATUS"
@@ -4154,6 +4171,14 @@
       "example": "NORMAL",
       "x-code-key": "CD-LOT-STATUS",
       "description": "부적합 등록 «후» 의 LOT 품질 상태. LOT 상태. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+     },
+     "rejectedResultCount": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "example": 2,
+      "description": "입하 LOT 검사 부적합만 — 이 자재 관리 LOT 에 매칭된 불합격 결과 수(참고용 · 결과 ↔ LOT 매칭 R-10). 그 밖 부적합은 null. 근거: 피처 005 §10 · omf-all-around#254"
      }
     },
     "required": [

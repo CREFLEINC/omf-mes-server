@@ -1279,7 +1279,7 @@
      "quality"
     ],
     "summary": "IQC 판정 확정(검사 단위)",
-    "description": "입하 LOT 검사(새 흐름 — targetTypeCode=INBOUND_LOT)의 결과 전부로 판정을 한 번에 확정한다(R-12). 결과가 1건 이상이고 모든 결과에 판정이 있고 각 결과의 합격·불합격·보류 수량 합이 검사 수량과 같아야 한다(아니면 400 — field 는 results 또는 results[n].overallJudgmentCode·results[n].inspectedQty, n 은 순번). 한 트랜잭션: 결과 전부 CONFIRMED, 종합 판정 = 불합격 > 보류 > 합격, 요청 COMPLETED·overallJudgmentCode·confirmedAt·confirmedBy, 검사 수준 기록 1회, 자재 관리 LOT 전부 이동(합격 — 검사 대기 보류를 닫고 C4, 다른 열린 보류가 남은 LOT 은 이동 안 함 / 보류 — C5 / 불합격 — C6, LOT 상태 이력 원천 INSPECTION_REQUEST), 불합격이면 부적합 1건(PENDING_DECISION · LOT 전부를 대상 LOT 으로 · 수량은 각 LOT 초기 수량 · 결과 연결은 첫 불합격 결과 · 이미 열린 부적합이 있는 LOT 은 뺀다)과 불합격 인계 알림(입하 LOT 당 1회), 변경 이력 CONFIRMED. 4M 변경품은 결과 저장 때 이미 LOT 전부에 적혀 있다. 대기·진행 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청(대상 LOT)·PQC·OQC 는 409 INVALID_STATE 「이전 데이터 검사는 결과 단위로 확정합니다」(결과 단위 :confirm 을 쓴다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-12",
+    "description": "입하 LOT 검사(새 흐름 — targetTypeCode=INBOUND_LOT)의 결과 전부로 판정을 한 번에 확정한다(R-12). 재작업 처분이 다시 연 요청(이력 REOPENED_BY_REWORK)은 앞 확정의 결과가 확정(CONFIRMED) 그대로 판정 근거로 남고, 기록 중(DRAFT)인 재검사 결과로만 판정한다(R-15 — 재검사 결과가 없으면 400 results). 결과가 1건 이상이고 모든 결과에 판정이 있고 각 결과의 합격·불합격·보류 수량 합이 검사 수량과 같아야 한다(아니면 400 — field 는 results 또는 results[n].overallJudgmentCode·results[n].inspectedQty, n 은 순번). 한 트랜잭션: 결과 전부 CONFIRMED, 종합 판정 = 불합격 > 보류 > 합격, 요청 COMPLETED·overallJudgmentCode·confirmedAt·confirmedBy, 검사 수준 기록 1회, 자재 관리 LOT 전부 이동(합격 — 검사 대기 보류를 닫고 C4, 다른 열린 보류가 남은 LOT 은 이동 안 함 / 보류 — C5 / 불합격 — C6, LOT 상태 이력 원천 INSPECTION_REQUEST), 불합격이면 부적합 1건(PENDING_DECISION · LOT 전부를 대상 LOT 으로 · 수량은 각 LOT 초기 수량 · 결과 연결은 첫 불합격 결과 · 이미 열린 부적합이 있는 LOT 은 뺀다)과 불합격 인계 알림(입하 LOT 당 1회), 변경 이력 CONFIRMED. 4M 변경품은 결과 저장 때 이미 LOT 전부에 적혀 있다. 대기·진행 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청(대상 LOT)·PQC·OQC 는 409 INVALID_STATE 「이전 데이터 검사는 결과 단위로 확정합니다」(결과 단위 :confirm 을 쓴다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-12",
     "parameters": [
      {
       "name": "inspectionRequestId",
@@ -1380,7 +1380,7 @@
      "quality"
     ],
     "summary": "IQC 판정 확정 취소",
-    "description": "입하 LOT 검사(새 흐름)의 판정 확정을 되돌린다(R-13). 막힘(하나라도면 409 InspectionConfirmCancelBlocked — errors[].code 가 막힘 코드, lotNos 에 그 LOT 번호): GOODS_RECEIVED(자재 관리 LOT 이 취소되지 않은 입고에 있음) · DISPOSITION_STARTED(확정이 만든 부적합에 처분 판정이 있음) · CONCESSION_EXISTS(그 부적합에 특채가 있음) · LOT_STATUS_CHANGED(확정 뒤 자재 관리 LOT 에 이 검사 밖의 상태 이력이 있음) · INBOUND_LOT_FINALIZED(최종 마감 — 최종 마감이 생기는 단계에서 막는다). 효과(한 트랜잭션): 결과 전부 CONFIRMED → DRAFT, 정상·불량 LOT → 검사 대기(C29 · 원천 INSPECTION_REQUEST, 보류 확정이던 LOT 은 그대로), 검사 대기 보류가 닫힌 LOT 에 다시 걸기, 확정이 만든 부적합 CANCELLED(closedAt), 요청 IN_PROGRESS·confirmCycle + 1·종합 판정·확정 시각·사람 비움(이전 내용은 변경 이력 CONFIRM_CANCELLED 의 summaryBefore 에, 사유는 reason), 4M 변경품은 그대로, 이미 보낸 알림은 되돌리지 않는다. 그 뒤 결과를 고치거나 더해 다시 확정한다. 판정 확정된 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청·PQC·OQC 는 409 INVALID_STATE. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-13",
+    "description": "입하 LOT 검사(새 흐름)의 판정 확정을 되돌린다(R-13). 막힘(하나라도면 409 InspectionConfirmCancelBlocked — errors[].code 가 막힘 코드, lotNos 에 그 LOT 번호): GOODS_RECEIVED(자재 관리 LOT 이 취소되지 않은 입고에 있음) · DISPOSITION_STARTED(확정이 만든 부적합에 처분 판정이 있음) · CONCESSION_EXISTS(그 부적합에 특채가 있음) · LOT_STATUS_CHANGED(확정 뒤 자재 관리 LOT 에 이 검사 밖의 상태 이력이 있음) · INBOUND_LOT_FINALIZED(최종 마감 — 최종 마감이 생기는 단계에서 막는다). 효과(한 트랜잭션): 그 확정의 결과 CONFIRMED → DRAFT(재작업 재열기 앞 확정의 결과는 근거로 그대로 · R-15), 정상·불량 LOT → 검사 대기(C29 · 원천 INSPECTION_REQUEST, 보류 확정이던 LOT 은 그대로), 검사 대기 보류가 닫힌 LOT 에 다시 걸기, 확정이 만든 부적합 CANCELLED(closedAt), 요청 IN_PROGRESS·confirmCycle + 1·종합 판정·확정 시각·사람 비움(이전 내용은 변경 이력 CONFIRM_CANCELLED 의 summaryBefore 에, 사유는 reason), 4M 변경품은 그대로, 이미 보낸 알림은 되돌리지 않는다. 그 뒤 결과를 고치거나 더해 다시 확정한다. 판정 확정된 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청·PQC·OQC 는 409 INVALID_STATE. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-13",
     "parameters": [
      {
       "name": "inspectionRequestId",
@@ -6861,6 +6861,14 @@
       "type": "integer",
       "description": "UNIQUE(의뢰, 회차). 재검은 정정이 아니라 새 회차다. 근거: 공유계약 B-10",
       "example": 1
+     },
+     "confirmCycle": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "example": 1,
+      "description": "입하 LOT IQC 결과만 — 결과가 생길 때 요청의 확정 주기(1 = 처음 검사, 2 이상 = 재검사: 판정 확정 취소·재작업 재열기마다 + 1). 화면은 「처음」(1)·「재검 n차」(n = 주기 − 1)로 그린다. 옛 IQC(회차 사슬 previousResultId)·PQC·OQC 는 null. finalRoundOnly=true 면 입하 LOT IQC 는 요청의 마지막 주기 결과만. 근거: 피처 005 §8 · D-18 · R-10 · omf-all-around#254"
      },
      "inspectedQty": {
       "type": "number",
