@@ -138,6 +138,19 @@ export class InspectionPlanVersionController {
     );
   }
 
+  /** 사용 중지 → 확정(재사용 · omf-all-around#258). */
+  @Post(':inspectionPlanVersionId\\:reactivate')
+  @Contract('POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:reactivate')
+  @HttpCode(HttpStatus.OK)
+  reactivate(
+    @Req() request: Request,
+    @Param('inspectionPlanVersionId', ParseIntPipe) versionId: number,
+  ): Promise<unknown> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
+      this.header(await this.versions.reactivate(versionId, actorOf(request))),
+    );
+  }
+
   @Post(':inspectionPlanVersionId\\:new-revision')
   @Contract('POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:new-revision')
   @HttpCode(HttpStatus.CREATED)
