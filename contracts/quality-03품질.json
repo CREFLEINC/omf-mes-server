@@ -1163,7 +1163,7 @@
      "quality"
     ],
     "summary": "검사 대상 이력",
-    "description": "한 검사 의뢰가 앞 단계에서 넘어온 문서(source)와, 전달(의뢰 생성) · 회차 저장·확정 · 그 회차가 일으킨 LOT 상태 전이를 시간순으로 낸다. 새로 쌓지 않고 의뢰·회차·LOT 상태 이력을 엮는다. 근거: omf-all-around#61 (서버 선행 · 장부 P-55) 입하 LOT 검사는 변경 이력(quality.inspection_request_event — 결과 추가·수정·삭제 등, 전·후 요약)을 함께 낸다(피처 005 R-11).",
+    "description": "한 검사 의뢰가 앞 단계에서 넘어온 문서(source)와, 전달(의뢰 생성) · 회차 저장·확정 · 그 회차가 일으킨 LOT 상태 전이를 시간순으로 낸다. 새로 쌓지 않고 의뢰·회차·LOT 상태 이력을 엮는다. 근거: omf-all-around#61 (서버 선행 · 장부 P-55) 입하 LOT 를 가진 IQC 요청은 변경 이력(quality.inspection_request_event)을 requestEvents[] 로 함께 낸다(피처 005 R-11).",
     "security": [
      {
       "omfSession": []
@@ -5276,7 +5276,8 @@
      "inspectionRequestNo",
      "inspectionTypeCode",
      "source",
-     "events"
+     "events",
+     "requestEvents"
     ],
     "description": "검사 대상 이력(서버 선행 · 장부 P-55 · omf-all-around#61).",
     "properties": {
@@ -5318,6 +5319,13 @@
       "items": {
        "$ref": "#/components/schemas/InspectionHistoryEvent"
       }
+     },
+     "requestEvents": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionRequestEvent"
+      },
+      "description": "입하 LOT 검사의 변경 이력(시간순, 맨 앞은 요청 생성 REQUESTED). 입하 LOT 가 없는 요청은 빈 배열. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
      }
     }
    },
@@ -5338,20 +5346,9 @@
        "REQUESTED",
        "RESULT_SAVED",
        "RESULT_CONFIRMED",
-       "LOT_STATUS_CHANGED",
-       "RESULT_ADDED",
-       "RESULT_UPDATED",
-       "RESULT_DELETED",
-       "CONFIRMED",
-       "CONFIRM_CANCELLED",
-       "REOPENED_BY_REWORK",
-       "SKIPPED",
-       "SKIP_VOIDED",
-       "SPLIT_OUT",
-       "SPLIT_IN",
-       "CANCELLED_BY_REOPEN"
+       "LOT_STATUS_CHANGED"
       ],
-      "description": "전달(의뢰 생성) · 회차 저장 · 회차 확정 · LOT 상태 전이 · 입하 LOT 검사의 변경 이력(INSPECTION_REQUEST_EVENT_TYPE — 결과 추가·수정·삭제·판정 확정·확정 취소·재작업 재열기·생략·생략 무효·분리·마감 취소로 무효). 근거: 피처 005 R-11"
+      "description": "전달(의뢰 생성) · 회차 저장 · 회차 확정 · LOT 상태 전이"
      },
      "actorName": {
       "type": "string"
@@ -5385,23 +5382,6 @@
      },
      "lotNo": {
       "type": "string"
-     },
-     "inspectionResultId": {
-      "type": "integer",
-      "format": "int64",
-      "description": "변경 이력 줄의 대상 결과 — 지운 결과도 id 를 남긴다"
-     },
-     "summaryBefore": {
-      "type": "object",
-      "description": "변경 이력 줄의 바뀌기 전 요약(결과면 순번·판정·수량·매칭 LOT)"
-     },
-     "summaryAfter": {
-      "type": "object",
-      "description": "변경 이력 줄의 바뀐 뒤 요약"
-     },
-     "reason": {
-      "type": "string",
-      "description": "변경 이력 줄의 사유"
      }
     }
    },
@@ -6548,8 +6528,69 @@
        "string",
        "null"
       ],
-      "description": "상세 조회·새 흐름 요청만 — 지금 결과로 판정 확정하면 나올 종합 판정(불합격 > 보류 > 합격). 결과가 없거나 판정이 빈 결과가 있으면 null. 미리 보기일 뿐 LOT 상태는 그대로다",
+      "description": "새 흐름 요청(targetTypeCode=INBOUND_LOT)만 — 목록 행·상세 모두. 지금 결과로 판정 확정하면 나올 종합 판정(불합격 > 보류 > 합격). 결과가 없거나 판정이 빈 결과가 있으면 null. 미리 보기일 뿐 LOT 상태는 그대로다. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8).",
       "example": "REJECTED"
+     },
+     "splitFromInboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "새 흐름 요청만 — 분리로 생긴 입하 LOT 이면 원래 입하 LOT 번호, 아니면 null. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "receivedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "새 흐름 요청만 — 입하 LOT 첫 등록(받기) 시각. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "receivedChannelCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "PDA",
+       "WEB",
+       null
+      ],
+      "description": "새 흐름 요청만 — 첫 등록 채널(작업자 단말이면 PDA, 계정이면 WEB). 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "supplierName": {
+      "type": "string",
+      "description": "새 흐름 요청만 — 입하 LOT 의 공급사 이름. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "inboundLotVersionNo": {
+      "type": "integer",
+      "description": "상세·새 흐름 요청만 — 입하 LOT 의 versionNo(분리 :split-lots 의 본문 versionNo). 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "nextResultSeqNo": {
+      "type": "integer",
+      "description": "상세·새 흐름 요청만 — 다음 결과가 받을 순번(남은 결과·지운 결과 중 최대 + 1 · 지운 번호는 다시 쓰지 않는다)"
+     },
+     "confirmedByName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "상세·새 흐름 요청만 — 판정 확정한 사람. 확정 전 null. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "nonconformanceId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "상세·새 흐름 요청만 — 불합격 확정으로 생긴 부적합(취소된 것 제외), 없으면 null. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "nonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "상세·새 흐름 요청만 — 그 부적합 번호. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
      }
     },
     "required": [
@@ -9668,7 +9709,8 @@
      "lotNo",
      "lotQty",
      "package",
-     "statusCode"
+     "statusCode",
+     "goodsReceived"
     ],
     "description": "입하 LOT 검사의 자재 관리 LOT 한 개. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
     "properties": {
@@ -9698,6 +9740,10 @@
       "type": "string",
       "description": "LOT 품질 상태(LOT_STATUS)",
       "x-code-key": "CD-LOT-STATUS"
+     },
+     "goodsReceived": {
+      "type": "boolean",
+      "description": "취소되지 않은 입고가 있는가. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
      }
     }
    },
@@ -9742,9 +9788,11 @@
      "purchaseOrderLineId",
      "purchaseOrderNo",
      "lineNo",
+     "orderDate",
+     "erpPurchaseOrderNo",
      "qty"
     ],
-    "description": "입하 LOT 의 P/O 배정 한 줄(참고)",
+    "description": "입하 LOT 의 P/O 배정 한 줄(참고 · logistics InboundLotPoAllocation 과 같은 모양)",
     "properties": {
      "purchaseOrderLineId": {
       "type": "integer",
@@ -9756,6 +9804,16 @@
      "lineNo": {
       "type": "integer"
      },
+     "orderDate": {
+      "type": "string",
+      "format": "date"
+     },
+     "erpPurchaseOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
      "qty": {
       "type": "number"
      }
@@ -9766,7 +9824,7 @@
     "required": [
      "inspectionResultId",
      "inspectionResultNo",
-     "inspectionRound",
+     "seqNo",
      "confirmCycle",
      "statusCode",
      "overallJudgmentCode",
@@ -9778,7 +9836,8 @@
      "inspectorName",
      "matchedLotIds",
      "matchedLotNos",
-     "versionNo"
+     "versionNo",
+     "defectNames"
     ],
     "description": "입하 LOT 검사의 결과 한 줄. 회차가 아니라 순번이다(inspectionRound = 결과 순번, 지운 번호는 다시 쓰지 않는다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10",
     "properties": {
@@ -9789,9 +9848,9 @@
      "inspectionResultNo": {
       "type": "string"
      },
-     "inspectionRound": {
+     "seqNo": {
       "type": "integer",
-      "description": "결과 순번(1, 2, …)"
+      "description": "결과 순번(1, 2, … · 물리 inspection_round) — 지운 순번은 다시 쓰지 않는다. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
      },
      "confirmCycle": {
       "type": [
@@ -9824,12 +9883,22 @@
      "heldQty": {
       "type": "number"
      },
+     "defectNames": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "이 결과의 불량 기록 불량 유형 이름(중복 없이). 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
      "inspectedAt": {
       "type": "string",
       "format": "date-time"
      },
      "inspectorName": {
-      "type": "string"
+      "type": [
+       "string",
+       "null"
+      ]
      },
      "matchedLotIds": {
       "type": "array",
@@ -9849,6 +9918,72 @@
      "versionNo": {
       "type": "integer",
       "description": "PUT·DELETE 의 If-Match"
+     }
+    }
+   },
+   "InspectionRequestEvent": {
+    "type": "object",
+    "required": [
+     "occurredAt",
+     "eventCode",
+     "actorName",
+     "detail",
+     "inspectionResultId",
+     "summaryBefore",
+     "summaryAfter",
+     "reason"
+    ],
+    "description": "검사 이력의 변경 이력 한 줄(피처 005 R-11).",
+    "properties": {
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "eventCode": {
+      "type": "string",
+      "description": "REQUESTED(요청 생성) 또는 INSPECTION_REQUEST_EVENT_TYPE 값 — RESULT_ADDED·RESULT_UPDATED·RESULT_DELETED·CONFIRMED·CONFIRM_CANCELLED·REOPENED_BY_REWORK·SKIPPED·SKIP_VOIDED·SPLIT_OUT·SPLIT_IN·CANCELLED_BY_REOPEN",
+      "x-code-key": "CD-INSPECTION-REQUEST-EVENT-TYPE"
+     },
+     "actorName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "detail": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "서버가 만든 한 줄 — 결과 이벤트는 「결과 1 기록 — 합격 · 검사 200 · 매칭 0001, 0002」(매칭은 LOT 번호 끝 4자리), 그 밖은 사유"
+     },
+     "inspectionResultId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "결과 이벤트의 대상 결과 — 지운 결과도 id 를 남긴다"
+     },
+     "summaryBefore": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "바뀌기 전 요약(결과면 순번 inspectionRound·판정·수량·매칭 LOT)"
+     },
+     "summaryAfter": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "바뀐 뒤 요약"
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ]
      }
     }
    }

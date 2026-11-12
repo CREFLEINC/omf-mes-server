@@ -1,13 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { InspectionRequestEventLine, inspectionRequestEventLines } from './iqc-request-events';
 
-/**
- * 이력 한 줄의 종류 — 전달(의뢰 생성) · 결과 저장 · 결과 확정 · LOT 상태 전이, 그리고 입하 LOT 검사의 변경 이력
- * (`quality.inspection_request_event` 의 유형 그대로 — 결과 추가·수정·삭제·확정·취소·생략·분리 등 · 피처 005 R-11).
- */
-export type InspectionHistoryEventCode = 'REQUESTED' | 'RESULT_SAVED' | 'RESULT_CONFIRMED' | 'LOT_STATUS_CHANGED' | string;
+/** 이력 한 줄의 종류 — 전달(의뢰 생성) · 결과 저장 · 결과 확정 · LOT 상태 전이. */
+export type InspectionHistoryEventCode = 'REQUESTED' | 'RESULT_SAVED' | 'RESULT_CONFIRMED' | 'LOT_STATUS_CHANGED';
 
 export interface InspectionHistoryEvent {
   occurredAt: string;
@@ -24,11 +21,6 @@ export interface InspectionHistoryEvent {
   newStatusCode?: string;
   transitionCode?: string;
   lotNo?: string;
-  /** 변경 이력 줄 — 대상 결과 id(지운 결과도) · 전·후 요약 · 사유. */
-  inspectionResultId?: number;
-  summaryBefore?: Prisma.JsonValue;
-  summaryAfter?: Prisma.JsonValue;
-  reason?: string;
 }
 
 export interface InspectionHistory {
@@ -38,6 +30,8 @@ export interface InspectionHistory {
   /** 앞 단계가 넘긴 문서 — IQC 입하(LOT·입하 번호) · PQC 작업지시 · OQC 출하 지시. */
   source: { targetTypeCode: string; targetId: number; documentNo?: string; lotNo?: string };
   events: InspectionHistoryEvent[];
+  /** 입하 LOT 검사의 변경 이력(피처 005 R-11) — 입하 LOT 가 없는 요청은 빈 배열. */
+  requestEvents: InspectionRequestEventLine[];
 }
 
 const INSPECTION_RESULT = 'INSPECTION_RESULT';
@@ -90,16 +84,6 @@ export class InspectionHistoryService {
       },
     });
 
-    // 변경 이력은 입하 LOT 를 가진 IQC 요청만 쌓는다(피처 005 R-11).
-    const changes = (request.inbound_lot_id ?? null) === null ? [] : await this.prisma.inspection_request_event.findMany({
-      where: { inspection_request_id: request.inspection_request_id },
-      orderBy: { inspection_request_event_id: 'asc' },
-      select: {
-        event_type_code: true, inspection_result_id: true, summary_before: true, summary_after: true, reason: true, occurred_at: true,
-        actor_user: { select: { user_name: true } }, actor_worker: { select: { worker_name: true } },
-      },
-    });
-
     const events: InspectionHistoryEvent[] = [
       { occurredAt: request.requested_at.toISOString(), eventTypeCode: 'REQUESTED' } satisfies InspectionHistoryEvent,
       ...results.flatMap((row): InspectionHistoryEvent[] => {
@@ -126,15 +110,6 @@ export class InspectionHistoryService {
         lotNo: row.lot.lot_no,
         ...actorOf(row.changed_worker?.worker_name ?? row.app_user?.user_name),
       })),
-      ...changes.map((row): InspectionHistoryEvent => ({
-        occurredAt: row.occurred_at.toISOString(),
-        eventTypeCode: row.event_type_code,
-        ...actorOf(row.actor_worker?.worker_name ?? row.actor_user?.user_name),
-        ...(row.inspection_result_id === null ? {} : { inspectionResultId: Number(row.inspection_result_id) }),
-        ...(row.summary_before === null ? {} : { summaryBefore: row.summary_before }),
-        ...(row.summary_after === null ? {} : { summaryAfter: row.summary_after }),
-        ...(row.reason === null ? {} : { reason: row.reason }),
-      })),
     ].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
 
     return {
@@ -148,6 +123,7 @@ export class InspectionHistoryService {
         ...(request.lot === null ? {} : { lotNo: request.lot.lot_no }),
       },
       events,
+      requestEvents: (request.inbound_lot_id ?? null) === null ? [] : await inspectionRequestEventLines(this.prisma, request),
     };
   }
 

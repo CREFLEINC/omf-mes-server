@@ -42,8 +42,9 @@ function expectShape(validate: ValidateFunction, body: unknown): void {
   expect(validate.errors ?? []).toEqual([]);
 }
 
-interface ResultRow { inspectionResultId: number; inspectionRound: number; confirmCycle: number | null; matchedLotIds: number[]; matchedLotNos: string[]; versionNo: number }
-interface IqcLot { requestId: number; inboundLotId: number; inboundLotNo: string; lots: IssuedMaterialLot[] }
+interface ResultRow { inspectionResultId: number; inspectionRound: number; versionNo: number }
+interface SummaryRow { inspectionResultId: number; seqNo: number; confirmCycle: number | null; matchedLotIds: number[]; matchedLotNos: string[]; defectNames: string[]; versionNo: number }
+interface IqcLot { requestId: number; inboundLotId: number; inboundLotNo: string; supplierName: string; lots: IssuedMaterialLot[] }
 
 describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
   let app: INestApplication;
@@ -125,8 +126,8 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     const twice = await post(resultBody(iqc.requestId, { matchedLotIds: [l1, l1] })).expect(400);
     expect(twice.body.errors).toEqual([expect.objectContaining({ field: 'matchedLotIds', code: 'INVALID' })]);
 
-    const results = (await detail(iqc.requestId)).results as ResultRow[];
-    expect(results.map((row) => [row.inspectionRound, row.matchedLotIds])).toEqual([[1, []], [2, [l1, l2]], [3, [l1]]]);
+    const results = (await detail(iqc.requestId)).results as SummaryRow[];
+    expect(results.map((row) => [row.seqNo, row.matchedLotIds])).toEqual([[1, []], [2, [l1, l2]], [3, [l1]]]);
     expect(results[1].matchedLotNos).toEqual([iqc.lots[0].lotNo, iqc.lots[1].lotNo]);
   });
 
@@ -142,15 +143,20 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
   it('US3-5·FR-024 상세 — lots[]·results[]·poAllocations 참고·previewJudgmentCode=REJECTED, 기록만으로 LOT 상태는 그대로', async () => {
     const iqc = await iqcLot(2);
     await post(resultBody(iqc.requestId, { matchedLotIds: [iqc.lots[0].lotId] })).expect(201);
-    await post(resultBody(iqc.requestId, { acceptedQty: 7, rejectedQty: 3, overallJudgmentCode: 'REJECTED', matchedLotIds: [iqc.lots[1].lotId] })).expect(201);
+    await post(resultBody(iqc.requestId, {
+      acceptedQty: 7, rejectedQty: 3, overallJudgmentCode: 'REJECTED', matchedLotIds: [iqc.lots[1].lotId],
+      defects: [{ defectCodeId: Number(ids.defectCode), defectQty: 3 }],
+    })).expect(201);
 
     const body = await detail(iqc.requestId);
     expect(body).toMatchObject({
       targetTypeCode: 'INBOUND_LOT', inboundLotId: iqc.inboundLotId, inboundLotNo: iqc.inboundLotNo, lotCount: 2, confirmCycle: 1,
-      previewJudgmentCode: 'REJECTED', poAllocations: [], unallocatedQty: 20, statusCode: 'IN_PROGRESS',
+      previewJudgmentCode: 'REJECTED', poAllocations: [], unallocatedQty: 20, statusCode: 'IN_PROGRESS', nextResultSeqNo: 3,
+      splitFromInboundLotNo: null, receivedChannelCode: 'PDA', supplierName: iqc.supplierName, receivedAt: expect.any(String),
+      inboundLotVersionNo: expect.any(Number), confirmedByName: null, nonconformanceId: null, nonconformanceNo: null,
     });
-    expect(body.lots).toEqual(iqc.lots.map((lot) => ({ lotId: lot.lotId, lotNo: lot.lotNo, lotQty: 10, package: null, statusCode: 'INSPECTION_PENDING' })));
-    expect((body.results as ResultRow[]).map((row) => row.confirmCycle)).toEqual([1, 1]);
+    expect(body.lots).toEqual(iqc.lots.map((lot) => ({ lotId: lot.lotId, lotNo: lot.lotNo, lotQty: 10, package: null, statusCode: 'INSPECTION_PENDING', goodsReceived: false })));
+    expect((body.results as SummaryRow[]).map((row) => [row.confirmCycle, row.defectNames])).toEqual([[1, []], [1, ['결과목록불량']]]);
     expect(await lotStatuses(iqc)).toEqual(['INSPECTION_PENDING', 'INSPECTION_PENDING']);
     expect(await prisma.lot_status_event.count({ where: { lot_id: { in: iqc.lots.map((lot) => BigInt(lot.lotId)) }, source_document_type_code: 'INSPECTION_RESULT' } })).toBe(0);
 
@@ -165,6 +171,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     expectShape(schemaOf('/quality/inspection-requests', 'get', 200), listed.body);
     expect(listed.body.items).toEqual([expect.objectContaining({
       inspectionRequestId: iqc.requestId, inboundLotId: iqc.inboundLotId, inboundLotNo: iqc.inboundLotNo, lotCount: 3,
+      previewJudgmentCode: null, supplierName: iqc.supplierName, receivedChannelCode: 'PDA', splitFromInboundLotNo: null,
     })]);
     expect(listed.body.items[0]).not.toHaveProperty('overallJudgmentCode');
     expect(listed.body.items[0]).not.toHaveProperty('confirmedAt');
@@ -181,7 +188,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
 
     const updated = await put(created.inspectionResultId, created.versionNo, { acceptedQty: 10, rejectedQty: 0, overallJudgmentCode: 'ACCEPTED', defects: [], matchedLotIds: [l1, l2] }).expect(200);
     expectShape(schemaOf('/quality/inspection-results/{inspectionResultId}', 'put', 200), updated.body);
-    const [row] = (await detail(iqc.requestId)).results as ResultRow[];
+    const [row] = (await detail(iqc.requestId)).results as SummaryRow[];
     expect(row).toMatchObject({ matchedLotIds: [l1, l2], overallJudgmentCode: 'ACCEPTED', acceptedQty: 10, versionNo: created.versionNo + 1 });
 
     const id = BigInt(created.inspectionResultId);
@@ -193,15 +200,16 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
 
     const history = await get(`${REQUESTS}/${String(iqc.requestId)}/history`).expect(200);
     expectShape(schemaOf('/quality/inspection-requests/{inspectionRequestId}/history', 'get', 200), history.body);
-    const changes = (history.body.events as { eventTypeCode: string; inspectionResultId?: number; summaryBefore?: Record<string, unknown>; summaryAfter?: Record<string, unknown>; actorName?: string }[])
-      .filter((event) => event.eventTypeCode.startsWith('RESULT_') && event.eventTypeCode !== 'RESULT_SAVED' && event.eventTypeCode !== 'RESULT_CONFIRMED');
-    expect(changes.map((event) => event.eventTypeCode)).toEqual(['RESULT_ADDED', 'RESULT_UPDATED', 'RESULT_DELETED']);
+    const events = history.body.requestEvents as { eventCode: string; inspectionResultId: number | null; summaryBefore: Record<string, unknown> | null; summaryAfter: Record<string, unknown> | null; actorName: string | null; detail: string | null }[];
+    expect(events.map((event) => event.eventCode)).toEqual(['REQUESTED', 'RESULT_ADDED', 'RESULT_UPDATED', 'RESULT_DELETED']);
+    const changes = events.slice(1);
+    expect(changes[1].detail).toBe(`결과 1 수정 — 합격 · 검사 10 · 매칭 ${iqc.lots[0].lotNo.slice(-4)}, ${iqc.lots[1].lotNo.slice(-4)}`);
     expect(changes.every((event) => event.inspectionResultId === created.inspectionResultId && event.actorName === `${PREFIX} ALL`)).toBe(true);
     expect(changes[0].summaryAfter).toMatchObject({ inspectionRound: 1, overallJudgmentCode: 'REJECTED', matchedLotIds: [l1] });
     expect(changes[1].summaryBefore).toMatchObject({ overallJudgmentCode: 'REJECTED', rejectedQty: 1, matchedLotIds: [l1] });
     expect(changes[1].summaryAfter).toMatchObject({ overallJudgmentCode: 'ACCEPTED', rejectedQty: 0, matchedLotIds: [l1, l2] });
     expect(changes[2].summaryBefore).toMatchObject({ inspectionRound: 1, matchedLotIds: [l1, l2] });
-    expect(changes[2]).not.toHaveProperty('summaryAfter');
+    expect(changes[2].summaryAfter).toBeNull();
   });
 
   it('US3-6 순번 = 최대 + 1 — 마지막 결과를 지워도 그 번호를 다시 쓰지 않는다', async () => {
@@ -210,6 +218,8 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     const second = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
     expect(second.inspectionRound).toBe(2);
     await remove(second.inspectionResultId, second.versionNo).expect(204);
+    // 상세의 다음 순번도 지운 번호를 건너뛴다 — 화면이 「결과 n」을 서버와 같게 그린다.
+    expect((await detail(iqc.requestId)).nextResultSeqNo).toBe(3);
     const third = (await post(resultBody(iqc.requestId)).expect(201)).body as ResultRow;
     expect(third.inspectionRound).toBe(3);
   });
@@ -266,6 +276,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     expect((await remove(draft.inspectionResultId, draft.versionNo).expect(409)).body).toMatchObject({ code: 'INVALID_STATE' });
     const listed = await get(`${REQUESTS}?inboundLotId=${String(iqc.inboundLotId)}`).expect(200);
     expect(listed.body.items[0]).toMatchObject({ overallJudgmentCode: 'ACCEPTED', confirmedAt: expect.any(String) });
+    expect(await detail(iqc.requestId)).toMatchObject({ confirmedByName: `${PREFIX} ALL`, nonconformanceId: null });
   });
 
   it('권한 W-01-01 — 없으면 결과 추가·수정·삭제 403', async () => {
@@ -303,7 +314,7 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     const { inboundLot, lots } = await issueAndReceive(fx, { plantId: Number(ids.plant), supplierId: Number(supplier.partner_id), itemId: Number(ids.item), lotQty: 10, lotCount });
     const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
     if (closed.iqcRequestId === null) throw new Error('입하 마감이 IQC 요청을 세우지 않았다');
-    return { requestId: closed.iqcRequestId, inboundLotId: inboundLot.inboundLotId, inboundLotNo: inboundLot.inboundLotNo, lots };
+    return { requestId: closed.iqcRequestId, inboundLotId: inboundLot.inboundLotId, inboundLotNo: inboundLot.inboundLotNo, supplierName: supplier.partner_name, lots };
   }
 
   /** 이전된 옛 IQC 요청 — 대상 LOT·`lot_id` 있음·`inbound_lot_id` 만 채움(데이터 이전 3). */
