@@ -4634,7 +4634,7 @@
      "logistics"
     ],
     "summary": "입하 목록",
-    "description": "근거: W-01-03 · M-01-06",
+    "description": "근거: W-01-03 · M-01-06. ⚠ 같은 검사를 쓰는 입하 줄 목록(GET /logistics/inbound-receipt-lines · :supplier-counts — P-01-01 라벨 발행 대기, 장부 P-118)은 deprecated 다 — 피처 005 새 흐름의 입하 줄은 라벨 대기가 아니라(자재 관리 LOT 이 발행 묶음에서 라벨과 함께 선다) 대상이 생기지 않는다. 이전 데이터 줄만 나온다",
     "parameters": [
      {
       "name": "receiptDateFrom",
@@ -4776,7 +4776,8 @@
      "logistics"
     ],
     "summary": "입하 등록",
-    "description": "입하·라인·자재 LOT 이 한 트랜잭션으로 만들어진다. 근거: M-01-01 §5-4 · 공유계약 B-8",
+    "deprecated": true,
+    "description": "⛔ 닫힘(피처 005 FR-036 · R-6) — 언제나 409 STATE_LOCKED「입하 LOT 받기를 쓰세요」. 새 입하는 POST /logistics/inbound-lots:receive 다. 닫기 전에 성공한 요청을 같은 Idempotency-Key 로 다시 보내면 저장된 201 을 그대로 받는다. 아래는 닫기 전 동작이다. 입하·라인·자재 LOT 이 한 트랜잭션으로 만들어진다. 근거: M-01-01 §5-4 · 공유계약 B-8",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4854,11 +4855,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "닫힘 — errors[].code=STATE_LOCKED「입하 LOT 받기를 쓰세요」(피처 005 FR-036). 같은 Idempotency-Key 로 다른 본문이 오면 conflictCause 봉투다",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -5204,7 +5212,8 @@
      "logistics"
     ],
     "summary": "초과 입하 분리 등록",
-    "description": "정량분과 초과분을 한 트랜잭션으로 등록한다. 근거: W-01-03 §5-1 · §5-4",
+    "deprecated": true,
+    "description": "⛔ 닫힘(피처 005 FR-036 · R-6) — 언제나 409 STATE_LOCKED「입하 LOT 받기를 쓰세요」. 새 입하는 POST /logistics/inbound-lots:receive 다. 닫기 전에 성공한 요청을 같은 Idempotency-Key 로 다시 보내면 저장된 201 을 그대로 받는다. 아래는 닫기 전 동작이다. 정량분과 초과분을 한 트랜잭션으로 등록한다. 근거: W-01-03 §5-1 · §5-4",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5265,6 +5274,23 @@
         }
        }
       }
+     },
+     "409": {
+      "description": "닫힘 — errors[].code=STATE_LOCKED「입하 LOT 받기를 쓰세요」(피처 005 FR-036). 같은 Idempotency-Key 로 다른 본문이 오면 conflictCause 봉투다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
+        }
+       }
+      }
      }
     },
     "x-internal-note": "세 갈래(BOTH·NORMAL_ONLY·EXCESS_ONLY)가 모두 화면의 버튼이다. 부분 실패를 허용하지 않는다 — 화면이 「한 트랜잭션」이라고 못박았다(W-01-03 §5-4)."
@@ -5276,7 +5302,8 @@
      "logistics"
     ],
     "summary": "줄마다 입하 한 건 등록",
-    "description": "입하 등록과 같은 본문(헤더 + 줄 여럿)으로 줄마다 입하 한 건을 세운다 — 입하번호가 줄마다 따로 붙는다. 헤더 값(공급사·공장·일시·납품서·차량·예외 유형)은 모든 건이 같다. 모든 건이 한 트랜잭션이다 — 하나라도 막히면 아무것도 서지 않는다. 검사는 입하 등록과 같고 400 의 칸은 요청 기준이다(lines.{i}.… — 건 안의 P/O 한도도 그 줄로 짚는다). 근거: 서버 선행 · 장부 P-117",
+    "deprecated": true,
+    "description": "⛔ 닫힘(피처 005 FR-036 · R-6) — 언제나 409 STATE_LOCKED「입하 LOT 받기를 쓰세요」. 새 입하는 POST /logistics/inbound-lots:receive 다. 닫기 전에 성공한 요청을 같은 Idempotency-Key 로 다시 보내면 저장된 201 을 그대로 받는다. 아래는 닫기 전 동작이다. 입하 등록과 같은 본문(헤더 + 줄 여럿)으로 줄마다 입하 한 건을 세운다 — 입하번호가 줄마다 따로 붙는다. 헤더 값(공급사·공장·일시·납품서·차량·예외 유형)은 모든 건이 같다. 모든 건이 한 트랜잭션이다 — 하나라도 막히면 아무것도 서지 않는다. 검사는 입하 등록과 같고 400 의 칸은 요청 기준이다(lines.{i}.… — 건 안의 P/O 한도도 그 줄로 짚는다). 근거: 서버 선행 · 장부 P-117",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5345,11 +5372,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "description": "닫힘 — errors[].code=STATE_LOCKED「입하 LOT 받기를 쓰세요」(피처 005 FR-036). 같은 Idempotency-Key 로 다른 본문이 오면 conflictCause 봉투다",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }
@@ -11099,7 +11133,8 @@
      "trace"
     ],
     "summary": "LOT 등록",
-    "description": "번호 출처가 둘이다 — numberSourceCode 로 가른다.\n\nSUPPLIER(사전부착) — 스캔한 값이 그대로 번호가 된다. 같은 공장에 같은 번호가 있으면 400 이다. 재시도해도 안 풀린다 — 사람이 스캔값을 고쳐야 한다. 근거: M-01-02 §5-1 [사전부착]\n\nMES(미부착) — 번호는 서버가 매긴다. 화면은 lotNo 를 보내지 않고 201 응답으로 받는다. ⛔ 채번 충돌은 서버가 스스로 재시도한다 — 그래도 실패하면 409 이고, 다시 부르면 풀린다. 400 을 내지 않는다: 사용자가 고칠 수 있는 값이 아니기 때문이다(POST /trace/serial-numbers 와 같은 이유). 계약은 「서버가 매긴다」까지만 정하고 도출·검증 규칙은 정하지 않는다 — 34자리 고정폭만 확정이다(MLOT #16). 근거: M-01-02 §5-1 [미부착] · P-01-01 §5-2\n\n⭐ 발행 기록은 이 경로가 만들지 않는다 — 공통 계약의 POST /app/document-issues 가 이어서 만든다. LOT 이 먼저 있어야 그쪽 targets 에 담을 수 있다. 두 호출 사이가 끊기면 「LOT 은 있고 라벨 기록은 없는」 상태가 남는데, 그것은 오류가 아니라 표현 가능한 상태다 — InboundReceiptLine.lotId 가 채워지고 labelIssued 가 false 로 남는다. 근거: P-01-01 §5-2\n\n⭐ 자재 LOT 은 등록 즉시 검사 대기로 보류된다 — 화면이 보내지 않고 서버가 건다. lot_hold 행이 함께 생기고 재고는 즉시 잡히되 가용이 아니다. Release 는 IQC 합격 시점이다. 근거: MLOT #5 · M-01-02 §4",
+    "deprecated": true,
+    "description": "⛔ 입하 원천은 닫힘(피처 005 FR-036 · R-6) — sourceTypeCode=INBOUND_RECEIPT_LINE 이면 409 STATE_LOCKED「입하 LOT 받기를 쓰세요」. 이 경로가 받는 원천은 그것뿐이라 새 LOT 은 서지 않는다 — 자재 관리 LOT 은 POST /logistics/material-lot-batches 가 발행하고 POST /logistics/inbound-lots:receive 가 받는다. 닫기 전에 성공한 요청을 같은 Idempotency-Key 로 다시 보내면 저장된 201 을 그대로 받는다. 아래는 닫기 전 동작이다.\n\n번호 출처가 둘이다 — numberSourceCode 로 가른다.\n\nSUPPLIER(사전부착) — 스캔한 값이 그대로 번호가 된다. 같은 공장에 같은 번호가 있으면 400 이다. 재시도해도 안 풀린다 — 사람이 스캔값을 고쳐야 한다. 근거: M-01-02 §5-1 [사전부착]\n\nMES(미부착) — 번호는 서버가 매긴다. 화면은 lotNo 를 보내지 않고 201 응답으로 받는다. ⛔ 채번 충돌은 서버가 스스로 재시도한다 — 그래도 실패하면 409 이고, 다시 부르면 풀린다. 400 을 내지 않는다: 사용자가 고칠 수 있는 값이 아니기 때문이다(POST /trace/serial-numbers 와 같은 이유). 계약은 「서버가 매긴다」까지만 정하고 도출·검증 규칙은 정하지 않는다 — 34자리 고정폭만 확정이다(MLOT #16). 근거: M-01-02 §5-1 [미부착] · P-01-01 §5-2\n\n⭐ 발행 기록은 이 경로가 만들지 않는다 — 공통 계약의 POST /app/document-issues 가 이어서 만든다. LOT 이 먼저 있어야 그쪽 targets 에 담을 수 있다. 두 호출 사이가 끊기면 「LOT 은 있고 라벨 기록은 없는」 상태가 남는데, 그것은 오류가 아니라 표현 가능한 상태다 — InboundReceiptLine.lotId 가 채워지고 labelIssued 가 false 로 남는다. 근거: P-01-01 §5-2\n\n⭐ 자재 LOT 은 등록 즉시 검사 대기로 보류된다 — 화면이 보내지 않고 서버가 건다. lot_hold 행이 함께 생기고 재고는 즉시 잡히되 가용이 아니다. Release 는 IQC 합격 시점이다. 근거: MLOT #5 · M-01-02 §4",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -11177,11 +11212,18 @@
       }
      },
      "409": {
-      "description": "저장 충돌 — 다시 부르면 풀린다. numberSourceCode = MES 에서 서버 채번이 거듭 충돌한 경우를 포함한다",
+      "description": "입하 원천(sourceTypeCode=INBOUND_RECEIPT_LINE)은 닫힘 — errors[].code=STATE_LOCKED「입하 LOT 받기를 쓰세요」(피처 005 FR-036). 같은 Idempotency-Key 로 다른 본문이 오면 conflictCause 봉투다",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/ErrorResponse"
+          }
+         ]
         }
        }
       }

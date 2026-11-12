@@ -152,8 +152,10 @@ export class InboundReceiptLineListService {
   }
 }
 
+/** 새 흐름(입하 LOT 이 있는 줄)은 뺀다 — 자재 관리 LOT 이 발행 묶음에서 라벨과 함께 서서 라벨 대기가 없다(피처 005 계약 §7). */
 function whereOf(query: InboundReceiptLineListQuery): Prisma.inbound_receipt_lineWhereInput {
   return {
+    inbound_lot: { is: null },
     inbound_receipt: {
       status_code: { notIn: CANCEL_STATUSES },
       ...(query.supplierId === undefined ? {} : { supplier_id: query.supplierId }),
