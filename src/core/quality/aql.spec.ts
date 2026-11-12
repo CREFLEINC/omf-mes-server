@@ -17,6 +17,13 @@ describe('aqlPlan — KS Q ISO 2859-1 보통 검사 1회 샘플링(omf-all-aroun
     [600000, 'G-III', 0.65, { codeLetter: 'R', sampleSize: 2000, acceptanceNumber: 21, rejectionNumber: 22 }],
     // ↑ 끝 — R · 1.0 은 Q(1250) 의 21/22 (LOT 50만 초과 · G-III → R)
     [600000, 'G-III', 1, { codeLetter: 'R', sampleSize: 1250, acceptanceNumber: 21, rejectionNumber: 22 }],
+    // A · 10 은 ↓(위가 없다) — B · 10 도 ↓ 라 C(5) 의 1/2. LOT 5 면 전수
+    [8, 'G-II', 10, { codeLetter: 'A', sampleSize: 5, acceptanceNumber: 1, rejectionNumber: 2 }],
+    [5, 'G-II', 10, { codeLetter: 'A', sampleSize: 5, acceptanceNumber: 1, rejectionNumber: 2 }],
+    // ↑ — B · 6.5 는 위 A(2) 의 0/1
+    [12, 'G-II', 6.5, { codeLetter: 'B', sampleSize: 2, acceptanceNumber: 0, rejectionNumber: 1 }],
+    // R · 0.015 는 ↑(아래가 없다) — Q · 0.015 도 ↑ 라 P(800) 의 0/1
+    [600000, 'G-III', 0.015, { codeLetter: 'R', sampleSize: 800, acceptanceNumber: 0, rejectionNumber: 1 }],
     // 특별 검사 수준 — LOT 770 · S-3 → E(13)
     [770, 'S-3', 1, { codeLetter: 'E', sampleSize: 13, acceptanceNumber: 0, rejectionNumber: 1 }],
   ])('LOT %d · %s · AQL %d', (lot, level, aql, expected) => {

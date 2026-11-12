@@ -184,6 +184,13 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         judgment: judgment as string,
         reason: body.judgmentChangeReason,
+        measurements: async () =>
+          (
+            await tx.inspection_measurement.findMany({
+              where: { inspection_result_id: resultId },
+              select: { inspection_item_spec_id: true, judgment_code: true },
+            })
+          ).map((m) => ({ inspectionItemSpecId: m.inspection_item_spec_id, judgmentCode: m.judgment_code })),
       });
       const remarks =
         changeReason === undefined ? body.remarks : remarksWithJudgmentChange(changeReason, body.remarks ?? result.remarks);

@@ -46,7 +46,8 @@ const CODE_LETTER_TABLE: readonly (readonly [number, string])[] = [
 
 /**
  * 표 2-A 의 대각선 값 — 대각선 번호 = 시료 문자 순번 + AQL 순번(0.010 이 0).
- * 14 미만은 ↓, 15 는 ↑, 16 은 ↓, 24 초과는 ↑ 다.
+ * 14 미만은 ↓, 15 는 ↑, 16 은 ↓, 24 초과는 ↑ 다. 단 표 끝은 반대로 적혀 있다 — 맨 윗줄 A 의 15 칸(AQL 10)은
+ * 위가 없어 ↓, 맨 아랫줄 R 의 16 칸(AQL 0.015)은 아래가 없어 ↑.
  */
 const DIAGONAL: Readonly<Record<number, readonly [number, number] | 'DOWN' | 'UP'>> = {
   14: [0, 1],
@@ -90,8 +91,9 @@ export function aqlPlan(lotSize: number, level: string, aql: number): AqlPlan | 
   let index = LETTERS.indexOf(codeLetter as (typeof LETTERS)[number]);
   for (;;) {
     const cell = cellOf(index + aqlIndex);
-    if (cell === 'DOWN') index += 1;
-    else if (cell === 'UP') index -= 1;
+    const last = LETTERS.length - 1;
+    if ((cell === 'DOWN' && index < last) || (cell === 'UP' && index === 0)) index += 1;
+    else if (cell === 'UP' || cell === 'DOWN') index -= 1;
     else {
       return {
         codeLetter,
