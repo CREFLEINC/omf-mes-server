@@ -5,7 +5,7 @@ import type { InboundLotActor } from '../../core/lot';
 /** 입하 LOT 이력(`trace.inbound_lot_event` · `INBOUND_LOT_EVENT_TYPE`). 행위자가 둘 다 비면 시스템이다. */
 export type InboundLotEventCode =
   | 'CREATED_BY_RECEIVE' | 'LOTS_REGISTERED' | 'LOTS_UNREGISTERED' | 'SUPPLIER_LOT_SET' | 'VOIDED'
-  | 'RECEIPT_CLOSED' | 'RECEIPT_REOPENED';
+  | 'RECEIPT_CLOSED' | 'RECEIPT_REOPENED' | 'SPLIT';
 
 /**
  * `LOTS_REGISTERED.summary.lots[]` 한 줄. 해제가 `batchId` 로 원천 묶음을 되돌리고, 상세가 `fromSupplierLabel`·등록 시각을
