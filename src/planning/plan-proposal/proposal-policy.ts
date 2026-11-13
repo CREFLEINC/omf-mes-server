@@ -108,6 +108,12 @@ export function proposedPlanDate(plannedStartDate: string | null, today: string)
   return plannedStartDate !== null && plannedStartDate >= today ? plannedStartDate : today;
 }
 
+/** 작성중 계획의 계획일 — 지났으면 오늘. 오늘로 옮긴 날짜는 시스템이 정한 날이다. `YYYY-MM-DD` 라 문자열 비교가 날짜 비교다. */
+export const draftPlanDate = (date: string, today: string): string => (date < today ? today : date);
+
+/** 보정 탐색에 쓴 근무일 판정의 키 — 읽기(`proposal-reader.ts`)와 계산이 같은 키로 찾는다. */
+export const calendarKey = (plantId: bigint, lineId: bigint | null, start: string): string => `${plantId}:${lineId ?? ''}:${start}`;
+
 /** 새 계획은 `new-1`…, 작성중 계획은 `plan-{id}` — 저장된 번호·id 와 섞이지 않는 임시 식별자. */
 export const newPlanKey = (index: number): string => `new-${index + 1}`;
 export const draftPlanKey = (productionPlanId: bigint): string => `plan-${String(productionPlanId)}`;

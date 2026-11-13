@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { toDateString } from '../../common/master';
+import { AdjustedPlanDate, adjustPlanDate, keepUserDate } from '../../core/calendar/working-day';
 import { FgResolution, FgSource, fgLocationOf } from '../../core/erp-warehouse/fg-location';
 import { checkCalibration, checkDoubleBooked, checkMoldLife, localToday } from '../../production/work-order/validation';
 import { defaultBomOf } from '../production-plan/master-choice';
@@ -14,6 +15,8 @@ import {
   ProposalStatus,
   basisHash,
   blockIssue,
+  calendarKey,
+  draftPlanDate,
   draftPlanKey,
   masterIssue,
   newPlanKey,
@@ -47,6 +50,9 @@ export interface ProposalPlan {
   source: 'NEW' | 'EXISTING_DRAFT';
   saved?: PlanRow;
   planDate: string;
+  /** SYSTEM 이면 휴일 보정을 했고 basis.calendar 가 보정에 쓴 날을 본다. USER 는 보정하지 않고 경고만 낸다. */
+  planDateSourceCode: 'SYSTEM' | 'USER';
+  dated: AdjustedPlanDate;
   proposedQty: Prisma.Decimal;
   uomId: bigint;
   bom: { id: bigint; code: string; version: number };
@@ -62,6 +68,7 @@ export interface ProposalBasis {
   bom: string;
   routing: string;
   resources: string;
+  calendar: string;
 }
 
 export interface Proposal {
@@ -95,9 +102,9 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   }));
   const { confirmedQty, draftQty } = sumPlanQty(qtyFacts);
   const quantities = planQuantities(order.order_qty, confirmedQty, draftQty);
-  const basis = basisOf(facts, order, saved);
   const result = (kind: ProposalKind, plans: ProposalPlan[], issues: ProposalIssue[]): Proposal => {
     const reasons = reasonsOf([...issues, ...plans.flatMap((plan) => [...plan.issues, ...plan.workOrders.flatMap((workOrder) => workOrder.issues)])]);
+    const basis = { ...basisOf(facts, order, saved), calendar: calendarBasis(plans) };
     return { order, kind, status: statusOf(kind, order.status_code === CANCELLED, reasons), reasons, quantities, plans, issues, basis, fg: fgOf(facts, order) };
   };
 
@@ -118,9 +125,14 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   const masterIssues: ProposalIssue[] = bomId === null ? [masterIssue('BOM_DEFAULT_REQUIRED')] : [];
   const today = localDate(now, order.plant.timezone_code);
   const targets = choice.kind === 'NEW_PLAN'
-    ? [{ key: newPlanKey(0), saved: undefined, planDate: proposedPlanDate(toDateString(order.planned_start_date), today), qty: choice.qty, lineId: null }]
+    ? [{ key: newPlanKey(0), saved: undefined, ...datedOf(facts, order, null, proposedPlanDate(toDateString(order.planned_start_date), today), 'SYSTEM'), qty: choice.qty, lineId: null }]
     // 작성중 계획의 계획일이 지났으면 오늘로 낸다 — 확정은 지난 계획일을 받지 않는다(저장값은 saved 에 남는다).
-    : choice.drafts.map((plan) => ({ key: draftPlanKey(plan.production_plan_id), saved: plan, planDate: laterOf(toDateString(plan.plan_date) as string, today), qty: plan.planned_qty, lineId: plan.planned_line_id }));
+    : choice.drafts.map((plan) => {
+        const savedDate = toDateString(plan.plan_date) as string;
+        const start = draftPlanDate(savedDate, today);
+        const source = start !== savedDate || plan.plan_date_source_code === 'SYSTEM' ? 'SYSTEM' : 'USER';
+        return { key: draftPlanKey(plan.production_plan_id), saved: plan, ...datedOf(facts, order, plan.planned_line_id, start, source), qty: plan.planned_qty, lineId: plan.planned_line_id };
+      });
 
   const routed = targets.map((target) => ({ target, routing: routingFor(facts, order, target.saved?.routing_id ?? null) }));
   for (const { routing } of routed) {
@@ -133,14 +145,19 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   const plans = routed.map(({ target, routing }): ProposalPlan => {
     const routingRow = facts.routings.get(routing.routingId as bigint);
     const workOrders = workOrdersOf(facts, order, routing.routingId as bigint, target.planDate, target.qty, target.lineId, now);
-    const issues = quantities.remainingQty.lt(0)
-      ? [blockIssue('PLAN_QTY_EXCEEDS_ORDER', `작성중 계획을 더하면 ERP W/O 수량을 넘습니다 — 잔량 ${quantities.remainingQty.toString()}. 계획 수량을 줄이세요.`, 'plannedQty')]
-      : [];
+    const issues = [
+      ...(quantities.remainingQty.lt(0)
+        ? [blockIssue('PLAN_QTY_EXCEEDS_ORDER', `작성중 계획을 더하면 ERP W/O 수량을 넘습니다 — 잔량 ${quantities.remainingQty.toString()}. 계획 수량을 줄이세요.`, 'plannedQty')]
+        : []),
+      ...planDateIssues(target.dated),
+    ];
     return {
       key: target.key,
       source: target.saved === undefined ? 'NEW' : 'EXISTING_DRAFT',
       ...(target.saved === undefined ? {} : { saved: target.saved }),
       planDate: target.planDate,
+      planDateSourceCode: target.planDateSourceCode,
+      dated: target.dated,
       proposedQty: target.qty,
       uomId: order.uom_id,
       bom: { id: bom.bom_id, code: bom.bom_code, version: bom.bom_version },
@@ -219,7 +236,7 @@ function workOrdersOf(
  * 변경 감지 값. 판(`version_no`)을 올리지 않는 칸도 잡게 기준의 «내용»을 해시한다. 다른 W/O 의 배정처럼 수시로 바뀌는 것은 넣지 않는다.
  * ⛔ 작성중 계획의 판은 반드시 넣는다 — 확정이 If-Match 없이 이 값으로 저장 충돌을 막는다.
  */
-function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[]): ProposalBasis {
+function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[]): Omit<ProposalBasis, 'calendar'> {
   const routings = facts.usableRoutings.get(pairKey(order.plant_id, order.item_id)) ?? [];
   const routingIds = new Set([...routings.map((row) => row.routing_id), ...saved.filter((plan) => plan.status_code !== CONFIRMED).map((plan) => plan.routing_id)]);
   const maps = facts.maps.get(pairKey(order.plant_id, order.item_id)) ?? [];
@@ -271,6 +288,31 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
   };
 }
 
+/** 시스템이 정한 날짜만 보정한다. 판정은 읽기가 같은 키로 미리 읽어 두었다. */
+function datedOf(facts: ProposalFacts, order: OrderRow, lineId: bigint | null, start: string, source: 'SYSTEM' | 'USER') {
+  const days = facts.calendar.get(calendarKey(order.plant_id, lineId, start));
+  if (days === undefined) throw new Error(`근무일 판정을 읽지 않았다: ${calendarKey(order.plant_id, lineId, start)}`);
+  const dated = source === 'SYSTEM' ? adjustPlanDate(days) : keepUserDate(days[0]);
+  return { planDate: dated.planDate, planDateSourceCode: source, dated };
+}
+
+/** 휴일·판정 불가는 확정을 막지 않는다 — WARN 이다. */
+function planDateIssues(dated: AdjustedPlanDate): ProposalIssue[] {
+  if (dated.day.statusCode === 'HOLIDAY') {
+    const why = dated.adjustment.outcomeCode === 'NOT_ADJUSTED_SEARCH_LIMIT' ? ` 다음 ${dated.adjustment.searchLimitDays}일 안에 휴일이 아닌 날이 없어 옮기지 않았습니다.` : '';
+    return [warnIssue('PLAN_DATE_HOLIDAY', `계획일 ${dated.planDate} 은 휴일입니다.${why} 그대로 확정할 수 있습니다.`, 'planDate')];
+  }
+  if (dated.day.statusCode === 'UNDETERMINED') {
+    return [warnIssue('PLAN_DATE_UNDETERMINED', `계획일 ${dated.planDate} 이 근무일인지 판정할 수 없습니다 — 작업 캘린더에 날짜가 없고 공장 근무일 정책이 없습니다.`, 'planDate')];
+  }
+  return [];
+}
+
+/** 시스템이 정한 날짜의 보정에 쓴 날만 — 사용자가 고른 날짜는 휴일이 돼도 경고만 바뀐다. */
+function calendarBasis(plans: readonly ProposalPlan[]): string {
+  return basisHash(plans.filter((plan) => plan.planDateSourceCode === 'SYSTEM').map((plan) => [plan.key, plan.dated.usedDays.map((day) => [day.date, day.statusCode])]));
+}
+
 /** 같은 Routing 을 쓰는 작성중 계획이 여럿이면 같은 기준정보 사유가 거듭 생긴다. */
 function dedupe(issues: readonly ProposalIssue[]): ProposalIssue[] {
   const seen = new Set<string>();
@@ -278,6 +320,3 @@ function dedupe(issues: readonly ProposalIssue[]): ProposalIssue[] {
 }
 
 const compare = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0);
-
-/** `YYYY-MM-DD` 라 문자열 비교가 날짜 비교다. */
-const laterOf = (date: string, today: string): string => (date < today ? today : date);

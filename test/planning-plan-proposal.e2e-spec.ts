@@ -53,6 +53,10 @@ interface Proposal {
     bomId: number;
     routingId: number;
     plannedLineId: number | null;
+    planDateSourceCode: string;
+    planDateAdjustment: { originalDate: string; adjustedDate: string | null; outcomeCode: string; searchLimitDays: number; skippedDays: { date: string; reasonCode: string | null }[] };
+    planDateCalendar: { date: string; statusCode: string; sourceCode: string };
+    issues: { severity: string; code: string; field?: string }[];
     saved?: { versionNo: number };
     workOrders: {
       routingOperationId: number;
@@ -85,6 +89,8 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
   /** 작성중 계획 50 + 60 이 오더 100 을 넘는 오더. */
   let overOrder: (key: string) => Promise<{ orderId: bigint }>;
   let overRound = 0;
+  /** 계획이 없는 ERP W/O(품목 IT-OK) — ERP 계획 시작일을 고른다. */
+  let newOrder: (key: string, start: string) => Promise<bigint>;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -528,6 +534,123 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
   });
 
+  /**
+   * 계획일 휴일 보정 — 이 묶음만 공장에 작업 캘린더를 붙인다(앞 묶음은 캘린더·정책이 없어 판정 불가다).
+   * 공장 근무일 정책은 두지 않는다 — 캘린더에 없는 날은 판정 불가라 요일에 기대지 않는다.
+   */
+  describe('계획일 휴일 보정', () => {
+    const H = shiftDays(localToday(), 20);
+    const S = shiftDays(localToday(), 40);
+    let calendarId: bigint;
+    const setDay = (date: string, type: string, reason: string | null = null) => prisma.work_calendar_day.upsert({
+      where: { work_calendar_id_calendar_date: { work_calendar_id: calendarId, calendar_date: new Date(`${date}T00:00:00.000Z`) } },
+      create: { work_calendar_id: calendarId, calendar_date: new Date(`${date}T00:00:00.000Z`), day_type_code: type, reason_code: reason },
+      update: { day_type_code: type, reason_code: reason },
+    });
+    const draftAt = async (key: string, date: string, source: string) => {
+      const orderId = await newOrder(key, date);
+      await prisma.production_plan.create({ data: {
+        production_order_id: orderId, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date(`${date}T00:00:00.000Z`), planned_qty: 100,
+        uom_id: id.uom, bom_id: id.bomOk, routing_id: id.routingOk, status_code: 'DRAFT', plan_date_source_code: source,
+      } });
+      return orderId;
+    };
+    const savedSource = async (orderId: bigint) =>
+      (await prisma.production_plan.findMany({ where: { production_order_id: orderId }, select: { plan_date: true, plan_date_source_code: true } }))
+        .map((row) => [row.plan_date.toISOString().slice(0, 10), row.plan_date_source_code]);
+
+    beforeAll(async () => {
+      calendarId = (await prisma.work_calendar.create({ data: { calendar_code: `${PREFIX}-CAL`, calendar_name: PREFIX } })).work_calendar_id;
+      await prisma.work_calendar_application.create({ data: {
+        work_calendar_id: calendarId, target_type_code: 'PLANT', target_id: id.plant, effective_from: new Date('2026-01-01T00:00:00.000Z'),
+      } });
+      await setDay(H, 'HOLIDAY', 'PUBLIC_HOLIDAY');
+      await setDay(shiftDays(H, 1), 'HOLIDAY', 'PUBLIC_HOLIDAY');
+      await setDay(shiftDays(H, 2), 'WORKING');
+      await setDay(S, 'HOLIDAY');
+      await setDay(shiftDays(S, 1), 'HOLIDAY');
+      await setDay(shiftDays(S, 2), 'WORKING');
+    });
+
+    it('새 계획의 계획일이 휴일이면 휴일 아닌 첫날로 옮기고 원래 날짜·건너뛴 휴일을 낸다 — W/O 창도 옮긴 날이다', async () => {
+      const proposal = await proposalOf(await newOrder('HOL-NEW', H));
+      expect(proposal.plans[0]).toMatchObject({
+        planDate: shiftDays(H, 2),
+        planDateSourceCode: 'SYSTEM',
+        planDateAdjustment: { originalDate: H, adjustedDate: shiftDays(H, 2), outcomeCode: 'ADJUSTED', searchLimitDays: 31 },
+        planDateCalendar: { date: shiftDays(H, 2), statusCode: 'WORKING', sourceCode: 'PLANT_CALENDAR' },
+      });
+      expect(proposal.plans[0].planDateAdjustment.skippedDays.map((day) => [day.date, day.reasonCode])).toEqual([[H, 'PUBLIC_HOLIDAY'], [shiftDays(H, 1), 'PUBLIC_HOLIDAY']]);
+      expect(proposal.plans[0].issues.filter((issue) => issue.field === 'planDate')).toEqual([]);
+      expect(proposal.plans[0].workOrders[0].plannedStartAt.slice(0, 10)).toBe(shiftDays(H, 2));
+      expect(validator(response200('/planning/production-orders:plan-proposals', 'get'))((await propose(order['HOL-NEW']).expect(200)).body)).toBe(true);
+    });
+
+    it('제안 날짜 그대로 확정하면 출처 SYSTEM, 날짜를 고쳐 확정하면 USER 로 저장하고 결과에 판정을 싣는다', async () => {
+      const kept = await proposalOf(order['HOL-NEW']);
+      const response = await confirm(order['HOL-NEW'], bodyOf(kept)).expect(200);
+      expect(response.body.plans[0].planDateCalendar).toMatchObject({ date: shiftDays(H, 2), statusCode: 'WORKING' });
+      expect(validator(response200('/planning/production-orders/{productionOrderId}:confirm-plan-proposal', 'post'))(response.body)).toBe(true);
+      expect(await savedSource(order['HOL-NEW'])).toEqual([[shiftDays(H, 2), 'SYSTEM']]);
+
+      const changedOrder = await newOrder('HOL-EDIT', H);
+      const body = bodyOf(await proposalOf(changedOrder));
+      body.plans[0].planDate = H;
+      const changed = await confirm(changedOrder, body).expect(200);
+      expect(changed.body.plans[0].planDateCalendar).toMatchObject({ date: H, statusCode: 'HOLIDAY' });
+      expect(await savedSource(changedOrder)).toEqual([[H, 'USER']]);
+    });
+
+    it('사용자가 고른 작성중 계획일은 휴일이어도 옮기지 않고 WARN 만 낸다 — 확정을 막지 않는다', async () => {
+      const orderId = await draftAt('HOL-USER', H, 'USER');
+      const proposal = await proposalOf(orderId);
+      expect(proposal.status).toBe('CONFIRMABLE');
+      expect(proposal.plans[0]).toMatchObject({
+        planDate: H, planDateSourceCode: 'USER', planDateAdjustment: { outcomeCode: 'USER_SPECIFIED', adjustedDate: null, skippedDays: [] },
+        planDateCalendar: { statusCode: 'HOLIDAY' },
+      });
+      expect(proposal.plans[0].issues).toContainEqual(expect.objectContaining({ severity: 'WARN', code: 'PLAN_DATE_HOLIDAY', field: 'planDate' }));
+      await confirm(orderId, bodyOf(proposal)).expect(200);
+      expect(await savedSource(orderId)).toEqual([[H, 'USER']]);
+    });
+
+    it('시스템이 고른 작성중 계획일은 휴일이면 옮긴다', async () => {
+      const proposal = await proposalOf(await draftAt('HOL-SYS', H, 'SYSTEM'));
+      expect(proposal.plans[0]).toMatchObject({ planDate: shiftDays(H, 2), planDateSourceCode: 'SYSTEM', planDateAdjustment: { outcomeCode: 'ADJUSTED' } });
+    });
+
+    it('판정할 수 없는 날은 옮기지 않고 WARN PLAN_DATE_UNDETERMINED 다', async () => {
+      const date = shiftDays(H, 5);
+      const proposal = await proposalOf(await newOrder('HOL-UND', date));
+      expect(proposal.plans[0]).toMatchObject({
+        planDate: date, planDateAdjustment: { outcomeCode: 'NOT_ADJUSTED_UNDETERMINED', adjustedDate: null }, planDateCalendar: { statusCode: 'UNDETERMINED', sourceCode: 'NOT_CONFIGURED' },
+      });
+      expect(proposal.plans[0].issues).toContainEqual(expect.objectContaining({ severity: 'WARN', code: 'PLAN_DATE_UNDETERMINED', field: 'planDate' }));
+    });
+
+    it('검토 뒤 보정에 쓴 날의 판정이 바뀌면 409 calendar 이고, 다시 조회하면 새 판정으로 옮긴다', async () => {
+      const orderId = await newOrder('HOL-409', S);
+      const reviewed = await proposalOf(orderId);
+      expect(reviewed.plans[0].planDate).toBe(shiftDays(S, 2));
+      await setDay(shiftDays(S, 1), 'WORKING');
+      const response = await confirm(orderId, bodyOf(reviewed)).expect(409);
+      expect(response.body).toMatchObject({ code: 'PROPOSAL_CHANGED', proposalChanges: [expect.objectContaining({ basis: 'calendar' })] });
+      expect((await proposalOf(orderId)).plans[0].planDate).toBe(shiftDays(S, 1));
+    });
+
+    it('사용자가 고른 날의 판정만 바뀌면 409 가 아니다 — 경고만 바뀐다', async () => {
+      const orderId = await draftAt('HOL-USER-409', S, 'USER');
+      const reviewed = await proposalOf(orderId);
+      expect(reviewed.plans[0].planDateCalendar.statusCode).toBe('HOLIDAY');
+      await setDay(S, 'WORKING');
+      try {
+        await confirm(orderId, bodyOf(reviewed)).expect(200);
+      } finally {
+        await setDay(S, 'HOLIDAY');
+      }
+    });
+  });
+
   /** 쓰기 흔적 — 제안 조회·거부된 확정 앞뒤로 견준다. 번호 카운터는 전역이다(다른 검사가 동시에 돌지 않는 일꾼 DB 안). */
   async function snapshot() {
     const orders = Object.values(order);
@@ -647,11 +770,15 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     await bom(itemNoLine, 1, true);
     await routing(itemNoLine, [{ process: process20.process_id, equipment: false, mold: false }]);
 
-    const makeOrder = async (key: string, itemId: bigint, opts: { plantId?: bigint; status?: string } = {}) => {
+    const makeOrder = async (key: string, itemId: bigint, opts: { plantId?: bigint; status?: string; start?: string } = {}) => {
       order[key] = (await prisma.production_order.create({ data: {
         production_order_no: `${PREFIX}-${key}`, business_unit_id: unit.business_unit_id, plant_id: opts.plantId ?? id.plant, item_id: itemId,
-        order_qty: 100, uom_id: id.uom, status_code: opts.status ?? 'RECEIVED', planned_start_date: new Date(`${planStart}T00:00:00.000Z`),
+        order_qty: 100, uom_id: id.uom, status_code: opts.status ?? 'RECEIVED', planned_start_date: new Date(`${opts.start ?? planStart}T00:00:00.000Z`),
       } })).production_order_id;
+    };
+    newOrder = async (key: string, start: string) => {
+      await makeOrder(key, id.itemOk, { start });
+      return order[key];
     };
     await makeOrder('A', id.itemOk);
     await makeOrder('B', itemNoBom);
@@ -726,6 +853,10 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
 
   async function cleanup(): Promise<void> {
     if (!prisma) return;
+    const calendars = { work_calendar: { calendar_code: { startsWith: PREFIX } } };
+    await prisma.work_calendar_day.deleteMany({ where: calendars });
+    await prisma.work_calendar_application.deleteMany({ where: calendars });
+    await prisma.work_calendar.deleteMany({ where: { calendar_code: { startsWith: PREFIX } } });
     const scope = { production_order: { production_order_no: { startsWith: PREFIX } } };
     const plans = await prisma.production_plan.findMany({ where: scope, select: { production_plan_id: true } });
     const workOrders = await prisma.work_order.findMany({ where: { production_plan_id: { in: plans.map((row) => row.production_plan_id) } }, select: { work_order_id: true } });
