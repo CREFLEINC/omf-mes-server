@@ -14,7 +14,7 @@ import { DEFAULT_DAY_START, PlanWindow, dayWindow, timeOfColumn } from './plan-w
 import { assertWithinOrder } from './plan-quantity';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
 import { assignResources, readDefaultMaps } from './resource-assign';
-import { ProductionPlanView, productionPlanView } from './production-plan-view';
+import { ProductionPlanView, planViews } from './production-plan-view';
 
 const STATUS_COLUMN = 'planning.production_plan.status_code';
 const DRAFT = 'DRAFT';
@@ -165,7 +165,7 @@ export class PlanConfirmService {
     // 잠금 밖 경합의 마지막 그물 — 위 토큰 대조와 겹치는 것이 맞다.
     assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT });
 
-    return productionPlanView(await tx.production_plan.findUniqueOrThrow({ where: { production_plan_id: productionPlanId } }));
+    return (await planViews(tx, [await tx.production_plan.findUniqueOrThrow({ where: { production_plan_id: productionPlanId } })]))[0];
   }
 }
 
