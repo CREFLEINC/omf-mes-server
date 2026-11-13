@@ -285,7 +285,11 @@ describe('피처 005 S8 입하 LOT IQC 결과 목록 (e2e)', () => {
     const events = history.body.requestEvents as { eventCode: string; inspectionResultId: number | null; summaryBefore: Record<string, unknown> | null; summaryAfter: Record<string, unknown> | null; actorName: string | null; detail: string | null }[];
     expect(events.map((event) => event.eventCode)).toEqual(['REQUESTED', 'RESULT_ADDED', 'RESULT_UPDATED', 'RESULT_DELETED']);
     const changes = events.slice(1);
-    expect(changes[1].detail).toBe(`결과 1 수정 — 합격 · 검사 10 · 매칭 ${iqc.lots[0].lotNo.slice(-4)}, ${iqc.lots[1].lotNo.slice(-4)}`);
+    // T142 — 합격·불합격·보류 수량을 싣는다(수량만 고쳐도 전·후가 다르다), 「검사 의뢰 생김」 은 입하 마감 경로·LOT 수·수량.
+    expect(changes[0].detail).toBe(`결과 1 기록 — 불합격 · 검사 10(합격 9 · 불합격 1) · 매칭 ${iqc.lots[0].lotNo.slice(-4)}`);
+    expect(changes[1].detail).toBe(`결과 1 수정 — 합격 · 검사 10(합격 10) · 매칭 ${iqc.lots[0].lotNo.slice(-4)}, ${iqc.lots[1].lotNo.slice(-4)}`);
+    expect(events[0].detail).toMatch(/^입하 마감 — 자재 관리 LOT 2개 · \d+ EA$/);
+    expect(events[0].actorName).not.toBeNull();
     expect(changes.every((event) => event.inspectionResultId === created.inspectionResultId && event.actorName === `${PREFIX} ALL`)).toBe(true);
     expect(changes[0].summaryAfter).toMatchObject({ inspectionRound: 1, overallJudgmentCode: 'REJECTED', matchedLotIds: [l1] });
     expect(changes[1].summaryBefore).toMatchObject({ overallJudgmentCode: 'REJECTED', rejectedQty: 1, matchedLotIds: [l1] });
