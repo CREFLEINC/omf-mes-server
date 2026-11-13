@@ -21,7 +21,7 @@ import {
   receiptView,
 } from './goods-receipt-view';
 import { MATERIAL_RECEIPT, erpInboundLines } from './erp-receipt';
-import { inboundLineOfLot, receivableQtyOf } from './lot-receivable';
+import { inboundLineOfLot, receivableQtyOf, receivingInboundLotOf } from './lot-receivable';
 import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
 /**
@@ -222,6 +222,8 @@ export class GoodsReceiptService {
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
+    // 입하 마감 전 거절이 IQC 합격 전 거절(400)보다 앞이다 — 검사 필요 품목도 먼저 입하 마감하라고 알린다(FR-014a).
+    await assertInboundLotsClosed(this.prisma, input);
     await this.assertTargets(input);
     await assertCodeValues(this.prisma, [
       { field: 'receiptTypeCode', value: input.receiptTypeCode, groupCode: 'RECEIPT_TYPE' },
@@ -326,6 +328,7 @@ async function assertInboundLotsWithin(tx: Prisma.TransactionClient, input: Good
      WHERE lot_id IN (${Prisma.join(lotIds.map((id) => Prisma.sql`${id}::bigint`))})
      ORDER BY lot_id
        FOR NO KEY UPDATE`;
+  await assertInboundLotsClosed(tx, input);
   const byId = new Map(lots.map((lot) => [lot.lot_id, lot]));
   const totals = lotTotals(input.lines);
   const errors: ErrorItem[] = [];
@@ -335,6 +338,20 @@ async function assertInboundLotsWithin(tx: Prisma.TransactionClient, input: Good
     await inboundGate(tx, input.warehouseId, `lines[${index}]`, line, lot, totals.get(line.lotId) as Prisma.Decimal, errors);
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
+
+/**
+ * 입하 중인 입하 LOT 의 자재 관리 LOT 은 입고하지 않는다(409 `INBOUND_LOT_RECEIVING` · FR-014a). LOT 을 잠근 뒤 읽는다 —
+ * 마감 취소도 LOT 을 먼저 잠그므로 둘이 한 줄로 선다.
+ */
+async function assertInboundLotsClosed(db: Pick<PrismaService, 'lot'>, input: GoodsReceiptCreate): Promise<void> {
+  const receiving = await receivingInboundLotOf(db, [...new Set(input.lines.map((line) => BigInt(line.lotId)))]);
+  if (receiving.size === 0) return;
+  throw new ContractException(HttpStatus.CONFLICT, input.lines.flatMap((line, index) => {
+    const inboundLotNo = receiving.get(BigInt(line.lotId));
+    return inboundLotNo === undefined ? [] : [field(`lines[${index}].lotId`, 'INBOUND_LOT_RECEIVING',
+      `입하 마감 전인 입하 LOT(${inboundLotNo})의 자재 관리 LOT 은 입고할 수 없습니다 — 먼저 입하 마감하세요.`)];
+  }));
 }
 
 /** 입하 LOT 의 문 셋 — 입고 상한 · 불량은 불량창고만 · IQC 합격 전 금지. 입하와 무관한 LOT 은 지나간다. */

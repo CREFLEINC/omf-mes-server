@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PUTAWAY_STAGING } from '../../common/master';
 import { matchErpWarehouse } from '../../core/erp-warehouse/erp-warehouse-match';
 import { PrismaService } from '../../prisma/prisma.service';
-import { inboundLineOfLot, receivableQtyOf } from './lot-receivable';
+import { inboundLineOfLot, receivableQtyOf, receivingInboundLotOf } from './lot-receivable';
 
 /** 입고 대기 LOT 상태 — `inbound-stage.ts` 의 RECEIPT_READY 와 같다(검사 대기·폐기는 아니다). 합격·무검사는 정상, IQC 불합격은 불량. */
 const STATUSES: Readonly<Record<string, { quality: string; inventory: string }>> = {
@@ -18,6 +18,7 @@ const MATERIAL_RECEIPT = 'MATERIAL';
 export type ReceiptDefaultIssueCode =
   | 'NOT_FOUND'
   | 'NOT_RECEIPT_READY'
+  | 'INBOUND_LOT_RECEIVING'
   | 'NO_ERP_WAREHOUSE'
   | 'MULTIPLE_ERP_WAREHOUSES'
   | 'NO_MES_WAREHOUSE'
@@ -29,6 +30,7 @@ export type ReceiptDefaultIssueCode =
 const MESSAGES: Readonly<Record<ReceiptDefaultIssueCode, string>> = {
   NOT_FOUND: '없는 LOT 입니다.',
   NOT_RECEIPT_READY: '입고 대기인 LOT 이 아닙니다.',
+  INBOUND_LOT_RECEIVING: '입하 마감 전인 입하 LOT 의 자재 관리 LOT 입니다 — 입하 마감 뒤에 입고합니다.',
   NO_ERP_WAREHOUSE: '발주 라인에 ERP 창고가 없습니다.',
   MULTIPLE_ERP_WAREHOUSES: '이 LOT 이 걸린 발주 라인들의 ERP 창고가 서로 다릅니다.',
   NO_MES_WAREHOUSE: 'ERP 창고의 MES 창고가 없거나 꺼져 있습니다 — ERP 연동 현황의 창고에서 만듭니다.',
@@ -79,12 +81,13 @@ export class ReceiptDefaultsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async of(lotIds: readonly bigint[]): Promise<ReceiptDefaults[]> {
-    const [lots, receivable] = await Promise.all([
+    const [lots, receivable, receiving] = await Promise.all([
       this.prisma.lot.findMany({
         where: { lot_id: { in: [...lotIds] } },
         select: { lot_id: true, lot_no: true, item_id: true, uom_id: true, status_code: true },
       }),
       receivableQtyOf(this.prisma, lotIds),
+      receivingInboundLotOf(this.prisma, lotIds),
     ]);
     const lotById = new Map(lots.map((lot) => [lot.lot_id, lot]));
     const lineOf = new Map<bigint, bigint | null>();
@@ -99,6 +102,7 @@ export class ReceiptDefaultsService {
     return lotIds.map((lotId) => {
       const lot = lotById.get(lotId);
       if (lot === undefined) return blank(lotId, 'NOT_FOUND');
+      if (receiving.has(lotId)) return { ...blank(lotId, 'INBOUND_LOT_RECEIVING'), ...lotFields(lot) };
       const lineId = lineOf.get(lotId) ?? null;
       const line = lineId === null ? undefined : lineById.get(lineId);
       const qty = receivable.get(lotId) ?? new Prisma.Decimal(0);

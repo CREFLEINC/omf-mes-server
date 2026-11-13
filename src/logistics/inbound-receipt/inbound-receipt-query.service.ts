@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { receivableQtyOf, splitLotsOf } from '../goods-receipt/lot-receivable';
+import { receivableQtyOf, receivingInboundLotOf, splitLotsOf } from '../goods-receipt/lot-receivable';
 import { INBOUND_RECEIPT_LINE_SOURCE, lotsOfInboundLines, representativeLot } from '../../core/lot';
 
 import { filter } from '../../common/master';
@@ -148,12 +148,15 @@ export class InboundReceiptQueryService {
       include: INBOUND_LINE_INCLUDE,
     });
     // 입고 화면이 기본 수량·선별 불량분 줄을 세우는 근거(장부 P-56) — 줄의 LOT 전부를 한 번에 센다.
-    const lotsOf = await lotsOfInboundLines(this.prisma, rows, {});
+    const lotsOf = await lotsOfInboundLines(this.prisma, rows, { lot_no: true, status_code: true });
     const lotIds = [...lotsOf.values()].flatMap((lots) => lots.map((lot) => lot.lot_id));
-    const [receivable, splits] = await Promise.all([
+    const [receivable, splits, receiving] = await Promise.all([
       receivableQtyOf(this.prisma, lotIds),
       splitLotsOf(this.prisma, lotIds),
+      receivingInboundLotOf(this.prisma, lotIds),
     ]);
+    // 입하 중인 입하 LOT 의 LOT 은 입고 후보가 아니다(FR-014a) — 입고 가능 수량 0.
+    for (const lotId of receiving.keys()) receivable.set(lotId, new Prisma.Decimal(0));
     return rows.map((row) => {
       const lots = lotsOf.get(row.inbound_receipt_line_id) ?? [];
       const known = lots.filter((lot) => receivable.has(lot.lot_id));
@@ -164,6 +167,10 @@ export class InboundReceiptQueryService {
             ? null
             : known.reduce((sum, lot) => sum.plus(receivable.get(lot.lot_id) ?? 0), new Prisma.Decimal(0)).toNumber(),
         splitLots: lots.flatMap((lot) => splits.get(lot.lot_id) ?? []),
+        materialLots: row.lot_id !== null ? null : lots.map((lot) => ({
+          lotId: Number(lot.lot_id), lotNo: lot.lot_no, statusCode: lot.status_code,
+          receivableQty: (receivable.get(lot.lot_id) ?? new Prisma.Decimal(0)).toNumber(),
+        })),
       };
     });
   }

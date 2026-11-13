@@ -10358,14 +10358,15 @@
       "type": [
        "string",
        "null"
-      ]
+      ],
+      "description": "행위자 이름(작업자 우선, 없으면 계정). REQUESTED 는 그 요청을 만든 입하 마감의 행위자(날짜 자동 마감·분리·선별로 생긴 요청은 null)."
      },
      "detail": {
       "type": [
        "string",
        "null"
       ],
-      "description": "서버가 만든 한 줄 — 결과 이벤트는 「결과 1 기록 — 합격 · 검사 200 · 매칭 0001, 0002」(매칭은 LOT 번호 끝 4자리), 그 밖은 사유 이벤트별 문구(피처 005 G2): RESULT_ADDED·RESULT_UPDATED·RESULT_DELETED 「결과 n 기록|수정|삭제 — 판정 · 검사 수량 · 매칭 LOT 끝 4자리 · 재검 사유 이름」, CONFIRMED 「합격|불합격|보류 — 자재 관리 LOT n개 정상|불량|보류 · 부적합 NC-…」, CONFIRM_CANCELLED 「이전 확정: 판정 · 부적합 n건 취소 (사유: …)」, 그 밖은 reason."
+      "description": "서버가 만든 한 줄 — 결과 이벤트는 「결과 1 수정 — 불합격 · 검사 200(합격 150 · 불합격 50) · 매칭 0001, 0002」(괄호는 0 이 아닌 합격·불합격·보류 수량 — 수량만 고친 수정도 전·후가 다르다, 매칭은 LOT 번호 끝 4자리), 그 밖은 사유 이벤트별 문구(피처 005 G2·T142): REQUESTED 「입하 마감|날짜 자동 마감|자재 관리 LOT 분리로 생김|선별로 생김 — 자재 관리 LOT n개 · 수량 단위」(입하 마감이 만든 요청은 마감 때의 LOT 수·수량), RESULT_ADDED·RESULT_UPDATED·RESULT_DELETED 「결과 n 기록|수정|삭제 — 판정 · 검사 수량(합격·불합격·보류) · 매칭 LOT 끝 4자리 · 재검 사유 이름」, CONFIRMED 「합격|불합격|보류 — 자재 관리 LOT n개 정상|불량|보류 · 부적합 NC-…」, CONFIRM_CANCELLED 「이전 확정: 판정 · 부적합 n건 취소 (사유: …)」, 그 밖은 reason."
      },
      "inspectionResultId": {
       "type": [

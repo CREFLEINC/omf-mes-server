@@ -156,7 +156,7 @@ export class InboundLotCloseService {
       inboundReceiptId: line.inbound_receipt.inbound_receipt_id, inboundReceiptNo: line.inbound_receipt.inbound_receipt_no,
     });
     await recordInboundLotEvent(tx, locked.inbound_lot_id, 'RECEIPT_CLOSED', input.actor, {
-      auto: input.auto,
+      auto: input.auto, lotCount, qty: line.received_qty.toString(),
       allocations: allocation.allocations.map((row) => ({ purchaseOrderLineId: String(row.purchaseOrderLineId), qty: row.qty.toString() })),
       unallocatedQty: allocation.unallocatedQty.toString(),
       iqcRequestId: iqcRequestId === null ? null : String(iqcRequestId),

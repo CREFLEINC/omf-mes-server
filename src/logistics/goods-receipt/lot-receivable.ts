@@ -21,6 +21,19 @@ const MAX_DEPTH = 10;
 
 type Db = Pick<PrismaService, 'lot' | 'goods_receipt_line' | 'inventory_transaction_line'>;
 
+/**
+ * 입하 중(`RECEIVING`)인 새 흐름 입하 LOT 의 자재 관리 LOT — 입고는 입하 마감 뒤에만 한다(FR-014a · 2026-11-13, 검사 불필요 품목도).
+ * 해제가 마감 전에만 되므로 이 문이 있어야 재고가 생긴 LOT 이 대기로 돌아가지 않는다. 이전 데이터(`PER_RECEIPT`)는 지금 그대로다.
+ */
+export async function receivingInboundLotOf(db: Pick<PrismaService, 'lot'>, lotIds: readonly bigint[]): Promise<Map<bigint, string>> {
+  if (lotIds.length === 0) return new Map();
+  const rows = await db.lot.findMany({
+    where: { lot_id: { in: [...lotIds] }, inbound_lot: { status_code: 'RECEIVING', erp_send_mode_code: 'ON_FINALIZE' } },
+    select: { lot_id: true, inbound_lot: { select: { inbound_lot_no: true } } },
+  });
+  return new Map(rows.map((row) => [row.lot_id, row.inbound_lot?.inbound_lot_no ?? '']));
+}
+
 export interface SplitLotView {
   lotId: number;
   lotNo: string;

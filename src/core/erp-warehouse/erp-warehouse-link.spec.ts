@@ -11,6 +11,7 @@ jest.mock('./erp-warehouse-match', () => {
 jest.mock('../../logistics/goods-receipt/lot-receivable', () => ({
   inboundLineOfLot: jest.fn(async () => 1n),
   receivableQtyOf: jest.fn(async () => new Map([[1n, new Prisma.Decimal(5)]])),
+  receivingInboundLotOf: jest.fn(async () => new Map()),
 }));
 
 /**

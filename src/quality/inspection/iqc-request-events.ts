@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { requestLotIds } from './inspection-request-lots';
 
 /**
  * 검사 이력의 변경 이력 한 줄(피처 005 R-11) — 칸 이름은 클라이언트 C3 이 정한 것(`requestEvents[]`). `eventCode` 는
@@ -32,10 +33,13 @@ export async function inspectionRequestEventLines(
       actor_user: { select: { user_name: true } }, actor_worker: { select: { worker_name: true } },
     },
   });
-  const reasonNames = await reinspectionReasonNames(prisma, rows.map((row) => row.summary_after ?? row.summary_before));
+  const [reasonNames, requested] = await Promise.all([
+    reinspectionReasonNames(prisma, rows.map((row) => row.summary_after ?? row.summary_before)),
+    requestedLine(prisma, request.inspection_request_id, rows.some((row) => row.event_type_code === 'SPLIT_IN')),
+  ]);
   return [
     {
-      occurredAt: request.requested_at.toISOString(), eventCode: 'REQUESTED', actorName: null, detail: null,
+      occurredAt: request.requested_at.toISOString(), eventCode: 'REQUESTED', actorName: requested.actorName, detail: requested.detail,
       inspectionResultId: null, summaryBefore: null, summaryAfter: null, reason: null,
     },
     ...rows.map((row) => ({
@@ -49,6 +53,37 @@ export async function inspectionRequestEventLines(
       reason: row.reason,
     })),
   ];
+}
+
+/**
+ * 「검사 의뢰 생김」 한 줄 — 어떻게 생겼나(입하 마감·날짜 자동 마감·분리·선별)와 자재 관리 LOT 수·수량(T142).
+ * 입하 마감이 만든 요청은 그 마감 기록(`RECEIPT_CLOSED` · 요약 `iqcRequestId`)의 행위자·LOT 수를 쓴다 — 마감 뒤 분리로 LOT 이 줄어도
+ * 생길 때의 수다. 옛 마감 기록(LOT 수 없음)·분리·선별로 생긴 요청은 지금 요청의 LOT 수와 대상 수량이다.
+ */
+async function requestedLine(
+  prisma: PrismaService, inspectionRequestId: bigint, splitIn: boolean,
+): Promise<{ actorName: string | null; detail: string | null }> {
+  const request = await prisma.inspection_request.findUniqueOrThrow({
+    where: { inspection_request_id: inspectionRequestId },
+    select: {
+      inbound_lot_id: true, lot_id: true, target_qty: true, split_from_inspection_request_id: true, uom: { select: { uom_code: true } },
+    },
+  });
+  if (request.inbound_lot_id === null) return { actorName: null, detail: null };
+  const closed = await prisma.inbound_lot_event.findFirst({
+    where: { inbound_lot_id: request.inbound_lot_id, event_type_code: 'RECEIPT_CLOSED', summary: { path: ['iqcRequestId'], equals: String(inspectionRequestId) } },
+    select: { summary: true, actor_user: { select: { user_name: true } }, actor_worker: { select: { worker_name: true } } },
+  });
+  const summary = objectOf(closed?.summary ?? null);
+  const lotCount = typeof summary?.lotCount === 'number' ? summary.lotCount : (await requestLotIds(prisma, request)).length;
+  const qty = typeof summary?.qty === 'string' ? summary.qty : request.target_qty.toString();
+  const how = closed !== null ? (summary?.auto === true ? '날짜 자동 마감' : '입하 마감')
+    : request.split_from_inspection_request_id !== null ? '선별로 생김' : splitIn ? '자재 관리 LOT 분리로 생김' : null;
+  const counts = `자재 관리 LOT ${String(lotCount)}개 · ${qty} ${request.uom.uom_code}`;
+  return {
+    actorName: closed?.actor_worker?.worker_name ?? closed?.actor_user?.user_name ?? null,
+    detail: how === null ? counts : `${how} — ${counts}`,
+  };
 }
 
 /** 결과 이벤트에 남은 재검 사유 코드의 이름(공통코드 `REINSPECTION_REASON` — 열린 그룹이라 없을 수 있다). */
@@ -101,5 +136,9 @@ function resultDetail(eventCode: string, summary: Prisma.JsonValue | null, reaso
   const lots = Array.isArray(summary.matchedLotNos) ? summary.matchedLotNos.map((no) => String(no).slice(-4)) : [];
   const reasonCode = typeof summary.reinspectionReasonCode === 'string' ? summary.reinspectionReasonCode : null;
   const reinspection = reasonCode === null ? '' : ` · 재검 사유 ${reasonNames.get(reasonCode) ?? reasonCode}`;
-  return `결과 ${String(summary.inspectionRound)} ${verb} — ${judgment} · 검사 ${String(summary.inspectedQty)}${lots.length === 0 ? '' : ` · 매칭 ${lots.join(', ')}`}${reinspection}`;
+  // 합격·불합격·보류 수량도 싣는다 — 수량만 고친 수정도 전·후 줄이 달라 보인다(T142).
+  const split = [['합격', summary.acceptedQty], ['불합격', summary.rejectedQty], ['보류', summary.heldQty]]
+    .flatMap(([name, qty]) => (typeof qty === 'number' && qty > 0 ? [`${String(name)} ${String(qty)}`] : []));
+  const qtys = `검사 ${String(summary.inspectedQty)}${split.length === 0 ? '' : `(${split.join(' · ')})`}`;
+  return `결과 ${String(summary.inspectionRound)} ${verb} — ${judgment} · ${qtys}${lots.length === 0 ? '' : ` · 매칭 ${lots.join(', ')}`}${reinspection}`;
 }
