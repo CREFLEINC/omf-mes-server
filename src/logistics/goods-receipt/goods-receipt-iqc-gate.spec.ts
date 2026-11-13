@@ -38,7 +38,9 @@ function stub(lot: Record<string, unknown>, inspectionRequired: boolean | null, 
     lot: {
       findUnique: async ({ where }: { where: { lot_id: bigint } }) =>
         qty.parent !== undefined && where.lot_id === 30n ? qty.parent : lot,
-      findMany: async () => [{ lot_id: 20n, initial_qty: new Prisma.Decimal(qty.initialQty ?? 100) }],
+      // 입하 중 입하 LOT 찾기(FR-014a)에는 없음으로 답한다 — 이 시험의 입하 LOT 은 마감됐다.
+      findMany: async (args?: { where?: { inbound_lot?: unknown } }) =>
+        (args?.where?.inbound_lot !== undefined ? [] : [{ lot_id: 20n, initial_qty: new Prisma.Decimal(qty.initialQty ?? 100) }]),
       groupBy: async () =>
         qty.splitQty === undefined ? [] : [{ parent_lot_id: 20n, _sum: { initial_qty: new Prisma.Decimal(qty.splitQty) } }],
     },
