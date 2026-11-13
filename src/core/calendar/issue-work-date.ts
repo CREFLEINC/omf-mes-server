@@ -1,7 +1,7 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** 0 = 일요일. 주 5일제는 월~금, 주 6일제는 월~토가 근무일이다. 공휴일·근무달력은 보지 않는다(spec 가정). */
-function isWorkingDay(date: Date, weeklyWorkingDays: 5 | 6): boolean {
+export function isWorkingDay(date: Date, weeklyWorkingDays: 5 | 6): boolean {
   const weekday = date.getUTCDay();
   return weekday !== 0 && (weeklyWorkingDays === 6 || weekday !== 6);
 }
