@@ -106,6 +106,7 @@ describe('계약 커버리지', () => {
     // IQC 판정 확정·확정 취소 2 오퍼레이션(피처 005 S9): 616 → 618.
     // 자재 관리 LOT 분리·미리 보기 2 오퍼레이션(피처 005 S11): 618 → 620.
     // W-01-16 배정 후보·배정 수정·최종 마감 3 오퍼레이션(피처 005 S12): 623.
+    // 생산계획 근무일 판정 1 오퍼레이션: 623 → 624.
     expect(registry.size).toBe(624);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });

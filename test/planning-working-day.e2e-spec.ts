@@ -49,6 +49,7 @@ describe('생산계획 근무일 판정 조회 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string;
   let deniedCookie: string;
+  let scopedCookie: string;
   const id: Record<string, bigint> = {};
   const userIds: bigint[] = [];
   const roleIds: bigint[] = [];
@@ -121,6 +122,9 @@ describe('생산계획 근무일 판정 조회 (e2e)', () => {
     const sign = (userId: bigint) => `${SESSION_COOKIE}=${jwt.sign({ sub: Number(userId), typ: 'session' })}`;
     cookie = sign(await makeUser('PLANNER', 'W-02-02'));
     deniedCookie = sign(await makeUser('DENIED', 'W-CO-14'));
+    const scoped = await makeUser('SCOPED', 'W-02-02');
+    await prisma.user_data_scope.create({ data: { app_user_id: scoped, plant_id: id.Q } });
+    scopedCookie = sign(scoped);
   }, 120_000);
 
   afterAll(async () => {
@@ -132,6 +136,7 @@ describe('생산계획 근무일 판정 조회 (e2e)', () => {
       await prisma.operation_policy.deleteMany({ where: { plant_id: { in: [id.P, id.Q] } } });
       await prisma.production_line.deleteMany({ where: { production_line_id: { in: [id.CHILD, id.SIBLING, id.OFF, id.Q_LINE] } } });
       await prisma.production_line.deleteMany({ where: { production_line_id: id.PARENT } });
+      await prisma.user_data_scope.deleteMany({ where: { app_user_id: { in: userIds } } });
       await prisma.plant.deleteMany({ where: { plant_id: { in: [id.P, id.Q] } } });
       await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
       await prisma.role_permission.deleteMany({ where: { role_id: { in: roleIds } } });
@@ -219,6 +224,20 @@ describe('생산계획 근무일 판정 조회 (e2e)', () => {
     expect(await fields([{ plantId: Number(id.P), productionLineId: Number(id.Q_LINE), from: '2027-03-01', to: '2027-03-01' }])).toEqual([['targets[0].productionLineId', 'INVALID']]);
     const many = Array.from({ length: 51 }, () => ({ plantId: Number(id.P), from: '2027-03-01', to: '2027-03-01' }));
     await resolve(many).expect(400);
+  });
+
+  it('데이터 범위 밖 공장은 403 PERMISSION_DENIED — 없는 공장(400)이 먼저다', async () => {
+    const outside = await resolve([
+      { plantId: Number(id.Q), from: '2027-03-01', to: '2027-03-01' },
+      { plantId: Number(id.P), from: '2027-03-01', to: '2027-03-01' },
+    ], scopedCookie).expect(403);
+    expect(outside.body.errors).toEqual([expect.objectContaining({ scope: 'field', field: 'targets[1].plantId', code: 'PERMISSION_DENIED' })]);
+    await resolve([{ plantId: Number(id.Q), from: '2027-03-01', to: '2027-03-01' }], scopedCookie).expect(200);
+    const missing = await resolve([
+      { plantId: Number(id.P), from: '2027-03-01', to: '2027-03-01' },
+      { plantId: 999999999, from: '2027-03-01', to: '2027-03-01' },
+    ], scopedCookie).expect(400);
+    expect(missing.body.errors).toEqual([expect.objectContaining({ field: 'targets[1].plantId', code: 'INVALID' })]);
   });
 
   it('계획 화면 권한이 없으면 403', async () => {

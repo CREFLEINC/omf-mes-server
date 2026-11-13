@@ -16,7 +16,7 @@ export interface WorkingDayResolveResult {
   items: { plantId: number; productionLineId: number | null; from: string; to: string; days: PlanningCalendarDay[] }[];
 }
 
-/** 범위 밖 공장은 없는 공장과 가르지 않는다 — 존재를 드러내지 않는다. */
+/** 없는 공장·기간·라인은 400, 그다음 데이터 범위 밖 공장은 403 — 공장을 고르는 다른 조회(`plantScopeFor`)와 같은 모양이다. */
 export async function resolveTargets(
   client: Prisma.TransactionClient,
   body: WorkingDayResolveBody,
@@ -28,7 +28,7 @@ export async function resolveTargets(
     client.plant.findMany({ where: { plant_id: { in: plantIds } }, select: { plant_id: true } }),
     lineIds.length === 0 ? [] : client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true } }),
   ]);
-  const visible = new Set(plants.map((plant) => plant.plant_id).filter((id) => scope === null || scope.includes(id)));
+  const existing = new Set(plants.map((plant) => plant.plant_id));
   const plantOfLine = new Map(lines.map((line) => [line.production_line_id, line.plant_id]));
 
   const errors: ErrorItem[] = [];
@@ -36,12 +36,16 @@ export async function resolveTargets(
     const path = `targets[${index}]`;
     if (target.from > target.to) errors.push({ scope: 'field', field: `${path}.to`, code: ERROR_CODE.RANGE, message: '종료일이 시작일보다 앞입니다.' });
     else if (daysBetween(target.from, target.to) > MAX_DAYS) errors.push({ scope: 'field', field: `${path}.to`, code: ERROR_CODE.RANGE, message: `기간은 ${MAX_DAYS}일 이하로 나눠 물으세요.` });
-    if (!visible.has(BigInt(target.plantId))) errors.push({ scope: 'field', field: `${path}.plantId`, code: ERROR_CODE.INVALID, message: '없는 공장입니다.' });
+    if (!existing.has(BigInt(target.plantId))) errors.push({ scope: 'field', field: `${path}.plantId`, code: ERROR_CODE.INVALID, message: '없는 공장입니다.' });
     else if (target.productionLineId != null && plantOfLine.get(BigInt(target.productionLineId)) !== BigInt(target.plantId)) {
       errors.push({ scope: 'field', field: `${path}.productionLineId`, code: ERROR_CODE.INVALID, message: '그 공장의 생산 라인이 아닙니다.' });
     }
   });
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+  const denied: ErrorItem[] = body.targets.flatMap((target, index) => (scope === null || scope.includes(BigInt(target.plantId))
+    ? []
+    : [{ scope: 'field' as const, field: `targets[${index}].plantId`, code: ERROR_CODE.PERMISSION_DENIED, message: '이 공장에 대한 데이터 권한이 없습니다.' }]));
+  if (denied.length > 0) throw new ContractException(HttpStatus.FORBIDDEN, denied);
 
   const days = await resolveWorkingDays(client, body.targets.map((target) => ({
     plantId: BigInt(target.plantId),

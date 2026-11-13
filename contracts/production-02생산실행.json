@@ -880,7 +880,7 @@
      "planning"
     ],
     "summary": "공장·생산 라인·기간 묶음의 근무일 판정",
-    "description": "묶음(targets)마다 기간의 날짜별 근무일 판정(PlanningCalendarDay)을 돌려준다. 판정 규칙은 PlanningCalendarDay 설명에 있다 — 설비 가동 정지 요약과 같은 캘린더 규칙에 공장 근무일 정책을 더한 것이다.\n\n화면의 자동 분배·계획 분할(순차 생성)은 이 응답으로 날짜를 고른다 — statusCode 가 HOLIDAY 인 날만 건너뛴다. UNDETERMINED(판정 불가)는 건너뛰지 않고 그대로 쓰되 판정 불가로 표시한다(제안 계획일 보정과 같은 규칙). 「다음 N 근무일」 같은 서버 탐색은 따로 없다 — 기간이 모자라면 다음 기간으로 다시 부른다.\n\n⛔ 한도 — targets 는 1~50개, 묶음마다 from ≤ to 이고 기간은 92일 이하(양 끝 포함). 넘으면 400 RANGE.\n⭐ 사용자 데이터 범위 — 범위 밖 공장과 없는 공장은 가르지 않고 400 { field: targets[i].plantId, code: INVALID } 다. productionLineId 가 그 공장의 라인이 아니면 400 { field: targets[i].productionLineId, code: INVALID }.\n⛔ 부작용이 없다 — 읽기지만 묶음을 본문에 실어야 해서 POST 다. 저장하지 않으므로 Idempotency-Key 를 받지 않는다.",
+    "description": "묶음(targets)마다 기간의 날짜별 근무일 판정(PlanningCalendarDay)을 돌려준다. 판정 규칙은 PlanningCalendarDay 설명에 있다 — 설비 가동 정지 요약과 같은 캘린더 규칙에 공장 근무일 정책을 더한 것이다.\n\n화면의 자동 분배·계획 분할(순차 생성)은 이 응답으로 날짜를 고른다 — statusCode 가 HOLIDAY 인 날만 건너뛴다. UNDETERMINED(판정 불가)는 건너뛰지 않고 그대로 쓰되 판정 불가로 표시한다(제안 계획일 보정과 같은 규칙). 「다음 N 근무일」 같은 서버 탐색은 따로 없다 — 기간이 모자라면 다음 기간으로 다시 부른다.\n\n⛔ 한도 — targets 는 1~50개, 묶음마다 from ≤ to 이고 기간은 92일 이하(양 끝 포함). 넘으면 400 RANGE.\n없는 공장은 400 { field: targets[i].plantId, code: INVALID }, productionLineId 가 그 공장의 라인이 아니면 400 { field: targets[i].productionLineId, code: INVALID } 다. ⭐ 사용자 데이터 범위 — 400 이 없을 때 범위 밖 공장이 있으면 403 { field: targets[i].plantId, code: PERMISSION_DENIED } 다(공장을 고르는 다른 조회와 같은 모양).\n⛔ 부작용이 없다 — 읽기지만 묶음을 본문에 실어야 해서 POST 다. 저장하지 않으므로 Idempotency-Key 를 받지 않는다.",
     "requestBody": {
      "required": true,
      "content": {
@@ -908,7 +908,7 @@
       }
      },
      "400": {
-      "description": "targets 가 없거나 50개를 넘는다 · 기간이 거꾸로이거나 92일을 넘는다 · 공장·라인이 없거나 범위 밖이다",
+      "description": "targets 가 없거나 50개를 넘는다 · 기간이 거꾸로이거나 92일을 넘는다 · 공장·라인이 없다",
       "content": {
        "application/json": {
         "schema": {
@@ -928,7 +928,7 @@
       }
      },
      "403": {
-      "description": "단말·권한 게이팅에 막혔다 — 계획 제안 조회와 같은 권한(W-02-01·W-02-02)",
+      "description": "단말·권한 게이팅에 막혔다 — 계획 제안 조회와 같은 권한(W-02-01·W-02-02). 또는 사용자 데이터 범위 밖 공장(PERMISSION_DENIED)",
       "content": {
        "application/json": {
         "schema": {
