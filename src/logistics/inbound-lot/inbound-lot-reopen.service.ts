@@ -100,11 +100,14 @@ export class InboundLotReopenService {
     tx: Prisma.TransactionClient, inboundLotId: bigint, lotIds: bigint[], locked: Awaited<ReturnType<LotHoldService['lockLotsWithin']>>,
     actor: LogisticsWriteActor, at: Date,
   ): Promise<bigint | null> {
-    const request = await tx.inspection_request.findFirst({
-      where: { inbound_lot_id: inboundLotId, inspection_type_code: 'IQC', status_code: { not: CANCELLED } },
-      select: { inspection_request_id: true, status_code: true, skip_basis_code: true },
-    });
-    if (request === null) return null;
+    const [request] = await tx.$queryRaw<{ inspection_request_id: bigint; status_code: string; skip_basis_code: string | null }[]>`
+      SELECT inspection_request_id, status_code, skip_basis_code FROM quality.inspection_request
+       WHERE inbound_lot_id = ${inboundLotId} AND inspection_type_code = 'IQC' AND status_code <> ${CANCELLED} FOR UPDATE`;
+    if (request === undefined) return null;
+    // 진행 중 요청도 결과 0건이면 취소한다(2026-11-13) — 요청을 잠근 뒤 다시 세어 판정 사이에 들어온 결과(DRAFT 포함)를 놓치지 않는다.
+    if (request.status_code !== 'SKIPPED' && (await tx.inspection_result.count({ where: { inspection_request_id: request.inspection_request_id } })) > 0) {
+      throw new ContractException(HttpStatus.CONFLICT, [{ scope: 'screen', code: 'IQC_RECORDED', message: BLOCKER_MESSAGE.IQC_RECORDED }], { openInboundLotNo: null });
+    }
     const to = this.states.assertTransition(REQUEST_COLUMN, 'inbound-receipt-reopened', request.status_code).to;
     const person = actor.appUserId === undefined ? { workerId: actor.workerId } : { appUserId: actor.appUserId };
     if (request.status_code === 'SKIPPED' && request.skip_basis_code === 'APPROVAL') {

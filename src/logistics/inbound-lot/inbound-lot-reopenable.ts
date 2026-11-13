@@ -21,7 +21,8 @@ const SKIP_TARGET = 'INBOUND_LOT';
 
 /**
  * 마감(`RECEIVED`)·최종 마감 입하 LOT 마다 마감 취소 판정(data-model 「마감 취소 가능」 · R-5a). 그 밖 상태는 맵에 없다.
- * 다음 단계 전 = 검사 필요는 IQC 결과 0건·요청이 대기(REQUESTED)·생략 결재 대기 없음, 검사 불필요·긴급 생략 실행은 입고 0건.
+ * 다음 단계 전 = 검사 필요는 IQC 결과 0건(판정 확정 전 — 요청 상태가 아니라 결과 수로 본다: 결과를 모두 지웠거나 확정 취소·분리로
+ * 0건이 된 진행 중 요청도 된다, 2026-11-13)·생략 결재 대기 없음, 검사 불필요·긴급 생략 실행은 입고 0건.
  */
 export async function reopenStatesOf(db: Prisma.TransactionClient, inboundLotIds: bigint[]): Promise<Map<bigint, ReopenState>> {
   if (inboundLotIds.length === 0) return new Map();
@@ -67,7 +68,7 @@ export async function reopenStatesOf(db: Prisma.TransactionClient, inboundLotIds
     if (row.status_code === 'FINALIZED') blockers.push('INBOUND_LOT_FINALIZED');
     if (row.erp_send_mode_code !== 'ON_FINALIZE') blockers.push('LEGACY_INBOUND_LOT');
     const iqcRecorded = request !== undefined && request.status_code !== 'SKIPPED'
-      && (request.status_code !== 'REQUESTED' || request._count.inspection_result > 0);
+      && (request.status_code === 'COMPLETED' || request._count.inspection_result > 0);
     if (iqcRecorded) blockers.push('IQC_RECORDED');
     if (receivedIds.has(row.inbound_lot_id)) blockers.push('GOODS_RECEIVED');
     if (pendingInboundLots.has(row.inbound_lot_id)) blockers.push('SKIP_PENDING');
@@ -83,7 +84,7 @@ export function onlyOpenReceiptBlocks(blockers: readonly ReopenBlockerCode[]): b
 }
 
 function reasonOf(request: { status_code: string; skip_basis_code: string | null } | undefined): ReopenReasonCode {
-  if (request?.status_code === 'REQUESTED') return 'NO_IQC_RESULT';
+  if (request?.status_code === 'REQUESTED' || request?.status_code === 'IN_PROGRESS') return 'NO_IQC_RESULT';
   if (request?.status_code === 'SKIPPED' && request.skip_basis_code === 'APPROVAL') return 'IQC_SKIPPED';
   return 'INSPECTION_NOT_REQUIRED';
 }

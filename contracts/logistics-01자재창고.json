@@ -14955,7 +14955,7 @@
      "logistics"
     ],
     "summary": "입하 마감 취소",
-    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 긴급 생략을 실행한 건은 자재 관리 LOT NORMAL → INSPECTION_PENDING(C30)·검사 대기 보류 다시·이벤트 SKIP_VOIDED·생략 결재 기록에 무효 표시, 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 먼저 열면 409 OPEN_RECEIPT_EXISTS(이때 openInboundLotNo 는 null — 다시 읽으면 목록이 번호를 준다). 근거: M-01-03",
+    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(대기·결과 0건 진행 중·생략 — 요청을 잠근 뒤 결과가 생겼으면 409 IQC_RECORDED. 행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 긴급 생략을 실행한 건은 자재 관리 LOT NORMAL → INSPECTION_PENDING(C30)·검사 대기 보류 다시·이벤트 SKIP_VOIDED·생략 결재 기록에 무효 표시, 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 먼저 열면 409 OPEN_RECEIPT_EXISTS(이때 openInboundLotNo 는 null — 다시 읽으면 목록이 번호를 준다). 근거: M-01-03",
     "parameters": [
      {
       "name": "inboundLotId",
@@ -27704,7 +27704,7 @@
        "IQC_SKIPPED",
        null
       ],
-      "description": "마감 취소 가능 건의 까닭(C2 정함) — NO_IQC_RESULT(검사 필요·결과 없음) · INSPECTION_NOT_REQUIRED(검사 불필요·기본 생략, 입고 전) · IQC_SKIPPED(긴급 생략 실행, 입고 전). reopenable 이 false 면 null"
+      "description": "마감 취소 가능 건의 까닭(C2 정함) — NO_IQC_RESULT(검사 필요·결과 0건 — 대기 또는 결과를 지워 0건이 된 진행 중 요청) · INSPECTION_NOT_REQUIRED(검사 불필요·기본 생략, 입고 전) · IQC_SKIPPED(긴급 생략 실행, 입고 전). reopenable 이 false 면 null"
      },
      "reopenBlockerCode": {
       "type": [
@@ -28559,7 +28559,7 @@
     "required": [
      "errors"
     ],
-    "description": "마감 취소 막힘(409) — errors[].code 가 막힘 코드다(scope=screen, 여럿이면 모두): IQC_RECORDED(IQC 결과가 있거나 확정·진행) · GOODS_RECEIVED(자재 관리 LOT 입고 있음) · SKIP_PENDING(IQC 생략 결재 대기) · INBOUND_LOT_FINALIZED(최종 마감) · LEGACY_INBOUND_LOT(이전 데이터 PER_RECEIPT) · OPEN_RECEIPT_EXISTS(같은 공장·공급사·품목에 입하 중 — 메시지와 openInboundLotNo 에 그 번호)",
+    "description": "마감 취소 막힘(409) — errors[].code 가 막힘 코드다(scope=screen, 여럿이면 모두): IQC_RECORDED(IQC 결과가 1건 이상이거나 판정 확정 — 요청 상태가 아니라 결과 수로 본다: 결과를 모두 지웠거나 확정 취소·분리로 0건이 된 진행 중 요청은 막지 않는다, 2026-11-13) · GOODS_RECEIVED(자재 관리 LOT 입고 있음) · SKIP_PENDING(IQC 생략 결재 대기) · INBOUND_LOT_FINALIZED(최종 마감) · LEGACY_INBOUND_LOT(이전 데이터 PER_RECEIPT) · OPEN_RECEIPT_EXISTS(같은 공장·공급사·품목에 입하 중 — 메시지와 openInboundLotNo 에 그 번호)",
     "properties": {
      "errors": {
       "type": "array",

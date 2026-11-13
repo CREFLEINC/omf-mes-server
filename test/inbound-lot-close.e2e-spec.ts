@@ -301,6 +301,38 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect((listed.body.items as Row[]).every((row) => (row.reopenable ? row.reopenReasonCode !== null : row.reopenBlockerCode === 'OPEN_RECEIPT_EXISTS'))).toBe(true);
   });
 
+  it('US2-12 마감 취소(결과를 기록했다가 모두 지워 0건·IN_PROGRESS) → 성공·요청 CANCELLED (2026-11-13)', async () => {
+    const closed = await closedLot(ids.supplierK1, ids.itemA);
+    const resultId = await addResult(closed, 'DRAFT');
+    expect((await requestOf(closed)).status_code).toBe('IN_PROGRESS');
+    // 결과가 남아 있으면 막는다.
+    const blocked = await sessionPost(reopenPath(closed.inboundLotId), closerCookie).send({ versionNo: await versionOf(closed.inboundLotId) }).expect(409);
+    expect((blocked.body.errors as { code: string }[]).map((error) => error.code)).toEqual(['IQC_RECORDED']);
+    await removeResult(resultId);
+    const row = await get(`${LOTS}/${String(closed.inboundLotId)}`).expect(200);
+    expect(row.body).toMatchObject({ reopenable: true, reopenReasonCode: 'NO_IQC_RESULT' });
+
+    await sessionPost(reopenPath(closed.inboundLotId), closerCookie).send({ versionNo: await versionOf(closed.inboundLotId) }).expect(200);
+    const iqc = await requestOf(closed);
+    expect(iqc.status_code).toBe('CANCELLED');
+    expect((await requestEvents(iqc.inspection_request_id)).map((event) => event.event_type_code)).toContain('CANCELLED_BY_REOPEN');
+  });
+
+  it('US2-12 마감 취소(판정 확정 → 확정 취소 → 결과 삭제로 0건) → 성공 (2026-11-13)', async () => {
+    const closed = await closedLot(ids.supplierK2, ids.itemA);
+    const resultId = await addResult(closed, 'DRAFT');
+    const requestPath = `/api/quality/inspection-requests/${String(closed.iqcRequestId)}`;
+    await webPost(`${requestPath}:confirm`).send({ versionNo: (await requestOf(closed)).version_no }).expect(200);
+    expect((await requestOf(closed)).status_code).toBe('COMPLETED');
+    await webPost(`${requestPath}:cancel-confirm`).send({ versionNo: (await requestOf(closed)).version_no }).expect(200);
+    expect((await requestOf(closed)).status_code).toBe('IN_PROGRESS');
+    await removeResult(resultId);
+
+    await sessionPost(reopenPath(closed.inboundLotId), closerCookie).send({ versionNo: await versionOf(closed.inboundLotId) }).expect(200);
+    expect((await requestOf(closed)).status_code).toBe('CANCELLED');
+    expect((await prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: BigInt(closed.inboundLotId) } })).status_code).toBe('RECEIVING');
+  });
+
   it('US2-13 같은 공급사·품목에 입하 중이 있으면 마감 취소 409 OPEN_RECEIPT_EXISTS(그 번호 함께)', async () => {
     const closed = await closedLot(ids.supplierZ4, ids.itemA);
     const open = await issueAndReceive(fx, batch(ids.supplierZ4, ids.itemA, 1, 5));
@@ -553,6 +585,25 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     }).expect(201);
   }
 
+  async function addResult(closed: ClosedInboundLot, statusCode: string): Promise<number> {
+    const lots = await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(closed.inboundLotId) }, select: { lot_id: true } });
+    const response = await webPost('/api/quality/inspection-results').send({
+      inspectionRequestId: closed.iqcRequestId, inspectedQty: 5, acceptedQty: 5, rejectedQty: 0, heldQty: 0, uomId: Number(ids.ea),
+      inspectedAt: `${DAY}T06:00:00.000Z`, statusCode, overallJudgmentCode: 'ACCEPTED', matchedLotIds: lots.map((lot) => Number(lot.lot_id)),
+    }).expect(201);
+    return (response.body as { inspectionResultId: number }).inspectionResultId;
+  }
+
+  async function removeResult(resultId: number): Promise<void> {
+    const { version_no: version } = await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(resultId) } });
+    await sessionAuth(cookie)(request(app.getHttpServer()).delete(`/api/quality/inspection-results/${String(resultId)}`))
+      .set('Idempotency-Key', idempotencyKey(fx)).set('If-Match', `W/"${String(version)}"`).expect(204);
+  }
+
+  async function requestOf(closed: ClosedInboundLot) {
+    return prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(closed.iqcRequestId as number) } });
+  }
+
   async function receiveGoods(inboundLotId: number): Promise<void> {
     const lot = await prisma.lot.findFirstOrThrow({ where: { inbound_lot_id: BigInt(inboundLotId) } });
     seq += 1;
@@ -620,7 +671,7 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
       data: { inspection_plan_id: plan.inspection_plan_id, plan_version: 1, effective_from: new Date('2026-01-01T00:00:00.000Z'),
         sampling_method_code: 'FULL', inspection_frequency_code: 'EVERY_LOT', status_code: 'CONFIRMED' },
     });
-    for (const code of ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Z2', 'Z3', 'Z4', 'Z5', 'R', 'Q', 'P', 'O', 'N', 'M', 'L1', 'L2', 'L3']) {
+    for (const code of ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Z2', 'Z3', 'Z4', 'Z5', 'R', 'Q', 'P', 'O', 'N', 'M', 'L1', 'L2', 'L3', 'K1', 'K2']) {
       ids[`supplier${code}`] = (await prisma.partner.create({ data: { partner_code: `${PREFIX}-${code}`, partner_name: `${PREFIX} 공급사 ${code}` } })).partner_id;
     }
     ids.worker = (await prisma.worker.create({

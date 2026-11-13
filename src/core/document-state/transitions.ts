@@ -212,7 +212,7 @@ export const TRANSITIONS: TransitionRegistry = {
    * ⭐ 출발이 둘이다 — 결과가 없는 요청(`REQUESTED`)과 기본·긴급 생략(`SKIPPED`)만 마감 취소가 무효로 만든다.
    */
   'quality.inspection_request.status_code': {
-    'inbound-receipt-reopened': { from: ['REQUESTED', 'SKIPPED'], to: 'CANCELLED', sourceOperation: REOPEN_RECEIPT },
+    'inbound-receipt-reopened': { from: ['REQUESTED', 'IN_PROGRESS', 'SKIPPED'], to: 'CANCELLED', sourceOperation: REOPEN_RECEIPT },
   },
 
   /**
