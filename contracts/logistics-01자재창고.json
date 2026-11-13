@@ -18974,6 +18974,41 @@
         }
        }
       }
+     },
+     "materialLots": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "description": "피처 005 FR-016 — 새 흐름 줄(입하 LOT · 자재 관리 LOT 여럿, 줄 lotId 는 대표 LOT 하나)의 자재 관리 LOT 마다 입고 단위. 입고(POST /logistics/goods-receipts)는 이 LOT 하나씩 그 receivableQty 한도로 보낸다 — 줄 receivableQty 는 이 합계다. 입하 중(RECEIVING)이면 각 receivableQty 0(FR-014a). 옛 줄은 null(줄 lotId·receivableQty 그대로). 선별 자식 LOT 은 여기 없고 splitLots 에 있다. 라인 목록·상세만 싣는다.",
+      "items": {
+       "type": "object",
+       "required": [
+        "lotId",
+        "lotNo",
+        "statusCode",
+        "receivableQty"
+       ],
+       "properties": {
+        "lotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1002
+        },
+        "lotNo": {
+         "type": "string",
+         "example": "AD9001-00041|50|261016|100001|0001"
+        },
+        "statusCode": {
+         "type": "string",
+         "example": "NORMAL"
+        },
+        "receivableQty": {
+         "type": "number",
+         "example": 100
+        }
+       }
+      }
      }
     }
    },

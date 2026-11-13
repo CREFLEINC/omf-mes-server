@@ -386,6 +386,33 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     await post('/api/logistics/goods-receipts').send(body(lots[0])).expect(201);
   });
 
+  it('FR-016 자재 관리 LOT 2개 입하 LOT — 입하 줄 materialLots 가 LOT 별 lotId·lotNo·receivableQty 를 싣고, LOT 별로 각 100 입고 201', async () => {
+    const lots = await passInboundLotIqc(fx, (await issueAndReceive(fx, batch(ids.s17, 2, 100))).inboundLot.inboundLotId);
+    const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lots[0].lotId) }, include: { inbound_lot: { include: { inbound_receipt_line: true } } } });
+    const line = lot.inbound_lot?.inbound_receipt_line;
+    if (line === undefined) throw new Error('입하 줄이 없다');
+    type LineRow = { inboundReceiptLineId: number; lotId: number | null; receivableQty: number | null; splitLots: unknown[];
+      materialLots: { lotId: number; lotNo: string; statusCode: string; receivableQty: number }[] | null };
+    const lineOf = async (): Promise<LineRow> => {
+      const response = await get(`/api/logistics/inbound-receipts/${String(line.inbound_receipt_id)}/lines`).expect(200);
+      expectShape(schemaOf('/logistics/inbound-receipts/{inboundReceiptId}/lines', 'get', 200), response.body);
+      return (response.body.items as LineRow[]).find((row) => row.inboundReceiptLineId === Number(line.inbound_receipt_line_id)) as LineRow;
+    };
+    const before = await lineOf();
+    expect(before).toMatchObject({ receivableQty: 200, splitLots: [] });
+    expect(before.materialLots).toEqual(lots.map((issued) => ({ lotId: issued.lotId, lotNo: issued.lotNo, statusCode: 'NORMAL', receivableQty: 100 })));
+
+    const receive = (issued: IssuedMaterialLot) => post('/api/logistics/goods-receipts').send({
+      receiptTypeCode: 'MATERIAL', plantId: Number(ids.plant), warehouseId: Number(ids.warehouse), receiptDatetime: `${DAY}T07:00:00.000Z`, businessDate: DAY,
+      lines: [{ inboundReceiptLineId: Number(line.inbound_receipt_line_id), itemId: Number(ids.item), lotId: issued.lotId, receiptQty: 100, uomId: Number(ids.ea),
+        qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', destinationLocationId: Number(ids.location) }],
+    });
+    await receive(lots[0]).expect(201);
+    expect((await lineOf()).materialLots?.map((row) => [row.lotId, row.receivableQty])).toEqual([[lots[0].lotId, 0], [lots[1].lotId, 100]]);
+    await receive(lots[1]).expect(201);
+    expect(await lineOf()).toMatchObject({ receivableQty: 0, materialLots: [{ receivableQty: 0 }, { receivableQty: 0 }] });
+  });
+
   it('FR-014a 검사 필요 품목도 입하 중이면 IQC 합격 전 400 보다 먼저 409 INBOUND_LOT_RECEIVING', async () => {
     const { lots } = await issueAndReceive(fx, batch(ids.s16, 1, 5));
     const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lots[0].lotId) }, include: { inbound_lot: true } });
@@ -629,7 +656,7 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     ids.itemN = (await prisma.item.create({
       data: { item_code: `${PREFIX}-N`, item_name: '작업기록무검사자재', item_type_code: 'RAW_MATERIAL', base_uom_id: ids.ea, lot_controlled: true, inspection_required: false },
     })).item_id;
-    for (let index = 1; index <= 16; index += 1) {
+    for (let index = 1; index <= 17; index += 1) {
       ids[`s${String(index)}`] = (await prisma.partner.create({ data: { partner_code: `${PREFIX}-S${String(index)}`, partner_name: `${PREFIX} 공급사 ${String(index)}` } })).partner_id;
     }
     ids.worker = (await prisma.worker.create({

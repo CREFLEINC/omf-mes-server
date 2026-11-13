@@ -148,7 +148,7 @@ export class InboundReceiptQueryService {
       include: INBOUND_LINE_INCLUDE,
     });
     // 입고 화면이 기본 수량·선별 불량분 줄을 세우는 근거(장부 P-56) — 줄의 LOT 전부를 한 번에 센다.
-    const lotsOf = await lotsOfInboundLines(this.prisma, rows, {});
+    const lotsOf = await lotsOfInboundLines(this.prisma, rows, { lot_no: true, status_code: true });
     const lotIds = [...lotsOf.values()].flatMap((lots) => lots.map((lot) => lot.lot_id));
     const [receivable, splits, receiving] = await Promise.all([
       receivableQtyOf(this.prisma, lotIds),
@@ -167,6 +167,10 @@ export class InboundReceiptQueryService {
             ? null
             : known.reduce((sum, lot) => sum.plus(receivable.get(lot.lot_id) ?? 0), new Prisma.Decimal(0)).toNumber(),
         splitLots: lots.flatMap((lot) => splits.get(lot.lot_id) ?? []),
+        materialLots: row.lot_id !== null ? null : lots.map((lot) => ({
+          lotId: Number(lot.lot_id), lotNo: lot.lot_no, statusCode: lot.status_code,
+          receivableQty: (receivable.get(lot.lot_id) ?? new Prisma.Decimal(0)).toNumber(),
+        })),
       };
     });
   }

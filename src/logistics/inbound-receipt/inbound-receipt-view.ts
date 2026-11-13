@@ -72,6 +72,11 @@ export interface InboundReceiptLineView {
   unallocatedQty: number;
   /** 서버 선행 P-56 — 이 라인 LOT 에서 선별로 떼어 낸 자식 LOT(불량분). 없으면 빈 배열. */
   splitLots?: SplitLotView[];
+  /**
+   * 새 흐름 줄(자재 관리 LOT 여럿 — 줄 `lot_id` 없음)의 자재 관리 LOT 마다 입고 단위(피처 005 FR-016). 입고는 이 LOT 하나씩 그 한도로 한다.
+   * 옛 줄은 `null`(줄 `lotId`·`receivableQty` 그대로). 선별 자식은 여기 넣지 않고 `splitLots` 에 둔다. 라인 목록(`GET …/lines`·상세)만 싣는다.
+   */
+  materialLots?: SplitLotView[] | null;
 }
 
 export interface InboundReceiptDetail {
