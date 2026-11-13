@@ -22,6 +22,7 @@ import { ProductionPlanService } from './production-plan/production-plan.service
 import { RoutingRevisionService } from './routing/routing-revision.service';
 import { RoutingController } from './routing/routing.controller';
 import { RoutingService } from './routing/routing.service';
+import { WorkingDayController } from './working-day/working-day.controller';
 
 /**
  * 계약 최상위 경로 `/planning` — Routing·BOM·생산계획.
@@ -29,7 +30,7 @@ import { RoutingService } from './routing/routing.service';
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, DocumentStateModule, NumberingModule, OutboxModule],
-  controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController, PlanProposalController],
+  controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController, PlanProposalController, WorkingDayController],
   providers: [
     RoutingService,
     RoutingOperationService,

@@ -1,10 +1,15 @@
 import { Prisma } from '@prisma/client';
 
 import { FgResolution, LOCATION_FACT_SELECT, LocationFact, fgKey, resolveFgLocations } from '../../core/erp-warehouse/fg-location';
+import { resolveWorkingDays } from '../../app/policy/working-day-resolver';
+import { toDateString } from '../../common/master';
+import { PLAN_DATE_SEARCH_LIMIT_DAYS, PlanningCalendarDay, addDays } from '../../core/calendar/working-day';
 import { RELEASED_WORK_ORDER_STATUSES } from '../../core/work-order';
 import type { EquipmentFacts, MoldFacts, RivalWindow } from '../../production/work-order/validation';
 import { DefaultBomRow, UsableRoutingRow, chooseRouting, readMastersOf } from '../production-plan/master-choice';
+import { localDate } from '../production-plan/plan-window';
 import { DefaultMap, pairKey, toDefaultMap } from '../production-plan/resource-assign';
+import { calendarKey, draftPlanDate, proposedPlanDate } from './proposal-policy';
 
 /**
  * 계획 제안이 읽는 것 전부 — 묶음(ERP W/O 여럿) 단위로 몇 번의 질의. 조회는 Prisma, 확정은 잠근 트랜잭션으로 같은 함수를 부른다.
@@ -38,6 +43,7 @@ export interface PlanRow {
   bom_id: bigint;
   routing_id: bigint;
   planned_line_id: bigint | null;
+  plan_date_source_code: string;
   remarks: string | null;
   work_order: { status_code: string }[];
 }
@@ -114,6 +120,8 @@ export interface ProposalFacts {
   /** ERP W/O 마다 완제품 위치 판정 — 키는 `fgKey`. */
   fg: Map<string, FgResolution>;
   rivals: RivalWindow[];
+  /** 계획일 후보마다 그날부터 보정 한도까지의 근무일 판정 — 키는 `calendarKey`. */
+  calendar: Map<string, PlanningCalendarDay[]>;
 }
 
 const CONFIRMED = 'CONFIRMED';
@@ -131,7 +139,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     orderBy: { production_plan_id: 'asc' },
     select: {
       production_plan_id: true, production_order_id: true, plan_no: true, status_code: true, version_no: true, plan_date: true,
-      planned_qty: true, uom_id: true, bom_id: true, routing_id: true, planned_line_id: true, remarks: true,
+      planned_qty: true, uom_id: true, bom_id: true, routing_id: true, planned_line_id: true, plan_date_source_code: true, remarks: true,
       work_order: { select: { status_code: true }, orderBy: { work_order_id: 'asc' } },
     },
   });
@@ -244,7 +252,37 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     locations: new Map(locationRows.map((row) => [row.location_id, row])),
     fg,
     rivals,
+    calendar: await readCalendar(client, orders, planRows, now),
   };
+}
+
+/** 새 계획(공장 층)과 작성중 계획(그 라인)의 계획일 후보마다 보정 한도까지 — 어느 쪽을 제안할지는 계산이 정하므로 둘 다 읽는다. */
+async function readCalendar(
+  client: Prisma.TransactionClient,
+  orders: readonly OrderRow[],
+  planRows: readonly PlanRow[],
+  now: Date,
+): Promise<Map<string, PlanningCalendarDay[]>> {
+  const starts = new Map<string, { plantId: bigint; lineId: bigint | null; start: string }>();
+  const add = (plantId: bigint, lineId: bigint | null, start: string) => starts.set(calendarKey(plantId, lineId, start), { plantId, lineId, start });
+  const orderOf = new Map(orders.map((order) => [order.production_order_id, order]));
+  for (const order of orders) {
+    const today = localDate(now, order.plant.timezone_code);
+    add(order.plant_id, null, proposedPlanDate(toDateString(order.planned_start_date), today));
+  }
+  for (const plan of planRows) {
+    const order = orderOf.get(plan.production_order_id);
+    if (order === undefined || plan.status_code === CONFIRMED) continue;
+    add(order.plant_id, plan.planned_line_id, draftPlanDate(toDateString(plan.plan_date) as string, localDate(now, order.plant.timezone_code)));
+  }
+  const entries = [...starts.entries()];
+  const days = await resolveWorkingDays(client, entries.map(([, target]) => ({
+    plantId: target.plantId,
+    lineId: target.lineId,
+    from: target.start,
+    to: addDays(target.start, PLAN_DATE_SEARCH_LIMIT_DAYS),
+  })));
+  return new Map(entries.map(([key], index) => [key, days[index]]));
 }
 
 /** 품목의 Routing 선택 — 작성중 계획은 저장된 Rev 가 아직 쓸 수 있으면 그것, 아니면 새 계획과 같은 규칙. */

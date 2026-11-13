@@ -2948,6 +2948,7 @@ model production_plan {
   version_no          Int              @default(1)
   split_of_plan_id    BigInt?
   split_reason_code   String?          @db.VarChar(50)
+  plan_date_source_code String        @default("USER") @db.VarChar(20)
   app_user            app_user?        @relation(fields: [confirmed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_production_plan_confirmed_by")
   bom                 bom              @relation(fields: [bom_id], references: [bom_id], onDelete: NoAction, onUpdate: NoAction)
   production_line     production_line? @relation(fields: [planned_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)

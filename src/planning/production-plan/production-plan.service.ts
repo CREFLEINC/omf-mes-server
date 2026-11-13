@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
-import { assertCodeValues, filter, optional, optionalDate } from '../../common/master';
+import { assertCodeValues, filter, optional, optionalDate, toDateString } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { NumberingService } from '../../core/numbering';
@@ -11,7 +11,7 @@ import { scopeWhere } from '../production-order/production-order-scope';
 import { assertPlannableRouting } from '../routing/routing.service';
 import { assertDefaultBom } from './master-choice';
 import { assertWithinOrder, precheckWithinOrder } from './plan-quantity';
-import { ProductionPlanView, productionPlanView } from './production-plan-view';
+import { ProductionPlanView, planViews } from './production-plan-view';
 
 /** 조회 2 + CRUD 3(PR ①a·②) — `:confirm` 은 PR ③ 몫이다. */
 export interface ProductionPlanListQuery {
@@ -40,7 +40,11 @@ export interface ProductionPlanCreate {
   plannedLineId?: number;
   splitOfPlanId?: ProductionPlanSplitRef;
   remarks?: string;
+  planDateSourceCode?: PlanDateSource;
 }
+
+/** 계획일을 시스템이 정했나(자동 분배·분할 순차 생성) 사람이 정했나 — 생략하면 사람이다. */
+type PlanDateSource = 'SYSTEM' | 'USER';
 
 /** 계약 `ProductionPlanUpdate` — required 0. 뒤 둘만 명시적 null = 해제. */
 export interface ProductionPlanUpdate {
@@ -50,6 +54,7 @@ export interface ProductionPlanUpdate {
   routingId?: number;
   plannedLineId?: number | null;
   remarks?: string | null;
+  planDateSourceCode?: PlanDateSource;
 }
 
 /** 태어나는 상태 · 확정 뒤 잠기는 상태. */
@@ -69,6 +74,7 @@ interface LockedPlan {
   version_no: number;
   production_order_id: bigint;
   planned_qty: Prisma.Decimal;
+  plan_date: Date;
 }
 
 @Injectable()
@@ -98,7 +104,7 @@ export class ProductionPlanService {
       }),
       this.prisma.production_plan.count({ where }),
     ]);
-    return pagedResponse(rows.map(productionPlanView), total, page);
+    return pagedResponse(await planViews(this.prisma, rows), total, page);
   }
 
   /** 없거나 범위 밖 공장 ERP W/O 의 계획이면 404 다(계약 선언) — 범위 밖 계획의 존재를 드러내지 않는다. */
@@ -107,7 +113,7 @@ export class ProductionPlanService {
       where: { production_plan_id: productionPlanId, ...planScopeWhere(scope) },
     });
     if (!row) throw new NotFoundException('없는 생산계획입니다.');
-    return { view: productionPlanView(row), versionNo: row.version_no };
+    return { view: (await planViews(this.prisma, [row]))[0], versionNo: row.version_no };
   }
 
   /** 단건 쓰기(수정·확정·삭제)가 멱등 처리보다 먼저 부른다 — 범위 밖이면 404. */
@@ -169,12 +175,13 @@ export class ProductionPlanService {
               ...optional('split_of_plan_id', idOf(body.splitOfPlanId?.sourcePlanId)),
               ...optional('split_reason_code', body.splitOfPlanId?.reasonCode),
               remarks: body.remarks ?? null,
+              plan_date_source_code: body.planDateSourceCode ?? 'USER',
               created_by: appUserId ?? null,
               updated_by: appUserId ?? null,
             },
           });
         });
-        return productionPlanView(created);
+        return (await planViews(this.prisma, [created]))[0];
       } catch (error) {
         if (!isDuplicatePlanNo(error)) throw error;
         if (attempt >= NUMBER_RETRY) {
@@ -222,6 +229,8 @@ export class ProductionPlanService {
         }
         if (body.bomId !== undefined) await assertDefaultBom(tx, body.bomId, current.production_order.item_id);
       }
+      // 출처는 날짜를 바꿀 때만 바뀐다 — 전체 본문을 싣는 호출자가 같은 날짜를 다시 보내도 바꾼 것이 아니다.
+      const dateChanged = body.planDate !== undefined && body.planDate !== toDateString(locked.plan_date);
       const updated = await tx.production_plan.update({
         where: { production_plan_id: BigInt(productionPlanId) },
         data: {
@@ -231,11 +240,12 @@ export class ProductionPlanService {
           ...optional('routing_id', idOf(body.routingId)),
           ...optional('planned_line_id', idOf(body.plannedLineId)),
           ...optional('remarks', body.remarks),
+          ...(dateChanged ? { plan_date_source_code: body.planDateSourceCode ?? 'USER' } : {}),
           updated_by: appUserId ?? null,
           version_no: { increment: 1 },
         },
       });
-      return productionPlanView(updated);
+      return (await planViews(tx, [updated]))[0];
     });
   }
 
@@ -272,7 +282,7 @@ export function planScopeWhere(scope: bigint[] | null): Prisma.production_planWh
 /** ⛔ `SELECT … FOR UPDATE` — 읽고 판정하고 쓰는 사이 재확정이 끼는 것을 막는다. */
 export async function lockPlan(tx: Prisma.TransactionClient, productionPlanId: number): Promise<LockedPlan> {
   const rows = await tx.$queryRaw<LockedPlan[]>`
-    SELECT status_code, version_no, production_order_id, planned_qty
+    SELECT status_code, version_no, production_order_id, planned_qty, plan_date
       FROM planning.production_plan
      WHERE production_plan_id = ${BigInt(productionPlanId)}
        FOR UPDATE`;

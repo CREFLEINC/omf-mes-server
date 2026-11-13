@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { lineAncestors, selectedCalendar } from "../../core/calendar/calendar-selection";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   DowntimeCalendarSlot,
@@ -90,17 +91,7 @@ export class DowntimeSummaryCalendarService {
       WITH RECURSIVE scoped_equipment
         (equipment_id,plant_id,line_id,timezone,range_start_us,range_end_us) AS
         (VALUES ${Prisma.join(values)}),
-      line_ancestors(equipment_id,line_id,depth,path) AS (
-        SELECT equipment_id,line_id,0,ARRAY[line_id]
-        FROM scoped_equipment WHERE line_id IS NOT NULL
-        UNION ALL
-        SELECT a.equipment_id,line.parent_line_id,a.depth+1,
-          a.path||line.parent_line_id
-        FROM line_ancestors a
-        JOIN mdm.production_line line ON line.production_line_id=a.line_id
-        WHERE line.parent_line_id IS NOT NULL
-          AND NOT line.parent_line_id=ANY(a.path)
-      ),
+      ${lineAncestors("scoped_equipment", "equipment_id")},
       date_scope AS (
         SELECT source.*,day::date AS calendar_date,
           day::date < ${startedFrom}::date AS carryover
@@ -133,28 +124,7 @@ export class DowntimeSummaryCalendarService {
             AT TIME ZONE scope.timezone))*1000000)::bigint::text END partial_end_us,
         scope.range_start_us,scope.range_end_us
       FROM date_scope scope
-      LEFT JOIN LATERAL (
-        SELECT candidate.work_calendar_id
-        FROM (
-          SELECT application.*,0 scope_rank,ancestor.depth
-          FROM mdm.work_calendar_application application
-          JOIN line_ancestors ancestor
-            ON ancestor.equipment_id=scope.equipment_id
-            AND ancestor.line_id=application.target_id
-          WHERE application.target_type_code='EQUIPMENT_GROUP'
-          UNION ALL
-          SELECT application.*,1 scope_rank,0 depth
-          FROM mdm.work_calendar_application application
-          WHERE application.target_type_code='PLANT'
-            AND application.target_id=scope.plant_id
-        ) candidate
-        WHERE candidate.effective_from<=scope.calendar_date
-          AND (candidate.effective_to IS NULL OR
-            candidate.effective_to>=scope.calendar_date)
-        ORDER BY candidate.scope_rank,candidate.depth,
-          candidate.effective_from DESC,
-          candidate.work_calendar_application_id DESC LIMIT 1
-      ) selected ON TRUE
+      ${selectedCalendar("equipment_id")}
       LEFT JOIN mdm.work_calendar calendar
         ON calendar.work_calendar_id=selected.work_calendar_id
       LEFT JOIN mdm.work_calendar_day day

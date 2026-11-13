@@ -623,7 +623,7 @@
     ],
     "summary": "ERP W/O 자동 계획 (재)시도",
     "deprecated": true,
-    "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. ERP W/O 수신·수기 등록 뒤의 자동 계획은 멈춘다 — 아래 「받으면 계획을 세운다」는 멈추기 전 동작이고, 이제는 이 오퍼레이션을 부를 때만 같은 일을 한다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67). ERP W/O 를 받으면(상태가 RECEIVED 이고 납기 — 없으면 계획 시작일 — 가 공장 현지 오늘 이후이거나 둘 다 없을 때) 서버가 계획 하나를 세우고 정할 수 있으면 확정·전개한다. 이 오퍼레이션은 그 조건 없이 그것을 다시 시도한다 — 계획이 없으면 세우고(BOM 은 품목의 기본 Rev, Routing 은 쓸 수 있는 Rev 가 하나면 그것·여럿이면 기본 Rev, 수량은 오더 수량, 계획일은 ERP 계획 시작일이 오늘 이후면 그날·아니면 공장 현지 오늘, 라인은 비움), 작성중 계획이 있고 이제 W/O 라인이 정해지면(계획 라인을 골랐거나 기본 매핑 설비가 라인에 속함) 확정한다. 확정 계획이 오더 수량을 채웠으면 바꾸지 않고 CONFIRMED 를 낸다. 확정에서 막히면 확정(POST /planning/production-plans/{productionPlanId}:confirm)의 400·409 를 그대로 낸다. 취소된 ERP W/O 는 400 STATE_LOCKED, 같은 ERP W/O 의 자동 계획이 이미 돌고 있으면 409 INVALID_STATE 다(다시 누르면 된다).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
+    "description": "⛔ 대체 예정 — 제안 조회(GET /planning/production-orders:plan-proposals)와 선택 확정(POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal)이 대신한다. 화면이 옮겨 간 뒤 지운다. 새 화면은 쓰지 않는다. ⛔ 이 경로는 휴일 보정을 하지 않는다 — 계획일이 휴일이어도 그대로 세우고 날짜 출처는 USER 로 남는다. ERP W/O 수신·수기 등록 뒤의 자동 계획은 멈춘다 — 아래 「받으면 계획을 세운다」는 멈추기 전 동작이고, 이제는 이 오퍼레이션을 부를 때만 같은 일을 한다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-67). ERP W/O 를 받으면(상태가 RECEIVED 이고 납기 — 없으면 계획 시작일 — 가 공장 현지 오늘 이후이거나 둘 다 없을 때) 서버가 계획 하나를 세우고 정할 수 있으면 확정·전개한다. 이 오퍼레이션은 그 조건 없이 그것을 다시 시도한다 — 계획이 없으면 세우고(BOM 은 품목의 기본 Rev, Routing 은 쓸 수 있는 Rev 가 하나면 그것·여럿이면 기본 Rev, 수량은 오더 수량, 계획일은 ERP 계획 시작일이 오늘 이후면 그날·아니면 공장 현지 오늘, 라인은 비움), 작성중 계획이 있고 이제 W/O 라인이 정해지면(계획 라인을 골랐거나 기본 매핑 설비가 라인에 속함) 확정한다. 확정 계획이 오더 수량을 채웠으면 바꾸지 않고 CONFIRMED 를 낸다. 확정에서 막히면 확정(POST /planning/production-plans/{productionPlanId}:confirm)의 400·409 를 그대로 낸다. 취소된 ERP W/O 는 400 STATE_LOCKED, 같은 ERP W/O 의 자동 계획이 이미 돌고 있으면 409 INVALID_STATE 다(다시 누르면 된다).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -872,6 +872,72 @@
      }
     },
     "x-internal-note": "소관 = W-06-10(공유계약 B-4-1 ④ · 중복 구현 금지). 기존 「근거: W-02-01 §5」는 죽은 인용이었다 — W-02-01 §5-5 163행이 「이 화면에 두지 않는다」로 정확히 반대를 말한다. omf-mes-client#66 종결 코멘트·#436 으로 클라이언트는 이미 이 mutation 을 제거했다."
+   }
+  },
+  "/planning/working-days:resolve": {
+   "post": {
+    "tags": [
+     "planning"
+    ],
+    "summary": "공장·생산 라인·기간 묶음의 근무일 판정",
+    "description": "묶음(targets)마다 기간의 날짜별 근무일 판정(PlanningCalendarDay)을 돌려준다. 판정 규칙은 PlanningCalendarDay 설명에 있다 — 설비 가동 정지 요약과 같은 캘린더 규칙에 공장 근무일 정책을 더한 것이다.\n\n화면의 자동 분배·계획 분할(순차 생성)은 이 응답으로 날짜를 고른다 — statusCode 가 HOLIDAY 인 날만 건너뛴다. UNDETERMINED(판정 불가)는 건너뛰지 않고 그대로 쓰되 판정 불가로 표시한다(제안 계획일 보정과 같은 규칙). 「다음 N 근무일」 같은 서버 탐색은 따로 없다 — 기간이 모자라면 다음 기간으로 다시 부른다.\n\n⛔ 한도 — targets 는 1~50개, 묶음마다 from ≤ to 이고 기간은 92일 이하(양 끝 포함). 넘으면 400 RANGE.\n없는 공장은 400 { field: targets[i].plantId, code: INVALID }, productionLineId 가 그 공장의 라인이 아니면 400 { field: targets[i].productionLineId, code: INVALID } 다. ⭐ 사용자 데이터 범위 — 400 이 없을 때 범위 밖 공장이 있으면 403 { field: targets[i].plantId, code: PERMISSION_DENIED } 다(공장을 고르는 다른 조회와 같은 모양).\n⛔ 부작용이 없다 — 읽기지만 묶음을 본문에 실어야 해서 POST 다. 저장하지 않으므로 Idempotency-Key 를 받지 않는다.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PlanningWorkingDayResolve"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "묶음마다 날짜별 판정 — 요청 순서대로",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PlanningWorkingDayResolveResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "targets 가 없거나 50개를 넘는다 · 기간이 거꾸로이거나 92일을 넘는다 · 공장·라인이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다 — 계획 제안 조회와 같은 권한(W-02-01·W-02-02). 또는 사용자 데이터 범위 밖 공장(PERMISSION_DENIED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/planning/production-plans": {
@@ -7700,9 +7766,11 @@
        "EQUIPMENT_CALIBRATION_EXPIRED",
        "WORKER_QUALIFICATION_EXPIRED",
        "MOLD_LIFE_EXCEEDED",
-       "EQUIPMENT_DOUBLE_BOOKED"
+       "EQUIPMENT_DOUBLE_BOOKED",
+       "PLAN_DATE_HOLIDAY",
+       "PLAN_DATE_UNDETERMINED"
       ],
-      "description": "BLOCK 은 ProductionPlanProposalReasonCode 의 값. WARN 은 4M 점검(GET /production/work-orders/{workOrderId}/validation)의 WARN 코드와 같은 판정이다",
+      "description": "BLOCK 은 ProductionPlanProposalReasonCode 의 값. WARN 은 4M 점검(GET /production/work-orders/{workOrderId}/validation)의 WARN 코드와 같은 판정이다. 예외로 PLAN_DATE_HOLIDAY(계획일이 휴일)·PLAN_DATE_UNDETERMINED(계획일 판정 불가)는 계획 단위 WARN 이고 field 는 planDate 다 — 확정을 막지 않는다",
       "example": "WORK_ORDER_LINE_REQUIRED"
      },
      "field": {
@@ -7724,6 +7792,9 @@
      "proposalPlanKey",
      "planSource",
      "planDate",
+     "planDateSourceCode",
+     "planDateAdjustment",
+     "planDateCalendar",
      "proposedQty",
      "uomId",
      "bomId",
@@ -7737,6 +7808,22 @@
      "issues"
     ],
     "properties": {
+     "planDateSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "description": "NEW 는 SYSTEM. EXISTING_DRAFT 는 저장된 출처 — 단 저장 날짜가 지나 오늘로 옮겼으면 SYSTEM. SYSTEM 이면 휴일 보정을 하고(planDateAdjustment), USER 면 보정하지 않고 경고만 낸다",
+      "example": "SYSTEM"
+     },
+     "planDateAdjustment": {
+      "$ref": "#/components/schemas/ProductionPlanDateAdjustment"
+     },
+     "planDateCalendar": {
+      "$ref": "#/components/schemas/PlanningCalendarDay",
+      "description": "보정 뒤 planDate 의 판정. 공장은 ERP W/O 의 공장, 라인은 plannedLineId(null 이면 공장 층 — 공정 W/O 의 라인은 보지 않는다). HOLIDAY 면 계획 issues 에 WARN PLAN_DATE_HOLIDAY, UNDETERMINED 면 WARN PLAN_DATE_UNDETERMINED"
+     },
      "proposalPlanKey": {
       "type": "string",
       "pattern": "^(new|plan)-[1-9][0-9]*$",
@@ -7767,7 +7854,7 @@
       "type": "string",
       "format": "date",
       "example": "2026-08-11",
-      "description": "NEW 는 ERP 계획 시작일이 공장 현지 오늘 이후면 그날, 없거나 지났으면 오늘. EXISTING_DRAFT 는 저장값, 지났으면 오늘(저장값은 saved.planDate). 늘 공장 현지 오늘 이후다"
+      "description": "NEW 는 ERP 계획 시작일이 공장 현지 오늘 이후면 그날, 없거나 지났으면 오늘. EXISTING_DRAFT 는 저장값, 지났으면 오늘(저장값은 saved.planDate). 늘 공장 현지 오늘 이후다. 그 날짜가 시스템이 정한 날(planDateSourceCode SYSTEM)이고 휴일이면 보정한 날이다 — 경위는 planDateAdjustment"
      },
      "proposedQty": {
       "type": "number",
@@ -8074,6 +8161,287 @@
      }
     }
    },
+   "PlanningCalendarDay": {
+    "type": "object",
+    "description": "하루의 근무일 판정 — 생산계획의 날짜 판단이 모두 이 한 벌을 쓴다. 판정 순서:\n① 그 날짜에 적용되는 작업 캘린더 하나를 고른다 — 생산 라인 → 상위 라인(가까운 순) → 공장 순으로 적용(작업 캘린더 적용)이 있는 첫 층. 적용 기간이 그 날짜를 덮는 적용만 보고, 같은 층에 여럿이면 적용 시작일이 늦은 것. 라인이 없으면(productionLineId null) 공장 층만 본다. 설비 가동 정지 요약과 같은 규칙이다.\n② 고른 캘린더가 사용 중이고 그 날짜를 등록했으면 그 날의 구분을 따른다 — 공장 근무일 정책과 관계없다(주말 특별근무 WORKING 은 가동, 평일 공휴일 HOLIDAY 는 휴일, PARTIAL 은 부분 가동과 그 시각).\n③ 고른 캘린더가 없거나, 사용 중지됐거나, 그 날짜를 등록하지 않았으면(부분 가동인데 시각이 없거나 종료가 시작보다 이르면 등록하지 않은 것으로 본다) ⛔ 상위 층 캘린더로 내려가지 않고 공장 근무일 정책(WEEKLY_WORKING_DAYS · 그 날짜에 유효한 정책)의 요일로 본다 — 5 = 월~금, 6 = 월~토, 일요일은 늘 휴일.\n④ 그 날짜에 유효한 근무일 정책이 없는 공장은 요일로 휴일을 정하지 않는다 — UNDETERMINED(판정 불가)다. ⛔ 정책 미등록 공장에 주 5일 기본값을 쓰지 않는다 — 기본값 5 는 정책이 등록된 공장(값이 5·6 이 아닌 경우)에서만 쓴다. 정책 등록 여부와 관계없이 캘린더에 등록된 날짜(②)는 늘 적용한다.\n⛔ 휴일(HOLIDAY)·판정 불가(UNDETERMINED)는 오류가 아니라 정보다 — 계획 저장·확정을 막지 않는다. 판정 불가는 휴일 경고와 다른 코드로 낸다.",
+    "required": [
+     "date",
+     "statusCode",
+     "sourceCode",
+     "workCalendarId",
+     "calendarCode",
+     "appliedProductionLineId",
+     "reasonCode",
+     "remarks",
+     "startTime",
+     "endTime",
+     "weeklyWorkingDays"
+    ],
+    "properties": {
+     "date": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-09-02",
+      "description": "공장 현지 날짜"
+     },
+     "statusCode": {
+      "type": "string",
+      "enum": [
+       "WORKING",
+       "HOLIDAY",
+       "PARTIAL",
+       "UNDETERMINED"
+      ],
+      "description": "WORKING 가동 · HOLIDAY 휴일 · PARTIAL 부분 가동(가동일이다 — 시각만 startTime·endTime 으로 보인다, 수량 환산은 하지 않는다) · UNDETERMINED 판정 불가(캘린더에 날짜가 없고 공장 근무일 정책이 없다). 시스템이 날짜를 고를 때는 HOLIDAY 만 건너뛴다",
+      "example": "HOLIDAY"
+     },
+     "sourceCode": {
+      "type": "string",
+      "enum": [
+       "LINE_CALENDAR",
+       "PARENT_LINE_CALENDAR",
+       "PLANT_CALENDAR",
+       "WEEKLY_POLICY",
+       "NOT_CONFIGURED"
+      ],
+      "description": "판정 출처 — LINE_CALENDAR 그 라인에 적용한 캘린더 · PARENT_LINE_CALENDAR 상위 라인에 적용한 캘린더 · PLANT_CALENDAR 공장에 적용한 캘린더 · WEEKLY_POLICY 공장 근무일 정책의 요일 · NOT_CONFIGURED 미설정(statusCode UNDETERMINED)",
+      "example": "PLANT_CALENDAR"
+     },
+     "workCalendarId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 3,
+      "description": "① 에서 고른 캘린더 — 출처가 WEEKLY_POLICY·NOT_CONFIGURED 여도(그 캘린더가 날짜를 등록하지 않았거나 사용 중지됐다) 고른 캘린더가 있으면 채운다. 적용된 캘린더가 없으면 null"
+     },
+     "calendarCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "VN-2026",
+      "description": "workCalendarId 의 코드"
+     },
+     "appliedProductionLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 12,
+      "description": "① 에서 캘린더를 고른 라인 — 그 라인 층이면 그 라인, 상위 라인 층이면 적용이 있던 상위 라인. 출처가 WEEKLY_POLICY 여도(그 캘린더가 날짜를 등록하지 않았다) 채운다. 공장 층에서 골랐거나 고른 캘린더가 없으면 null"
+     },
+     "reasonCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "example": "PUBLIC_HOLIDAY",
+      "description": "캘린더 날짜의 사유(공통코드 WORK_CALENDAR_DAY_REASON). 출처가 캘린더가 아니면 null",
+      "x-code-key": "CD-WORK-CALENDAR-DAY-REASON"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "독립기념일",
+      "description": "캘린더 날짜의 비고. 출처가 캘린더가 아니면 null"
+     },
+     "startTime": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "08:00:00",
+      "description": "PARTIAL 만 — 가동 시작 시각(공장 현지). 아니면 null"
+     },
+     "endTime": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "12:00:00",
+      "description": "PARTIAL 만 — 가동 종료 시각(공장 현지). 아니면 null"
+     },
+     "weeklyWorkingDays": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "enum": [
+       5,
+       6,
+       null
+      ],
+      "example": 5,
+      "description": "WEEKLY_POLICY 만 — 그 날짜에 유효한 공장 근무일 정책 값. 아니면 null"
+     }
+    }
+   },
+   "PlanningWorkingDayTarget": {
+    "type": "object",
+    "required": [
+     "plantId",
+     "from",
+     "to"
+    ],
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1,
+      "example": 1
+     },
+     "productionLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "minimum": 1,
+      "example": 12,
+      "description": "생략·null 이면 공장 층만 본다(라인·상위 라인 캘린더를 보지 않는다)"
+     },
+     "from": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-09-01"
+     },
+     "to": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-09-30",
+      "description": "from 이상 · 기간 92일 이하(양 끝 포함)"
+     }
+    }
+   },
+   "PlanningWorkingDayResolve": {
+    "type": "object",
+    "required": [
+     "targets"
+    ],
+    "properties": {
+     "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+       "$ref": "#/components/schemas/PlanningWorkingDayTarget"
+      },
+      "description": "같은 묶음을 거듭 보내도 거르지 않고 요청 순서대로 낸다"
+     }
+    }
+   },
+   "PlanningWorkingDayResolveResult": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "description": "targets 와 같은 순서·같은 수",
+      "items": {
+       "type": "object",
+       "required": [
+        "plantId",
+        "productionLineId",
+        "from",
+        "to",
+        "days"
+       ],
+       "properties": {
+        "plantId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1
+        },
+        "productionLineId": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "example": 12
+        },
+        "from": {
+         "type": "string",
+         "format": "date",
+         "example": "2026-09-01"
+        },
+        "to": {
+         "type": "string",
+         "format": "date",
+         "example": "2026-09-30"
+        },
+        "days": {
+         "type": "array",
+         "description": "from 부터 to 까지 하루도 빠짐없이 날짜 순",
+         "items": {
+          "$ref": "#/components/schemas/PlanningCalendarDay"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "ProductionPlanDateAdjustment": {
+    "type": "object",
+    "description": "제안 계획일 보정 경위. 시스템이 정한 계획일이 휴일(HOLIDAY)이면 다음 날부터 31일 안에서 휴일이 아닌 첫날로 옮긴다 — UNDETERMINED 는 건너뛰지 않는다(그 날로 옮기고 planDateCalendar 가 판정 불가를 보인다). 원래 날짜가 판정 불가면 보정하지 않는다. 사용자가 고른 날짜는 보정하지 않는다.",
+    "required": [
+     "originalDate",
+     "adjustedDate",
+     "outcomeCode",
+     "searchLimitDays",
+     "skippedDays"
+    ],
+    "properties": {
+     "originalDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-09-02",
+      "description": "보정 전 날짜 — NEW 는 ERP 계획 시작일(지났거나 없으면 공장 현지 오늘), EXISTING_DRAFT 는 저장값(지났으면 오늘)"
+     },
+     "adjustedDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "example": "2026-08-11",
+      "description": "ADJUSTED 일 때만 — 계획의 planDate 와 같다. 아니면 null"
+     },
+     "outcomeCode": {
+      "type": "string",
+      "enum": [
+       "NOT_NEEDED",
+       "ADJUSTED",
+       "NOT_ADJUSTED_UNDETERMINED",
+       "NOT_ADJUSTED_SEARCH_LIMIT",
+       "USER_SPECIFIED"
+      ],
+      "description": "NOT_NEEDED 원래 날짜가 휴일이 아니다 · ADJUSTED 휴일이라 옮겼다 · NOT_ADJUSTED_UNDETERMINED 원래 날짜가 판정 불가라 옮기지 않았다 · NOT_ADJUSTED_SEARCH_LIMIT 31일 안에 휴일 아닌 날이 없어 옮기지 않았다(원래 날짜 그대로, 휴일 경고) · USER_SPECIFIED 사용자가 고른 날짜라 보정하지 않는다(휴일이면 경고만)",
+      "example": "ADJUSTED"
+     },
+     "searchLimitDays": {
+      "type": "integer",
+      "example": 31,
+      "description": "원래 날짜 다음 날부터 몇 날까지 보는가"
+     },
+     "skippedDays": {
+      "type": "array",
+      "description": "보정 사유 — 건너뛴 휴일의 판정(원래 날짜부터 날짜 순). ADJUSTED·NOT_ADJUSTED_SEARCH_LIMIT 만, 아니면 빈 배열",
+      "items": {
+       "$ref": "#/components/schemas/PlanningCalendarDay"
+      }
+     }
+    }
+   },
    "ProductionPlanProposalBasis": {
     "type": "object",
     "description": "변경 감지 값 — 제안을 계산할 때 본 기준의 판. 서버가 만드는 불투명 문자열이라 화면은 해석·비교하지 않고 확정 본문 basis 에 그대로 돌려 싣는다. 확정은 같은 식으로 다시 계산해 하나라도 다르면 저장하지 않고 409 PROPOSAL_CHANGED 다. ⛔ 다른 W/O 의 작업자 배정처럼 수시로 바뀌는 값은 넣지 않는다 — 기준정보·저장된 계획만 본다.",
@@ -8082,9 +8450,16 @@
      "plans",
      "bom",
      "routing",
-     "resources"
+     "resources",
+     "calendar"
     ],
     "properties": {
+     "calendar": {
+      "type": "string",
+      "maxLength": 128,
+      "example": "값",
+      "description": "시스템이 정한 계획일(planDateSourceCode SYSTEM)마다 보정에 쓴 날짜들 — 원래 날짜부터 고른 날짜까지(한도에 걸렸으면 한도까지) — 의 statusCode. ⛔ 사용자가 고른 날짜의 판정은 넣지 않는다 — 그 날이 휴일이 돼도 경고만 바뀌고 409 가 나지 않는다. 캘린더 전체의 판이 아니라 쓴 날짜만 보므로 다른 날짜를 고쳐도 바뀌지 않는다"
+     },
      "productionOrder": {
       "type": "string",
       "maxLength": 128,
@@ -8132,7 +8507,8 @@
        "plans",
        "bom",
        "routing",
-       "resources"
+       "resources",
+       "calendar"
       ],
       "description": "ProductionPlanProposalBasis 의 칸 이름",
       "example": "productionOrder"
@@ -8187,7 +8563,7 @@
       "type": "string",
       "format": "date",
       "example": "2026-08-11",
-      "description": "공장 현지 오늘 이후여야 한다 — 지났으면 400 RANGE(자정을 넘겨 확정하면 검토 때의 날짜가 지났을 수 있다)"
+      "description": "공장 현지 오늘 이후여야 한다 — 지났으면 400 RANGE(자정을 넘겨 확정하면 검토 때의 날짜가 지났을 수 있다). 휴일이어도 거부하지 않는다. 저장하는 날짜 출처는 서버가 정한다 — 제안 planDate 와 같으면 제안의 planDateSourceCode, 다르면 USER"
      },
      "plannedQty": {
       "type": "number",
@@ -8346,9 +8722,14 @@
      "planNo",
      "statusCode",
      "versionNo",
+     "planDateCalendar",
      "workOrders"
     ],
     "properties": {
+     "planDateCalendar": {
+      "$ref": "#/components/schemas/PlanningCalendarDay",
+      "description": "확정한 계획일의 판정 — 휴일·판정 불가 경고 정보(ProductionPlan.planDateCalendar 와 같다)"
+     },
      "proposalPlanKey": {
       "type": "string",
       "description": "CONFIRMED 만 — 본문의 임시 식별자. 화면이 제안 행과 실제 계획을 잇는다",
@@ -8562,6 +8943,24 @@
    "ProductionPlan": {
     "type": "object",
     "properties": {
+     "planDateSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "description": "계획일을 누가 정했나 — SYSTEM 은 시스템이 만든 날짜(자동 분배·분할 순차 생성·제안 계획일 보정), USER 는 사람이 직접 고른 날짜. SYSTEM 날짜는 그 날이 뒤에 휴일이 되면 재검토 대상이고(planDateReviewRequired · 제안 basis.calendar), USER 날짜는 휴일이어도 경고만 한다. 출처는 계획일을 바꿀 때만 바뀐다. 이 칸이 생기기 전 계획은 USER",
+      "example": "SYSTEM"
+     },
+     "planDateCalendar": {
+      "$ref": "#/components/schemas/PlanningCalendarDay",
+      "description": "계획일의 지금 판정 — 휴일·판정 불가 경고 정보다(오류 아님). 조회·등록·수정·확정 응답마다 그때의 캘린더로 다시 판정한다. 라인은 plannedLineId(없으면 공장 층), 공장은 ERP W/O 의 공장"
+     },
+     "planDateReviewRequired": {
+      "type": "boolean",
+      "example": false,
+      "description": "작성중(DRAFT)이고 planDateSourceCode 가 SYSTEM 인데 planDateCalendar.statusCode 가 HOLIDAY 다 — 시스템이 고른 날이 그 뒤 휴일이 됐으니 다시 배분·보정하라는 표시. USER 출처·확정 계획은 늘 false(휴일 여부는 planDateCalendar 로 본다)"
+     },
      "productionPlanId": {
       "type": "integer",
       "format": "int64",
@@ -8641,7 +9040,10 @@
      "uomId",
      "bomId",
      "routingId",
-     "statusCode"
+     "statusCode",
+     "planDateSourceCode",
+     "planDateCalendar",
+     "planDateReviewRequired"
     ],
     "description": "BOM·Routing 은 06 기준정보 계약이 소유한다 — 여기서는 참조만 한다.",
     "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 02 계약 2단계 §1-2"
@@ -8649,6 +9051,15 @@
    "ProductionPlanCreate": {
     "type": "object",
     "properties": {
+     "planDateSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "description": "계획일을 누가 정했나 — SYSTEM 은 시스템이 만든 날짜(자동 분배·분할 순차 생성·제안 계획일 보정), USER 는 사람이 직접 고른 날짜. SYSTEM 날짜는 그 날이 뒤에 휴일이 되면 재검토 대상이고(planDateReviewRequired · 제안 basis.calendar), USER 날짜는 휴일이어도 경고만 한다. 생략하면 USER. 화면의 자동 분배·분할 순차 생성이 만든 날짜는 SYSTEM 으로 싣는다. ⛔ 휴일이어도 거부하지 않는다 — 응답 planDateCalendar 로 경고한다",
+      "example": "SYSTEM"
+     },
      "productionOrderId": {
       "type": "integer",
       "format": "int64",
@@ -8723,6 +9134,15 @@
    "ProductionPlanUpdate": {
     "type": "object",
     "properties": {
+     "planDateSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "description": "계획일을 누가 정했나 — SYSTEM 은 시스템이 만든 날짜(자동 분배·분할 순차 생성·제안 계획일 보정), USER 는 사람이 직접 고른 날짜. SYSTEM 날짜는 그 날이 뒤에 휴일이 되면 재검토 대상이고(planDateReviewRequired · 제안 basis.calendar), USER 날짜는 휴일이어도 경고만 한다. ⛔ planDate 가 저장값과 다를 때만 쓴다 — 그때 이 값(생략하면 USER)으로 바뀐다. planDate 를 안 보내거나 저장값과 같으면 이 칸은 무시하고 출처를 그대로 둔다(날짜 외 칸 수정으로 출처가 바뀌지 않는다)",
+      "example": "SYSTEM"
+     },
      "planDate": {
       "type": "string",
       "format": "date",

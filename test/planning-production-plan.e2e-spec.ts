@@ -1075,6 +1075,73 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
   });
 
   /** `:confirm` 200 — 확정도 실제 오퍼레이션으로 한다(§8-1 관행). */
+  /** 이 묶음만 공장에 작업 캘린더를 붙인다 — 앞 묶음은 캘린더·정책이 없어 판정 불가다. 날짜는 앞 묶음과 겹치지 않는 2027-05. */
+  describe('계획일 출처 · 휴일 경고', () => {
+    const HOLIDAY = '2027-05-04';
+    const OPEN = '2027-05-05';
+    let orderId = 0;
+    const send = (method: 'post' | 'put', path: string, body: object, ifMatch?: string) => {
+      const call = request(app.getHttpServer())[method](`/api/planning/production-plans${path}`).set('Cookie', cookie).set('Idempotency-Key', randomUUID());
+      return (ifMatch === undefined ? call : call.set('If-Match', ifMatch)).send(body);
+    };
+    const put = async (planId: number, body: object) => (await send('put', `/${planId}`, body, await etagOf(planId)).expect(200)).body;
+    const create = async (extra: object) =>
+      (await send('post', '', { productionOrderId: orderId, planDate: HOLIDAY, plannedQty: 1, uomId, bomId, routingId, plannedLineId: lineId, ...extra }).expect(201)).body;
+
+    beforeAll(async () => {
+      const base = await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: BigInt(orderWId) } });
+      orderId = Number((await prisma.production_order.create({ data: {
+        production_order_no: `${PREFIX}-PO-HOL`, business_unit_id: base.business_unit_id, plant_id: base.plant_id, item_id: base.item_id,
+        order_qty: 1000, uom_id: base.uom_id, status_code: 'RECEIVED',
+      } })).production_order_id);
+      const calendar = await prisma.work_calendar.create({ data: { calendar_code: `${PREFIX}-CAL`, calendar_name: PREFIX } });
+      await prisma.work_calendar_application.create({ data: {
+        work_calendar_id: calendar.work_calendar_id, target_type_code: 'PLANT', target_id: plantId, effective_from: new Date('2027-01-01T00:00:00.000Z'),
+      } });
+      await prisma.work_calendar_day.create({ data: {
+        work_calendar_id: calendar.work_calendar_id, calendar_date: new Date(`${HOLIDAY}T00:00:00.000Z`), day_type_code: 'HOLIDAY', reason_code: 'PUBLIC_HOLIDAY',
+      } });
+    });
+
+    it('시스템 지정 날짜는 휴일이어도 저장하고 판정·재검토 표시를 낸다', async () => {
+      const created = await create({ planDateSourceCode: 'SYSTEM' });
+      expect(validator('POST /planning/production-plans', '201')(created)).toBe(true);
+      expect(created).toMatchObject({
+        planDateSourceCode: 'SYSTEM',
+        planDateCalendar: { date: HOLIDAY, statusCode: 'HOLIDAY', sourceCode: 'PLANT_CALENDAR', reasonCode: 'PUBLIC_HOLIDAY' },
+        planDateReviewRequired: true,
+      });
+    });
+
+    it('출처를 생략하면 USER — 휴일이어도 재검토 표시 없이 경고(판정)만 낸다', async () => {
+      const created = await create({});
+      expect(created).toMatchObject({ planDateSourceCode: 'USER', planDateCalendar: { statusCode: 'HOLIDAY' }, planDateReviewRequired: false });
+    });
+
+    it('출처는 날짜를 바꿀 때만 바뀐다 — 날짜 외 수정·같은 날짜 재전송은 그대로, 날짜를 바꾸면 보낸 값(생략 USER)', async () => {
+      const planId = (await create({ planDateSourceCode: 'SYSTEM' })).productionPlanId as number;
+      expect(await put(planId, { plannedQty: 2 })).toMatchObject({ planDateSourceCode: 'SYSTEM' });
+      expect(await put(planId, { planDate: HOLIDAY, planDateSourceCode: 'USER' })).toMatchObject({ planDateSourceCode: 'SYSTEM' });
+      const moved = await put(planId, { planDate: OPEN });
+      expect(moved).toMatchObject({ planDateSourceCode: 'USER', planDateCalendar: { date: OPEN, statusCode: 'UNDETERMINED', sourceCode: 'NOT_CONFIGURED' }, planDateReviewRequired: false });
+      expect(validator('PUT /planning/production-plans/{productionPlanId}')(moved)).toBe(true);
+      expect(await put(planId, { planDate: HOLIDAY, planDateSourceCode: 'SYSTEM' })).toMatchObject({ planDateSourceCode: 'SYSTEM', planDateReviewRequired: true });
+    });
+
+    it('조회·확정이 출처를 보존하고 판정을 싣는다 — 휴일 계획도 확정된다', async () => {
+      const planId = (await create({ planDateSourceCode: 'SYSTEM' })).productionPlanId as number;
+      const detail = await request(app.getHttpServer()).get(`/api/planning/production-plans/${planId}`).set('Cookie', cookie).expect(200);
+      expect(detail.body).toMatchObject({ planDateSourceCode: 'SYSTEM', planDateReviewRequired: true });
+      const list = await request(app.getHttpServer()).get('/api/planning/production-plans').query({ productionOrderId: orderId }).set('Cookie', cookie).expect(200);
+      expect(validator('GET /planning/production-plans')(list.body)).toBe(true);
+      expect(list.body.items.find((item: { productionPlanId: number }) => item.productionPlanId === planId)).toMatchObject({ planDateSourceCode: 'SYSTEM', planDateCalendar: { statusCode: 'HOLIDAY' } });
+
+      const confirmed = (await confirmPlan(planId)).body;
+      expect(confirmed).toMatchObject({ statusCode: 'CONFIRMED', planDateSourceCode: 'SYSTEM', planDateCalendar: { statusCode: 'HOLIDAY' }, planDateReviewRequired: false });
+      expect(validator('POST /planning/production-plans/{productionPlanId}:confirm')(confirmed)).toBe(true);
+    });
+  });
+
   async function confirmPlan(productionPlanId: number): Promise<request.Response> {
     return request(app.getHttpServer())
       .post(`/api/planning/production-plans/${productionPlanId}:confirm`)
@@ -1330,6 +1397,10 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
    *  ⚠ `plan_no` 는 이제 채번(`PP-{YYYYMMDD}-{SEQ4}`)이 지어 `PREFIX` 로 시작하지 않는다 —
    *  `production_order` 관계로 좁힌다. */
   async function cleanup(): Promise<void> {
+    const calendars = { work_calendar: { calendar_code: { startsWith: PREFIX } } };
+    await prisma.work_calendar_day.deleteMany({ where: calendars });
+    await prisma.work_calendar_application.deleteMany({ where: calendars });
+    await prisma.work_calendar.deleteMany({ where: { calendar_code: { startsWith: PREFIX } } });
     const scope = { production_order: { production_order_no: { startsWith: PREFIX } } };
     // 전개분 — `work_order_dependency` → `work_order` 가 계획보다 먼저다(§8-2 역순).
     const plans = await prisma.production_plan.findMany({ where: scope, select: { production_plan_id: true } });

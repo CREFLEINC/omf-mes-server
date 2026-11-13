@@ -6,9 +6,11 @@ import { ConflictException, ContractException, ERROR_CODE } from '../../common/e
 import { IdempotencyConflictCode, IdempotencyService } from '../../common/idempotency';
 import { idempotencyContextOf } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
+import { PlanningCalendarDay } from '../../core/calendar/working-day';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlanConfirmService, isDuplicateWorkOrderNo } from '../production-plan/plan-confirm.service';
+import { PlanDateRow, calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals } from './proposal-builder';
 import { ProposalConfirmBody, ResolvedPlan, quantityDelta, resolveConfirm } from './proposal-confirm-check';
@@ -25,6 +27,7 @@ export interface ProposalConfirmResult {
     planNo: string;
     statusCode: string;
     versionNo: number;
+    planDateCalendar: PlanningCalendarDay;
     workOrders: { workOrderId: number; workOrderNo: string; routingOperationId: number }[];
   }[];
 }
@@ -43,6 +46,7 @@ const BASIS_LABEL: Record<keyof ProposalBasis, string> = {
   bom: '품목의 ERP 기본 BOM 이 바뀌었습니다.',
   routing: '품목의 Routing·공정이 바뀌었습니다.',
   resources: '자원 기준정보(기본 매핑·라인·설비·금형·교대)가 바뀌었습니다.',
+  calendar: '시스템이 정한 계획일의 근무일 판정이 바뀌었습니다(작업 캘린더·공장 근무일 정책).',
 };
 
 interface Numbers {
@@ -73,7 +77,8 @@ export class PlanProposalService {
       select: { production_order_id: true },
     });
     const found = new Set(visible.map((row) => row.production_order_id));
-    const proposals = buildProposals(await readProposalFacts(this.prisma, [...found]), new Date());
+    const now = new Date();
+    const proposals = buildProposals(await readProposalFacts(this.prisma, [...found], now), now);
     return {
       items: ids.filter((id) => found.has(id)).map((id) => proposalView(proposals.get(id) as Proposal)),
       notFoundProductionOrderIds: ids.filter((id) => !found.has(id)).map(Number),
@@ -144,13 +149,13 @@ export class PlanProposalService {
     await assertWithinOrder(tx, orderId, new Prisma.Decimal(0), quantityDelta(checked.resolved).field);
 
     const workOrderNos = [...numbers.workOrderNos];
-    const plans: ProposalConfirmResult['plans'] = [];
+    const results: (Omit<ProposalConfirmResult['plans'][number], 'planDateCalendar'> & PlanDateRow)[] = [];
     for (const { plan, productionPlanId, version } of saved) {
       const materials = await this.confirms.materials(tx, Number(productionPlanId));
       const confirmed = await this.confirms.confirmIn(tx, materials, version, workOrderNos.splice(0, plan.operationCount), appUserId, plan.supplements);
-      plans.push({ proposalPlanKey: plan.body.proposalPlanKey, ...(await planResult(tx, productionPlanId, confirmed.versionNo)) });
+      results.push({ proposalPlanKey: plan.body.proposalPlanKey, ...(await planResult(tx, productionPlanId, confirmed.versionNo)) });
     }
-    return { productionOrderId: Number(orderId), outcome: 'CONFIRMED', plans };
+    return { productionOrderId: Number(orderId), outcome: 'CONFIRMED', plans: await withCalendars(tx, results) };
   }
 
   /** 새 계획은 작성중으로 등록하고, 작성중 계획은 본문 값으로 고친다 — 다음 확정이 둘을 같은 길로 확정한다. */
@@ -167,6 +172,8 @@ export class PlanProposalService {
       bom_id: BigInt(plan.body.bomId),
       routing_id: BigInt(plan.body.routingId),
       planned_line_id: plan.body.plannedLineId === null ? null : BigInt(plan.body.plannedLineId),
+      // 제안 날짜를 그대로 실었으면 제안의 출처, 사람이 고쳤으면 사용자 지정이다.
+      plan_date_source_code: plan.body.planDate === plan.proposal.planDate ? plan.proposal.planDateSourceCode : 'USER',
       ...(plan.body.remarks === undefined ? {} : { remarks: plan.body.remarks }),
       updated_by: appUserId ?? null,
     };
@@ -198,8 +205,9 @@ export class PlanProposalService {
    * 취소 400 → 이미 처리됨 → basis 409 → 본문 검증 400 순. 같은 판정을 잠그지 않고(채번 전) 한 번, 잠근 트랜잭션에서 한 번 한다.
    */
   private async check(client: Prisma.TransactionClient, orderId: bigint, body: ProposalConfirmBody): Promise<Checked> {
-    const facts = await readProposalFacts(client, [orderId]);
-    const proposal = buildProposals(facts, new Date()).get(orderId);
+    const now = new Date();
+    const facts = await readProposalFacts(client, [orderId], now);
+    const proposal = buildProposals(facts, now).get(orderId);
     if (proposal === undefined) throw new NotFoundException('없는 ERP W/O 입니다.');
     if (proposal.order.status_code === CANCELLED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 ERP W/O 는 계획하지 않습니다.' }]);
@@ -246,8 +254,14 @@ async function alreadyProcessed(tx: Prisma.TransactionClient, orderId: bigint): 
   return {
     productionOrderId: Number(orderId),
     outcome: 'ALREADY_PROCESSED',
-    plans: await Promise.all(live.map((plan) => planResult(tx, plan.production_plan_id, plan.version_no))),
+    plans: await withCalendars(tx, await Promise.all(live.map((plan) => planResult(tx, plan.production_plan_id, plan.version_no)))),
   };
+}
+
+/** 확정한 계획일의 판정을 싣는다 — 경고 정보다. 판정에 쓴 칸은 응답에서 뺀다. */
+async function withCalendars<T extends PlanDateRow>(tx: Prisma.TransactionClient, results: readonly T[]): Promise<(Omit<T, keyof PlanDateRow> & { planDateCalendar: PlanningCalendarDay })[]> {
+  const days = await calendarsOfPlans(tx, results);
+  return results.map(({ production_order_id: _order, planned_line_id: _line, plan_date: _date, ...result }, index) => ({ ...result, planDateCalendar: days[index] }));
 }
 
 async function planResult(tx: Prisma.TransactionClient, productionPlanId: bigint, versionNo: number) {
@@ -256,6 +270,9 @@ async function planResult(tx: Prisma.TransactionClient, productionPlanId: bigint
     select: {
       plan_no: true,
       status_code: true,
+      production_order_id: true,
+      planned_line_id: true,
+      plan_date: true,
       work_order: {
         orderBy: { routing_operation: { operation_seq: 'asc' } },
         select: { work_order_id: true, work_order_no: true, routing_operation_id: true },
@@ -267,6 +284,9 @@ async function planResult(tx: Prisma.TransactionClient, productionPlanId: bigint
     planNo: plan.plan_no,
     statusCode: plan.status_code,
     versionNo,
+    production_order_id: plan.production_order_id,
+    planned_line_id: plan.planned_line_id,
+    plan_date: plan.plan_date,
     workOrders: plan.work_order.map((workOrder) => ({
       workOrderId: Number(workOrder.work_order_id),
       workOrderNo: workOrder.work_order_no,
