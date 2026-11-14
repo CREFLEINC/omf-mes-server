@@ -40,7 +40,7 @@ interface Row {
   blockedReasons: { code: string; name: string }[];
   inspection: { statusCode: string; judgmentCode: string | null; judgedAt: string | null } | null;
   goodsReceipt: { goodsReceiptNo: string } | null;
-  putaway: { statusCode: string; locationCode: string | null } | null;
+  putaway: { statusCode: string; locationCode: string | null; locationName: string | null; locationAliasName: string | null } | null;
 }
 
 function responseValidator(path = '~1logistics~1purchase-orders~1{purchaseOrderId}~1inbound-progress'): ValidateFunction {
@@ -119,8 +119,16 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     expect(await rowOf(lotId)).toMatchObject({
       stageCode: 'COMPLETED',
       nextActionCode: null,
-      putaway: { statusCode: 'COMPLETED', locationCode: `${PREFIX}-LOC` },
+      putaway: { statusCode: 'COMPLETED', locationCode: `${PREFIX}-LOC`, locationName: '입고진행위치', locationAliasName: null },
     });
+
+    // omf-all-around#268 — 적치 위치에 별칭이 있으면 함께 싣는다(관리웹 「코드 · 별칭」).
+    await prisma.location.update({ where: { location_id: ids.location }, data: { alias_name: 'A열 1번 랙' } });
+    try {
+      expect((await rowOf(lotId)).putaway).toMatchObject({ locationCode: `${PREFIX}-LOC`, locationAliasName: 'A열 1번 랙' });
+    } finally {
+      await prisma.location.update({ where: { location_id: ids.location }, data: { alias_name: null } });
+    }
   });
 
   it('⭐ 세 id 가 입하 상세·발주 라인 목록과 같다 — 화면이 라인 아래에 묶고 입고 처리 창을 연다', async () => {

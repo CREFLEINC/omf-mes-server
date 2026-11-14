@@ -79,6 +79,13 @@ describe('출고 요청 현황 조회 (e2e)', () => {
       destinationLocationName: expect.any(String),
       productionPlanNo: expect.stringContaining('-PP-P1'),
     });
+    // omf-all-around#268 — 입고지 코드 · 별칭 · 역할을 함께 싣는다(관리웹 「코드 · 별칭」 · 서버가 둔 위치는 역할 이름).
+    const destination = await prisma.location.findUniqueOrThrow({ where: { location_id: row.destination_location_id } });
+    expect(found.body.items.find((i: { materialIssueRequestId: number }) => i.materialIssueRequestId === Number(row.material_issue_request_id))).toMatchObject({
+      destinationLocationCode: destination.location_code,
+      destinationLocationAliasName: destination.alias_name,
+      destinationLocationSystemRoleCode: destination.system_role_code,
+    });
     const other = await list({ productionDateFrom: today, productionDateTo: today, sourceWarehouseId: Number(a.warehouseId) });
     expect(idsOf(other.body)).not.toContain(Number(row.material_issue_request_id));
   });
