@@ -22315,6 +22315,24 @@
       "type": "string",
       "description": "입고지 이름. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66"
      },
+     "destinationLocationCode": {
+      "type": "string",
+      "description": "입고지 위치 코드. 관리웹이 「코드 · 별칭」으로 보인다. 근거: omf-all-around#268"
+     },
+     "destinationLocationAliasName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "입고지 위치 별칭 — 없으면 null. 근거: omf-all-around#268"
+     },
+     "destinationLocationSystemRoleCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "서버가 창고마다 둔 위치의 역할(PUTAWAY_STAGING · WAREHOUSE_WHOLE) — 사람이 만든 위치는 null. 관리웹이 이때 역할 이름으로 보인다. 근거: omf-all-around#268"
+     },
      "destinationWarehouseId": {
       "type": "integer",
       "format": "int64",
@@ -25476,6 +25494,7 @@
        "statusCode",
        "locationCode",
        "locationName",
+       "locationAliasName",
        "completedAt"
       ],
       "properties": {
@@ -25502,6 +25521,13 @@
          "string",
          "null"
         ]
+       },
+       "locationAliasName": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "적치한 위치의 별칭 — 대기이거나 별칭이 없으면 null. 근거: omf-all-around#268"
        },
        "completedAt": {
         "type": [

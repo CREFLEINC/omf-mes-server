@@ -22,6 +22,8 @@ type PutawayView = {
   statusCode: string;
   locationCode: string | null;
   locationName: string | null;
+  /** 적치한 위치의 별칭 — 없으면 null(omf-all-around#268, 관리웹 「코드 · 별칭」 표기). */
+  locationAliasName: string | null;
   completedAt: string | null;
 };
 
@@ -313,7 +315,7 @@ export class InboundProgressService {
             putaway_task_no: true,
             status_code: true,
             completed_at: true,
-            location_putaway_task_actual_location_idTolocation: { select: { location_code: true, location_name: true } },
+            location_putaway_task_actual_location_idTolocation: { select: { location_code: true, location_name: true, alias_name: true } },
           },
         },
       },
@@ -338,6 +340,7 @@ export class InboundProgressService {
             statusCode: task.status_code,
             locationCode: location?.location_code ?? null,
             locationName: location?.location_name ?? null,
+            locationAliasName: location?.alias_name ?? null,
             completedAt: task.completed_at?.toISOString() ?? null,
           });
         }
