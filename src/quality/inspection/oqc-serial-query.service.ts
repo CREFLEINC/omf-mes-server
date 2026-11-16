@@ -44,6 +44,18 @@ export class OqcSerialQueryService {
     });
   }
 
+  /**
+   * 제품 LOT 스캔 — 그 LOT 을 피킹한 OQC 의뢰(관리웹 OQC 판정 화면의 「LOT 스캔」). 피킹 판단은 시리얼 스캔과 같다.
+   * LOT 번호는 공장마다 따로라(`uq_lot` = 공장 + 번호) 같은 번호의 LOT 이 여럿이면 의뢰를 합친다 — 의뢰 번호순.
+   */
+  async scanLot(lotNo: string) {
+    const lots = await this.prisma.lot.findMany({ where: { lot_no: lotNo }, select: { lot_id: true, item_id: true } });
+    if (lots.length === 0) throw new NotFoundException('없는 LOT 입니다.');
+    const found = (await Promise.all(lots.map((lot) => this.pickedRequests(lot.item_id, lot.lot_id, undefined)))).flat();
+    const byId = new Map(found.map((request) => [request.inspectionRequestId, request]));
+    return { lotNo, pickedRequests: [...byId.values()].sort((a, b) => a.inspectionRequestId - b.inspectionRequestId) };
+  }
+
   /** 의뢰 하나의 회차들이 쓴 시리얼 판정 — 시리얼 번호순. */
   async ofRequest(inspectionRequestId: number) {
     const rows = await this.prisma.oqc_serial_result.findMany({

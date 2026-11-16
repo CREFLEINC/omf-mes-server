@@ -16,3 +16,15 @@ export class OqcSerialController {
     return this.oqcSerials.scan(serialNo, currentTerminalQualityReadScope(request));
   }
 }
+
+/** 제품 LOT OQC 스캔 조회 — 관리웹 OQC 판정 화면의 「LOT 스캔」이 시리얼 대신 LOT 번호로 의뢰를 연다. */
+@Controller('quality/oqc-lots')
+export class OqcLotController {
+  constructor(private readonly oqcSerials: OqcSerialQueryService) {}
+
+  @Get(':lotNo')
+  @Contract('GET /quality/oqc-lots/{lotNo}')
+  scan(@Param('lotNo') lotNo: string) {
+    return this.oqcSerials.scanLot(lotNo);
+  }
+}
