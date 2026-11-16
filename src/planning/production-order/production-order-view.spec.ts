@@ -116,6 +116,8 @@ describe('productionOrderView — §2-3 확인 3칸 키 생략', () => {
     planned_start_date: null,
     auto_plan_attempted_at: null,
     auto_plan_running_until: null,
+    auto_work_order_attempted_at: null,
+    auto_work_order_error_text: null,
   };
 
   it('⑦ 확인 이력이 없으면 acknowledgedAt·acknowledgedBy·acknowledgeDecisionCode 키가 생략된다', () => {

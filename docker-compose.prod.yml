@@ -91,6 +91,8 @@ x-api: &api
     # ⛔ 빠뜨리면 .env.prod 에 true 로 적어도 오류 없이 돌지 않는다.
     MATERIAL_ISSUE_RELEASE_ENABLED: ${MATERIAL_ISSUE_RELEASE_ENABLED:-false}
     REPLENISHMENT_ENABLED: ${REPLENISHMENT_ENABLED:-false}
+    # OA 자동 W/O(flowtrack 연동). 기본은 꺼짐이다.
+    AUTO_WORK_ORDER_ENABLED: ${AUTO_WORK_ORDER_ENABLED:-false}
   # 두 쪽이 «같은» 볼륨을 건다 — 전환 뒤에도 올린 파일을 그대로 내려받는다.
   # 파일은 uuid 키에 새 파일로만 쓰고 DB 행은 쓴 뒤 커밋되므로 함께 떠 있어도 안전하다.
   volumes:
