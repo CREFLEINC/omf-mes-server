@@ -108,7 +108,8 @@ describe('계약 커버리지', () => {
     // W-01-16 배정 후보·배정 수정·최종 마감 3 오퍼레이션(피처 005 S12): 623.
     // 생산계획 근무일 판정 1 오퍼레이션: 623 → 624.
     // 제품 LOT OQC 스캔 1 오퍼레이션: 624 → 625.
-    expect(registry.size).toBe(625);
+    // 계획 제안 보완값 재검증 1 오퍼레이션: 625 → 626.
+    expect(registry.size).toBe(626);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

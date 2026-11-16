@@ -534,6 +534,112 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
   });
 
+  describe('보완값 재검증', () => {
+    const revalidate = (orderId: bigint | number, body: unknown) =>
+      request(app.getHttpServer()).post(`/api/planning/production-orders/${orderId}:revalidate-plan-proposal`).set('Cookie', cookie).send(body as object);
+    const revalidated = (response: { body: unknown }) => response.body as {
+      confirmable: boolean;
+      alreadyProcessed: boolean;
+      basis: Record<string, string>;
+      proposalChanges: { basis: string }[];
+      currentProposal?: Proposal;
+      errors: { scope: string; field?: string; code: string; message: string }[];
+      warnings: { code: string; field: string }[];
+      plans: { proposalPlanKey: string; planDateSourceCode: string; workOrders: { routingOperationId: number; operationSeq: number | null; orderQty: number; predecessors: { routingOperationId: number }[]; plannedStartAt: string; plannedEndAt: string; missingFields: string[] }[] }[];
+    };
+
+    it('제안 그대로면 확정 가능이고 확정할 값을 낸다 — 저장·채번·멱등 기록이 없고 같은 본문이 그대로 확정된다', async () => {
+      const orderId = await newOrder('RV-OK', planStart);
+      const proposal = await proposalOf(orderId);
+      const body = bodyOf(proposal);
+      const before = await snapshot();
+
+      const response = await revalidate(orderId, body).expect(200);
+      expect(validator(response200('/planning/production-orders/{productionOrderId}:revalidate-plan-proposal', 'post'))(response.body)).toBe(true);
+      const result = revalidated(response);
+      expect(result).toMatchObject({ confirmable: true, alreadyProcessed: false, errors: [], proposalChanges: [], basis: proposal.basis });
+      expect(result.currentProposal).toBeUndefined();
+      const [plan] = result.plans;
+      expect(plan).toMatchObject({ proposalPlanKey: 'new-1', planDateSourceCode: 'SYSTEM' });
+      expect(plan.workOrders.map((workOrder) => [workOrder.routingOperationId, workOrder.orderQty, workOrder.plannedStartAt, workOrder.plannedEndAt]))
+        .toEqual(proposal.plans[0].workOrders.map((workOrder) => [workOrder.routingOperationId, proposal.plans[0].proposedQty, workOrder.plannedStartAt, workOrder.plannedEndAt]));
+      expect(plan.workOrders.map((workOrder) => workOrder.predecessors)).toEqual(proposal.plans[0].workOrders.map((workOrder) => workOrder.predecessors.map((p) => expect.objectContaining(p))));
+      expect(await snapshot()).toEqual(before);
+
+      await confirm(orderId, body).expect(200);
+    });
+
+    it('확정이 400 으로 낼 오류를 같은 code·field·문장으로 모두 낸다 — 수량 합계도 함께', async () => {
+      const proposal = await proposalOf(order.J);
+      const body = bodyOf(proposal);
+      body.plans[0].bomId = Number(id.bomOld);
+      Object.assign(body.plans[0].workOrders[0], { productionLineId: Number(id.foreignLine), defaultWipLocationId: Number(id.materialLoc), plannedEquipmentId: Number(id.eqDown) });
+      const before = await snapshot();
+
+      const confirmed = await confirm(order.J, body).expect(400);
+      const result = revalidated(await revalidate(order.J, body).expect(200));
+      expect(result.confirmable).toBe(false);
+      expect(result.errors).toEqual(confirmed.body.errors);
+
+      body.plans[0].plannedQty = 101;
+      const over = revalidated(await revalidate(order.J, body).expect(200));
+      expect(over.errors).toEqual([...confirmed.body.errors, expect.objectContaining({ field: 'plans[0].plannedQty', code: 'PLAN_QTY_EXCEEDS_ORDER' })]);
+      expect(await snapshot()).toEqual(before);
+    });
+
+    it('계획 집합이 제안과 다르면 plans 오류 하나이고 계획별 결과는 비운다', async () => {
+      const body = bodyOf(await proposalOf(order.J));
+      body.plans[0].proposalPlanKey = 'new-2';
+      const result = revalidated(await revalidate(order.J, body).expect(200));
+      expect(result).toMatchObject({ confirmable: false, plans: [], errors: [expect.objectContaining({ field: 'plans', code: 'INVALID' })] });
+    });
+
+    it('교대를 바꾸면 계획 시각을 다시 계산하고, 같은 설비를 겹치게 고르면 본문 안의 다른 공정과도 시간 중복 경고다', async () => {
+      const orderId = await newOrder('RV-WARN', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      Object.assign(body.plans[0].workOrders[0], { plannedShiftId: Number(id.nightShift) });
+      for (const workOrder of body.plans[0].workOrders) workOrder.plannedEquipmentId = Number(id.eq1);
+
+      const result = revalidated(await revalidate(orderId, body).expect(200));
+      expect(result.confirmable).toBe(true);
+      const night = result.plans[0].workOrders[0];
+      expect([night.plannedStartAt, night.plannedEndAt]).toEqual([
+        new Date(`${planStart}T19:00:00+07:00`).toISOString(),
+        new Date(`${shiftDays(planStart, 1)}T07:00:00+07:00`).toISOString(),
+      ]);
+      expect(result.warnings.filter((warning) => warning.code === 'EQUIPMENT_DOUBLE_BOOKED').map((warning) => warning.field)).toEqual([
+        'plans[0].workOrders[0].plannedEquipmentId',
+        'plans[0].workOrders[1].plannedEquipmentId',
+      ]);
+    });
+
+    it('기준이 바뀌었으면 proposalChanges·currentProposal 이고 확정 가능이 아니다 — 응답 basis 로 확정하면 저장된다', async () => {
+      const orderId = await newOrder('RV-BASIS', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      await prisma.production_order.update({ where: { production_order_id: orderId }, data: { order_qty: 90, version_no: { increment: 1 } } });
+      body.plans[0].plannedQty = 90;
+
+      const result = revalidated(await revalidate(orderId, body).expect(200));
+      expect(result).toMatchObject({ confirmable: false, errors: [], proposalChanges: [{ basis: 'productionOrder' }] });
+      expect(result.currentProposal).toMatchObject({ productionOrderId: Number(orderId), remainingQty: 90 });
+      await confirm(orderId, body).expect(409);
+      await confirm(orderId, { ...body, basis: result.basis }).expect(200);
+    });
+
+    it('이미 처리된 ERP W/O 는 alreadyProcessed, 취소는 STATE_LOCKED, 범위 밖·없는 ERP W/O 는 404', async () => {
+      const body = bodyOf(await proposalOf(order.J));
+      expect(revalidated(await revalidate(order.A, body).expect(200))).toMatchObject({ confirmable: false, alreadyProcessed: true, errors: [], plans: [] });
+      expect(revalidated(await revalidate(order.G, body).expect(200)).errors).toEqual([expect.objectContaining({ scope: 'screen', code: 'STATE_LOCKED' })]);
+      await revalidate(order.OUT, body).expect(404);
+      await revalidate(999999999, body).expect(404);
+    });
+
+    it('권한이 없으면 403', async () => {
+      await request(app.getHttpServer()).post(`/api/planning/production-orders/${order.J}:revalidate-plan-proposal`).set('Cookie', strangerCookie)
+        .send(bodyOf(await proposalOf(order.J))).expect(403);
+    });
+  });
+
   /**
    * 계획일 휴일 보정 — 이 묶음만 공장에 작업 캘린더를 붙인다(앞 묶음은 캘린더·정책이 없어 판정 불가다).
    * 공장 근무일 정책은 두지 않는다 — 캘린더에 없는 날은 판정 불가라 요일에 기대지 않는다.
@@ -690,6 +796,20 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
         expect(await prisma.production_plan.count({ where: { production_order_id: orderId } })).toBe(0);
       });
       await confirm(orderId, body).expect(200);
+    });
+
+    it('재검증도 확정과 같은 오류 하나(AUTO_WORK_ORDER_PLANT)를 200 으로 내고 아무것도 바꾸지 않는다', async () => {
+      const orderId = await newOrder('OA-REVAL', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      await withAutoPolicy(async () => {
+        const before = await snapshot();
+        const confirmed = await confirm(orderId, body).expect(400);
+        const response = await request(app.getHttpServer())
+          .post(`/api/planning/production-orders/${orderId}:revalidate-plan-proposal`).set('Cookie', cookie).send(body).expect(200);
+        expect(validator(response200('/planning/production-orders/{productionOrderId}:revalidate-plan-proposal', 'post'))(response.body)).toBe(true);
+        expect(response.body).toMatchObject({ confirmable: false, alreadyProcessed: false, plans: [], warnings: [], errors: confirmed.body.errors });
+        expect(await snapshot()).toEqual(before);
+      });
     });
   });
 
