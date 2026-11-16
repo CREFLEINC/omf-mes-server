@@ -194,7 +194,7 @@ export class LotRegistryService {
    * ⛔ **`lot_lifecycle_history` 를 쓰지 않는다** — `WAITING` 은 태어남이지 전이가 아니고
    *    `LOT_LIFECYCLE_TRANSITION` 에 「생성」 코드가 없다(값을 지어내지 않는다 · F-6).
    */
-  async preIssueWithin(tx: Tx, input: LotPreIssueInput, appUserId: number): Promise<LotRow[]> {
+  async preIssueWithin(tx: Tx, input: LotPreIssueInput, appUserId: number | null): Promise<LotRow[]> {
     // 400 이 아니라 호출자 버그다 — 화면이 고칠 값이 아니다.
     if ((input.bomId === null) !== (input.bomVersion === null)) {
       throw new Error('bomId 와 bomVersion 은 둘 다 있거나 둘 다 없어야 한다 (ck_lot_bom_snapshot)');
@@ -217,7 +217,7 @@ export class LotRegistryService {
           work_order_lot_seq: index + 1,
           bom_id: input.bomId,
           bom_version: input.bomVersion,
-          created_by: BigInt(appUserId),
+          created_by: appUserId === null ? null : BigInt(appUserId),
         },
       });
       lotIds.push(lot.lot_id);

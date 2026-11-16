@@ -84,6 +84,27 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     expect(await eventsOf('WORK_ORDER_RELEASED', 'WORK_ORDER', workOrderId)).toHaveLength(0);
   });
 
+  it('추적 시스템 연동이 세운 계획의 W/O 는 라인·WIP·스크랩 위치 없이 배포되고 작업 시작 알림(T6)이 없다', async () => {
+    const workOrderId = (
+      await prisma.work_order.create({
+        data: {
+          work_order_no: `${PREFIX}-WO${++seq}`,
+          production_plan_id: ids.autoPlan,
+          routing_operation_id: ids.operation,
+          item_id: ids.itemFg,
+          order_qty: 100,
+          uom_id: ids.uom,
+          status_code: 'PLANNED',
+          default_fg_location_id: ids.locWip,
+        },
+      })
+    ).work_order_id;
+    await release(workOrderId).expect(200);
+
+    expect(await eventsOf('WORK_ORDER_RELEASED', 'WORK_ORDER', workOrderId)).toHaveLength(0);
+    expect(await prisma.lot.count({ where: { source_type_code: 'WORK_ORDER', source_id: workOrderId } })).toBe(1);
+  });
+
   it('FR-002 같은 W/O 를 다시 알려도(재시도) 사건은 하나다', async () => {
     const workOrderId = await workOrder('NORMAL');
     await release(workOrderId).expect(200);
@@ -466,6 +487,21 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
           bom_id: bom.bom_id,
           routing_id: routing.routing_id,
           status_code: 'CONFIRMED',
+        },
+      })
+    ).production_plan_id;
+    ids.autoPlan = (
+      await prisma.production_plan.create({
+        data: {
+          production_order_id: order.production_order_id,
+          plan_no: `${PREFIX}-PP-AUTO`,
+          plan_date: new Date('2026-10-28T00:00:00.000Z'),
+          planned_qty: 100,
+          uom_id: ids.uom,
+          bom_id: bom.bom_id,
+          routing_id: routing.routing_id,
+          status_code: 'CONFIRMED',
+          created_automatically: true,
         },
       })
     ).production_plan_id;

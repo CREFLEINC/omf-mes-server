@@ -3,7 +3,8 @@
  *
  * 다섯 판정의 경계 — 저장된 계획·W/O 로만 판정한다(자동 계획 시도 기록은 보지 않는다): 계획 전(기준정보 사유 있음·없음) ·
  * 작성중 계획 · 확정 계획량 모자람 · W/O 0건 · 일부 배포 · 라인 빈 W/O 와 정상 W/O 섞임 · 다른 공장 라인 · W/O 전부 취소 ·
- * 전부 배포(취소 W/O 섞임) · 취소된 오더. 칩 건수는 `size=1` 의 total 로 센다(클라이언트와 같다).
+ * 전부 배포(취소 W/O 섞임) · 취소된 오더 · 추적 시스템 연동이 세운 계획의 라인 없는 W/O(완제품 위치 있음·없음).
+ * 칩 건수는 `size=1` 의 total 로 센다(클라이언트와 같다).
  * 조치 필요 까닭 `worklistReasons` 와, 그 까닭이 배포 전제 검사(`releasePlan`)가 실제로 막는 W/O 와 같은지도 본다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -77,6 +78,8 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       RERUN: 'BEFORE_PLAN',
       DONE: 'RELEASED',
       CANCEL: 'CANCELLED',
+      AUTO: 'RELEASE_PENDING',
+      AUTONOFG: 'ACTION_REQUIRED',
     });
   });
 
@@ -103,6 +106,9 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       RERUN: undefined,
       DONE: undefined,
       CANCEL: undefined,
+      AUTO: undefined,
+      // 라인이 비어도 라인 까닭은 없다 — 완제품 위치만 까닭이다.
+      AUTONOFG: [{ code: 'WORK_ORDER_LOCATION_MISSING', workOrderCount: 1 }],
     });
   });
 
@@ -124,6 +130,8 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       RERUN: '0/0',
       DONE: '0/1',
       CANCEL: '0/0',
+      AUTO: '1/1',
+      AUTONOFG: '1/1',
     });
   });
 
@@ -171,12 +179,12 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
       totals[state] = ((await list({ worklistState: state, size: 1 }).expect(200)).body as { page: { total: number } }).page.total;
       expect(totals[state]).toBe(all.items.length);
     }
-    expect(totals).toEqual({ BEFORE_PLAN: 2, ACTION_REQUIRED: 6, RELEASE_PENDING: 1, RELEASED: 1, CANCELLED: 1 });
+    expect(totals).toEqual({ BEFORE_PLAN: 2, ACTION_REQUIRED: 7, RELEASE_PENDING: 2, RELEASED: 1, CANCELLED: 1 });
   });
 
   it('autoPlanStatus 와 함께 걸린다 — DONE 중 배포 대기만', async () => {
     const body = (await list({ autoPlanStatus: 'DONE', worklistState: 'RELEASE_PENDING' }).expect(200)).body as { items: Row[] };
-    expect(body.items.map((row) => row.productionOrderNo)).toEqual([`${PREFIX}-PARTIAL`]);
+    expect(body.items.map((row) => row.productionOrderNo).sort()).toEqual([`${PREFIX}-AUTO`, `${PREFIX}-PARTIAL`]);
   });
 
   it('계획 시작일 필터가 autoPlanStatus·worklistState 와 함께 걸린다 — 하나는 남고 하나는 빠진다', async () => {
@@ -245,7 +253,10 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
     await prisma.item_resource_map.create({ data: { plant_id: ids.plant, item_id: readyItem.item_id, equipment_id: equipment.equipment_id, is_default: true } });
 
     let seq = 0;
-    const order = async (key: string, opts: { status?: string; attempted?: boolean; planned?: number; draft?: boolean; itemId?: bigint; plannedStart?: string } = {}) => {
+    const order = async (
+      key: string,
+      opts: { status?: string; attempted?: boolean; planned?: number; draft?: boolean; itemId?: bigint; plannedStart?: string; auto?: boolean } = {},
+    ) => {
       const row = await prisma.production_order.create({ data: {
         production_order_no: `${PREFIX}-${key}`, business_unit_id: unit.business_unit_id, plant_id: ids.plant, item_id: opts.itemId ?? item.item_id,
         order_qty: 10, uom_id: uom.uom_id, status_code: opts.status ?? 'CONFIRMED',
@@ -257,10 +268,14 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
         production_order_id: row.production_order_id, plan_no: `${PREFIX}-PP-${key}`, plan_date: new Date('2026-10-28T00:00:00.000Z'),
         planned_qty: opts.planned, uom_id: uom.uom_id, bom_id: bom.bom_id, routing_id: routing.routing_id,
         status_code: opts.draft === true ? 'DRAFT' : 'CONFIRMED', confirmed_at: opts.draft === true ? null : new Date(),
+        created_automatically: opts.auto === true,
       } });
       return { orderId: row.production_order_id, planId: plan.production_plan_id };
     };
-    const workOrder = async (planId: bigint | null, opts: { released?: boolean; status?: string; line?: bigint | null; locations?: boolean } = {}) => {
+    const workOrder = async (
+      planId: bigint | null,
+      opts: { released?: boolean; status?: string; line?: bigint | null; locations?: boolean; fgOnly?: boolean; blocked?: boolean } = {},
+    ) => {
       seq += 1;
       const withLocations = opts.locations ?? true;
       const row = await prisma.work_order.create({ data: {
@@ -269,12 +284,12 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
         status_code: opts.status ?? (opts.released === true ? 'RELEASED' : 'PLANNED'),
         released_at: opts.released === true ? new Date() : null,
         production_line_id: opts.line === undefined ? line : opts.line,
-        default_wip_location_id: withLocations ? location : null,
+        default_wip_location_id: withLocations && opts.fgOnly !== true ? location : null,
         default_fg_location_id: withLocations ? location : null,
-        default_scrap_location_id: withLocations ? location : null,
+        default_scrap_location_id: withLocations && opts.fgOnly !== true ? location : null,
       } });
       if (opts.released !== true && opts.status === undefined) {
-        pending.push({ workOrderId: row.work_order_id, blocked: opts.line !== undefined || !withLocations });
+        pending.push({ workOrderId: row.work_order_id, blocked: opts.blocked ?? (opts.line !== undefined || !withLocations) });
       }
     };
 
@@ -299,6 +314,11 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
     await workOrder(allCancelled.planId, { status: 'CANCELLED' });
     await order('CANCEL', { status: 'CANCELLED', planned: 10 });
     await order('RERUN', { attempted: true, itemId: readyItem.item_id });
+    // 추적 시스템 연동이 세운 계획 — 라인·WIP·스크랩 없이 배포한다. 완제품 위치가 비면 사람이 세운 계획처럼 막힌다.
+    const auto = await order('AUTO', { planned: 10, auto: true });
+    await workOrder(auto.planId, { line: null, fgOnly: true, blocked: false });
+    const autoNoFg = await order('AUTONOFG', { planned: 10, auto: true });
+    await workOrder(autoNoFg.planId, { line: null, locations: false, blocked: true });
   }
 
   async function cleanup(): Promise<void> {

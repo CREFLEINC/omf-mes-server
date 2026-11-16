@@ -46,7 +46,7 @@ type Draft = MaterialIssueLine & { shortage_qty: Prisma.Decimal };
  */
 export async function writeWaitingRequests(
   tx: Prisma.TransactionClient,
-  input: { workOrderId: bigint; waiting: WaitingPlan; lines: MaterialIssueLine[]; appUserId: number },
+  input: { workOrderId: bigint; waiting: WaitingPlan; lines: MaterialIssueLine[]; appUserId: number | null },
   releaser: MaterialIssueReleaser,
 ): Promise<WaitingResult> {
   const { waiting, lines } = input;
