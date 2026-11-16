@@ -2,14 +2,18 @@
  * 추적 시스템 연동 — 포장 입고이동 처리(flowtrack 연동 제안 §3-3 · §8 의 7-2).
  *
  * 한 트랜잭션에서 실적 → 시리얼 → 제품 입고 → (양품 합이 지시수량이면) 마감. 처리한 전송 번호는 다시 처리하지 않고,
- * 거절한 전송은 아무것도 남기지 않는다.
+ * 거절한 전송은 아무것도 남기지 않는다. HTTP 입구(7-3)는 연동 단말 토큰만 받는다.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
+import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
 import { StockMove, StockMoveService, SYSTEM_WORKER_NO } from '../src/integration/tracking-system/stock-move.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -28,6 +32,7 @@ describe('추적 시스템 연동 — 포장 입고이동 처리 (e2e)', () => {
   let moves: StockMoveService;
   let seq = 0;
   const ids: Record<string, bigint> = {};
+  const callers: Record<string, [string, string]> = {};
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -139,6 +144,37 @@ describe('추적 시스템 연동 — 포장 입고이동 처리 (e2e)', () => {
     expect(await prisma.serial_number.count({ where: { lot_id: target.lotId } })).toBe(0);
   });
 
+  const post = (input: StockMove, caller: [string, string], key = input.transmissionId) => request(app.getHttpServer())
+    .post('/api/integration/tracking-system/stock-moves').set(...caller).set('Idempotency-Key', key).send(input);
+
+  it('HTTP — 연동 토큰으로 보내면 받고, 같은 전송을 다시 보내면 200 에 replayed 로 답한다', async () => {
+    const target = await releasedWorkOrder();
+    const input = body(target, serials(3));
+
+    expect((await post(input, callers.tracking).expect(200)).body).toEqual({ replayed: false });
+    expect((await post(input, callers.tracking).expect(200)).body).toEqual({ replayed: true });
+    expect(await prisma.production_result.count({ where: { work_order_id: target.workOrderId } })).toBe(1);
+  });
+
+  it('HTTP — 헤더 요청 키와 전송 번호가 다르면 400 이고 아무것도 남기지 않는다', async () => {
+    const target = await releasedWorkOrder();
+    const input = body(target, serials(1));
+
+    const response = await post(input, callers.tracking, randomUUID()).expect(400);
+
+    expect(response.body.errors).toEqual([expect.objectContaining({ field: 'transmissionId', code: 'INVALID' })]);
+    expect(await prisma.tracking_transmission.count({ where: { transmission_id: input.transmissionId } })).toBe(0);
+  });
+
+  it.each(['web', 'pop'])('HTTP — 연동 토큰이 아니면(%s) 401 이고 아무것도 남기지 않는다', async (caller) => {
+    const target = await releasedWorkOrder();
+    const input = body(target, serials(1));
+
+    await post(input, callers[caller]).expect(401);
+
+    expect(await prisma.tracking_transmission.count({ where: { transmission_id: input.transmissionId } })).toBe(0);
+  });
+
   /** 자동 흐름이 세운 계획의 배포 상태 W/O(지시수량 10)와 그 생산 LOT 하나. */
   async function releasedWorkOrder(): Promise<Case> {
     const key = ++seq;
@@ -197,5 +233,18 @@ describe('추적 시스템 연동 — 포장 입고이동 처리 (e2e)', () => {
       update: { is_active: true },
     })).worker_id;
     ids.otherLot = (await releasedWorkOrder()).lotId;
+
+    // 단말 토큰은 `terminal.service.ts` 가 서명하는 클레임 그대로 직접 낸다(다른 단말 e2e 와 같은 관례).
+    const jwt = app.get(JwtService);
+    for (const [caller, type] of [['tracking', 'TRACKING_SYSTEM'], ['pop', 'POP']]) {
+      const terminal = await prisma.terminal.create({ data: {
+        terminal_code: `${PREFIX}-${type}`, plant_id: ids.plant, terminal_type_code: type, status_code: 'RUNNING',
+      } });
+      callers[caller] = ['Authorization', `Bearer ${jwt.sign({
+        sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId: Number(ids.plant),
+      })}`];
+    }
+    const user = await prisma.app_user.create({ data: { login_id: `${PREFIX}-WEB`, user_name: PREFIX, status_code: 'EMPLOYED' } });
+    callers.web = ['Cookie', `${SESSION_COOKIE}=${jwt.sign({ sub: Number(user.app_user_id), typ: TOKEN_TYPE.SESSION })}`];
   }
 });
