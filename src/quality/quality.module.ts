@@ -47,7 +47,7 @@ import { IqcRejectedHandoverNotifier } from './inspection/iqc-rejected-handover'
 import { IqcRequestConfirmService } from './inspection/iqc-request-confirm.service';
 import { InspectionRequestController } from './inspection/inspection-request.controller';
 import { InspectionHistoryService } from './inspection/inspection-history.service';
-import { OqcSerialController } from './inspection/oqc-serial.controller';
+import { OqcLotController, OqcSerialController } from './inspection/oqc-serial.controller';
 import { OqcSerialQueryService } from './inspection/oqc-serial-query.service';
 import { InspectionRequestService } from './inspection/inspection-request.service';
 import { InspectionResultController } from './inspection/inspection-result.controller';
@@ -98,6 +98,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InspectionPlanDrawingController,
     InspectionRequestController,
     OqcSerialController,
+    OqcLotController,
     // ⭐ `InspectionResultController` 보다 «먼저» — 라우트가 등록 순서로 잡혀, 뒤에 두면
     //   `/summary`·`/defect-rate-trend` 가 `:inspectionResultId`(ParseIntPipe)에 먼저 걸려 400 이다.
     InspectionSummaryController,

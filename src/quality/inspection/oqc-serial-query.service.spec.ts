@@ -16,7 +16,7 @@ const RECORD_VIEW = {
   inspectorName: '검사자', inspectionResultId: 90, inspectionRound: 2,
 };
 
-function prismaFor(options: { serial?: boolean; record?: boolean; released?: boolean } = {}) {
+function prismaFor(options: { serial?: boolean; record?: boolean; released?: boolean; lots?: { lot_id: bigint; item_id: bigint }[] } = {}) {
   return {
     serial_number: {
       findUnique: jest.fn().mockResolvedValue(options.serial === false ? null : {
@@ -34,6 +34,9 @@ function prismaFor(options: { serial?: boolean; record?: boolean; released?: boo
     shipment_request_line: { findMany: jest.fn().mockResolvedValue([{ shipment_request_id: 30n }]) },
     inspection_request: {
       findMany: jest.fn().mockResolvedValue([{ inspection_request_id: 1n, inspection_request_no: 'IRQ-1', target_id: 30n, status_code: 'COMPLETED' }]),
+    },
+    lot: {
+      findMany: jest.fn().mockResolvedValue(options.lots ?? [{ lot_id: 50n, item_id: 7n }]),
     },
     oqc_serial_result: {
       findMany: jest.fn().mockResolvedValue([
@@ -70,6 +73,36 @@ describe('OqcSerialQueryService.scan', () => {
 
   it('없는 시리얼은 404', async () => {
     await expect(new OqcSerialQueryService(prismaFor({ serial: false })).scan('X')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('OqcSerialQueryService.scanLot', () => {
+  it('제품 LOT 번호로 그 LOT 을 피킹한 OQC 의뢰를 낸다 — 피킹 판단은 시리얼 스캔과 같다', async () => {
+    const prisma = prismaFor();
+    await expect(new OqcSerialQueryService(prisma).scanLot('L-50')).resolves.toEqual({
+      lotNo: 'L-50',
+      pickedRequests: [{ inspectionRequestId: 1, inspectionRequestNo: 'IRQ-1', shipmentRequestId: 30, statusCode: 'COMPLETED' }],
+    });
+    expect((prisma.lot.findMany as jest.Mock).mock.calls[0][0].where).toEqual({ lot_no: 'L-50' });
+    expect((prisma.inventory_reservation.findMany as jest.Mock).mock.calls[0][0].where).toMatchObject({ lot_id: 50n });
+    expect((prisma.inspection_request.findMany as jest.Mock).mock.calls[0][0].where).toMatchObject({
+      inspection_type_code: 'OQC', target_type_code: 'SHIPMENT_REQUEST', item_id: 7n,
+    });
+  });
+
+  it('공장마다 같은 번호의 LOT 이 있으면 의뢰를 합친다 — 같은 의뢰는 한 번만', async () => {
+    const prisma = prismaFor({ lots: [{ lot_id: 50n, item_id: 7n }, { lot_id: 51n, item_id: 7n }] });
+    const view = await new OqcSerialQueryService(prisma).scanLot('L-50');
+    expect(view.pickedRequests).toHaveLength(1);
+    expect(prisma.inventory_reservation.findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('예약을 다 푼 LOT 은 의뢰가 없다', async () => {
+    await expect(new OqcSerialQueryService(prismaFor({ released: true })).scanLot('L-50')).resolves.toEqual({ lotNo: 'L-50', pickedRequests: [] });
+  });
+
+  it('없는 LOT 은 404', async () => {
+    await expect(new OqcSerialQueryService(prismaFor({ lots: [] })).scanLot('X')).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 
