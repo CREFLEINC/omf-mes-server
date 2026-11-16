@@ -56,6 +56,22 @@ export interface ProductionResultContext {
   appUserId: number | undefined;
 }
 
+/**
+ * 서버 호출(추적 시스템 연동)의 실적 — 양품만, W/O 의 생산 LOT 하나에 전부 배분한다. 번호·작업자·멱등 키는 호출자가 준다.
+ * 불량·작업 세션·설비는 없다.
+ */
+export interface ServerResult {
+  workOrderId: number;
+  goodQty: number;
+  uomId: number;
+  lotId: bigint;
+  occurredAt: Date;
+  resultSourceCode: string;
+  workerId: bigint;
+  idempotencyKey: string;
+  productionResultNo: string;
+}
+
 interface PreparedResult {
   body: ProductionResultCreate;
   context: ProductionResultContext;
@@ -111,6 +127,34 @@ export class ProductionResultService {
       defectProcessId,
     };
     return this.prisma.$transaction((tx) => this.commit(tx, prepared));
+  }
+
+  /**
+   * 호출자의 트랜잭션 안에서 쓴다 — 채번은 호출자가 트랜잭션을 열기 «전»에 `NUMBERING_DOCUMENT` 로 한다.
+   * 계정이 없으므로 LOT 을 정상으로 올리는 이력의 주체는 `workerId` 다.
+   */
+  async recordWithin(tx: Tx, input: ServerResult): Promise<ProductionResultView> {
+    const allocations = [{ lotId: Number(input.lotId), allocatedQty: input.goodQty }];
+    const body: ProductionResultCreate = {
+      workOrderId: input.workOrderId,
+      goodQty: input.goodQty,
+      uomId: input.uomId,
+      resultSourceCode: input.resultSourceCode,
+      occurredAt: input.occurredAt.toISOString(),
+      lotAllocations: allocations,
+    };
+    const quantities = resultQuantities(body);
+    assertAllocations(allocations, quantities.good_qty);
+    return this.commit(tx, {
+      body,
+      context: { workerNo: undefined, idempotencyKey: input.idempotencyKey, version: undefined, appUserId: undefined },
+      workerId: input.workerId,
+      quantities,
+      allocations,
+      occurredAt: input.occurredAt,
+      productionResultNo: input.productionResultNo,
+      defectProcessId: null,
+    });
   }
 
   private async commit(tx: Tx, prepared: PreparedResult): Promise<ProductionResultView> {

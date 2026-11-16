@@ -603,7 +603,8 @@ describe('DocumentStateService', () => {
       // +3 — 자재 관리 LOT 받기 L4 · 등록 해제 L6·C31(피처 005 S4).
       // +2 — 입하 마감 취소의 생략 무효 C30 · IQC 요청 취소(피처 005 S5).
       // +3 — 판정 확정 취소의 LOT C29 · IQC 결과 CONFIRMED→DRAFT · 부적합 CANCELLED(피처 005 S9).
-      expect(service.registered()).toHaveLength(73);
+      // +1 — 추적 시스템 연동이 세운 계획의 W/O 를 배포 상태에서 마감(flowtrack 연동 결정 17).
+      expect(service.registered()).toHaveLength(74);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {
