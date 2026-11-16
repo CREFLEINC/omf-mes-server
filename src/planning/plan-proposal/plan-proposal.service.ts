@@ -14,6 +14,7 @@ import { PlanDateRow, calendarsOfPlans } from '../production-plan/plan-date-cale
 import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals } from './proposal-builder';
 import { ProposalConfirmBody, ResolvedPlan, planDateSourceOf, quantityDelta, resolveConfirm } from './proposal-confirm-check';
+import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
 import { readProposalFacts } from './proposal-reader';
 import { ORDER_CANCELLED_ERROR, ProposalRevalidation, basisChanges, revalidateProposal } from './proposal-revalidate';
 import { ProposalView, proposalView } from './proposal-view';
@@ -199,7 +200,7 @@ export class PlanProposalService {
   }
 
   /**
-   * 취소 400 → 이미 처리됨 → basis 409 → 본문 검증 400 순. 같은 판정을 잠그지 않고(채번 전) 한 번, 잠근 트랜잭션에서 한 번 한다.
+   * 취소 400 → OA 자동 W/O 공장 400 → 이미 처리됨 → basis 409 → 본문 검증 400 순. 같은 판정을 잠그지 않고(채번 전) 한 번, 잠근 트랜잭션에서 한 번 한다.
    */
   private async check(client: Prisma.TransactionClient, orderId: bigint, body: ProposalConfirmBody): Promise<Checked> {
     const now = new Date();
@@ -208,6 +209,13 @@ export class PlanProposalService {
     if (proposal === undefined) throw new NotFoundException('없는 ERP W/O 입니다.');
     if (proposal.order.status_code === CANCELLED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [ORDER_CANCELLED_ERROR]);
+    }
+    if (proposal.kind === 'AUTO_WORK_ORDER') {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [{
+        scope: 'screen',
+        code: AUTO_WORK_ORDER_PLANT,
+        message: 'OA 자동 W/O 공장의 ERP W/O 는 자동 W/O 실행기가 계획·확정합니다. 이 화면에서 확정하지 않습니다.',
+      }]);
     }
     if (proposal.kind === 'KEEP_CONFIRMED') return { already: true };
     assertSameBasis(proposal, body.basis);

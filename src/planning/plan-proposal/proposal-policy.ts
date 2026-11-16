@@ -41,7 +41,7 @@ const BLOCKED_REASONS: ReadonlySet<ProposalReasonCode> = new Set([
 ]);
 
 export type ProposalCategory = 'INPUT' | 'BLOCKED';
-export type ProposalKind = 'NEW_PLAN' | 'REVIEW_DRAFT' | 'KEEP_CONFIRMED' | 'NOT_PROPOSABLE';
+export type ProposalKind = 'NEW_PLAN' | 'REVIEW_DRAFT' | 'KEEP_CONFIRMED' | 'NOT_PROPOSABLE' | 'AUTO_WORK_ORDER';
 export type ProposalStatus = 'CONFIRMABLE' | 'NEEDS_INPUT' | 'NO_CHANGE';
 
 export interface ProposalIssue {
@@ -97,10 +97,13 @@ export function reasonsOf(issues: readonly ProposalIssue[]): ProposalReason[] {
 
 /** 확정 계획이 수량을 채웠어도 남은 작성중 계획이 있으면 사람이 치워야 한다 — 변경 없음이 아니라 보완 필요다. */
 export function statusOf(kind: ProposalKind, cancelled: boolean, reasons: readonly ProposalReason[]): ProposalStatus {
-  if (cancelled) return 'NO_CHANGE';
+  if (cancelled || kind === 'AUTO_WORK_ORDER') return 'NO_CHANGE';
   if (reasons.length > 0) return 'NEEDS_INPUT';
   return kind === 'KEEP_CONFIRMED' ? 'NO_CHANGE' : 'CONFIRMABLE';
 }
+
+/** OA 자동 W/O 공장의 ERP W/O 를 재검증·확정이 거부하는 오류 코드(scope screen). */
+export const AUTO_WORK_ORDER_PLANT = 'AUTO_WORK_ORDER_PLANT';
 
 /** 계획일 — ERP 계획 시작일이 공장 현지 오늘 이후면 그날, 없거나 지났으면 오늘. `YYYY-MM-DD` 라 문자열 비교가 날짜 비교다. */
 export function proposedPlanDate(plannedStartDate: string | null, today: string): string {

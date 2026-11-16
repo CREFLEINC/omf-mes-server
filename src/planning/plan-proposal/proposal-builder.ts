@@ -111,6 +111,8 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   if (order.status_code === CANCELLED) {
     return result('NOT_PROPOSABLE', [], [blockIssue('ORDER_CANCELLED', '취소된 ERP W/O 는 계획하지 않습니다.')]);
   }
+  // 자동 W/O 실행기가 계획·확정·배포한다 — 사람이 세운 계획이 하나라도 있으면 실행기가 그 ERP W/O 를 다시 고르지 않는다.
+  if (facts.autoPlants.has(order.plant_id)) return result('AUTO_WORK_ORDER', [], []);
   if (confirmedQty.gte(order.order_qty)) {
     // 확정분으로 이미 채웠는데 작성중 계획이 남았다 — 확정하면 넘친다. 이 화면에서는 풀 수 없고 계획 화면에서 줄이거나 지운다.
     const leftover = qtyFacts.some((fact) => !fact.confirmed)

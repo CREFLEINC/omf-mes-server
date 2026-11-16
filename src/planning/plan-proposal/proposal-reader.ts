@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { FgResolution, LOCATION_FACT_SELECT, LocationFact, fgKey, resolveFgLocations } from '../../core/erp-warehouse/fg-location';
+import { isAutoWorkOrderPlant } from '../../app/policy/plant-policy-text';
 import { resolveWorkingDays } from '../../app/policy/working-day-resolver';
 import { toDateString } from '../../common/master';
 import { PLAN_DATE_SEARCH_LIMIT_DAYS, PlanningCalendarDay, addDays } from '../../core/calendar/working-day';
@@ -28,6 +29,8 @@ export interface OrderRow {
   version_no: number;
   erp_storage_location_code: string | null;
   planned_start_date: Date | null;
+  auto_work_order_attempted_at: Date | null;
+  auto_work_order_error_text: string | null;
   plant: { timezone_code: string };
 }
 
@@ -122,6 +125,8 @@ export interface ProposalFacts {
   rivals: RivalWindow[];
   /** 계획일 후보마다 그날부터 보정 한도까지의 근무일 판정 — 키는 `calendarKey`. */
   calendar: Map<string, PlanningCalendarDay[]>;
+  /** OA 자동 W/O 공장 — 공장 현지 오늘로 판정했다. */
+  autoPlants: Set<bigint>;
 }
 
 const CONFIRMED = 'CONFIRMED';
@@ -131,7 +136,8 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     where: { production_order_id: { in: [...orderIds] } },
     select: {
       production_order_id: true, production_order_no: true, erp_order_no: true, plant_id: true, item_id: true, uom_id: true,
-      order_qty: true, status_code: true, version_no: true, erp_storage_location_code: true, planned_start_date: true, plant: { select: { timezone_code: true } },
+      order_qty: true, status_code: true, version_no: true, erp_storage_location_code: true, planned_start_date: true,
+      auto_work_order_attempted_at: true, auto_work_order_error_text: true, plant: { select: { timezone_code: true } },
     },
   });
   const planRows = await client.production_plan.findMany({
@@ -253,7 +259,15 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     fg,
     rivals,
     calendar: await readCalendar(client, orders, planRows, now),
+    autoPlants: await readAutoPlants(client, orders, now),
   };
+}
+
+async function readAutoPlants(client: Prisma.TransactionClient, orders: readonly OrderRow[], now: Date): Promise<Set<bigint>> {
+  const plants = new Map(orders.map((order) => [order.plant_id, order.plant.timezone_code]));
+  const auto = new Set<bigint>();
+  for (const [plantId, timezone] of plants) if (await isAutoWorkOrderPlant(client, plantId, localDate(now, timezone))) auto.add(plantId);
+  return auto;
 }
 
 /** 새 계획(공장 층)과 작성중 계획(그 라인)의 계획일 후보마다 보정 한도까지 — 어느 쪽을 제안할지는 계산이 정하므로 둘 다 읽는다. */

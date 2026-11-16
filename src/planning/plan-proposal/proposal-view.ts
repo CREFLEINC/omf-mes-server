@@ -21,6 +21,9 @@ export function proposalView(proposal: Proposal) {
     draftPlanQty: quantities.draftQty.toNumber(),
     remainingQty: quantities.remainingQty.toNumber(),
     erpStorage: erpStorageView(proposal.fg),
+    autoWorkOrder: proposal.kind === 'AUTO_WORK_ORDER'
+      ? { lastAttemptedAt: order.auto_work_order_attempted_at?.toISOString() ?? null, errorText: order.auto_work_order_error_text }
+      : null,
     plans: proposal.plans.map(planView),
     issues: proposal.issues,
     basis: proposal.basis,
