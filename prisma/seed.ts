@@ -57,14 +57,15 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // 기술스택 결정 16의 폼팩터. ⛔ 관리웹은 단말 마스터에 등록하지 않는다 — 현장 단말만 든다
-    // (계약 Terminal.terminalTypeCode). 시스템 소유 — 폼팩터는 아키텍처 축이라 고객이 늘리지 않는다.
+    // ⛔ 관리웹은 단말 마스터에 등록하지 않는다(계약 Terminal.terminalTypeCode). 시스템 소유 — 고객이 늘리지 않는다.
+    // TRACKING_SYSTEM 은 마이그 20261116090000 과 같은 줄이다(배포는 시드를 안 돌린다).
     groupCode: 'TERMINAL_TYPE',
     groupName: '단말 유형',
     isSystemOwned: true,
     values: [
       { code: 'POP', codeName: 'POP 단말', order: 10 },
       { code: 'MOBILE', codeName: '모바일 스캐너', order: 20 },
+      { code: 'TRACKING_SYSTEM', codeName: '추적 시스템 연동', order: 30 },
     ],
     retired: ['ADMIN_WEB'],
   },

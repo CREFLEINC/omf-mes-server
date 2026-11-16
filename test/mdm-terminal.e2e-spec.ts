@@ -247,6 +247,28 @@ describe('단말 마스터 (e2e)', () => {
     expect(row.token_version).toBe(2);
   });
 
+  it('⛔ 단말 유형을 바꾸면 옛 토큰이 끊긴다 — 두면 옛 기기가 새 유형의 권한을 얻는다', async () => {
+    const { id } = await create(`${PREFIX}-RETYPE`);
+    const token = (await issueToken(id)).body.token;
+    const etag = (await request(app.getHttpServer()).get(`/api/mdm/terminals/${id}`).set('Cookie', cookie).expect(200)).headers.etag;
+    // 두 유형이 다 부르는 읽기여야 끊김이 유형 거절과 갈린다.
+    const read = () => request(app.getHttpServer())
+      .get('/api/mdm/code-values?codeGroupCode=TERMINAL_TYPE').set('Authorization', `Bearer ${token}`);
+    const put = (ifMatch: string, extra: Record<string, unknown>) => request(app.getHttpServer())
+      .put(`/api/mdm/terminals/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', ifMatch)
+      .send(updateBody(extra))
+      .expect(200);
+
+    const sameType = await put(etag, {});
+    await read().expect(200);
+
+    await put(sameType.headers.etag, { terminalTypeCode: 'TRACKING_SYSTEM' });
+    await read().expect(401);
+  });
+
   it('FR-007 MOBILE 등록 확인은 현재 토큰 세대만 기록하고 재발급 뒤 미등록으로 돌아간다', async () => {
     const { id } = await create(`${PREFIX}-REG`, { terminalTypeCode: 'MOBILE' });
     const path = `/api/mdm/terminals/${id}:confirm-registration`;

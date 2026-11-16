@@ -11920,7 +11920,7 @@
        "x-no-example": true
       },
       "x-code-key": "CD-TERMINAL-TYPE",
-      "description": "단말 유형 — 고정 스테이션(POP · Electron 키오스크 · 산업용 패널 PC)과 손에 드는 기기(MOBILE · Capacitor Android)가 여기서 갈린다. ⭐ 폼팩터는 결정 16 이 확정한 아키텍처 축이라 고객 관행으로 늘지 않는다. ⚠ 관리웹은 단말 마스터에 등록하지 않는다 — 현장 단말만 여기 든다. ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+      "description": "단말 유형 — 고정 스테이션(POP · Electron 키오스크 · 산업용 패널 PC) · 손에 드는 기기(MOBILE · Capacitor Android) · 추적 시스템 연동(TRACKING_SYSTEM · 2026-11-12). ⚠ 관리웹은 단말 마스터에 등록하지 않는다. ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      {
       "name": "includeInactive",
@@ -25371,7 +25371,7 @@
       "x-source-column": "terminal_type_code",
       "type": "string",
       "x-no-example": true,
-      "description": "단말 유형 — 고정 스테이션(POP · Electron 키오스크 · 산업용 패널 PC)과 손에 드는 기기(MOBILE · Capacitor Android)가 여기서 갈린다. ⭐ 폼팩터는 결정 16 이 확정한 아키텍처 축이라 고객 관행으로 늘지 않는다. ⚠ 관리웹은 단말 마스터에 등록하지 않는다 — 현장 단말만 여기 든다. ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "단말 유형 — 고정 스테이션(POP · Electron 키오스크 · 산업용 패널 PC) · 손에 드는 기기(MOBILE · Capacitor Android) · 추적 시스템 연동(TRACKING_SYSTEM · 2026-11-12). ⚠ 관리웹은 단말 마스터에 등록하지 않는다. ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-code-key": "CD-TERMINAL-TYPE"
      },
      "statusCode": {
@@ -25452,7 +25452,7 @@
       "type": "string",
       "x-no-example": true,
       "x-code-key": "CD-TERMINAL-TYPE",
-      "description": "단말 유형 — 고정 스테이션(POP)과 손에 드는 기기(MOBILE). 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+      "description": "단말 유형 — 고정 스테이션(POP) · 손에 드는 기기(MOBILE) · 추적 시스템 연동(TRACKING_SYSTEM). 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "statusCode": {
       "type": "string",
@@ -25504,7 +25504,7 @@
       "type": "string",
       "x-no-example": true,
       "x-code-key": "CD-TERMINAL-TYPE",
-      "description": "단말 유형 — 고정 스테이션(POP)과 손에 드는 기기(MOBILE). 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+      "description": "단말 유형 — 고정 스테이션(POP) · 손에 드는 기기(MOBILE) · 추적 시스템 연동(TRACKING_SYSTEM). 값 목록은 GET /mdm/code-values?codeGroupCode=TERMINAL_TYPE 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. 바꾸면 그 단말의 토큰이 끊긴다 — 다시 발급한다(`:issue-token`)."
      },
      "statusCode": {
       "type": "string",
