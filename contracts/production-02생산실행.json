@@ -342,7 +342,7 @@
      "planning"
     ],
     "summary": "ERP W/O 계획 제안 조회",
-    "description": "고른 ERP W/O 마다 생산계획·공정별 W/O·4M 제안을 계산해 돌려준다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·상태·시도 기록을 바꾸지 않는다. 제안을 보고 닫으면 아무 일도 없던 것이다. 저장은 사람이 고른 ERP W/O 를 하나씩 POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 로 확정할 때만 한다. ERP W/O 수신과 수기 등록(POST /planning/production-orders)도 계획을 저장·확정하지 않는다.\n\n완제품 위치는 ERP W/O 의 입고 창고(SL_CD)를 따른다(erpStorage) — 설명은 ProductionPlanProposalErpStorage.\n\n구분(kind)·상태(status)·사유(reasons)의 판정은 ProductionPlanProposal 설명에 있다. 기준정보와 저장된 계획이 그대로면 다시 불러도 같은 결과다(임시 식별자 proposalPlanKey 와 basis 도 같다) — 4M 점검 WARN 만 다른 W/O 의 배정에 따라 달라질 수 있다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 items 에 넣지 않고 notFoundProductionOrderIds 에 담는다. 둘을 가르지 않는다 — 존재를 드러내지 않는다(규칙은 목록 설명).",
+    "description": "고른 ERP W/O 마다 생산계획·공정별 W/O·4M 제안을 계산해 돌려준다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·상태·시도 기록을 바꾸지 않는다. 제안을 보고 닫으면 아무 일도 없던 것이다. 저장은 사람이 고른 ERP W/O 를 하나씩 POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal 로 확정할 때만 한다. ERP W/O 수신과 수기 등록(POST /planning/production-orders)도 계획을 저장·확정하지 않는다.\n\n완제품 위치는 ERP W/O 의 입고 창고(SL_CD)를 따른다(erpStorage) — 설명은 ProductionPlanProposalErpStorage.\n\n구분(kind)·상태(status)·사유(reasons)의 판정은 ProductionPlanProposal 설명에 있다. 기준정보와 저장된 계획이 그대로면 다시 불러도 같은 결과다(임시 식별자 proposalPlanKey 와 basis 도 같다) — 4M 점검 WARN 만 다른 W/O 의 배정에 따라 달라질 수 있다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 items 에 넣지 않고 notFoundProductionOrderIds 에 담는다. 둘을 가르지 않는다 — 존재를 드러내지 않는다(규칙은 목록 설명).\n\n⭐ 기존 작성중 계획 — 작성중 계획이 있는 ERP W/O 는 질의 existingDraftAction 이 계획의 바탕을 정한다: 생략·REPLACE 는 대체 기준의 새 계획(NEW_PLAN), CONTINUE 는 작성중 계획(REVIEW_DRAFT). 둘 다 existingDrafts 에 요약을 싣는다. 확정 때 사람이 고른 값을 본문 existingDraftAction 에 싣는다(ProductionPlanProposalConfirm).\n\n⭐ OA 자동 W/O 공장(사용자 결정 2026-11-16) — 오늘(공장 현지) 자동 라우팅 공정 정책(AUTO_ROUTING_PROCESS)이 걸린 공장의 ERP W/O 는 자동 W/O 실행기가 사람 없이 계획·확정·배포한다. 제안 조회는 표시만 한다(kind AUTO_WORK_ORDER · status NO_CHANGE · plans 빈 배열 · autoWorkOrder 에 마지막 시도 시각·실패 까닭). 재검증은 errors 에 screen AUTO_WORK_ORDER_PLANT 를 싣고, 확정은 400 screen AUTO_WORK_ORDER_PLANT 로 거부한다 — 사람이 세운 계획이 실행기를 멈추게 하지 않도록.",
     "parameters": [
      {
       "name": "productionOrderIds",
@@ -365,6 +365,20 @@
        1002
       ],
       "description": "쉼표로 이은 ERP W/O id · 같은 id 는 한 번만 낸다 · 입력 순서대로"
+     },
+     {
+      "name": "existingDraftAction",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "CONTINUE",
+        "REPLACE"
+       ]
+      },
+      "example": "CONTINUE",
+      "description": "작성중 계획이 있는 ERP W/O 의 계획 바탕 — 생략·REPLACE 는 새 계획, CONTINUE 는 작성중 계획. 작성중 계획이 없는 ERP W/O 에는 영향이 없다. 묶음의 모든 ERP W/O 에 같이 건다 — 「이어서」를 고른 ERP W/O 하나만 다시 부를 때 쓴다"
      }
     ],
     "security": [
@@ -714,7 +728,7 @@
      "planning"
     ],
     "summary": "ERP W/O 계획 제안 확정",
-    "description": "제안 조회(GET /planning/production-orders:plan-proposals)에서 사람이 고른 ERP W/O 하나를 확정한다 — 요청 하나 = ERP W/O 하나. 여러 건은 건마다 따로 부르고, 한 건의 실패가 다른 건을 되돌리지 않는다.\n\n한 트랜잭션 안에서 ⓐ 작성중 계획(planSource EXISTING_DRAFT)은 본문 값(계획일·수량·BOM·Routing·라인)으로 고친 뒤 확정하고, 새 계획(NEW)은 등록해 바로 확정한다 ⓑ 계획마다 Routing 공정별 W/O 와 공정 의존을 만든다 — 수량·유형·우선순위는 POST /planning/production-plans/{productionPlanId}:confirm 의 전개와 같다 ⓒ 본문의 보완 4M(라인·설비·금형·작업자·교대·기본 위치)과 그 교대로 정한 계획 시각을 W/O 에 저장한다. 하나라도 실패하면 전부 롤백된다 — 부분 성공은 없다.\n\n처리 순서 — ① 없거나 범위 밖인 ERP W/O 는 404 ② 같은 Idempotency-Key 재전송은 처음 응답을 그대로 낸다(새 계획·W/O·번호 없음) ③ ERP W/O 행을 잠그고 제안을 조회와 같은 식으로 다시 계산한다 ④ 취소된 ERP W/O 는 400 STATE_LOCKED ⑤ 확정 계획량이 이미 ERP W/O 수량을 채웠으면 저장하지 않고 200 outcome ALREADY_PROCESSED 와 지금의 확정 계획·W/O 를 낸다 — 다른 키로 다시 눌렀거나 다른 사람이 먼저 확정한 경우다 ⑥ 본문 basis 가 다시 계산한 basis 와 하나라도 다르면 저장하지 않고 409 PROPOSAL_CHANGED — proposalChanges 에 바뀐 기준, currentProposal 에 지금 제안을 싣는다 ⑦ 본문 검증 실패는 400 이고 오류 field 는 본문 경로다(예: plans[0].workOrders[1].productionLineId) ⑧ 저장하고 200 outcome CONFIRMED.\n\n⭐ 본문 값은 제안과 같지 않아도 된다(사람이 고칠 수 있다). 변경 감지는 값이 아니라 basis 로 하고, 값은 수기 등록·확정과 같은 규칙으로 검증한다 — 계획일이 공장 현지 오늘 이후(RANGE) · 수량 합계(PLAN_QTY_EXCEEDS_ORDER — 본문의 모든 계획을 반영한 합계로 한 번 본다, 본문 순서와 무관) · ERP 기본 BOM(BOM_NOT_DEFAULT) · 확정·유효 기간 안의 이 품목 Routing(INVALID) · Routing 공정과 같은 W/O 집합(INVALID) · 라인·설비·금형·기본 위치는 제안의 사유와 같은 판정·같은 코드(LINE_PLANT_MISMATCH·RESOURCE_PLANT_MISMATCH·EQUIPMENT_NOT_IN_SERVICE·EQUIPMENT_LINE_MISMATCH·MOLD_NOT_IN_SERVICE·LOCATION_INVALID) · 완제품 위치는 ERP W/O 의 입고 창고(SL_CD) 안의 위치만(FG_LOCATION_OUTSIDE_WAREHOUSE — 창고를 정하지 못하면 FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED, SL_CD 가 없으면 외부·불량 창고 위치는 LOCATION_INVALID). 수량이 같아도 SL_CD 나 그 창고·입고 위치가 바뀌었으면 ⑥에서 409 PROPOSAL_CHANGED 다. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다 · 작업자·교대가 그 공장의 사용 중인 것(INVALID).\n\n⭐ 번호 — 계획번호·MES W/O 번호는 트랜잭션을 열기 전에 뽑는다. 검증 실패·충돌·롤백이면 뽑은 번호는 쓰이지 않고 결번이 된다 — 번호가 건너뛰는 것은 오류가 아니다. 같은 키 재전송은 ②에서 끝나 번호를 뽑지 않는다.\n\n⭐ If-Match 를 받지 않는다 — 작성중 계획의 판은 basis.plans 가 대신 본다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).",
+    "description": "제안 조회(GET /planning/production-orders:plan-proposals)에서 사람이 고른 ERP W/O 하나를 확정한다 — 요청 하나 = ERP W/O 하나. 여러 건은 건마다 따로 부르고, 한 건의 실패가 다른 건을 되돌리지 않는다.\n\n한 트랜잭션 안에서 ⓐ REPLACE 면 replacedDrafts 의 작성중 계획을 지우고, 작성중 계획(plan-{id})은 본문 값(계획일·출처·수량·BOM·Routing·라인)으로 고친 뒤 확정하고, 새 계획(new-N)은 등록해 바로 확정한다 ⓑ 계획마다 Routing 공정별 W/O 와 공정 의존을 만든다 — 수량·유형·우선순위는 POST /planning/production-plans/{productionPlanId}:confirm 의 전개와 같다 ⓒ 본문의 보완 4M(라인·설비·금형·작업자·교대·기본 위치)과 계획 시각(USER 는 본문 그대로, SYSTEM 은 계획일·교대로 정한 값)을 W/O 에 저장한다 ⓓ 사람이 알고 허용한 것을 감사 기록(audit.audit_event · target PRODUCTION_ORDER · correlationId = Idempotency-Key)으로 남긴다 — 작성중 계획 대체(PLAN_DRAFT_REPLACED) · 입고 창고 수동 변경(FG_WAREHOUSE_OVERRIDDEN) · 휴일인 USER 계획일(PLAN_DATE_USER_ON_HOLIDAY). 롤백되면 기록도 없다. 같은 키 재전송은 다시 기록하지 않는다. 하나라도 실패하면 전부 롤백된다 — 부분 성공은 없다.\n\n처리 순서 — ① 없거나 범위 밖인 ERP W/O 는 404 ② 같은 Idempotency-Key 재전송은 처음 응답을 그대로 낸다(새 계획·W/O·번호 없음) ③ ERP W/O 의 작성중 계획들과 ERP W/O 행을 잠그고 제안을 조회와 같은 식으로(본문 existingDraftAction 기준) 다시 계산한다 ④ 취소된 ERP W/O 는 400 STATE_LOCKED · OA 자동 W/O 공장은 400 AUTO_WORK_ORDER_PLANT ⑤ 확정 계획량이 이미 ERP W/O 수량을 채웠으면 저장하지 않고 200 outcome ALREADY_PROCESSED 와 지금의 확정 계획·W/O 를 낸다 — 다른 키로 다시 눌렀거나 다른 사람이 먼저 확정한 경우다 ⑥ 본문 basis 가 다시 계산한 basis 와 하나라도 다르면 저장하지 않고 409 PROPOSAL_CHANGED — proposalChanges 에 바뀐 기준, currentProposal 에 지금 제안을 싣는다 ⑦ 본문 검증 실패는 400 이고 오류 field 는 본문 경로다(예: plans[0].workOrders[1].productionLineId) ⑧ 저장하고 200 outcome CONFIRMED.\n\n⭐ 본문 값은 제안과 같지 않아도 된다(사람이 고칠 수 있다). 변경 감지는 값이 아니라 basis 로 하고, 값은 수기 등록·확정과 같은 규칙으로 검증한다 — 계획일이 공장 현지 오늘 이후(RANGE) · 수량 합계(PLAN_QTY_EXCEEDS_ORDER — 본문의 모든 계획을 반영한 합계로 한 번 본다, 본문 순서와 무관) · ERP 기본 BOM(BOM_NOT_DEFAULT) · 확정·유효 기간 안의 이 품목 Routing(INVALID) · Routing 공정과 같은 W/O 집합(INVALID) · 라인·설비·금형·기본 위치는 제안의 사유와 같은 판정·같은 코드(LINE_PLANT_MISMATCH·RESOURCE_PLANT_MISMATCH·EQUIPMENT_NOT_IN_SERVICE·EQUIPMENT_LINE_MISMATCH·MOLD_NOT_IN_SERVICE·LOCATION_INVALID) · 완제품 위치는 ERP W/O 의 입고 창고(SL_CD) 안의 위치만(FG_LOCATION_OUTSIDE_WAREHOUSE — 창고를 정하지 못하면 FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED, SL_CD 가 없으면 외부·불량 창고 위치는 LOCATION_INVALID). 수량이 같아도 SL_CD 나 그 창고·입고 위치가 바뀌었으면 ⑥에서 409 PROPOSAL_CHANGED 다. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다 · 작업자·교대가 그 공장의 사용 중인 것(INVALID).\n\n⭐ 번호 — 계획번호·MES W/O 번호는 트랜잭션을 열기 전에 뽑는다. 검증 실패·충돌·롤백이면 뽑은 번호는 쓰이지 않고 결번이 된다 — 번호가 건너뛰는 것은 오류가 아니다. 같은 키 재전송은 ②에서 끝나 번호를 뽑지 않는다.\n\n⭐ If-Match 를 받지 않는다 — 작성중 계획의 판은 basis.plans 가 대신 본다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 멱등 처리 전에 막는다(규칙은 목록 설명).\n\n⭐ 기존 작성중 계획(사용자 결정 2026-11-16) — ERP W/O 에 작성중 계획이 있으면 사람이 「이어서 한다(CONTINUE)」와 「지금 편집한 계획으로 새로 한다(REPLACE)」 가운데 하나를 골라 existingDraftAction 에 싣는다. 비우면 작성중 계획을 건드리지 않고 400 field existingDraftAction EXISTING_DRAFT_ACTION_REQUIRED 다(묵시적 기본값 없음). CONTINUE — 작성중 계획(plan-{id})을 편집 기준으로 쓴다: 작성중 계획 전부를 savedVersionNo 와 함께 싣고, 새 계획(new-N)을 더할 수 있다(분할·추가). 작성중 계획을 빼고 보내면 400 field plans INVALID — 지우려면 REPLACE 다. REPLACE — 작성중 계획 전부를 replacedDrafts 에 id·판으로 적고 본문 계획은 모두 새 계획(new-N)이다. 한 트랜잭션에서 작성중 계획을 지우고 새 계획을 등록·확정한다. replacedDrafts 가 지금의 작성중 계획 집합·판과 다르면 저장하지 않고 409 PROPOSAL_CHANGED(basis plans)다 — 다시 검토한다. 수량 한도(확정 계획량 + 작성 수량 ≤ ERP W/O 수량)는 대체 «후» 기준이다 — 지워질 작성중 계획의 수량은 세지 않는다. 작성중 계획이 없으면 existingDraftAction·replacedDrafts 는 보지 않는다.\n\n⭐ 재검증과 같은 판정 — 본문 검증은 POST …:revalidate-plan-proposal 과 한 함수다. 재검증이 errors 를 비워 낸 본문은 그 사이 기준이 바뀌지 않았다면 여기서 400 이 나지 않는다. WARN(교정 기한·금형 수명·설비 시간 중복·작업자 자격·휴일·교대 밖 시각·선후 시각·입고 창고 다름)은 여기서 다시 보지 않고 막지 않는다.\n\n추가 400 코드 — EXISTING_DRAFT_ACTION_REQUIRED(field existingDraftAction) · DUPLICATE_PLAN_KEY(field plans[i].proposalPlanKey) · PLAN_DATE_SOURCE_MISMATCH(field plans[i].planDateSourceCode) · PLAN_TIME_OUTSIDE_PLAN_DATE(field plans[i].workOrders[j].plannedStartAt) · FG_WAREHOUSE_NOT_ALLOWED·LOCATION_INVALID(field plans[i].fgWarehouseOverride.*) · AUTO_WORK_ORDER_PLANT(scope screen).",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -736,6 +750,93 @@
       "application/json": {
        "schema": {
         "$ref": "#/components/schemas/ProductionPlanProposalConfirm"
+       },
+       "example": {
+        "basis": {
+         "productionOrder": "a1…",
+         "plans": "b2…",
+         "bom": "c3…",
+         "routing": "d4…",
+         "resources": "e5…",
+         "calendar": "f6…"
+        },
+        "existingDraftAction": "REPLACE",
+        "replacedDrafts": [
+         {
+          "productionPlanId": 3001,
+          "versionNo": 2
+         }
+        ],
+        "plans": [
+         {
+          "proposalPlanKey": "new-1",
+          "savedVersionNo": null,
+          "splitFromPlanKey": null,
+          "planDate": "2026-11-18",
+          "planDateSourceCode": "SYSTEM",
+          "plannedQty": 60,
+          "bomId": 401,
+          "routingId": 601,
+          "plannedLineId": 11,
+          "fgWarehouseOverride": {
+           "warehouseId": 52,
+           "locationId": 5201,
+           "erpMismatchAcknowledged": true
+          },
+          "workOrders": [
+           {
+            "routingOperationId": 701,
+            "productionLineId": 11,
+            "plannedEquipmentId": 2001,
+            "plannedShiftId": null,
+            "plannedTimeSourceCode": "SYSTEM",
+            "defaultWipLocationId": 1101,
+            "defaultFgLocationId": 5201,
+            "defaultScrapLocationId": 1103
+           },
+           {
+            "routingOperationId": 702,
+            "productionLineId": 11,
+            "plannedShiftId": 31,
+            "plannedTimeSourceCode": "USER",
+            "plannedStartAt": "2026-11-18T13:00:00+07:00",
+            "plannedEndAt": "2026-11-18T21:00:00+07:00",
+            "defaultWipLocationId": 1101,
+            "defaultFgLocationId": 5201,
+            "defaultScrapLocationId": 1103
+           }
+          ]
+         },
+         {
+          "proposalPlanKey": "new-2",
+          "savedVersionNo": null,
+          "splitFromPlanKey": "new-1",
+          "planDate": "2026-11-19",
+          "planDateSourceCode": "USER",
+          "plannedQty": 60,
+          "bomId": 401,
+          "routingId": 601,
+          "plannedLineId": 12,
+          "workOrders": [
+           {
+            "routingOperationId": 701,
+            "productionLineId": 12,
+            "plannedTimeSourceCode": "SYSTEM",
+            "defaultWipLocationId": 1201,
+            "defaultFgLocationId": 5101,
+            "defaultScrapLocationId": 1203
+           },
+           {
+            "routingOperationId": 702,
+            "productionLineId": 12,
+            "plannedTimeSourceCode": "SYSTEM",
+            "defaultWipLocationId": 1201,
+            "defaultFgLocationId": 5101,
+            "defaultScrapLocationId": 1203
+           }
+          ]
+         }
+        ]
        }
       }
      }
@@ -752,6 +853,80 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ProductionPlanProposalConfirmResult"
+        },
+        "example": {
+         "productionOrderId": 1001,
+         "outcome": "CONFIRMED",
+         "replacedDrafts": [
+          {
+           "productionPlanId": 3001,
+           "planNo": "PP-20261116-0003"
+          }
+         ],
+         "plans": [
+          {
+           "proposalPlanKey": "new-1",
+           "splitFromPlanKey": null,
+           "productionPlanId": 3002,
+           "planNo": "PP-20261116-0004",
+           "statusCode": "CONFIRMED",
+           "versionNo": 2,
+           "planDateCalendar": {
+            "date": "2026-11-18",
+            "statusCode": "WORKING"
+           },
+           "fgWarehouseDiffersFromErp": true,
+           "workOrders": [
+            {
+             "workOrderId": 5001,
+             "workOrderNo": "WO-20261116-0011",
+             "routingOperationId": 701,
+             "plannedStartAt": "2026-11-18T08:00:00+07:00",
+             "plannedEndAt": "2026-11-18T20:00:00+07:00",
+             "plannedTimeSourceCode": "SYSTEM"
+            },
+            {
+             "workOrderId": 5002,
+             "workOrderNo": "WO-20261116-0012",
+             "routingOperationId": 702,
+             "plannedStartAt": "2026-11-18T13:00:00+07:00",
+             "plannedEndAt": "2026-11-18T21:00:00+07:00",
+             "plannedTimeSourceCode": "USER"
+            }
+           ]
+          },
+          {
+           "proposalPlanKey": "new-2",
+           "splitFromPlanKey": "new-1",
+           "productionPlanId": 3003,
+           "planNo": "PP-20261116-0005",
+           "statusCode": "CONFIRMED",
+           "versionNo": 2,
+           "planDateCalendar": {
+            "date": "2026-11-19",
+            "statusCode": "WORKING"
+           },
+           "fgWarehouseDiffersFromErp": false,
+           "workOrders": [
+            {
+             "workOrderId": 5003,
+             "workOrderNo": "WO-20261116-0013",
+             "routingOperationId": 701,
+             "plannedStartAt": "2026-11-19T08:00:00+07:00",
+             "plannedEndAt": "2026-11-20T08:00:00+07:00",
+             "plannedTimeSourceCode": "SYSTEM"
+            },
+            {
+             "workOrderId": 5004,
+             "workOrderNo": "WO-20261116-0014",
+             "routingOperationId": 702,
+             "plannedStartAt": "2026-11-19T08:00:00+07:00",
+             "plannedEndAt": "2026-11-20T08:00:00+07:00",
+             "plannedTimeSourceCode": "SYSTEM"
+            }
+           ]
+          }
+         ]
         }
        }
       }
@@ -762,6 +937,40 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ErrorResponse"
+        },
+        "example": {
+         "errors": [
+          {
+           "scope": "field",
+           "field": "existingDraftAction",
+           "code": "EXISTING_DRAFT_ACTION_REQUIRED",
+           "message": "이 ERP W/O 에 작성중 계획(PP-20261116-0003)이 있습니다. 「이어서 한다」와 「새로 한다」 가운데 하나를 고르세요."
+          },
+          {
+           "scope": "field",
+           "field": "plans[1].planDateSourceCode",
+           "code": "PLAN_DATE_SOURCE_MISMATCH",
+           "message": "시스템 날짜는 2026-11-18 입니다 — 날짜를 바꿨으면 출처를 USER 로 보내세요."
+          },
+          {
+           "scope": "field",
+           "field": "plans[0].workOrders[1].plannedStartAt",
+           "code": "PLAN_TIME_OUTSIDE_PLAN_DATE",
+           "message": "계획 시작 시각이 계획일(2026-11-18) 근무일(08:00 ~ 다음 날 08:00) 밖입니다. 시각이나 계획일을 고치세요."
+          },
+          {
+           "scope": "field",
+           "field": "plans[0].workOrders[1].defaultFgLocationId",
+           "code": "FG_LOCATION_OUTSIDE_WAREHOUSE",
+           "message": "완제품 위치는 고른 입고 창고(S520, 완제품 2창고) 안의 위치여야 합니다."
+          },
+          {
+           "scope": "field",
+           "field": "plans[1].plannedQty",
+           "code": "PLAN_QTY_EXCEEDS_ORDER",
+           "message": "계획 수량 합계가 ERP W/O 수량(120)을 넘습니다 — 확정 0 + 이번 130."
+          }
+         ]
         }
        }
       }
@@ -802,6 +1011,231 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ProductionConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/planning/production-orders/{productionOrderId}:revalidate-plan-proposal": {
+   "post": {
+    "tags": [
+     "planning"
+    ],
+    "summary": "ERP W/O 계획 제안 보완값 재검증",
+    "description": "사람이 고친 계획(계획일·출처·수량·생산 라인·Routing·4M·계획 시각·입고 창고·계획 구성)을 저장하지 않고 확정과 같은 규칙·같은 계산으로 다시 계산·검증한다. ⛔ 부작용이 없다 — 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·목록 상태·감사 기록·멱등 기록을 바꾸지 않고, 잠그지 않는다. Idempotency-Key 를 받지 않는다. 본문은 확정 본문(ProductionPlanProposalConfirm)과 같다 — 화면은 재검증한 본문을 그대로 확정에 보낸다.\n\n⭐ 새 API 로 둔 까닭 — 조회(GET)는 본문을 싣지 못하고(계획 여럿 × 공정별 4M·시각), 확정에 미리 보기 칸을 두면 멱등 기록·채번·409 와 한 경로에 섞여 「저장하지 않음」을 확정 안에서 갈라 지켜야 한다. 판정 함수는 하나다 — 확정은 그것을 잠근 트랜잭션에서 다시 부르고 errors 가 있으면 400 으로 던진다.\n\n처리 — ① 없거나 범위 밖이면 404 ② 형식 위반(계약 가드)만 400 ③ 그 밖의 판정은 모두 200 이다: 확정이 400 으로 낼 오류는 errors(같은 code·같은 field 본문 경로·같은 문장), 막지 않는 경고는 warnings, 서버가 시스템 값을 다시 계산해 본문과 달라진 칸은 corrections. 사람이 정한 값(출처 USER·사람이 고른 4M·입고 창고)은 고치지 않는다 — 맞지 않으면 errors 다. 취소된 ERP W/O 는 errors 에 screen STATE_LOCKED, OA 자동 W/O 공장은 screen AUTO_WORK_ORDER_PLANT.\n\n⭐ basis 연결 — 본문 basis 를 지금 다시 계산한 basis(본문 existingDraftAction 기준)와 견줘 다른 칸을 proposalChanges 에, 지금 제안을 currentProposal 에 싣는다. 응답 basis 는 지금의 basis 다. 화면은 proposalChanges 를 사람에게 보인 뒤에만 응답 basis 를 확정 본문에 옮겨 싣는다 — 사람이 보지 않은 기준 변화를 새 basis 로 덮어 확정하지 않는다. 잠그지 않으므로 재검증과 확정 사이에 바뀌면 확정이 409 PROPOSAL_CHANGED 다.\n\n⭐ 판정 시점 — BLOCK(errors): 재검증·확정 둘 다(한 함수). WARN(warnings): 제안 조회·재검증만 계산하고 확정은 다시 보지 않는다. 설비 시간 중복(EQUIPMENT_DOUBLE_BOOKED)은 지금 저장된 다른 MES W/O 와 이 본문의 다른 계획·공정의 시각을 함께 본다 — 재검증 뒤 남이 만든 W/O 와의 중복은 확정이 잡지 않는다. 금형 시간 중복은 판정하지 않는다(4M 점검에 없는 규칙).\n\n⭐ 기존 작성중 계획(사용자 결정 2026-11-16) — ERP W/O 에 작성중 계획이 있으면 사람이 「이어서 한다(CONTINUE)」와 「지금 편집한 계획으로 새로 한다(REPLACE)」 가운데 하나를 골라 existingDraftAction 에 싣는다. 비우면 작성중 계획을 건드리지 않고 400 field existingDraftAction EXISTING_DRAFT_ACTION_REQUIRED 다(묵시적 기본값 없음). CONTINUE — 작성중 계획(plan-{id})을 편집 기준으로 쓴다: 작성중 계획 전부를 savedVersionNo 와 함께 싣고, 새 계획(new-N)을 더할 수 있다(분할·추가). 작성중 계획을 빼고 보내면 400 field plans INVALID — 지우려면 REPLACE 다. REPLACE — 작성중 계획 전부를 replacedDrafts 에 id·판으로 적고 본문 계획은 모두 새 계획(new-N)이다. 한 트랜잭션에서 작성중 계획을 지우고 새 계획을 등록·확정한다. replacedDrafts 가 지금의 작성중 계획 집합·판과 다르면 저장하지 않고 409 PROPOSAL_CHANGED(basis plans)다 — 다시 검토한다. 수량 한도(확정 계획량 + 작성 수량 ≤ ERP W/O 수량)는 대체 «후» 기준이다 — 지워질 작성중 계획의 수량은 세지 않는다. 작성중 계획이 없으면 existingDraftAction·replacedDrafts 는 보지 않는다.\n\n⭐ OA 자동 W/O 공장(사용자 결정 2026-11-16) — 오늘(공장 현지) 자동 라우팅 공정 정책(AUTO_ROUTING_PROCESS)이 걸린 공장의 ERP W/O 는 자동 W/O 실행기가 사람 없이 계획·확정·배포한다. 제안 조회는 표시만 한다(kind AUTO_WORK_ORDER · status NO_CHANGE · plans 빈 배열 · autoWorkOrder 에 마지막 시도 시각·실패 까닭). 재검증은 errors 에 screen AUTO_WORK_ORDER_PLANT 를 싣고, 확정은 400 screen AUTO_WORK_ORDER_PLANT 로 거부한다 — 사람이 세운 계획이 실행기를 멈추게 하지 않도록.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 권한은 확정과 같다.",
+    "parameters": [
+     {
+      "name": "productionOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductionPlanProposalConfirm"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "재검증 결과 — 저장하지 않았다. 확정할 수 있는지는 confirmable",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductionPlanProposalRevalidation"
+        },
+        "example": {
+         "productionOrderId": 1001,
+         "confirmable": false,
+         "basis": {
+          "productionOrder": "a1…",
+          "plans": "b2…",
+          "bom": "c3…",
+          "routing": "d4…",
+          "resources": "e5…",
+          "calendar": "f6…"
+         },
+         "proposalChanges": [],
+         "existingDrafts": [
+          {
+           "productionPlanId": 3001,
+           "versionNo": 2,
+           "planNo": "PP-20261116-0003",
+           "planDate": "2026-11-17",
+           "plannedQty": 120,
+           "uomId": 9,
+           "plannedLineId": 11,
+           "plannedLineCode": "L-01",
+           "plannedLineName": "조립 1라인",
+           "statusCode": "DRAFT",
+           "createdBy": 77,
+           "createdByName": "김계획",
+           "createdAt": "2026-11-16T09:12:00+07:00",
+           "updatedAt": "2026-11-16T10:02:00+07:00",
+           "createdAutomatically": false
+          }
+         ],
+         "errors": [
+          {
+           "scope": "field",
+           "field": "plans[1].workOrders[0].productionLineId",
+           "code": "LINE_PLANT_MISMATCH",
+           "message": "이 ERP W/O 공장의 사용 중인 라인이 아닙니다. 라인을 다시 고르세요."
+          }
+         ],
+         "warnings": [
+          {
+           "code": "EQUIPMENT_DOUBLE_BOOKED",
+           "field": "plans[0].workOrders[0].plannedEquipmentId",
+           "message": "설비(2001)가 같은 시간대의 다른 MES W/O 에 배정돼 있습니다."
+          },
+          {
+           "code": "PLAN_DATE_HOLIDAY",
+           "field": "plans[1].planDate",
+           "message": "계획일 2026-11-19 은 휴일입니다. 그대로 확정할 수 있습니다."
+          },
+          {
+           "code": "FG_WAREHOUSE_DIFFERS_FROM_ERP",
+           "field": "plans[0].fgWarehouseOverride",
+           "message": "입고 창고를 ERP(S510)와 다른 S520 으로 바꿨습니다 — ERP 는 S510 으로 입고합니다."
+          }
+         ],
+         "corrections": [
+          {
+           "field": "plans[0].workOrders[0].plannedStartAt",
+           "reasonCode": "SYSTEM_TIME_RECALCULATED",
+           "from": "2026-11-17T08:00:00+07:00",
+           "to": "2026-11-18T08:00:00+07:00",
+           "message": "계획일을 2026-11-18 로 바꿔 계획 시각을 다시 계산했습니다."
+          }
+         ],
+         "plans": [
+          {
+           "proposalPlanKey": "new-1",
+           "planSource": "NEW",
+           "splitFromPlanKey": null,
+           "planDate": "2026-11-18",
+           "planDateSourceCode": "SYSTEM",
+           "planDateCalendar": {
+            "date": "2026-11-18",
+            "statusCode": "WORKING"
+           },
+           "plannedQty": 60,
+           "routingId": 601,
+           "plannedLineId": 11,
+           "fgWarehouse": {
+            "erpStorageLocationCode": "S510",
+            "erpWarehouseId": 51,
+            "appliedWarehouseId": 52,
+            "appliedLocationId": 5201,
+            "overridden": true,
+            "differsFromErp": true
+           },
+           "workOrders": [
+            {
+             "routingOperationId": 701,
+             "operationSeq": 10,
+             "orderQty": 60,
+             "predecessors": [],
+             "plannedStartAt": "2026-11-18T08:00:00+07:00",
+             "plannedEndAt": "2026-11-19T08:00:00+07:00",
+             "plannedTimeSourceCode": "SYSTEM",
+             "plannedShiftId": null,
+             "productionLineId": 11,
+             "plannedEquipmentId": 2001,
+             "plannedMoldId": null,
+             "responsibleWorkerId": null,
+             "defaultWipLocationId": 1101,
+             "defaultFgLocationId": 5201,
+             "defaultScrapLocationId": 1103,
+             "equipmentRequired": true,
+             "moldRequired": false,
+             "missingFields": []
+            },
+            {
+             "routingOperationId": 702,
+             "operationSeq": 20,
+             "orderQty": 60,
+             "predecessors": [
+              {
+               "routingOperationId": 701,
+               "dependencyTypeCode": "FINISH_TO_START"
+              }
+             ],
+             "plannedStartAt": "2026-11-18T13:00:00+07:00",
+             "plannedEndAt": "2026-11-18T21:00:00+07:00",
+             "plannedTimeSourceCode": "USER",
+             "plannedShiftId": 31,
+             "productionLineId": 11,
+             "plannedEquipmentId": null,
+             "plannedMoldId": null,
+             "responsibleWorkerId": null,
+             "defaultWipLocationId": 1101,
+             "defaultFgLocationId": 5201,
+             "defaultScrapLocationId": 1103,
+             "equipmentRequired": false,
+             "moldRequired": false,
+             "missingFields": []
+            }
+           ]
+          }
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "형식 위반 — 계약 가드(타입·필수·enum·pattern). 업무 판정은 200 의 errors 다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다 — 선택 확정과 같은 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다 · 데이터 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -7510,7 +7944,7 @@
    },
    "ProductionPlanProposal": {
     "type": "object",
-    "description": "ERP W/O 하나의 계획 제안 — 서버가 조회 때 계산만 하고 저장하지 않는다. 판정 순서: 취소된 ERP W/O → NOT_PROPOSABLE·NO_CHANGE(ORDER_CANCELLED) · 확정 계획량 ≥ ERP W/O 수량 → KEEP_CONFIRMED·NO_CHANGE(작성중 계획이 남았으면 NEEDS_INPUT·DRAFT_PLAN_EXCEEDS_ORDER) · 작성중 계획이 있으면 REVIEW_DRAFT · 없으면 NEW_PLAN. REVIEW_DRAFT·NEW_PLAN 인데 BOM·Routing 사유(BOM_DEFAULT_REQUIRED·ROUTING_REQUIRED·ROUTING_DEFAULT_REQUIRED·ROUTING_OPERATION_REQUIRED)가 있으면 NOT_PROPOSABLE·NEEDS_INPUT 이고 plans 는 빈 배열이다. category BLOCKED 는 표시 분류일 뿐 plans 를 비우지 않는다(예: 입고 창고 연결 실패는 BLOCKED 이지만 계획·4M 은 그대로 낸다). 그 밖에는 BLOCK 문제가 하나라도 있으면 NEEDS_INPUT, 없으면 CONFIRMABLE 이다.",
+    "description": "ERP W/O 하나의 계획 제안 — 서버가 조회 때 계산만 하고 저장하지 않는다. 판정 순서: 취소된 ERP W/O → NOT_PROPOSABLE·NO_CHANGE(ORDER_CANCELLED) · 확정 계획량 ≥ ERP W/O 수량 → KEEP_CONFIRMED·NO_CHANGE(작성중 계획이 남았으면 NEEDS_INPUT·DRAFT_PLAN_EXCEEDS_ORDER) · 작성중 계획이 있으면 REVIEW_DRAFT · 없으면 NEW_PLAN. REVIEW_DRAFT·NEW_PLAN 인데 BOM·Routing 사유(BOM_DEFAULT_REQUIRED·ROUTING_REQUIRED·ROUTING_DEFAULT_REQUIRED·ROUTING_OPERATION_REQUIRED)가 있으면 NOT_PROPOSABLE·NEEDS_INPUT 이고 plans 는 빈 배열이다. category BLOCKED 는 표시 분류일 뿐 plans 를 비우지 않는다(예: 입고 창고 연결 실패는 BLOCKED 이지만 계획·4M 은 그대로 낸다). 그 밖에는 BLOCK 문제가 하나라도 있으면 NEEDS_INPUT, 없으면 CONFIRMABLE 이다. 작성중 계획이 있으면 질의 existingDraftAction 이 계획의 바탕을 정한다 — 없거나 REPLACE 면 작성중 계획을 대체한다고 보고 새 계획 하나(수량 = ERP W/O 수량 − 확정 계획량)를 NEW_PLAN 으로, CONTINUE 면 작성중 계획마다 하나를 REVIEW_DRAFT 로 낸다. 어느 쪽이든 existingDrafts 에 작성중 계획 요약을 싣는다. ⭐ OA 자동 W/O 공장(사용자 결정 2026-11-16) — 오늘(공장 현지) 자동 라우팅 공정 정책(AUTO_ROUTING_PROCESS)이 걸린 공장의 ERP W/O 는 자동 W/O 실행기가 사람 없이 계획·확정·배포한다. 제안 조회는 표시만 한다(kind AUTO_WORK_ORDER · status NO_CHANGE · plans 빈 배열 · autoWorkOrder 에 마지막 시도 시각·실패 까닭). 재검증은 errors 에 screen AUTO_WORK_ORDER_PLANT 를 싣고, 확정은 400 screen AUTO_WORK_ORDER_PLANT 로 거부한다 — 사람이 세운 계획이 실행기를 멈추게 하지 않도록.",
     "required": [
      "productionOrderId",
      "productionOrderNo",
@@ -7527,7 +7961,9 @@
      "erpStorage",
      "plans",
      "issues",
-     "basis"
+     "basis",
+     "existingDrafts",
+     "autoWorkOrder"
     ],
     "properties": {
      "productionOrderId": {
@@ -7601,7 +8037,7 @@
      },
      "plans": {
       "type": "array",
-      "description": "확정하면 저장될 계획. NEW_PLAN 은 새 계획 하나, REVIEW_DRAFT 는 작성중 계획마다 하나(새 계획을 더하지 않는다 — 남는 수량은 remainingQty). KEEP_CONFIRMED·NOT_PROPOSABLE 은 빈 배열",
+      "description": "확정하면 저장될 계획. NEW_PLAN 은 새 계획 하나(작성중 계획이 있어도 — 대체 기준), REVIEW_DRAFT(existingDraftAction=CONTINUE)는 작성중 계획마다 하나. KEEP_CONFIRMED·NOT_PROPOSABLE·AUTO_WORK_ORDER 는 빈 배열. 사람은 확정 본문에서 계획을 나누거나 더할 수 있다(ProductionPlanProposalConfirm.plans)",
       "items": {
        "$ref": "#/components/schemas/ProductionPlanProposalPlan"
       }
@@ -7615,6 +8051,43 @@
      },
      "basis": {
       "$ref": "#/components/schemas/ProductionPlanProposalBasis"
+     },
+     "existingDrafts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalExistingDraft"
+      },
+      "description": "이 ERP W/O 의 작성중 계획 요약 — 없으면 빈 배열. 비지 않으면 확정 본문에 existingDraftAction 이 필수다"
+     },
+     "autoWorkOrder": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "kind AUTO_WORK_ORDER 만 — 자동 W/O 실행기의 마지막 처리. 그 밖에는 null",
+      "required": [
+       "lastAttemptedAt",
+       "errorText"
+      ],
+      "properties": {
+       "lastAttemptedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "example": "2026-11-16T09:15:00+07:00",
+        "description": "아직 시도하지 않았으면 null"
+       },
+       "errorText": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "example": null,
+        "description": "마지막 시도가 실패한 까닭. 성공했거나 시도 전이면 null"
+       }
+      }
      }
     }
    },
@@ -7662,9 +8135,10 @@
      "NEW_PLAN",
      "REVIEW_DRAFT",
      "KEEP_CONFIRMED",
-     "NOT_PROPOSABLE"
+     "NOT_PROPOSABLE",
+     "AUTO_WORK_ORDER"
     ],
-    "description": "제안 구분. NEW_PLAN 신규 제안(작성중 계획이 없고 확정 계획량이 모자라다 — 잔량으로 새 계획 하나) · REVIEW_DRAFT 기존 작성중 계획 검토(작성중 계획을 지금 기준으로 다시 맞춘 확정 제안) · KEEP_CONFIRMED 기존 확정 계획 유지(확정 계획량이 ERP W/O 수량을 채웠다 — 확정된 계획의 BOM·Routing 개정도 그대로 둔다. 작성중 계획이 남아 있으면 DRAFT_PLAN_EXCEEDS_ORDER 로 보완 필요다) · NOT_PROPOSABLE 제안 불가(취소된 ERP W/O, 또는 기준정보 때문에 계획을 세울 수 없다 — reasons 의 BLOCKED 사유)"
+    "description": "제안 구분. NEW_PLAN 신규 제안(작성중 계획이 없거나 대체 기준이면 — ERP W/O 수량 − 확정 계획량으로 새 계획 하나) · REVIEW_DRAFT 기존 작성중 계획 이어서(existingDraftAction=CONTINUE — 작성중 계획을 지금 기준으로 다시 맞춘 확정 제안) · KEEP_CONFIRMED 기존 확정 계획 유지(확정 계획량이 ERP W/O 수량을 채웠다 — 확정된 계획의 BOM·Routing 개정도 그대로 둔다. 작성중 계획이 남아 있으면 DRAFT_PLAN_EXCEEDS_ORDER 로 보완 필요다) · NOT_PROPOSABLE 제안 불가(취소된 ERP W/O, 또는 기준정보 때문에 계획을 세울 수 없다 — reasons 의 BLOCKED 사유) · AUTO_WORK_ORDER OA 자동 W/O 공장의 ERP W/O — 실행기가 처리하므로 사람이 확정하지 않는다(status NO_CHANGE · plans 빈 배열 · autoWorkOrder)"
    },
    "ProductionPlanProposalStatus": {
     "type": "string",
@@ -8532,7 +9006,7 @@
    },
    "ProductionPlanProposalConfirm": {
     "type": "object",
-    "description": "한 ERP W/O 의 제안 확정 본문 — 제안의 plans 와 보완값, 검토한 basis.",
+    "description": "한 ERP W/O 의 제안 확정 본문 — 사람이 고친 계획 구성과 보완값, 검토한 basis. 재검증(:revalidate-plan-proposal)도 같은 본문을 받는다 — 재검증한 본문을 그대로 확정에 보낸다. ⭐ 기존 작성중 계획(사용자 결정 2026-11-16) — ERP W/O 에 작성중 계획이 있으면 사람이 「이어서 한다(CONTINUE)」와 「지금 편집한 계획으로 새로 한다(REPLACE)」 가운데 하나를 골라 existingDraftAction 에 싣는다. 비우면 작성중 계획을 건드리지 않고 400 field existingDraftAction EXISTING_DRAFT_ACTION_REQUIRED 다(묵시적 기본값 없음). CONTINUE — 작성중 계획(plan-{id})을 편집 기준으로 쓴다: 작성중 계획 전부를 savedVersionNo 와 함께 싣고, 새 계획(new-N)을 더할 수 있다(분할·추가). 작성중 계획을 빼고 보내면 400 field plans INVALID — 지우려면 REPLACE 다. REPLACE — 작성중 계획 전부를 replacedDrafts 에 id·판으로 적고 본문 계획은 모두 새 계획(new-N)이다. 한 트랜잭션에서 작성중 계획을 지우고 새 계획을 등록·확정한다. replacedDrafts 가 지금의 작성중 계획 집합·판과 다르면 저장하지 않고 409 PROPOSAL_CHANGED(basis plans)다 — 다시 검토한다. 수량 한도(확정 계획량 + 작성 수량 ≤ ERP W/O 수량)는 대체 «후» 기준이다 — 지워질 작성중 계획의 수량은 세지 않는다. 작성중 계획이 없으면 existingDraftAction·replacedDrafts 는 보지 않는다.",
     "required": [
      "basis",
      "plans"
@@ -8541,10 +9015,30 @@
      "basis": {
       "$ref": "#/components/schemas/ProductionPlanProposalBasis"
      },
+     "existingDraftAction": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "CONTINUE",
+       "REPLACE",
+       null
+      ],
+      "example": "REPLACE",
+      "description": "기존 작성중 계획을 어떻게 할지 — 사람이 팝업에서 고른 값. 작성중 계획이 있는데 비면 400 EXISTING_DRAFT_ACTION_REQUIRED. 규칙은 ProductionPlanProposalConfirm 설명"
+     },
+     "replacedDrafts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalDraftRef"
+      },
+      "description": "REPLACE 만 — 지울 작성중 계획 전부(사람이 본 id·판). REPLACE 인데 비었으면 400 REQUIRED. 지금의 작성중 계획 집합·판과 다르면 409 PROPOSAL_CHANGED"
+     },
      "plans": {
       "type": "array",
       "minItems": 1,
-      "description": "제안의 plans 전부를 싣는다 — proposalPlanKey 집합이 다시 계산한 제안과 같아야 한다. 빠지거나, 제안에 없는 키로 계획을 더하면 400 field plans INVALID(한 ERP W/O 는 전부 확정하거나 아무것도 하지 않는다 · 본문으로 새 계획을 만들 수 없다). 수량은 줄일 수 있다 — plannedQty 를 줄여 확정하면 나머지는 잔량으로 남는다",
+      "description": "확정할 계획 전부 — 한 ERP W/O 는 전부 확정하거나 아무것도 하지 않는다(일부 계획만 확정하는 정책 없음). 사람이 계획을 나누거나 더해도 된다. 키 — plan-{id} 는 이 ERP W/O 의 작성중 계획(CONTINUE 만 · savedVersionNo 필수), new-N 은 새 계획(화면이 정하는 임시 키 — 제안의 new-1 을 그대로 쓰고 나눈·더한 계획은 new-2…). 400 field plans INVALID — 같은 키가 둘(DUPLICATE_PLAN_KEY) · 이 ERP W/O 의 작성중 계획이 아닌 plan-{id}(다른 ERP W/O·확정 계획 포함) · REPLACE 인데 plan-{id} · CONTINUE 인데 작성중 계획이 빠짐 · splitFromPlanKey 가 본문에 없는 키·자기 자신. 같은 Routing 을 쓰는 계획이 여럿이어도 공정 W/O 는 (proposalPlanKey, routingOperationId)로 갈린다. 수량 합계(확정 계획량 + 본문 계획 수량, REPLACE 면 지울 작성중 계획은 빼고)가 ERP W/O 수량을 넘으면 400 PLAN_QTY_EXCEEDS_ORDER — 본문 순서와 무관하게 한 번 본다. 하나라도 실패하면 전부 롤백된다",
       "items": {
        "$ref": "#/components/schemas/ProductionPlanProposalConfirmPlan"
       }
@@ -8560,20 +9054,47 @@
      "bomId",
      "routingId",
      "plannedLineId",
-     "workOrders"
+     "workOrders",
+     "planDateSourceCode"
     ],
     "properties": {
      "proposalPlanKey": {
       "type": "string",
       "pattern": "^(new|plan)-[1-9][0-9]*$",
-      "description": "제안의 값 그대로",
+      "description": "plan-{id}(작성중 계획 · CONTINUE) 또는 new-N(새 계획). 본문 안에서 유일하다. 응답(재검증·확정)이 이 키로 계획을 돌려준다",
       "example": "new-1"
+     },
+     "savedVersionNo": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "example": 2,
+      "description": "plan-{id} 만 필수 — 편집 기준으로 쓴 작성중 계획의 판(제안의 saved.versionNo). 비면 400 REQUIRED, 지금 판과 다르면 409 PROPOSAL_CHANGED(basis plans). new-N 은 비운다"
+     },
+     "splitFromPlanKey": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^(new|plan)-[1-9][0-9]*$",
+      "example": "new-1",
+      "description": "사람이 나눈 계획이면 나누기 전 계획의 키(본문 안의 키). 화면이 두 행을 잇고 감사 기록에 남기는 데만 쓴다 — 러닝체인지 분할(splitOfPlanId)로 저장하지 않는다. 나누지 않았으면 null·생략"
      },
      "planDate": {
       "type": "string",
       "format": "date",
       "example": "2026-08-11",
-      "description": "공장 현지 오늘 이후여야 한다 — 지났으면 400 RANGE(자정을 넘겨 확정하면 검토 때의 날짜가 지났을 수 있다). 휴일이어도 거부하지 않는다. 저장하는 날짜 출처는 서버가 정한다 — 제안 planDate 와 같으면 제안의 planDateSourceCode, 다르면 USER"
+      "description": "공장 현지 오늘 이후여야 한다 — 지났으면 400 RANGE(자정을 넘겨 확정하면 검토 때의 날짜가 지났을 수 있다). 휴일이어도 거부하지 않는다(WARN PLAN_DATE_HOLIDAY). 출처는 planDateSourceCode 로 명시한다"
+     },
+     "planDateSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "example": "USER",
+      "description": "날짜 출처(R4) — 서버가 추측하지 않고 이 값을 저장한다. SYSTEM 은 서버가 정한 날짜(제안의 planDate · 나누거나 더한 새 계획은 그 ERP W/O 의 시스템 날짜 = 제안 new-1 의 planDate)를 그대로 둘 때만 — 다르면 400 field planDateSourceCode PLAN_DATE_SOURCE_MISMATCH(사람이 고친 날짜는 USER). USER 는 어떤 날짜든 받고 휴일 보정을 하지 않는다(WARN 만). basis.calendar 는 SYSTEM 날짜만 본다. USER 날짜가 휴일이면(PLAN_DATE_HOLIDAY 를 보고 정했다) 확정이 감사 기록(PLAN_DATE_USER_ON_HOLIDAY)을 남긴다"
      },
      "plannedQty": {
       "type": "number",
@@ -8603,6 +9124,40 @@
       "example": 1001,
       "description": "계획 라인. null 이면 라인을 공정 W/O 마다 정한다"
      },
+     "fgWarehouseOverride": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "입고 창고 수동 변경 — 없으면 생략·null(SL_CD 규칙 그대로). 입고 창고 수동 변경(R5 · 사용자 결정 2026-11-16) — ERP 는 오더의 SL_CD 창고로 입고하고 MES 생산입고 송신은 창고를 싣지 않으므로, 바꾸면 MES 와 ERP 의 재고 위치가 달라진다. 사람이 이를 알고 허용할 때만 쓴다. fgWarehouseOverride 가 있으면 그 계획의 모든 공정 W/O 의 defaultFgLocationId 는 override 의 locationId 와 같아야 한다(아니면 400 FG_LOCATION_OUTSIDE_WAREHOUSE). 창고는 ERP W/O 공장의 사용 중인 창고이고 자재·불량·외부 창고가 아니어야 하며(아니면 400 field fgWarehouseOverride.warehouseId FG_WAREHOUSE_NOT_ALLOWED), 위치는 그 창고의 사용 중인 위치여야 한다(아니면 400 field fgWarehouseOverride.locationId LOCATION_INVALID). erpMismatchAcknowledged 가 true 가 아니면 400 REQUIRED. ERP W/O 에 SL_CD 가 없으면 보내지 않는다(400 INVALID — 그때는 원래 규칙대로 위치를 고른다). override 의 창고가 SL_CD 창고와 같으면 400 INVALID(바꾼 것이 없다). 생산 라인을 바꿔도 override 는 그대로다 — 서버가 라인 기본 위치로 되돌리지 않는다. 재검증과 확정이 같은 판정(core/erp-warehouse/fg-location.ts)을 쓴다. 확정하면 감사 기록(PRODUCTION_ORDER · FG_WAREHOUSE_OVERRIDDEN)을 같은 트랜잭션에 남긴다.",
+      "required": [
+       "warehouseId",
+       "locationId",
+       "erpMismatchAcknowledged"
+      ],
+      "properties": {
+       "warehouseId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001,
+        "description": "사람이 고른 MES 입고 창고"
+       },
+       "locationId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001,
+        "description": "그 창고의 위치 — 공정 W/O 의 defaultFgLocationId 가 이 값이어야 한다"
+       },
+       "erpMismatchAcknowledged": {
+        "type": "boolean",
+        "enum": [
+         true
+        ],
+        "example": true,
+        "description": "확인 응답 — 「ERP 입고 창고와 MES 입고 창고가 달라진다」는 화면 확인 메시지에 사람이 동의했다. true 만 받는다"
+       }
+      }
+     },
      "remarks": {
       "type": "string",
       "example": "값"
@@ -8619,13 +9174,14 @@
    },
    "ProductionPlanProposalConfirmWorkOrder": {
     "type": "object",
-    "description": "공정 W/O 하나의 보완 4M. 생산 라인과 기본 위치 셋은 필수다 — 배포가 요구하므로 확정 때 막는다. 계획 시각은 싣지 않는다 — 서버가 계획일과 plannedShiftId 로 정한다(ProductionPlanProposalWorkOrder.plannedStartAt 의 규칙). 기본 위치 셋은 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치여야 한다 — 아니면 400 LOCATION_INVALID. 완제품 위치는 더해, ERP W/O 에 SL_CD 가 있으면 그 창고(제안의 erpStorage.warehouse) 안의 위치여야 한다 — 다른 창고면 400 FG_LOCATION_OUTSIDE_WAREHOUSE, SL_CD 의 창고를 정하지 못하면 어떤 위치도 400 FG_WAREHOUSE_*(FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED). SL_CD 가 없으면 외부창고·불량창고 위치도 400 LOCATION_INVALID 다. 라인·설비·금형·위치는 제안의 사유와 같은 판정·같은 코드다.",
+    "description": "공정 W/O 하나의 보완 4M·계획 시각. 생산 라인과 기본 위치 셋은 필수다 — 배포가 요구하므로 확정 때 막는다. 계획 시각(R3) — plannedTimeSourceCode SYSTEM 이면 서버가 계획일과 plannedShiftId 로 정한다(ProductionPlanProposalWorkOrder.plannedStartAt 의 규칙). 본문에 화면이 보던 시각을 실어도 되고, 다시 계산한 값과 다르면 재검증 corrections 에 SYSTEM_TIME_RECALCULATED 로 알린다(확정은 다시 계산한 값을 저장한다). USER 면 plannedStartAt·plannedEndAt 둘 다 필수이고 서버는 그대로 저장한다 — 계획일·교대를 바꿔도 다시 계산하지 않는다. 판정: 시작 < 종료(아니면 400 field plannedEndAt RANGE) · 시작이 계획일의 근무일 하루(가장 이른 활성 교대 시작부터 24시간 — 자정을 넘긴 야간도 그날) 안(아니면 400 field plannedStartAt PLAN_TIME_OUTSIDE_PLAN_DATE — 계획일을 바꿔 시작이 벗어나도 옮기지 않고 이 오류를 낸다) · 교대를 정했는데 시각이 그 교대 창 밖이면 WARN PLAN_TIME_OUTSIDE_SHIFT · 선행 공정(FINISH_TO_START)의 종료보다 이르게 시작하면 WARN PLAN_TIME_PRECEDENCE. 시각은 오프셋을 붙인 순간이고 공장 시간대로 푼다. 기본 위치 셋은 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치여야 한다 — 아니면 400 LOCATION_INVALID. 완제품 위치는 더해, 계획에 fgWarehouseOverride 가 없고 ERP W/O 에 SL_CD 가 있으면 그 창고(제안의 erpStorage.warehouse) 안의 위치여야 한다 — 다른 창고면 400 FG_LOCATION_OUTSIDE_WAREHOUSE, SL_CD 의 창고를 정하지 못하면 어떤 위치도 400 FG_WAREHOUSE_*(FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED). SL_CD 가 없으면 외부창고·불량창고 위치도 400 LOCATION_INVALID 다. fgWarehouseOverride 가 있으면 그 위치여야 한다. 라인·설비·금형·위치는 제안의 사유와 같은 판정·같은 코드다.",
     "required": [
      "routingOperationId",
      "productionLineId",
      "defaultWipLocationId",
      "defaultFgLocationId",
-     "defaultScrapLocationId"
+     "defaultScrapLocationId",
+     "plannedTimeSourceCode"
     ],
     "properties": {
      "routingOperationId": {
@@ -8675,6 +9231,33 @@
       "example": 1001,
       "description": "생략·null = 근무일 하루. 그 공장의 활성 교대가 아니면 400 INVALID"
      },
+     "plannedTimeSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "example": "USER",
+      "description": "SYSTEM 서버가 계획일·교대로 정한다 · USER 사람이 정한 plannedStartAt·plannedEndAt 를 그대로 저장한다. 규칙은 ProductionPlanProposalConfirmWorkOrder 설명"
+     },
+     "plannedStartAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-11-18T13:00:00+07:00",
+      "description": "USER 면 필수(비면 400 REQUIRED). SYSTEM 이면 화면이 보던 값을 실어도 되고 무시된다(달라졌으면 재검증 corrections)"
+     },
+     "plannedEndAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-11-18T21:00:00+07:00",
+      "description": "USER 면 필수 · 시작보다 늦어야 한다(아니면 400 RANGE)"
+     },
      "defaultWipLocationId": {
       "type": "integer",
       "format": "int64",
@@ -8684,7 +9267,7 @@
       "type": "integer",
       "format": "int64",
       "example": 1001,
-      "description": "SL_CD 창고 안의 위치(제안의 defaultFgLocationId). 규칙은 ProductionPlanProposalConfirmWorkOrder 설명. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다."
+      "description": "SL_CD 창고 안의 위치(제안의 defaultFgLocationId), 계획에 fgWarehouseOverride 가 있으면 그 locationId. 규칙은 ProductionPlanProposalConfirmWorkOrder 설명. ERP 목적지의 의미는 마지막 공정에 있고 중간 공정 값은 배포 필수 검사를 위해 같은 값을 둔다."
      },
      "defaultScrapLocationId": {
       "type": "integer",
@@ -8699,7 +9282,8 @@
     "required": [
      "productionOrderId",
      "outcome",
-     "plans"
+     "plans",
+     "replacedDrafts"
     ],
     "properties": {
      "productionOrderId": {
@@ -8722,6 +9306,13 @@
       "items": {
        "$ref": "#/components/schemas/ProductionPlanProposalConfirmedPlan"
       }
+     },
+     "replacedDrafts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalReplacedDraft"
+      },
+      "description": "CONFIRMED 이고 REPLACE 였으면 이번에 지운 작성중 계획. 그 밖에는 빈 배열"
      }
     }
    },
@@ -8733,7 +9324,8 @@
      "statusCode",
      "versionNo",
      "planDateCalendar",
-     "workOrders"
+     "workOrders",
+     "fgWarehouseDiffersFromErp"
     ],
     "properties": {
      "planDateCalendar": {
@@ -8771,7 +9363,10 @@
        "required": [
         "workOrderId",
         "workOrderNo",
-        "routingOperationId"
+        "routingOperationId",
+        "plannedStartAt",
+        "plannedEndAt",
+        "plannedTimeSourceCode"
        ],
        "properties": {
         "workOrderId": {
@@ -8787,9 +9382,649 @@
          "type": "integer",
          "format": "int64",
          "example": 1001
+        },
+        "plannedStartAt": {
+         "type": "string",
+         "format": "date-time",
+         "example": "2026-11-18T13:00:00+07:00"
+        },
+        "plannedEndAt": {
+         "type": "string",
+         "format": "date-time",
+         "example": "2026-11-18T21:00:00+07:00"
+        },
+        "plannedTimeSourceCode": {
+         "type": "string",
+         "enum": [
+          "SYSTEM",
+          "USER"
+         ],
+         "example": "USER",
+         "description": "확정 때의 출처 — 응답에만 있고 W/O 에 저장하지 않는다"
         }
        }
       }
+     },
+     "splitFromPlanKey": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "new-1",
+      "description": "CONFIRMED 만 — 본문의 splitFromPlanKey"
+     },
+     "fgWarehouseDiffersFromErp": {
+      "type": "boolean",
+      "example": true,
+      "description": "이 계획의 W/O 완제품 위치 창고가 ERP W/O 의 SL_CD 와 다르다(W/O 의 fgWarehouseDiffersFromErp 와 같다)"
+     }
+    }
+   },
+   "ProductionPlanProposalExistingDraft": {
+    "type": "object",
+    "description": "이 ERP W/O 의 작성중 계획 요약 — 확정 전에 「이어서 / 새로」를 고르는 팝업이 보인다. 제안 조회·재검증 응답에 같은 모양으로 싣는다.",
+    "required": [
+     "productionPlanId",
+     "versionNo",
+     "planNo",
+     "planDate",
+     "plannedQty",
+     "uomId",
+     "plannedLineId",
+     "plannedLineCode",
+     "plannedLineName",
+     "statusCode",
+     "createdBy",
+     "createdByName",
+     "createdAt",
+     "updatedAt",
+     "createdAutomatically"
+    ],
+    "properties": {
+     "productionPlanId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "versionNo": {
+      "type": "integer",
+      "example": 2,
+      "description": "REPLACE 의 replacedDrafts·CONTINUE 의 savedVersionNo 에 그대로 싣는다"
+     },
+     "planNo": {
+      "type": "string",
+      "example": "PP-20261116-0003"
+     },
+     "planDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-18"
+     },
+     "plannedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 120.0
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "plannedLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "plannedLineCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "L-01"
+     },
+     "plannedLineName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "조립 1라인"
+     },
+     "statusCode": {
+      "type": "string",
+      "example": "DRAFT",
+      "x-code-key": "CD-PRODUCTION-PLAN-STATUS"
+     },
+     "createdBy": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "createdByName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "김계획"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-16T09:12:00+07:00"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-16T10:02:00+07:00"
+     },
+     "createdAutomatically": {
+      "type": "boolean",
+      "example": false,
+      "description": "자동 흐름(OA 자동 W/O)이 세운 계획인가"
+     }
+    }
+   },
+   "ProductionPlanProposalDraftRef": {
+    "type": "object",
+    "description": "REPLACE 로 지울 작성중 계획 하나 — 사람이 팝업에서 본 id·판",
+    "required": [
+     "productionPlanId",
+     "versionNo"
+    ],
+    "properties": {
+     "productionPlanId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "versionNo": {
+      "type": "integer",
+      "example": 2
+     }
+    }
+   },
+   "ProductionPlanProposalReplacedDraft": {
+    "type": "object",
+    "required": [
+     "productionPlanId",
+     "planNo"
+    ],
+    "properties": {
+     "productionPlanId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "planNo": {
+      "type": "string",
+      "example": "PP-20261116-0003"
+     }
+    }
+   },
+   "ProductionPlanProposalFgWarehouse": {
+    "type": "object",
+    "description": "계획의 입고 창고 — ERP 원본(SL_CD)과 MES 적용 창고·위치",
+    "required": [
+     "erpStorageLocationCode",
+     "erpWarehouseId",
+     "appliedWarehouseId",
+     "appliedLocationId",
+     "overridden",
+     "differsFromErp"
+    ],
+    "properties": {
+     "erpStorageLocationCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "S510",
+      "description": "ERP W/O 의 SL_CD"
+     },
+     "erpWarehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "SL_CD 로 정한 MES 창고. 연결하지 못했거나 SL_CD 가 없으면 null"
+     },
+     "appliedWarehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "공정 W/O 완제품 위치의 창고"
+     },
+     "appliedLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "공정 W/O 의 defaultFgLocationId"
+     },
+     "overridden": {
+      "type": "boolean",
+      "example": true,
+      "description": "본문 fgWarehouseOverride 로 사람이 바꿨다"
+     },
+     "differsFromErp": {
+      "type": "boolean",
+      "example": true,
+      "description": "SL_CD 가 있고 적용 창고 코드가 그와 다르다 — W/O 목록·상세의 fgWarehouseDiffersFromErp 와 같은 판정"
+     }
+    }
+   },
+   "ProductionPlanProposalWarning": {
+    "type": "object",
+    "description": "재검증 경고 하나 — 확정을 막지 않는다. field 는 본문 경로다.",
+    "required": [
+     "code",
+     "field",
+     "message"
+    ],
+    "properties": {
+     "code": {
+      "type": "string",
+      "enum": [
+       "EQUIPMENT_CALIBRATION_EXPIRED",
+       "WORKER_QUALIFICATION_EXPIRED",
+       "MOLD_LIFE_EXCEEDED",
+       "EQUIPMENT_DOUBLE_BOOKED",
+       "PLAN_DATE_HOLIDAY",
+       "PLAN_DATE_UNDETERMINED",
+       "PLAN_TIME_OUTSIDE_SHIFT",
+       "PLAN_TIME_PRECEDENCE",
+       "FG_WAREHOUSE_DIFFERS_FROM_ERP"
+      ],
+      "example": "EQUIPMENT_DOUBLE_BOOKED",
+      "description": "4M 점검의 WARN 과 같은 판정(EQUIPMENT_CALIBRATION_EXPIRED·WORKER_QUALIFICATION_EXPIRED·MOLD_LIFE_EXCEEDED·EQUIPMENT_DOUBLE_BOOKED) · 계획일 휴일·판정 불가(PLAN_DATE_HOLIDAY·PLAN_DATE_UNDETERMINED) · USER 시각이 교대 창 밖(PLAN_TIME_OUTSIDE_SHIFT) · 선행 공정 종료보다 이른 시작(PLAN_TIME_PRECEDENCE) · 입고 창고를 ERP 와 다르게 바꿨다(FG_WAREHOUSE_DIFFERS_FROM_ERP — 확인 응답을 받았어도 알린다). EQUIPMENT_DOUBLE_BOOKED 는 저장된 다른 MES W/O 와 «이 본문의 다른 계획·공정»을 함께 본다"
+     },
+     "field": {
+      "type": "string",
+      "example": "plans[0].workOrders[1].plannedEquipmentId"
+     },
+     "message": {
+      "type": "string",
+      "example": "설비(2001)가 같은 시간대의 다른 MES W/O 에 배정돼 있습니다."
+     }
+    }
+   },
+   "ProductionPlanProposalCorrection": {
+    "type": "object",
+    "description": "서버가 시스템 값을 다시 계산해 본문(화면이 보던 값)과 달라진 칸 — 무엇이 왜 바뀌었나. ⛔ 사람이 정한 값(출처 USER·사람이 고른 4M·입고 창고)은 보정하지 않는다 — 맞지 않으면 errors 다.",
+    "required": [
+     "field",
+     "reasonCode",
+     "from",
+     "to",
+     "message"
+    ],
+    "properties": {
+     "field": {
+      "type": "string",
+      "example": "plans[0].workOrders[0].plannedStartAt"
+     },
+     "reasonCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM_TIME_RECALCULATED"
+      ],
+      "example": "SYSTEM_TIME_RECALCULATED",
+      "description": "SYSTEM_TIME_RECALCULATED 출처 SYSTEM 인 계획 시각을 지금 계획일·교대로 다시 계산했다"
+     },
+     "from": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "2026-11-18T08:00:00+07:00",
+      "description": "본문 값. 본문에 없었으면 null"
+     },
+     "to": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "2026-11-18T20:00:00+07:00"
+     },
+     "message": {
+      "type": "string",
+      "example": "교대를 야간조로 바꿔 계획 시각을 20:00 ~ 다음 날 08:00 로 다시 계산했습니다."
+     }
+    }
+   },
+   "ProductionPlanProposalRevalidatedWorkOrder": {
+    "type": "object",
+    "description": "재검증한 공정 W/O 하나 — 확정하면 저장될 값. 본문 값을 그대로 두고(사람이 정한 값) 서버가 정하는 칸(수량·SYSTEM 시각·선후관계)만 계산해 채운다.",
+    "required": [
+     "routingOperationId",
+     "operationSeq",
+     "orderQty",
+     "predecessors",
+     "plannedStartAt",
+     "plannedEndAt",
+     "plannedTimeSourceCode",
+     "plannedShiftId",
+     "productionLineId",
+     "plannedEquipmentId",
+     "plannedMoldId",
+     "responsibleWorkerId",
+     "defaultWipLocationId",
+     "defaultFgLocationId",
+     "defaultScrapLocationId",
+     "equipmentRequired",
+     "moldRequired",
+     "missingFields"
+    ],
+    "properties": {
+     "routingOperationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "operationSeq": {
+      "type": "integer",
+      "example": 10
+     },
+     "orderQty": {
+      "type": "number",
+      "format": "double",
+      "example": 60.0,
+      "description": "계획 수량과 같다(공정마다 같은 양)"
+     },
+     "predecessors": {
+      "type": "array",
+      "description": "이 계획 안의 선행 공정 — Routing 공정 의존 그대로",
+      "items": {
+       "type": "object",
+       "required": [
+        "routingOperationId",
+        "dependencyTypeCode"
+       ],
+       "properties": {
+        "routingOperationId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "dependencyTypeCode": {
+         "type": "string",
+         "example": "FINISH_TO_START"
+        }
+       }
+      }
+     },
+     "plannedStartAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T08:00:00+07:00"
+     },
+     "plannedEndAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-19T08:00:00+07:00"
+     },
+     "plannedTimeSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "example": "SYSTEM"
+     },
+     "plannedShiftId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "productionLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "plannedEquipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "plannedMoldId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "responsibleWorkerId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "defaultWipLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "defaultFgLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "defaultScrapLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentRequired": {
+      "type": "boolean",
+      "example": true
+     },
+     "moldRequired": {
+      "type": "boolean",
+      "example": false
+     },
+     "missingFields": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "example": [
+       "plannedEquipmentId"
+      ],
+      "description": "필수인데 빈 배정 칸 — 생산 라인·기본 위치 셋은 늘, 설비·금형은 공정이 요구할 때(equipmentRequired·moldRequired). 같은 칸의 오류가 errors 에도 있다"
+     }
+    }
+   },
+   "ProductionPlanProposalRevalidatedPlan": {
+    "type": "object",
+    "description": "재검증한 계획 하나 — 본문 순서. 키는 proposalPlanKey, 공정 W/O 는 그 안의 routingOperationId 다(같은 Routing 을 쓰는 계획이 여럿이어도 둘을 함께 쓰면 갈린다).",
+    "required": [
+     "proposalPlanKey",
+     "planSource",
+     "splitFromPlanKey",
+     "planDate",
+     "planDateSourceCode",
+     "planDateCalendar",
+     "plannedQty",
+     "routingId",
+     "plannedLineId",
+     "fgWarehouse",
+     "workOrders"
+    ],
+    "properties": {
+     "proposalPlanKey": {
+      "type": "string",
+      "example": "new-2"
+     },
+     "planSource": {
+      "type": "string",
+      "enum": [
+       "NEW",
+       "EXISTING_DRAFT"
+      ],
+      "example": "NEW"
+     },
+     "productionPlanId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "EXISTING_DRAFT 만"
+     },
+     "splitFromPlanKey": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "new-1"
+     },
+     "planDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-18"
+     },
+     "planDateSourceCode": {
+      "type": "string",
+      "enum": [
+       "SYSTEM",
+       "USER"
+      ],
+      "example": "USER"
+     },
+     "planDateCalendar": {
+      "$ref": "#/components/schemas/PlanningCalendarDay"
+     },
+     "plannedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 60.0
+     },
+     "routingId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "plannedLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "fgWarehouse": {
+      "$ref": "#/components/schemas/ProductionPlanProposalFgWarehouse"
+     },
+     "workOrders": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalRevalidatedWorkOrder"
+      }
+     }
+    }
+   },
+   "ProductionPlanProposalRevalidation": {
+    "type": "object",
+    "description": "POST /planning/production-orders/{productionOrderId}:revalidate-plan-proposal 의 200 결과 — 저장하지 않았다.",
+    "required": [
+     "productionOrderId",
+     "confirmable",
+     "basis",
+     "proposalChanges",
+     "existingDrafts",
+     "errors",
+     "warnings",
+     "corrections",
+     "plans"
+    ],
+    "properties": {
+     "productionOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "confirmable": {
+      "type": "boolean",
+      "example": false,
+      "description": "errors 와 proposalChanges 가 모두 비었다 — 이 본문(basis 포함)을 그대로 확정하면 400·409 PROPOSAL_CHANGED 가 나지 않는다(그 사이 기준이 바뀌지 않았다면)"
+     },
+     "basis": {
+      "$ref": "#/components/schemas/ProductionPlanProposalBasis"
+     },
+     "proposalChanges": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalChange"
+      },
+      "description": "본문 basis 와 지금 basis 가 다른 칸 — 확정이었다면 409 PROPOSAL_CHANGED. 비면 basis 가 본문과 같다. ⛔ 화면은 이것을 사람에게 보인 뒤에만 응답 basis 를 확정 본문에 옮겨 싣는다"
+     },
+     "currentProposal": {
+      "$ref": "#/components/schemas/ProductionPlanProposal",
+      "description": "proposalChanges 가 있을 때만 — 지금 기준의 제안(같은 existingDraftAction 기준)"
+     },
+     "existingDrafts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalExistingDraft"
+      },
+      "description": "지금의 작성중 계획 — 없으면 빈 배열"
+     },
+     "errors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErrorItem"
+      },
+      "description": "확정이 400 으로 낼 오류 전부 — 같은 code·같은 field(본문 경로)·같은 문장. 비면 검증을 통과했다"
+     },
+     "warnings": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalWarning"
+      }
+     },
+     "corrections": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalCorrection"
+      }
+     },
+     "plans": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionPlanProposalRevalidatedPlan"
+      },
+      "description": "최종 계획 — 본문 순서. 형식은 맞는데 Routing 을 쓸 수 없는 계획은 workOrders 가 빈 배열이다"
      }
     }
    },
@@ -10523,6 +11758,27 @@
      },
      "validation": {
       "$ref": "#/components/schemas/ValidationSummary"
+     },
+     "erpStorageLocationCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "S510",
+      "description": "이 W/O 가 속한 ERP W/O 의 입고 창고(SL_CD) — ERP 원본. 없으면 null"
+     },
+     "fgWarehouseCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "S520",
+      "description": "완제품 위치(defaultFgLocationId)의 창고 코드. 위치가 없으면 null"
+     },
+     "fgWarehouseDiffersFromErp": {
+      "type": "boolean",
+      "example": true,
+      "description": "「ERP 입고 창고와 다름」 — SL_CD 가 있고 fgWarehouseCode 가 그와 다르다(공백 제거 후 비교). 저장한 표시가 아니라 읽을 때 판정한다 — 계획 제안에서 입고 창고를 바꿨거나, 확정 뒤 ERP 가 SL_CD 를 바꾼 경우 모두 참이다. ERP 는 SL_CD 창고로 입고하고 MES 생산입고 송신은 창고를 싣지 않으므로 참이면 MES 와 ERP 의 재고 위치가 다르다. 누가 언제 바꿨는지는 GET /audit/events(targetTypeCode PRODUCTION_ORDER · targetId productionOrderId)의 FG_WAREHOUSE_OVERRIDDEN 기록. 목록·상세 모두 싣는다"
      }
     },
     "required": [

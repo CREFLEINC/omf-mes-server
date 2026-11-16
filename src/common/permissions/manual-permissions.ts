@@ -302,6 +302,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 계획 제안 조회·선택 확정 — ERP W/O 목록(W-02-01)에서 고르고 계획(W-02-02)을 세우고 확정한다. `:auto-plan` 을 대신한다.
   'GET /planning/production-orders:plan-proposals': ['W-02-01', 'W-02-02'],
   'POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal': ['W-02-01', 'W-02-02'],
+  'POST /planning/production-orders/{productionOrderId}:revalidate-plan-proposal': ['W-02-01', 'W-02-02'],
   // 계획 날짜를 고르는 두 화면(자동 분배·분할)이 근무일을 본다 — 계획 제안 조회와 같은 권한이다.
   'POST /planning/working-days:resolve': ['W-02-01', 'W-02-02'],
 
