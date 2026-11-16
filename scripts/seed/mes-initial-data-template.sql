@@ -531,6 +531,33 @@ JOIN mdm.item component_item
 JOIN mdm.uom unit ON unit.uom_code = source.child_item_unit
 ON CONFLICT (bom_id, sequence_no) DO NOTHING;
 
+-- Earlier seeds loaded source required_qty=0 as 1 EA; a re-run sets those rows back to 0.
+-- A row the ERP BOM receive has matched (erp_child_item_seq set) or a closed version is left alone.
+UPDATE planning.bom_component component
+SET required_qty = source.child_item_qty
+FROM erp_seed.erp_bom source
+JOIN mdm.item parent_item
+  ON normalize(parent_item.item_code, NFKC) = normalize(source.prnt_item_cd, NFKC)
+JOIN planning.bom bom
+  ON bom.parent_item_id = parent_item.item_id
+ AND bom.bom_code = 'ERP-' || source.prnt_item_cd
+ AND bom.bom_version = 1
+JOIN mdm.item component_item
+  ON normalize(component_item.item_code, NFKC) = normalize(source.child_item_cd, NFKC)
+WHERE source.child_item_qty = 0
+  AND bom.status_code <> 'OBSOLETE'
+  AND component.bom_id = bom.bom_id
+  AND component.component_item_id = component_item.item_id
+  AND component.sequence_no = CASE WHEN EXISTS (
+        SELECT 1
+        FROM erp_seed.erp_bom invalid
+        WHERE invalid.plant_cd = source.plant_cd
+          AND invalid.prnt_item_cd = source.prnt_item_cd
+          AND invalid.child_item_seq <= 0
+      ) THEN source.child_item_seq + 1 ELSE source.child_item_seq END
+  AND component.required_qty = 1
+  AND component.erp_child_item_seq IS NULL;
+
 \echo 'OMF MES initial-data seed: verifying target counts'
 DO $$
 DECLARE
@@ -612,6 +639,17 @@ BEGIN
   );
   IF actual_count <> 22793 THEN
     RAISE EXCEPTION 'BOM component target count: expected 22793, got %', actual_count;
+  END IF;
+
+  SELECT count(*) INTO actual_count
+  FROM planning.bom_component component
+  JOIN planning.bom bom ON bom.bom_id = component.bom_id
+  WHERE component.required_qty = 0
+    AND bom.bom_code IN (
+      SELECT DISTINCT 'ERP-' || prnt_item_cd FROM erp_seed.erp_bom
+    );
+  IF actual_count <> 720 THEN
+    RAISE EXCEPTION 'BOM components with required_qty 0: expected 720, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count FROM mdm.mold;
