@@ -18,6 +18,8 @@ export const POLICY_CODES = [
   'FIFO_ENFORCEMENT_LEVEL',
   'WEEKLY_WORKING_DAYS',
   'REPLENISHMENT_RUN_TIME',
+  'AUTO_ROUTING_PROCESS',
+  'BACKFLUSH_WAREHOUSE',
 ] as const;
 export type PolicyCode = (typeof POLICY_CODES)[number];
 
@@ -33,6 +35,8 @@ const VALUE_SLOT: Record<PolicyCode, 'boolean' | 'numeric' | 'text'> = {
   FIFO_ENFORCEMENT_LEVEL: 'text',
   WEEKLY_WORKING_DAYS: 'numeric',
   REPLENISHMENT_RUN_TIME: 'text',
+  AUTO_ROUTING_PROCESS: 'text',
+  BACKFLUSH_WAREHOUSE: 'text',
 };
 
 /** 통제 수준 두 코드가 함께 쓰는 값 — 계약이 셋으로 닫았다. */
@@ -47,7 +51,12 @@ export type WeeklyWorkingDays = (typeof WEEKLY_WORKING_DAYS)[number];
 export const RUN_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** 범위를 공장으로 못 박은 코드 — 다른 축으로 걸면 「어느 공장의 근무일인가」가 흐려진다. */
-const PLANT_ONLY_CODES: PolicyCode[] = ['WEEKLY_WORKING_DAYS', 'REPLENISHMENT_RUN_TIME'];
+const PLANT_ONLY_CODES: PolicyCode[] = [
+  'WEEKLY_WORKING_DAYS',
+  'REPLENISHMENT_RUN_TIME',
+  'AUTO_ROUTING_PROCESS',
+  'BACKFLUSH_WAREHOUSE',
+];
 
 /**
  * `W-05-01`(운영 정책) 밖에서 그 코드 «하나만» 읽고 쓰는 화면. 그 화면 권한으로는 다른 코드를 못 쓴다 —
