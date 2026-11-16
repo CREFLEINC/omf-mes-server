@@ -19955,14 +19955,14 @@
       "x-source-column": "blocked_qty",
       "type": "number",
       "minimum": 0,
-      "description": "내보낼 수 없게 묶인 수량. ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
+      "description": "내보낼 수 없게 묶인 수량. 묶인 수량에 더해 출고 할당이 집지 않는 잔액(정상 품질이 아님 · 가용 상태가 아님 · 풀리지 않은 LOT 보류)의 나머지(보유 − 예약 − 피킹)를 센다(omf-all-around#285). ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
       "example": 0
      },
      "availableQty": {
       "x-source-column": "available_qty",
       "type": "number",
       "readOnly": true,
-      "description": "보유 − 예약 − 피킹 − 보류. 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
+      "description": "보유 − 예약 − 피킹 − 보류. 보류에 집을 수 없는 잔액이 들어가므로 출고 할당(정상 품질 · 가용 상태 · LOT 보류 아님)과 같은 기준이다(omf-all-around#285). 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
       "example": 80
      },
      "uomId": {

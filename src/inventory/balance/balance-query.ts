@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { INVENTORY_AVAILABLE, QUALITY_NORMAL } from '../../core/picking/picking-generation';
 
 /**
  * 잔액 집계 SQL 을 짓는다.
@@ -118,6 +119,25 @@ const FROM = `
        WHERE h.lot_id = b.lot_id AND h.released_at IS NULL LIMIT 1
     ) hh ON TRUE`;
 
+/**
+ * 집을 수 있는 잔액 행인가 — 출고 할당의 `PICKABLE_BALANCE`(정상 품질 · 가용 상태 · 풀리지 않은 LOT 보류 없음)와
+ * **같은 기준**이다(omf-all-around#285). `hh` 는 `FROM` 의 보류 조인이다.
+ *
+ * ⛔ 예전에는 가용을 `보유 − 예약 − 피킹 − blocked_qty` 로만 셌는데 `blocked_qty` 를 쓰는 경로가 없어(보류는
+ * `lot_hold` 가 정본) 불량 · 보류 재고가 그대로 「가용」으로, 「보류」는 늘 0 으로 나갔다.
+ */
+const PICKABLE_ROW = `(b.quality_status_code = '${QUALITY_NORMAL}' AND b.inventory_status_code = '${INVENTORY_AVAILABLE}' AND hh.held IS NULL)`;
+
+/** 예약 · 피킹 · 묶음을 뺀 나머지 — 집을 수 있는 행이면 가용, 아니면 보류로 간다. */
+const FREE_QTY = '(b.on_hand_qty - b.reserved_qty - b.picked_qty - b.blocked_qty)';
+
+/**
+ * 가용 · 보류 합. 집을 수 없는 행(불량 · 보류 상태 · LOT 보류)의 나머지는 가용에서 빼 보류로 옮긴다 —
+ * `보유 = 예약 + 피킹 + 보류 + 가용` 이 그대로 선다. 나머지가 음수(보유 음수)면 옮기지 않는다.
+ */
+const AVAILABLE_SUM = `sum(CASE WHEN ${PICKABLE_ROW} THEN ${FREE_QTY} ELSE least(${FREE_QTY}, 0) END)`;
+const BLOCKED_SUM = `sum(b.blocked_qty + CASE WHEN ${PICKABLE_ROW} THEN 0 ELSE greatest(${FREE_QTY}, 0) END)`;
+
 function conditionsOf(filters: BalanceFilters, withExpiry: boolean): Conditions {
   const c = new Conditions();
   if (filters.plantId !== undefined) c.add((p) => `b.plant_id = ${p}::bigint`, filters.plantId);
@@ -181,8 +201,8 @@ export function balanceRowsQuery(groupBy: GroupBy, filters: BalanceFilters): Bui
            sum(b.on_hand_qty) AS on_hand_qty,
            sum(b.reserved_qty) AS reserved_qty,
            sum(b.picked_qty) AS picked_qty,
-           sum(b.blocked_qty) AS blocked_qty,
-           sum(b.on_hand_qty - b.reserved_qty - b.picked_qty - b.blocked_qty) AS available_qty,
+           ${BLOCKED_SUM} AS blocked_qty,
+           ${AVAILABLE_SUM} AS available_qty,
            max(b.last_transaction_at) AS last_transaction_at,
            min(l.expiry_date) AS earliest_expiry_date,
            max(l.manufactured_at) AS manufactured_at,
@@ -203,8 +223,8 @@ export function balanceSummaryQuery(filters: BalanceFilters): BuiltQuery {
     SELECT count(DISTINCT b.item_id)::int AS item_count,
            count(DISTINCT b.lot_id)::int AS lot_count,
            coalesce(sum(b.on_hand_qty), 0) AS on_hand_qty,
-           coalesce(sum(b.on_hand_qty - b.reserved_qty - b.picked_qty - b.blocked_qty), 0) AS available_qty,
-           coalesce(sum(b.blocked_qty), 0) AS blocked_qty,
+           coalesce(${AVAILABLE_SUM}, 0) AS available_qty,
+           coalesce(${BLOCKED_SUM}, 0) AS blocked_qty,
            count(DISTINCT CASE WHEN b.lot_id IS NOT NULL AND l.expiry_date IS NULL THEN b.lot_id END)::int
              AS expiry_unknown_count
       ${FROM}
