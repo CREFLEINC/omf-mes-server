@@ -9,9 +9,10 @@ import { scopedPlantIds } from '../production-order/production-order-scope';
 import { ProductionOrderService } from '../production-order/production-order.service';
 import { ProposalConfirmBody } from './proposal-confirm-check';
 import { ProposalConfirmResult, PlanProposalService } from './plan-proposal.service';
+import { ProposalRevalidation } from './proposal-revalidate';
 import { ProposalView } from './proposal-view';
 
-/** ERP W/O 계획 제안 조회·선택 확정. 사용자 데이터 범위는 ERP W/O 목록과 같은 규칙이다. */
+/** ERP W/O 계획 제안 조회·보완값 재검증·선택 확정. 사용자 데이터 범위는 ERP W/O 목록과 같은 규칙이다. */
 @Controller('planning')
 export class PlanProposalController {
   constructor(
@@ -42,6 +43,19 @@ export class PlanProposalController {
     const appUserId = userOf(request);
     await this.orders.assertInScope(productionOrderId, appUserId);
     return this.proposals.confirm(request, productionOrderId, body, appUserId, FAMILY_CONFLICT_CODE);
+  }
+
+  /** 저장하지 않는다 — 멱등 키를 받지 않는다. 범위 밖이면 404. */
+  @Post('production-orders/:productionOrderId\\:revalidate-plan-proposal')
+  @Contract('POST /planning/production-orders/{productionOrderId}:revalidate-plan-proposal')
+  @HttpCode(HttpStatus.OK)
+  async revalidate(
+    @Req() request: Request,
+    @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
+    @Body() body: ProposalConfirmBody,
+  ): Promise<ProposalRevalidation> {
+    await this.orders.assertInScope(productionOrderId, userOf(request));
+    return this.proposals.revalidate(productionOrderId, body);
   }
 }
 

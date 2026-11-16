@@ -1,8 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { ContractException } from '../../common/errors';
 import {
-  assertWholeOrder,
   categoryOf,
   basisHash,
   blockIssue,
@@ -11,6 +9,7 @@ import {
   reasonsOf,
   statusOf,
   warnIssue,
+  wholeOrderError,
 } from './proposal-policy';
 
 const D = (value: number): Prisma.Decimal => new Prisma.Decimal(value);
@@ -70,9 +69,9 @@ describe('reasonsOf · statusOf — 사유 분류와 상태', () => {
   });
 });
 
-describe('assertWholeOrder — 한 ERP W/O 는 전부 아니면 하나도', () => {
+describe('wholeOrderError — 한 ERP W/O 는 전부 아니면 하나도', () => {
   it('제안한 계획을 모두 실으면 순서와 무관하게 통과한다', () => {
-    expect(() => assertWholeOrder(['plan-1', 'plan-2'], ['plan-2', 'plan-1'])).not.toThrow();
+    expect(wholeOrderError(['plan-1', 'plan-2'], ['plan-2', 'plan-1'])).toBeNull();
   });
 
   it.each([
@@ -80,15 +79,8 @@ describe('assertWholeOrder — 한 ERP W/O 는 전부 아니면 하나도', () =
     ['겹쳐서', ['plan-1', 'plan-1']],
     ['다른 키', ['plan-1', 'new-1']],
     ['제안에 없는 계획을 더해', ['plan-1', 'plan-2', 'new-1']],
-  ])('%s 실으면 400 field plans', (_, sent) => {
-    let error: unknown;
-    try {
-      assertWholeOrder(['plan-1', 'plan-2'], sent);
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error).toBeInstanceOf(ContractException);
-    expect(JSON.stringify((error as ContractException).getResponse())).toContain('"field":"plans"');
+  ])('%s 실으면 field plans 오류', (_, sent) => {
+    expect(wholeOrderError(['plan-1', 'plan-2'], sent)).toMatchObject({ scope: 'field', field: 'plans', code: 'INVALID' });
   });
 });
 

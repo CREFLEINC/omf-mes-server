@@ -1,8 +1,7 @@
-import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 
-import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ERROR_CODE, ErrorItem } from '../../common/errors';
 import { FG_LINK_FAILURES } from '../../core/erp-warehouse/fg-location';
 import type { MasterReason } from '../production-plan/master-choice';
 import { RESOURCE_CODES } from './resource-rules';
@@ -10,7 +9,7 @@ import { RESOURCE_CODES } from './resource-rules';
 /**
  * 계획 제안의 판정 — 구분·상태·사유 분류. 계산(`proposal-builder.ts`)과 확정(`plan-proposal.service.ts`)이 이 한 벌을 쓴다.
  * 업무 결정이 바뀔 수 있는 자리는 함수 하나씩으로 모아 둔다: `plansToPropose`(작성중 계획이 있으면 남은 수량을 제안하는가),
- * `assertWholeOrder`(한 ERP W/O 안에서 일부 계획만 확정하는가).
+ * `wholeOrderError`(한 ERP W/O 안에서 일부 계획만 확정하는가).
  */
 
 /** 계약 `ProductionPlanProposalReasonCode` — 응답은 이 순서로 낸다. */
@@ -119,21 +118,21 @@ export const newPlanKey = (index: number): string => `new-${index + 1}`;
 export const draftPlanKey = (productionPlanId: bigint): string => `plan-${String(productionPlanId)}`;
 
 /**
- * 한 ERP W/O 는 제안한 계획을 전부 확정하거나 아무것도 하지 않는다 — 본문의 계획 집합이 제안과 다르면 400.
+ * 한 ERP W/O 는 제안한 계획을 전부 확정하거나 아무것도 하지 않는다 — 본문의 계획 집합이 제안과 다르면 오류(확정은 400).
  * 일부만 확정하게 바꾸려면 이 함수를 고친다.
  */
-export function assertWholeOrder(proposedKeys: readonly string[], bodyKeys: readonly string[]): void {
+export function wholeOrderError(proposedKeys: readonly string[], bodyKeys: readonly string[]): ErrorItem | null {
   const proposed = [...proposedKeys].sort();
   const sent = [...bodyKeys].sort();
-  if (proposed.length === sent.length && proposed.every((key, index) => key === sent[index])) return;
-  throw new ContractException(HttpStatus.BAD_REQUEST, [{
+  if (proposed.length === sent.length && proposed.every((key, index) => key === sent[index])) return null;
+  return {
     scope: 'field',
     field: 'plans',
     code: ERROR_CODE.INVALID,
     message: proposed.length === 0
       ? '이 ERP W/O 는 확정할 계획 제안이 없습니다. 제안을 다시 조회하세요.'
       : `제안한 계획(${proposed.join(', ')})을 모두 실어 보내야 합니다 — 한 ERP W/O 는 전부 확정하거나 아무것도 하지 않습니다.`,
-  }]);
+  };
 }
 
 /** 변경 감지 값 — 기준의 «내용»을 해시한다(판을 올리지 않는 기준정보도 잡는다). 불투명 문자열이라 화면은 비교만 한다. */

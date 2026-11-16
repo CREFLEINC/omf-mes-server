@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { toDateString } from '../../common/master';
-import { AdjustedPlanDate, adjustPlanDate, keepUserDate } from '../../core/calendar/working-day';
+import { AdjustedPlanDate, PlanningCalendarDay, adjustPlanDate, keepUserDate } from '../../core/calendar/working-day';
 import { FgResolution, FgSource, fgLocationOf } from '../../core/erp-warehouse/fg-location';
 import { checkCalibration, checkDoubleBooked, checkMoldLife, localToday } from '../../production/work-order/validation';
 import { defaultBomOf } from '../production-plan/master-choice';
@@ -296,14 +296,16 @@ function datedOf(facts: ProposalFacts, order: OrderRow, lineId: bigint | null, s
   return { planDate: dated.planDate, planDateSourceCode: source, dated };
 }
 
-/** 휴일·판정 불가는 확정을 막지 않는다 — WARN 이다. */
 function planDateIssues(dated: AdjustedPlanDate): ProposalIssue[] {
-  if (dated.day.statusCode === 'HOLIDAY') {
-    const why = dated.adjustment.outcomeCode === 'NOT_ADJUSTED_SEARCH_LIMIT' ? ` 다음 ${dated.adjustment.searchLimitDays}일 안에 휴일이 아닌 날이 없어 옮기지 않았습니다.` : '';
-    return [warnIssue('PLAN_DATE_HOLIDAY', `계획일 ${dated.planDate} 은 휴일입니다.${why} 그대로 확정할 수 있습니다.`, 'planDate')];
-  }
-  if (dated.day.statusCode === 'UNDETERMINED') {
-    return [warnIssue('PLAN_DATE_UNDETERMINED', `계획일 ${dated.planDate} 이 근무일인지 판정할 수 없습니다 — 작업 캘린더에 날짜가 없고 공장 근무일 정책이 없습니다.`, 'planDate')];
+  const why = dated.adjustment.outcomeCode === 'NOT_ADJUSTED_SEARCH_LIMIT' ? ` 다음 ${dated.adjustment.searchLimitDays}일 안에 휴일이 아닌 날이 없어 옮기지 않았습니다.` : '';
+  return planDayIssues(dated.planDate, dated.day, why);
+}
+
+/** 휴일·판정 불가는 확정을 막지 않는다 — WARN 이다. 제안과 재검증이 같은 문장을 낸다. */
+export function planDayIssues(planDate: string, day: PlanningCalendarDay, why = ''): ProposalIssue[] {
+  if (day.statusCode === 'HOLIDAY') return [warnIssue('PLAN_DATE_HOLIDAY', `계획일 ${planDate} 은 휴일입니다.${why} 그대로 확정할 수 있습니다.`, 'planDate')];
+  if (day.statusCode === 'UNDETERMINED') {
+    return [warnIssue('PLAN_DATE_UNDETERMINED', `계획일 ${planDate} 이 근무일인지 판정할 수 없습니다 — 작업 캘린더에 날짜가 없고 공장 근무일 정책이 없습니다.`, 'planDate')];
   }
   return [];
 }

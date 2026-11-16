@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 
-import { ConflictException, ContractException, ERROR_CODE } from '../../common/errors';
+import { ConflictException, ContractException } from '../../common/errors';
 import { IdempotencyConflictCode, IdempotencyService } from '../../common/idempotency';
 import { idempotencyContextOf } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
@@ -13,8 +13,9 @@ import { PlanConfirmService, isDuplicateWorkOrderNo } from '../production-plan/p
 import { PlanDateRow, calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals } from './proposal-builder';
-import { ProposalConfirmBody, ResolvedPlan, quantityDelta, resolveConfirm } from './proposal-confirm-check';
+import { ProposalConfirmBody, ResolvedPlan, planDateSourceOf, quantityDelta, resolveConfirm } from './proposal-confirm-check';
 import { readProposalFacts } from './proposal-reader';
+import { ORDER_CANCELLED_ERROR, ProposalRevalidation, basisChanges, revalidateProposal } from './proposal-revalidate';
 import { ProposalView, proposalView } from './proposal-view';
 
 /** 계약 `ProductionPlanProposalConfirmResult`. */
@@ -40,14 +41,6 @@ const WORK_ORDER = 'WORK_ORDER';
 const TRANSACTION_OPTIONS = { timeout: 15_000, maxWait: 5_000 };
 /** 계획번호·W/O 번호 채번 재시도 상한(`plan-confirm.service.ts` 와 같다). */
 const NUMBER_RETRY = 3;
-const BASIS_LABEL: Record<keyof ProposalBasis, string> = {
-  productionOrder: 'ERP W/O 가 바뀌었습니다(수량·상태·계획 시작일).',
-  plans: '이 ERP W/O 의 계획이 바뀌었습니다 — 다른 사람이나 다른 화면이 계획을 등록·수정·확정했습니다.',
-  bom: '품목의 ERP 기본 BOM 이 바뀌었습니다.',
-  routing: '품목의 Routing·공정이 바뀌었습니다.',
-  resources: '자원 기준정보(기본 매핑·라인·설비·금형·교대)가 바뀌었습니다.',
-  calendar: '시스템이 정한 계획일의 근무일 판정이 바뀌었습니다(작업 캘린더·공장 근무일 정책).',
-};
 
 interface Numbers {
   planNos: string[];
@@ -83,6 +76,11 @@ export class PlanProposalService {
       items: ids.filter((id) => found.has(id)).map((id) => proposalView(proposals.get(id) as Proposal)),
       notFoundProductionOrderIds: ids.filter((id) => !found.has(id)).map(Number),
     };
+  }
+
+  /** 저장하지 않는 재검증 — 확정과 같은 판정을 잠그지 않고 돌려 결과를 200 으로 낸다. */
+  revalidate(productionOrderId: number, body: ProposalConfirmBody): Promise<ProposalRevalidation> {
+    return revalidateProposal(this.prisma, BigInt(productionOrderId), body);
   }
 
   /**
@@ -172,8 +170,7 @@ export class PlanProposalService {
       bom_id: BigInt(plan.body.bomId),
       routing_id: BigInt(plan.body.routingId),
       planned_line_id: plan.body.plannedLineId === null ? null : BigInt(plan.body.plannedLineId),
-      // 제안 날짜를 그대로 실었으면 제안의 출처, 사람이 고쳤으면 사용자 지정이다.
-      plan_date_source_code: plan.body.planDate === plan.proposal.planDate ? plan.proposal.planDateSourceCode : 'USER',
+      plan_date_source_code: planDateSourceOf(plan),
       ...(plan.body.remarks === undefined ? {} : { remarks: plan.body.remarks }),
       updated_by: appUserId ?? null,
     };
@@ -210,7 +207,7 @@ export class PlanProposalService {
     const proposal = buildProposals(facts, now).get(orderId);
     if (proposal === undefined) throw new NotFoundException('없는 ERP W/O 입니다.');
     if (proposal.order.status_code === CANCELLED) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 ERP W/O 는 계획하지 않습니다.' }]);
+      throw new ContractException(HttpStatus.BAD_REQUEST, [ORDER_CANCELLED_ERROR]);
     }
     if (proposal.kind === 'KEEP_CONFIRMED') return { already: true };
     assertSameBasis(proposal, body.basis);
@@ -231,14 +228,11 @@ export class PlanProposalService {
 
 /** 하나라도 다르면 저장하지 않는다 — 바뀐 기준과 지금 제안을 함께 낸다(화면이 다시 조회하지 않게). */
 function assertSameBasis(proposal: Proposal, sent: ProposalBasis): void {
-  const changed = (Object.keys(BASIS_LABEL) as (keyof ProposalBasis)[]).filter((key) => proposal.basis[key] !== sent[key]);
-  if (changed.length === 0) return;
+  const proposalChanges = basisChanges(proposal, sent);
+  if (proposalChanges.length === 0) return;
   throw new ConflictException('user', '검토한 뒤 계획 제안의 기준이 바뀌어 확정하지 않았습니다. 바뀐 제안을 검토한 뒤 다시 확정하세요.', {
     code: 'PROPOSAL_CHANGED',
-    proposalChanges: changed.map((basis) => ({
-      basis,
-      message: basis === 'productionOrder' ? `${BASIS_LABEL[basis]} 지금 수량 ${proposal.order.order_qty.toString()}.` : BASIS_LABEL[basis],
-    })),
+    proposalChanges,
     currentProposal: proposalView(proposal),
   });
 }

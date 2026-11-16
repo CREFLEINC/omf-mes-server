@@ -6,7 +6,7 @@ import { LOCATION_FACT_SELECT } from '../../core/erp-warehouse/fg-location';
 import { WorkOrderSupplement } from '../production-plan/expand';
 import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
-import { assertWholeOrder } from './proposal-policy';
+import { wholeOrderError } from './proposal-policy';
 import { ProposalFacts } from './proposal-reader';
 import { resourceFindings } from './resource-rules';
 import { pairKey } from '../production-plan/resource-assign';
@@ -49,17 +49,36 @@ export interface ResolvedPlan {
   supplements: Map<bigint, WorkOrderSupplement>;
 }
 
-/**
- * 확정 본문을 수기 등록·확정과 같은 규칙으로 검증한다 — 오류는 모아 한 번에 400(field 는 본문 경로).
- * 제안과 값이 달라도 된다(사람이 고칠 수 있다). 변경 감지는 호출자가 basis 로 이미 끝냈다.
- */
+export interface ConfirmJudgment {
+  /** 계획 집합이 제안과 다르면 비어 있다 — 그때는 계획별 판정을 하지 않는다. */
+  resolved: ResolvedPlan[];
+  errors: ErrorItem[];
+}
+
+/** 확정 — 판정에 오류가 하나라도 있으면 모아 한 번에 400(field 는 본문 경로)이다. */
 export async function resolveConfirm(
   client: Prisma.TransactionClient,
   proposal: Proposal,
   facts: ProposalFacts,
   body: ProposalConfirmBody,
 ): Promise<ResolvedPlan[]> {
-  assertWholeOrder(proposal.plans.map((plan) => plan.key), body.plans.map((plan) => plan.proposalPlanKey));
+  const { resolved, errors } = await judgeConfirm(client, proposal, facts, body);
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+  return resolved;
+}
+
+/**
+ * 확정 본문을 수기 등록·확정과 같은 규칙으로 판정한다 — 던지지 않고 오류를 모은다. 확정(`resolveConfirm`)과 재검증이 이 한 판정을 쓴다.
+ * 제안과 값이 달라도 된다(사람이 고칠 수 있다). 변경 감지는 호출자가 basis 로 한다.
+ */
+export async function judgeConfirm(
+  client: Prisma.TransactionClient,
+  proposal: Proposal,
+  facts: ProposalFacts,
+  body: ProposalConfirmBody,
+): Promise<ConfirmJudgment> {
+  const wholeOrder = wholeOrderError(proposal.plans.map((plan) => plan.key), body.plans.map((plan) => plan.proposalPlanKey));
+  if (wholeOrder !== null) return { resolved: [], errors: [wholeOrder] };
   const { order } = proposal;
   const refs = await readReferences(client, body);
   const usable = new Set((facts.usableRoutings.get(pairKey(order.plant_id, order.item_id)) ?? []).map((row) => row.routing_id));
@@ -124,9 +143,12 @@ export async function resolveConfirm(
     return { index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements };
   });
 
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  return resolved;
+  return { resolved, errors };
 }
+
+/** 저장할 날짜 출처 — 제안 날짜를 그대로 실었으면 제안의 출처, 사람이 고쳤으면 사용자 지정이다. */
+export const planDateSourceOf = (plan: Pick<ResolvedPlan, 'body' | 'proposal'>): 'SYSTEM' | 'USER' =>
+  plan.body.planDate === plan.proposal.planDate ? plan.proposal.planDateSourceCode : 'USER';
 
 /**
  * 이번 확정이 계획 수량 합계에 더하는 양 — 새 계획은 수량, 작성중 계획은 저장값과의 차.
