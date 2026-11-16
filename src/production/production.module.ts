@@ -123,5 +123,7 @@ import { WorkOrderPqcSkipService } from './work-order/work-order-pqc-skip.servic
     RepairExecutionService,
     RepairExecutionReturnService,
   ],
+  // 추적 시스템 연동(`src/integration/tracking-system`)이 자동 W/O 를 배포한다.
+  exports: [WorkOrderReleaseService],
 })
 export class ProductionModule {}

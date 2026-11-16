@@ -128,8 +128,14 @@ export class ProductionPlanService {
    * 잠근 트랜잭션 안에서 한다. ⛔ 원본 수량 조정은 없다.
    * 거부될 요청이 번호를 쓰지 않게 Routing·BOM·수량을 채번 «전»에 한 번 본다 — 수량은 잠금 없이 보고 트랜잭션이 다시 본다.
    * `scope` 를 주면 범위 밖 공장의 ERP W/O 는 없는 것과 같다(필드 오류). 안 주면 범위를 보지 않는다(`:auto-plan` — 호출자가 이미 봤다).
+   * `createdAutomatically` 는 추적 시스템 연동이 사람 없이 세운 계획이다 — 계약 본문이 아니라 서버 호출만 싣는다.
    */
-  async create(body: ProductionPlanCreate, appUserId: number | undefined, scope?: bigint[] | null): Promise<ProductionPlanView> {
+  async create(
+    body: ProductionPlanCreate,
+    appUserId: number | undefined,
+    scope?: bigint[] | null,
+    options: { createdAutomatically?: boolean } = {},
+  ): Promise<ProductionPlanView> {
     await assertCodeValues(this.prisma, [
       {
         field: 'splitOfPlanId.reasonCode',
@@ -176,6 +182,7 @@ export class ProductionPlanService {
               ...optional('split_reason_code', body.splitOfPlanId?.reasonCode),
               remarks: body.remarks ?? null,
               plan_date_source_code: body.planDateSourceCode ?? 'USER',
+              created_automatically: options.createdAutomatically ?? false,
               created_by: appUserId ?? null,
               updated_by: appUserId ?? null,
             },

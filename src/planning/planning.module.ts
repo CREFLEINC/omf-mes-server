@@ -45,5 +45,7 @@ import { WorkingDayController } from './working-day/working-day.controller';
     ResyncService,
     PlanProposalService,
   ],
+  // 추적 시스템 연동(`src/integration/tracking-system`)이 자동 W/O 의 계획을 세우고 확정한다.
+  exports: [ProductionPlanService, PlanConfirmService],
 })
 export class PlanningModule {}
