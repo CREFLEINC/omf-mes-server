@@ -1,6 +1,6 @@
 import { Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 
-import { plantPolicyText } from '../../app/policy/plant-policy-text';
+import { isAutoWorkOrderPlant } from '../../app/policy/plant-policy-text';
 import { ContractException } from '../../common/errors';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -89,7 +89,7 @@ export class AutoWorkOrderRunner implements OnApplicationBootstrap, OnApplicatio
     for (const { plant_id: plantId, plant } of rows) {
       if (plantId === null || plant === null) continue;
       const today = localDate(now, plant.timezone_code);
-      if ((await plantPolicyText(this.prisma, 'AUTO_ROUTING_PROCESS', plantId, today)) !== null) plants.push(plantId);
+      if (await isAutoWorkOrderPlant(this.prisma, plantId, today)) plants.push(plantId);
     }
     return plants;
   }

@@ -651,6 +651,48 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
   });
 
+  describe('OA 자동 W/O 공장', () => {
+    /** 그날 자동 라우팅 공정 정책이 걸린 공장 — 실행기는 이 시험에서 꺼져 있다(AUTO_WORK_ORDER_ENABLED 없음). */
+    async function withAutoPolicy(run: () => Promise<void>): Promise<void> {
+      await prisma.operation_policy.create({ data: {
+        policy_code: 'AUTO_ROUTING_PROCESS', plant_id: id.plant, value_text: `${PREFIX}-ASSY`, effective_from: new Date('2026-01-01T00:00:00.000Z'),
+      } });
+      try {
+        await run();
+      } finally {
+        await prisma.operation_policy.deleteMany({ where: { plant_id: id.plant, policy_code: 'AUTO_ROUTING_PROCESS' } });
+      }
+    }
+
+    it('제안 조회는 표시만 한다 — AUTO_WORK_ORDER · 변경 없음 · 계획 없음 · 실행기의 마지막 시도와 실패 까닭', async () => {
+      const orderId = await newOrder('OA-SHOW', planStart);
+      const attemptedAt = new Date('2026-11-16T02:15:00.000Z');
+      await prisma.production_order.update({ where: { production_order_id: orderId }, data: { auto_work_order_attempted_at: attemptedAt, auto_work_order_error_text: '품목의 ERP 기본 BOM 이 없습니다.' } });
+      const before = await proposalOf(orderId);
+      expect(before.kind).toBe('NEW_PLAN');
+      expect((before as unknown as { autoWorkOrder: unknown }).autoWorkOrder).toBeNull();
+      await withAutoPolicy(async () => {
+        const response = await propose(orderId).expect(200);
+        expect(validator(response200('/planning/production-orders:plan-proposals', 'get'))(response.body)).toBe(true);
+        const proposal = (response.body as { items: (Proposal & { autoWorkOrder: unknown })[] }).items[0];
+        expect(proposal).toMatchObject({ kind: 'AUTO_WORK_ORDER', status: 'NO_CHANGE', reasons: [], plans: [], issues: [] });
+        expect(proposal.autoWorkOrder).toEqual({ lastAttemptedAt: attemptedAt.toISOString(), errorText: '품목의 ERP 기본 BOM 이 없습니다.' });
+      });
+    });
+
+    it('확정은 400 AUTO_WORK_ORDER_PLANT 이고 저장하지 않는다 — 정책을 거두면 같은 제안이 다시 확정된다', async () => {
+      const orderId = await newOrder('OA-CONFIRM', planStart);
+      const reviewed = await proposalOf(orderId);
+      const body = bodyOf(reviewed);
+      await withAutoPolicy(async () => {
+        const rejected = await confirm(orderId, body).expect(400);
+        expect(rejected.body).toEqual({ errors: [expect.objectContaining({ scope: 'screen', code: 'AUTO_WORK_ORDER_PLANT' })] });
+        expect(await prisma.production_plan.count({ where: { production_order_id: orderId } })).toBe(0);
+      });
+      await confirm(orderId, body).expect(200);
+    });
+  });
+
   /** 쓰기 흔적 — 제안 조회·거부된 확정 앞뒤로 견준다. 번호 카운터는 전역이다(다른 검사가 동시에 돌지 않는 일꾼 DB 안). */
   async function snapshot() {
     const orders = Object.values(order);
@@ -879,6 +921,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
+    await prisma.operation_policy.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     const users = await prisma.app_user.findMany({ where: { login_id: { startsWith: `${PREFIX}-` } } });
     const userIds = users.map((row) => row.app_user_id);
     await prisma.user_data_scope.deleteMany({ where: { app_user_id: { in: userIds } } });
