@@ -90,6 +90,7 @@ export function workOrderView(
     itemCode: row.item.item_code,
     poMismatch: row.po_mismatch,
     versionNo: row.version_no,
+    updatedAt: row.updated_at.toISOString(),
     progress: extras.progress,
     preIssuedLots: extras.preIssuedLots,
     // ⛔ 상세에 켤 스위치(`withValidation`)가 없다 — 언제나 키 생략(§7-6).
