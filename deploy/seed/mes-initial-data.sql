@@ -18,6 +18,8 @@
 --   * ERP warehouse codes carry no plant. WH* go to PL11 and S<digit>* to PL13. Other codes
 --     go to PL11, except 100667 and 100668, which the customer warehouse list (2026-10-29)
 --     assigns to PL13. Every warehouse is loaded as internal and carries no partner.
+--   * Not ERP data: process OA-ASSY and two PL13 operation policies for the flowtrack
+--     integration (AUTO_ROUTING_PROCESS = OA-ASSY, BACKFLUSH_WAREHOUSE = S530).
 
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -35060,6 +35062,28 @@ WHERE source.type_code = 'SL_TYPE'
   AND entity.legal_entity_code = 'SAMJIN_LND_VINA'
 ON CONFLICT (plant_id, warehouse_code) DO NOTHING;
 
+-- OA (PL13) settings for the flowtrack integration (user decision 2026-11-16). A plant that already
+-- has a row for the policy keeps it, whatever its start date.
+\echo 'OMF MES initial-data seed: OA integration settings'
+INSERT INTO mdm.process (process_code, process_name, process_type_code)
+VALUES ('OA-ASSY', '조립', 'ASSEMBLY')
+ON CONFLICT (process_code) DO NOTHING;
+
+INSERT INTO app.operation_policy (policy_code, plant_id, value_text, effective_from)
+SELECT policy.code, plant.plant_id, policy.value, DATE '2026-11-16'
+FROM mdm.legal_entity entity
+JOIN mdm.plant plant
+  ON plant.legal_entity_id = entity.legal_entity_id AND plant.plant_code = 'PL13'
+CROSS JOIN (VALUES
+  ('AUTO_ROUTING_PROCESS', 'OA-ASSY'),
+  ('BACKFLUSH_WAREHOUSE', 'S530')
+) AS policy(code, value)
+WHERE entity.legal_entity_code = 'SAMJIN_LND_VINA'
+  AND NOT EXISTS (
+    SELECT 1 FROM app.operation_policy existing
+    WHERE existing.policy_code = policy.code AND existing.plant_id = plant.plant_id
+  );
+
 \echo 'OMF MES initial-data seed: BOM data'
 INSERT INTO planning.bom
   (parent_item_id, plant_id, bom_code, bom_version, status_code,
@@ -35199,6 +35223,21 @@ BEGIN
   WHERE warehouse.warehouse_code IN ('100667', '100668') AND plant.plant_code = 'PL13';
   IF actual_count <> 2 THEN
     RAISE EXCEPTION 'PL13 warehouse 100667·100668 count: expected 2, got %', actual_count;
+  END IF;
+
+  -- The same check the server makes when a policy is saved.
+  SELECT count(DISTINCT policy.policy_code) INTO actual_count
+  FROM app.operation_policy policy
+  JOIN mdm.plant plant ON plant.plant_id = policy.plant_id AND plant.plant_code = 'PL13'
+  WHERE (policy.policy_code = 'AUTO_ROUTING_PROCESS' AND EXISTS (
+          SELECT 1 FROM mdm.process process
+          WHERE process.process_code = policy.value_text AND process.is_active))
+     OR (policy.policy_code = 'BACKFLUSH_WAREHOUSE' AND EXISTS (
+          SELECT 1 FROM mdm.warehouse warehouse
+          WHERE warehouse.plant_id = policy.plant_id
+            AND warehouse.warehouse_code = policy.value_text AND warehouse.is_active));
+  IF actual_count <> 2 THEN
+    RAISE EXCEPTION 'PL13 OA policies naming an active process and warehouse: expected 2, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count FROM planning.bom

@@ -3740,7 +3740,9 @@
         "PRECHECK_CONTROL_LEVEL",
         "FIFO_ENFORCEMENT_LEVEL",
         "WEEKLY_WORKING_DAYS",
-        "REPLENISHMENT_RUN_TIME"
+        "REPLENISHMENT_RUN_TIME",
+        "AUTO_ROUTING_PROCESS",
+        "BACKFLUSH_WAREHOUSE"
        ]
       },
       "x-code-key": "CD-POLICY"
@@ -3937,7 +3939,9 @@
         "PRECHECK_CONTROL_LEVEL",
         "FIFO_ENFORCEMENT_LEVEL",
         "WEEKLY_WORKING_DAYS",
-        "REPLENISHMENT_RUN_TIME"
+        "REPLENISHMENT_RUN_TIME",
+        "AUTO_ROUTING_PROCESS",
+        "BACKFLUSH_WAREHOUSE"
        ]
       },
       "x-code-key": "CD-POLICY"
@@ -10521,7 +10525,7 @@
      "effectiveFrom"
     ],
     "description": "운영 정책 한 건. 표 하나를 여러 화면이 쓰고 뜻은 policyCode 가 정한다. 범위 축은 넷 다 비울 수 있고 비면 전체를 뜻한다. 여럿이 동시에 맞으면 더 좁은 것이 이기며 축 우선순위는 품목 · 공정 · 공장 · 사업부 차례다. 이 판정은 서버가 하고 화면은 effective 경로로 결과를 받는다. 값 칸은 셋 중 하나만 쓴다. 물리 제약은 「셋 중 하나 이상」이라 셋 다 채워도 통과하지만, 어느 칸을 쓰는지는 정책 코드가 정한다 — 쓰지 않는 칸을 채우면 읽는 쪽이 헷갈린다. 근거: W-05-01 §5-A",
-    "x-internal-note": "코드 목록이 계약 자산이다 — W-05-01 §9-1. 작업 전 점검 통제 3단계(PRECHECK_CONTROL_LEVEL)를 2026-08-26 에 넣었다 — 소유 화면이 P-02-02 로 확정됐다(P-02-02 §5-1 · W-05-12 §8-7). 설정 전용 화면은 신설하지 않고 시드로 넣는다(P-02-02 §5-3). FIFO_ENFORCEMENT_LEVEL 은 2026-08-29 A2 체인 대조에서 더했다 — 소유 화면은 M-01-08 이고 설정 전용 화면은 없어 시드로 넣는다. ⚠ 이름이 시드 관례와 어긋나면 정정이 enum 값 «삭제»가 되어 ⛔ 다 — 신설 전 OPERATION_POLICY 시드 목록과 대조해야 하고, 물리 주석이 「FIFO 위반 정책」을 이미 명시하고 있어 중복 신설일 공산이 있다. 시드 코드 문자열 전문을 데이터 모델 담당에게 받는 것이 선행이다. ⚠ 정책 코드를 요구하는 자리가 아홉 있고 전부 소유 화면 미정이다 — 계정 잠금 실패 임계값(W-CO-01) · 비밀번호 최소 길이(W-CO-10) · 출하 자동 확정 on/off·경과 시간(W-04-12 — 화면은 표시만) · 재고 이동 단위(M-01-10 — W-06-06·omf-mes#145 소관) · 마감 허용 오차(W-02-05 — 「정확히 일치=정상」이라 당장은 불요) · 초과 생산(W-02-02 — 물리 주석에 이미 있다) · 작업자 자격 통제(P-CO-01 — 2026-07-28 사용자 판단으로 보류). ⛔ 코드를 enum 에 넣는 조건은 「소유 화면 확정」이다(2026-08-26 PRECHECK_CONTROL_LEVEL 선례).",
+    "x-internal-note": "코드 목록이 계약 자산이다 — W-05-01 §9-1. 작업 전 점검 통제 3단계(PRECHECK_CONTROL_LEVEL)를 2026-08-26 에 넣었다 — 소유 화면이 P-02-02 로 확정됐다(P-02-02 §5-1 · W-05-12 §8-7). 설정 전용 화면은 신설하지 않고 시드로 넣는다(P-02-02 §5-3). FIFO_ENFORCEMENT_LEVEL 은 2026-08-29 A2 체인 대조에서 더했다 — 소유 화면은 M-01-08 이고 설정 전용 화면은 없어 시드로 넣는다. ⚠ 이름이 시드 관례와 어긋나면 정정이 enum 값 «삭제»가 되어 ⛔ 다 — 신설 전 OPERATION_POLICY 시드 목록과 대조해야 하고, 물리 주석이 「FIFO 위반 정책」을 이미 명시하고 있어 중복 신설일 공산이 있다. 시드 코드 문자열 전문을 데이터 모델 담당에게 받는 것이 선행이다. ⚠ 정책 코드를 요구하는 자리가 아홉 있고 전부 소유 화면 미정이다 — 계정 잠금 실패 임계값(W-CO-01) · 비밀번호 최소 길이(W-CO-10) · 출하 자동 확정 on/off·경과 시간(W-04-12 — 화면은 표시만) · 재고 이동 단위(M-01-10 — W-06-06·omf-mes#145 소관) · 마감 허용 오차(W-02-05 — 「정확히 일치=정상」이라 당장은 불요) · 초과 생산(W-02-02 — 물리 주석에 이미 있다) · 작업자 자격 통제(P-CO-01 — 2026-07-28 사용자 판단으로 보류). ⛔ 코드를 enum 에 넣는 조건은 「소유 화면 확정」이다(2026-08-26 PRECHECK_CONTROL_LEVEL 선례). AUTO_ROUTING_PROCESS · BACKFLUSH_WAREHOUSE 는 2026-11-16 에 더했다 — 쓰는 쪽이 화면이 아니라 추적 시스템(flowtrack) 연동이고, 설정 화면이 없어 초기 데이터로 넣는다(FIFO_ENFORCEMENT_LEVEL 선례 · 사용자 결정 2026-11-12).",
     "properties": {
      "operationPolicyId": {
       "type": "integer",
@@ -10540,9 +10544,11 @@
        "PRECHECK_CONTROL_LEVEL",
        "FIFO_ENFORCEMENT_LEVEL",
        "WEEKLY_WORKING_DAYS",
-       "REPLENISHMENT_RUN_TIME"
+       "REPLENISHMENT_RUN_TIME",
+       "AUTO_ROUTING_PROCESS",
+       "BACKFLUSH_WAREHOUSE"
       ],
-      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다. WEEKLY_WORKING_DAYS = 공장의 주간 근무일(valueNumeric · 5 = 월~금 | 6 = 월~토). 범위는 공장만 받는다 — plantId 를 주고 itemId·processId 는 비운다(아니면 400). ⭐ 이 코드만 예외로, 맞는 정책이 없으면 서버가 5 로 계산한다(출고 요청의 출고 작업일 = 생산일의 직전 근무일). effective 는 그대로 resolved=false 를 낸다. 설정 화면은 W-CO-15(공장 근무일 설정). 근거: 피처 003 · omf-all-around#66 REPLENISHMENT_RUN_TIME = 자동 보충 실행 시각(valueText · 공장 현지 HH:MM, 00:00~23:59 — 아니면 400 RANGE). 범위는 공장만 받는다. 맞는 정책이 없으면 서버가 01:00 으로 돈다(effective 는 그대로 resolved=false). 설정 화면은 W-02-12(생산 창고 보충) — W-02-12 권한은 이 코드 행만 읽고 쓴다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다. WEEKLY_WORKING_DAYS = 공장의 주간 근무일(valueNumeric · 5 = 월~금 | 6 = 월~토). 범위는 공장만 받는다 — plantId 를 주고 itemId·processId 는 비운다(아니면 400). ⭐ 이 코드만 예외로, 맞는 정책이 없으면 서버가 5 로 계산한다(출고 요청의 출고 작업일 = 생산일의 직전 근무일). effective 는 그대로 resolved=false 를 낸다. 설정 화면은 W-CO-15(공장 근무일 설정). 근거: 피처 003 · omf-all-around#66 REPLENISHMENT_RUN_TIME = 자동 보충 실행 시각(valueText · 공장 현지 HH:MM, 00:00~23:59 — 아니면 400 RANGE). 범위는 공장만 받는다. 맞는 정책이 없으면 서버가 01:00 으로 돈다(effective 는 그대로 resolved=false). 설정 화면은 W-02-12(생산 창고 보충) — W-02-12 권한은 이 코드 행만 읽고 쓴다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 AUTO_ROUTING_PROCESS = 라우팅이 없는 품목에 서버가 만드는 1공정 라우팅의 공정 코드(valueText · 사용 중인 공정이어야 한다 — 아니면 400 INVALID). BACKFLUSH_WAREHOUSE = 추적 시스템 연동이 자재를 빼는 창고 코드(valueText · 그 공장의 사용 중인 창고여야 한다 — 아니면 400 INVALID). 둘 다 범위는 공장만 받는다. 설정 화면은 없고 초기 데이터로 넣는다. 근거: flowtrack 연동(OA · PL13) · 사용자 결정 2026-11-12",
       "x-source-column": "policy_code",
       "x-code-key": "CD-POLICY"
      },
@@ -10644,9 +10650,11 @@
        "PRECHECK_CONTROL_LEVEL",
        "FIFO_ENFORCEMENT_LEVEL",
        "WEEKLY_WORKING_DAYS",
-       "REPLENISHMENT_RUN_TIME"
+       "REPLENISHMENT_RUN_TIME",
+       "AUTO_ROUTING_PROCESS",
+       "BACKFLUSH_WAREHOUSE"
       ],
-      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다. WEEKLY_WORKING_DAYS = 공장의 주간 근무일(valueNumeric · 5 = 월~금 | 6 = 월~토). 범위는 공장만 받는다 — plantId 를 주고 itemId·processId 는 비운다(아니면 400). ⭐ 이 코드만 예외로, 맞는 정책이 없으면 서버가 5 로 계산한다(출고 요청의 출고 작업일 = 생산일의 직전 근무일). effective 는 그대로 resolved=false 를 낸다. 설정 화면은 W-CO-15(공장 근무일 설정). 근거: 피처 003 · omf-all-around#66 REPLENISHMENT_RUN_TIME = 자동 보충 실행 시각(valueText · 공장 현지 HH:MM, 00:00~23:59 — 아니면 400 RANGE). 범위는 공장만 받는다. 맞는 정책이 없으면 서버가 01:00 으로 돈다(effective 는 그대로 resolved=false). 설정 화면은 W-02-12(생산 창고 보충) — W-02-12 권한은 이 코드 행만 읽고 쓴다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다. WEEKLY_WORKING_DAYS = 공장의 주간 근무일(valueNumeric · 5 = 월~금 | 6 = 월~토). 범위는 공장만 받는다 — plantId 를 주고 itemId·processId 는 비운다(아니면 400). ⭐ 이 코드만 예외로, 맞는 정책이 없으면 서버가 5 로 계산한다(출고 요청의 출고 작업일 = 생산일의 직전 근무일). effective 는 그대로 resolved=false 를 낸다. 설정 화면은 W-CO-15(공장 근무일 설정). 근거: 피처 003 · omf-all-around#66 REPLENISHMENT_RUN_TIME = 자동 보충 실행 시각(valueText · 공장 현지 HH:MM, 00:00~23:59 — 아니면 400 RANGE). 범위는 공장만 받는다. 맞는 정책이 없으면 서버가 01:00 으로 돈다(effective 는 그대로 resolved=false). 설정 화면은 W-02-12(생산 창고 보충) — W-02-12 권한은 이 코드 행만 읽고 쓴다. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 AUTO_ROUTING_PROCESS = 라우팅이 없는 품목에 서버가 만드는 1공정 라우팅의 공정 코드(valueText · 사용 중인 공정이어야 한다 — 아니면 400 INVALID). BACKFLUSH_WAREHOUSE = 추적 시스템 연동이 자재를 빼는 창고 코드(valueText · 그 공장의 사용 중인 창고여야 한다 — 아니면 400 INVALID). 둘 다 범위는 공장만 받는다. 설정 화면은 없고 초기 데이터로 넣는다. 근거: flowtrack 연동(OA · PL13) · 사용자 결정 2026-11-12",
       "x-code-key": "CD-POLICY"
      },
      "businessUnitId": {
@@ -10797,7 +10805,9 @@
        "PRECHECK_CONTROL_LEVEL",
        "FIFO_ENFORCEMENT_LEVEL",
        "WEEKLY_WORKING_DAYS",
-       "REPLENISHMENT_RUN_TIME"
+       "REPLENISHMENT_RUN_TIME",
+       "AUTO_ROUTING_PROCESS",
+       "BACKFLUSH_WAREHOUSE"
       ],
       "x-code-key": "CD-POLICY"
      },

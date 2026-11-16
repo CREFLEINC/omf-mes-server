@@ -131,6 +131,7 @@ export class OperationPolicyService {
     assertWritable(code, permissions);
     assertScope(code, input);
     assertValues(code, input);
+    await assertReferenced(this.prisma, code, input.plantId, input.valueText);
 
     return view(
       await this.prisma.operation_policy.create({
@@ -158,6 +159,7 @@ export class OperationPolicyService {
     assertWritable(current.policy.policyCode as PolicyCode, permissions);
     // ⛔ 코드는 바꿀 수 없으므로(계약) 값 검사는 «저장된» 코드로 한다.
     assertValues(current.policy.policyCode as PolicyCode, input);
+    await assertReferenced(this.prisma, current.policy.policyCode as PolicyCode, current.policy.plantId, input.valueText);
 
     const updated = await this.prisma.operation_policy.updateMany({
       where: { operation_policy_id: operationPolicyId, version_no: version },
@@ -285,6 +287,36 @@ function assertId(field: string, value: unknown): number | undefined {
   if (Number.isInteger(parsed) && parsed >= 0) return parsed;
   throw new ContractException(HttpStatus.BAD_REQUEST, [
     { scope: 'field', field, code: ERROR_CODE.INVALID, message: '숫자 식별자여야 합니다.' },
+  ]);
+}
+
+/**
+ * 값이 다른 기준정보의 코드인 정책 — 글자라 FK 가 없어 저장할 때 그 행을 본다.
+ * 공장·값이 비는 경우는 앞의 범위·값 검사가 이미 막았다.
+ */
+async function assertReferenced(
+  prisma: PrismaService,
+  code: PolicyCode,
+  plantId: number | null | undefined,
+  valueText: string | null | undefined,
+): Promise<void> {
+  if (plantId == null || valueText == null) return;
+  if (code === 'AUTO_ROUTING_PROCESS') {
+    const row = await prisma.process.findUnique({ where: { process_code: valueText }, select: { is_active: true } });
+    if (row?.is_active !== true) throw invalidValueText('사용 중인 공정의 코드여야 합니다.');
+  }
+  if (code === 'BACKFLUSH_WAREHOUSE') {
+    const row = await prisma.warehouse.findUnique({
+      where: { plant_id_warehouse_code: { plant_id: plantId, warehouse_code: valueText } },
+      select: { is_active: true },
+    });
+    if (row?.is_active !== true) throw invalidValueText('이 공장의 사용 중인 창고 코드여야 합니다.');
+  }
+}
+
+function invalidValueText(message: string): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field: 'valueText', code: ERROR_CODE.INVALID, message },
   ]);
 }
 
