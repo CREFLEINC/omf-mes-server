@@ -6,14 +6,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TerminalContext } from './terminal-context';
 import { IN_SERVICE, NEIGHBOR_EQUIPMENT } from './terminal-production-scope';
 
-type TerminalType = 'POP' | 'MOBILE';
+type TerminalType = 'POP' | 'MOBILE' | 'TRACKING_SYSTEM';
 
 /** Explicit terminal GETs; each additional FR-005 group is reviewed for resource scope. */
 export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
   'GET /mdm/workers': ['POP', 'MOBILE'],
   // MOBILE also reads its own row so registration can reject a non-MOBILE token before confirming (P-11).
   'GET /mdm/terminals/{terminalId}': ['POP', 'MOBILE'],
-  'GET /production/work-orders': ['POP', 'MOBILE'],
+  'GET /production/work-orders': ['POP', 'MOBILE', 'TRACKING_SYSTEM'],
   'GET /production/work-sessions': ['POP'],
   'GET /mdm/terminals/{terminalId}/processes': ['POP'],
   'GET /trace/lots': ['POP', 'MOBILE'],
@@ -31,7 +31,8 @@ export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly Terminal
   'GET /logistics/inbound-receipts': ['MOBILE'],
   'GET /mdm/equipments/{equipmentId}/inspection-items': ['POP', 'MOBILE'],
   'GET /mdm/locations': ['POP', 'MOBILE'],
-  'GET /mdm/code-values': ['POP', 'MOBILE'],
+  // TRACKING_SYSTEM 은 마감 사유(`WORK_ORDER_COMPLETION_VARIANCE_REASON`)를 읽는다(flowtrack 연동 제안 §3-5).
+  'GET /mdm/code-values': ['POP', 'MOBILE', 'TRACKING_SYSTEM'],
   'GET /mdm/items/{itemId}': ['POP', 'MOBILE'],
   'GET /mdm/molds': ['POP'],
   'GET /mdm/molds/{moldId}': ['POP'],
@@ -126,9 +127,10 @@ export async function assertTerminalReadScope(
         // 설비를 걸면 단말 공장의 설비여야 한다 — 옆 설비의 W/O 도 찾는다(장부 P-123). 없는 설비와 남의 공장 설비는 같은 401 이다.
         if (query.plannedEquipmentId !== undefined) await plantEquipment(query.plannedEquipmentId);
         // 목록 서비스가 이 단말의 공정 매핑으로 좁힌다 — 재작업은 실적 입력, 그 밖은 작업 시작 공정이다.
-      } else {
+      } else if (terminal.terminalTypeCode !== 'TRACKING_SYSTEM') {
         await ownWorkOrder(query.successorOfWorkOrderId);
       }
+      // TRACKING_SYSTEM 은 공장 W/O 전체를 읽는다 — 공장 범위는 목록 서비스(`workOrderListWhere`)가 모든 단말에 건다.
       break;
     case 'GET /production/work-sessions':
     case 'GET /logistics/shopfloor-receipts':

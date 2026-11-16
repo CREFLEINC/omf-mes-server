@@ -122,7 +122,7 @@ export class AuthenticationGuard implements CanActivate {
       throw loginRequired();
     }
     if (!terminal) throw loginRequired();
-    if (!terminalTypes.includes(terminal.terminalTypeCode as 'POP' | 'MOBILE')) {
+    if (!(terminalTypes as readonly string[]).includes(terminal.terminalTypeCode)) {
       throw wrongTerminalType(key, terminalTypes, terminal.terminalTypeCode);
     }
     if (TERMINAL_LOGISTICS_OPERATIONS[key]) await assertTerminalLogisticsScope(this.prisma, request, key, terminal);

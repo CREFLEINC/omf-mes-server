@@ -186,6 +186,12 @@ export class TerminalService {
   ): Promise<{ terminal: TerminalView; versionNo: number }> {
     await this.assertCodes(input);
     await this.assertWarehouse(input);
+    const current = await this.prisma.terminal.findUnique({
+      where: { terminal_id: terminalId }, select: { terminal_type_code: true },
+    });
+    // 유형이 바뀌면 옛 토큰을 끊는다 — 토큰에 유형이 없고 요청마다 행의 유형으로 판정하므로, 두면 옛 기기가 새 유형의 권한을 얻는다.
+    //   읽은 뒤 바뀐 유형은 아래 version_no 조건이 0행으로 막는다.
+    const typeChanged = current !== null && current.terminal_type_code !== input.terminalTypeCode;
     const updated = await this.prisma.terminal.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
       where: { terminal_id: terminalId, version_no: version },
@@ -196,6 +202,7 @@ export class TerminalService {
         ...optional('location_id', input.locationId),
         ...optional('warehouse_id', input.warehouseId),
         ...optional('equipment_id', input.equipmentId),
+        ...(typeChanged ? { token_version: { increment: 1 } } : {}),
         version_no: { increment: 1 },
       },
     });
