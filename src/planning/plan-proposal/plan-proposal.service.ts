@@ -14,9 +14,8 @@ import { PlanDateRow, calendarsOfPlans } from '../production-plan/plan-date-cale
 import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals } from './proposal-builder';
 import { ProposalConfirmBody, ResolvedPlan, planDateSourceOf, quantityDelta, resolveConfirm } from './proposal-confirm-check';
-import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
 import { readProposalFacts } from './proposal-reader';
-import { ORDER_CANCELLED_ERROR, ProposalRevalidation, basisChanges, revalidateProposal } from './proposal-revalidate';
+import { AUTO_WORK_ORDER_PLANT_ERROR, ORDER_CANCELLED_ERROR, ProposalRevalidation, basisChanges, revalidateProposal } from './proposal-revalidate';
 import { ProposalView, proposalView } from './proposal-view';
 
 /** 계약 `ProductionPlanProposalConfirmResult`. */
@@ -210,13 +209,7 @@ export class PlanProposalService {
     if (proposal.order.status_code === CANCELLED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [ORDER_CANCELLED_ERROR]);
     }
-    if (proposal.kind === 'AUTO_WORK_ORDER') {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [{
-        scope: 'screen',
-        code: AUTO_WORK_ORDER_PLANT,
-        message: 'OA 자동 W/O 공장의 ERP W/O 는 자동 W/O 실행기가 계획·확정합니다. 이 화면에서 확정하지 않습니다.',
-      }]);
-    }
+    if (proposal.kind === 'AUTO_WORK_ORDER') throw new ContractException(HttpStatus.BAD_REQUEST, [AUTO_WORK_ORDER_PLANT_ERROR]);
     if (proposal.kind === 'KEEP_CONFIRMED') return { already: true };
     assertSameBasis(proposal, body.basis);
     return { already: false, proposal, resolved: await resolveConfirm(client, proposal, facts, body) };

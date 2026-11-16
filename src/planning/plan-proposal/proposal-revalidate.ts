@@ -7,6 +7,7 @@ import { calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals, planDayIssues } from './proposal-builder';
 import { ProposalConfirmBody, ResolvedPlan, judgeConfirm, planDateSourceOf, quantityDelta } from './proposal-confirm-check';
+import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
 import { ProposalFacts, readProposalFacts } from './proposal-reader';
 import { ProposalView, proposalView } from './proposal-view';
 import { RevalidationWarning, workOrderWarnings } from './proposal-warnings';
@@ -36,6 +37,11 @@ export function basisChanges(proposal: Proposal, sent: ProposalBasis): ProposalC
 }
 
 export const ORDER_CANCELLED_ERROR: ErrorItem = { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 ERP W/O 는 계획하지 않습니다.' };
+export const AUTO_WORK_ORDER_PLANT_ERROR: ErrorItem = {
+  scope: 'screen',
+  code: AUTO_WORK_ORDER_PLANT,
+  message: 'OA 자동 W/O 공장의 ERP W/O 는 자동 W/O 실행기가 계획·확정합니다. 이 화면에서 확정하지 않습니다.',
+};
 
 /** 계약 `ProductionPlanProposalRevalidation`. */
 export interface ProposalRevalidation {
@@ -67,6 +73,7 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
   };
   const nothing = { confirmable: false, warnings: [], plans: [] };
   if (proposal.order.status_code === 'CANCELLED') return { ...head, ...nothing, alreadyProcessed: false, errors: [ORDER_CANCELLED_ERROR] };
+  if (proposal.kind === 'AUTO_WORK_ORDER') return { ...head, ...nothing, alreadyProcessed: false, errors: [AUTO_WORK_ORDER_PLANT_ERROR] };
   if (proposal.kind === 'KEEP_CONFIRMED') return { ...head, ...nothing, alreadyProcessed: true, errors: [] };
 
   const { resolved, errors } = await judgeConfirm(client, proposal, facts, body);

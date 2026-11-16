@@ -797,6 +797,20 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       });
       await confirm(orderId, body).expect(200);
     });
+
+    it('재검증도 확정과 같은 오류 하나(AUTO_WORK_ORDER_PLANT)를 200 으로 내고 아무것도 바꾸지 않는다', async () => {
+      const orderId = await newOrder('OA-REVAL', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      await withAutoPolicy(async () => {
+        const before = await snapshot();
+        const confirmed = await confirm(orderId, body).expect(400);
+        const response = await request(app.getHttpServer())
+          .post(`/api/planning/production-orders/${orderId}:revalidate-plan-proposal`).set('Cookie', cookie).send(body).expect(200);
+        expect(validator(response200('/planning/production-orders/{productionOrderId}:revalidate-plan-proposal', 'post'))(response.body)).toBe(true);
+        expect(response.body).toMatchObject({ confirmable: false, alreadyProcessed: false, plans: [], warnings: [], errors: confirmed.body.errors });
+        expect(await snapshot()).toEqual(before);
+      });
+    });
   });
 
   /** 쓰기 흔적 — 제안 조회·거부된 확정 앞뒤로 견준다. 번호 카운터는 전역이다(다른 검사가 동시에 돌지 않는 일꾼 DB 안). */

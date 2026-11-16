@@ -815,7 +815,7 @@
      "planning"
     ],
     "summary": "ERP W/O 계획 제안 보완값 재검증",
-    "description": "사람이 고친 계획(계획일·수량·BOM·Routing·생산 라인·4M·교대)을 저장하지 않고 확정과 같은 판정·같은 계산으로 다시 계산·검증한다. ⛔ 부작용이 없다 — 잠그지 않고, 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·목록 상태·멱등 기록을 바꾸지 않는다. Idempotency-Key 를 받지 않는다. 본문은 확정 본문(ProductionPlanProposalConfirm)과 같다 — 화면은 재검증한 본문을 그대로 확정에 보낸다.\n\n⭐ 새 오퍼레이션으로 둔 까닭 — 조회(GET)는 본문을 싣지 못하고(계획 여럿 × 공정별 4M), 확정에 미리 보기 칸을 두면 멱등 기록·채번·409 와 한 경로에 섞여 「저장하지 않음」을 확정 안에서 갈라 지켜야 한다. 판정 함수는 하나다 — 확정은 같은 함수를 잠근 트랜잭션에서 다시 부르고 오류가 있으면 400 으로 던진다.\n\n처리 — ① 없거나 범위 밖이면 404 ② 형식 위반(계약 가드)만 400 ③ 그 밖의 판정은 모두 200 이다: 확정이 400 으로 낼 오류는 errors, 409 PROPOSAL_CHANGED 로 낼 것은 proposalChanges·currentProposal, 확정을 막지 않는 경고는 warnings. 확정 계획량이 이미 수량을 채웠으면 alreadyProcessed 다.\n\n⭐ basis 연결 — 응답 basis 는 지금 다시 계산한 basis 다. 화면은 proposalChanges 를 사람에게 보인 뒤에만 응답 basis 를 확정 본문에 옮겨 싣는다. 잠그지 않으므로 재검증과 확정 사이에 기준이 바뀌면 확정이 409 PROPOSAL_CHANGED 다.\n\n⭐ 판정 시점 — BLOCK(errors): 재검증·확정 둘 다(한 함수). WARN(warnings: 교정 기한·금형 수명·작업자 자격·설비 시간 중복·계획일 휴일·판정 불가): 제안 조회·재검증만 계산하고 확정은 다시 보지 않으며 막지 않는다. 설비 시간 중복은 지금 저장된 다른 MES W/O 와 이 본문의 다른 공정 W/O 의 시각을 함께 본다 — 재검증 뒤 남이 만든 W/O 와의 중복은 확정이 잡지 않는다. 금형 시간 중복은 판정하지 않는다(4M 점검에 없는 규칙).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 권한은 확정과 같다.",
+    "description": "사람이 고친 계획(계획일·수량·BOM·Routing·생산 라인·4M·교대)을 저장하지 않고 확정과 같은 판정·같은 계산으로 다시 계산·검증한다. ⛔ 부작용이 없다 — 잠그지 않고, 계획·W/O·4M 을 저장하지 않고, 계획번호·MES W/O 번호를 뽑지 않고, 수량·목록 상태·멱등 기록을 바꾸지 않는다. Idempotency-Key 를 받지 않는다. 본문은 확정 본문(ProductionPlanProposalConfirm)과 같다 — 화면은 재검증한 본문을 그대로 확정에 보낸다.\n\n⭐ 새 오퍼레이션으로 둔 까닭 — 조회(GET)는 본문을 싣지 못하고(계획 여럿 × 공정별 4M), 확정에 미리 보기 칸을 두면 멱등 기록·채번·409 와 한 경로에 섞여 「저장하지 않음」을 확정 안에서 갈라 지켜야 한다. 판정 함수는 하나다 — 확정은 같은 함수를 잠근 트랜잭션에서 다시 부르고 오류가 있으면 400 으로 던진다.\n\n처리 — ① 없거나 범위 밖이면 404 ② 형식 위반(계약 가드)만 400 ③ 그 밖의 판정은 모두 200 이다: 확정이 400 으로 낼 오류는 errors, 409 PROPOSAL_CHANGED 로 낼 것은 proposalChanges·currentProposal, 확정을 막지 않는 경고는 warnings. 확정 계획량이 이미 수량을 채웠으면 alreadyProcessed 다. 취소된 ERP W/O 는 errors 에 screen STATE_LOCKED, OA 자동 W/O 공장의 ERP W/O 는 screen AUTO_WORK_ORDER_PLANT 하나다(확정과 같은 순서·같은 문장).\n\n⭐ basis 연결 — 응답 basis 는 지금 다시 계산한 basis 다. 화면은 proposalChanges 를 사람에게 보인 뒤에만 응답 basis 를 확정 본문에 옮겨 싣는다. 잠그지 않으므로 재검증과 확정 사이에 기준이 바뀌면 확정이 409 PROPOSAL_CHANGED 다.\n\n⭐ 판정 시점 — BLOCK(errors): 재검증·확정 둘 다(한 함수). WARN(warnings: 교정 기한·금형 수명·작업자 자격·설비 시간 중복·계획일 휴일·판정 불가): 제안 조회·재검증만 계산하고 확정은 다시 보지 않으며 막지 않는다. 설비 시간 중복은 지금 저장된 다른 MES W/O 와 이 본문의 다른 공정 W/O 의 시각을 함께 본다 — 재검증 뒤 남이 만든 W/O 와의 중복은 확정이 잡지 않는다. 금형 시간 중복은 판정하지 않는다(4M 점검에 없는 규칙).\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 는 404 다. 권한은 확정과 같다.",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -9064,7 +9064,7 @@
       "items": {
        "$ref": "#/components/schemas/ErrorItem"
       },
-      "description": "확정이 400 으로 낼 오류 — 같은 code·같은 field(본문 경로)·같은 문장. 확정은 첫 단계에서 멈추지만 재검증은 본문 검증과 수량 합계(PLAN_QTY_EXCEEDS_ORDER)를 함께 낸다. 취소된 ERP W/O 는 screen STATE_LOCKED 하나다. 비면 검증을 통과했다"
+      "description": "확정이 400 으로 낼 오류 — 같은 code·같은 field(본문 경로)·같은 문장. 확정은 첫 단계에서 멈추지만 재검증은 본문 검증과 수량 합계(PLAN_QTY_EXCEEDS_ORDER)를 함께 낸다. 취소된 ERP W/O 는 screen STATE_LOCKED, OA 자동 W/O 공장의 ERP W/O 는 screen AUTO_WORK_ORDER_PLANT 하나다. 비면 검증을 통과했다"
      },
      "warnings": {
       "type": "array",
@@ -9077,7 +9077,7 @@
       "items": {
        "$ref": "#/components/schemas/ProductionPlanProposalRevalidatedPlan"
       },
-      "description": "최종 계획 — 본문 순서. 계획 집합이 제안과 달라(field plans) 계획별로 판정하지 못했거나, 취소·이미 처리된 ERP W/O 면 빈 배열이다"
+      "description": "최종 계획 — 본문 순서. 계획 집합이 제안과 달라(field plans) 계획별로 판정하지 못했거나, 취소·OA 자동 W/O 공장·이미 처리된 ERP W/O 면 빈 배열이다"
      }
     }
    },
