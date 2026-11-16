@@ -14,9 +14,11 @@ import { PreIssuedLotSummaryView, WorkOrderProgressView } from './work-order-pro
 
 /** 표시용 파생 칸의 조인 — 물리에 칸이 없다. 공정 셋은 Routing 공정의 공정이다(POP 이 단말 공정 매핑과 견준다). ERP W/O 는 계획을 경유해 잇는다(계약이 그렇게 적었다). */
 export const DISPLAY_JOIN = {
-  production_plan: { select: { production_order_id: true, production_order: { select: { production_order_no: true } } } },
+  production_plan: { select: {
+    production_order_id: true, production_order: { select: { production_order_no: true, erp_storage_location_code: true } },
+  } },
   routing_operation: { select: { operation_name: true, process: { select: { process_id: true, process_code: true, process_name: true } } } },
-  item: { select: { item_code: true } },
+  item: { select: { item_code: true, item_name: true } },
   // 설비 없는 단말이 W/O 의 계획 설비로 작업 전 점검을 할 때 화면이 그 설비를 보인다.
   equipment: { select: { equipment_code: true, equipment_name: true } },
   // POP 마감의 주체 — 관리웹 마감은 비어 있다.
@@ -81,6 +83,7 @@ export function workOrderView(
     remarks: row.remarks ?? undefined,
     productionOrderId: id(row.production_plan?.production_order_id ?? null),
     productionOrderNo: row.production_plan?.production_order.production_order_no,
+    erpStorageLocationCode: row.production_plan?.production_order.erp_storage_location_code ?? undefined,
     routingOperationName: row.routing_operation.operation_name,
     processId: Number(row.routing_operation.process.process_id),
     processCode: row.routing_operation.process.process_code,
@@ -88,6 +91,7 @@ export function workOrderView(
     plannedEquipmentCode: row.equipment?.equipment_code,
     plannedEquipmentName: row.equipment?.equipment_name,
     itemCode: row.item.item_code,
+    itemName: row.item.item_name,
     poMismatch: row.po_mismatch,
     versionNo: row.version_no,
     updatedAt: row.updated_at.toISOString(),

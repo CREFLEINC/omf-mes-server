@@ -46,7 +46,7 @@ function workOrderRow(overrides: Partial<WorkOrderRow> = {}): WorkOrderRow {
     close_judgment_code: null,
     production_plan: null,
     routing_operation: { operation_name: '사출', process: { process_id: 41n, process_code: 'PR-INJ', process_name: '사출공정' } },
-    item: { item_code: 'ITM-0001' },
+    item: { item_code: 'ITM-0001', item_name: '품목 하나' },
     equipment: null,
     closed_worker: null,
     ...overrides,
@@ -79,7 +79,7 @@ describe('WorkOrder 뷰', () => {
     const view = workOrderView(workOrderRow(), { erpMessageQueued: false });
 
     // 널 칸은 키 자체가 없다 — `undefined` 로 「있는데 값이 없다」와 뜻이 갈리지 않게 한다.
-    for (const key of ['productionPlanId', 'plannedStartAt', 'remarks', 'closedAt', 'validation']) {
+    for (const key of ['productionPlanId', 'erpStorageLocationCode', 'plannedStartAt', 'remarks', 'closedAt', 'validation']) {
       expect(Object.keys(view)).not.toContain(key);
     }
     // 마감 전 `erpMessageQueued` 는 널·false 가 아니라 «키 없음»이다(계약 ⌜마감 전에는 비어 있다⌝).
@@ -112,11 +112,11 @@ describe('WorkOrder 뷰', () => {
       .toMatchObject({ closedByUserId: 4, closedByUserName: '관리자' });
   });
 
-  it('뷰 — 표시용 파생 넷은 계획 → ERP W/O 조인으로 낸다', () => {
+  it('뷰 — 표시용 파생 칸은 계획 → ERP W/O 조인으로 낸다', () => {
     const view = workOrderView(
       workOrderRow({
         production_plan_id: 21n,
-        production_plan: { production_order_id: 31n, production_order: { production_order_no: 'PO-2026-0001' } },
+        production_plan: { production_order_id: 31n, production_order: { production_order_no: 'PO-2026-0001', erp_storage_location_code: 'S410' } },
       }),
       { erpMessageQueued: true },
     );
@@ -125,10 +125,25 @@ describe('WorkOrder 뷰', () => {
       productionPlanId: 21,
       productionOrderId: 31,
       productionOrderNo: 'PO-2026-0001',
+      erpStorageLocationCode: 'S410',
       routingOperationName: '사출',
       itemCode: 'ITM-0001',
+      itemName: '품목 하나',
       erpMessageQueued: true,
     });
+  });
+
+  // 추적 시스템 연동이 ERP W/O 창고로 품목을 가른다(omf-all-around#274) — ERP 가 창고를 비워 보내면 널이 아니라 키가 없다.
+  it('뷰 — ERP W/O 에 창고가 없으면 창고 키를 생략한다', () => {
+    const view = workOrderView(
+      workOrderRow({
+        production_plan_id: 21n,
+        production_plan: { production_order_id: 31n, production_order: { production_order_no: 'PO-2026-0001', erp_storage_location_code: null } },
+      }),
+      { erpMessageQueued: false },
+    );
+
+    expect(Object.keys(view)).not.toContain('erpStorageLocationCode');
   });
 
   it('뷰 — 공정 셋은 Routing 공정의 공정에서 낸다', () => {
