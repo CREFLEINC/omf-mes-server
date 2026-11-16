@@ -62,6 +62,7 @@ function bom(components: Component[], extra: Row = {}): Row {
     status_code: 'CONFIRMED',
     base_qty: D(1),
     base_uom_id: 1n,
+    plant_id: 5n,
     effective_from: new Date('2026-08-25T00:00:00.000Z'),
     bom_component: components,
     ...extra,
@@ -90,7 +91,7 @@ function fake(current: Row | null = null) {
           .filter((code) => UOMS[code] !== undefined)
           .map((code) => ({ uom_code: code, uom_id: UOMS[code] })),
     },
-    plant: { findMany: async () => [{ timezone_code: 'Asia/Ho_Chi_Minh' }] },
+    plant: { findMany: async () => [{ plant_id: 5n, timezone_code: 'Asia/Ho_Chi_Minh' }] },
     bom: {
       findFirst: async () => current,
       update: record('bom.update'),
@@ -139,6 +140,7 @@ describe('bomTable', () => {
     expect(f.writes.map((w) => w.op)).toEqual(['bom.create']);
     expect(f.writes[0].args.data).toMatchObject({
       parent_item_id: 1n,
+      plant_id: 5n,
       bom_code: 'ERP-P1',
       bom_version: 1,
       status_code: 'CONFIRMED',
@@ -171,6 +173,21 @@ describe('bomTable', () => {
 
     await bomTable.applyUnit(f.tx, [erp('C1', 10, 3), erp('C2', 20, 2)]);
 
+    expect(f.writes).toEqual([]);
+  });
+
+  it('결과가 같은데 공장이 비어 있으면 판을 올리지 않고 공장만 적는다', async () => {
+    const f = fake(bom([component(1, 11n, 3, 10), component(2, 12n, 2, 20)], { plant_id: null }));
+
+    await bomTable.applyUnit(f.tx, [erp('C1', 10, 3), erp('C2', 20, 2)]);
+
+    expect(f.writes).toEqual([{ op: 'bom.update', args: { where: { bom_id: 100n }, data: { plant_id: 5n } } }]);
+  });
+
+  it('살아 있는 판의 공장과 다른 공장에서 오면 실패한다', async () => {
+    const f = fake(bom([component(1, 11n, 3, 10)], { plant_id: 9n }));
+
+    await expect(bomTable.applyUnit(f.tx, [erp('C1', 10, 4)])).rejects.toThrow('두 공장');
     expect(f.writes).toEqual([]);
   });
 

@@ -22,6 +22,7 @@ export const bomTable: UnitTable = {
     const parentCode = requiredText(rows[0], 'PRNT_ITEM_CD');
     const plantCodes = new Set(rows.map((row) => requiredText(row, 'PLANT_CD')));
     if (plantCodes.size > 1) throw new Error(`모품목 ${parentCode} 의 BOM 이 두 공장에서 왔다`);
+    const plant = await plantByCode(tx, [...plantCodes][0]);
 
     const items = await itemIdsByCode(tx, [
       parentCode,
@@ -40,6 +41,9 @@ export const bomTable: UnitTable = {
     });
     const live =
       current !== null && current.status_code !== REVISION_STATUS.OBSOLETE ? current : null;
+    if (live !== null && live.plant_id !== null && live.plant_id !== plant.plant_id) {
+      throw new Error(`모품목 ${parentCode} 의 BOM 이 두 공장에서 왔다`);
+    }
 
     const incoming = rows.map((row) => entryOf(row, items, uoms));
     const kept = incoming.filter((_, i) => !isCancel(rows[i]));
@@ -73,7 +77,10 @@ export const bomTable: UnitTable = {
     }));
 
     if (live !== null && sameBom(live, baseQty, baseUomId, components, adopted)) {
-      // 운영 초기 데이터로 들어온 판 — ERP 순번만 채운다. 보이는 값이 그대로라 판을 올리지 않는다.
+      // 공장 칸(20261116100000)·ERP 순번 전에 들어온 판 — 비어 있는 것만 채운다. 보이는 값이 그대로라 판을 올리지 않는다.
+      if (live.plant_id === null) {
+        await tx.bom.update({ where: { bom_id: live.bom_id }, data: { plant_id: plant.plant_id } });
+      }
       for (const [i, component] of live.bom_component.entries()) {
         if (component.erp_child_item_seq !== null) continue;
         await tx.bom_component.update({
@@ -84,7 +91,7 @@ export const bomTable: UnitTable = {
       return;
     }
 
-    const today = plantToday(await plantByCode(tx, [...plantCodes][0]));
+    const today = plantToday(plant);
     if (live !== null) {
       const from = live.effective_from.toISOString().slice(0, 10);
       await tx.bom.update({
@@ -103,6 +110,7 @@ export const bomTable: UnitTable = {
     await tx.bom.create({
       data: {
         parent_item_id: parentId,
+        plant_id: plant.plant_id,
         bom_code: bomCode,
         bom_version: (current?.bom_version ?? 0) + 1,
         status_code: REVISION_STATUS.CONFIRMED,

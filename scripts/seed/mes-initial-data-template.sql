@@ -9,8 +9,6 @@
 --   country/timezone VN / Asia/Ho_Chi_Minh
 --
 -- Deliberate source adjustments:
---   * 720 BOM component rows have source required_qty=0 EA. MES requires > 0,
---     so they are provisionally loaded as 1 EA.
 --   * 30 BOMs start with sequence_no=0. All 194 components in those BOMs are
 --     shifted by +1 to preserve their source ordering while satisfying sequence_no > 0.
 --   * ERP item group Mold remains an item classification. No mdm.mold rows are made.
@@ -211,19 +209,19 @@ BEGIN
   IF actual_count > 0 THEN
     RAISE EXCEPTION '% BOM component references are missing from item source', actual_count;
   END IF;
-END $$;
 
-INSERT INTO erp_seed.seed_adjustment
-  (entity_type, entity_key, field_name, source_value, seed_value, reason)
-SELECT
-  'BOM_COMPONENT',
-  prnt_item_cd || ':' || child_item_seq || ':' || child_item_cd,
-  'required_qty',
-  child_item_qty::text,
-  '1',
-  'MES ck requires required_qty > 0; provisional customer-review value'
-FROM erp_seed.erp_bom
-WHERE child_item_qty <= 0;
+  -- One MES BOM per parent item carries one plant; the ERP BOM receive rejects the same case.
+  SELECT count(*) INTO actual_count
+  FROM (
+    SELECT prnt_item_cd
+    FROM erp_seed.erp_bom
+    GROUP BY prnt_item_cd
+    HAVING count(DISTINCT plant_cd) > 1
+  ) conflicts;
+  IF actual_count > 0 THEN
+    RAISE EXCEPTION '% BOM parents come from more than one plant', actual_count;
+  END IF;
+END $$;
 
 INSERT INTO erp_seed.seed_adjustment
   (entity_type, entity_key, field_name, source_value, seed_value, reason)
@@ -481,21 +479,38 @@ ON CONFLICT (plant_id, warehouse_code) DO NOTHING;
 
 \echo 'OMF MES initial-data seed: BOM data'
 INSERT INTO planning.bom
-  (parent_item_id, bom_code, bom_version, status_code,
+  (parent_item_id, plant_id, bom_code, bom_version, status_code,
    is_default, effective_from, base_qty, base_uom_id)
-SELECT parent_item.item_id, 'ERP-' || source.prnt_item_cd, 1, 'CONFIRMED',
+SELECT parent_item.item_id, plant.plant_id, 'ERP-' || source.prnt_item_cd, 1, 'CONFIRMED',
        true, DATE '2026-08-25', min(source.prnt_item_qty), min(unit.uom_id)
 FROM erp_seed.erp_bom source
 JOIN mdm.item parent_item
   ON normalize(parent_item.item_code, NFKC) = normalize(source.prnt_item_cd, NFKC)
 JOIN mdm.uom unit ON unit.uom_code = source.prnt_item_unit
-GROUP BY parent_item.item_id, source.prnt_item_cd
+JOIN mdm.legal_entity entity ON entity.legal_entity_code = 'SAMJIN_LND_VINA'
+JOIN mdm.plant plant
+  ON plant.legal_entity_id = entity.legal_entity_id AND plant.plant_code = source.plant_cd
+GROUP BY parent_item.item_id, plant.plant_id, source.prnt_item_cd
 ON CONFLICT (parent_item_id, bom_code, bom_version) DO NOTHING;
+
+-- BOMs loaded before planning.bom.plant_id existed (migration 20261116100000) get their plant
+-- on a re-run. Every version of the BOM code is filled; the ERP BOM receive may have added some.
+UPDATE planning.bom bom
+SET plant_id = plant.plant_id
+FROM (SELECT DISTINCT prnt_item_cd, plant_cd FROM erp_seed.erp_bom) source
+JOIN mdm.item parent_item
+  ON normalize(parent_item.item_code, NFKC) = normalize(source.prnt_item_cd, NFKC)
+JOIN mdm.legal_entity entity ON entity.legal_entity_code = 'SAMJIN_LND_VINA'
+JOIN mdm.plant plant
+  ON plant.legal_entity_id = entity.legal_entity_id AND plant.plant_code = source.plant_cd
+WHERE bom.parent_item_id = parent_item.item_id
+  AND bom.bom_code = 'ERP-' || source.prnt_item_cd
+  AND bom.plant_id IS NULL;
 
 INSERT INTO planning.bom_component
   (bom_id, component_item_id, required_qty, uom_id, sequence_no)
 SELECT bom.bom_id, component_item.item_id,
-       CASE WHEN source.child_item_qty > 0 THEN source.child_item_qty ELSE 1 END,
+       source.child_item_qty,
        unit.uom_id,
        CASE WHEN EXISTS (
          SELECT 1
@@ -580,6 +595,13 @@ BEGIN
   WHERE bom_code IN (SELECT DISTINCT 'ERP-' || prnt_item_cd FROM erp_seed.erp_bom);
   IF actual_count <> 4198 THEN
     RAISE EXCEPTION 'BOM target count: expected 4198, got %', actual_count;
+  END IF;
+
+  SELECT count(*) INTO actual_count FROM planning.bom
+  WHERE plant_id IS NULL
+    AND bom_code IN (SELECT DISTINCT 'ERP-' || prnt_item_cd FROM erp_seed.erp_bom);
+  IF actual_count <> 0 THEN
+    RAISE EXCEPTION 'BOM without plant: expected 0, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count
