@@ -475,6 +475,31 @@ model sync_lease {
   @@schema("integration")
 }
 
+model tracking_transmission {
+  tracking_transmission_id       BigInt                           @id @default(autoincrement())
+  transmission_id                String                           @unique(map: "uq_tracking_transmission") @db.Uuid
+  kind_code                      String                           @db.VarChar(50)
+  plant_id                       BigInt
+  work_order_id                  BigInt?
+  payload                        Json
+  received_at                    DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  plant                          plant                            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order                     work_order?                      @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  tracking_transmission_document tracking_transmission_document[]
+
+  @@schema("integration")
+}
+
+model tracking_transmission_document {
+  tracking_transmission_id BigInt
+  document_type_code       String                @db.VarChar(50)
+  document_id              BigInt
+  tracking_transmission    tracking_transmission @relation(fields: [tracking_transmission_id], references: [tracking_transmission_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tracking_transmission_id, document_type_code, document_id])
+  @@schema("integration")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model erp_sync_state {
   interface_code     String    @id @db.VarChar(50)
@@ -2425,6 +2450,7 @@ model plant {
   inbound_lot inbound_lot[]
   material_lot_batch material_lot_batch[]
   supplier_item_default supplier_item_default[]
+  tracking_transmission tracking_transmission[]
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")
 }
@@ -3392,6 +3418,7 @@ model work_order {
   operation_handover_operation_handover_to_work_order_idTowork_order                operation_handover[]             @relation("operation_handover_to_work_order_idTowork_order")
   precheck_decision                                                                 precheck_decision[]
   production_result                                                                 production_result[]
+  tracking_transmission                                                             tracking_transmission[]
   lot                                                                               lot?                             @relation(fields: [rework_source_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_lot")
   nonconformance_work_order_rework_source_nonconformance_idTononconformance         nonconformance?                  @relation("work_order_rework_source_nonconformance_idTononconformance", fields: [rework_source_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_nc")
   location_work_order_default_fg_location_idTolocation                              location?                        @relation("work_order_default_fg_location_idTolocation", fields: [default_fg_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
