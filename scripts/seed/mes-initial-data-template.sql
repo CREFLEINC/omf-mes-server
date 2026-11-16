@@ -18,8 +18,9 @@
 --   * ERP warehouse codes carry no plant. WH* go to PL11 and S<digit>* to PL13. Other codes
 --     go to PL11, except 100667 and 100668, which the customer warehouse list (2026-10-29)
 --     assigns to PL13. Every warehouse is loaded as internal and carries no partner.
---   * Not ERP data: process OA-ASSY and two PL13 operation policies for the flowtrack
---     integration (AUTO_ROUTING_PROCESS = OA-ASSY, BACKFLUSH_WAREHOUSE = S530).
+--   * Not ERP data: process OA-ASSY, two PL13 operation policies and the PL13 system worker
+--     TRACKING-SYSTEM for the flowtrack integration (AUTO_ROUTING_PROCESS = OA-ASSY,
+--     BACKFLUSH_WAREHOUSE = S530).
 
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -501,6 +502,17 @@ WHERE entity.legal_entity_code = 'SAMJIN_LND_VINA'
     WHERE existing.policy_code = policy.code AND existing.plant_id = plant.plant_id
   );
 
+INSERT INTO mdm.worker (worker_no, worker_name, business_unit_id, plant_id, status_code, is_active)
+SELECT 'TRACKING-SYSTEM', 'flowtrack', unit.business_unit_id, plant.plant_id, 'EMPLOYED', true
+FROM mdm.legal_entity entity
+JOIN mdm.business_unit unit
+  ON unit.legal_entity_id = entity.legal_entity_id
+ AND unit.business_unit_code = 'VIETNAM'
+JOIN mdm.plant plant
+  ON plant.legal_entity_id = entity.legal_entity_id AND plant.plant_code = 'PL13'
+WHERE entity.legal_entity_code = 'SAMJIN_LND_VINA'
+ON CONFLICT (worker_no) DO NOTHING;
+
 \echo 'OMF MES initial-data seed: BOM data'
 INSERT INTO planning.bom
   (parent_item_id, plant_id, bom_code, bom_version, status_code,
@@ -655,6 +667,14 @@ BEGIN
             AND warehouse.warehouse_code = policy.value_text AND warehouse.is_active));
   IF actual_count <> 2 THEN
     RAISE EXCEPTION 'PL13 OA policies naming an active process and warehouse: expected 2, got %', actual_count;
+  END IF;
+
+  SELECT count(*) INTO actual_count
+  FROM mdm.worker worker
+  JOIN mdm.plant plant ON plant.plant_id = worker.plant_id AND plant.plant_code = 'PL13'
+  WHERE worker.worker_no = 'TRACKING-SYSTEM' AND worker.is_active;
+  IF actual_count <> 1 THEN
+    RAISE EXCEPTION 'PL13 active system worker TRACKING-SYSTEM: expected 1, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count FROM planning.bom

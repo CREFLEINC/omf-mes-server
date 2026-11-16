@@ -66,7 +66,7 @@ src/
 
 ⛔ **도메인이 다른 도메인의 service 를 부르지 않는다.** 공유가 필요하면 그것은 `core` 다.
 지금 아는 공유는 하나 — 재고 posting 을 물류·생산·품질·재고 넷이 쓴다.
-예외 하나 — 추적 시스템 연동의 OA 자동 W/O(`src/integration/tracking-system`)는 계획·생산 모듈이 내보낸 service 를 부른다(사용자 결정 2026-11-16).
+예외 하나 — 추적 시스템 연동(`src/integration/tracking-system`)은 계획·생산·물류(입고 전기)·추적(시리얼)이 내보낸 service 와 함수를 부른다(사용자 결정 2026-11-16).
 
 ---
 
