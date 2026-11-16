@@ -68,6 +68,10 @@ describe('reasonsOf · statusOf — 사유 분류와 상태', () => {
     expect(statusOf('KEEP_CONFIRMED', false, [{ code: 'DRAFT_PLAN_EXCEEDS_ORDER', category: 'BLOCKED' }])).toBe('NEEDS_INPUT');
     expect(statusOf('NOT_PROPOSABLE', true, [{ code: 'ORDER_CANCELLED', category: 'BLOCKED' }])).toBe('NO_CHANGE');
   });
+
+  it('OA 자동 W/O 공장은 실행기가 처리하므로 변경 없음이다', () => {
+    expect(statusOf('AUTO_WORK_ORDER', false, [])).toBe('NO_CHANGE');
+  });
 });
 
 describe('assertWholeOrder — 한 ERP W/O 는 전부 아니면 하나도', () => {

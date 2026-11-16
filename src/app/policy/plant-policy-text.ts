@@ -27,3 +27,12 @@ export async function plantPolicyText(
   });
   return winnerOf(rows)?.value_text ?? null;
 }
+
+/** OA 자동 W/O 공장 — 그날(공장 현지) 자동 라우팅 공정 정책이 걸렸다. 자동 W/O 실행기와 계획 제안이 이 한 판정을 쓴다. */
+export async function isAutoWorkOrderPlant(
+  tx: Pick<Prisma.TransactionClient, 'operation_policy'>,
+  plantId: number | bigint,
+  onDate: string,
+): Promise<boolean> {
+  return (await plantPolicyText(tx, 'AUTO_ROUTING_PROCESS', plantId, onDate)) !== null;
+}
