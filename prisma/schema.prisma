@@ -2391,6 +2391,7 @@ model plant {
   updated_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                BigInt?
   version_no                Int                         @default(1)
+  bom                       bom[]
   numbering_rule            numbering_rule[]
   operation_policy          operation_policy[]
   printer                   printer[]
@@ -2821,8 +2822,10 @@ model bom {
   updated_at      DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by      BigInt?
   version_no      Int               @default(1)
+  plant_id        BigInt?
   uom             uom               @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   item            item              @relation(fields: [parent_item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  plant           plant?            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   bom_component   bom_component[]
   production_plan production_plan[]
   lot             lot[]

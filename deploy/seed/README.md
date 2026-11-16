@@ -34,7 +34,6 @@ seed/load-mes-initial-data.sh
 
 - 조직: `SAMJIN_LND_VINA`, `VIETNAM`, `PL11 Parts Plant`, `PL13 OA Plant`
 - 국가/타임존: `VN`, `Asia/Ho_Chi_Minh`
-- 원본 소요량이 `0 EA`인 BOM 구성 720행: `1 EA`로 적재
 - 구성 순번 0이 있는 BOM 30개: 순서를 유지하도록 해당 BOM 구성 194행의 순번을 모두 +1
 
 실제 실행 후 `erp_seed.seed_adjustment`에 원본값, 적재값, 사유가 남는다. 고객 확인이 끝나면
