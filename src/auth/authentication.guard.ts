@@ -22,6 +22,7 @@ import { TERMINAL_LOT_WRITE_OPERATIONS, assertTerminalLotWriteScope } from './te
 import { TERMINAL_MATERIAL_LOT_OPERATIONS, assertTerminalMaterialLotScope } from './terminal-material-lot-scope';
 import { TERMINAL_INSPECTION_SHEET_OPERATIONS, assertTerminalInspectionSheetScope } from './terminal-inspection-sheet-scope';
 import { resolveTerminalContext } from './terminal-token';
+import { TERMINAL_TRACKING_SYSTEM_OPERATIONS } from './terminal-tracking-system-scope';
 import { TERMINAL_WORK_OPERATIONS, assertTerminalWorkScope } from './terminal-work-scope';
 import { TERMINAL_ACCESSIBLE_SCREENS_OPERATION, TERMINAL_REGISTRATION_OPERATION } from './terminal-registration-operation';
 import { wrongTerminalType } from './terminal-type-denied';
@@ -112,7 +113,7 @@ export class AuthenticationGuard implements CanActivate {
       ?? TERMINAL_APP_WRITE_OPERATIONS[key] ?? TERMINAL_QUALITY_WRITE_OPERATIONS[key]
       ?? TERMINAL_MOBILE_PRODUCTION_OPERATIONS[key] ?? TERMINAL_LOT_WRITE_OPERATIONS[key]
       ?? TERMINAL_INSPECTION_SHEET_OPERATIONS[key] ?? TERMINAL_WORK_OPERATIONS[key]
-      ?? TERMINAL_MATERIAL_LOT_OPERATIONS[key];
+      ?? TERMINAL_MATERIAL_LOT_OPERATIONS[key] ?? TERMINAL_TRACKING_SYSTEM_OPERATIONS[key];
     if (!terminalTypes || !request.headers.authorization) throw loginRequired();
     let terminal;
     try {
@@ -138,6 +139,7 @@ export class AuthenticationGuard implements CanActivate {
     else if (TERMINAL_APP_READ_OPERATIONS[key]) await assertTerminalAppReadScope(this.prisma, request, key, terminal);
     else if (TERMINAL_WORK_OPERATIONS[key]) assertTerminalWorkScope(request, key);
     else if (TERMINAL_MATERIAL_LOT_OPERATIONS[key]) await assertTerminalMaterialLotScope(this.prisma, request, key, terminal);
+    else if (TERMINAL_TRACKING_SYSTEM_OPERATIONS[key]) { /* 공장 범위는 서비스가 건다. */ }
     else await assertTerminalAppWriteScope(this.prisma, request, key, terminal);
     attachTerminal(request, terminal);
     return true;

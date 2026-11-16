@@ -17320,6 +17320,67 @@
     "x-internal-note": "저장 충돌 보호를 붙이지 않았다 — 항목이 다섯인 고정 목록이고 행을 오가며 편집하는 형태가 아니다. 「개발품 제외」의 판정 축(품목이냐 작업지시 유형이냐)은 이 계약이 정하지 않는다 — 확정 문구가 갈려 있고 omf-mes#70 에서 사용자 결정을 기다린다."
    }
   },
+  "/integration/tracking-system/stock-moves": {
+   "post": {
+    "tags": [
+     "integration"
+    ],
+    "summary": "추적 시스템 포장 입고이동 받기",
+    "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 W/O 하나의 포장 묶음을 보낸다. 한 트랜잭션에서 실적(양품 = 시리얼 수 · PL13 시스템 작업자) → 시리얼 등록(보낸 번호 그대로) → 제품 입고(W/O 완제품 위치 · 정상·가용 · 적치 지시 없음) → 양품 합이 지시수량이면 W/O 마감. W/O 는 단말 공장에서만 찾는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다 — 원인을 고친 뒤 같은 전송을 다시 보내면 처리한다. 근거: flowtrack 연동 제안 §3-3 · 사용자 결정 2026-11-16",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TrackingStockMove"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "처리함 · 이미 처리한 전송(replayed=true)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TrackingTransmissionResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "INVALID — Idempotency-Key ≠ transmissionId · 모르는 W/O(다른 공장 W/O 도) · 품목이 W/O 와 다름 · qty ≠ 시리얼 수 · 본문 안에서 겹친 시리얼 · W/O 에 완제품 위치가 없음 · 생산 LOT 이 하나가 아님 · 시스템 작업자가 없음. STATE_LOCKED — 마감·취소된 W/O · 실적 뒤에도 생산 LOT 이 정상이 아님(MES 공정 검사 기준·LOT 보류). RANGE — 양품 합이 지시수량을 넘음. UNIQUE_VIOLATION — MES 에 이미 있는 시리얼",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "토큰이 없거나 추적 시스템 연동 단말 토큰이 아니다(계정 세션 포함)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/mdm/shifts": {
    "get": {
     "tags": [
@@ -23892,6 +23953,85 @@
      },
      "editability": {
       "$ref": "#/components/schemas/Editability"
+     }
+    }
+   },
+   "TrackingStockMove": {
+    "type": "object",
+    "description": "W/O 하나의 포장 묶음(flowtrack 연동 제안 §3-3)",
+    "required": [
+     "transmissionId",
+     "workOrderNo",
+     "mesWorkOrderId",
+     "itemCode",
+     "qty",
+     "serialNos",
+     "packedFrom",
+     "packedTo",
+     "businessDate"
+    ],
+    "properties": {
+     "transmissionId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "flowtrack 전송 번호 — Idempotency-Key 와 같다"
+     },
+     "workOrderNo": {
+      "type": "string",
+      "maxLength": 100
+     },
+     "mesWorkOrderId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "null 이면 workOrderNo 로 찾는다"
+     },
+     "itemCode": {
+      "type": "string",
+      "maxLength": 50
+     },
+     "qty": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "양품 수 — serialNos 개수와 같다"
+     },
+     "serialNos": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 150
+      },
+      "description": "flowtrack 이 매긴 시리얼. 그 W/O 의 생산 LOT 에 등록한다"
+     },
+     "packedFrom": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "packedTo": {
+      "type": "string",
+      "format": "date-time",
+      "description": "실적 시각·입고 시각"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "입고 업무일자(공유계약 C-8)"
+     }
+    }
+   },
+   "TrackingTransmissionResult": {
+    "type": "object",
+    "required": [
+     "replayed"
+    ],
+    "properties": {
+     "replayed": {
+      "type": "boolean",
+      "description": "이미 처리한 전송 번호라 아무것도 하지 않았다"
      }
     }
    },

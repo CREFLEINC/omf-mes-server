@@ -27,7 +27,7 @@ seed/load-mes-initial-data.sh
 | 품목 | 9,269 |
 | 창고 | 33 |
 | BOM / 구성품 | 4,198 / 22,793 |
-| OA 연동 설정 — 공정 `OA-ASSY` / PL13 운영 정책(자동 라우팅 공정 · 자재 차감 창고 S530) | 1 / 2 |
+| OA 연동 설정 — 공정 `OA-ASSY` / PL13 운영 정책(자동 라우팅 공정 · 자재 차감 창고 S530) / PL13 시스템 작업자 `TRACKING-SYSTEM` | 1 / 2 / 1 |
 
 `item_group_nm = Mold`인 품목도 일반 품목으로 들어가지만 `mdm.mold`는 만들지 않는다.
 

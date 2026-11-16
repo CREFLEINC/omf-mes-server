@@ -9801,11 +9801,12 @@
      },
      "resultSourceCode": {
       "type": "string",
-      "description": "실적을 «무엇이» 만들었는가 — 수기 입력(MANUAL) · IoT 자동수집(IOT). ⭐ 서버가 안다 — 화면이 고르는 값이 아니다. ⛔ 두 갈래뿐이라 계약이 닫는다",
+      "description": "실적을 «무엇이» 만들었는가 — 수기 입력(MANUAL) · IoT 자동수집(IOT) · 추적 시스템 연동(TRACKING_SYSTEM — 서버가 연동 포장으로 쓴다 · 등록 본문으로는 보낼 수 없다). ⭐ 서버가 안다 — 화면이 고르는 값이 아니다",
       "x-code-key": "CD-PRODUCTION-RESULT-SOURCE",
       "enum": [
        "MANUAL",
-       "IOT"
+       "IOT",
+       "TRACKING_SYSTEM"
       ],
       "example": "MANUAL"
      },

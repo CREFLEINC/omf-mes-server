@@ -109,7 +109,8 @@ describe('계약 커버리지', () => {
     // 생산계획 근무일 판정 1 오퍼레이션: 623 → 624.
     // 제품 LOT OQC 스캔 1 오퍼레이션: 624 → 625.
     // 계획 제안 보완값 재검증 1 오퍼레이션: 625 → 626.
-    expect(registry.size).toBe(626);
+    // 추적 시스템 포장 입고이동 1 오퍼레이션(flowtrack 연동 제안 §3-3): 626 → 627.
+    expect(registry.size).toBe(627);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

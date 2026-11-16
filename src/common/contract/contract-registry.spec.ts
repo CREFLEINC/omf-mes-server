@@ -39,8 +39,9 @@ describe('ContractRegistry', () => {
   // 생산계획 근무일 판정 1건: 624.
   // 제품 LOT OQC 스캔 1건: 625.
   // 계획 제안 보완값 재검증 1건: 626.
-  it('계약 7파일에서 오퍼레이션 626건을 적재한다', () => {
-    expect(registry.size).toBe(626);
+  // 추적 시스템 포장 입고이동 1건(flowtrack 연동 제안 §3-3): 627.
+  it('계약 7파일에서 오퍼레이션 627건을 적재한다', () => {
+    expect(registry.size).toBe(627);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
