@@ -13,6 +13,8 @@ import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'TRKSYS';
+// 바뀐 시각은 넣을 때만 정할 수 있다 — 고치면 DB 가 지금 시각으로 다시 찍는다.
+const OPEN_UPDATED_AT = '2026-01-01T00:00:00.000Z';
 
 describe('추적 시스템 연동 단말 (e2e)', () => {
   let app: INestApplication;
@@ -46,6 +48,18 @@ describe('추적 시스템 연동 단말 (e2e)', () => {
 
     expect(response.body.items.map((row: { workOrderNo: string }) => row.workOrderNo).sort())
       .toEqual([`${PREFIX}-WO-OPEN`, `${PREFIX}-WO-PLANNED`]);
+  });
+
+  // flowtrack 은 열린 W/O 를 `open=true` 로, 닫힌 W/O 를 `updatedSince=<마지막 받기 − 10분>` 으로 옮겨 받는다.
+  it('바뀐 시각 이후의 W/O 만 낸다 — 같은 시각도 내고, 닫힌 W/O 도 닫힌 때 바뀐 것으로 실린다', async () => {
+    const since = (updatedSince: string) => get('/production/work-orders', { q: PREFIX, updatedSince, size: 200 }).expect(200)
+      .then((response) => response.body.items.map((row: { workOrderNo: string; statusCode: string; updatedAt: string }) =>
+        ({ workOrderNo: row.workOrderNo, statusCode: row.statusCode, updatedAt: row.updatedAt })));
+
+    expect(await since(OPEN_UPDATED_AT)).toEqual([{ workOrderNo: `${PREFIX}-WO-OPEN`, statusCode: 'RELEASED', updatedAt: OPEN_UPDATED_AT }]);
+
+    await prisma.work_order.update({ where: { work_order_no: `${PREFIX}-WO-PLANNED` }, data: { status_code: 'CANCELLED' } });
+    expect(await since('2026-01-01T00:00:00.001Z')).toEqual([{ workOrderNo: `${PREFIX}-WO-PLANNED`, statusCode: 'CANCELLED', updatedAt: expect.any(String) }]);
   });
 
   it('마감 사유 공통코드를 읽는다', async () => {
@@ -85,12 +99,13 @@ describe('추적 시스템 연동 단말 (e2e)', () => {
     const ownLine = await line('L1', own);
     const otherLine = await line('L2', other);
 
-    const workOrder = (code: string, lineId: bigint, status: string, releasedAt: Date | null) => prisma.work_order.create({ data: {
+    const workOrder = (code: string, lineId: bigint, status: string, releasedAt: Date | null, updatedAt?: string) => prisma.work_order.create({ data: {
       work_order_no: `${PREFIX}-WO-${code}`, routing_operation_id: operation.routing_operation_id, item_id: item.item_id, order_qty: 10,
       uom_id: uom.uom_id, status_code: status, production_line_id: lineId, released_at: releasedAt,
+      ...(updatedAt === undefined ? {} : { updated_at: new Date(updatedAt) }),
     } });
-    await workOrder('OPEN', ownLine, 'RELEASED', new Date('2026-11-16T01:00:00.000Z'));
-    await workOrder('PLANNED', ownLine, 'PLANNED', null);
+    await workOrder('OPEN', ownLine, 'RELEASED', new Date('2026-11-16T01:00:00.000Z'), OPEN_UPDATED_AT);
+    await workOrder('PLANNED', ownLine, 'PLANNED', null, '2025-12-31T00:00:00.000Z');
     await workOrder('FOREIGN', otherLine, 'RELEASED', new Date('2026-11-16T01:00:00.000Z'));
 
     const terminal = await prisma.terminal.create({ data: {

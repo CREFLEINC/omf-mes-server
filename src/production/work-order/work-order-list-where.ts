@@ -20,6 +20,7 @@ export interface WorkOrderListQuery {
   workOrderTypeCode?: string;
   plannedStartFrom?: string;
   plannedStartTo?: string;
+  updatedSince?: string;
   q?: string;
   sort?: string;
   withProgress?: boolean;
@@ -117,6 +118,7 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
     plannedEquipmentWhere(query.plannedEquipmentId, query.includeUnplannedEquipment),
     eq('work_order_type_code', query.workOrderTypeCode),
     plannedStartWhere(query.plannedStartFrom, query.plannedStartTo),
+    query.updatedSince === undefined ? {} : { updated_at: { gte: new Date(query.updatedSince) } },
     // ⛔ ERP W/O 번호는 이 축으로 검색되지 않는다(계약 자인) — `work_order_no` 만 본다.
     query.q === undefined ? {} : { work_order_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
   ].filter((clause) => Object.keys(clause).length > 0);
