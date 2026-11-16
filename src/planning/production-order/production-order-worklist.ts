@@ -36,8 +36,11 @@ const PENDING = Prisma.sql`w.released_at IS NULL AND w.status_code IN ('PLANNED'
  * 배포 전제 검사(`release-plan.ts` 의 기본 위치 검사·`lineErrors`)가 막는 것 — 셋 중 하나라도 걸린 배포 전 W/O 가 있으면 배포 대기가
  * 아니라 조치 필요다(배포가 400 이 난다). ⛔ 배포 전제 검사를 바꾸면 이 셋도 함께 고친다 — 갈리면 「배포 대기」를 눌러도 배포가 막힌다.
  */
-const LINE_MISSING = Prisma.sql`w.production_line_id IS NULL`;
-const LOCATION_MISSING = Prisma.sql`(w.default_wip_location_id IS NULL OR w.default_fg_location_id IS NULL OR w.default_scrap_location_id IS NULL)`;
+/** 추적 시스템 연동이 세운 계획의 라인 없는 W/O — 배포는 라인·WIP·스크랩 위치를 보지 않는다(`release-plan.ts` 의 `lineless`). */
+const LINELESS = Prisma.sql`(w.production_line_id IS NULL AND pp.created_automatically)`;
+const LINE_MISSING = Prisma.sql`(w.production_line_id IS NULL AND NOT pp.created_automatically)`;
+const LOCATION_MISSING = Prisma.sql`(w.default_fg_location_id IS NULL OR (NOT ${LINELESS}
+  AND (w.default_wip_location_id IS NULL OR w.default_scrap_location_id IS NULL)))`;
 const LINE_PLANT_MISMATCH = Prisma.sql`(w.production_line_id IS NOT NULL AND NOT EXISTS (
   SELECT 1 FROM mdm.production_line l WHERE l.production_line_id = w.production_line_id AND l.plant_id = o.plant_id))`;
 const BLOCKED = Prisma.sql`(${LINE_MISSING} OR ${LOCATION_MISSING} OR ${LINE_PLANT_MISMATCH})`;

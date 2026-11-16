@@ -164,7 +164,7 @@ export async function writePqcRequest(
     uomId: bigint;
     plan: PqcRequestPlan;
   },
-  appUserId: number,
+  appUserId: number | null,
 ): Promise<void> {
   const existing = await tx.inspection_request.findFirst({
     where: {

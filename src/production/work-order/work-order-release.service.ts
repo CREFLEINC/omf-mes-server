@@ -51,12 +51,15 @@ export class WorkOrderReleaseService {
   /** 대기 요청 즉시 배포 — 00:00 러너와 같은 함수다. 쓰는 의존이 이 서비스의 것과 같아 여기서 짓는다. */
   private readonly issueReleaser: MaterialIssueReleaser;
 
-  /** 생산 창고 공장(피처 003)이면 만든 대기 요청과 미배정 자재를 돌려준다. 아니면 `null` — 지금 방식이다. */
+  /**
+   * 생산 창고 공장(피처 003)이면 만든 대기 요청과 미배정 자재를 돌려준다. 아니면 `null` — 지금 방식이다.
+   * `appUserId` 가 `null` 이면 추적 시스템 연동의 자동 배포다 — 사람이 없어 기록자를 비운다(사용자 2026-11-16).
+   */
   async release(
     workOrderId: number,
     version: number,
     body: WorkOrderRelease,
-    appUserId: number,
+    appUserId: number | null,
   ): Promise<WaitingResult | null> {
     const plan = await releasePlan(this.prisma, this.numbering, workOrderId, body.lotSize);
     const issue = plan.issueRequestNo === null ? null : await this.issuePlan(plan, plan.issueRequestNo);
@@ -94,7 +97,7 @@ export class WorkOrderReleaseService {
     plan: ReleasePlan,
     issue: IssuePlan | null,
     pqc: PqcRequestPlan | null,
-    appUserId: number,
+    appUserId: number | null,
   ): Promise<WaitingResult | null> {
     const locked = await lockWorkOrder(tx, workOrderId);
     // ⭐ 버전 대조가 전이 검사보다 «먼저»다(`document-cancel.service.ts` 선례).
@@ -160,7 +163,8 @@ export class WorkOrderReleaseService {
             },
             this.issueReleaser,
           );
-    await this.workOrderNotices.released(tx, BigInt(workOrderId));
+    // 자동 흐름의 W/O 는 사람이 인계받지 않는다 — 추적 시스템이 목록에서 가져간다(사용자 2026-11-16).
+    if (!plan.plan.created_automatically) await this.workOrderNotices.released(tx, BigInt(workOrderId));
     return waiting;
   }
 
@@ -169,7 +173,7 @@ export class WorkOrderReleaseService {
     workOrderId: number,
     issue: IssuePlan,
     destinationLocationId: bigint,
-    appUserId: number,
+    appUserId: number | null,
   ): Promise<void> {
     const header = await tx.material_issue_request.create({
       data: {

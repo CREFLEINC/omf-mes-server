@@ -40,6 +40,7 @@ const RELEASE_SELECT = {
       bom_id: true,
       bom: { select: { bom_version: true, base_qty: true } },
       production_order: { select: { plant_id: true, plant: { select: { timezone_code: true } } } },
+      created_automatically: true,
     },
   },
 } satisfies Prisma.work_orderSelect;
@@ -105,15 +106,19 @@ export async function releasePlan(
   }
 
   // ⛔ 이 검사와 `lineErrors` 를 바꾸면 `production-order-worklist.ts` 의 조각도 함께 고친다 — 갈리면 ERP W/O 목록에는 「배포 대기」로 보이는데 배포가 막힌다.
-  const missingLocations = [
-    ['defaultWipLocationId', row.default_wip_location_id],
-    ['defaultFgLocationId', row.default_fg_location_id],
-    ['defaultScrapLocationId', row.default_scrap_location_id],
-  ] as const;
-  const locationErrors = missingLocations
+  // 추적 시스템 연동이 세운 계획의 W/O 는 라인 없이 배포한다 — 현장 단말이 다루지 않는다(사용자 2026-11-12). 제품은 완제품 위치로 들어간다.
+  const lineless = plan.created_automatically && row.production_line_id === null;
+  const requiredLocations: [string, bigint | null][] = lineless
+    ? [['defaultFgLocationId', row.default_fg_location_id]]
+    : [
+        ['defaultWipLocationId', row.default_wip_location_id],
+        ['defaultFgLocationId', row.default_fg_location_id],
+        ['defaultScrapLocationId', row.default_scrap_location_id],
+      ];
+  const locationErrors = requiredLocations
     .filter(([, value]) => value === null)
     .map(([name]) => field(name, ERROR_CODE.REQUIRED, '배포 전에 기본 위치를 지정해야 합니다.'));
-  const preconditionErrors = [...locationErrors, ...lineErrors(row, plan)];
+  const preconditionErrors = [...locationErrors, ...(lineless ? [] : lineErrors(row, plan))];
   if (preconditionErrors.length > 0) {
     throw new ContractException(HttpStatus.BAD_REQUEST, preconditionErrors);
   }
