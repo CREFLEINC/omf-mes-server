@@ -17,6 +17,8 @@ import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
 const STATUS_COLUMN = 'production.work_order.status_code';
 const CLOSE_ACTION = 'work-order-close';
+/** 추적 시스템 연동이 세운 계획의 W/O 를 배포 상태에서 마감하는 전이 — `closeWithin` 만 쓴다. */
+const AUTO_CLOSE_ACTION = 'work-order-close-auto';
 const VARIANCE_REASON_GROUP = 'WORK_ORDER_COMPLETION_VARIANCE_REASON';
 /** 아웃박스 대상 유형(승인 다형 축) — 시드 `INTERFACE_TARGET` 이 열려 있다(I-6 §1-6). */
 const WORK_ORDER_TARGET = 'WORK_ORDER';
@@ -60,16 +62,25 @@ export class WorkOrderCloseService {
     ]);
     // 계정이 없는 요청(단말)만 사번으로 작업자를 푼다 — 관리웹 마감은 계정이 남는다.
     const closedWorkerId = actor.appUserId === undefined ? await resolveWorkerId(this.prisma, actor.workerNo) : null;
-    await this.prisma.$transaction((tx) => this.commit(tx, workOrderId, version, body, actor, closedWorkerId));
+    await this.prisma.$transaction((tx) => this.commit(tx, workOrderId, version, body, actor, closedWorkerId, CLOSE_ACTION));
+  }
+
+  /**
+   * 추적 시스템 연동의 마감 — 호출자의 트랜잭션 안에서, 그 트랜잭션의 «마지막» W/O 쓰기로 부른다(마감한 W/O 는 고칠 수 없다).
+   * 자동 흐름이 세운 계획의 W/O 만 배포 상태에서 바로 마감한다. 마감한 작업자는 호출자가 준다(연동은 시스템 작업자).
+   */
+  async closeWithin(tx: Tx, workOrderId: number, body: WorkOrderClose, closedWorkerId: bigint): Promise<void> {
+    await this.commit(tx, workOrderId, undefined, body, {}, closedWorkerId, AUTO_CLOSE_ACTION);
   }
 
   private async commit(
     tx: Tx,
     workOrderId: number,
-    version: number,
+    version: number | undefined,
     body: WorkOrderClose,
     actor: WorkOrderCloseActor,
     closedWorkerId: bigint | null,
+    action: string,
   ): Promise<void> {
     const { appUserId } = actor;
     const locked = await lockWorkOrder(tx, workOrderId);
@@ -77,8 +88,9 @@ export class WorkOrderCloseService {
     // ⭐ 열린 세션 검사가 전이 검사보다 «먼저»다 — 계약이 이 자리에만 409 봉투를 지정했고,
     //    전이가 먼저 걸리면 진행 중인 W/O 가 400 을 받아 화면이 띄울 문구를 잃는다(§5-1).
     await assertNoOpenSession(tx, workOrderId);
+    const automatic = await createdAutomatically(tx, workOrderId);
     // 상태가 본문보다 먼저다 — 마감할 수 없는 W/O 에 「처분을 고르라」를 먼저 보이면 고쳐도 다시 막힌다.
-    const transition = this.assertClosable(locked.status_code);
+    const transition = this.assertClosable(locked.status_code, automatic ? action : CLOSE_ACTION);
 
     const goodSum = await goodQty(tx, workOrderId);
     const judgment = judgeCompletion(goodSum, locked.order_qty);
@@ -108,6 +120,8 @@ export class WorkOrderCloseService {
     await this.voidEmptySlots(tx, workOrderId, closedAt);
     // 생산 창고 규칙의 출고 요청 정리 — 진행 없음 취소, 진행 있음 미출고분 닫기(피처 003 FR-028).
     await settleWorkOrderRequests(tx, this.documentState, { workOrderId: BigInt(workOrderId), reason: 'WO_CLOSED', appUserId: appUserId ?? null });
+    // 자동 흐름의 W/O 는 ERP 생산입고를 보내지 않고(ERP 송신은 연동 범위 밖) 사람에게 마감을 알리지 않는다(flowtrack 연동 제안 §7-3 의 4).
+    if (automatic) return;
     await this.outbox.enqueue(tx, {
       interfaceCode: IF_WO_CLOSE,
       messageKey: outboxMessageKey(IF_WO_CLOSE, row.work_order_no),
@@ -131,9 +145,9 @@ export class WorkOrderCloseService {
   }
 
   /** ⛔ 400 이다 — 409 는 If-Match 저장 충돌이 쓴다(§1-6). 문구만 상태별 조치로 바꾼다. */
-  private assertClosable(statusCode: string) {
+  private assertClosable(statusCode: string, action: string) {
     try {
-      return this.documentState.assertTransition(STATUS_COLUMN, CLOSE_ACTION, statusCode, HttpStatus.BAD_REQUEST);
+      return this.documentState.assertTransition(STATUS_COLUMN, action, statusCode, HttpStatus.BAD_REQUEST);
     } catch (error) {
       if (!(error instanceof ContractException)) throw error;
       const message = `진행 중이거나 중단된 W/O 만 마감됩니다 — ${NOT_CLOSABLE[statusCode] ?? `${statusCode} 상태입니다. W/O 상태를 확인하세요.`}`;
@@ -195,6 +209,15 @@ async function assertNoOpenSession(tx: Tx, workOrderId: number): Promise<void> {
       '그 단말에서 작업을 종료하거나 관리웹에서 작업 세션을 강제 종료한 뒤 다시 마감하세요.',
     { code: ERROR_CODE.OPEN_SESSION_EXISTS, openSessions },
   );
+}
+
+/** 추적 시스템 연동이 사람 없이 세운 계획의 W/O 인가(`production_plan.created_automatically`). */
+async function createdAutomatically(tx: Tx, workOrderId: number): Promise<boolean> {
+  const row = await tx.work_order.findUnique({
+    where: { work_order_id: BigInt(workOrderId) },
+    select: { production_plan: { select: { created_automatically: true } } },
+  });
+  return row?.production_plan?.created_automatically === true;
 }
 
 /**

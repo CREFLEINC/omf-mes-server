@@ -57,6 +57,8 @@ function stub(options: { status?: string; goodSum?: number; openSession?: boolea
       },
     },
     work_order: {
+      // 사람이 세운 계획의 W/O — 자동 흐름의 배포 상태 마감은 e2e(`tracking-system-result-close`)가 본다.
+      findUnique: () => Promise.resolve({ production_plan: { created_automatically: false } }),
       update: ({ data }: { data: Row }) => {
         updates.push(data);
         return Promise.resolve({ work_order_no: 'WO-20260906-0001', item_id: 11n });

@@ -376,6 +376,10 @@ export const TRANSITIONS: TransitionRegistry = {
     // 중단 세션은 종료(또는 관리웹 강제 종료)를 거쳐야 닫힌다.
     'work-order-close':   { from: ['COMPLETED', 'IN_PROGRESS', 'SUSPENDED'], to: 'CLOSED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:close' },
+    // 추적 시스템 연동이 세운 계획의 W/O — 작업 세션 없이 배포 상태로 실적을 받으므로 배포 상태에서 바로 마감한다
+    // (flowtrack 연동 제안 §1-1 의 17). 연동 처리만 부른다 — 관리웹 `:close` 는 위 전이다.
+    'work-order-close-auto': { from: ['RELEASED', 'COMPLETED', 'IN_PROGRESS', 'SUSPENDED'], to: 'CLOSED',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:close' },
     'work-order-cancel':  { from: ['PLANNED','CONFIRMED','RELEASED','IN_PROGRESS','SUSPENDED'], to: 'CANCELLED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel' },
     // `IN_PROGRESS` 도 `from` 에 있다 — 계약 `sessionNo` ⌜`:end` 한 뒤 다시 시작⌝ 이
