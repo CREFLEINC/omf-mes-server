@@ -10027,7 +10027,7 @@
      "trace"
     ],
     "summary": "LOT 하나의 하위 사슬(정방향)",
-    "description": "입하·자재입고 → 투입 W/O → 생산 LOT → 생산입고·포장(출하 단위)·출하. 반제품은 한 번에 한 단만 푼다 — consumedFurther 가 0 보다 큰 생산 LOT 으로 다시 부른다. 실적 배분이 없는 생산 LOT 은 잇지 않는다. 근거: 서버 선행 · 장부 P-119",
+    "description": "입하·자재입고 → 투입 W/O → 생산 LOT → 생산입고·포장(출하 단위)·출하. 반제품은 한 번에 한 단만 푼다 — consumedFurther 가 0 보다 큰 생산 LOT 으로 다시 부른다. 실적 배분이 없는 생산 LOT 은 잇지 않는다. 근거: 서버 선행 · 장부 P-119 부분 출고 분할(피처 008): 투입·생산 LOT 이음은 이 LOT 과 그 분할 자손(SPLIT 계보)의 투입을 함께 센다.",
     "security": [
      {
       "omfSession": []
@@ -10050,7 +10050,9 @@
             "basis",
             "workOrders",
             "truncated",
-            "totalProductionLotCount"
+            "totalProductionLotCount",
+            "splitFrom",
+            "splits"
            ],
            "properties": {
             "lot": {
@@ -10080,7 +10082,8 @@
                "firstConsumedAt",
                "lastConsumedAt",
                "linkBasis",
-               "productionLots"
+               "productionLots",
+               "viaLot"
               ],
               "properties": {
                "workOrderId": {
@@ -10123,6 +10126,30 @@
                 "items": {
                  "$ref": "#/components/schemas/LotFlowProductionLot"
                 }
+               },
+               "viaLot": {
+                "oneOf": [
+                 {
+                  "type": "object",
+                  "required": [
+                   "lotId",
+                   "lotNo"
+                  ],
+                  "properties": {
+                   "lotId": {
+                    "type": "integer",
+                    "format": "int64"
+                   },
+                   "lotNo": {
+                    "type": "string"
+                   }
+                  }
+                 },
+                 {
+                  "type": "null"
+                 }
+                ],
+                "description": "이 LOT 이 아니라 분할 자손으로만 투입된 W/O 면 그 자손 LOT(첫 투입). 이 LOT 자신이 투입됐으면 null"
                }
               }
              },
@@ -10134,6 +10161,24 @@
             },
             "totalProductionLotCount": {
              "type": "integer"
+            },
+            "splitFrom": {
+             "oneOf": [
+              {
+               "$ref": "#/components/schemas/LotFlowSplitLink"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "description": "이 LOT 이 분할 LOT 이면 그 부모(분할된 원래 LOT)"
+            },
+            "splits": {
+             "type": "array",
+             "items": {
+              "$ref": "#/components/schemas/LotFlowSplitLink"
+             },
+             "description": "이 LOT 에서 나온 분할 LOT — 자손 전체, 깊이 순(같은 깊이는 분할 시각 순). workOrders·생산 LOT 이음은 이 자손들의 투입을 함께 센다"
             }
            }
           }
@@ -16384,7 +16429,7 @@
         "type": "null"
        }
       ],
-      "description": "재생재·분할 LOT 처럼 입하에서 오지 않았으면 null"
+      "description": "재생재·분할 LOT 처럼 입하에서 오지 않았으면 null 분할 LOT 은 입하 LOT 칸이 비어 있어 뿌리 조상(원래 자재 LOT)의 입하를 보인다(피처 008)."
      },
      "receipts": {
       "type": "array",
@@ -16588,7 +16633,8 @@
        "lastConsumedAt",
        "linkBasis",
        "producedBy",
-       "cyclic"
+       "cyclic",
+       "splitAncestry"
       ],
       "properties": {
        "consumedQty": {
@@ -16632,6 +16678,13 @@
        "cyclic": {
         "type": "boolean",
         "description": "조회한 LOT 자신으로 되돌아왔다(경로 대조는 화면이 한다)"
+       },
+       "splitAncestry": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/LotFlowSplitLink"
+        },
+        "description": "투입된 LOT 이 분할 LOT 이면 그 조상 — 가까운 부모부터 뿌리(원래 자재 LOT)까지. 분할 LOT 이 아니면 빈 목록"
        }
       }
      }
@@ -28971,6 +29024,69 @@
       }
      }
     ]
+   },
+   "LotFlowSplitLink": {
+    "type": "object",
+    "description": "분할 관계 한 줄(피처 008 · omf-all-around#289). lot 은 이 관계로 이어진 상대 LOT — splitFrom·splitAncestry 에서는 부모(분할된 원래 LOT), splits 에서는 자식(분할 LOT)이다.",
+    "required": [
+     "relationTypeCode",
+     "lot",
+     "qty",
+     "uomCode",
+     "splitAt",
+     "goodsIssue"
+    ],
+    "properties": {
+     "relationTypeCode": {
+      "type": "string",
+      "enum": [
+       "SPLIT"
+      ]
+     },
+     "lot": {
+      "$ref": "#/components/schemas/LotFlowLotHead"
+     },
+     "qty": {
+      "type": "number",
+      "description": "분할 수량"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "goodsIssue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "분할을 일으킨 출고 라인 — 출고가 아닌 옛 분할(처분 선별)은 null",
+      "required": [
+       "goodsIssueId",
+       "goodsIssueNo",
+       "goodsIssueLineId",
+       "lineNo"
+      ],
+      "properties": {
+       "goodsIssueId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "goodsIssueNo": {
+        "type": "string"
+       },
+       "goodsIssueLineId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lineNo": {
+        "type": "integer"
+       }
+      }
+     }
+    }
    }
   },
   "securitySchemes": {

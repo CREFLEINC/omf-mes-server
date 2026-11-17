@@ -7,6 +7,7 @@ import {
   InputWindow,
   WORK_ORDER_LOT_SOURCE,
   inputWindows,
+  lotWithSplitDescendants,
   lotsAt,
   madeAt,
   tracedWorkOrders,
@@ -91,8 +92,10 @@ export class LotGenealogyQueryService {
     const page = pageRequest(query);
     const lot = await this.prisma.lot.findUnique({ where: { lot_id: BigInt(lotId) }, select: { lot_id: true } });
     if (lot === null) throw new NotFoundException('없는 LOT 입니다.');
+    // 부분 출고 분할 LOT 은 이 LOT 의 일부다 — 자손이 들어간 시리얼도 낸다(피처 008 D-13).
+    const family = new Set(await lotWithSplitDescendants(this.prisma, [BigInt(lotId)]));
     const consumed = await this.prisma.material_consumption.findMany({
-      where: { lot_id: BigInt(lotId) },
+      where: { lot_id: { in: [...family] } },
       distinct: ['work_order_id'],
       select: { work_order_id: true },
     });
@@ -101,7 +104,7 @@ export class LotGenealogyQueryService {
     const found: UsedSerialView[] = [];
     for (const workOrderId of workOrderIds) {
       const mine = traced.has(workOrderId)
-        ? (await this.windowsOf(workOrderId)).filter((w) => w.lotId === BigInt(lotId))
+        ? (await this.windowsOf(workOrderId)).filter((w) => family.has(w.lotId))
         : null;
       const serials = await this.prisma.serial_number.findMany({
         where: { lot: { source_type_code: WORK_ORDER_LOT_SOURCE, source_id: workOrderId } },
