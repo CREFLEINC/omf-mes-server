@@ -201,7 +201,7 @@
       }
      },
      "400": {
-      "description": "검증 실패",
+      "description": "검증 실패. locationPrefix — 형식이 틀리면 INVALID, 다른 창고가 쓰면 UNIQUE_VIOLATION(uniqueScope [locationPrefix] · omf-all-around#292)",
       "content": {
        "application/json": {
         "schema": {
@@ -341,7 +341,7 @@
       }
      },
      "400": {
-      "description": "검증 실패",
+      "description": "검증 실패. locationPrefix 를 지금 값과 다르게 보내면 STATE_LOCKED — 창고 위치 코드는 등록한 뒤 바꿀 수 없다(omf-all-around#292)",
       "content": {
        "application/json": {
         "schema": {
@@ -548,12 +548,12 @@
      {
       "name": "warehouseId",
       "in": "query",
-      "required": true,
+      "required": false,
       "schema": {
        "type": "integer",
        "format": "int64"
       },
-      "description": "필수. Location 은 창고를 고른 뒤에 본다 — W-06-07 §3 ⚠ 위치 «코드» 스캔은 locationCode 와 함께 보낸다 — 창고는 적치 지시·화면 문맥이 준다."
+      "description": "locationCode 가 없으면 필수(없으면 400 REQUIRED). Location 은 창고를 고른 뒤에 본다 — W-06-07 §3. 위치 코드는 창고 위치 코드(Warehouse.locationPrefix)로 시작하고 모든 창고를 통틀어 유일하다(omf-all-around#292) — 위치 «코드» 스캔은 locationCode 만 보내도 한 건이 집힌다. 함께 보내면 그 창고 안에서만 찾는다."
      },
      {
       "name": "q",
@@ -19231,7 +19231,8 @@
      "warehouseTypeCode",
      "isExternal",
      "isDefect",
-     "isActive"
+     "isActive",
+     "locationPrefix"
     ],
     "description": "창고.",
     "properties": {
@@ -19293,6 +19294,13 @@
       "type": "boolean",
       "default": true,
       "example": true
+     },
+     "locationPrefix": {
+      "x-source-column": "location_prefix",
+      "type": "string",
+      "pattern": "^[A-Z0-9]{2,6}$",
+      "description": "창고 위치 코드 — 이 창고의 위치 코드 앞에 붙는다({locationPrefix}-Z01 · {locationPrefix}-SYS-STAGING). 모든 창고를 통틀어 유일하고, 등록한 뒤에는 바꾸지 않는다. 창고 코드와 따로다. 근거: 사용자 결정 2026-11-17 · omf-all-around#292",
+      "example": "K7QX"
      }
     },
     "x-internal-note": "미착지: 다국어(한/베) 명칭 — #64"
@@ -19356,6 +19364,13 @@
       "default": false,
       "description": "불량창고 여부. 근거: DR-012 확정 3-C · omf-mes#147",
       "example": false
+     },
+     "locationPrefix": {
+      "x-source-column": "location_prefix",
+      "type": "string",
+      "pattern": "^[A-Z0-9]{2,6}$",
+      "description": "창고 위치 코드 — 선택. 빼면 서버가 쓰지 않은 무작위 4자(영문 대문자·숫자, 헷갈리는 0/O·1/I/L 제외)를 채운다. 사람이 고칠 때는 대문자·숫자 2~6자. 형식이 틀리면 400 INVALID, 다른 창고가 쓰면 400 UNIQUE_VIOLATION(uniqueScope [locationPrefix]). 등록한 뒤에는 바꿀 수 없다. 근거: omf-all-around#292",
+      "example": "K7QX"
      }
     }
    },
@@ -19411,6 +19426,13 @@
       "type": "boolean",
       "description": "불량창고 여부. 근거: DR-012 확정 3-C · omf-mes#147",
       "example": false
+     },
+     "locationPrefix": {
+      "x-source-column": "location_prefix",
+      "type": "string",
+      "pattern": "^[A-Z0-9]{2,6}$",
+      "description": "창고 위치 코드 — 등록한 뒤 바꿀 수 없다. 빼거나 지금 값과 같으면 통과하고, 다르면 400 STATE_LOCKED(바꾸면 그 창고의 위치 코드와 붙인 라벨이 어긋난다). 근거: omf-all-around#292",
+      "example": "K7QX"
      }
     }
    },
@@ -19471,9 +19493,9 @@
       "x-source-column": "location_code",
       "type": "string",
       "maxLength": 50,
-      "example": "Z01-R001-L01-C01",
+      "example": "K7QX-Z01-R001-L01-C01",
       "x-no-code-key": "코드 그룹이 아니다 — Location 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다.",
-      "description": "서버가 발행한다 — 구역 Z01 · 랙 {구역}-R001 · 층 {랙}-L01 · 셀 {층}-C01, 같은 상위 안 가장 큰 번호 + 1(자리 수를 넘으면 늘어난다). 바꿀 수 없다. 서버가 만든 자리는 SYS-STAGING · SYS-WHOLE"
+      "description": "서버가 발행한다 — 구역 {창고 위치 코드}-Z01 · 랙 {구역}-R001 · 층 {랙}-L01 · 셀 {층}-C01, 같은 상위 안 가장 큰 번호 + 1(자리 수를 넘으면 늘어난다). 창고 위치 코드는 Warehouse.locationPrefix 다(창고 코드가 아니다). 바꿀 수 없다. 모든 창고를 통틀어 유일하다(uq_location_code · omf-all-around#292) — 위치 QR 하나로 창고까지 풀린다. 서버가 만든 자리는 {창고 위치 코드}-SYS-STAGING · {창고 위치 코드}-SYS-WHOLE. 2026-11-17 이전 코드(사람이 짓던 S230-01 등 포함)는 예외 없이 {창고 위치 코드}-{옛 코드}로 바꾸었다"
      },
      "locationName": {
       "x-source-column": "location_name",

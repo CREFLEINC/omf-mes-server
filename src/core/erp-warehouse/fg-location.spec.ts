@@ -59,12 +59,12 @@ describe('resolveFgLocations — SL_CD → 창고 → 완제품 위치', () => {
 
   it('나뉘지 않은 창고는 「창고 전체」를 쓴다', async () => {
     expect(await resolve('S10')).toMatchObject({
-      kind: 'ERP_STORAGE_LOCATION', warehouse: { id: 10n, code: 'S10' }, location: { id: 100n, isActive: true },
+      kind: 'ERP_STORAGE_LOCATION', warehouse: { id: 10n, code: 'S10' }, location: { id: 100n, isActive: true, systemRoleCode: WAREHOUSE_WHOLE },
     });
   });
 
   it('나뉜 창고는 「적치 대기」를 쓴다', async () => {
-    expect(await resolve('S11')).toMatchObject({ kind: 'ERP_STORAGE_LOCATION', warehouse: { id: 11n }, location: { id: 111n } });
+    expect(await resolve('S11')).toMatchObject({ kind: 'ERP_STORAGE_LOCATION', warehouse: { id: 11n }, location: { id: 111n, systemRoleCode: PUTAWAY_STAGING } });
   });
 
   it('SL_CD 를 앞뒤 공백 없이 비교하고, 비었으면 NO_STORAGE_CODE', async () => {
@@ -98,7 +98,7 @@ describe('resolveFgLocations — SL_CD → 창고 → 완제품 위치', () => {
 
 describe('fgLocationOf — 출처', () => {
   const erp: FgResolution = {
-    kind: 'ERP_STORAGE_LOCATION', erpCode: 'S10', warehouse: { id: 10n, code: 'S10', name: 'a' }, location: { id: 100n, code: 'L', name: 'l', isActive: true },
+    kind: 'ERP_STORAGE_LOCATION', erpCode: 'S10', warehouse: { id: 10n, code: 'S10', name: 'a' }, location: { id: 100n, code: 'L', name: 'l', isActive: true, systemRoleCode: 'WAREHOUSE_WHOLE' },
   };
 
   it('ERP 창고가 정해졌으면 라인 기본값이 있어도 ERP 위치다', () => {
@@ -119,7 +119,7 @@ describe('locationFinding — 사용자가 넣은 위치', () => {
     warehouse: { plant_id: 1n, warehouse_type_code: 'PRODUCT', is_active: true, is_external: false, is_defect: false, ...over },
   });
   const erp: FgResolution = {
-    kind: 'ERP_STORAGE_LOCATION', erpCode: 'S10', warehouse: { id: 10n, code: 'S10', name: '완제품' }, location: { id: 100n, code: 'L', name: 'l', isActive: true },
+    kind: 'ERP_STORAGE_LOCATION', erpCode: 'S10', warehouse: { id: 10n, code: 'S10', name: '완제품' }, location: { id: 100n, code: 'L', name: 'l', isActive: true, systemRoleCode: 'WAREHOUSE_WHOLE' },
   };
 
   it('규칙 없이(WIP·스크랩) 보면 공장·자재·활성만 본다', () => {

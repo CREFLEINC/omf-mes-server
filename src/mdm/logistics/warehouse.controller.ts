@@ -105,6 +105,8 @@ interface WarehouseCreateBody {
   warehouseTypeCode: string;
   isExternal?: boolean;
   isDefect?: boolean;
+  /** 창고 위치 코드 — 빼면 서버가 무작위로 채운다(omf-all-around#292). */
+  locationPrefix?: string;
 }
 
 interface WarehouseUpdateBody {
@@ -114,4 +116,6 @@ interface WarehouseUpdateBody {
   warehouseTypeCode: string;
   isExternal: boolean;
   isDefect: boolean;
+  /** 등록한 뒤 바꾸지 않는다 — 빼거나 같은 값만 받는다(#292). */
+  locationPrefix?: string;
 }

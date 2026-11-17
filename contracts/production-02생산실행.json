@@ -8223,11 +8223,17 @@
      "location": {
       "type": ["object", "null"],
       "description": "결정된 입고 위치(창고 전체 또는 적치 대기). warehouse 와 함께 null 이다",
-      "required": ["id", "code", "name"],
+      "required": ["id", "code", "name", "systemRoleCode"],
       "properties": {
        "id": {"type": "integer", "format": "int64", "example": 1001},
-       "code": {"type": "string", "example": "WH-ALL"},
-       "name": {"type": "string", "example": "창고 전체"}
+       "code": {"type": "string", "example": "K7QX-SYS-WHOLE"},
+       "name": {"type": "string", "example": "창고 전체"},
+       "systemRoleCode": {
+        "type": ["string", "null"],
+        "enum": ["PUTAWAY_STAGING", "WAREHOUSE_WHOLE", null],
+        "description": "그 위치의 역할 — 적치 대기(PUTAWAY_STAGING) · 창고 전체(WAREHOUSE_WHOLE). 위치 코드가 창고 위치 코드로 시작하므로(omf-all-around#292) 적치 대기는 code 글자가 아니라 이 값으로 가린다",
+        "example": "WAREHOUSE_WHOLE"
+       }
       }
      },
      "reasonCode": {
