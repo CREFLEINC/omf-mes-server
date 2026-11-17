@@ -9,6 +9,8 @@ import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { AcknowledgeService, ProductionOrderAcknowledge } from './acknowledge.service';
 import { AutoPlanResult, AutoPlanService } from './auto-plan.service';
+import type { AuditEventView } from '../../audit/audit-event-view';
+import { ProductionOrderAuditQuery, ProductionOrderAuditService } from './production-order-audit.service';
 import { ProductionOrderCreate, ProductionOrderCreateService } from './production-order-create.service';
 import { ProductionOrderDetailQuery, ProductionOrderListQuery, ProductionOrderService } from './production-order.service';
 import { ProductionOrderView } from './production-order-view';
@@ -24,6 +26,7 @@ export class ProductionOrderController {
     private readonly creates: ProductionOrderCreateService,
     private readonly autoPlans: AutoPlanService,
     private readonly idempotency: IdempotencyService,
+    private readonly audits: ProductionOrderAuditService,
   ) {}
 
   @Get()
@@ -56,6 +59,18 @@ export class ProductionOrderController {
     const { view, versionNo } = await this.queries.detail(productionOrderId, query, userOf(request));
     setEtag(response, versionNo);
     return view;
+  }
+
+  /** 이 ERP W/O 의 감사 기록 — 범위 밖·없는 ERP W/O 는 404. */
+  @Get(':productionOrderId/audit-events')
+  @Contract('GET /planning/production-orders/{productionOrderId}/audit-events')
+  async auditEvents(
+    @Req() request: Request,
+    @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
+    @Query() query: ProductionOrderAuditQuery,
+  ): Promise<PagedResponse<AuditEventView>> {
+    await this.queries.assertInScope(productionOrderId, userOf(request));
+    return this.audits.list(productionOrderId, query);
   }
 
   /**
