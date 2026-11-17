@@ -10,14 +10,14 @@ import { ProductionModule } from '../../production/production.module';
 import { SyncLease } from '../erp/sync-lease';
 import { AUTO_WORK_ORDER_LEASE, AutoWorkOrderRunner } from './auto-work-order.runner';
 import { AutoWorkOrderService } from './auto-work-order.service';
-import { StockMoveController } from './stock-move.controller';
+import { TrackingSystemController } from './tracking-system.controller';
 import { StockIssueService } from './stock-issue.service';
 import { StockMoveService } from './stock-move.service';
 
 /** 추적 시스템(flowtrack) 연동 — OA 자동 W/O · 포장 입고이동 · 출하 출고. 다른 도메인이 내보낸 서비스·함수를 부른다(사용자 결정 2026-11-16). */
 @Module({
   imports: [PrismaModule, PlanningModule, ProductionModule, NumberingModule, InventoryPostingModule],
-  controllers: [StockMoveController],
+  controllers: [TrackingSystemController],
   providers: [
     AutoWorkOrderService,
     StockMoveService,
