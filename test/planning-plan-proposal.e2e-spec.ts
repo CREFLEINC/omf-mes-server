@@ -742,7 +742,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(await prisma.audit_event.findMany({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: changedOrder } })).toEqual([expect.objectContaining({
         event_type_code: 'UPDATE', correlation_id: key,
         before_value: { systemDate: shiftDays(H, 2) },
-        after_value: expect.objectContaining({ eventCode: 'PLAN_DATE_USER_ON_HOLIDAY', productionPlanId: changed.body.plans[0].productionPlanId, planDate: H, calendarStatusCode: 'HOLIDAY' }),
+        after_value: { eventCode: 'PLAN_DATE_USER_ON_HOLIDAY', detail: expect.objectContaining({ productionPlanId: changed.body.plans[0].productionPlanId, planDate: H, calendarStatusCode: 'HOLIDAY' }) },
       })]);
       // 휴일이 아닌 USER 날짜·SYSTEM 날짜는 남기지 않는다.
       expect(await prisma.audit_event.count({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: order['HOL-NEW'] } })).toBe(0);

@@ -16,7 +16,7 @@ export interface UserHolidayDate {
 
 /**
  * 사람이 휴일 경고를 보고도 직접 정한 계획일(출처 USER)을 남긴다 — 계획마다 한 줄, 확정과 같은 트랜잭션.
- * 저장 규약은 작성중 계획 대체 기록(`draft-replace.ts`)과 같다 — 유형은 시스템 소유 값(UPDATE)이고 사건은 afterValue.eventCode 다.
+ * 저장 규약은 작성중 계획 대체 기록(`draft-replace.ts`)과 같다 — 유형은 시스템 소유 값(UPDATE)이고 사건은 afterValue.eventCode, 내용은 afterValue.detail 이다.
  */
 export async function recordUserHolidayDates(
   tx: Prisma.TransactionClient,
@@ -35,11 +35,13 @@ export async function recordUserHolidayDates(
       before_value: { systemDate: plan.systemDate },
       after_value: {
         eventCode: PLAN_DATE_USER_ON_HOLIDAY,
-        productionPlanId: plan.productionPlanId,
-        planNo: plan.planNo,
-        planDate: plan.planDate,
-        calendarStatusCode: plan.day.statusCode,
-        calendarReasonCode: plan.day.reasonCode,
+        detail: {
+          productionPlanId: plan.productionPlanId,
+          planNo: plan.planNo,
+          planDate: plan.planDate,
+          calendarStatusCode: plan.day.statusCode,
+          calendarReasonCode: plan.day.reasonCode,
+        },
       },
     })),
   });
