@@ -26,6 +26,7 @@ import {
   statusOf,
   warnIssue,
 } from './proposal-policy';
+import { ExistingDraftAction } from './plan-set-rules';
 import { OperationRow, OrderRow, PlanRow, ProposalFacts, fgOf, routingFor } from './proposal-reader';
 import { resourceFindings } from './resource-rules';
 
@@ -82,17 +83,33 @@ export interface Proposal {
   basis: ProposalBasis;
   /** ERP W/O 의 입고 창고(`SL_CD`) 판정 — 공정 W/O 의 완제품 위치가 이것을 따른다. */
   fg: FgResolution;
+  /** 이 ERP W/O 의 작성중 계획 — 제안이 그것을 바탕으로 했든(REVIEW_DRAFT) 아니든 요약으로 보인다. */
+  drafts: ExistingDraft[];
+  /** 사람이 나누거나 더한 새 계획(제안에 없는 new-N)의 기준 — 시스템 날짜·기본 BOM·Routing. 계획을 세울 수 없으면 null. */
+  newPlanTemplate: ProposalPlan | null;
+}
+
+export interface ExistingDraft {
+  row: PlanRow;
+  lineCode: string | null;
+  lineName: string | null;
+  createdByName: string | null;
+  /** 이 작성중 계획을 분할 원본으로 가리키는 다른 계획(같이 지울 작성중 계획은 빼고). */
+  splitChildIds: bigint[];
 }
 
 const CONFIRMED = 'CONFIRMED';
 const CANCELLED = 'CANCELLED';
 
-/** 읽은 사실에서 ERP W/O 마다 제안을 만든다 — 쓰지 않는다. `now` 는 계획일·교정 기한의 「오늘」이다. */
-export function buildProposals(facts: ProposalFacts, now: Date): Map<bigint, Proposal> {
-  return new Map(facts.orders.map((order) => [order.production_order_id, buildOne(facts, order, now)]));
+/**
+ * 읽은 사실에서 ERP W/O 마다 제안을 만든다 — 쓰지 않는다. `now` 는 계획일·교정 기한의 「오늘」이다.
+ * `action` 은 작성중 계획이 있는 ERP W/O 의 바탕이다 — CONTINUE 면 작성중 계획, 아니면 대체할 새 계획.
+ */
+export function buildProposals(facts: ProposalFacts, now: Date, action: ExistingDraftAction = 'REPLACE'): Map<bigint, Proposal> {
+  return new Map(facts.orders.map((order) => [order.production_order_id, buildOne(facts, order, now, action)]));
 }
 
-function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
+function buildOne(facts: ProposalFacts, order: OrderRow, now: Date, action: ExistingDraftAction): Proposal {
   const saved = facts.plans.get(order.production_order_id) ?? [];
   const qtyFacts = saved.map((plan) => ({
     plan,
@@ -102,10 +119,14 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   }));
   const { confirmedQty, draftQty } = sumPlanQty(qtyFacts);
   const quantities = planQuantities(order.order_qty, confirmedQty, draftQty);
-  const result = (kind: ProposalKind, plans: ProposalPlan[], issues: ProposalIssue[]): Proposal => {
+  const drafts = qtyFacts.filter((fact) => !fact.confirmed).map((fact) => fact.plan);
+  const result = (kind: ProposalKind, plans: ProposalPlan[], issues: ProposalIssue[], newPlanTemplate: ProposalPlan | null = null): Proposal => {
     const reasons = reasonsOf([...issues, ...plans.flatMap((plan) => [...plan.issues, ...plan.workOrders.flatMap((workOrder) => workOrder.issues)])]);
     const basis = { ...basisOf(facts, order, saved), calendar: calendarBasis(plans) };
-    return { order, kind, status: statusOf(kind, order.status_code === CANCELLED, reasons), reasons, quantities, plans, issues, basis, fg: fgOf(facts, order) };
+    return {
+      order, kind, status: statusOf(kind, order.status_code === CANCELLED, reasons), reasons, quantities, plans, issues, basis, fg: fgOf(facts, order),
+      drafts: drafts.map((row) => existingDraftOf(facts, row, drafts)), newPlanTemplate,
+    };
   };
 
   if (order.status_code === CANCELLED) {
@@ -121,13 +142,17 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
     return result('KEEP_CONFIRMED', [], leftover);
   }
 
-  const choice = plansToPropose(qtyFacts.filter((fact) => !fact.confirmed).map((fact) => fact.plan), order.order_qty, confirmedQty);
+  const choice = plansToPropose(drafts, order.order_qty, confirmedQty, action);
   const bomRows = facts.boms.get(order.item_id) ?? [];
   const bomId = defaultBomOf(bomRows.map((bom) => bom.bom_id));
   const masterIssues: ProposalIssue[] = bomId === null ? [masterIssue('BOM_DEFAULT_REQUIRED')] : [];
   const today = localDate(now, order.plant.timezone_code);
+  const newTarget = {
+    key: newPlanKey(0), saved: undefined, ...datedOf(facts, order, null, proposedPlanDate(toDateString(order.planned_start_date), today), 'SYSTEM'),
+    qty: order.order_qty.minus(confirmedQty), lineId: null,
+  };
   const targets = choice.kind === 'NEW_PLAN'
-    ? [{ key: newPlanKey(0), saved: undefined, ...datedOf(facts, order, null, proposedPlanDate(toDateString(order.planned_start_date), today), 'SYSTEM'), qty: choice.qty, lineId: null }]
+    ? [newTarget]
     // 작성중 계획의 계획일이 지났으면 오늘로 낸다 — 확정은 지난 계획일을 받지 않는다(저장값은 saved 에 남는다).
     : choice.drafts.map((plan) => {
         const savedDate = toDateString(plan.plan_date) as string;
@@ -144,11 +169,11 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
   if (masterIssues.length > 0) return result('NOT_PROPOSABLE', [], dedupe(masterIssues));
 
   const bom = bomRows[0];
-  const plans = routed.map(({ target, routing }): ProposalPlan => {
+  const toPlan = ({ target, routing }: (typeof routed)[number]): ProposalPlan => {
     const routingRow = facts.routings.get(routing.routingId as bigint);
     const workOrders = workOrdersOf(facts, order, routing.routingId as bigint, target.planDate, target.qty, target.lineId, now);
     const issues = [
-      ...(quantities.remainingQty.lt(0)
+      ...(choice.kind === 'REVIEW_DRAFT' && quantities.remainingQty.lt(0)
         ? [blockIssue('PLAN_QTY_EXCEEDS_ORDER', `작성중 계획을 더하면 ERP W/O 수량을 넘습니다 — 잔량 ${quantities.remainingQty.toString()}. 계획 수량을 줄이세요.`, 'plannedQty')]
         : []),
       ...planDateIssues(target.dated),
@@ -168,8 +193,40 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date): Proposal {
       workOrders,
       issues,
     };
+  };
+  const plans = routed.map(toPlan);
+  warnSiblingDoubleBooking(plans);
+  return result(choice.kind, plans, [], choice.kind === 'NEW_PLAN' ? plans[0] : templateOf(facts, order, newTarget, toPlan));
+}
+
+/** 이어서 할 때 사람이 더하는 새 계획의 기준 — 새 계획 제안과 같은 날짜·Routing 규칙. Routing 을 정하지 못하면 새 계획을 받지 않는다. */
+function templateOf<T extends { saved?: PlanRow }>(facts: ProposalFacts, order: OrderRow, target: T, toPlan: (routed: { target: T; routing: ReturnType<typeof routingFor> }) => ProposalPlan): ProposalPlan | null {
+  const routing = routingFor(facts, order, null);
+  if (routing.routingId === null || (facts.operations.get(routing.routingId) ?? []).length === 0) return null;
+  return toPlan({ target, routing });
+}
+
+/** 같은 ERP W/O 의 다른 공정 W/O 와 설비 시간이 겹치는가 — 재검증(`proposal-warnings.ts`)과 같은 비교. 저장된 W/O 와 겹친 것은 이미 냈다. */
+function warnSiblingDoubleBooking(plans: readonly ProposalPlan[]): void {
+  const rows = plans.flatMap((plan) => plan.workOrders);
+  const windowOf = (row: ProposalWorkOrder) => ({ planned_start_at: row.window.plannedStartAt, planned_end_at: row.window.plannedEndAt });
+  rows.forEach((row, index) => {
+    if (row.equipmentId === null || row.issues.some((issue) => issue.code === 'EQUIPMENT_DOUBLE_BOOKED')) return;
+    const rivals = rows.filter((other, at) => at !== index && other.equipmentId !== null).map((other) => ({ planned_equipment_id: other.equipmentId, ...windowOf(other) }));
+    for (const finding of checkDoubleBooked([row.equipmentId], windowOf(row), rivals)) row.issues.push(warnIssue(finding.code, finding.message, finding.field));
   });
-  return result(choice.kind, plans, []);
+}
+
+function existingDraftOf(facts: ProposalFacts, row: PlanRow, drafts: readonly PlanRow[]): ExistingDraft {
+  const line = row.planned_line_id === null ? undefined : facts.draftFacts.lines.get(row.planned_line_id);
+  const draftIds = new Set(drafts.map((draft) => draft.production_plan_id));
+  return {
+    row,
+    splitChildIds: (facts.draftFacts.splitChildren.get(row.production_plan_id) ?? []).filter((id) => !draftIds.has(id)),
+    lineCode: line?.code ?? null,
+    lineName: line?.name ?? null,
+    createdByName: row.created_by === null ? null : (facts.draftFacts.users.get(row.created_by) ?? null),
+  };
 }
 
 /** 공정마다 W/O 제안 — 라인·설비·금형은 확정 전개(`expand.ts`)와 같은 배정, 창은 근무일 하루(교대는 제안하지 않는다). */

@@ -1,5 +1,5 @@
 import { toDateString } from '../../common/master';
-import { Proposal, ProposalPlan, ProposalWorkOrder } from './proposal-builder';
+import { ExistingDraft, Proposal, ProposalPlan, ProposalWorkOrder } from './proposal-builder';
 
 /** 계약 `ProductionPlanProposal` 매퍼. 「키가 없다」로 적힌 칸만 빼고 null 은 그대로 낸다(계약이 required + nullable 로 적었다). */
 export type ProposalView = ReturnType<typeof proposalView>;
@@ -25,8 +25,32 @@ export function proposalView(proposal: Proposal) {
       ? { lastAttemptedAt: order.auto_work_order_attempted_at?.toISOString() ?? null, errorText: order.auto_work_order_error_text }
       : null,
     plans: proposal.plans.map(planView),
+    existingDrafts: proposal.drafts.map(existingDraftView),
     issues: proposal.issues,
     basis: proposal.basis,
+  };
+}
+
+export type ExistingDraftView = ReturnType<typeof existingDraftView>;
+
+/** 계약 `ProductionPlanProposalExistingDraft` — 「이어서 / 새로」 팝업이 보이는 요약. */
+export function existingDraftView({ row, lineCode, lineName, createdByName }: ExistingDraft) {
+  return {
+    productionPlanId: Number(row.production_plan_id),
+    versionNo: row.version_no,
+    planNo: row.plan_no,
+    planDate: toDateString(row.plan_date) as string,
+    plannedQty: row.planned_qty.toNumber(),
+    uomId: Number(row.uom_id),
+    plannedLineId: id(row.planned_line_id),
+    plannedLineCode: lineCode,
+    plannedLineName: lineName,
+    statusCode: row.status_code,
+    createdBy: id(row.created_by),
+    createdByName,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    createdAutomatically: row.created_automatically,
   };
 }
 

@@ -7,6 +7,7 @@ import { FAMILY_CONFLICT_CODE } from '../../common/idempotency';
 import { PrismaService } from '../../prisma/prisma.service';
 import { scopedPlantIds } from '../production-order/production-order-scope';
 import { ProductionOrderService } from '../production-order/production-order.service';
+import { ExistingDraftAction } from './plan-set-rules';
 import { ProposalConfirmBody } from './proposal-confirm-check';
 import { ProposalConfirmResult, PlanProposalService } from './plan-proposal.service';
 import { ProposalRevalidation } from './proposal-revalidate';
@@ -27,8 +28,9 @@ export class PlanProposalController {
   async propose(
     @Req() request: Request,
     @Query('productionOrderIds') productionOrderIds: number[],
+    @Query('existingDraftAction') existingDraftAction: ExistingDraftAction | undefined,
   ): Promise<{ items: ProposalView[]; notFoundProductionOrderIds: number[] }> {
-    return this.proposals.propose(productionOrderIds, await scopedPlantIds(this.prisma, userOf(request)));
+    return this.proposals.propose(productionOrderIds, await scopedPlantIds(this.prisma, userOf(request)), existingDraftAction ?? 'REPLACE');
   }
 
   /** 범위 밖이면 404 — 멱등 처리보다 먼저 막는다. */

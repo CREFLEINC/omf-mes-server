@@ -14,6 +14,7 @@ import { AcknowledgeService } from './production-order/acknowledge.service';
 import { AutoPlanService } from './production-order/auto-plan.service';
 import { ProductionOrderController } from './production-order/production-order.controller';
 import { ProductionOrderCreateService } from './production-order/production-order-create.service';
+import { ProductionOrderAuditService } from './production-order/production-order-audit.service';
 import { ProductionOrderService } from './production-order/production-order.service';
 import { ResyncService } from './production-order/resync.service';
 import { PlanConfirmService } from './production-plan/plan-confirm.service';
@@ -39,6 +40,7 @@ import { WorkingDayController } from './working-day/working-day.controller';
     ProductionPlanService,
     PlanConfirmService,
     ProductionOrderService,
+    ProductionOrderAuditService,
     ProductionOrderCreateService,
     AutoPlanService,
     AcknowledgeService,
