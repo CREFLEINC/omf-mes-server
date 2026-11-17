@@ -44,15 +44,15 @@ export async function workOrderWarnings(
     const operations = facts.operations.get(BigInt(plan.body.routingId)) ?? [];
     return plan.body.workOrders.map((workOrder, at): Row => {
       const operationId = BigInt(workOrder.routingOperationId);
-      const supplement = plan.supplements.get(operationId);
-      if (supplement === undefined) throw new Error(`판정이 공정 W/O 를 빠뜨렸다: ${operationId}`);
+      const window = plan.windows.get(operationId);
+      if (window === undefined) throw new Error(`판정이 공정 W/O 를 빠뜨렸다: ${operationId}`);
       return {
         path: `plans[${plan.index}].workOrders[${at}]`,
         processId: operations.find((operation) => operation.routing_operation_id === operationId)?.process_id ?? null,
-        equipmentId: supplement.equipmentId,
-        moldId: supplement.moldId,
-        workerId: supplement.workerId,
-        window: { planned_start_at: supplement.window.plannedStartAt, planned_end_at: supplement.window.plannedEndAt },
+        equipmentId: idOf(workOrder.plannedEquipmentId),
+        moldId: idOf(workOrder.plannedMoldId),
+        workerId: idOf(workOrder.responsibleWorkerId),
+        window: { planned_start_at: window.plannedStartAt, planned_end_at: window.plannedEndAt },
       };
     });
   });
@@ -97,6 +97,8 @@ export async function workOrderWarnings(
     return findings.map((finding) => ({ code: finding.code, field: `${row.path}.${finding.field}`, message: finding.message }));
   });
 }
+
+const idOf = (value: number | null | undefined): bigint | null => (value === undefined || value === null ? null : BigInt(value));
 
 function unique(ids: readonly (bigint | null)[]): bigint[] {
   return [...new Set(ids.filter((id): id is bigint => id !== null))];

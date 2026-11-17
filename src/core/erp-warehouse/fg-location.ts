@@ -31,6 +31,12 @@ export type FgResolution =
   | { kind: 'NO_STORAGE_CODE' }
   | { kind: 'LINK_FAILED'; erpCode: string; reason: FgLinkFailure };
 
+/**
+ * 완제품 위치 칸의 판정 규칙 — ERP W/O 의 입고 창고 판정이거나, 사람이 ERP 와 다르게 고른 입고 창고(계획 제안의 수동 변경)다.
+ * 수동 변경은 계획 제안 확정만 쓴다 — 직접 확정·자동 W/O 는 언제나 ERP 판정을 따른다.
+ */
+export type FgRule = FgResolution | { kind: 'MANUAL_WAREHOUSE'; warehouse: FgPlace };
+
 export interface FgTarget {
   plantId: bigint;
   /** ERP W/O 의 `SL_CD` — 비었으면 null. */
@@ -44,6 +50,21 @@ const normalized = (code: string | null): string | null => (code === null || cod
 
 /** 창고 유형이 자재면 완제품 위치로 두지 않는다 — 라인 기본 위치와 같은 규칙(`equipment-group.service.ts`). */
 const MATERIAL_WAREHOUSE = 'MATERIAL';
+
+type WarehouseFacts = { plant_id: bigint | null; is_active: boolean; warehouse_type_code: string; is_defect: boolean; is_external: boolean };
+
+/** 자재·불량·외부 창고는 완제품 입고 창고로 쓰지 않는다. */
+const fgTypeAllowed = (warehouse: WarehouseFacts): boolean =>
+  warehouse.warehouse_type_code !== MATERIAL_WAREHOUSE && !warehouse.is_defect && !warehouse.is_external;
+
+/**
+ * 사람이 고른 완제품 입고 창고가 쓸 수 있는가 — ERP 입고 창고 연결과 같은 기준(이 공장 · 사용 중 · 자재·불량·외부 아님). 쓸 수 있으면 null.
+ */
+export function fgWarehouseRejection(plantId: bigint, warehouse: WarehouseFacts | undefined): FgLinkFailure | null {
+  if (warehouse === undefined || warehouse.plant_id !== plantId) return 'FG_WAREHOUSE_OTHER_PLANT';
+  if (!warehouse.is_active) return 'FG_WAREHOUSE_INACTIVE';
+  return fgTypeAllowed(warehouse) ? null : 'FG_WAREHOUSE_NOT_ALLOWED';
+}
 
 /** 여러 ERP W/O 를 한꺼번에 푼다 — 창고는 한 번에 읽고, 입고 위치는 창고마다 한 번이다. */
 export async function resolveFgLocations(db: Db, targets: readonly FgTarget[]): Promise<Map<string, FgResolution>> {
@@ -84,9 +105,8 @@ export async function resolveFgLocations(db: Db, targets: readonly FgTarget[]): 
     if (match.kind === 'UNMAPPED') result.set(key, failed('FG_WAREHOUSE_UNMAPPED'));
     else if (match.kind === 'OTHER_PLANT') result.set(key, failed('FG_WAREHOUSE_OTHER_PLANT'));
     else if (match.kind === 'INACTIVE') result.set(key, failed('FG_WAREHOUSE_INACTIVE'));
-    else if (match.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE || match.warehouse.is_defect || match.warehouse.is_external) {
-      result.set(key, failed('FG_WAREHOUSE_NOT_ALLOWED'));
-    } else matched.push({ key, erpCode, warehouse: match.warehouse });
+    else if (!fgTypeAllowed(match.warehouse)) result.set(key, failed('FG_WAREHOUSE_NOT_ALLOWED'));
+    else matched.push({ key, erpCode, warehouse: match.warehouse });
   }
   // 입고 위치는 창고마다 한 번 — 서로 다른 창고는 함께 읽는다.
   await Promise.all(matched.map(async ({ key, erpCode, warehouse }) => {
@@ -144,7 +164,7 @@ export interface LocationFinding {
  * W/O 기본 위치(WIP·완제품·스크랩) 하나의 판정. `fg` 를 주면 완제품 위치 규칙이다 — 입고 창고가 정해진 W/O 는 그 창고 안 위치만,
  * `SL_CD` 가 없으면 외부·불량 창고도 뺀다. 연결이 실패한 W/O 는 어떤 위치도 받지 않는다.
  */
-export function locationFinding(plantId: bigint, location: LocationFact | undefined, fg?: FgResolution): LocationFinding | null {
+export function locationFinding(plantId: bigint, location: LocationFact | undefined, fg?: FgRule): LocationFinding | null {
   if (fg?.kind === 'LINK_FAILED') return { code: fg.reason, message: fgLinkMessage(fg) };
   if (
     location === undefined ||
@@ -154,6 +174,9 @@ export function locationFinding(plantId: bigint, location: LocationFact | undefi
     !location.warehouse.is_active
   ) {
     return { code: 'LOCATION_INVALID', message: '이 공장의, 자재창고가 아닌 사용 중인 위치여야 합니다.' };
+  }
+  if (fg?.kind === 'MANUAL_WAREHOUSE' && location.warehouse_id !== fg.warehouse.id) {
+    return { code: 'FG_LOCATION_OUTSIDE_WAREHOUSE', message: `완제품 위치는 고른 입고 창고(${fg.warehouse.code}, ${fg.warehouse.name}) 안의 위치여야 합니다.` };
   }
   if (fg?.kind === 'ERP_STORAGE_LOCATION' && location.warehouse_id !== fg.warehouse.id) {
     return {

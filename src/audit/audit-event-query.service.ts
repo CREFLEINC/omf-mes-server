@@ -17,7 +17,8 @@ export type AuditTargetType =
   | "ITEM"
   | "ROUTING"
   | "INSPECTION_PLAN_VERSION"
-  | "INSPECTION_SHEET_TEMPLATE";
+  | "INSPECTION_SHEET_TEMPLATE"
+  | "PRODUCTION_ORDER";
 
 /** 계약 질의 9칸. 기간 둘은 `@Contract` 가드가 필수·date-time을 검사한다. */
 export interface AuditEventQuery {

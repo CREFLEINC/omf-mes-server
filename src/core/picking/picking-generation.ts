@@ -13,8 +13,8 @@ import { PickingAllocation, PickingDemand, allocatePicking } from './allocation'
  */
 
 const MATERIAL_WAREHOUSE = 'MATERIAL';
-const QUALITY_NORMAL = 'NORMAL';
-const INVENTORY_AVAILABLE = 'AVAILABLE';
+export const QUALITY_NORMAL = 'NORMAL';
+export const INVENTORY_AVAILABLE = 'AVAILABLE';
 const FEFO = 'FEFO';
 /** 코드 그룹 `PICKING_TYPE` 의 자재출고피킹. */
 const PICKING_TYPE_MATERIAL = 'MATERIAL';

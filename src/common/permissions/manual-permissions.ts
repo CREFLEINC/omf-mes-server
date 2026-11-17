@@ -303,6 +303,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /planning/production-orders:plan-proposals': ['W-02-01', 'W-02-02'],
   'POST /planning/production-orders/{productionOrderId}:confirm-plan-proposal': ['W-02-01', 'W-02-02'],
   'POST /planning/production-orders/{productionOrderId}:revalidate-plan-proposal': ['W-02-01', 'W-02-02'],
+  // ERP W/O 한 건의 감사 기록 — 계획 제안 확정이 남긴 작성중 계획 대체·입고 창고 수동 변경·휴일 직접 지정을 생산계획(W-02-01·W-02-02)과
+  // 작업지시(W-02-03·W-02-04) 화면에서 본다(사용자 요구 — 작업지시 화면에서 「누가 언제 바꿨나」). 횡단 조회 `GET /audit/events` 는 주지 않는다 —
+  // 그것은 모든 공장·모든 대상의 기록을 낸다.
+  'GET /planning/production-orders/{productionOrderId}/audit-events': ['W-02-01', 'W-02-02', 'W-02-03', 'W-02-04'],
   // 계획 날짜를 고르는 두 화면(자동 분배·분할)이 근무일을 본다 — 계획 제안 조회와 같은 권한이다.
   'POST /planning/working-days:resolve': ['W-02-01', 'W-02-02'],
 

@@ -19,6 +19,8 @@ export const DISPLAY_JOIN = {
   } },
   routing_operation: { select: { operation_name: true, process: { select: { process_id: true, process_code: true, process_name: true } } } },
   item: { select: { item_code: true, item_name: true } },
+  // 「ERP 입고 창고와 다름」을 읽을 때 판정한다 — 완제품 위치의 창고 코드를 ERP W/O 의 SL_CD 와 견준다.
+  location_work_order_default_fg_location_idTolocation: { select: { warehouse: { select: { warehouse_code: true } } } },
   // 설비 없는 단말이 W/O 의 계획 설비로 작업 전 점검을 할 때 화면이 그 설비를 보인다.
   equipment: { select: { equipment_code: true, equipment_name: true } },
   // POP 마감의 주체 — 관리웹 마감은 비어 있다.
@@ -84,6 +86,11 @@ export function workOrderView(
     productionOrderId: id(row.production_plan?.production_order_id ?? null),
     productionOrderNo: row.production_plan?.production_order.production_order_no,
     erpStorageLocationCode: row.production_plan?.production_order.erp_storage_location_code ?? undefined,
+    fgWarehouseCode: row.location_work_order_default_fg_location_idTolocation?.warehouse.warehouse_code,
+    fgWarehouseDiffersFromErp: fgDiffersFromErp(
+      row.production_plan?.production_order.erp_storage_location_code ?? null,
+      row.location_work_order_default_fg_location_idTolocation?.warehouse.warehouse_code ?? null,
+    ),
     routingOperationName: row.routing_operation.operation_name,
     processId: Number(row.routing_operation.process.process_id),
     processCode: row.routing_operation.process.process_code,
@@ -122,3 +129,13 @@ export function workOrderResourcePlanView(row: ResourcePlanRow) {
 
 const id = (value: bigint | null): number | undefined => (value === null ? undefined : Number(value));
 const at = (value: Date | null): string | undefined => (value === null ? undefined : value.toISOString());
+
+/**
+ * 「ERP 입고 창고와 다름」 — ERP W/O 의 SL_CD 가 있고 완제품 위치의 창고 코드가 그와 다르다(앞뒤 공백 무시 · ERP 창고 연결과 같은 견줌).
+ * ERP 는 SL_CD 창고로 입고하고 MES 생산입고 송신은 창고를 싣지 않으므로 참이면 MES 와 ERP 의 재고 위치가 다르다.
+ * 계획 제안에서 사람이 바꿨든, 확정 뒤 ERP 가 SL_CD 를 바꿨든 같다 — 누가 바꿨는지는 감사 기록(FG_WAREHOUSE_OVERRIDDEN)이 갖는다.
+ */
+export function fgDiffersFromErp(erpCode: string | null, fgWarehouseCode: string | null): boolean {
+  const erp = erpCode?.trim() ?? '';
+  return erp !== '' && fgWarehouseCode !== null && fgWarehouseCode !== erp;
+}
