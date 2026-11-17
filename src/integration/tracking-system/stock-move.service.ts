@@ -1,7 +1,7 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
+import { ERROR_CODE, field, one } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { VOIDED_LIFECYCLE, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
@@ -13,6 +13,7 @@ import { ACTIVE_RESULT_WHERE } from '../../production/work-order/work-order-prog
 import { lockWorkOrder } from '../../production/work-order/work-order-write.service';
 import { registerSerialNumbers } from '../../trace/serial-number/serial-number-register';
 import { backflush } from './backflush';
+import { claimTransmission, screen } from './tracking-transmission';
 
 type Tx = Prisma.TransactionClient;
 
@@ -73,7 +74,9 @@ export class StockMoveService {
     const issueNo = await this.numbering.next('GOODS_ISSUE', plantId, input.businessDate);
 
     return this.prisma.$transaction(async (tx) => {
-      const transmission = await claim(tx, input, plantId, workOrder.work_order_id);
+      const transmission = await claimTransmission(tx, {
+        transmissionId: input.transmissionId, kindCode: KIND, plantId, workOrderId: workOrder.work_order_id, payload: input,
+      });
       if (transmission === null) return { replayed: true };
       const workOrderId = Number(workOrder.work_order_id);
       const locked = await lockWorkOrder(tx, workOrderId);
@@ -142,16 +145,6 @@ export class StockMoveService {
   }
 }
 
-/** 이미 처리한 전송 번호면 `null` 이다. 같은 번호를 다른 요청이 처리하는 중이면 그쪽이 끝날 때까지 기다린다. */
-async function claim(tx: Tx, input: StockMove, plantId: bigint, workOrderId: bigint): Promise<bigint | null> {
-  const rows = await tx.$queryRaw<{ tracking_transmission_id: bigint }[]>`
-    INSERT INTO integration.tracking_transmission (transmission_id, kind_code, plant_id, work_order_id, payload)
-    VALUES (${input.transmissionId}::uuid, ${KIND}, ${plantId}, ${workOrderId}, ${JSON.stringify(input)}::jsonb)
-    ON CONFLICT (transmission_id) DO NOTHING
-    RETURNING tracking_transmission_id`;
-  return rows[0]?.tracking_transmission_id ?? null;
-}
-
 async function goodQty(tx: Tx, workOrderId: number): Promise<Prisma.Decimal> {
   const sums = await tx.production_result.aggregate({
     where: { work_order_id: BigInt(workOrderId), ...ACTIVE_RESULT_WHERE },
@@ -176,8 +169,4 @@ async function assertLotNormal(tx: Tx, lotId: bigint): Promise<void> {
   if (lot.status_code !== 'NORMAL') {
     throw screen(ERROR_CODE.STATE_LOCKED, `생산 LOT 이 정상이 아닙니다(${lot.status_code}) — MES 의 공정 검사 기준·LOT 보류를 확인하세요.`);
   }
-}
-
-function screen(code: string, message: string): ContractException {
-  return new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'screen', code, message }]);
 }

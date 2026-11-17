@@ -1,14 +1,14 @@
-import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { plantPolicyText } from '../../app/policy/plant-policy-text';
-import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ERROR_CODE } from '../../common/errors';
 import { BOM_COMPONENT_SELECT, materialRequirements } from '../../core/bom';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { recordLateInputGenealogyWithin } from '../../core/lot';
-import { PICKABLE_BALANCE, PickingDemand, PickingLineDraft, StockCandidate, allocatePicking } from '../../core/picking';
-import { GoodsIssueLineWriteInput, postIssue } from '../../logistics/goods-issue/issue-posting';
+import { PICKABLE_BALANCE, PickingDemand, StockCandidate, allocatePicking } from '../../core/picking';
 import { CONSUMPTION_STATUS } from '../../production/material-consumption/material-consumption.constants';
+import { postTrackingIssue } from './goods-issue-write';
+import { screen } from './tracking-transmission';
 
 type Tx = Prisma.TransactionClient;
 
@@ -29,7 +29,6 @@ export interface BackflushInput {
 
 const ISSUE_TYPE = 'PRODUCTION';
 const SOURCE_DOCUMENT_TYPE = 'PRODUCTION_RESULT';
-const POSTED = 'POSTED';
 const CONSUMPTION_TYPE = 'BACKFLUSH';
 const LOT_NORMAL = 'NORMAL';
 /** PL13 ERP BOM 은 9단까지 내려간다(2026-11-17) — 이보다 깊으면 BOM 이 돌고 있다. */
@@ -58,7 +57,10 @@ export async function backflush(tx: Tx, posting: InventoryPostingService, input:
   const drafts = orders[0]?.lines ?? [];
   if (drafts.length === 0) return null;
 
-  const { goodsIssueId, lines } = await postBackflushIssue(tx, posting, input, warehouseId, drafts);
+  const { goodsIssueId, lines } = await postTrackingIssue(tx, posting, {
+    goodsIssueNo: input.goodsIssueNo, issueTypeCode: ISSUE_TYPE, sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
+    sourceDocumentId: input.productionResultId, warehouseId, occurredAt: input.occurredAt, businessDate: input.businessDate,
+  }, drafts.map((draft) => ({ itemId: draft.itemId, lotId: draft.lotId, uomId: draft.uomId, locationId: draft.locationId, qty: draft.plannedQty })));
   // 번호를 출고 라인에서 딴다 — 라인 수는 잔액을 잠근 뒤에야 알고, 채번은 트랜잭션 밖에서만 한다(I-2 R-2).
   await tx.material_consumption.createMany({
     data: lines.map((line, index) => ({
@@ -79,10 +81,7 @@ async function backflushWarehouse(tx: Tx, input: BackflushInput): Promise<bigint
     select: { warehouse_id: true, is_active: true },
   });
   if (warehouse === null || !warehouse.is_active) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [{
-      scope: 'screen', code: ERROR_CODE.INVALID,
-      message: `자재 차감 창고가 없습니다(운영 정책 BACKFLUSH_WAREHOUSE: ${code ?? '없음'}) — 이 공장의 정책 행과 그 창고를 확인하세요.`,
-    }]);
+    throw screen(ERROR_CODE.INVALID, `자재 차감 창고가 없습니다(운영 정책 BACKFLUSH_WAREHOUSE: ${code ?? '없음'}) — 이 공장의 정책 행과 그 창고를 확인하세요.`);
   }
   return warehouse.warehouse_id;
 }
@@ -162,40 +161,4 @@ async function candidates(tx: Tx, warehouseId: bigint, demands: PickingDemand[])
           availableQty: row.available_qty, expiryDate: null, lotCreatedAt: row.lot.created_at,
         }],
   );
-}
-
-async function postBackflushIssue(
-  tx: Tx,
-  posting: InventoryPostingService,
-  input: BackflushInput,
-  warehouseId: bigint,
-  drafts: PickingLineDraft[],
-): Promise<{ goodsIssueId: bigint; lines: GoodsIssueLineWriteInput[] }> {
-  const { goods_issue_id: goodsIssueId } = await tx.goods_issue.create({
-    data: {
-      goods_issue_no: input.goodsIssueNo, issue_type_code: ISSUE_TYPE, source_document_type_code: SOURCE_DOCUMENT_TYPE,
-      source_document_id: input.productionResultId, source_warehouse_id: warehouseId, issued_at: input.occurredAt, status_code: POSTED,
-    },
-    select: { goods_issue_id: true },
-  });
-  const created = await tx.goods_issue_line.createManyAndReturn({
-    data: drafts.map((draft) => ({
-      goods_issue_id: goodsIssueId, line_no: draft.lineNo, item_id: draft.itemId, lot_id: draft.lotId,
-      issue_qty: draft.plannedQty, uom_id: draft.uomId, source_location_id: draft.locationId,
-    })),
-    select: { goods_issue_line_id: true, line_no: true },
-  });
-  const idOf = new Map(created.map((line) => [line.line_no, line.goods_issue_line_id]));
-  const lines = drafts.map((draft) => ({
-    goodsIssueLineId: idOf.get(draft.lineNo) as bigint, itemId: draft.itemId, lotId: draft.lotId,
-    issueQty: draft.plannedQty, uomId: draft.uomId, sourceLocationId: draft.locationId,
-  }));
-  await postIssue(tx, posting, {
-    header: {
-      goodsIssueId, goodsIssueNo: input.goodsIssueNo, issueTypeCode: ISSUE_TYPE, sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
-      sourceDocumentId: input.productionResultId, sourceWarehouseId: warehouseId, destinationTypeCode: null, destinationId: null,
-    },
-    lines, businessDate: input.businessDate, occurredAt: input.occurredAt,
-  }, undefined);
-  return { goodsIssueId, lines };
 }

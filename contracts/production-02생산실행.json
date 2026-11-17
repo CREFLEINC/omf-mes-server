@@ -11429,6 +11429,7 @@
      },
      "statusCode": {
       "type": "string",
+      "description": "REGISTERED 등록 · SHIPPED 추적 시스템(flowtrack) 연동 출하로 나감",
       "x-no-example": true,
       "x-no-code-key": "코드 그룹을 세우지 않는다 — 전이 액션이 계약 7벌에 0건이고 축이 품질(⇒ LOT_STATUS 파생)인지 생애인지 안 정해졌다. R69 「불량품 미부착」이라 「불량」 값의 생산자도 없다(A-21)."
      },

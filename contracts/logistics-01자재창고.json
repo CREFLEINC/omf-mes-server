@@ -16692,7 +16692,7 @@
       "x-source-column": "source_document_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "원천 문서 유형. **A-10 다형 참조 판별자**이고 값은 **대상 테이블 이름**이다 — 피킹 지시(`PICKING_ORDER` → `logistics.picking_order`, 생산 투입) · 입고 전표(`GOODS_RECEIPT` → `logistics.goods_receipt`, 공급사 반품·자재 폐기) · 처분 결정(`DISPOSITION_DECISION` → `quality.disposition_decision`, 제품 폐기) · 출하(`SHIPMENT` → `logistics.shipment`, 출하 확정) 넷이다. `sourceDocumentId` 는 그 표의 식별자다. ⛔ 공통코드 그룹으로 받지 않는다 — 값이 우리 계약의 리소스 이름이라 **고객이 늘릴 수 있는 값이 아니다**(공유계약 A-10·A-16, `GoodsIssue.destinationTypeCode` 와 같은 처리). 새 대상이 생기면 화면이 문자열을 정하기 전에 이 목록에 등재한다(A-16). ⚠ 같은 이름의 다른 자리(`GoodsReceipt`·`InventoryTransaction` 등)는 값 집합이 다르다 — 자리마다 닫는다.\n\n서버 구현 기준 추가값: SHIPMENT → logistics.shipment. 출하 등록이 내부에서 만든 출고 전표의 원천이다(통보 217). PRODUCTION_RESULT → production.production_result. 추적 시스템(flowtrack) 연동의 자재 차감이 만든 출고 전표의 원천이다.",
+      "description": "원천 문서 유형. **A-10 다형 참조 판별자**이고 값은 **대상 테이블 이름**이다 — 피킹 지시(`PICKING_ORDER` → `logistics.picking_order`, 생산 투입) · 입고 전표(`GOODS_RECEIPT` → `logistics.goods_receipt`, 공급사 반품·자재 폐기) · 처분 결정(`DISPOSITION_DECISION` → `quality.disposition_decision`, 제품 폐기) · 출하(`SHIPMENT` → `logistics.shipment`, 출하 확정) 넷이다. `sourceDocumentId` 는 그 표의 식별자다. ⛔ 공통코드 그룹으로 받지 않는다 — 값이 우리 계약의 리소스 이름이라 **고객이 늘릴 수 있는 값이 아니다**(공유계약 A-10·A-16, `GoodsIssue.destinationTypeCode` 와 같은 처리). 새 대상이 생기면 화면이 문자열을 정하기 전에 이 목록에 등재한다(A-16). ⚠ 같은 이름의 다른 자리(`GoodsReceipt`·`InventoryTransaction` 등)는 값 집합이 다르다 — 자리마다 닫는다.\n\n서버 구현 기준 추가값: SHIPMENT → logistics.shipment. 출하 등록이 내부에서 만든 출고 전표의 원천이다(통보 217). PRODUCTION_RESULT → production.production_result. 추적 시스템(flowtrack) 연동의 자재 차감이 만든 출고 전표의 원천이다. TRACKING_TRANSMISSION → integration.tracking_transmission. 추적 시스템 연동의 출하(컨테이너 하나)가 D/O 마다 만든 출고 전표의 원천이다.",
       "x-no-example": true,
       "x-internal-note": "2026-09-01 `omf-mes#336`에서 원본 계약을 `enum` 3값으로 닫았고, v0.1.2 서버 구현 기준선이 응답값 SHIPMENT를 더해 4값으로 확장한다. 구 주석의 「`enum` 을 못박으면 값이 정해질 때 계약이 깨진다 — G-2 를 계약에도 적용한다」는 **이 자리에 성립하지 않는다**: 미확정 코드 표시 조항(G-2)은 「우리가 확정해야 하는데 못 한 값」의 조항이고(마스터 판별 조항 G-31 이 범위를 줄였다), 이 값은 확정 대상이 아니라 **우리 계약의 리소스 목록**이다. ⛔ 자유 문자열→`enum` 이므로 통지 대상이다.",
       "enum": [
@@ -16700,7 +16700,8 @@
        "GOODS_RECEIPT",
        "DISPOSITION_DECISION",
        "SHIPMENT",
-       "PRODUCTION_RESULT"
+       "PRODUCTION_RESULT",
+       "TRACKING_TRANSMISSION"
       ],
       "x-code-key": "CD-GOODS-ISSUE-SOURCE-DOCUMENT-TYPE"
      },
