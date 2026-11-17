@@ -9,6 +9,7 @@ import {
   GoodsIssueDetail,
   GoodsIssueLineView,
   GoodsIssueView,
+  GOODS_ISSUE_LINE_INCLUDE,
   goodsIssueLineView,
   goodsIssueView,
 } from './goods-issue-view';
@@ -95,6 +96,7 @@ export class GoodsIssueQueryService {
     const rows = await this.prisma.goods_issue_line.findMany({
       where: { goods_issue_id: goodsIssueId },
       orderBy: { line_no: 'asc' },
+      include: GOODS_ISSUE_LINE_INCLUDE,
     });
     return rows.map(goodsIssueLineView);
   }
