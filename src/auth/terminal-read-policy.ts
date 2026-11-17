@@ -6,6 +6,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TerminalContext } from './terminal-context';
 import { IN_SERVICE, NEIGHBOR_EQUIPMENT } from './terminal-production-scope';
 
+/** POP 이 완료 W/O 를 읽을 수 있는 `updatedSince` 의 한계 — 48시간(공장 하루 + 여유). */
+const RECENT_COMPLETED_MS = 48 * 3_600_000;
+
+/** `updatedSince` 가 지금으로부터 `windowMs` 안의 올바른 시각인가. 없거나 잘못된 값은 아니다. */
+const isRecent = (value: unknown, windowMs: number): boolean => {
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  const at = new Date(value).getTime();
+  return Number.isFinite(at) && Date.now() - at <= windowMs;
+};
+
 type TerminalType = 'POP' | 'MOBILE' | 'TRACKING_SYSTEM';
 
 /** Explicit terminal GETs; each additional FR-005 group is reviewed for resource scope. */
@@ -123,7 +133,10 @@ export async function assertTerminalReadScope(
         // 재작업 실적(P-04-03)은 배포 전(PLANNED) 재작업 W/O 도 «보이기만» 한다 — 지시가 났는지 현장이 알게(장부 P-113).
         //   고르기·저장은 배포된 것만이다(실적 저장이 PLANNED 를 받지 않는다).
         const plannedRework = query.workOrderTypeCode === 'REWORK' && query.statusCode === 'PLANNED';
-        if (query.open !== 'true' && !plannedRework) throw denied();
+        // POP 홈 「오늘 작업 현황」의 완료 수(omf-all-around#291) — 완료 W/O 는 «최근 갱신분»만 본다.
+        //   지난 이력 전체를 단말이 훑지 않도록 `updatedSince` 를 48시간 안으로 묶는다.
+        const recentCompleted = query.statusCode === 'COMPLETED' && isRecent(query.updatedSince, RECENT_COMPLETED_MS);
+        if (query.open !== 'true' && !plannedRework && !recentCompleted) throw denied();
         // 설비를 걸면 단말 공장의 설비여야 한다 — 옆 설비의 W/O 도 찾는다(장부 P-123). 없는 설비와 남의 공장 설비는 같은 401 이다.
         if (query.plannedEquipmentId !== undefined) await plantEquipment(query.plannedEquipmentId);
         // 목록 서비스가 이 단말의 공정 매핑으로 좁힌다 — 재작업은 실적 입력, 그 밖은 작업 시작 공정이다.

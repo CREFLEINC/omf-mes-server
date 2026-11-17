@@ -44,4 +44,15 @@ describe('POP MES W/O 목록 범위', () => {
   it('열린 W/O 가 아니면 막는다', async () => {
     await expect(read(popWithoutEquipment, {})).rejects.toMatchObject({ status: 401 });
   });
+
+  // POP 홈 「오늘 작업 현황」 완료 수(omf-all-around#291) — 최근 48시간 안에 갱신된 완료 W/O 만 본다.
+  it('완료 W/O 는 최근 48시간 안의 updatedSince 와 함께일 때만 본다', async () => {
+    const recent = new Date(Date.now() - 3_600_000).toISOString();
+    const old = new Date(Date.now() - 72 * 3_600_000).toISOString();
+    await expect(read(pop, { statusCode: 'COMPLETED', updatedSince: recent })).resolves.toBeUndefined();
+    await expect(read(pop, { statusCode: 'COMPLETED' })).rejects.toMatchObject({ status: 401 });
+    await expect(read(pop, { statusCode: 'COMPLETED', updatedSince: old })).rejects.toMatchObject({ status: 401 });
+    await expect(read(pop, { statusCode: 'COMPLETED', updatedSince: 'x' })).rejects.toMatchObject({ status: 401 });
+    await expect(read(pop, { statusCode: 'CLOSED', updatedSince: recent })).rejects.toMatchObject({ status: 401 });
+  });
 });
