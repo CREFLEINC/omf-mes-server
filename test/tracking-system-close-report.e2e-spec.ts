@@ -1,15 +1,20 @@
 /**
- * 추적 시스템 연동 — 마감 보고 처리(flowtrack 연동 제안 §3-5 · §8 의 10-3).
+ * 추적 시스템 연동 — 마감 보고 처리(flowtrack 연동 제안 §3-5 · §8 의 10-3 · HTTP 입구 10-4).
  *
  * 한 트랜잭션에서 `qty` 만큼 실적 → 제품 입고 → 자재 차감 → 마감. S410 은 만든 수, 시리얼 품목은 0(양품은 입고이동으로 왔다).
  * 양품 합이 0 이면 마감 대신 취소하고, 취소 사유는 같은 코드가 없으면 「기타」다. 거절한 전송은 아무것도 남기지 않는다.
+ * HTTP 입구는 연동 단말 토큰만 받는다.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
+import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
 import { StockMoveService } from '../src/integration/tracking-system/stock-move.service';
 import { SYSTEM_WORKER_NO } from '../src/integration/tracking-system/tracking-production';
 import { WorkOrderCloseReport, WorkOrderCloseReportService } from '../src/integration/tracking-system/work-order-close-report.service';
@@ -32,6 +37,7 @@ describe('추적 시스템 연동 — 마감 보고 처리 (e2e)', () => {
   let moves: StockMoveService;
   let seq = 0;
   const ids: Record<string, bigint> = {};
+  const callers: Record<string, [string, string]> = {};
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -162,6 +168,33 @@ describe('추적 시스템 연동 — 마감 보고 처리 (e2e)', () => {
     expect(await prisma.production_result.count({ where: { work_order_id: target.workOrderId } })).toBe(results);
   });
 
+  const post = (input: WorkOrderCloseReport, caller: [string, string], key = input.transmissionId) => request(app.getHttpServer())
+    .post('/api/integration/tracking-system/work-order-closes').set(...caller).set('Idempotency-Key', key).send(input);
+
+  it('HTTP — 연동 토큰으로 보내면 받고(비울 칸은 null 로 와도 된다), 같은 전송을 다시 보내면 200 에 replayed 로 답한다', async () => {
+    const target = await released('fru');
+    const input = report(target, 10, { remainderDispositionCode: null, reasonCode: null, remarks: null });
+
+    expect((await post(input, callers.tracking).expect(200)).body).toEqual({ replayed: false });
+    expect((await post(input, callers.tracking).expect(200)).body).toEqual({ replayed: true });
+    expect((await workOrder(target)).status_code).toBe('CLOSED');
+  });
+
+  it.each([
+    ['헤더 요청 키와 전송 번호가 다름', (input: WorkOrderCloseReport) => post(input, callers.tracking, randomUUID()), 400],
+    ['처분 값이 계약 밖', (input: WorkOrderCloseReport) => post({ ...input, remainderDispositionCode: 'KEEP' }, callers.tracking), 400],
+    ['계정 세션', (input: WorkOrderCloseReport) => post(input, callers.web), 401],
+    ['POP 토큰', (input: WorkOrderCloseReport) => post(input, callers.pop), 401],
+  ] as const)('HTTP — %s 이면 거절하고 아무것도 남기지 않는다', async (_name, send, status) => {
+    const target = await released('fru');
+    const input = report(target, 6, { remainderDispositionCode: 'WRITE_OFF', reasonCode: 'PLAN_CHANGE' });
+
+    await send(input).expect(status);
+
+    expect(await prisma.tracking_transmission.count({ where: { transmission_id: input.transmissionId } })).toBe(0);
+    expect((await workOrder(target)).status_code).toBe('RELEASED');
+  });
+
   async function pack(target: Case, count: number): Promise<void> {
     await moves.receive({
       transmissionId: randomUUID(), workOrderNo: target.workOrderNo, mesWorkOrderId: Number(target.workOrderId), itemCode: target.itemCode,
@@ -249,5 +282,18 @@ describe('추적 시스템 연동 — 마감 보고 처리 (e2e)', () => {
       create: { worker_no: SYSTEM_WORKER_NO, worker_name: 'flowtrack', plant_id: ids.plant, business_unit_id: ids.unit, status_code: 'EMPLOYED' },
       update: { is_active: true },
     })).worker_id;
+
+    // 단말 토큰은 `terminal.service.ts` 가 서명하는 클레임 그대로 직접 낸다(다른 단말 e2e 와 같은 관례).
+    const jwt = app.get(JwtService);
+    for (const [caller, type] of [['tracking', 'TRACKING_SYSTEM'], ['pop', 'POP']]) {
+      const terminal = await prisma.terminal.create({ data: {
+        terminal_code: `${PREFIX}-${type}`, plant_id: ids.plant, terminal_type_code: type, status_code: 'RUNNING',
+      } });
+      callers[caller] = ['Authorization', `Bearer ${jwt.sign({
+        sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId: Number(ids.plant),
+      })}`];
+    }
+    const user = await prisma.app_user.create({ data: { login_id: `${PREFIX}-WEB`, user_name: PREFIX, status_code: 'EMPLOYED' } });
+    callers.web = ['Cookie', `${SESSION_COOKIE}=${jwt.sign({ sub: Number(user.app_user_id), typ: TOKEN_TYPE.SESSION })}`];
   }
 });

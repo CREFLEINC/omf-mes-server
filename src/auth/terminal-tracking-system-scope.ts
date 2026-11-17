@@ -5,4 +5,5 @@
 export const TERMINAL_TRACKING_SYSTEM_OPERATIONS: Readonly<Record<string, readonly 'TRACKING_SYSTEM'[]>> = {
   'POST /integration/tracking-system/stock-moves': ['TRACKING_SYSTEM'],
   'POST /integration/tracking-system/stock-issues': ['TRACKING_SYSTEM'],
+  'POST /integration/tracking-system/work-order-closes': ['TRACKING_SYSTEM'],
 };

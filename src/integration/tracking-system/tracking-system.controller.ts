@@ -7,13 +7,15 @@ import { Contract } from '../../common/contract';
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { StockIssue, StockIssueService } from './stock-issue.service';
 import { StockMove, StockMoveService } from './stock-move.service';
+import { WorkOrderCloseReport, WorkOrderCloseReportService } from './work-order-close-report.service';
 
-/** flowtrack 포장 입고이동·출하 출고(flowtrack 연동 제안 §3-3 · §3-4). 연동 단말 토큰 전용. */
+/** flowtrack 포장 입고이동·출하 출고·마감 보고(flowtrack 연동 제안 §3-3 · §3-4 · §3-5). 연동 단말 토큰 전용. */
 @Controller('integration/tracking-system')
 export class TrackingSystemController {
   constructor(
     private readonly stockMoves: StockMoveService,
     private readonly stockIssues: StockIssueService,
+    private readonly closeReports: WorkOrderCloseReportService,
   ) {}
 
   @Post('stock-moves')
@@ -28,6 +30,13 @@ export class TrackingSystemController {
   @HttpCode(HttpStatus.OK)
   receiveStockIssue(@Req() request: Request, @Body() body: StockIssue): Promise<{ replayed: boolean }> {
     return this.stockIssues.receive(body, plantOf(request, body.transmissionId));
+  }
+
+  @Post('work-order-closes')
+  @Contract('POST /integration/tracking-system/work-order-closes')
+  @HttpCode(HttpStatus.OK)
+  receiveCloseReport(@Req() request: Request, @Body() body: WorkOrderCloseReport): Promise<{ replayed: boolean }> {
+    return this.closeReports.receive(body, plantOf(request, body.transmissionId));
   }
 }
 

@@ -42,8 +42,9 @@ describe('ContractRegistry', () => {
   // 추적 시스템 포장 입고이동 1건(flowtrack 연동 제안 §3-3): 627.
   // ERP W/O 감사 기록 조회 1건: 628.
   // 추적 시스템 출하 출고 1건(flowtrack 연동 제안 §3-4): 629.
-  it('계약 7파일에서 오퍼레이션 629건을 적재한다', () => {
-    expect(registry.size).toBe(629);
+  // 추적 시스템 마감 보고 1건(flowtrack 연동 제안 §3-5): 630.
+  it('계약 7파일에서 오퍼레이션 630건을 적재한다', () => {
+    expect(registry.size).toBe(630);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
