@@ -17514,6 +17514,137 @@
      }
     }
    },
+   "/integration/tracking-system/qty-issues": {
+    "post": {
+     "tags": [
+      "integration"
+     ],
+     "summary": "추적 시스템 수량 출고 받기",
+     "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 시리얼 없는 품목(S410)을 출하할 때 품목·수량으로 보낸다(마감 보고를 보낸 뒤). 한 트랜잭션에서 그 창고의 뺄 수 있는 재고 — 맨 아래 위치의 정상 품질·가용·보류 없음·LOT 정상 재고의 가용 수량(보유 − 예약 − 피킹 − 차단). LOT 이 없는 재고 · 같은 위치·LOT 에 보유가 있는 상태가 둘 이상인 재고 · 시리얼이 달린 LOT 은 세지 않는다 에서 LOT 생성이 오래된 것부터 빼 출고 전표 하나(유형 SHIPMENT · 원천 TRACKING_TRANSMISSION)로 남긴다. 모자라면 거절한다. 창고·품목은 단말 공장에서 찾는다. 출고 시각은 받은 시각이다. ERP 로 보내지 않는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다. 근거: flowtrack 연동 제안 §3-5 · 사용자 결정 2026-11-17",
+     "parameters": [
+      {
+       "$ref": "#/components/parameters/IdempotencyKey"
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TrackingQtyIssue"
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "omfSession": []
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "처리함 · 이미 처리한 전송(replayed=true)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TrackingTransmissionResult"
+         }
+        }
+       }
+      },
+      "400": {
+       "description": "INVALID — Idempotency-Key ≠ transmissionId · 이 공장에 없는 창고(warehouseCode) · MES 에 없는 품목(itemCode). NEGATIVE_BALANCE — 뺄 수 있는 재고가 모자람",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "토큰이 없거나 추적 시스템 연동 단말 토큰이 아니다(계정 세션 포함)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/integration/tracking-system/stocks": {
+    "get": {
+     "tags": [
+      "integration"
+     ],
+     "summary": "추적 시스템 재고 조회",
+     "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. 그 창고의 품목별 뺄 수 있는 재고 — 맨 아래 위치의 정상 품질·가용·보류 없음·LOT 정상 재고의 가용 수량(보유 − 예약 − 피킹 − 차단). LOT 이 없는 재고 · 같은 위치·LOT 에 보유가 있는 상태가 둘 이상인 재고 · 시리얼이 달린 LOT 은 세지 않는다. 수량 출고가 뺄 수 있는 양과 같다 — 조회한 만큼 보내면 들어간다. itemCode 를 주면 그 품목 하나(재고가 없으면 qty 0), 안 주면 재고가 있는 품목 전부(품목코드 순). 창고·품목은 단말 공장에서 찾는다. 근거: flowtrack 연동 제안 §3-5 · 사용자 결정 2026-11-17",
+     "parameters": [
+      {
+       "name": "warehouseCode",
+       "in": "query",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50
+       },
+       "description": "창고 코드(예: S410)"
+      },
+      {
+       "name": "itemCode",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50
+       },
+       "description": "품목 코드 — 없으면 품목 전부"
+      }
+     ],
+     "security": [
+      {
+       "omfSession": []
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "품목별 수량",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TrackingStocks"
+         }
+        }
+       }
+      },
+      "400": {
+       "description": "INVALID — 이 공장에 없는 창고(warehouseCode) · MES 에 없는 품목(itemCode)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "토큰이 없거나 추적 시스템 연동 단말 토큰이 아니다(계정 세션 포함)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
   "/mdm/shifts": {
    "get": {
     "tags": [
@@ -24337,6 +24468,74 @@
        "type": "string",
        "format": "date",
        "description": "제품 입고·자재 차감의 업무일자(공유계약 C-8)"
+      }
+     }
+    },
+    "TrackingQtyIssue": {
+     "type": "object",
+     "description": "시리얼 없는 품목의 수량 출고(flowtrack 연동 제안 §3-5)",
+     "required": [
+      "transmissionId",
+      "warehouseCode",
+      "itemCode",
+      "qty",
+      "businessDate"
+     ],
+     "properties": {
+      "transmissionId": {
+       "type": "string",
+       "format": "uuid",
+       "description": "flowtrack 전송 번호 — Idempotency-Key 와 같다"
+      },
+      "warehouseCode": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 50
+      },
+      "itemCode": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 50
+      },
+      "qty": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "businessDate": {
+       "type": "string",
+       "format": "date",
+       "description": "출고 업무일자(공유계약 C-8)"
+      }
+     }
+    },
+    "TrackingStocks": {
+     "type": "object",
+     "required": [
+      "items"
+     ],
+     "properties": {
+      "items": {
+       "type": "array",
+       "items": {
+        "$ref": "#/components/schemas/TrackingStockLevel"
+       }
+      }
+     }
+    },
+    "TrackingStockLevel": {
+     "type": "object",
+     "required": [
+      "itemCode",
+      "qty"
+     ],
+     "properties": {
+      "itemCode": {
+       "type": "string"
+      },
+      "qty": {
+       "type": "number",
+       "minimum": 0,
+       "description": "뺄 수 있는 수량"
       }
      }
     },

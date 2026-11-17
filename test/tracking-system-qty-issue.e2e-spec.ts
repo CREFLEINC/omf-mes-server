@@ -1,15 +1,19 @@
 /**
- * 추적 시스템 연동 — 재고 조회·수량 출고 처리(flowtrack 연동 제안 §3-5 · §8 의 10-5).
+ * 추적 시스템 연동 — 재고 조회·수량 출고 처리(flowtrack 연동 제안 §3-5 · §8 의 10-5 · HTTP 입구 10-6).
  *
  * 둘 다 «수량 출고가 실제로 뺄 수 있는 재고»를 본다 — 정상 품질·가용·보류 없음·LOT 정상·맨 아래 위치·LOT 있음, 시리얼 달린 LOT 은 뺀다.
- * 수량 출고는 오래된 LOT 부터 빼 출고 전표 하나로 남긴다. 거절한 전송은 아무것도 남기지 않는다.
+ * 수량 출고는 오래된 LOT 부터 빼 출고 전표 하나로 남긴다. 거절한 전송은 아무것도 남기지 않는다. HTTP 입구는 연동 단말 토큰만 받는다.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
+import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
 import { QtyIssue, TrackingStockService } from '../src/integration/tracking-system/tracking-stock.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -28,6 +32,7 @@ describe('추적 시스템 연동 — 재고 조회·수량 출고 처리 (e2e)'
   let stocks: TrackingStockService;
   let seq = 0;
   const ids: Record<string, bigint> = {};
+  const callers: Record<string, [string, string]> = {};
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -119,6 +124,44 @@ describe('추적 시스템 연동 — 재고 조회·수량 출고 처리 (e2e)'
     await expect(stocks.stocks(ids.plant, `${PREFIX}-OTHER`)).rejects.toMatchObject({ errors: [expect.objectContaining({ field: 'warehouseCode', code: 'INVALID' })] });
   });
 
+  const get = (query: Record<string, string>, caller: [string, string]) => request(app.getHttpServer())
+    .get('/api/integration/tracking-system/stocks').query(query).set(...caller);
+  const post = (input: QtyIssue, caller: [string, string], key = input.transmissionId) => request(app.getHttpServer())
+    .post('/api/integration/tracking-system/qty-issues').set(...caller).set('Idempotency-Key', key).send(input);
+
+  it('HTTP — 연동 토큰이면 재고를 조회하고 수량 출고를 받는다 · 같은 전송을 다시 보내면 200 에 replayed 로 답한다', async () => {
+    const [item] = await items('http');
+    await stock(item.id, 5);
+
+    expect((await get({ warehouseCode: WAREHOUSE, itemCode: item.code }, callers.tracking).expect(200)).body).toEqual({ items: [{ itemCode: item.code, qty: 5 }] });
+    const input = issue(item.code, 2);
+    expect((await post(input, callers.tracking).expect(200)).body).toEqual({ replayed: false });
+    expect((await post(input, callers.tracking).expect(200)).body).toEqual({ replayed: true });
+    expect((await get({ warehouseCode: WAREHOUSE, itemCode: item.code }, callers.tracking).expect(200)).body).toEqual({ items: [{ itemCode: item.code, qty: 3 }] });
+  });
+
+  it('HTTP — 재고 조회는 창고가 없으면 400 · 연동 토큰이 아니면 401', async () => {
+    await get({}, callers.tracking).expect(400);
+    await get({ warehouseCode: WAREHOUSE }, callers.web).expect(401);
+    await get({ warehouseCode: WAREHOUSE }, callers.pop).expect(401);
+  });
+
+  it.each([
+    ['헤더 요청 키와 전송 번호가 다름', (input: QtyIssue) => post(input, callers.tracking, randomUUID()), 400],
+    ['수량이 0', (input: QtyIssue) => post({ ...input, qty: 0 }, callers.tracking), 400],
+    ['계정 세션', (input: QtyIssue) => post(input, callers.web), 401],
+    ['POP 토큰', (input: QtyIssue) => post(input, callers.pop), 401],
+  ] as const)('HTTP — 수량 출고가 %s 이면 거절하고 아무것도 남기지 않는다', async (_name, send, status) => {
+    const [item] = await items(`refused-${++seq}`);
+    const row = await stock(item.id, 5);
+    const input = issue(item.code, 2);
+
+    await send(input).expect(status);
+
+    expect(await prisma.tracking_transmission.count({ where: { transmission_id: input.transmissionId } })).toBe(0);
+    expect(await onHand(row)).toEqual([5]);
+  });
+
   async function items(...names: string[]): Promise<{ id: bigint; code: string }[]> {
     const created: { id: bigint; code: string }[] = [];
     for (const name of names) {
@@ -178,5 +221,18 @@ describe('추적 시스템 연동 — 재고 조회·수량 출고 처리 (e2e)'
     ids.worker = (await prisma.worker.create({ data: {
       worker_no: PREFIX, worker_name: PREFIX, plant_id: ids.plant, business_unit_id: ids.unit, status_code: 'EMPLOYED',
     } })).worker_id;
+
+    // 단말 토큰은 `terminal.service.ts` 가 서명하는 클레임 그대로 직접 낸다(다른 단말 e2e 와 같은 관례).
+    const jwt = app.get(JwtService);
+    for (const [caller, type] of [['tracking', 'TRACKING_SYSTEM'], ['pop', 'POP']]) {
+      const terminal = await prisma.terminal.create({ data: {
+        terminal_code: `${PREFIX}-${type}`, plant_id: ids.plant, terminal_type_code: type, status_code: 'RUNNING',
+      } });
+      callers[caller] = ['Authorization', `Bearer ${jwt.sign({
+        sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId: Number(ids.plant),
+      })}`];
+    }
+    const user = await prisma.app_user.create({ data: { login_id: `${PREFIX}-WEB`, user_name: PREFIX, status_code: 'EMPLOYED' } });
+    callers.web = ['Cookie', `${SESSION_COOKIE}=${jwt.sign({ sub: Number(user.app_user_id), typ: TOKEN_TYPE.SESSION })}`];
   }
 });
