@@ -10,7 +10,15 @@ import { Prisma } from '@prisma/client';
  */
 
 export type GoodsIssueRow = Prisma.goods_issueGetPayload<object>;
-export type GoodsIssueLineRow = Prisma.goods_issue_lineGetPayload<object>;
+/** 라인의 LOT 번호와 «이 라인이 만든» 분할 LOT 의 부모 — 조회마다 같은 모양으로 싣는다(피처 008 D-9). */
+export const GOODS_ISSUE_LINE_INCLUDE = {
+  lot: {
+    select: { lot_no: true, source_type_code: true, source_id: true, parent_lot_id: true, parent_lot: { select: { lot_no: true } } },
+  },
+} satisfies Prisma.goods_issue_lineInclude;
+export type GoodsIssueLineRow = Prisma.goods_issue_lineGetPayload<{ include: typeof GOODS_ISSUE_LINE_INCLUDE }>;
+
+const GOODS_ISSUE_SPLIT = 'GOODS_ISSUE_SPLIT';
 
 export interface GoodsIssueView {
   goodsIssueId: number;
@@ -37,6 +45,10 @@ export interface GoodsIssueLineView {
   pickingLineId: number | null;
   itemId: number;
   lotId: number;
+  lotNo: string;
+  /** 이 라인이 부분 출고로 분할 LOT 을 만들었으면 원래 LOT — 돌아온 분할 LOT 을 다시 전량 낸 라인은 null 이다. */
+  splitFromLotId: number | null;
+  splitFromLotNo: string | null;
   issueQty: number;
   uomId: number;
   sourceLocationId: number;
@@ -70,6 +82,8 @@ export function goodsIssueView(row: GoodsIssueRow): GoodsIssueView {
 }
 
 export function goodsIssueLineView(row: GoodsIssueLineRow): GoodsIssueLineView {
+  const { lot } = row;
+  const splitHere = lot.source_type_code === GOODS_ISSUE_SPLIT && lot.source_id === row.goods_issue_line_id;
   return {
     goodsIssueLineId: Number(row.goods_issue_line_id),
     goodsIssueId: Number(row.goods_issue_id),
@@ -77,6 +91,9 @@ export function goodsIssueLineView(row: GoodsIssueLineRow): GoodsIssueLineView {
     pickingLineId: id(row.picking_line_id),
     itemId: Number(row.item_id),
     lotId: Number(row.lot_id),
+    lotNo: lot.lot_no,
+    splitFromLotId: splitHere ? id(lot.parent_lot_id) : null,
+    splitFromLotNo: splitHere ? (lot.parent_lot?.lot_no ?? null) : null,
     issueQty: Number(row.issue_qty),
     uomId: Number(row.uom_id),
     sourceLocationId: Number(row.source_location_id),

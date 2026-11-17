@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { InventoryPostingService } from '../../core/inventory-posting';
 import type { ConsumeMove } from '../../core/inventory-posting';
 import { withoutEmptyBalances } from '../../core/inventory-posting/balance-lock';
+import { splitPartialIssueLines } from './issue-split';
 
 /**
  * 출고 «전기» — 잔액 선잠금 · 음수 손검사 · 원장 out · 되짚기. 입고 `receipt-posting.ts` 의
@@ -83,6 +84,11 @@ export interface PostIssueInput {
   businessDate: string;
   /** ⛔ 본문 값 그대로다(C-1). 입고와 달리 `issued_at` 을 쓰지 않는다 — 본문이 직접 준다. */
   occurredAt: Date;
+  /**
+   * 부분 출고면 줄마다 분할 LOT 을 만들어 그것을 낸다(피처 008). 원천 `PICKING_ORDER` 출고만 켠다 —
+   * 출하·폐기·반품은 끈다(FR-017). 출고 라인·원장은 분할 LOT, 피킹 라인·picked 소진은 원래 LOT 이다.
+   */
+  splitPartial?: boolean;
 }
 
 /** 잔액 차원 7칸 — `uq_inventory_balance_dim` 11칸 중 출고 라인이 «주는» 쪽이다. */
@@ -188,6 +194,25 @@ export async function postIssue(
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
+  const splits = input.splitPartial
+    ? await splitPartialIssueLines(
+        tx,
+        posting,
+        {
+          goodsIssueId: header.goodsIssueId,
+          goodsIssueNo: header.goodsIssueNo,
+          sourceWarehouseId: header.sourceWarehouseId,
+          plantId: source.plantId,
+          businessDate: input.businessDate,
+          occurredAt: input.occurredAt,
+          lines,
+          dimensions: fromKeys.map((key) => picked.get(keyOf(key)) as BalanceRow),
+        },
+        appUserId,
+      )
+    : new Map<number, bigint>();
+  const issuedLotOf = (index: number): bigint => splits.get(index) ?? lines[index].lotId;
+
   const posted = await posting.post(tx, {
     businessDate: input.businessDate,
     occurredAt: input.occurredAt,
@@ -207,7 +232,7 @@ export async function postIssue(
       const from = picked.get(keyOf(fromKeys[index])) as BalanceRow;
       return {
         itemId: Number(line.itemId),
-        lotId: Number(line.lotId),
+        lotId: Number(issuedLotOf(index)),
         qty: Number(line.issueQty),
         uomId: Number(line.uomId),
         // 출발지만 있고 도착지가 없다 — 그것이 「나갔다」의 표현이다.
@@ -257,7 +282,10 @@ export async function postIssue(
   for (const [index, line] of lines.entries()) {
     await tx.goods_issue_line.update({
       where: { goods_issue_line_id: line.goodsIssueLineId },
-      data: { inventory_transaction_line_id: ledger[index].inventory_transaction_line_id },
+      data: {
+        inventory_transaction_line_id: ledger[index].inventory_transaction_line_id,
+        ...(splits.has(index) ? { lot_id: issuedLotOf(index) } : {}),
+      },
     });
   }
 

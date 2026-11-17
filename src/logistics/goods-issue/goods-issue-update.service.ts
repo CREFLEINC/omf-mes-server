@@ -7,7 +7,7 @@ import { ApprovalService } from '../../core/approval';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoodsIssueLineCreate, REGISTERED, lineTargetErrors } from './goods-issue-rules';
-import { GoodsIssueLineView, goodsIssueLineView } from './goods-issue-view';
+import { GOODS_ISSUE_LINE_INCLUDE, GoodsIssueLineView, goodsIssueLineView } from './goods-issue-view';
 import { APPROVAL_TYPE, TARGET_TYPE } from './goods-issue.service';
 
 /**
@@ -146,6 +146,7 @@ export class GoodsIssueUpdateService {
       const rows = await tx.goods_issue_line.findMany({
         where: { goods_issue_id: goodsIssueId },
         orderBy: { line_no: 'asc' },
+        include: GOODS_ISSUE_LINE_INCLUDE,
       });
       return rows.map(goodsIssueLineView);
     });

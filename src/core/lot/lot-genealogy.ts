@@ -64,6 +64,25 @@ export function inputWindows(rows: readonly InputRow[]): InputWindow[] {
   return windows;
 }
 
+/**
+ * LOT 과 그 분할 자손 전부(`SPLIT` 계보를 끝까지 · 피처 008). 부분 출고로 떼어 낸 분할 LOT 은 원래 LOT 의
+ * 일부라 출고량·영향·투입을 셀 때 함께 센다. `UNION` 이 고리를 끊는다. 순서는 정하지 않는다.
+ */
+export async function lotWithSplitDescendants(db: Pick<Tx, '$queryRaw'>, lotIds: readonly bigint[]): Promise<bigint[]> {
+  if (lotIds.length === 0) return [];
+  const rows = await db.$queryRaw<{ lot_id: bigint }[]>`
+    WITH RECURSIVE family(lot_id) AS (
+      SELECT unnest(${[...lotIds]}::bigint[])
+      UNION
+      SELECT r.target_lot_id
+        FROM trace.lot_relation r
+        JOIN family f ON f.lot_id = r.source_lot_id
+       WHERE r.relation_type_code = ${SPLIT_RELATION}
+    )
+    SELECT lot_id FROM family`;
+  return rows.map((row) => row.lot_id);
+}
+
 /** 실적 구간 (after, until] 과 겹치는 자재 LOT — 구간 안에서 LOT 이 바뀌었으면 둘 다다. */
 export function lotsBetween(windows: readonly InputWindow[], after: Date | null, until: Date): InputWindow[] {
   return windows.filter(

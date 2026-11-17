@@ -145,6 +145,8 @@ function stub(seed: Seed = {}) {
         uom_id: BigInt(row.uom_id as number),
         source_location_id: BigInt(row.source_location_id as number),
         inventory_transaction_line_id: null,
+        // 응답 매퍼가 싣는 LOT 번호·분할 원천(피처 008 D-9).
+        lot: { lot_no: 'LOT', source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 1n, parent_lot_id: null, parent_lot: null },
       }));
   }
 

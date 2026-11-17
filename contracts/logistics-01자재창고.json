@@ -2965,7 +2965,7 @@
      "logistics"
     ],
     "summary": "출고 등록",
-    "description": "postImmediately 가 참이면 등록과 전기가 같은 트랜잭션이다 — 화면이 한 버튼인 경우다. 승인을 먼저 받는 기타 출고는 거짓으로 보낸다. 전기 때 생산 투입 출고(sourceDocumentTypeCode=PICKING_ORDER)는 LOT 상태가 정상(NORMAL)이 아니면 400 STATE_LOCKED(lines[i].lotId)다 — 공급사 반품·폐기 출고는 LOT 상태를 보지 않는다(omf-all-around#240). 근거: M-01-08 · W-01-05 · W-01-06",
+    "description": "postImmediately 가 참이면 등록과 전기가 같은 트랜잭션이다 — 화면이 한 버튼인 경우다. 승인을 먼저 받는 기타 출고는 거짓으로 보낸다. 전기 때 생산 투입 출고(sourceDocumentTypeCode=PICKING_ORDER)는 LOT 상태가 정상(NORMAL)이 아니면 400 STATE_LOCKED(lines[i].lotId)다 — 공급사 반품·폐기 출고는 LOT 상태를 보지 않는다(omf-all-around#240). 근거: M-01-08 · W-01-05 · W-01-06 부분 출고 분할(피처 008 · omf-all-around#289): 원천이 PICKING_ORDER 인 출고가 전기될 때, 라인 수량을 내도 그 LOT 재고가 어디든 남으면(부분 출고) 줄마다 분할 LOT(번호 = 수량 칸을 분할 수량으로 바꾸고 번호 칸에 -S{n})을 만들어 그것을 낸다 — 그래서 응답 lines[].lotId 는 요청의 lotId(원래 LOT)와 다르고 splitFromLotId 가 원래 LOT 이다. 분할은 원천 GOODS_ISSUE_SPLIT 의 분할 원장(LOT_SPLIT)으로 출발 위치에서 원래 LOT → 분할 LOT 으로 옮긴 뒤 출고 원장이 분할 LOT 을 낸다. 전량 출고면 분할하지 않는다. 피킹 라인의 LOT 은 원래 LOT 그대로다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -16979,6 +16979,7 @@
      "lineNo",
      "itemId",
      "lotId",
+     "lotNo",
      "issueQty",
      "uomId",
      "sourceLocationId"
@@ -17023,7 +17024,30 @@
       "x-source-column": "lot_id",
       "type": "integer",
       "format": "int64",
+      "example": 1001,
+      "description": "출고한 LOT. 부분 출고 분할이면 분할 LOT 이다(피처 008)."
+     },
+     "lotNo": {
+      "type": "string",
+      "description": "lotId 의 LOT 번호(분할이면 분할 LOT 번호).",
+      "example": "040101-00022S|300|260731|100019|0001-S1"
+     },
+     "splitFromLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "이 라인이 부분 출고로 분할 LOT 을 만들었으면 원래 LOT. 아니면 null(전량 출고, 돌아온 분할 LOT 을 다시 전량 출고한 라인 포함).",
       "example": 1001
+     },
+     "splitFromLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "splitFromLotId 의 LOT 번호.",
+      "example": "040101-00022S|1000|260731|100019|0001"
      },
      "issueQty": {
       "x-source-column": "issue_qty",
