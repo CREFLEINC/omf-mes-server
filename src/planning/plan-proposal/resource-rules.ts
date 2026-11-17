@@ -1,4 +1,4 @@
-import { FG_LINK_FAILURES, FgResolution, LocationFact, locationFinding } from '../../core/erp-warehouse/fg-location';
+import { FG_LINK_FAILURES, FgRule, LocationFact, locationFinding } from '../../core/erp-warehouse/fg-location';
 import { unusable } from '../../core/work-order';
 
 /**
@@ -44,7 +44,7 @@ export interface ResourceFinding {
 const LOCATION_FIELDS = ['defaultWipLocationId', 'defaultFgLocationId', 'defaultScrapLocationId'] as const;
 
 /** `fg` 는 ERP W/O 의 완제품 위치 판정 — 완제품 위치 칸만 이 규칙을 따른다(`core/erp-warehouse/fg-location.ts`). */
-export function resourceFindings(plantId: bigint, values: WorkOrderResources, refs: ResourceRefs, fg: FgResolution): ResourceFinding[] {
+export function resourceFindings(plantId: bigint, values: WorkOrderResources, refs: ResourceRefs, fg: FgRule): ResourceFinding[] {
   const findings: ResourceFinding[] = [];
   const line = values.productionLineId === null ? undefined : refs.lines.get(values.productionLineId);
   if (values.productionLineId === null) {
