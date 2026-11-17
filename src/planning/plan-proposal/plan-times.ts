@@ -39,7 +39,7 @@ export interface TimeJudgment {
 export interface TimeContext {
   /** 계획일과 교대로 정한 창 — SYSTEM 의 값. */
   system: PlanWindow;
-  /** 계획일의 근무일 하루 — USER 시작 시각이 들어야 하는 범위. */
+  /** 계획일의 근무일 하루 — USER 시작 시각이 들어야 하는 범위(고른 교대 창 안이면 그것으로도 된다). */
   day: PlanWindow;
   /** 교대를 정했으면 그 교대 창. */
   shift: PlanWindow | null;
@@ -69,7 +69,10 @@ export function judgeTime(path: string, body: TimeBody, context: TimeContext): T
   if (errors.length > 0) return { window: context.system, errors, warnings: [], corrections: [] };
   const window = { plannedStartAt: new Date(body.plannedStartAt as string), plannedEndAt: new Date(body.plannedEndAt as string) };
   if (window.plannedStartAt >= window.plannedEndAt) error('plannedEndAt', ERROR_CODE.RANGE, '계획 종료 시각은 시작 시각보다 늦어야 합니다.');
-  if (window.plannedStartAt < context.day.plannedStartAt || window.plannedStartAt >= context.day.plannedEndAt) {
+  // 고른 교대가 다음 근무일 시작을 넘겨 끝나면(23:00–07:30 · 첫 교대 07:00) 그 교대 안의 시작은 근무일 밖이어도 계획일의 일이다.
+  const inDay = window.plannedStartAt >= context.day.plannedStartAt && window.plannedStartAt < context.day.plannedEndAt;
+  const inShift = context.shift !== null && window.plannedStartAt >= context.shift.plannedStartAt && window.plannedStartAt < context.shift.plannedEndAt;
+  if (!inDay && !inShift) {
     error('plannedStartAt', PLAN_TIME_OUTSIDE_PLAN_DATE,
       `계획 시작 시각이 계획일(${context.planDate})의 근무일(${clock(context.day.plannedStartAt, context.timezone)} ~ 다음 날 ${clock(context.day.plannedEndAt, context.timezone)}) 밖입니다. 시각이나 계획일을 고치세요.`);
   }

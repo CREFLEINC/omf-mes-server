@@ -9,6 +9,8 @@ import { Proposal, ProposalBasis, buildProposals, planDayIssues } from './propos
 import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, judgeConfirm, quantityDelta } from './proposal-confirm-check';
 import { TimeCorrection } from './plan-times';
 import { splitChildConflict } from './draft-replace';
+import { FgWarehouseView, fgOverrideWarning, fgWarehouseView } from './fg-override';
+import { findArrivalLocationId } from '../../core/material-issue/production-warehouse';
 import { draftsChanged } from './plan-set-rules';
 import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
 import { ProposalFacts, readProposalFacts } from './proposal-reader';
@@ -77,7 +79,7 @@ export interface ProposalRevalidation {
   errors: ErrorItem[];
   warnings: RevalidationWarning[];
   corrections: TimeCorrection[];
-  plans: ReturnType<typeof planView>[];
+  plans: (ReturnType<typeof planView> & { fgWarehouse: FgWarehouseView })[];
 }
 
 /**
@@ -111,8 +113,11 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
   const warnings = [
     ...resolved.flatMap((plan, at) => planDayIssues(plan.body.planDate, days[at]).map((issue) => ({ code: issue.code, field: `plans[${plan.index}].planDate`, message: issue.message }))),
     ...timeWarnings,
+    ...resolved.flatMap((plan) => fgOverrideWarning(`plans[${plan.index}]`, proposal.fg, plan.fgOverride)),
     ...(await workOrderWarnings(client, proposal.order, facts, resolved, now)),
   ];
+  const arrivalOf = (warehouseId: bigint) => findArrivalLocationId(client, warehouseId);
+  const fgWarehouses = await Promise.all(resolved.map((plan) => fgWarehouseView(proposal.fg, { sent: plan.fgOverrideSent, applied: plan.fgOverride }, arrivalOf)));
   return {
     ...head,
     confirmable: errors.length === 0 && proposalChanges.length === 0,
@@ -120,7 +125,7 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
     errors,
     warnings,
     corrections,
-    plans: resolved.map((plan, at) => planView(facts, plan, days[at])),
+    plans: resolved.map((plan, at) => ({ ...planView(facts, plan, days[at]), fgWarehouse: fgWarehouses[at] })),
   };
 }
 

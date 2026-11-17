@@ -38,6 +38,15 @@ describe('judgeTime — SYSTEM 은 계획일·교대로, USER 는 본문 그대�
     expect(judgeTime('p', { plannedTimeSourceCode: 'USER', plannedStartAt: at('2026-11-19T06:00:00'), plannedEndAt: at('2026-11-19T08:00:00') }, context()).errors).toEqual([]);
   });
 
+  it('고른 교대가 다음 근무일 시작을 넘겨 끝나면 그 교대 안의 시작은 근무일 밖이어도 받는다', () => {
+    const late = shiftWindow(DATE, { startTime: '23:00:00', endTime: '07:30:00' }, TZ);
+    const judged = judgeTime('p', { plannedTimeSourceCode: 'USER', plannedStartAt: at('2026-11-19T07:15:00'), plannedEndAt: at('2026-11-19T07:30:00') }, context(late));
+    expect([judged.errors, judged.warnings]).toEqual([[], []]);
+    // 교대를 고르지 않았으면 같은 시각이 근무일 밖이다.
+    expect(codes(judgeTime('p', { plannedTimeSourceCode: 'USER', plannedStartAt: at('2026-11-19T07:15:00'), plannedEndAt: at('2026-11-19T07:30:00') }, context()).errors))
+      .toEqual([['p.plannedStartAt', 'PLAN_TIME_OUTSIDE_PLAN_DATE']]);
+  });
+
   it('USER 시각이 고른 교대 밖이면 WARN 이다 — 막지 않는다', () => {
     const judged = judgeTime('p', { plannedTimeSourceCode: 'USER', plannedStartAt: at('2026-11-18T13:00:00'), plannedEndAt: at('2026-11-18T21:00:00') }, context(night));
     expect(judged.errors).toEqual([]);

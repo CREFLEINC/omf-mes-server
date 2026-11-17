@@ -42,11 +42,21 @@ export async function isDividedWarehouse(db: Db, warehouseId: bigint): Promise<b
 
 /** 보충 출고의 도착 위치 — 나뉜 창고는 적치 대기, 아니면 창고 전체(R-7). 창고마다 트리거가 둘 다 만든다. */
 export async function arrivalLocationId(db: Db, warehouseId: bigint): Promise<bigint> {
+  const { role, locationId } = await arrivalOf(db, warehouseId);
+  if (locationId === null) throw new Error(`창고 ${warehouseId} 에 ${role} 위치가 없다`);
+  return locationId;
+}
+
+/** `arrivalLocationId` 와 같은 규칙 — 그 위치가 없으면 던지지 않고 null 이다(보여 주기만 하는 자리). DB 오류는 그대로 던진다. */
+export async function findArrivalLocationId(db: Db, warehouseId: bigint): Promise<bigint | null> {
+  return (await arrivalOf(db, warehouseId)).locationId;
+}
+
+async function arrivalOf(db: Db, warehouseId: bigint): Promise<{ role: string; locationId: bigint | null }> {
   const role = (await isDividedWarehouse(db, warehouseId)) ? PUTAWAY_STAGING : WAREHOUSE_WHOLE;
   const row = await db.location.findFirst({
     where: { warehouse_id: warehouseId, system_role_code: role },
     select: { location_id: true },
   });
-  if (row === null) throw new Error(`창고 ${warehouseId} 에 ${role} 위치가 없다`);
-  return row.location_id;
+  return { role, locationId: row?.location_id ?? null };
 }

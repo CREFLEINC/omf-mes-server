@@ -12,10 +12,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PlanConfirmService, isDuplicateWorkOrderNo } from '../production-plan/plan-confirm.service';
 import { PlanDateRow, calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../production-plan/plan-quantity';
-import { deleteDrafts, recordDraftsReplaced, splitChildConflict } from './draft-replace';
+import { deleteDrafts, splitChildConflict } from './draft-replace';
 import { ExistingDraftAction, draftChoiceErrors } from './plan-set-rules';
 import { Proposal, buildProposals } from './proposal-builder';
-import { recordUserHolidayDates } from './plan-date-audit';
+import { AuditContext, FgOverride, recordDraftsReplaced, recordFgOverrides, recordUserHolidayDates } from './proposal-audit';
 import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, quantityDelta, resolveConfirm, systemDateOf } from './proposal-confirm-check';
 import { readProposalFacts } from './proposal-reader';
 import {
@@ -182,14 +182,13 @@ export class PlanProposalService {
         ...(await planResult(tx, productionPlanId, confirmed.versionNo)),
       });
     }
-    if (replaced.length > 0) {
-      await recordDraftsReplaced(tx, { orderId, drafts: replaced, newPlanIds: saved.map((row) => row.productionPlanId), actorId: appUserId, correlationId });
-    }
     const plans = await withCalendars(tx, results);
-    const userHolidays = checked.resolved.flatMap((plan, at) => (plan.body.planDateSourceCode === 'USER' && plans[at].planDateCalendar.statusCode === 'HOLIDAY'
+    const audit: AuditContext = { orderId, actorId: appUserId, correlationId };
+    await recordDraftsReplaced(tx, audit, replaced, saved.map((row) => row.productionPlanId));
+    await recordUserHolidayDates(tx, audit, checked.resolved.flatMap((plan, at) => (plan.body.planDateSourceCode === 'USER' && plans[at].planDateCalendar.statusCode === 'HOLIDAY'
       ? [{ productionPlanId: plans[at].productionPlanId, planNo: plans[at].planNo, planDate: plan.body.planDate, systemDate: systemDateOf(checked.proposal, plan.proposal), day: plans[at].planDateCalendar }]
-      : []));
-    await recordUserHolidayDates(tx, { orderId, plans: userHolidays, actorId: appUserId, correlationId });
+      : [])));
+    await recordFgOverrides(tx, audit, fgOverridesOf(checked.proposal, checked.resolved, plans));
     return {
       productionOrderId: Number(orderId),
       outcome: 'CONFIRMED',
@@ -280,6 +279,24 @@ function assertUnchanged(proposal: Proposal, body: ProposalConfirmBody): void {
     code: 'PROPOSAL_CHANGED',
     proposalChanges,
     currentProposal: proposalView(proposal),
+  });
+}
+
+/** 입고 창고를 바꾼 계획마다 — ERP 원본(SL_CD 창고·입고 위치)과 적용 창고, 만든 W/O 의 완제품 위치. 바꾼 창고는 SL_CD 가 연결된 ERP W/O 에서만 받았다. */
+function fgOverridesOf(proposal: Proposal, resolved: readonly ResolvedPlan[], plans: readonly ProposalConfirmResult['plans'][number][]): FgOverride[] {
+  const fg = proposal.fg;
+  if (fg.kind !== 'ERP_STORAGE_LOCATION') return [];
+  return resolved.flatMap((plan, at): FgOverride[] => {
+    if (plan.fgOverride === null) return [];
+    const fgOf = new Map(plan.body.workOrders.map((workOrder) => [workOrder.routingOperationId, workOrder.defaultFgLocationId]));
+    return [{
+      productionPlanId: plans[at].productionPlanId,
+      planNo: plans[at].planNo,
+      erpStorageLocationCode: fg.erpCode,
+      erp: { warehouseId: Number(fg.warehouse.id), warehouseCode: fg.warehouse.code, locationId: Number(fg.location.id) },
+      applied: { warehouseId: Number(plan.fgOverride.id), warehouseCode: plan.fgOverride.code },
+      workOrders: plans[at].workOrders.map((workOrder) => ({ workOrderId: workOrder.workOrderId, defaultFgLocationId: Number(fgOf.get(workOrder.routingOperationId)) })),
+    }];
   });
 }
 
