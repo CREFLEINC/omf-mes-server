@@ -6,10 +6,12 @@ import { PlanningCalendarDay } from '../../core/calendar/working-day';
 import { calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals, planDayIssues } from './proposal-builder';
-import { ProposalConfirmBody, ResolvedPlan, judgeConfirm, planDateSourceOf, quantityDelta } from './proposal-confirm-check';
+import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, judgeConfirm, planDateSourceOf, quantityDelta } from './proposal-confirm-check';
+import { splitChildConflict } from './draft-replace';
+import { draftsChanged } from './plan-set-rules';
 import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
 import { ProposalFacts, readProposalFacts } from './proposal-reader';
-import { ProposalView, proposalView } from './proposal-view';
+import { ExistingDraftView, ProposalView, existingDraftView, proposalView } from './proposal-view';
 import { RevalidationWarning, workOrderWarnings } from './proposal-warnings';
 
 const BASIS_LABEL: Record<keyof ProposalBasis, string> = {
@@ -26,14 +28,33 @@ export interface ProposalChange {
   message: string;
 }
 
-/** 본문 basis 와 지금 basis 가 다른 칸 — 확정은 이것이 비지 않으면 409 PROPOSAL_CHANGED, 재검증은 그대로 싣는다. */
-export function basisChanges(proposal: Proposal, sent: ProposalBasis): ProposalChange[] {
+/**
+ * 사람이 검토한 뒤 바뀐 것 — 확정은 이것이 비지 않으면 409 PROPOSAL_CHANGED, 재검증은 그대로 싣는다.
+ * basis 의 칸과, 사람이 본 작성중 계획의 id·판(`draftsChanged`)이 지금과 다른 것(basis plans 로 낸다)이다.
+ */
+export function proposalChangesOf(proposal: Proposal, body: ProposalConfirmBody): ProposalChange[] {
+  const changed = (Object.keys(BASIS_LABEL) as (keyof ProposalBasis)[]).filter((key) => proposal.basis[key] !== body.basis[key]);
+  if (!changed.includes('plans') && draftsChanged(draftRefsOf(proposal), body)) changed.push('plans');
   return (Object.keys(BASIS_LABEL) as (keyof ProposalBasis)[])
-    .filter((key) => proposal.basis[key] !== sent[key])
+    .filter((basis) => changed.includes(basis))
     .map((basis) => ({
       basis,
       message: basis === 'productionOrder' ? `${BASIS_LABEL[basis]} 지금 수량 ${proposal.order.order_qty.toString()}.` : BASIS_LABEL[basis],
     }));
+}
+
+/** 본문이 고른 바탕(이어서·새로)으로 다시 계산한 제안 — 확정과 재검증이 같은 식으로 읽는다. */
+export async function proposalFor(client: Prisma.TransactionClient, orderId: bigint, body: ProposalConfirmBody, now: Date): Promise<{ facts: ProposalFacts; proposal: Proposal }> {
+  const facts = await readProposalFacts(client, [orderId], now);
+  const proposal = buildProposals(facts, now, body.existingDraftAction === 'CONTINUE' ? 'CONTINUE' : 'REPLACE').get(orderId);
+  if (proposal === undefined) throw new NotFoundException('없는 ERP W/O 입니다.');
+  return { facts, proposal };
+}
+
+/** 「새로 한다」면 지울 작성중 계획의 수량 — 수량 한도는 대체 «후» 기준이다. */
+export function replacedQtyOf(proposal: Proposal, body: ProposalConfirmBody): Prisma.Decimal {
+  if (body.existingDraftAction !== 'REPLACE') return new Prisma.Decimal(0);
+  return proposal.drafts.reduce((sum, { row }) => sum.plus(row.planned_qty), new Prisma.Decimal(0));
 }
 
 export const ORDER_CANCELLED_ERROR: ErrorItem = { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 ERP W/O 는 계획하지 않습니다.' };
@@ -51,6 +72,7 @@ export interface ProposalRevalidation {
   basis: ProposalBasis;
   proposalChanges: ProposalChange[];
   currentProposal?: ProposalView;
+  existingDrafts: ExistingDraftView[];
   errors: ErrorItem[];
   warnings: RevalidationWarning[];
   plans: ReturnType<typeof planView>[];
@@ -61,23 +83,24 @@ export interface ProposalRevalidation {
  * 확정이 400 으로 낼 것은 errors, 409 로 낼 것은 proposalChanges 다. 확정과 달리 하나에서 멈추지 않고 모두 낸다.
  */
 export async function revalidateProposal(client: Prisma.TransactionClient, orderId: bigint, body: ProposalConfirmBody, now: Date = new Date()): Promise<ProposalRevalidation> {
-  const facts = await readProposalFacts(client, [orderId], now);
-  const proposal = buildProposals(facts, now).get(orderId);
-  if (proposal === undefined) throw new NotFoundException('없는 ERP W/O 입니다.');
-  const proposalChanges = basisChanges(proposal, body.basis);
+  const { facts, proposal } = await proposalFor(client, orderId, body, now);
+  const proposalChanges = proposalChangesOf(proposal, body);
   const head = {
     productionOrderId: Number(orderId),
     basis: proposal.basis,
     proposalChanges,
     ...(proposalChanges.length === 0 ? {} : { currentProposal: proposalView(proposal) }),
+    existingDrafts: proposal.drafts.map(existingDraftView),
   };
   const nothing = { confirmable: false, warnings: [], plans: [] };
   if (proposal.order.status_code === 'CANCELLED') return { ...head, ...nothing, alreadyProcessed: false, errors: [ORDER_CANCELLED_ERROR] };
   if (proposal.kind === 'AUTO_WORK_ORDER') return { ...head, ...nothing, alreadyProcessed: false, errors: [AUTO_WORK_ORDER_PLANT_ERROR] };
   if (proposal.kind === 'KEEP_CONFIRMED') return { ...head, ...nothing, alreadyProcessed: true, errors: [] };
 
-  const { resolved, errors } = await judgeConfirm(client, proposal, facts, body);
-  if (resolved.length > 0) errors.push(...(await quantityErrors(client, orderId, resolved)));
+  const { resolved, errors } = await judgeConfirm(client, proposal, facts, body, now);
+  const pinned = splitChildConflict(proposal, body.existingDraftAction);
+  if (pinned !== null) errors.unshift({ scope: 'screen', code: 'INVALID_STATE', message: pinned });
+  if (resolved.length > 0) errors.push(...(await quantityErrors(client, orderId, resolved, replacedQtyOf(proposal, body))));
   const days = await calendarsOfPlans(client, resolved.map((plan) => ({
     production_order_id: orderId,
     planned_line_id: plan.body.plannedLineId === null ? null : BigInt(plan.body.plannedLineId),
@@ -98,8 +121,8 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
 }
 
 /** 확정의 미리 검사(`precheckWithinOrder`)를 그대로 부르고 그 400 을 오류로 받는다 — 같은 문장·같은 칸. */
-async function quantityErrors(client: Prisma.TransactionClient, orderId: bigint, resolved: readonly ResolvedPlan[]): Promise<ErrorItem[]> {
-  const { delta, field } = quantityDelta(resolved);
+async function quantityErrors(client: Prisma.TransactionClient, orderId: bigint, resolved: readonly ResolvedPlan[], replacedQty: Prisma.Decimal): Promise<ErrorItem[]> {
+  const { delta, field } = quantityDelta(resolved, replacedQty);
   try {
     await precheckWithinOrder(client, orderId, delta, field, true);
     return [];
@@ -117,18 +140,21 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
   const dependencies = facts.dependencies.get(routingId) ?? [];
   return {
     proposalPlanKey: body.proposalPlanKey,
+    splitFromPlanKey: body.splitFromPlanKey ?? null,
     planSource: proposal.source,
     ...(proposal.saved === undefined ? {} : { productionPlanId: Number(proposal.saved.production_plan_id) }),
     planDate: body.planDate,
     planDateSourceCode: planDateSourceOf(plan),
     planDateCalendar: day,
     plannedQty: body.plannedQty,
+    bomId: body.bomId,
     routingId: body.routingId,
     plannedLineId: body.plannedLineId,
+    remarks: body.remarks ?? null,
     workOrders: body.workOrders.map((workOrder) => {
       const operationId = BigInt(workOrder.routingOperationId);
       const operation = operations.get(operationId);
-      const window = plan.supplements.get(operationId)?.window;
+      const window = plan.windows.get(operationId);
       const equipmentRequired = operation?.equipment_required ?? false;
       const moldRequired = operation?.mold_required ?? false;
       const equipmentId = workOrder.plannedEquipmentId ?? null;
@@ -143,13 +169,13 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
         plannedStartAt: window?.plannedStartAt.toISOString() ?? null,
         plannedEndAt: window?.plannedEndAt.toISOString() ?? null,
         plannedShiftId: workOrder.plannedShiftId ?? null,
-        productionLineId: workOrder.productionLineId,
+        productionLineId: workOrder.productionLineId ?? null,
         plannedEquipmentId: equipmentId,
         plannedMoldId: moldId,
         responsibleWorkerId: workOrder.responsibleWorkerId ?? null,
-        defaultWipLocationId: workOrder.defaultWipLocationId,
-        defaultFgLocationId: workOrder.defaultFgLocationId,
-        defaultScrapLocationId: workOrder.defaultScrapLocationId,
+        defaultWipLocationId: workOrder.defaultWipLocationId ?? null,
+        defaultFgLocationId: workOrder.defaultFgLocationId ?? null,
+        defaultScrapLocationId: workOrder.defaultScrapLocationId ?? null,
         equipmentRequired,
         moldRequired,
         // 확정·배포가 막지 않는 빈 칸이다 — 공정이 요구하는데 비었음을 알린다.

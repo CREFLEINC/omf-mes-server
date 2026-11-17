@@ -44,6 +44,7 @@ interface Proposal {
   remainingQty: number;
   basis: Record<string, string>;
   issues: { code: string }[];
+  existingDrafts: { productionPlanId: number; versionNo: number; planNo: string; plannedQty: number }[];
   plans: {
     proposalPlanKey: string;
     planSource: string;
@@ -112,16 +113,26 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
 
   const propose = (...orderIds: (bigint | number)[]) =>
     request(app.getHttpServer()).get(PROPOSALS).query({ productionOrderIds: orderIds.map(String).join(',') }).set('Cookie', cookie);
-  const proposalOf = async (orderId: bigint): Promise<Proposal> => ((await propose(orderId).expect(200)).body as { items: Proposal[] }).items[0];
+  /** `action` 은 작성중 계획이 있는 ERP W/O 의 바탕 — 이어서(CONTINUE)면 작성중 계획을 검토한다. */
+  const proposalOf = async (orderId: bigint, action?: 'CONTINUE' | 'REPLACE'): Promise<Proposal> =>
+    ((await request(app.getHttpServer()).get(PROPOSALS)
+      .query({ productionOrderIds: String(orderId), ...(action === undefined ? {} : { existingDraftAction: action }) })
+      .set('Cookie', cookie).expect(200)).body as { items: Proposal[] }).items[0];
   const confirm = (orderId: bigint | number, body: unknown, key: string = randomUUID()) =>
     request(app.getHttpServer()).post(confirmPath(orderId)).set('Cookie', cookie).set('Idempotency-Key', key).send(body as object);
 
   /** 제안을 그대로 확정 본문으로 — 보완 4M 은 제안 값, 빈 칸은 `fill` 로 채운다. */
+  /** 작성중 계획이 있으면 제안의 바탕대로 고른다 — REVIEW_DRAFT 는 이어서(판 포함), NEW_PLAN 은 새로(본 작성중 계획 전부). */
   function bodyOf(proposal: Proposal, fill: Record<string, number | null> = {}) {
+    const choice = proposal.existingDrafts.length === 0 ? {}
+      : proposal.kind === 'REVIEW_DRAFT' ? { existingDraftAction: 'CONTINUE' }
+        : { existingDraftAction: 'REPLACE', replacedDrafts: proposal.existingDrafts.map(({ productionPlanId, versionNo }) => ({ productionPlanId, versionNo })) };
     return {
       basis: proposal.basis,
+      ...choice,
       plans: proposal.plans.map((plan) => ({
         proposalPlanKey: plan.proposalPlanKey,
+        ...(plan.saved === undefined ? {} : { savedVersionNo: plan.saved.versionNo }),
         planDate: plan.planDate,
         plannedQty: plan.proposedQty,
         bomId: plan.bomId,
@@ -197,7 +208,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('작성중 계획이 있으면 그 계획을 검토한다 — 임시 키는 저장된 id 로, 저장값을 함께 싣고 남은 수량은 제안하지 않는다', async () => {
-      const proposal = await proposalOf(order.E);
+      const proposal = await proposalOf(order.E, 'CONTINUE');
 
       expect(proposal).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'CONFIRMABLE', remainingQty: 40 });
       expect(proposal.plans).toEqual([expect.objectContaining({
@@ -206,7 +217,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('확정 계획이 일부 있고 작성중 계획도 있으면 작성중만 제안한다 — 남는 수량(오더량 − 확정 − 작성)은 remainingQty 로만 싣는다', async () => {
-      const proposal = await proposalOf(order.K);
+      const proposal = await proposalOf(order.K, 'CONTINUE');
 
       expect(proposal).toMatchObject({ kind: 'REVIEW_DRAFT', remainingQty: 20 });
       expect(proposal.plans.map((plan) => [plan.planSource, plan.proposedQty])).toEqual([['EXISTING_DRAFT', 50]]);
@@ -216,7 +227,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const detail = await request(app.getHttpServer()).get(`/api/planning/production-orders/${order.M}`).set('Cookie', cookie).expect(200);
 
       expect(detail.body).toMatchObject({ planStatusCode: 'PLANNED', confirmedPlanQty: 0, draftPlanQty: 100, remainingQty: 0, worklistState: 'ACTION_REQUIRED' });
-      expect(await proposalOf(order.M)).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'CONFIRMABLE', remainingQty: 0 });
+      expect(await proposalOf(order.M, 'CONTINUE')).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'CONFIRMABLE', remainingQty: 0 });
     });
 
     it('부작용이 없다 — 계획·W/O·번호·멱등 기록·ERP W/O 판과 시도 기록이 그대로다', async () => {
@@ -291,7 +302,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const { plans, workOrders, counters } = await snapshot();
       const again = await confirm(order.A, firstBody).expect(200);
 
-      expect(again.body).toEqual({ ...firstResponse, outcome: 'ALREADY_PROCESSED', plans: (firstResponse.plans as Record<string, unknown>[]).map(({ proposalPlanKey: _, ...plan }) => plan) });
+      expect(again.body).toEqual({ ...firstResponse, outcome: 'ALREADY_PROCESSED', plans: (firstResponse.plans as Record<string, unknown>[]).map(({ proposalPlanKey: _, splitFromPlanKey: __, ...plan }) => plan) });
       expect(await snapshot()).toMatchObject({ plans, workOrders, counters });
     });
 
@@ -307,7 +318,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('검토한 뒤 작성중 계획이 고쳐지면 409(plans) — 다시 조회해 확정하면 그 작성중 계획이 확정된다', async () => {
-      const stale = bodyOf(await proposalOf(order.E));
+      const stale = bodyOf(await proposalOf(order.E, 'CONTINUE'));
       await request(app.getHttpServer())
         .put(`/api/planning/production-plans/${id.draftE}`)
         .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('If-Match', '1')
@@ -317,7 +328,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const changed = await confirm(order.E, stale).expect(409);
       expect(changed.body.proposalChanges.map((change: { basis: string }) => change.basis)).toEqual(['plans']);
 
-      const fresh = await confirm(order.E, bodyOf(await proposalOf(order.E))).expect(200);
+      const fresh = await confirm(order.E, bodyOf(await proposalOf(order.E, 'CONTINUE'))).expect(200);
       expect(fresh.body.plans).toEqual([expect.objectContaining({ proposalPlanKey: `plan-${id.draftE}`, productionPlanId: Number(id.draftE), statusCode: 'CONFIRMED' })]);
       expect(await prisma.production_plan.count({ where: { production_order_id: order.E } })).toBe(1);
     });
@@ -341,8 +352,9 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
 
     it.each([
       ['공정이 빠지면 plans[0].workOrders', (body: ReturnType<typeof bodyOf>) => { body.plans[0].workOrders.pop(); }, 'plans[0].workOrders', 'INVALID'],
-      ['계획 집합이 제안과 다르면 plans', (body: ReturnType<typeof bodyOf>) => { body.plans[0].proposalPlanKey = 'new-2'; }, 'plans', 'INVALID'],
-      ['제안에 없는 계획을 더하면 plans — 본문으로 새 계획을 만들 수 없다', (body: ReturnType<typeof bodyOf>) => { body.plans.push({ ...body.plans[0], proposalPlanKey: 'new-2' }); }, 'plans', 'INVALID'],
+      ['같은 키가 둘이면 plans[1].proposalPlanKey', (body: ReturnType<typeof bodyOf>) => { body.plans.push({ ...body.plans[0] }); }, 'plans[1].proposalPlanKey', 'DUPLICATE_PLAN_KEY'],
+      ['다른 ERP W/O 의 계획을 실으면 plans[0].proposalPlanKey', (body: ReturnType<typeof bodyOf>) => { body.plans[0].proposalPlanKey = `plan-${id.draftE}`; }, 'plans[0].proposalPlanKey', 'INVALID'],
+      ['나누기 전 키가 본문에 없으면 plans[0].splitFromPlanKey', (body: ReturnType<typeof bodyOf>) => { Object.assign(body.plans[0], { splitFromPlanKey: 'new-9' }); }, 'plans[0].splitFromPlanKey', 'INVALID'],
       ['수량이 ERP W/O 를 넘으면 plans[0].plannedQty', (body: ReturnType<typeof bodyOf>) => { body.plans[0].plannedQty = 101; }, 'plans[0].plannedQty', 'PLAN_QTY_EXCEEDS_ORDER'],
       ['계획일이 공장 현지 오늘보다 앞이면 plans[0].planDate', (body: ReturnType<typeof bodyOf>) => { body.plans[0].planDate = shiftDays(localToday(), -1); }, 'plans[0].planDate', 'RANGE'],
       ['필수 4M 이 없으면 계약 검사가 막는다', (body: ReturnType<typeof bodyOf>) => { delete (body.plans[0].workOrders[0] as { productionLineId?: number }).productionLineId; }, 'plans[0].workOrders[0].productionLineId', 'REQUIRED'],
@@ -385,7 +397,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('계획 라인과 다른 라인의 설비는 제안이 EQUIPMENT_LINE_MISMATCH(보완 필요)로 내고, 그대로 확정하면 같은 판정·같은 칸으로 400 이다', async () => {
-      const proposal = await proposalOf(order.N);
+      const proposal = await proposalOf(order.N, 'CONTINUE');
       expect(proposal).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'NEEDS_INPUT', reasons: [{ code: 'EQUIPMENT_LINE_MISMATCH', category: 'INPUT' }] });
       expect(proposal.plans[0].workOrders.map((workOrder) => workOrder.issues.filter((issue) => issue.severity === 'BLOCK').map((issue) => [issue.code, issue.field])))
         .toEqual([[['EQUIPMENT_LINE_MISMATCH', 'plannedEquipmentId']], [['EQUIPMENT_LINE_MISMATCH', 'plannedEquipmentId']]]);
@@ -438,7 +450,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('수시로 바뀌는 칸은 409 를 내지 않는다 — 금형 타수·설비 교정 기한과 그 판, 확정 계획 W/O 의 진행 상태', async () => {
-      const body = bodyOf(await proposalOf(order.K));
+      const body = bodyOf(await proposalOf(order.K, 'CONTINUE'));
       await prisma.mold.update({ where: { mold_id: id.mold }, data: { current_shot_count: { increment: 500 }, version_no: { increment: 1 } } });
       await prisma.equipment.update({ where: { equipment_id: id.eq1 }, data: { calibration_due_date: new Date('2030-01-01T00:00:00.000Z'), version_no: { increment: 1 } } });
       await prisma.work_order.update({ where: { work_order_id: id.workOrderK1 }, data: { status_code: 'RELEASED', released_at: new Date() } });
@@ -449,7 +461,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     it('제안 확정과 계획 수정·확정이 동시에 와도 5xx 가 없고 결과가 한쪽으로 맞는다 — 여러 라운드', async () => {
       for (let round = 0; round < 6; round += 1) {
         const { orderId, planId } = await draftOrder(`RACE${round}`);
-        const body = bodyOf(await proposalOf(orderId));
+        const body = bodyOf(await proposalOf(orderId, 'CONTINUE'));
         const rival = round % 2 === 0
           ? request(app.getHttpServer()).put(`/api/planning/production-plans/${planId}`).set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('If-Match', '1').send({ plannedQty: 40 })
           : request(app.getHttpServer()).post(`/api/planning/production-plans/${planId}:confirm`).set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('If-Match', '1').send({});
@@ -480,7 +492,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     ])('작성중 계획 합이 넘을 때 하나를 줄여 확정하면 %s 200 이다 — 모든 계획을 반영한 합계로 한 번 본다', async (_, arrange) => {
       overRound += 1;
       const { orderId } = await overOrder(`OVER${overRound}`);
-      const proposal = await proposalOf(orderId);
+      const proposal = await proposalOf(orderId, 'CONTINUE');
       expect(proposal).toMatchObject({ kind: 'REVIEW_DRAFT', status: 'NEEDS_INPUT', reasons: [{ code: 'PLAN_QTY_EXCEEDS_ORDER', category: 'INPUT' }], remainingQty: -10 });
       const body = bodyOf(proposal);
       body.plans[1].plannedQty = 50;
@@ -493,7 +505,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
 
     it('작성중 계획 합이 그대로 넘으면 field 400 이고 저장하지 않는다', async () => {
       const { orderId } = await overOrder('OVER9');
-      const response = await confirm(orderId, bodyOf(await proposalOf(orderId))).expect(400);
+      const response = await confirm(orderId, bodyOf(await proposalOf(orderId, 'CONTINUE'))).expect(400);
       // 수량을 바꾼 줄이 없으면 마지막 줄을 가리킨다.
       expect(response.body.errors).toEqual([expect.objectContaining({
         scope: 'field', field: 'plans[1].plannedQty', code: 'PLAN_QTY_EXCEEDS_ORDER', message: expect.stringMatching(/작성 110 · 잔량 -10/),
@@ -503,7 +515,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
 
     it('줄였지만 아직 넘으면 그 줄을 가리키고 문구는 본문 반영 뒤 값이다', async () => {
       const { orderId } = await overOrder('OVER10');
-      const body = bodyOf(await proposalOf(orderId));
+      const body = bodyOf(await proposalOf(orderId, 'CONTINUE'));
       body.plans[1].plannedQty = 55;
 
       const response = await confirm(orderId, body).expect(400);
@@ -521,7 +533,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('계획일이 지난 작성중 계획은 오늘로 제안한다 — 저장값은 saved 에 남고 제안 값 그대로 확정된다', async () => {
-      const proposal = await proposalOf(order.Q);
+      const proposal = await proposalOf(order.Q, 'CONTINUE');
       expect(proposal.plans[0]).toMatchObject({ planDate: localToday(), saved: expect.objectContaining({ planDate: shiftDays(localToday(), -2) }) });
       await confirm(order.Q, bodyOf(proposal)).expect(200);
     });
@@ -560,7 +572,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(result).toMatchObject({ confirmable: true, alreadyProcessed: false, errors: [], proposalChanges: [], basis: proposal.basis });
       expect(result.currentProposal).toBeUndefined();
       const [plan] = result.plans;
-      expect(plan).toMatchObject({ proposalPlanKey: 'new-1', planDateSourceCode: 'SYSTEM' });
+      expect(plan).toMatchObject({ proposalPlanKey: 'new-1', planDateSourceCode: 'SYSTEM', splitFromPlanKey: null, bomId: proposal.plans[0].bomId, remarks: null });
       expect(plan.workOrders.map((workOrder) => [workOrder.routingOperationId, workOrder.orderQty, workOrder.plannedStartAt, workOrder.plannedEndAt]))
         .toEqual(proposal.plans[0].workOrders.map((workOrder) => [workOrder.routingOperationId, proposal.plans[0].proposedQty, workOrder.plannedStartAt, workOrder.plannedEndAt]));
       expect(plan.workOrders.map((workOrder) => workOrder.predecessors)).toEqual(proposal.plans[0].workOrders.map((workOrder) => workOrder.predecessors.map((p) => expect.objectContaining(p))));
@@ -587,11 +599,27 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(await snapshot()).toEqual(before);
     });
 
-    it('계획 집합이 제안과 다르면 plans 오류 하나이고 계획별 결과는 비운다', async () => {
+    it('계획 구성이 틀리면 그 오류만 내고 계획별 결과는 비운다', async () => {
       const body = bodyOf(await proposalOf(order.J));
-      body.plans[0].proposalPlanKey = 'new-2';
+      body.plans.push({ ...body.plans[0] });
       const result = revalidated(await revalidate(order.J, body).expect(200));
-      expect(result).toMatchObject({ confirmable: false, plans: [], errors: [expect.objectContaining({ field: 'plans', code: 'INVALID' })] });
+      expect(result).toMatchObject({ confirmable: false, plans: [], errors: [expect.objectContaining({ field: 'plans[1].proposalPlanKey', code: 'DUPLICATE_PLAN_KEY' })] });
+    });
+
+    it('생산 라인·기본 위치가 빈 본문(제안이 정하지 못한 칸)도 200 이고 그 칸마다 REQUIRED 다 — 확정 본문은 계약 가드가 막는다', async () => {
+      const orderId = await newOrder('RV-EMPTY', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      Object.assign(body.plans[0].workOrders[0], { productionLineId: null, defaultWipLocationId: null, defaultFgLocationId: null, defaultScrapLocationId: null });
+      const response = await revalidate(orderId, body).expect(200);
+      expect(validator(response200('/planning/production-orders/{productionOrderId}:revalidate-plan-proposal', 'post'))(response.body)).toBe(true);
+      const result = revalidated(response);
+      const path = 'plans[0].workOrders[0]';
+      expect(result.errors.map((error) => [error.field, error.code])).toEqual(expect.arrayContaining([
+        [`${path}.productionLineId`, 'REQUIRED'], [`${path}.defaultWipLocationId`, 'REQUIRED'], [`${path}.defaultScrapLocationId`, 'REQUIRED'],
+      ]));
+      expect(result.errors.map((error) => error.code)).not.toContain('WORK_ORDER_LINE_REQUIRED');
+      expect(result.plans[0].workOrders[0]).toMatchObject({ productionLineId: null, defaultWipLocationId: null });
+      await confirm(orderId, body).expect(400);
     });
 
     it('교대를 바꾸면 계획 시각을 다시 계산하고, 같은 설비를 겹치게 고르면 본문 안의 다른 공정과도 시간 중복 경고다', async () => {
@@ -709,7 +737,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
 
     it('사용자가 고른 작성중 계획일은 휴일이어도 옮기지 않고 WARN 만 낸다 — 확정을 막지 않는다', async () => {
       const orderId = await draftAt('HOL-USER', H, 'USER');
-      const proposal = await proposalOf(orderId);
+      const proposal = await proposalOf(orderId, 'CONTINUE');
       expect(proposal.status).toBe('CONFIRMABLE');
       expect(proposal.plans[0]).toMatchObject({
         planDate: H, planDateSourceCode: 'USER', planDateAdjustment: { outcomeCode: 'USER_SPECIFIED', adjustedDate: null, skippedDays: [] },
@@ -721,7 +749,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('시스템이 고른 작성중 계획일은 휴일이면 옮긴다', async () => {
-      const proposal = await proposalOf(await draftAt('HOL-SYS', H, 'SYSTEM'));
+      const proposal = await proposalOf(await draftAt('HOL-SYS', H, 'SYSTEM'), 'CONTINUE');
       expect(proposal.plans[0]).toMatchObject({ planDate: shiftDays(H, 2), planDateSourceCode: 'SYSTEM', planDateAdjustment: { outcomeCode: 'ADJUSTED' } });
     });
 
@@ -746,7 +774,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
 
     it('사용자가 고른 날의 판정만 바뀌면 409 가 아니다 — 경고만 바뀐다', async () => {
       const orderId = await draftAt('HOL-USER-409', S, 'USER');
-      const reviewed = await proposalOf(orderId);
+      const reviewed = await proposalOf(orderId, 'CONTINUE');
       expect(reviewed.plans[0].planDateCalendar.statusCode).toBe('HOLIDAY');
       await setDay(S, 'WORKING');
       try {
@@ -810,6 +838,136 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
         expect(response.body).toMatchObject({ confirmable: false, alreadyProcessed: false, plans: [], warnings: [], errors: confirmed.body.errors });
         expect(await snapshot()).toEqual(before);
       });
+    });
+  });
+
+  describe('기존 작성중 계획 — 이어서 · 새로', () => {
+    const revalidateBody = (orderId: bigint, body: unknown) =>
+      request(app.getHttpServer()).post(`/api/planning/production-orders/${orderId}:revalidate-plan-proposal`).set('Cookie', cookie).send(body as object);
+
+    it('기본 조회는 대체할 새 계획과 작성중 계획 요약이다 — 이어서로 조회하면 작성중 계획을 검토한다', async () => {
+      const { orderId, planId } = await draftOrder('KEY-SHOW');
+      const response = await propose(orderId).expect(200);
+      expect(validator(response200('/planning/production-orders:plan-proposals', 'get'))(response.body)).toBe(true);
+      const replace = (response.body as { items: Proposal[] }).items[0];
+      expect(replace).toMatchObject({ kind: 'NEW_PLAN', status: 'CONFIRMABLE', draftPlanQty: 50 });
+      expect(replace.plans.map((plan) => [plan.proposalPlanKey, plan.proposedQty])).toEqual([['new-1', 100]]);
+      expect(replace.existingDrafts).toEqual([expect.objectContaining({
+        productionPlanId: Number(planId), versionNo: 1, plannedQty: 50, statusCode: 'DRAFT', createdAutomatically: false, plannedLineId: null, plannedLineCode: null,
+      })]);
+      const continued = await proposalOf(orderId, 'CONTINUE');
+      expect(continued).toMatchObject({ kind: 'REVIEW_DRAFT', existingDrafts: replace.existingDrafts });
+      expect(continued.plans.map((plan) => plan.proposalPlanKey)).toEqual([`plan-${planId}`]);
+    });
+
+    it('고르지 않으면 400 EXISTING_DRAFT_ACTION_REQUIRED 이고 작성중 계획을 건드리지 않는다 — 재검증도 같은 오류', async () => {
+      const { orderId } = await draftOrder('KEY-NONE');
+      const { existingDraftAction: _, replacedDrafts: __, ...body } = bodyOf(await proposalOf(orderId)) as Record<string, unknown>;
+      const before = await snapshot();
+      const response = await confirm(orderId, body).expect(400);
+      expect(response.body.errors).toEqual([expect.objectContaining({ field: 'existingDraftAction', code: 'EXISTING_DRAFT_ACTION_REQUIRED', message: expect.stringContaining(`${PREFIX}-PP-`) })]);
+      expect((await revalidateBody(orderId, body).expect(200)).body.errors).toEqual(response.body.errors);
+      expect(await snapshot()).toEqual(before);
+    });
+
+    it('새로 — 한 트랜잭션에서 작성중 계획을 지우고 새 계획을 확정한다 · 수량 한도는 대체 후 기준 · 기록은 그 요청의 키로 남는다', async () => {
+      const { orderId, planId } = await draftOrder('KEY-REPLACE');
+      const body = bodyOf(await proposalOf(orderId));
+      expect(body).toMatchObject({ existingDraftAction: 'REPLACE', replacedDrafts: [{ productionPlanId: Number(planId), versionNo: 1 }] });
+      const key = randomUUID();
+      const response = await confirm(orderId, body, key).expect(200);
+      expect(validator(response200('/planning/production-orders/{productionOrderId}:confirm-plan-proposal', 'post'))(response.body)).toBe(true);
+      expect(response.body.replacedDrafts).toEqual([{ productionPlanId: Number(planId), planNo: `${PREFIX}-PP-KEY-REPLACE` }]);
+      expect(await prisma.production_plan.findUnique({ where: { production_plan_id: planId } })).toBeNull();
+      const plans = await prisma.production_plan.findMany({ where: { production_order_id: orderId } });
+      expect(plans.map((plan) => [plan.status_code, Number(plan.planned_qty)])).toEqual([['CONFIRMED', 100]]);
+      const audits = await prisma.audit_event.findMany({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: orderId } });
+      expect(audits).toEqual([expect.objectContaining({
+        event_type_code: 'DELETE', correlation_id: key, performed_by: expect.any(BigInt),
+        after_value: { eventCode: 'PLAN_DRAFT_REPLACED', detail: { newPlanIds: [Number(plans[0].production_plan_id)] } },
+        before_value: { drafts: [expect.objectContaining({ productionPlanId: Number(planId), versionNo: 1, plannedQty: 50 })] },
+      })]);
+      await confirm(orderId, body, key).expect(200);
+      expect(await prisma.audit_event.count({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: orderId } })).toBe(1);
+    });
+
+    it('새로 — 사람이 본 작성중 계획의 판이 지금과 다르면 409 plans 이고 아무것도 지우지 않는다', async () => {
+      const { orderId, planId } = await draftOrder('KEY-STALE');
+      const body = bodyOf(await proposalOf(orderId));
+      const stale = { ...body, replacedDrafts: [{ productionPlanId: Number(planId), versionNo: 9 }] };
+      const response = await confirm(orderId, stale).expect(409);
+      expect(response.body).toMatchObject({ code: 'PROPOSAL_CHANGED', proposalChanges: [expect.objectContaining({ basis: 'plans' })] });
+      expect(await prisma.production_plan.count({ where: { production_plan_id: planId } })).toBe(1);
+      expect((await revalidateBody(orderId, stale).expect(200)).body).toMatchObject({ confirmable: false, proposalChanges: [expect.objectContaining({ basis: 'plans' })] });
+    });
+
+    it('새로 — 지울 작성중 계획을 다른 계획이 분할 원본으로 가리키면 재검증은 그 오류로 확정 불가, 확정은 번호를 뽑기 전에 409 INVALID_STATE', async () => {
+      const { orderId, planId } = await draftOrder('KEY-PINNED');
+      const child = await prisma.production_plan.create({ data: {
+        production_order_id: orderId, plan_no: `${PREFIX}-PP-KEY-PINNED-C`, plan_date: new Date(`${planStart}T00:00:00.000Z`), planned_qty: 30,
+        uom_id: id.uom, bom_id: id.bomOk, routing_id: id.routingOk, status_code: 'CONFIRMED', confirmed_at: new Date(), split_of_plan_id: planId,
+      } });
+      try {
+        const body = bodyOf(await proposalOf(orderId));
+        const checked = await revalidateBody(orderId, body).expect(200);
+        expect(checked.body.confirmable).toBe(false);
+        expect(checked.body.errors[0]).toMatchObject({ scope: 'screen', code: 'INVALID_STATE', message: expect.stringContaining(`${PREFIX}-PP-KEY-PINNED`) });
+        const before = await snapshot();
+        const response = await confirm(orderId, body).expect(409);
+        expect(response.body).toMatchObject({ code: 'INVALID_STATE', message: checked.body.errors[0].message });
+        expect(await snapshot()).toEqual(before);
+      } finally {
+        await prisma.production_plan.delete({ where: { production_plan_id: child.production_plan_id } });
+      }
+    });
+
+    it('새로 — 작성중 계획을 싣거나 지울 계획을 비우면 400', async () => {
+      const { orderId, planId } = await draftOrder('KEY-REPLACE-BAD');
+      const body = bodyOf(await proposalOf(orderId));
+      await confirm(orderId, { ...body, replacedDrafts: [] }).expect(400).expect(({ body: error }) => {
+        expect(error.errors).toEqual([expect.objectContaining({ field: 'replacedDrafts', code: 'REQUIRED' })]);
+      });
+      const withDraft = { ...body, plans: [{ ...body.plans[0], proposalPlanKey: `plan-${planId}`, savedVersionNo: 1 }] };
+      await confirm(orderId, withDraft).expect(400).expect(({ body: error }) => {
+        expect(error.errors).toEqual([expect.objectContaining({ field: 'plans[0].proposalPlanKey', code: 'INVALID' })]);
+      });
+    });
+
+    it('이어서 — 작성중 계획을 나눠 새 계획을 더하면 둘 다 확정되고 나누기 전 키를 돌려준다', async () => {
+      const { orderId, planId } = await draftOrder('KEY-SPLIT');
+      const body = bodyOf(await proposalOf(orderId, 'CONTINUE'));
+      body.plans[0].plannedQty = 30;
+      body.plans.push({ ...body.plans[0], proposalPlanKey: 'new-1', plannedQty: 20, savedVersionNo: undefined, splitFromPlanKey: `plan-${planId}` } as (typeof body.plans)[number]);
+
+      const checked = await revalidateBody(orderId, body).expect(200);
+      expect(checked.body).toMatchObject({ confirmable: true, errors: [] });
+      expect(checked.body.plans.map((plan: { proposalPlanKey: string; planSource: string; splitFromPlanKey: string | null }) => [plan.proposalPlanKey, plan.planSource, plan.splitFromPlanKey]))
+        .toEqual([[`plan-${planId}`, 'EXISTING_DRAFT', null], ['new-1', 'NEW', `plan-${planId}`]]);
+
+      const response = await confirm(orderId, body).expect(200);
+      expect(response.body.replacedDrafts).toEqual([]);
+      expect(response.body.plans.map((plan: { proposalPlanKey: string; splitFromPlanKey: string | null; statusCode: string }) => [plan.proposalPlanKey, plan.splitFromPlanKey, plan.statusCode]))
+        .toEqual([[`plan-${planId}`, null, 'CONFIRMED'], ['new-1', `plan-${planId}`, 'CONFIRMED']]);
+      const plans = await prisma.production_plan.findMany({ where: { production_order_id: orderId }, orderBy: { production_plan_id: 'asc' } });
+      expect(plans.map((plan) => [plan.production_plan_id, Number(plan.planned_qty), plan.split_of_plan_id])).toEqual([[planId, 30, null], [expect.any(BigInt), 20, null]]);
+    });
+
+    it('이어서 — 작성중 계획을 빼거나 판을 빼면 400, 판이 다르면 409, 더한 계획이 수량을 넘으면 400', async () => {
+      const { orderId, planId } = await draftOrder('KEY-CONT-BAD');
+      const body = bodyOf(await proposalOf(orderId, 'CONTINUE'));
+      const extra = { ...body.plans[0], proposalPlanKey: 'new-1', plannedQty: 60, savedVersionNo: undefined } as (typeof body.plans)[number];
+      await confirm(orderId, { ...body, plans: [extra] }).expect(400).expect(({ body: error }) => {
+        expect(error.errors).toEqual([expect.objectContaining({ field: 'plans', code: 'INVALID' })]);
+      });
+      await confirm(orderId, { ...body, plans: [{ ...body.plans[0], savedVersionNo: undefined }] }).expect(400).expect(({ body: error }) => {
+        expect(error.errors).toEqual([expect.objectContaining({ field: 'plans[0].savedVersionNo', code: 'REQUIRED' })]);
+      });
+      await confirm(orderId, { ...body, plans: [{ ...body.plans[0], savedVersionNo: 5 }] }).expect(409);
+      await confirm(orderId, { ...body, plans: [...body.plans, extra] }).expect(400).expect(({ body: error }) => {
+        expect(error.errors).toEqual([expect.objectContaining({ field: 'plans[1].plannedQty', code: 'PLAN_QTY_EXCEEDS_ORDER' })]);
+      });
+      expect(await prisma.production_plan.findMany({ where: { production_order_id: orderId }, select: { production_plan_id: true, status_code: true } }))
+        .toEqual([{ production_plan_id: planId, status_code: 'DRAFT' }]);
     });
   });
 
@@ -1026,6 +1184,8 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     await prisma.work_order_dependency.deleteMany({ where: { OR: [{ predecessor_work_order_id: { in: workOrderIds } }, { successor_work_order_id: { in: workOrderIds } }] } });
     await prisma.work_order.deleteMany({ where: { work_order_id: { in: workOrderIds } } });
     await prisma.production_plan.deleteMany({ where: scope });
+    const orderIds = (await prisma.production_order.findMany({ where: { production_order_no: { startsWith: PREFIX } }, select: { production_order_id: true } })).map((row) => row.production_order_id);
+    await prisma.audit_event.deleteMany({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: { in: orderIds } } });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
     await prisma.item_resource_map.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
     await prisma.bom.deleteMany({ where: { bom_code: { startsWith: PREFIX } } });

@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 
@@ -12,18 +12,30 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PlanConfirmService, isDuplicateWorkOrderNo } from '../production-plan/plan-confirm.service';
 import { PlanDateRow, calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../production-plan/plan-quantity';
-import { Proposal, ProposalBasis, buildProposals } from './proposal-builder';
-import { ProposalConfirmBody, ResolvedPlan, planDateSourceOf, quantityDelta, resolveConfirm } from './proposal-confirm-check';
+import { deleteDrafts, recordDraftsReplaced, splitChildConflict } from './draft-replace';
+import { ExistingDraftAction, draftChoiceErrors } from './plan-set-rules';
+import { Proposal, buildProposals } from './proposal-builder';
+import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, planDateSourceOf, quantityDelta, resolveConfirm } from './proposal-confirm-check';
 import { readProposalFacts } from './proposal-reader';
-import { AUTO_WORK_ORDER_PLANT_ERROR, ORDER_CANCELLED_ERROR, ProposalRevalidation, basisChanges, revalidateProposal } from './proposal-revalidate';
+import {
+  AUTO_WORK_ORDER_PLANT_ERROR,
+  ORDER_CANCELLED_ERROR,
+  ProposalRevalidation,
+  proposalChangesOf,
+  proposalFor,
+  replacedQtyOf,
+  revalidateProposal,
+} from './proposal-revalidate';
 import { ProposalView, proposalView } from './proposal-view';
 
 /** 계약 `ProductionPlanProposalConfirmResult`. */
 export interface ProposalConfirmResult {
   productionOrderId: number;
   outcome: 'CONFIRMED' | 'ALREADY_PROCESSED';
+  replacedDrafts: { productionPlanId: number; planNo: string }[];
   plans: {
     proposalPlanKey?: string;
+    splitFromPlanKey?: string | null;
     productionPlanId: number;
     planNo: string;
     statusCode: string;
@@ -62,8 +74,15 @@ export class PlanProposalService {
     private readonly confirms: PlanConfirmService,
   ) {}
 
-  /** 범위 밖·없는 id 는 제안하지 않고 따로 돌려준다 — 둘을 가르지 않는다. 입력 순서대로, 같은 id 는 한 번. */
-  async propose(productionOrderIds: readonly number[], scope: bigint[] | null): Promise<{ items: ProposalView[]; notFoundProductionOrderIds: number[] }> {
+  /**
+   * 범위 밖·없는 id 는 제안하지 않고 따로 돌려준다 — 둘을 가르지 않는다. 입력 순서대로, 같은 id 는 한 번.
+   * 작성중 계획이 있는 ERP W/O 는 `action` 이 바탕을 정한다 — 이어서(CONTINUE)면 작성중 계획, 아니면 대체할 새 계획.
+   */
+  async propose(
+    productionOrderIds: readonly number[],
+    scope: bigint[] | null,
+    action: ExistingDraftAction = 'REPLACE',
+  ): Promise<{ items: ProposalView[]; notFoundProductionOrderIds: number[] }> {
     const ids = [...new Set(productionOrderIds)].map((id) => BigInt(id));
     const visible = await this.prisma.production_order.findMany({
       where: { production_order_id: { in: ids }, ...(scope === null ? {} : { plant_id: { in: scope } }) },
@@ -71,7 +90,7 @@ export class PlanProposalService {
     });
     const found = new Set(visible.map((row) => row.production_order_id));
     const now = new Date();
-    const proposals = buildProposals(await readProposalFacts(this.prisma, [...found], now), now);
+    const proposals = buildProposals(await readProposalFacts(this.prisma, [...found], now), now, action);
     return {
       items: ids.filter((id) => found.has(id)).map((id) => proposalView(proposals.get(id) as Proposal)),
       notFoundProductionOrderIds: ids.filter((id) => !found.has(id)).map(Number),
@@ -102,12 +121,12 @@ export class PlanProposalService {
     for (let attempt = 0; ; attempt += 1) {
       const precheck = await this.check(this.prisma, orderId, body);
       if (!precheck.already) {
-        const { delta, field } = quantityDelta(precheck.resolved);
+        const { delta, field } = quantityDelta(precheck.resolved, replacedQtyOf(precheck.proposal, body));
         await precheckWithinOrder(this.prisma, orderId, delta, field, true);
       }
       const numbers = precheck.already ? { planNos: [], workOrderNos: [] } : await this.drawNumbers(precheck.proposal, precheck.resolved);
       try {
-        const outcome = await this.idempotency.run(context, (tx) => this.confirmLocked(tx, orderId, body, numbers, appUserId), TRANSACTION_OPTIONS);
+        const outcome = await this.idempotency.run(context, (tx) => this.confirmLocked(tx, orderId, body, numbers, appUserId, context.key), TRANSACTION_OPTIONS);
         return outcome.body;
       } catch (error) {
         if (!isDuplicateNo(error)) throw error;
@@ -124,6 +143,7 @@ export class PlanProposalService {
     body: ProposalConfirmBody,
     numbers: Numbers,
     appUserId: number | undefined,
+    correlationId: string,
   ): Promise<ProposalConfirmResult> {
     // ⛔ 잠금 순서는 «계획 → ERP W/O» 다 — 수정·확정(`lockPlan` → `assertWithinOrder`)과 같아야 교착하지 않는다.
     // 작성중 계획을 id 순으로 먼저 잠그고 ERP W/O 를 잠근다. 그 사이 새로 생긴 계획은 basis.plans 가 409 로 잡는다.
@@ -139,6 +159,10 @@ export class PlanProposalService {
       throw new ConflictException('user', '확정하는 사이 계획이 바뀌었습니다. 다시 시도해 주세요.', { code: 'INVALID_STATE' });
     }
 
+    // 「새로 한다」 — 작성중 계획을 먼저 지운다. 수량 합계는 대체 «후» 기준이다.
+    const replaced = body.existingDraftAction === 'REPLACE' ? checked.proposal.drafts : [];
+    if (replaced.length > 0) await deleteDrafts(tx, replaced);
+
     // 모든 계획의 수정을 먼저 반영하고 합계를 한 번 본 뒤 확정한다 — 계획마다 저장·확정을 번갈아 하면 확정의 합계 검사가
     // 아직 고치지 않은 계획을 옛 수량으로 세어, 본문 순서에 따라 같은 요청이 400 이 된다.
     const planNos = [...numbers.planNos];
@@ -151,9 +175,21 @@ export class PlanProposalService {
     for (const { plan, productionPlanId, version } of saved) {
       const materials = await this.confirms.materials(tx, Number(productionPlanId));
       const confirmed = await this.confirms.confirmIn(tx, materials, version, workOrderNos.splice(0, plan.operationCount), appUserId, plan.supplements);
-      results.push({ proposalPlanKey: plan.body.proposalPlanKey, ...(await planResult(tx, productionPlanId, confirmed.versionNo)) });
+      results.push({
+        proposalPlanKey: plan.body.proposalPlanKey,
+        splitFromPlanKey: plan.body.splitFromPlanKey ?? null,
+        ...(await planResult(tx, productionPlanId, confirmed.versionNo)),
+      });
     }
-    return { productionOrderId: Number(orderId), outcome: 'CONFIRMED', plans: await withCalendars(tx, results) };
+    if (replaced.length > 0) {
+      await recordDraftsReplaced(tx, { orderId, drafts: replaced, newPlanIds: saved.map((row) => row.productionPlanId), actorId: appUserId, correlationId });
+    }
+    return {
+      productionOrderId: Number(orderId),
+      outcome: 'CONFIRMED',
+      replacedDrafts: replaced.map(({ row }) => ({ productionPlanId: Number(row.production_plan_id), planNo: row.plan_no })),
+      plans: await withCalendars(tx, results),
+    };
   }
 
   /** 새 계획은 작성중으로 등록하고, 작성중 계획은 본문 값으로 고친다 — 다음 확정이 둘을 같은 길로 확정한다. */
@@ -199,20 +235,23 @@ export class PlanProposalService {
   }
 
   /**
-   * 취소 400 → OA 자동 W/O 공장 400 → 이미 처리됨 → basis 409 → 본문 검증 400 순. 같은 판정을 잠그지 않고(채번 전) 한 번, 잠근 트랜잭션에서 한 번 한다.
+   * 취소 400 → OA 자동 W/O 공장 400 → 이미 처리됨 → 기존 작성중 계획 선택 없음 400 → basis·작성중 계획 판 409 → 지울 작성중 계획의 분할 자식 409 → 본문 검증 400 순.
+   * 같은 판정을 잠그지 않고(채번 전) 한 번, 잠근 트랜잭션에서 한 번 한다.
    */
   private async check(client: Prisma.TransactionClient, orderId: bigint, body: ProposalConfirmBody): Promise<Checked> {
     const now = new Date();
-    const facts = await readProposalFacts(client, [orderId], now);
-    const proposal = buildProposals(facts, now).get(orderId);
-    if (proposal === undefined) throw new NotFoundException('없는 ERP W/O 입니다.');
+    const { facts, proposal } = await proposalFor(client, orderId, body, now);
     if (proposal.order.status_code === CANCELLED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [ORDER_CANCELLED_ERROR]);
     }
     if (proposal.kind === 'AUTO_WORK_ORDER') throw new ContractException(HttpStatus.BAD_REQUEST, [AUTO_WORK_ORDER_PLANT_ERROR]);
     if (proposal.kind === 'KEEP_CONFIRMED') return { already: true };
-    assertSameBasis(proposal, body.basis);
-    return { already: false, proposal, resolved: await resolveConfirm(client, proposal, facts, body) };
+    const choice = draftChoiceErrors(draftRefsOf(proposal), body);
+    if (choice.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, choice);
+    assertUnchanged(proposal, body);
+    const pinned = splitChildConflict(proposal, body.existingDraftAction);
+    if (pinned !== null) throw new ConflictException('user', pinned, { code: 'INVALID_STATE' });
+    return { already: false, proposal, resolved: await resolveConfirm(client, proposal, facts, body, now) };
   }
 
   private async drawNumbers(proposal: Proposal, resolved: readonly ResolvedPlan[]): Promise<Numbers> {
@@ -228,8 +267,8 @@ export class PlanProposalService {
 }
 
 /** 하나라도 다르면 저장하지 않는다 — 바뀐 기준과 지금 제안을 함께 낸다(화면이 다시 조회하지 않게). */
-function assertSameBasis(proposal: Proposal, sent: ProposalBasis): void {
-  const proposalChanges = basisChanges(proposal, sent);
+function assertUnchanged(proposal: Proposal, body: ProposalConfirmBody): void {
+  const proposalChanges = proposalChangesOf(proposal, body);
   if (proposalChanges.length === 0) return;
   throw new ConflictException('user', '검토한 뒤 계획 제안의 기준이 바뀌어 확정하지 않았습니다. 바뀐 제안을 검토한 뒤 다시 확정하세요.', {
     code: 'PROPOSAL_CHANGED',
@@ -249,6 +288,7 @@ async function alreadyProcessed(tx: Prisma.TransactionClient, orderId: bigint): 
   return {
     productionOrderId: Number(orderId),
     outcome: 'ALREADY_PROCESSED',
+    replacedDrafts: [],
     plans: await withCalendars(tx, await Promise.all(live.map((plan) => planResult(tx, plan.production_plan_id, plan.version_no)))),
   };
 }

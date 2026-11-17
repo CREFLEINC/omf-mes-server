@@ -140,7 +140,9 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
       const workOrders = proposal.plans[0].workOrders;
       expect(workOrders).toHaveLength(2);
       for (const workOrder of workOrders) {
-        expect(workOrder).toMatchObject({ defaultFgLocationId: Number(wh.A.whole), defaultFgLocationSource: 'ERP_STORAGE_LOCATION', issues: [] });
+        expect(workOrder).toMatchObject({ defaultFgLocationId: Number(wh.A.whole), defaultFgLocationSource: 'ERP_STORAGE_LOCATION' });
+        // 두 공정이 같은 설비를 하루 내내 쓰는 시험 데이터라 설비 시간 중복 WARN 만 있다.
+        expect(workOrder.issues.filter((issue) => issue.severity === 'BLOCK')).toEqual([]);
         expect(workOrder.defaultWipLocationId).toBe(Number(id.locWip));
       }
     });
@@ -170,7 +172,7 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
       // 라인에 기본 완제품 위치가 있어도 쓰지 않는다.
       for (const workOrder of proposal.plans[0].workOrders) {
         expect(workOrder).toMatchObject({ defaultFgLocationId: null, defaultFgLocationSource: 'NONE' });
-        expect(workOrder.issues.map((issue) => [issue.code, issue.field])).toEqual([[reason, 'defaultFgLocationId']]);
+        expect(workOrder.issues.filter((issue) => issue.severity === 'BLOCK').map((issue) => [issue.code, issue.field])).toEqual([[reason, 'defaultFgLocationId']]);
       }
     });
 

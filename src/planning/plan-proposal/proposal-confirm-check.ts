@@ -6,19 +6,26 @@ import { LOCATION_FACT_SELECT } from '../../core/erp-warehouse/fg-location';
 import { WorkOrderSupplement } from '../production-plan/expand';
 import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
-import { wholeOrderError } from './proposal-policy';
+import { DraftRef, ExistingDraftAction, draftActionOf, draftChoiceErrors, planSetErrors } from './plan-set-rules';
 import { ProposalFacts } from './proposal-reader';
 import { resourceFindings } from './resource-rules';
 import { pairKey } from '../production-plan/resource-assign';
 
-/** 계약 `ProductionPlanProposalConfirm` — 형식·필수·양수는 계약 가드가 이미 막았다. */
+/**
+ * 계약 `ProductionPlanProposalConfirm`·`ProductionPlanProposalRevalidate` — 형식·양수는 계약 가드가 이미 막았다.
+ * 재검증 본문은 생산 라인·기본 위치 셋이 비어도 받는다(판정이 REQUIRED 로 낸다). 확정 본문은 계약 가드가 막는다.
+ */
 export interface ProposalConfirmBody {
   basis: ProposalBasis;
+  existingDraftAction?: ExistingDraftAction | null;
+  replacedDrafts?: { productionPlanId: number; versionNo: number }[];
   plans: ProposalConfirmPlan[];
 }
 
 export interface ProposalConfirmPlan {
   proposalPlanKey: string;
+  savedVersionNo?: number | null;
+  splitFromPlanKey?: string | null;
   planDate: string;
   plannedQty: number;
   bomId: number;
@@ -30,14 +37,14 @@ export interface ProposalConfirmPlan {
 
 export interface ProposalConfirmWorkOrder {
   routingOperationId: number;
-  productionLineId: number;
+  productionLineId?: number | null;
   plannedEquipmentId?: number | null;
   plannedMoldId?: number | null;
   responsibleWorkerId?: number | null;
   plannedShiftId?: number | null;
-  defaultWipLocationId: number;
-  defaultFgLocationId: number;
-  defaultScrapLocationId: number;
+  defaultWipLocationId?: number | null;
+  defaultFgLocationId?: number | null;
+  defaultScrapLocationId?: number | null;
 }
 
 /** 검증을 마친 계획 하나 — 저장에 그대로 쓴다. */
@@ -46,7 +53,10 @@ export interface ResolvedPlan {
   body: ProposalConfirmPlan;
   proposal: ProposalPlan;
   operationCount: number;
+  /** 생산 라인·기본 위치 셋이 다 찬 공정만 — 빈 칸이 있으면 오류가 있어 저장하지 않는다. */
   supplements: Map<bigint, WorkOrderSupplement>;
+  /** 공정마다 계획 시각 — 계획일과 교대로 정했다. */
+  windows: Map<bigint, PlanWindow>;
 }
 
 export interface ConfirmJudgment {
@@ -61,38 +71,48 @@ export async function resolveConfirm(
   proposal: Proposal,
   facts: ProposalFacts,
   body: ProposalConfirmBody,
+  now: Date,
 ): Promise<ResolvedPlan[]> {
-  const { resolved, errors } = await judgeConfirm(client, proposal, facts, body);
+  const { resolved, errors } = await judgeConfirm(client, proposal, facts, body, now);
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   return resolved;
 }
 
 /**
  * 확정 본문을 수기 등록·확정과 같은 규칙으로 판정한다 — 던지지 않고 오류를 모은다. 확정(`resolveConfirm`)과 재검증이 이 한 판정을 쓴다.
- * 제안과 값이 달라도 된다(사람이 고칠 수 있다). 변경 감지는 호출자가 basis 로 한다.
+ * 제안과 값이 달라도 된다(사람이 고칠 수 있다). 변경 감지는 호출자가 basis·`draftsChanged` 로 한다. `now` 가 공장 현지 「오늘」을 정한다.
+ * 기존 작성중 계획 선택·계획 구성(`plan-set-rules.ts`)이 틀리면 계획별 판정을 하지 않는다.
  */
 export async function judgeConfirm(
   client: Prisma.TransactionClient,
   proposal: Proposal,
   facts: ProposalFacts,
   body: ProposalConfirmBody,
+  now: Date,
 ): Promise<ConfirmJudgment> {
-  const wholeOrder = wholeOrderError(proposal.plans.map((plan) => plan.key), body.plans.map((plan) => plan.proposalPlanKey));
-  if (wholeOrder !== null) return { resolved: [], errors: [wholeOrder] };
+  const drafts = draftRefsOf(proposal);
+  const choice = draftChoiceErrors(drafts, body);
+  if (choice.length > 0) return { resolved: [], errors: choice };
+  const planSet = planSetErrors(proposal.plans.length > 0, drafts, draftActionOf(drafts, body), body);
+  if (planSet.length > 0) return { resolved: [], errors: planSet };
   const { order } = proposal;
   const refs = await readReferences(client, body);
   const usable = new Set((facts.usableRoutings.get(pairKey(order.plant_id, order.item_id)) ?? []).map((row) => row.routing_id));
   const shifts = facts.shifts.get(order.plant_id) ?? [];
   const dayStart = dayStartOf(shifts.filter((shift) => shift.is_active).map((shift) => timeOfColumn(shift.start_time)));
-  const today = localDate(new Date(), order.plant.timezone_code);
+  const today = localDate(now, order.plant.timezone_code);
   const errors: ErrorItem[] = [];
   const error = (field: string, code: string, message: string): void => {
     errors.push({ scope: 'field', field, code, message });
   };
 
-  const resolved = body.plans.map((plan, index): ResolvedPlan => {
+  const resolved = body.plans.flatMap((plan, index): ResolvedPlan[] => {
     const path = `plans[${index}]`;
-    const proposed = proposal.plans.find((candidate) => candidate.key === plan.proposalPlanKey) as ProposalPlan;
+    const proposed = proposedFor(proposal, plan.proposalPlanKey);
+    if (proposed === undefined) {
+      error(`${path}.proposalPlanKey`, ERROR_CODE.INVALID, '이 ERP W/O 에는 새 계획을 더할 수 없습니다 — 새 계획에 쓸 Routing 을 정하지 못했습니다.');
+      return [];
+    }
     // 자정을 넘겨 확정하면 검토 때의 계획일이 지났을 수 있다 — 지난 날로 W/O 를 만들지 않는다. 제안은 늘 오늘 이후로 낸다.
     if (plan.planDate < today) error(`${path}.planDate`, ERROR_CODE.RANGE, `계획일이 지났습니다 — 공장 현지 오늘(${today}) 이후로 고르세요.`);
     if (BigInt(plan.bomId) !== proposed.bom.id) {
@@ -110,18 +130,24 @@ export async function judgeConfirm(
     }
 
     const supplements = new Map<bigint, WorkOrderSupplement>();
+    const windows = new Map<bigint, PlanWindow>();
     plan.workOrders.forEach((workOrder, at) => {
       const field = (name: string): string => `${path}.workOrders[${at}].${name}`;
+      // 재검증 본문은 빈 칸을 받는다 — 확정 본문은 계약 가드가 막는다. 빈 칸은 「고르세요」 하나로 내고 자원 판정의 같은 뜻 사유는 뺀다.
+      const empty = REQUIRED_RESOURCES.filter((name) => workOrder[name] === null || workOrder[name] === undefined);
+      for (const name of empty) error(field(name), ERROR_CODE.REQUIRED, REQUIRED_MESSAGE[name]);
       const resources = {
-        productionLineId: BigInt(workOrder.productionLineId),
+        productionLineId: idOf(workOrder.productionLineId),
         equipmentId: idOf(workOrder.plannedEquipmentId),
         moldId: idOf(workOrder.plannedMoldId),
-        defaultWipLocationId: BigInt(workOrder.defaultWipLocationId),
-        defaultFgLocationId: BigInt(workOrder.defaultFgLocationId),
-        defaultScrapLocationId: BigInt(workOrder.defaultScrapLocationId),
+        defaultWipLocationId: idOf(workOrder.defaultWipLocationId),
+        defaultFgLocationId: idOf(workOrder.defaultFgLocationId),
+        defaultScrapLocationId: idOf(workOrder.defaultScrapLocationId),
       };
       // 제안이 사유를 내는 판정과 같은 것 — 「확정 가능」 제안을 그대로 보내면 여기서 막히지 않는다.
-      for (const finding of resourceFindings(order.plant_id, resources, refs, proposal.fg)) error(field(finding.field), finding.code, finding.message);
+      for (const finding of resourceFindings(order.plant_id, resources, refs, proposal.fg)) {
+        if (!EMPTY_CODES.has(finding.code)) error(field(finding.field), finding.code, finding.message);
+      }
       const workerId = idOf(workOrder.responsibleWorkerId);
       if (workerId !== null) {
         const worker = refs.workers.get(workerId);
@@ -133,30 +159,49 @@ export async function judgeConfirm(
       const window: PlanWindow = shift === undefined
         ? dayWindow(plan.planDate, dayStart, order.plant.timezone_code)
         : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time) }, order.plant.timezone_code);
-      supplements.set(BigInt(workOrder.routingOperationId), {
-        ...resources,
-        workerId,
-        shiftId,
-        window,
-      });
+      const operationId = BigInt(workOrder.routingOperationId);
+      windows.set(operationId, window);
+      const { productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId } = resources;
+      if (productionLineId !== null && defaultWipLocationId !== null && defaultFgLocationId !== null && defaultScrapLocationId !== null) {
+        supplements.set(operationId, { ...resources, productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId, workerId, shiftId, window });
+      }
     });
-    return { index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements };
+    return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, windows }];
   });
 
   return { resolved, errors };
 }
+
+/** 제안에 있는 키는 그 계획, 사람이 나누거나 더한 new-N 은 새 계획의 기준(시스템 날짜·기본 BOM·Routing). */
+function proposedFor(proposal: Proposal, key: string): ProposalPlan | undefined {
+  const proposed = proposal.plans.find((candidate) => candidate.key === key);
+  if (proposed !== undefined) return proposed;
+  return proposal.newPlanTemplate === null ? undefined : { ...proposal.newPlanTemplate, key };
+}
+
+export const draftRefsOf = (proposal: Proposal): DraftRef[] =>
+  proposal.drafts.map(({ row }) => ({ productionPlanId: row.production_plan_id, versionNo: row.version_no, planNo: row.plan_no }));
+
+const REQUIRED_RESOURCES = ['productionLineId', 'defaultWipLocationId', 'defaultFgLocationId', 'defaultScrapLocationId'] as const;
+const REQUIRED_MESSAGE: Record<(typeof REQUIRED_RESOURCES)[number], string> = {
+  productionLineId: '생산 라인이 비었습니다. 라인을 고르세요.',
+  defaultWipLocationId: 'WIP 위치가 비었습니다. 위치를 고르세요.',
+  defaultFgLocationId: '완제품 위치가 비었습니다. 위치를 고르세요.',
+  defaultScrapLocationId: '스크랩 위치가 비었습니다. 위치를 고르세요.',
+};
+const EMPTY_CODES: ReadonlySet<string> = new Set(['WORK_ORDER_LINE_REQUIRED', 'WORK_ORDER_LOCATION_REQUIRED']);
 
 /** 저장할 날짜 출처 — 제안 날짜를 그대로 실었으면 제안의 출처, 사람이 고쳤으면 사용자 지정이다. */
 export const planDateSourceOf = (plan: Pick<ResolvedPlan, 'body' | 'proposal'>): 'SYSTEM' | 'USER' =>
   plan.body.planDate === plan.proposal.planDate ? plan.proposal.planDateSourceCode : 'USER';
 
 /**
- * 이번 확정이 계획 수량 합계에 더하는 양 — 새 계획은 수량, 작성중 계획은 저장값과의 차.
+ * 이번 확정이 계획 수량 합계에 더하는 양 — 새 계획은 수량, 작성중 계획은 저장값과의 차, 새로 해서 지우는 작성중 계획(`replacedQty`)은 뺀다.
  * 오류 칸은 화면이 고칠 줄이다 — 수량을 늘린 첫 줄, 없으면 수량을 바꾼(줄였지만 아직 넘는) 첫 줄, 그것도 없으면 마지막 줄.
  */
-export function quantityDelta(plans: readonly ResolvedPlan[]): { delta: Prisma.Decimal; field: string } {
+export function quantityDelta(plans: readonly ResolvedPlan[], replacedQty: Prisma.Decimal = new Prisma.Decimal(0)): { delta: Prisma.Decimal; field: string } {
   const changes = plans.map((plan) => ({ index: plan.index, change: new Prisma.Decimal(plan.body.plannedQty).minus(plan.proposal.saved?.planned_qty ?? 0) }));
-  const delta = changes.reduce((sum, { change }) => sum.plus(change), new Prisma.Decimal(0));
+  const delta = changes.reduce((sum, { change }) => sum.plus(change), new Prisma.Decimal(0)).minus(replacedQty);
   const target =
     changes.find(({ change }) => change.gt(0)) ?? changes.find(({ change }) => !change.isZero()) ?? changes[changes.length - 1];
   return { delta, field: `plans[${target.index}].plannedQty` };
