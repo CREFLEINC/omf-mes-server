@@ -1,5 +1,6 @@
 /**
  * OA 자동 W/O 실행기 — 자동 라우팅 공정 정책이 있는 공장의 ERP W/O 를 한 건씩 끌고 가고, 실패는 ERP W/O 에 남긴다(사용자 결정 2026-11-16).
+ * ERP 에서 취소된 ERP W/O 의 실적 없는 자동 W/O 는 취소한다(flowtrack 연동 결정 11 · PR 11).
  *
  * 실행기를 직접 만들어 `tick(now)` 를 부른다 — 시각은 검사가 움직인다. 리스는 늘 잡히는 가짜다.
  */
@@ -12,6 +13,7 @@ import { configureApp } from '../src/app.setup';
 import { AutoWorkOrderRunner, RETRY_AFTER_MS } from '../src/integration/tracking-system/auto-work-order.runner';
 import { AutoWorkOrderService } from '../src/integration/tracking-system/auto-work-order.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { ProductionResultService } from '../src/production/production-result/production-result.service';
 
 const PREFIX = `E2E_AWR_${randomUUID().slice(0, 8)}`;
 const SL_CD = 'S510';
@@ -84,6 +86,41 @@ describe('OA 자동 W/O 실행기 (e2e)', () => {
     expect(plan.work_order.map((workOrder) => workOrder.status_code)).toEqual(['RELEASED']);
   });
 
+  it('ERP 에서 취소되면 실적 없는 자동 W/O 를 취소하고 생산 LOT 을 폐번한다 — 실적이 있으면 그대로 두고 다시 고르지 않는다', async () => {
+    const [kept] = (await autoPlans(orders.withResult))[0].work_order;
+    const keptLot = await prisma.lot.findFirstOrThrow({ where: { source_type_code: 'WORK_ORDER', source_id: kept.work_order_id } });
+    await prisma.$transaction((tx) => app.get(ProductionResultService).recordWithin(tx, {
+      workOrderId: Number(kept.work_order_id), goodQty: 1, uomId: Number(ids.uom), lotId: keptLot.lot_id, occurredAt: start,
+      resultSourceCode: 'TRACKING_SYSTEM', workerId: ids.worker, idempotencyKey: randomUUID(), productionResultNo: `${PREFIX}-PR`,
+    }));
+    const keptAttempt = await attempt(orders.withResult);
+    await prisma.production_order.updateMany({
+      where: { production_order_id: { in: [orders.erpCancel, orders.withResult] } }, data: { status_code: 'CANCELLED' },
+    });
+    const at = new Date(start.getTime() + 2 * RETRY_AFTER_MS);
+
+    await runner.tick(at);
+
+    const [cancelled] = (await autoPlans(orders.erpCancel))[0].work_order;
+    expect(cancelled).toMatchObject({ status_code: 'CANCELLED', cancellation_reason_code: 'PLAN_CHANGE', updated_by: null });
+    const lot = await prisma.lot.findFirstOrThrow({ where: { source_type_code: 'WORK_ORDER', source_id: cancelled.work_order_id } });
+    expect(lot.lifecycle_status_code).toBe('VOIDED');
+    expect(await attempt(orders.erpCancel)).toEqual({ auto_work_order_attempted_at: at, auto_work_order_error_text: null });
+    expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: kept.work_order_id } })).status_code).toBe('RELEASED');
+    expect(await attempt(orders.withResult)).toEqual(keptAttempt);
+  });
+
+  it('취소는 잠근 뒤 다시 본다 — 실적이 생긴 W/O 와 취소되지 않은 ERP W/O 의 W/O 는 건드리지 않는다', async () => {
+    const auto = app.get(AutoWorkOrderService);
+    await auto.cancelForErp(orders.withResult);
+    await auto.cancelForErp(orders.ready);
+
+    for (const key of ['withResult', 'ready']) {
+      const [plan] = await autoPlans(orders[key]);
+      expect({ key, statuses: plan.work_order.map((workOrder) => workOrder.status_code) }).toEqual({ key, statuses: ['RELEASED'] });
+    }
+  });
+
   async function order(key: string, opts: { plantId?: bigint; itemId?: bigint; status?: string } = {}): Promise<void> {
     orders[key] = (await prisma.production_order.create({ data: {
       production_order_no: `${PREFIX}-PO-${++seq}`, business_unit_id: ids.unit, plant_id: opts.plantId ?? ids.plant,
@@ -130,6 +167,11 @@ describe('OA 자동 W/O 실행기 (e2e)', () => {
     await order('otherPlant', { plantId: otherPlant });
     await order('otherBom', { itemId: bad.itemId });
     await order('person', { itemId: manual.itemId });
+    await order('erpCancel');
+    await order('withResult');
+    ids.worker = (await prisma.worker.create({ data: {
+      worker_no: PREFIX, worker_name: PREFIX, plant_id: ids.plant, business_unit_id: ids.unit, status_code: 'EMPLOYED',
+    } })).worker_id;
     const routing = await prisma.routing.create({ data: {
       item_id: manual.itemId, routing_code: `RT-${PREFIX}-C-01`, routing_version: 1, status_code: 'DRAFT',
     } });
