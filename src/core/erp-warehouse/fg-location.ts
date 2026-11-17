@@ -27,7 +27,7 @@ export interface FgPlace {
 }
 
 /**
- * 입고 위치 — 「창고 전체」 또는 「적치 대기」. 역할(`systemRoleCode`)을 함께 싣는다 — 위치 코드가 창고 코드로 시작하게
+ * 입고 위치 — 「창고 전체」 또는 「적치 대기」. 역할(`systemRoleCode`)을 함께 싣는다 — 위치 코드가 창고 위치 코드로 시작하게
  * 바뀌어(omf-all-around#292) 화면이 코드 글자(`SYS-STAGING`)로 적치 대기를 가리지 않게.
  */
 export type FgArrival = FgPlace & { isActive: boolean; systemRoleCode: string | null };
