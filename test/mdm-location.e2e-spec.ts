@@ -119,7 +119,7 @@ describe('위치 마스터 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
   });
 
-  it('⛔ warehouseId 없이 부르면 400 이다 — 계약이 필수로 두었다 (G-8)', async () => {
+  it('⛔ warehouseId 도 locationCode 도 없이 부르면 400 이다 — 창고를 고른 뒤에 본다 (G-8 · #292)', async () => {
     const rejected = await request(app.getHttpServer())
       .get('/api/mdm/locations')
       .set('Cookie', cookie)
@@ -265,12 +265,18 @@ describe('위치 마스터 (e2e)', () => {
     const staging = await systemLocation(warehouseId, 'PUTAWAY_STAGING');
 
     const list = await request(app.getHttpServer())
-      .get(`/api/mdm/locations?warehouseId=${warehouseId}&locationCode=SYS-STAGING`)
+      .get(`/api/mdm/locations?warehouseId=${warehouseId}&locationCode=${PREFIX}-WH1-SYS-STAGING`)
       .set('Cookie', cookie)
       .expect(200);
     expect(list.body.items).toEqual([
       expect.objectContaining({ locationId: staging, systemRoleCode: 'PUTAWAY_STAGING', aliasName: null }),
     ]);
+    // 위치 코드는 모든 창고를 통틀어 유일하다 — 코드 하나로 창고 없이 한 건이 집힌다(#292).
+    const scanned = await request(app.getHttpServer())
+      .get(`/api/mdm/locations?locationCode=${PREFIX}-WH1-SYS-STAGING`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(scanned.body.items).toEqual([expect.objectContaining({ locationId: staging, warehouseId })]);
 
     const detail = await request(app.getHttpServer())
       .get(`/api/mdm/locations/${staging}`)

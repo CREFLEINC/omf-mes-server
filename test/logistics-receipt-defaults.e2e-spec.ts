@@ -105,7 +105,7 @@ describe('입고 기본값 (e2e · 장부 P-150)', () => {
       lotId: Number(lot), plantId: Number(ids.plant), itemId: Number(ids.item), uomId: Number(ids.uom),
       receiptTypeCode: 'MATERIAL', receiptQty: 30,
       warehouseId: Number(ids.wh), warehouseCode: `${PREFIX}-WH`, destinationLocationId: await slot(ids.wh),
-      destinationLocationCode: 'SYS-STAGING', qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', issues: [],
+      destinationLocationCode: `${PREFIX}-WH-SYS-STAGING`, qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', issues: [],
     });
   });
 

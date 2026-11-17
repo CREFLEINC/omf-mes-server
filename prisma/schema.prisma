@@ -2305,8 +2305,19 @@ model location {
   production_line_default_scrap                                                     production_line[]            @relation("production_line_default_scrap_location_idTolocation")
   lot_status_event                                                                  lot_status_event[]
 
-  @@unique([warehouse_id, location_code], map: "uq_location")
+  @@unique([location_code], map: "uq_location_code")
   @@index([parent_location_id], map: "ix_location_parent")
+  @@schema("mdm")
+}
+
+/// 위치 코드에 창고 코드를 붙일 때(omf-all-around#292) 바뀐 위치의 옛 코드 → 새 코드. 위치 라벨 재발행 목록
+model location_code_rename {
+  location_id  BigInt   @id
+  warehouse_id BigInt
+  old_code     String   @db.VarChar(50)
+  new_code     String   @db.VarChar(50)
+  renamed_at   DateTime @default(now()) @db.Timestamptz(6)
+
   @@schema("mdm")
 }
 

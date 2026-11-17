@@ -135,7 +135,7 @@ describe('위치 계층 (e2e)', () => {
     expect(kept).toMatchObject({ parentLocationId: zone.locationId, locationName: '고친 랙' });
   });
 
-  it('⭐ 코드는 서버가 발행한다 — Z01 · Z01-R001 · -L01 · -C01 · 같은 상위 안 다음 번호 · 꺼진 번호도 다시 쓰지 않는다', async () => {
+  it('⭐ 코드는 서버가 발행한다 — {창고}-Z01 · -R001 · -L01 · -C01 · 같은 상위 안 다음 번호 · 꺼진 번호도 다시 쓰지 않는다', async () => {
     const fresh = await createWarehouse(`${PREFIX}-WH2`);
     // 화면이 코드를 실어 보내도 쓰지 않는다.
     const zone = await send({ warehouseId: fresh, locationCode: 'MINE' }, 201);
@@ -143,12 +143,12 @@ describe('위치 계층 (e2e)', () => {
     const level = await send({ warehouseId: fresh, parentLocationId: rack.locationId }, 201);
     const cell = await send({ warehouseId: fresh, parentLocationId: level.locationId }, 201);
     expect([zone, rack, level, cell].map((row) => row.locationCode))
-      .toEqual(['Z01', 'Z01-R001', 'Z01-R001-L01', 'Z01-R001-L01-C01']);
+      .toEqual(['Z01', 'Z01-R001', 'Z01-R001-L01', 'Z01-R001-L01-C01'].map((code) => `${PREFIX}-WH2-${code}`));
 
     const second = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
     await transition(second.locationId, 'deactivate', 200);
     const third = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
-    expect([second.locationCode, third.locationCode]).toEqual(['Z01-R002', 'Z01-R003']);
+    expect([second.locationCode, third.locationCode]).toEqual([`${PREFIX}-WH2-Z01-R002`, `${PREFIX}-WH2-Z01-R003`]);
   });
 
   it('⭐ 목록을 상위·단계로 나눠 받는다', async () => {
@@ -160,7 +160,7 @@ describe('위치 계층 (e2e)', () => {
     const children = await list(fresh, { parentLocationId: String(zone.locationId) });
     expect(children.map((row) => row.locationId)).toEqual([rack.locationId]);
     const zones = await list(fresh, { locationLevelCode: 'ZONE' });
-    expect(zones.map((row) => row.locationCode).sort()).toEqual(['SYS-STAGING', 'SYS-WHOLE', 'Z01']);
+    expect(zones.map((row) => row.locationCode).sort()).toEqual(['SYS-STAGING', 'SYS-WHOLE', 'Z01'].map((code) => `${PREFIX}-WH3-${code}`));
   });
 
   it('⭐ 목록·상세가 단계와 isLeaf 를 싣는다 — 하위를 끄면 다시 맨 아래다', async () => {

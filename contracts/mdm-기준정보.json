@@ -548,12 +548,12 @@
      {
       "name": "warehouseId",
       "in": "query",
-      "required": true,
+      "required": false,
       "schema": {
        "type": "integer",
        "format": "int64"
       },
-      "description": "필수. Location 은 창고를 고른 뒤에 본다 — W-06-07 §3 ⚠ 위치 «코드» 스캔은 locationCode 와 함께 보낸다 — 창고는 적치 지시·화면 문맥이 준다."
+      "description": "locationCode 가 없으면 필수(없으면 400 REQUIRED). Location 은 창고를 고른 뒤에 본다 — W-06-07 §3. 위치 코드는 창고 코드로 시작하고 모든 창고를 통틀어 유일하다(omf-all-around#292) — 위치 «코드» 스캔은 locationCode 만 보내도 한 건이 집힌다. 함께 보내면 그 창고 안에서만 찾는다."
      },
      {
       "name": "q",
@@ -19326,7 +19326,7 @@
       "x-source-column": "warehouse_code",
       "type": "string",
       "maxLength": 50,
-      "description": "uq_warehouse — plantId 내 유일. 공백만 불가",
+      "description": "공장이 달라도 다른 창고와 겹칠 수 없다(400 UNIQUE_VIOLATION — 위치 코드가 창고 코드로 시작한다 · omf-all-around#292). 만든 뒤 바꿀 수 없다. 공백만 불가",
       "example": "WH-01",
       "x-no-code-key": "코드 그룹이 아니다 — Warehouse 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
      },
@@ -19382,7 +19382,7 @@
       "x-source-column": "warehouse_code",
       "type": "string",
       "maxLength": 50,
-      "description": "uq_warehouse — plantId 내 유일. 실제 편집 가능 여부는 GET 응답의 editability를 따른다",
+      "description": "만든 뒤 바꿀 수 없다 — 지금 값과 다르면 400 STATE_LOCKED(위치 코드 앞부분과 붙인 라벨이 어긋난다 · 사용자 결정 omf-all-around#292). 같은 값은 통과한다. GET 응답의 editability 는 늘 codeEditable=false 다(ERP 창고는 RECEIVED_FROM_ERP, 나머지는 LABEL_ISSUED)",
       "example": "WH-01",
       "x-internal-note": "(§8-7 미결 반영)",
       "x-no-code-key": "코드 그룹이 아니다 — Warehouse 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
@@ -19471,9 +19471,9 @@
       "x-source-column": "location_code",
       "type": "string",
       "maxLength": 50,
-      "example": "Z01-R001-L01-C01",
+      "example": "S230-Z01-R001-L01-C01",
       "x-no-code-key": "코드 그룹이 아니다 — Location 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다.",
-      "description": "서버가 발행한다 — 구역 Z01 · 랙 {구역}-R001 · 층 {랙}-L01 · 셀 {층}-C01, 같은 상위 안 가장 큰 번호 + 1(자리 수를 넘으면 늘어난다). 바꿀 수 없다. 서버가 만든 자리는 SYS-STAGING · SYS-WHOLE"
+      "description": "서버가 발행한다 — 구역 {창고 코드}-Z01 · 랙 {구역}-R001 · 층 {랙}-L01 · 셀 {층}-C01, 같은 상위 안 가장 큰 번호 + 1(자리 수를 넘으면 늘어난다). 바꿀 수 없다. 모든 창고를 통틀어 유일하다(uq_location_code · omf-all-around#292) — 위치 QR 하나로 창고까지 풀린다. 서버가 만든 자리는 {창고 코드}-SYS-STAGING · {창고 코드}-SYS-WHOLE. 창고 코드로 시작하던 옛 코드(예: S230-A-01-02)는 그대로 두었다"
      },
      "locationName": {
       "x-source-column": "location_name",

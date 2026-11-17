@@ -77,7 +77,8 @@ interface LocationWrite {
 const SYSTEM_KEPT = ['locationName', 'parentLocationId', 'locationLevelCode'] as const;
 
 export interface LocationQuery extends ReferenceQuery {
-  warehouseId: number;
+  /** locationCode 가 없으면 필수 — 코드는 모든 창고를 통틀어 유일해(#292) 스캔 한 건은 창고 없이 집힌다. */
+  warehouseId?: number;
   locationCode?: string;
   parentLocationId?: number;
   locationLevelCode?: string;
@@ -102,10 +103,15 @@ export class LocationService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(query: LocationQuery): Promise<PagedResponse<LocationView>> {
+    // 「Location 은 창고를 고른 뒤에 본다」(G-8) — 코드 스캔 한 건만 창고 없이 받는다(#292).
+    if (query.warehouseId === undefined && query.locationCode === undefined) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'field', field: 'warehouseId', code: ERROR_CODE.REQUIRED, message: '창고를 고르세요 — 위치 코드로 한 건을 찾을 때만 창고 없이 받습니다.' },
+      ]);
+    }
     const page = referencePage(query);
     const where = referenceWhere(query, { code: 'location_code', name: 'location_name' }, {
-      // 계약이 warehouseId 를 필수로 두었다 — 「Location 은 창고를 고른 뒤에 본다」(G-8).
-      warehouse_id: query.warehouseId,
+      ...(query.warehouseId === undefined ? {} : { warehouse_id: query.warehouseId }),
       // 스캔한 코드로 한 건을 집는 자리라 정확 일치다. 부분 일치는 `q` 가 맡는다 —
       // 계약이 「q 로 받은 페이지를 화면이 걸러 쓰는 것으로는 성립하지 않는다」로 적었다.
       ...(query.locationCode === undefined ? {} : { location_code: query.locationCode }),
