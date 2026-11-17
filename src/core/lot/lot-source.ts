@@ -17,3 +17,6 @@ export const LOT_SPLIT_SOURCE = 'LOT_SPLIT';
  * PDA 입하가 원천을 입하 줄로 바꾼다 — 그래서 이 원천으로 남은 LOT 은 아직 입하되지 않았거나 폐기된 것이다.
  */
 export const MATERIAL_LOT_BATCH_SOURCE = 'MATERIAL_LOT_BATCH';
+
+/** 부분 출고가 떼어 낸 분할 LOT 의 원천 — `source_id` 는 출고 라인이다(피처 008 R-4). 입고 쪽 `LOT_SPLIT` 과 갈라 둔다. */
+export const GOODS_ISSUE_SPLIT_SOURCE = 'GOODS_ISSUE_SPLIT';
