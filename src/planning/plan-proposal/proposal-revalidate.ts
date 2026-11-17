@@ -10,7 +10,7 @@ import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, judgeConfirm, quantityD
 import { TimeCorrection } from './plan-times';
 import { splitChildConflict } from './draft-replace';
 import { FgWarehouseView, fgOverrideWarning, fgWarehouseView } from './fg-override';
-import { arrivalLocationId } from '../../core/material-issue/production-warehouse';
+import { findArrivalLocationId } from '../../core/material-issue/production-warehouse';
 import { draftsChanged } from './plan-set-rules';
 import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
 import { ProposalFacts, readProposalFacts } from './proposal-reader';
@@ -116,9 +116,8 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
     ...resolved.flatMap((plan) => fgOverrideWarning(`plans[${plan.index}]`, proposal.fg, plan.fgOverride)),
     ...(await workOrderWarnings(client, proposal.order, facts, resolved, now)),
   ];
-  // 입고 위치가 없는 창고(시스템 위치가 아직 없다)는 기본값을 비운다 — 판정은 이미 끝났다.
-  const arrivalOf = (warehouseId: bigint) => arrivalLocationId(client, warehouseId).catch(() => null);
-  const fgWarehouses = await Promise.all(resolved.map((plan) => fgWarehouseView(proposal.fg, plan.fgOverride, arrivalOf)));
+  const arrivalOf = (warehouseId: bigint) => findArrivalLocationId(client, warehouseId);
+  const fgWarehouses = await Promise.all(resolved.map((plan) => fgWarehouseView(proposal.fg, { sent: plan.fgOverrideSent, applied: plan.fgOverride }, arrivalOf)));
   return {
     ...head,
     confirmable: errors.length === 0 && proposalChanges.length === 0,

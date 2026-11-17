@@ -67,8 +67,10 @@ export interface ResolvedPlan {
   supplements: Map<bigint, WorkOrderSupplement>;
   /** 공정마다 저장할 계획 시각 — SYSTEM 은 계획일과 교대로 정했고 USER 는 본문 그대로다. */
   windows: Map<bigint, PlanWindow>;
-  /** 사람이 ERP 와 다르게 고른 입고 창고 — 바꾸지 않았으면 null. */
+  /** 사람이 ERP 와 다르게 고른 입고 창고 — 받아들인 것만(보내지 않았거나 거부했으면 null). */
   fgOverride: FgPlace | null;
+  /** 본문에 변경이 실렸다 — 거부됐어도 참이다. */
+  fgOverrideSent: boolean;
 }
 
 export interface ConfirmJudgment {
@@ -154,8 +156,8 @@ export async function judgeConfirm(
       error(`${path}.workOrders`, ERROR_CODE.INVALID, 'Routing 공정마다 W/O 하나씩 실어야 합니다 — 공정이 빠졌거나 겹쳤거나 다른 Routing 의 공정입니다.');
     }
 
-    const fgOverride = judgeFgOverride(path, plan.fgWarehouseOverride, proposal.fg, order.plant_id, refs.warehouses, error);
-    const fgRule: FgRule = fgOverride === null ? proposal.fg : { kind: 'MANUAL_WAREHOUSE', warehouse: fgOverride };
+    const override = judgeFgOverride(path, plan.fgWarehouseOverride, proposal.fg, order.plant_id, refs.warehouses, error);
+    const fgRule: FgRule = override.locationRule === null ? proposal.fg : { kind: 'MANUAL_WAREHOUSE', warehouse: override.locationRule };
     const supplements = new Map<bigint, WorkOrderSupplement>();
     const windows = new Map<bigint, PlanWindow>();
     const timed: TimedOperation[] = [];
@@ -202,7 +204,7 @@ export async function judgeConfirm(
       }
     });
     warnings.push(...precedenceWarnings(timed, facts.dependencies.get(routingId) ?? [], timezone));
-    return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, windows, fgOverride }];
+    return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, windows, fgOverride: override.applied, fgOverrideSent: override.sent }];
   });
 
   return { resolved, errors, warnings, corrections };

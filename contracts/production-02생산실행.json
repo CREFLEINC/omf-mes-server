@@ -960,6 +960,175 @@
     }
    }
   },
+  "/planning/production-orders/{productionOrderId}/audit-events": {
+   "get": {
+    "tags": [
+     "planning"
+    ],
+    "summary": "ERP W/O 감사 기록 조회",
+    "description": "ERP W/O 한 건에 남은 감사 기록 — 계획 제안 확정이 사람이 «알고 허용한 것»을 남긴다(작성중 계획 대체 PLAN_DRAFT_REPLACED · 입고 창고 수동 변경 FG_WAREHOUSE_OVERRIDDEN · 휴일 직접 지정 PLAN_DATE_USER_ON_HOLIDAY). 생산계획(W-02-01·W-02-02)·작업지시(W-02-03·W-02-04) 화면이 부른다 — 작업지시는 W/O 의 productionOrderId 로 찾는다. ⛔ 대상은 늘 경로의 ERP W/O 다 — 다른 ERP W/O·다른 대상의 기록은 나오지 않는다. 횡단 감사 조회(GET /audit/events)의 권한은 이 화면들에 주지 않는다. 최신순(발생 시각 내림차순, 같으면 기록 id 내림차순). 기간은 선택이다 — 대상·시각 인덱스로 찾는다.\n\n⭐ 사용자 데이터 범위 — 범위 밖 공장의 ERP W/O 와 없는 id 는 404 다(규칙은 목록 설명).",
+    "parameters": [
+     {
+      "name": "productionOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "occurredFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "이 시각 이후(포함). 생략하면 처음부터"
+     },
+     {
+      "name": "occurredTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "이 시각 전(미포함). 생략하면 지금까지"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록 — 최신순",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ProductionOrderAuditEvent"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        },
+        "example": {
+         "items": [
+          {
+           "auditEventId": 9001,
+           "occurredAt": "2026-11-17T10:12:00+07:00",
+           "targetTypeCode": "PRODUCTION_ORDER",
+           "targetId": 1001,
+           "eventTypeCode": "UPDATE",
+           "beforeValue": {
+            "erpStorageLocationCode": "S510",
+            "warehouseId": 51,
+            "warehouseCode": "S510",
+            "locationId": 5101
+           },
+           "afterValue": {
+            "eventCode": "FG_WAREHOUSE_OVERRIDDEN",
+            "detail": {
+             "productionPlanId": 3002,
+             "planNo": "PP-20261117-0004",
+             "warehouseId": 52,
+             "warehouseCode": "S520",
+             "workOrders": [
+              {
+               "workOrderId": 5001,
+               "defaultFgLocationId": 5201
+              }
+             ],
+             "erpMismatchAcknowledged": true
+            }
+           },
+           "reason": null,
+           "performedBy": 77,
+           "terminalId": null,
+           "correlationId": "7b4c8f0e-2f3a-4b8e-9d7c-5a1e2b3c4d5e"
+          }
+         ],
+         "page": {
+          "page": 1,
+          "size": 50,
+          "total": 1
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "질의 형식 위반 — 계약 가드",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다 — 생산계획·작업지시 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다 · 데이터 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/planning/production-orders/{productionOrderId}:revalidate-plan-proposal": {
    "post": {
     "tags": [
@@ -9325,6 +9494,101 @@
      }
     }
    },
+   "ProductionOrderAuditEvent": {
+    "x-source-table": "audit.audit_event",
+    "type": "object",
+    "description": "ERP W/O 한 건의 감사 기록 하나 — 횡단 감사 조회(GET /audit/events)의 AuditEvent 와 같은 모양이고 대상은 늘 이 ERP W/O 다.",
+    "required": [
+     "auditEventId",
+     "occurredAt",
+     "targetTypeCode",
+     "targetId",
+     "eventTypeCode",
+     "beforeValue",
+     "afterValue",
+     "reason",
+     "performedBy",
+     "terminalId",
+     "correlationId"
+    ],
+    "properties": {
+     "auditEventId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-17T10:12:00+07:00"
+     },
+     "targetTypeCode": {
+      "type": "string",
+      "enum": [
+       "PRODUCTION_ORDER"
+      ],
+      "example": "PRODUCTION_ORDER"
+     },
+     "targetId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "ERP W/O id — 경로의 productionOrderId"
+     },
+     "eventTypeCode": {
+      "type": "string",
+      "example": "UPDATE",
+      "description": "시스템 소유 감사 이벤트 유형 — DELETE(작성중 계획 대체) · UPDATE(입고 창고 수동 변경 · 휴일 직접 지정)",
+      "x-code-key": "CD-AUDIT-EVENT-TYPE"
+     },
+     "beforeValue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "사건마다 다르다 — PLAN_DRAFT_REPLACED drafts(지운 작성중 계획의 id·번호·판·계획일·수량) · FG_WAREHOUSE_OVERRIDDEN SL_CD·그 MES 창고·입고 위치 · PLAN_DATE_USER_ON_HOLIDAY systemDate(시스템이 냈을 날짜)"
+     },
+     "afterValue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "{eventCode, detail} — eventCode 는 PLAN_DRAFT_REPLACED · FG_WAREHOUSE_OVERRIDDEN · PLAN_DATE_USER_ON_HOLIDAY. detail 은 각각 newPlanIds · 계획·적용 창고·W/O 마다 완제품 위치·erpMismatchAcknowledged · 계획·계획일·근무일 판정"
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": null
+     },
+     "performedBy": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 77,
+      "description": "확정한 사용자"
+     },
+     "terminalId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": null
+     },
+     "correlationId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "7b4c8f0e-2f3a-4b8e-9d7c-5a1e2b3c4d5e",
+      "description": "그 기록을 남긴 계획 제안 확정 요청의 Idempotency-Key — 한 확정의 기록을 묶는다"
+     }
+    }
+   },
    "ProductionPlanProposalExistingDraft": {
     "type": "object",
     "description": "이 ERP W/O 의 작성중 계획 요약 — 확정 전에 「이어서 / 새로」를 고르는 팝업이 보인다. 제안 조회·재검증 응답에 같은 모양으로 싣는다.",
@@ -11924,7 +12188,7 @@
      "fgWarehouseDiffersFromErp": {
       "type": "boolean",
       "example": true,
-      "description": "「ERP 입고 창고와 다름」 — ERP W/O 의 SL_CD(erpStorageLocationCode)가 있고 fgWarehouseCode 가 그와 다르다(SL_CD 앞뒤 공백 무시). 목록·상세 모두 싣는다. 저장한 표시가 아니라 읽을 때 판정한다 — 계획 제안에서 사람이 입고 창고를 바꿨든, 확정 뒤 ERP 가 SL_CD 를 바꿨든 참이다. ERP 는 SL_CD 창고로 입고하고 MES 생산입고 송신은 창고를 싣지 않으므로 참이면 MES 와 ERP 의 재고 위치가 다르다. 누가 언제 바꿨는지는 GET /audit/events?targetTypeCode=PRODUCTION_ORDER&targetId={productionOrderId} 의 FG_WAREHOUSE_OVERRIDDEN 기록이다"
+      "description": "「ERP 입고 창고와 다름」 — ERP W/O 의 SL_CD(erpStorageLocationCode)가 있고 fgWarehouseCode 가 그와 다르다(SL_CD 앞뒤 공백 무시). 목록·상세 모두 싣는다. 저장한 표시가 아니라 읽을 때 판정한다 — 계획 제안에서 사람이 입고 창고를 바꿨든, 확정 뒤 ERP 가 SL_CD 를 바꿨든 참이다. ERP 는 SL_CD 창고로 입고하고 MES 생산입고 송신은 창고를 싣지 않으므로 참이면 MES 와 ERP 의 재고 위치가 다르다. 누가 언제 바꿨는지는 GET /planning/production-orders/{productionOrderId}/audit-events 의 FG_WAREHOUSE_OVERRIDDEN 기록이다"
      },
      "routingOperationName": {
       "type": "string",

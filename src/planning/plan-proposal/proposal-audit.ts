@@ -6,7 +6,7 @@ import { ExistingDraft } from './proposal-builder';
 
 /**
  * 계획 제안 확정이 남기는 감사 기록 — 사람이 «알고 허용한 것»만 남긴다(작성중 계획 대체 · 입고 창고 수동 변경 · 휴일인 직접 지정 계획일).
- * 대상은 ERP W/O(`GET /audit/events?targetTypeCode=PRODUCTION_ORDER`)이고 확정 요청의 Idempotency-Key 를 correlationId 로 묶는다.
+ * 대상은 ERP W/O 이고(화면은 `GET /planning/production-orders/{id}/audit-events` 로 본다) 확정 요청의 Idempotency-Key 를 correlationId 로 묶는다.
  * ⛔ 확정과 같은 트랜잭션에서 부른다 — 롤백되면 기록도 없고, 같은 키 재전송은 처음 응답을 재생해 다시 기록하지 않는다.
  * 저장 규약은 다른 업무 기록(`request-lifecycle.ts`)과 같다 — 유형은 시스템 소유 값(CREATE·UPDATE·DELETE)이고 사건은 afterValue.eventCode,
  * 내용은 afterValue.detail 이다.

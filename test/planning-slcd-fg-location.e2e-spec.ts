@@ -289,11 +289,11 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
       const detail = await request(app.getHttpServer()).get(`/api/production/work-orders/${workOrderIds[0]}`).set('Cookie', cookie).expect(200);
       expect(detail.body).toMatchObject({ erpStorageLocationCode: `${PREFIX}A`, fgWarehouseCode: `${PREFIX}B`, fgWarehouseDiffersFromErp: true });
 
-      const occurredFrom = new Date(Date.now() - 60_000).toISOString();
-      const occurredTo = new Date(Date.now() + 60_000).toISOString();
-      const events = await request(app.getHttpServer()).get('/api/audit/events')
-        .query({ occurredFrom, occurredTo, targetTypeCode: 'PRODUCTION_ORDER', targetId: String(orderId) }).set('Cookie', cookie).expect(200);
+      const events = await request(app.getHttpServer()).get(`/api/planning/production-orders/${orderId}/audit-events`).set('Cookie', cookie).expect(200);
+      expect(validator(response200('/planning/production-orders/{productionOrderId}/audit-events', 'get'))(events.body)).toBe(true);
+      expect(events.body.page).toMatchObject({ total: 1 });
       expect(events.body.items).toEqual([expect.objectContaining({
+        targetTypeCode: 'PRODUCTION_ORDER', targetId: Number(orderId),
         eventTypeCode: 'UPDATE', correlationId: key, performedBy: expect.any(Number),
         beforeValue: { erpStorageLocationCode: `${PREFIX}A`, warehouseId: Number(wh.A.id), warehouseCode: `${PREFIX}A`, locationId: Number(wh.A.whole) },
         afterValue: {
@@ -304,6 +304,41 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
           }),
         },
       })]);
+    });
+
+    it('ERP W/O 감사 기록은 그 오더만 낸다 — 횡단 조회는 403, 범위 밖·없는 오더는 404, 다른 오더 기록은 섞이지 않는다', async () => {
+      const mine = await makeOrder(`${PREFIX}A`);
+      const other = await makeOrder(`${PREFIX}A`);
+      const record = (orderId: bigint, eventCode: string) => prisma.audit_event.create({ data: {
+        occurred_at: new Date(), target_type_code: 'PRODUCTION_ORDER', target_id: orderId, event_type_code: 'UPDATE', after_value: { eventCode, detail: {} },
+      } });
+      await record(mine, 'FG_WAREHOUSE_OVERRIDDEN');
+      await record(other, 'PLAN_DATE_USER_ON_HOLIDAY');
+      const foreign = (await prisma.production_order.create({ data: {
+        production_order_no: `${PREFIX}-OUT`, business_unit_id: id.unit, plant_id: id.otherPlant, item_id: id.item, order_qty: 100, uom_id: id.uom, status_code: 'RECEIVED',
+      } })).production_order_id;
+      await record(foreign, 'FG_WAREHOUSE_OVERRIDDEN');
+
+      const occurredFrom = new Date(Date.now() - 60_000).toISOString();
+      const occurredTo = new Date(Date.now() + 60_000).toISOString();
+      await request(app.getHttpServer()).get('/api/audit/events').query({ occurredFrom, occurredTo }).set('Cookie', cookie).expect(403);
+
+      const own = await request(app.getHttpServer()).get(`/api/planning/production-orders/${mine}/audit-events`).query({ occurredFrom, occurredTo }).set('Cookie', cookie).expect(200);
+      expect(own.body.items.map((item: { targetId: number; afterValue: { eventCode: string } }) => [item.targetId, item.afterValue.eventCode])).toEqual([[Number(mine), 'FG_WAREHOUSE_OVERRIDDEN']]);
+      await request(app.getHttpServer()).get(`/api/planning/production-orders/${foreign}/audit-events`).set('Cookie', cookie).expect(404);
+      await request(app.getHttpServer()).get('/api/planning/production-orders/999999999/audit-events').set('Cookie', cookie).expect(404);
+      // 기간 밖이면 비어 있다.
+      const past = await request(app.getHttpServer()).get(`/api/planning/production-orders/${mine}/audit-events`)
+        .query({ occurredTo: new Date(Date.now() - 3_600_000).toISOString() }).set('Cookie', cookie).expect(200);
+      expect(past.body).toMatchObject({ items: [], page: { total: 0 } });
+    });
+
+    it('거부한 변경은 적용 창고를 비우고 「다름」 경고를 내지 않는다', async () => {
+      const orderId = await makeOrder(`${PREFIX}A`);
+      const body = withOverride(bodyOf(await proposalOf(orderId), { defaultFgLocationId: Number(wh.E.whole) }), override(wh.E.id));
+      const checked = (await revalidate(orderId, body).expect(200)).body;
+      expect(checked.plans[0].fgWarehouse).toMatchObject({ appliedWarehouseId: null, arrivalLocationId: null, overridden: true, differsFromErp: false });
+      expect(checked.warnings.map((warning: { code: string }) => warning.code)).not.toContain('FG_WAREHOUSE_DIFFERS_FROM_ERP');
     });
 
     it('바꾸지 않은 W/O 는 「ERP 입고 창고와 다름」이 아니다', async () => {
@@ -474,6 +509,7 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
     } });
     id.plant = (await plant('P1')).plant_id;
     const otherPlant = (await plant('P2')).plant_id;
+    id.otherPlant = otherPlant;
     await prisma.user_data_scope.create({ data: { app_user_id: user.app_user_id, plant_id: id.plant } });
     id.uom = (await prisma.uom.findFirstOrThrow({ where: { decimal_scale: 0 } })).uom_id;
 

@@ -25,8 +25,17 @@ export interface WarehouseRef {
   is_external: boolean;
 }
 
+export interface FgOverrideJudgment {
+  /** 본문에 변경이 실렸다. */
+  sent: boolean;
+  /** 받아들인 창고 — 보내지 않았거나 거부했으면 null. 기록·「다름」 경고·적용 창고는 이것만 본다. */
+  applied: FgPlace | null;
+  /** 공정 W/O 완제품 위치를 견줄 창고 — 거부했어도 고른 창고가 있으면 그것(SL_CD 창고 밖이라는 오류가 겹치지 않게). 없으면 SL_CD 규칙. */
+  locationRule: FgPlace | null;
+}
+
 /**
- * 판정하고 바꾼 창고를 낸다 — 보내지 않았거나 받을 수 없으면 null(그때 공정 W/O 완제품 위치는 SL_CD 규칙이다). 오류는 `error` 로 모은다.
+ * 판정한다 — 오류는 `error` 로 모은다.
  * SL_CD 가 없는 ERP W/O 는 바꿀 ERP 창고가 없어 받지 않는다 — 완제품 위치를 이 공장의 쓸 수 있는 창고에서 바로 고르면 되고,
  * 받으면 ERP 와 다르지 않은데 「다름」 기록이 남는다. SL_CD 연결이 실패한 ERP W/O 는 우회하지 않는다 — 창고 연결을 먼저 고친다.
  */
@@ -37,28 +46,34 @@ export function judgeFgOverride(
   plantId: bigint,
   warehouses: ReadonlyMap<bigint, WarehouseRef>,
   error: (field: string, code: string, message: string) => void,
-): FgPlace | null {
-  if (body === undefined || body === null) return null;
+): FgOverrideJudgment {
+  if (body === undefined || body === null) return { sent: false, applied: null, locationRule: null };
+  const rejected = { sent: true, applied: null, locationRule: null };
   const field = `${path}.fgWarehouseOverride`;
   if (fg.kind === 'NO_STORAGE_CODE') {
     error(field, ERROR_CODE.INVALID, 'ERP W/O 에 입고 창고(SL_CD)가 없어 바꿀 것이 없습니다 — 완제품 위치를 그대로 고르세요.');
-    return null;
+    return rejected;
   }
   if (fg.kind === 'LINK_FAILED') {
     error(field, FG_OVERRIDE_LINK_FAILED, `${fgLinkMessage(fg)} 연결하지 못한 입고 창고는 다른 창고로 바꿔 넘기지 않습니다.`);
-    return null;
+    return rejected;
   }
+  let accepted = true;
   if (body.erpMismatchAcknowledged !== true) {
+    accepted = false;
     error(`${field}.erpMismatchAcknowledged`, ERROR_CODE.REQUIRED, 'ERP 입고 창고와 MES 입고 창고가 달라진다는 확인에 동의해야 바꿀 수 있습니다.');
   }
   const warehouse = warehouses.get(BigInt(body.warehouseId));
   const rejection = fgWarehouseRejection(plantId, warehouse);
   if (rejection !== null) {
+    accepted = false;
     error(`${field}.warehouseId`, rejection, '이 공장의 사용 중인, 자재·불량·외부 창고가 아닌 창고만 완제품 입고 창고로 고를 수 있습니다.');
   } else if (warehouse?.warehouse_id === fg.warehouse.id) {
+    accepted = false;
     error(`${field}.warehouseId`, ERROR_CODE.INVALID, `ERP 입고 창고(SL_CD ${fg.erpCode})와 같은 창고입니다 — 바꾸지 않으려면 보내지 마세요.`);
   }
-  return warehouse === undefined ? null : { id: warehouse.warehouse_id, code: warehouse.warehouse_code, name: warehouse.warehouse_name };
+  const place = warehouse === undefined ? null : { id: warehouse.warehouse_id, code: warehouse.warehouse_code, name: warehouse.warehouse_name };
+  return { sent: true, applied: accepted ? place : null, locationRule: place };
 }
 
 /** 재검증의 계획별 입고 창고 — ERP 원본(SL_CD)과 적용 창고, 그 창고의 입고 위치(공정 W/O 완제품 위치의 기본값). */
@@ -71,26 +86,29 @@ export interface FgWarehouseView {
   differsFromErp: boolean;
 }
 
-/** `arrivalOf` 는 창고의 입고 위치(나뉜 창고는 적치 대기, 아니면 창고 전체)를 낸다 — 없으면 null. */
+/**
+ * `arrivalOf` 는 창고의 입고 위치(나뉜 창고는 적치 대기, 아니면 창고 전체)를 낸다 — 없으면 null.
+ * 보낸 변경을 거부했으면 적용 창고·입고 위치를 비운다 — 확정되지 않을 창고를 적용된 것처럼 보이지 않는다.
+ */
 export async function fgWarehouseView(
   fg: FgResolution,
-  override: FgPlace | null,
+  override: Pick<FgOverrideJudgment, 'sent' | 'applied'>,
   arrivalOf: (warehouseId: bigint) => Promise<bigint | null>,
 ): Promise<FgWarehouseView> {
   const erpWarehouse = fg.kind === 'ERP_STORAGE_LOCATION' ? fg.warehouse : null;
-  const applied = override ?? erpWarehouse;
-  const arrival = override !== null ? await arrivalOf(override.id) : fg.kind === 'ERP_STORAGE_LOCATION' ? fg.location.id : null;
+  const applied = override.sent ? override.applied : erpWarehouse;
+  const arrival = override.applied !== null ? await arrivalOf(override.applied.id) : !override.sent && fg.kind === 'ERP_STORAGE_LOCATION' ? fg.location.id : null;
   return {
     erpStorageLocationCode: fg.kind === 'NO_STORAGE_CODE' ? null : fg.erpCode,
     erpWarehouseId: erpWarehouse === null ? null : Number(erpWarehouse.id),
     appliedWarehouseId: applied === null ? null : Number(applied.id),
     arrivalLocationId: arrival === null ? null : Number(arrival),
-    overridden: override !== null,
-    differsFromErp: override !== null && erpWarehouse !== null && override.id !== erpWarehouse.id,
+    overridden: override.sent,
+    differsFromErp: override.applied !== null && erpWarehouse !== null && override.applied.id !== erpWarehouse.id,
   };
 }
 
-/** 사람이 알고 바꿨어도 알린다 — 확정을 막지 않는다. */
+/** 사람이 알고 바꿨어도 알린다 — 확정을 막지 않는다. 거부한 변경(`applied` null)은 알리지 않는다 — 그 오류가 이미 있다. */
 export function fgOverrideWarning(path: string, fg: FgResolution, override: FgPlace | null): { code: string; field: string; message: string }[] {
   if (override === null || fg.kind !== 'ERP_STORAGE_LOCATION' || override.id === fg.warehouse.id) return [];
   return [{
