@@ -132,6 +132,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/waiting-material-lots': ['P-01-01', 'W-01-14'],
+  // 분할 LOT 라벨(피처 008 · omf-all-around#289) — POP P-01-02 가 출고 QR 대신 부분 출고 분할 LOT 의 자재 LOT 라벨을 찍는다.
+  'GET /logistics/split-material-lots': ['P-01-02'],
   'POST /trace/lots:void': ['P-01-01', 'W-01-14'],
   // PDA 입하 받기·해제·공급사 LOT(피처 005 §3) — 받기와 공급사 LOT 입력은 스캔 화면 M-01-01 뿐이고(M-01-03 에는 입력
   // 화면이 없다), 해제는 스캔 화면 카드와 입하 마감 화면 M-01-03 둘 다 한다.

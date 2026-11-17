@@ -38,6 +38,8 @@ import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { DocumentProgressModule } from './document-progress/document-progress.module';
 import { GoodsIssueController } from './goods-issue/goods-issue.controller';
+import { SplitMaterialLotController } from './split-material-lot/split-material-lot.controller';
+import { SplitMaterialLotQueryService } from './split-material-lot/split-material-lot-query.service';
 import { GoodsIssueQueryService } from './goods-issue/goods-issue-query.service';
 import { GoodsIssueUpdateService } from './goods-issue/goods-issue-update.service';
 import { GoodsIssueService } from './goods-issue/goods-issue.service';
@@ -157,6 +159,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     MaterialLotBatchController,
     InboundLotController,
     GoodsIssueController,
+    SplitMaterialLotController,
     ReplenishmentItemController,
     ReplenishmentRunController,
     ReplenishmentArrivalController,
@@ -262,6 +265,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     },
     IqcHandoverNotifier,
     GoodsIssueQueryService,
+    SplitMaterialLotQueryService,
     GoodsIssueService,
     GoodsIssueUpdateService,
     GoodsReceiptService,
