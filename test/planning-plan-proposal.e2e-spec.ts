@@ -134,6 +134,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
         proposalPlanKey: plan.proposalPlanKey,
         ...(plan.saved === undefined ? {} : { savedVersionNo: plan.saved.versionNo }),
         planDate: plan.planDate,
+        planDateSourceCode: plan.planDateSourceCode,
         plannedQty: plan.proposedQty,
         bomId: plan.bomId,
         routingId: plan.routingId,
@@ -143,6 +144,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
           productionLineId: workOrder.productionLineId ?? fill.productionLineId,
           plannedEquipmentId: workOrder.plannedEquipmentId,
           plannedMoldId: workOrder.plannedMoldId,
+          plannedTimeSourceCode: 'SYSTEM' as 'SYSTEM' | 'USER',
           defaultWipLocationId: workOrder.defaultWipLocationId ?? fill.defaultWipLocationId,
           defaultFgLocationId: workOrder.defaultFgLocationId ?? fill.defaultFgLocationId,
           defaultScrapLocationId: workOrder.defaultScrapLocationId ?? fill.defaultScrapLocationId,
@@ -720,7 +722,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(validator(response200('/planning/production-orders:plan-proposals', 'get'))((await propose(order['HOL-NEW']).expect(200)).body)).toBe(true);
     });
 
-    it('제안 날짜 그대로 확정하면 출처 SYSTEM, 날짜를 고쳐 확정하면 USER 로 저장하고 결과에 판정을 싣는다', async () => {
+    it('날짜 출처는 본문 값을 저장한다 — 제안 날짜 그대로면 SYSTEM, 고친 날짜를 SYSTEM 으로 보내면 400, USER 면 휴일이어도 저장하고 기록을 남긴다', async () => {
       const kept = await proposalOf(order['HOL-NEW']);
       const response = await confirm(order['HOL-NEW'], bodyOf(kept)).expect(200);
       expect(response.body.plans[0].planDateCalendar).toMatchObject({ date: shiftDays(H, 2), statusCode: 'WORKING' });
@@ -730,9 +732,20 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const changedOrder = await newOrder('HOL-EDIT', H);
       const body = bodyOf(await proposalOf(changedOrder));
       body.plans[0].planDate = H;
-      const changed = await confirm(changedOrder, body).expect(200);
+      const mismatch = await confirm(changedOrder, body).expect(400);
+      expect(mismatch.body.errors).toEqual([expect.objectContaining({ field: 'plans[0].planDateSourceCode', code: 'PLAN_DATE_SOURCE_MISMATCH', message: expect.stringContaining(shiftDays(H, 2)) })]);
+      body.plans[0].planDateSourceCode = 'USER';
+      const key = randomUUID();
+      const changed = await confirm(changedOrder, body, key).expect(200);
       expect(changed.body.plans[0].planDateCalendar).toMatchObject({ date: H, statusCode: 'HOLIDAY' });
       expect(await savedSource(changedOrder)).toEqual([[H, 'USER']]);
+      expect(await prisma.audit_event.findMany({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: changedOrder } })).toEqual([expect.objectContaining({
+        event_type_code: 'UPDATE', correlation_id: key,
+        before_value: { systemDate: shiftDays(H, 2) },
+        after_value: expect.objectContaining({ eventCode: 'PLAN_DATE_USER_ON_HOLIDAY', productionPlanId: changed.body.plans[0].productionPlanId, planDate: H, calendarStatusCode: 'HOLIDAY' }),
+      })]);
+      // 휴일이 아닌 USER 날짜·SYSTEM 날짜는 남기지 않는다.
+      expect(await prisma.audit_event.count({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: order['HOL-NEW'] } })).toBe(0);
     });
 
     it('사용자가 고른 작성중 계획일은 휴일이어도 옮기지 않고 WARN 만 낸다 — 확정을 막지 않는다', async () => {
@@ -948,6 +961,92 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       });
       expect(await prisma.production_plan.findMany({ where: { production_order_id: orderId }, select: { production_plan_id: true, status_code: true } }))
         .toEqual([{ production_plan_id: planId, status_code: 'DRAFT' }]);
+    });
+  });
+
+  describe('계획 시각 — 시스템 · 직접', () => {
+    const revalidate = (orderId: bigint, body: unknown) =>
+      request(app.getHttpServer()).post(`/api/planning/production-orders/${orderId}:revalidate-plan-proposal`).set('Cookie', cookie).send(body as object);
+    const local = (date: string, time: string): string => new Date(`${date}T${time}+07:00`).toISOString();
+
+    it('직접 정한 시각은 그대로 저장한다 — 교대를 골라도 다시 계산하지 않고 교대 밖이면 경고만, 재검증은 최종 시각·출처를 낸다', async () => {
+      const orderId = await newOrder('TIME-USER', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      const [first, second] = body.plans[0].workOrders;
+      Object.assign(first, { plannedTimeSourceCode: 'USER', plannedShiftId: Number(id.nightShift), plannedStartAt: local(planStart, '13:00:00'), plannedEndAt: local(planStart, '21:00:00') });
+      Object.assign(second, { plannedTimeSourceCode: 'USER', plannedStartAt: local(planStart, '20:00:00'), plannedEndAt: local(shiftDays(planStart, 1), '02:00:00') });
+
+      const checked = await revalidate(orderId, body).expect(200);
+      expect(validator(response200('/planning/production-orders/{productionOrderId}:revalidate-plan-proposal', 'post'))(checked.body)).toBe(true);
+      expect(checked.body).toMatchObject({ confirmable: true, errors: [], corrections: [] });
+      expect(checked.body.plans[0].workOrders.map((workOrder: Record<string, unknown>) => [workOrder.plannedTimeSourceCode, workOrder.plannedStartAt, workOrder.plannedEndAt])).toEqual([
+        ['USER', local(planStart, '13:00:00'), local(planStart, '21:00:00')],
+        ['USER', local(planStart, '20:00:00'), local(shiftDays(planStart, 1), '02:00:00')],
+      ]);
+      expect(checked.body.warnings.filter((warning: { code: string }) => warning.code.startsWith('PLAN_TIME')).map((warning: { code: string; field: string }) => [warning.code, warning.field])).toEqual([
+        ['PLAN_TIME_OUTSIDE_SHIFT', 'plans[0].workOrders[0].plannedStartAt'],
+        ['PLAN_TIME_PRECEDENCE', 'plans[0].workOrders[1].plannedStartAt'],
+      ]);
+
+      const key = randomUUID();
+      const response = await confirm(orderId, body, key).expect(200);
+      const workOrders = await prisma.work_order.findMany({ where: { production_plan_id: BigInt(response.body.plans[0].productionPlanId) }, orderBy: { routing_operation: { operation_seq: 'asc' } } });
+      expect(workOrders.map((row) => [row.planned_start_at?.toISOString(), row.planned_end_at?.toISOString(), row.planned_shift_id])).toEqual([
+        [local(planStart, '13:00:00'), local(planStart, '21:00:00'), id.nightShift],
+        [local(planStart, '20:00:00'), local(shiftDays(planStart, 1), '02:00:00'), null],
+      ]);
+      // 시각을 직접 고친 것은 기록하지 않는다.
+      expect(await prisma.audit_event.count({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: orderId } })).toBe(0);
+    });
+
+    it('시스템 시각은 교대로 다시 계산하고 화면이 보던 값과 다르면 corrections 로 알린다 — 확정은 다시 계산한 값을 저장한다', async () => {
+      const orderId = await newOrder('TIME-SYS', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      const shown = local(planStart, '07:00:00');
+      Object.assign(body.plans[0].workOrders[0], { plannedShiftId: Number(id.nightShift), plannedStartAt: shown });
+
+      const checked = await revalidate(orderId, body).expect(200);
+      expect(checked.body.corrections).toEqual([expect.objectContaining({
+        field: 'plans[0].workOrders[0].plannedStartAt', reasonCode: 'SYSTEM_TIME_RECALCULATED', from: shown, to: local(planStart, '19:00:00'),
+      })]);
+      expect(checked.body.plans[0].workOrders[0]).toMatchObject({ plannedTimeSourceCode: 'SYSTEM', plannedStartAt: local(planStart, '19:00:00'), plannedEndAt: local(shiftDays(planStart, 1), '07:00:00') });
+
+      const response = await confirm(orderId, body).expect(200);
+      const first = await prisma.work_order.findFirstOrThrow({ where: { production_plan_id: BigInt(response.body.plans[0].productionPlanId) }, orderBy: { routing_operation: { operation_seq: 'asc' } } });
+      expect(first.planned_start_at?.toISOString()).toBe(local(planStart, '19:00:00'));
+    });
+
+    it('직접 정한 시각이 비거나 거꾸로거나 계획일 근무일 밖이면 400 이고 재검증도 같은 오류다', async () => {
+      const orderId = await newOrder('TIME-BAD', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      const [first, second] = body.plans[0].workOrders;
+      Object.assign(first, { plannedTimeSourceCode: 'USER', plannedStartAt: local(shiftDays(planStart, 1), '08:00:00'), plannedEndAt: local(shiftDays(planStart, 1), '09:00:00') });
+      Object.assign(second, { plannedTimeSourceCode: 'USER', plannedStartAt: local(planStart, '10:00:00'), plannedEndAt: local(planStart, '09:00:00') });
+      const response = await confirm(orderId, body).expect(400);
+      expect(response.body.errors.map((error: { field: string; code: string }) => [error.field, error.code])).toEqual([
+        ['plans[0].workOrders[0].plannedStartAt', 'PLAN_TIME_OUTSIDE_PLAN_DATE'],
+        ['plans[0].workOrders[1].plannedEndAt', 'RANGE'],
+      ]);
+      expect((await revalidate(orderId, body).expect(200)).body.errors).toEqual(response.body.errors);
+      Object.assign(first, { plannedStartAt: null, plannedEndAt: null });
+      expect((await confirm(orderId, body).expect(400)).body.errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ field: 'plans[0].workOrders[0].plannedStartAt', code: 'REQUIRED' }),
+        expect.objectContaining({ field: 'plans[0].workOrders[0].plannedEndAt', code: 'REQUIRED' }),
+      ]));
+      expect(await prisma.production_plan.count({ where: { production_order_id: orderId } })).toBe(0);
+    });
+
+    it('시각 출처를 빼면 계약 가드가 400 이다 — 확정·재검증 모두', async () => {
+      const orderId = await newOrder('TIME-NONE', planStart);
+      const body = bodyOf(await proposalOf(orderId));
+      delete (body.plans[0].workOrders[0] as { plannedTimeSourceCode?: string }).plannedTimeSourceCode;
+      delete (body.plans[0] as { planDateSourceCode?: string }).planDateSourceCode;
+      for (const response of [await confirm(orderId, body).expect(400), await revalidate(orderId, body).expect(400)]) {
+        expect(response.body.errors).toEqual(expect.arrayContaining([
+          expect.objectContaining({ field: 'plans[0].planDateSourceCode', code: 'REQUIRED' }),
+          expect.objectContaining({ field: 'plans[0].workOrders[0].plannedTimeSourceCode', code: 'REQUIRED' }),
+        ]));
+      }
     });
   });
 

@@ -15,7 +15,8 @@ import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../prod
 import { deleteDrafts, recordDraftsReplaced } from './draft-replace';
 import { ExistingDraftAction, draftChoiceErrors } from './plan-set-rules';
 import { Proposal, buildProposals } from './proposal-builder';
-import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, planDateSourceOf, quantityDelta, resolveConfirm } from './proposal-confirm-check';
+import { recordUserHolidayDates } from './plan-date-audit';
+import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, quantityDelta, resolveConfirm, systemDateOf } from './proposal-confirm-check';
 import { readProposalFacts } from './proposal-reader';
 import {
   AUTO_WORK_ORDER_PLANT_ERROR,
@@ -184,11 +185,16 @@ export class PlanProposalService {
     if (replaced.length > 0) {
       await recordDraftsReplaced(tx, { orderId, drafts: replaced, newPlanIds: saved.map((row) => row.productionPlanId), actorId: appUserId, correlationId });
     }
+    const plans = await withCalendars(tx, results);
+    const userHolidays = checked.resolved.flatMap((plan, at) => (plan.body.planDateSourceCode === 'USER' && plans[at].planDateCalendar.statusCode === 'HOLIDAY'
+      ? [{ productionPlanId: plans[at].productionPlanId, planNo: plans[at].planNo, planDate: plan.body.planDate, systemDate: systemDateOf(checked.proposal, plan.proposal), day: plans[at].planDateCalendar }]
+      : []));
+    await recordUserHolidayDates(tx, { orderId, plans: userHolidays, actorId: appUserId, correlationId });
     return {
       productionOrderId: Number(orderId),
       outcome: 'CONFIRMED',
       replacedDrafts: replaced.map(({ row }) => ({ productionPlanId: Number(row.production_plan_id), planNo: row.plan_no })),
-      plans: await withCalendars(tx, results),
+      plans,
     };
   }
 
@@ -206,7 +212,7 @@ export class PlanProposalService {
       bom_id: BigInt(plan.body.bomId),
       routing_id: BigInt(plan.body.routingId),
       planned_line_id: plan.body.plannedLineId === null ? null : BigInt(plan.body.plannedLineId),
-      plan_date_source_code: planDateSourceOf(plan),
+      plan_date_source_code: plan.body.planDateSourceCode,
       ...(plan.body.remarks === undefined ? {} : { remarks: plan.body.remarks }),
       updated_by: appUserId ?? null,
     };
