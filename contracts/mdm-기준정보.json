@@ -17327,7 +17327,7 @@
      "integration"
     ],
     "summary": "추적 시스템 포장 입고이동 받기",
-    "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 W/O 하나의 포장 묶음을 보낸다. 한 트랜잭션에서 실적(양품 = 시리얼 수 · PL13 시스템 작업자) → 시리얼 등록(보낸 번호 그대로) → 제품 입고(W/O 완제품 위치 · 정상·가용 · 적치 지시 없음) → 양품 합이 지시수량이면 W/O 마감. W/O 는 단말 공장에서만 찾는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다 — 원인을 고친 뒤 같은 전송을 다시 보내면 처리한다. 근거: flowtrack 연동 제안 §3-3 · 사용자 결정 2026-11-16",
+    "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 W/O 하나의 포장 묶음을 보낸다. 한 트랜잭션에서 실적(양품 = 시리얼 수 · PL13 시스템 작업자) → 시리얼 등록(보낸 번호 그대로) → 제품 입고(W/O 완제품 위치 · 정상·가용 · 적치 지시 없음) → 자재 차감(W/O 계획 BOM 을 PL13 기본 BOM 이 있는 구성품까지 풀어 운영 정책 BACKFLUSH_WAREHOUSE 창고의 맨 아래 위치에서 오래된 LOT 부터 · 소수 6자리 · 모자란 몫은 미차감으로 남기고 입고는 막지 않는다) → 양품 합이 지시수량이면 W/O 마감. W/O 는 단말 공장에서만 찾는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다 — 원인을 고친 뒤 같은 전송을 다시 보내면 처리한다. 근거: flowtrack 연동 제안 §3-3 · 사용자 결정 2026-11-16",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -17360,7 +17360,7 @@
       }
      },
      "400": {
-      "description": "INVALID — Idempotency-Key ≠ transmissionId · 모르는 W/O(다른 공장 W/O 도) · 품목이 W/O 와 다름 · qty ≠ 시리얼 수 · 본문 안에서 겹친 시리얼 · W/O 에 완제품 위치가 없음 · 생산 LOT 이 하나가 아님 · 시스템 작업자가 없음. STATE_LOCKED — 마감·취소된 W/O · 실적 뒤에도 생산 LOT 이 정상이 아님(MES 공정 검사 기준·LOT 보류). RANGE — 양품 합이 지시수량을 넘음. UNIQUE_VIOLATION — MES 에 이미 있는 시리얼",
+      "description": "INVALID — Idempotency-Key ≠ transmissionId · 모르는 W/O(다른 공장 W/O 도) · 품목이 W/O 와 다름 · qty ≠ 시리얼 수 · 본문 안에서 겹친 시리얼 · W/O 에 완제품 위치가 없음 · 생산 LOT 이 하나가 아님 · 시스템 작업자가 없음 · 자재 차감 창고(운영 정책 BACKFLUSH_WAREHOUSE)가 없음. STATE_LOCKED — 마감·취소된 W/O · 실적 뒤에도 생산 LOT 이 정상이 아님(MES 공정 검사 기준·LOT 보류). RANGE — 양품 합이 지시수량을 넘음. UNIQUE_VIOLATION — MES 에 이미 있는 시리얼",
       "content": {
        "application/json": {
         "schema": {

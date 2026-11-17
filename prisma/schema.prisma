@@ -486,6 +486,7 @@ model tracking_transmission {
   plant                          plant                            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   work_order                     work_order?                      @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   tracking_transmission_document tracking_transmission_document[]
+  tracking_transmission_shortage tracking_transmission_shortage[]
 
   @@schema("integration")
 }
@@ -497,6 +498,22 @@ model tracking_transmission_document {
   tracking_transmission    tracking_transmission @relation(fields: [tracking_transmission_id], references: [tracking_transmission_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@id([tracking_transmission_id, document_type_code, document_id])
+  @@schema("integration")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tracking_transmission_shortage {
+  tracking_transmission_id BigInt
+  item_id                  BigInt
+  uom_id                   BigInt
+  warehouse_id             BigInt
+  shortage_qty             Decimal               @db.Decimal(20, 6)
+  item                     item                  @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  tracking_transmission    tracking_transmission @relation(fields: [tracking_transmission_id], references: [tracking_transmission_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                      uom                   @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse                warehouse             @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tracking_transmission_id, item_id, uom_id])
   @@schema("integration")
 }
 
@@ -2146,6 +2163,7 @@ model item {
   inbound_lot inbound_lot[]
   material_lot_batch material_lot_batch[]
   supplier_item_default supplier_item_default[]
+  tracking_transmission_shortage tracking_transmission_shortage[]
   @@index([item_type_code, is_active], map: "ix_item_type")
   @@schema("mdm")
 }
@@ -2695,6 +2713,7 @@ model uom {
   inbound_lot inbound_lot[]
   material_lot_batch material_lot_batch[]
   supplier_item_default supplier_item_default[]
+  tracking_transmission_shortage tracking_transmission_shortage[]
   @@schema("mdm")
 }
 
@@ -2742,6 +2761,7 @@ model warehouse {
   replenishment_item_source       replenishment_item[]             @relation("replenishment_item_source_warehouse")
   replenishment_warehouse_setting replenishment_warehouse_setting?
   replenishment_run               replenishment_run[]
+  tracking_transmission_shortage  tracking_transmission_shortage[]
 
   @@unique([plant_id, warehouse_code], map: "uq_warehouse")
   @@schema("mdm")

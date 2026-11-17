@@ -12,6 +12,7 @@ import { WorkOrderCloseService } from '../../production/work-order/work-order-cl
 import { ACTIVE_RESULT_WHERE } from '../../production/work-order/work-order-progress';
 import { lockWorkOrder } from '../../production/work-order/work-order-write.service';
 import { registerSerialNumbers } from '../../trace/serial-number/serial-number-register';
+import { backflush } from './backflush';
 
 type Tx = Prisma.TransactionClient;
 
@@ -39,12 +40,12 @@ const WORK_ORDER_SELECT = {
   uom_id: true,
   default_fg_location_id: true,
   item: { select: { item_code: true } },
-  production_plan: { select: { production_order: { select: { plant_id: true } } } },
+  production_plan: { select: { bom_id: true, production_order: { select: { plant_id: true } } } },
   location_work_order_default_fg_location_idTolocation: { select: { warehouse_id: true } },
 } satisfies Prisma.work_orderSelect;
 
 /**
- * 포장 한 묶음을 한 트랜잭션에서 실적 → 시리얼 → 제품 입고 → (양품 합이 지시수량이면) 마감으로 받는다. 자재 차감은 PR 8 이다.
+ * 포장 한 묶음을 한 트랜잭션에서 실적 → 시리얼 → 제품 입고 → 자재 차감 → (양품 합이 지시수량이면) 마감으로 받는다.
  * 처리한 전송 번호가 다시 오면 아무것도 하지 않는다. 거절하면 전송 행도 되돌려져 원인을 고친 뒤 같은 전송을 다시 받을 수 있다.
  */
 @Injectable()
@@ -69,6 +70,7 @@ export class StockMoveService {
     // 번호는 트랜잭션을 열기 전에 뽑는다(I-2 R-2) — 다시 온 전송은 번호를 버린다(결번 허용). 실적 번호의 기간은 실적 시각의 UTC 날짜다(실적 등록과 같다).
     const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, new Date(input.packedTo).toISOString().slice(0, 10));
     const receiptNo = await this.numbering.next('GOODS_RECEIPT', plantId, input.businessDate);
+    const issueNo = await this.numbering.next('GOODS_ISSUE', plantId, input.businessDate);
 
     return this.prisma.$transaction(async (tx) => {
       const transmission = await claim(tx, input, plantId, workOrder.work_order_id);
@@ -98,13 +100,20 @@ export class StockMoveService {
           qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', destinationLocationId: Number(workOrder.default_fg_location_id),
         }],
       }, undefined, receiptNo, null);
+      const issueId = await backflush(tx, this.posting, {
+        trackingTransmissionId: transmission, transmissionId: input.transmissionId, plantId, workOrderId: workOrder.work_order_id,
+        bomId: (workOrder.production_plan as { bom_id: bigint }).bom_id, qty: new Prisma.Decimal(input.qty),
+        productionResultId: BigInt(result.productionResultId), workerId, goodsIssueNo: issueNo, businessDate: input.businessDate,
+        occurredAt: new Date(input.packedTo),
+      });
       await tx.tracking_transmission_document.createMany({ data: [
         { tracking_transmission_id: transmission, document_type_code: 'PRODUCTION_RESULT', document_id: BigInt(result.productionResultId) },
         { tracking_transmission_id: transmission, document_type_code: 'GOODS_RECEIPT', document_id: receiptId },
+        ...(issueId === null ? [] : [{ tracking_transmission_id: transmission, document_type_code: 'GOODS_ISSUE', document_id: issueId }]),
       ] });
       if (total.equals(locked.order_qty)) await this.closes.closeWithin(tx, workOrderId, {}, workerId);
       return { replayed: false };
-    });
+    }, { timeout: 15_000, maxWait: 5_000 });
   }
 
   /** `mesWorkOrderId` 가 있으면 그것으로, 없으면 번호로 찾는다. 다른 공장의 W/O 는 없는 W/O 와 같게 답한다. */
