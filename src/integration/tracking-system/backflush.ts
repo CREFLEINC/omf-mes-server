@@ -5,9 +5,10 @@ import { ERROR_CODE } from '../../common/errors';
 import { BOM_COMPONENT_SELECT, materialRequirements } from '../../core/bom';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { recordLateInputGenealogyWithin } from '../../core/lot';
-import { PICKABLE_BALANCE, PickingDemand, StockCandidate, allocatePicking } from '../../core/picking';
+import { PickingDemand, allocatePicking } from '../../core/picking';
 import { CONSUMPTION_STATUS } from '../../production/material-consumption/material-consumption.constants';
 import { postTrackingIssue } from './goods-issue-write';
+import { issuableStock } from './issuable-stock';
 import { screen } from './tracking-transmission';
 
 type Tx = Prisma.TransactionClient;
@@ -30,7 +31,6 @@ export interface BackflushInput {
 const ISSUE_TYPE = 'PRODUCTION';
 const SOURCE_DOCUMENT_TYPE = 'PRODUCTION_RESULT';
 const CONSUMPTION_TYPE = 'BACKFLUSH';
-const LOT_NORMAL = 'NORMAL';
 /** PL13 ERP BOM 은 9단까지 내려간다(2026-11-17) — 이보다 깊으면 BOM 이 돌고 있다. */
 const MAX_BOM_LEVELS = 20;
 /** 재고·소요 칸이 소수 6자리다 — 더 잘게 남기면 미차감이 0 으로 저장된다. */
@@ -45,7 +45,10 @@ const ZERO = new Prisma.Decimal(0);
 export async function backflush(tx: Tx, posting: InventoryPostingService, input: BackflushInput): Promise<bigint | null> {
   const warehouseId = await backflushWarehouse(tx, input);
   const demands = await leafDemands(tx, input);
-  const { orders, shortages } = allocatePicking(demands, await candidates(tx, warehouseId, demands), new Set());
+  const stock = await issuableStock(tx, {
+    warehouseId, itemIds: [...new Set(demands.map((demand) => demand.itemId))], lock: true, withoutSerials: false,
+  });
+  const { orders, shortages } = allocatePicking(demands, stock, new Set());
   if (shortages.length > 0) {
     await tx.tracking_transmission_shortage.createMany({
       data: shortages.map((shortage) => ({
@@ -122,43 +125,4 @@ async function leafDemands(tx: Tx, input: BackflushInput): Promise<PickingDemand
     }
   }
   return [...leaves.values()].map((demand) => ({ ...demand, qty: demand.qty.toDecimalPlaces(QTY_SCALE) }));
-}
-
-/**
- * 차감 창고의 맨 아래 위치에서 뺄 수 있는 LOT 재고 — 정상 품질·가용·보류 없음·LOT 정상. 잠근 뒤에 읽는다.
- * LOT 이 없는 재고는 출고 라인에 실을 수 없어 미차감이 된다. 같은 위치·LOT 에 보유가 있는 상태가 둘 이상이면 출고 전기가
- * 어느 것을 낼지 몰라 전송 전체를 거절하므로 그 재고도 빼지 않는다.
- */
-async function candidates(tx: Tx, warehouseId: bigint, demands: PickingDemand[]): Promise<StockCandidate[]> {
-  const itemIds = [...new Set(demands.map((demand) => demand.itemId))];
-  if (itemIds.length === 0) return [];
-  const locked = await tx.$queryRaw<{ location_id: bigint; item_id: bigint; lot_id: bigint | null; on_hand_qty: Prisma.Decimal }[]>`
-    SELECT location_id, item_id, lot_id, on_hand_qty
-      FROM inventory.inventory_balance
-     WHERE warehouse_id = ${warehouseId} AND item_id IN (${Prisma.join(itemIds)})
-     ORDER BY inventory_balance_id
-       FOR UPDATE`;
-  const held = new Map<string, number>();
-  for (const row of locked) {
-    if (row.on_hand_qty.isZero()) continue;
-    const key = `${row.location_id}:${row.item_id}:${row.lot_id}`;
-    held.set(key, (held.get(key) ?? 0) + 1);
-  }
-  const rows = await tx.inventory_balance.findMany({
-    where: {
-      AND: [PICKABLE_BALANCE, {
-        warehouse_id: warehouseId, item_id: { in: itemIds }, lot: { is: { status_code: LOT_NORMAL } },
-        location: { is_active: true, child_locations: { none: { is_active: true } } },
-      }],
-    },
-    select: { location_id: true, lot_id: true, item_id: true, uom_id: true, available_qty: true, lot: { select: { created_at: true } } },
-  });
-  return rows.flatMap((row) =>
-    row.lot_id === null || row.lot === null || row.available_qty === null || (held.get(`${row.location_id}:${row.item_id}:${row.lot_id}`) ?? 0) > 1
-      ? []
-      : [{
-          warehouseId, locationId: row.location_id, lotId: row.lot_id, itemId: row.item_id, uomId: row.uom_id,
-          availableQty: row.available_qty, expiryDate: null, lotCreatedAt: row.lot.created_at,
-        }],
-  );
 }
