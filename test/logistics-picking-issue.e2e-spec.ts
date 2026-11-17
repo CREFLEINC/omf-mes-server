@@ -412,6 +412,58 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
       expect(shipped).toBe(issuedFamily._sum.issue_qty?.toNumber());
     });
 
+    it('US3-1·US3-2 출고 목록 lotId·awaitingShopfloorReceiptOnly — 분할 LOT 으로 받을 출고를 찾고, 받으면 빠진다', async () => {
+      const { order, lines, workOrderId } = await releaseAndPick(100);
+      const created = await issue(order, lines).expect(201);
+      const issueId = created.body.goodsIssue.goodsIssueId as number;
+      const line = created.body.lines[0] as { goodsIssueLineId: number; lotId: number };
+      // 같은 분할 LOT 을 원천이 다른 출고(공급사 반품)로도 낸다 — 미입고 축에서 빠져야 한다.
+      const receipt = await prisma.goods_receipt.create({
+        data: {
+          goods_receipt_no: `${PREFIX}-GR${++seq}`, receipt_type_code: 'MATERIAL', plant_id: ids.plant,
+          warehouse_id: ids.wipWarehouse, receipt_datetime: new Date(OCCURRED_AT), status_code: 'POSTED',
+        },
+      });
+      const returned = await request(app.getHttpServer())
+        .post('/api/logistics/goods-issues')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          issueTypeCode: 'SUPPLIER_RETURN', sourceDocumentTypeCode: 'GOODS_RECEIPT', sourceDocumentId: Number(receipt.goods_receipt_id),
+          sourceWarehouseId: Number(ids.wipWarehouse), issuedAt: OCCURRED_AT, postImmediately: true, businessDate: BUSINESS_DATE, occurredAt: OCCURRED_AT,
+          lines: [{ itemId: Number(ids.item), lotId: line.lotId, issueQty: 1, uomId: Number(ids.uom), sourceLocationId: Number(ids.wipLocation) }],
+        })
+        .expect(201);
+      // 분할 LOT 을 반품해도 분할하지 않는다 — 원천이 피킹 지시가 아니다(FR-017).
+      expect(returned.body.lines[0]).toMatchObject({ lotId: line.lotId, splitFromLotId: null });
+
+      const listed = async (query: string): Promise<number[]> => {
+        const response = await request(app.getHttpServer()).get(`/api/logistics/goods-issues?${query}`).set('Cookie', cookie).expect(200);
+        return (response.body.items as { goodsIssueId: number }[]).map((row) => row.goodsIssueId).sort((a, b) => a - b);
+      };
+      expect(await listed(`lotId=${String(line.lotId)}`)).toEqual([issueId, returned.body.goodsIssue.goodsIssueId].sort((a, b) => a - b));
+      expect(await listed(`lotId=${String(line.lotId)}&awaitingShopfloorReceiptOnly=true`)).toEqual([issueId]);
+      // 원래 LOT 은 이 출고 라인에 없다 — 분할 출고는 원래 LOT 축으로 잡히지 않는다.
+      expect(await listed(`lotId=${String(ids.lot)}&awaitingShopfloorReceiptOnly=true`)).not.toContain(issueId);
+
+      // 분할 LOT 출고의 생산창고 입고 — 라인 LOT 대조가 분할 LOT 으로 통과한다.
+      await request(app.getHttpServer())
+        .post('/api/logistics/shopfloor-receipts')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Worker-No', `${PREFIX}-WK`)
+        .send({
+          goodsIssueId: issueId, workOrderId: Number(workOrderId), destinationLocationId: Number(ids.wipLocation),
+          receivedAt: OCCURRED_AT, businessDate: BUSINESS_DATE, occurredAt: OCCURRED_AT,
+          lines: [{
+            goodsIssueLineId: line.goodsIssueLineId, itemId: Number(ids.item), lotId: line.lotId, uomId: Number(ids.uom),
+            issuedQty: 100, receivedQty: 100,
+          }],
+        })
+        .expect(201);
+      expect(await listed(`lotId=${String(line.lotId)}&awaitingShopfloorReceiptOnly=true`)).toEqual([]);
+    });
+
     it('Q25 같은 LOT 을 두 위치에서 동시에 부분 출고해도 분할 번호가 겹치지 않고 둘 다 된다', async () => {
       const second = await prisma.location.create({
         data: { warehouse_id: ids.materialWarehouse, location_code: `${PREFIX}-M1-02`, location_name: 'M1-02', location_type_code: 'DEFAULT' },
@@ -681,7 +733,7 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '출고검사용' } });
     await prisma.role_permission.createMany({
-      data: ['W-02-04', 'W-02-10', 'M-01-08', 'W-01-05', 'W-03-02'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
+      data: ['W-02-04', 'W-02-10', 'M-01-08', 'W-01-05', 'W-03-02', 'M-01-09'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     const login = await request(app.getHttpServer())
@@ -702,6 +754,10 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     await prisma.$executeRawUnsafe(
       `TRUNCATE inventory.inventory_transaction_line, inventory.inventory_transaction CASCADE`,
     );
+    // 분할 LOT 출고의 생산창고 입고(US3-1) — 라인·적치 지시는 위 TRUNCATE CASCADE 가 비운다.
+    await prisma.putaway_task.deleteMany({ where: { shopfloor_receipt_line: { shopfloor_receipt: { goods_issue: { warehouse: { warehouse_code: { startsWith: PREFIX } } } } } } });
+    await prisma.shopfloor_receipt_line.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
+    await prisma.shopfloor_receipt.deleteMany({ where: { goods_issue: { warehouse: { warehouse_code: { startsWith: PREFIX } } } } });
     await prisma.goods_issue_line.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
     await prisma.goods_issue.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
     await prisma.goods_receipt_line.deleteMany({ where: { goods_receipt: { goods_receipt_no: { startsWith: PREFIX } } } });
