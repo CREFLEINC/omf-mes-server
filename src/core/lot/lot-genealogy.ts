@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 import type { Tx } from './lot-registry.service';
 
@@ -81,6 +83,68 @@ export async function lotWithSplitDescendants(db: Pick<Tx, '$queryRaw'>, lotIds:
     )
     SELECT lot_id FROM family`;
   return rows.map((row) => row.lot_id);
+}
+
+/**
+ * 원시 SQL 조각 — `lotExpr`(LOT id 를 내는 SQL 식) LOT 과 그 분할 자손 id 를 내는 부분 질의. `IN (…)` 에 그대로 넣는다.
+ * 값은 코드 상수만 끼운다(사용자 값은 호출 쪽이 bind 한다).
+ */
+export function splitFamilySql(lotExpr: string): string {
+  return `WITH RECURSIVE split_family(lot_id) AS (
+      SELECT ${lotExpr}
+      UNION
+      SELECT r.target_lot_id FROM trace.lot_relation r JOIN split_family f ON f.lot_id = r.source_lot_id
+       WHERE r.relation_type_code = '${SPLIT_RELATION}'
+    ) SELECT lot_id FROM split_family`;
+}
+
+/** 분할 계보 한 줄 — 부모 → 자식. `depth` 는 기준 LOT 에서 몇 단 떨어졌나(1 = 바로 위·아래). */
+export interface SplitRelationRow {
+  base_lot_id: bigint;
+  parent_lot_id: bigint;
+  child_lot_id: bigint;
+  qty: Prisma.Decimal;
+  occurred_at: Date;
+  source_event_type_code: string | null;
+  source_event_id: bigint | null;
+  depth: number;
+}
+
+/** 각 LOT 의 분할 조상 사슬 — 가까운 부모부터 뿌리까지(`depth` 오름차순). 분할 LOT 이 아니면 빈 목록이다. */
+export async function splitAncestors(db: Pick<Tx, '$queryRaw'>, lotIds: readonly bigint[]): Promise<Map<bigint, SplitRelationRow[]>> {
+  if (lotIds.length === 0) return new Map();
+  const rows = await db.$queryRaw<SplitRelationRow[]>`
+    WITH RECURSIVE up AS (
+      SELECT b.lot_id AS base_lot_id, r.source_lot_id AS parent_lot_id, r.target_lot_id AS child_lot_id, r.relation_qty AS qty,
+             r.occurred_at, r.source_event_type_code, r.source_event_id, 1 AS depth
+        FROM unnest(${[...lotIds]}::bigint[]) AS b(lot_id)
+        JOIN trace.lot_relation r ON r.target_lot_id = b.lot_id AND r.relation_type_code = ${SPLIT_RELATION}
+      UNION ALL
+      SELECT up.base_lot_id, r.source_lot_id, r.target_lot_id, r.relation_qty, r.occurred_at, r.source_event_type_code,
+             r.source_event_id, up.depth + 1
+        FROM up JOIN trace.lot_relation r ON r.target_lot_id = up.parent_lot_id AND r.relation_type_code = ${SPLIT_RELATION}
+       WHERE up.depth < 64
+    )
+    SELECT * FROM up ORDER BY base_lot_id, depth`;
+  const chains = new Map<bigint, SplitRelationRow[]>(lotIds.map((id) => [id, []]));
+  for (const row of rows) chains.get(row.base_lot_id)?.push(row);
+  return chains;
+}
+
+/** LOT 에서 나온 분할 자손 계보 전부 — 깊이 순(같은 깊이는 분할 시각 순). */
+export async function splitDescendants(db: Pick<Tx, '$queryRaw'>, lotId: bigint): Promise<SplitRelationRow[]> {
+  return db.$queryRaw<SplitRelationRow[]>`
+    WITH RECURSIVE down AS (
+      SELECT ${lotId}::bigint AS base_lot_id, r.source_lot_id AS parent_lot_id, r.target_lot_id AS child_lot_id, r.relation_qty AS qty,
+             r.occurred_at, r.source_event_type_code, r.source_event_id, 1 AS depth
+        FROM trace.lot_relation r WHERE r.source_lot_id = ${lotId} AND r.relation_type_code = ${SPLIT_RELATION}
+      UNION ALL
+      SELECT down.base_lot_id, r.source_lot_id, r.target_lot_id, r.relation_qty, r.occurred_at, r.source_event_type_code,
+             r.source_event_id, down.depth + 1
+        FROM down JOIN trace.lot_relation r ON r.source_lot_id = down.child_lot_id AND r.relation_type_code = ${SPLIT_RELATION}
+       WHERE down.depth < 64
+    )
+    SELECT * FROM down ORDER BY depth, occurred_at, child_lot_id`;
 }
 
 /** 실적 구간 (after, until] 과 겹치는 자재 LOT — 구간 안에서 LOT 이 바뀌었으면 둘 다다. */
