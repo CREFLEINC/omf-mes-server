@@ -14,8 +14,9 @@ import { TrackingSystemController } from './tracking-system.controller';
 import { StockIssueService } from './stock-issue.service';
 import { StockMoveService } from './stock-move.service';
 import { TrackingProduction } from './tracking-production';
+import { WorkOrderCloseReportService } from './work-order-close-report.service';
 
-/** 추적 시스템(flowtrack) 연동 — OA 자동 W/O · 포장 입고이동 · 출하 출고. 다른 도메인이 내보낸 서비스·함수를 부른다(사용자 결정 2026-11-16). */
+/** 추적 시스템(flowtrack) 연동 — OA 자동 W/O · 포장 입고이동 · 출하 출고 · 마감 보고. 다른 도메인이 내보낸 서비스·함수를 부른다(사용자 결정 2026-11-16). */
 @Module({
   imports: [PrismaModule, PlanningModule, ProductionModule, NumberingModule, InventoryPostingModule],
   controllers: [TrackingSystemController],
@@ -24,6 +25,7 @@ import { TrackingProduction } from './tracking-production';
     StockMoveService,
     StockIssueService,
     TrackingProduction,
+    WorkOrderCloseReportService,
     // 운영 서버에서 AUTO_WORK_ORDER_ENABLED=true 여야 돈다 — 켜는 때는 현장이 정한다(사용자 2026-11-16).
     {
       provide: AutoWorkOrderRunner,
