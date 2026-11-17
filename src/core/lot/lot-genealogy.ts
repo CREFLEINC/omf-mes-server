@@ -86,16 +86,40 @@ export async function lotWithSplitDescendants(db: Pick<Tx, '$queryRaw'>, lotIds:
 }
 
 /**
- * 원시 SQL 조각 — `lotExpr`(LOT id 를 내는 SQL 식) LOT 과 그 분할 자손 id 를 내는 부분 질의. `IN (…)` 에 그대로 넣는다.
+ * 원시 SQL 조각 — `seed`(LOT id 한 칸을 내는 SELECT) LOT 들과 그 분할 자손 id 를 내는 부분 질의. `IN (…)` 에 그대로 넣는다.
  * 값은 코드 상수만 끼운다(사용자 값은 호출 쪽이 bind 한다).
  */
-export function splitFamilySql(lotExpr: string): string {
+export function splitFamilySql(seed: string): string {
   return `WITH RECURSIVE split_family(lot_id) AS (
-      SELECT ${lotExpr}
+      ${seed}
       UNION
       SELECT r.target_lot_id FROM trace.lot_relation r JOIN split_family f ON f.lot_id = r.source_lot_id
        WHERE r.relation_type_code = '${SPLIT_RELATION}'
     ) SELECT lot_id FROM split_family`;
+}
+
+/**
+ * 원시 SQL 식 — `lotAlias` LOT 의 입하 LOT id. 부분 출고 분할 LOT 은 입하 LOT 칸이 비어 있어(FR-003) 조상을 따라 올라가
+ * 처음 만나는 입하 LOT 이다. 칸이 차 있으면 그대로다.
+ */
+export function inboundLotOfSql(lotAlias: string): string {
+  return `COALESCE(${lotAlias}.inbound_lot_id, CASE WHEN ${lotAlias}.parent_lot_id IS NOT NULL THEN (
+      WITH RECURSIVE anc(parent_lot_id, inbound_lot_id, depth) AS (
+        SELECT a.parent_lot_id, a.inbound_lot_id, 1 FROM trace.lot a WHERE a.lot_id = ${lotAlias}.parent_lot_id
+        UNION ALL
+        SELECT a.parent_lot_id, a.inbound_lot_id, anc.depth + 1 FROM anc JOIN trace.lot a ON a.lot_id = anc.parent_lot_id
+         WHERE anc.inbound_lot_id IS NULL AND anc.depth < 64
+      ) SELECT inbound_lot_id FROM anc WHERE inbound_lot_id IS NOT NULL LIMIT 1) END)`;
+}
+
+/**
+ * 원시 SQL 부분 질의 — 입하 LOT(`by` 가 `ID` 면 id, `NO` 면 번호 = `param` 자리표)에 속한 LOT 과 그 분할 자손 id.
+ * 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다(피처 008 contracts §8).
+ */
+export function inboundLotFamilySql(by: 'ID' | 'NO', param: string): string {
+  return splitFamilySql(by === 'ID'
+    ? `SELECT fl.lot_id FROM trace.lot fl WHERE fl.inbound_lot_id = ${param}::bigint`
+    : `SELECT fl.lot_id FROM trace.lot fl JOIN trace.inbound_lot fil ON fil.inbound_lot_id = fl.inbound_lot_id WHERE fil.inbound_lot_no = ${param}`);
 }
 
 /** 분할 계보 한 줄 — 부모 → 자식. `depth` 는 기준 LOT 에서 몇 단 떨어졌나(1 = 바로 위·아래). */
