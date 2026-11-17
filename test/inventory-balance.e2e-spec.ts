@@ -36,13 +36,22 @@ interface BalanceRow {
   warehouseId: number | null;
   locationCode: string | null;
   onHandQty: number;
+  availableQty: number;
+  blockedQty: number;
   heldLotCount: number;
   earliestExpiryDate: string | null;
 }
 interface BalanceBody {
   items: BalanceRow[];
   page: { page: number; size: number; total: number };
-  summary: { itemCount: number; lotCount: number; onHandQty: number; asOf: string };
+  summary: {
+    itemCount: number;
+    lotCount: number;
+    onHandQty: number;
+    availableQty: number;
+    blockedQty: number;
+    asOf: string;
+  };
   expiryUnknownCount: number;
   errors?: { field: string; code: string }[];
 }
@@ -225,6 +234,38 @@ describe('재고 잔액 (e2e)', () => {
 
     const all = await list(`itemId=${itemId}&groupBy=LOT`);
     expect(all.items.length).toBeGreaterThan(1);
+  });
+
+  /**
+   * omf-all-around#285 — 가용은 출고 할당(`PICKABLE_BALANCE`)과 같은 기준이다. 불량 품질 · 보류 상태 · 풀리지
+   * 않은 LOT 보류의 잔액은 가용이 아니라 보류로 센다. ⚠ 앞 검사들이 lotA 에 보류를 걸고 lotB 를 0 으로 만들었다 —
+   * 정상으로 남은 것은 noExpiryLot(4) 뿐이다.
+   */
+  it('⭐ 불량 · 보류 상태 · LOT 보류 재고는 가용이 아니라 보류로 센다', async () => {
+    const lotD = await makeLot(BigInt(itemId), BigInt(plantId), BigInt(uomId), 'D', '2026-07-01');
+    await post({
+      transactionNo: `${PREFIX}-GR4`,
+      lines: [
+        {
+          itemId,
+          lotId: lotD,
+          qty: 5,
+          uomId,
+          to: { ...hereB, qualityStatusCode: 'DEFECTIVE', inventoryStatusCode: 'ON_HOLD' },
+          ownershipTypeCode: 'OWNED',
+        },
+      ],
+    });
+
+    const byLot = await list(`itemId=${itemId}&groupBy=LOT`);
+    const row = (lotId: number) => byLot.items.find((r) => r.lotId === lotId);
+    expect(row(lotD)).toMatchObject({ onHandQty: 5, availableQty: 0, blockedQty: 5 });
+    expect(row(lotA)).toMatchObject({ onHandQty: 10, availableQty: 0, blockedQty: 10 });
+    expect(row(noExpiryLot)).toMatchObject({ onHandQty: 4, availableQty: 4, blockedQty: 0 });
+
+    const byItem = await list(`itemId=${itemId}`);
+    expect(byItem.items[0]).toMatchObject({ onHandQty: 19, availableQty: 4, blockedQty: 15 });
+    expect(byItem.summary).toMatchObject({ onHandQty: 19, availableQty: 4, blockedQty: 15 });
   });
 
   it('⭐ 원장 합계와 잔액이 같다 — balance = 트랜잭션의 합', async () => {
