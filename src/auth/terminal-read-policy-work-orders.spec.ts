@@ -45,7 +45,7 @@ describe('POP MES W/O 목록 범위', () => {
     await expect(read(popWithoutEquipment, {})).rejects.toMatchObject({ status: 401 });
   });
 
-  // POP 홈 「오늘 작업 현황」 완료 수(omf-all-around#291) — 최근 48시간 안에 갱신된 완료 W/O 만 본다.
+  // POP 홈 「오늘 작업 현황」 완료 수(omf-all-around#291) — 최근 48시간 안에 갱신된 끝난(완료·마감) W/O 만 본다.
   it('끝난 W/O(완료·마감)는 최근 48시간 안의 updatedSince 와 함께일 때만 본다', async () => {
     const recent = new Date(Date.now() - 3_600_000).toISOString();
     const old = new Date(Date.now() - 72 * 3_600_000).toISOString();
@@ -57,5 +57,16 @@ describe('POP MES W/O 목록 범위', () => {
     await expect(read(pop, { statusCode: 'COMPLETED,CLOSED', updatedSince: recent })).resolves.toBeUndefined();
     await expect(read(pop, { statusCode: 'COMPLETED,RELEASED', updatedSince: recent })).rejects.toMatchObject({ status: 401 });
     await expect(read(pop, { statusCode: 'CLOSED', updatedSince: old })).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('미래 시각·중복 키(배열)로 온 끝난 W/O 조회는 막는다', async () => {
+    const recent = new Date(Date.now() - 3_600_000).toISOString();
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    const skewed = new Date(Date.now() + 60_000).toISOString();
+    await expect(read(pop, { statusCode: 'COMPLETED', updatedSince: future })).rejects.toMatchObject({ status: 401 });
+    // 단말 시계가 1분 빠른 것은 봐준다(5분 안).
+    await expect(read(pop, { statusCode: 'COMPLETED', updatedSince: skewed })).resolves.toBeUndefined();
+    await expect(read(pop, { statusCode: ['COMPLETED', 'CLOSED'], updatedSince: recent })).rejects.toMatchObject({ status: 401 });
+    await expect(read(pop, { statusCode: 'COMPLETED', updatedSince: [recent, recent] })).rejects.toMatchObject({ status: 401 });
   });
 });
