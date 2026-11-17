@@ -26,6 +26,7 @@ import { assertErpWarehouse } from './erp-warehouse-rules';
  * 다시 뽑아 대조한다 — FK 가 새로 붙으면 검사가 깨져서 드러난다.
  */
 export const WAREHOUSE_REFERRERS: readonly Referrer[] = [
+  ['integration.tracking_transmission_shortage', 'warehouse_id'],
   ['inventory.handling_unit', 'warehouse_id'],
   ['inventory.inventory_balance', 'warehouse_id'],
   ['inventory.inventory_count', 'warehouse_id'],

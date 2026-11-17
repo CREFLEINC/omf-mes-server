@@ -17327,7 +17327,7 @@
      "integration"
     ],
     "summary": "추적 시스템 포장 입고이동 받기",
-    "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 W/O 하나의 포장 묶음을 보낸다. 한 트랜잭션에서 실적(양품 = 시리얼 수 · PL13 시스템 작업자) → 시리얼 등록(보낸 번호 그대로) → 제품 입고(W/O 완제품 위치 · 정상·가용 · 적치 지시 없음) → 양품 합이 지시수량이면 W/O 마감. W/O 는 단말 공장에서만 찾는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다 — 원인을 고친 뒤 같은 전송을 다시 보내면 처리한다. 근거: flowtrack 연동 제안 §3-3 · 사용자 결정 2026-11-16",
+    "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 W/O 하나의 포장 묶음을 보낸다. 한 트랜잭션에서 실적(양품 = 시리얼 수 · PL13 시스템 작업자) → 시리얼 등록(보낸 번호 그대로) → 제품 입고(W/O 완제품 위치 · 정상·가용 · 적치 지시 없음) → 자재 차감(W/O 계획 BOM 을 PL13 기본 BOM 이 있는 구성품까지 풀어 운영 정책 BACKFLUSH_WAREHOUSE 창고의 맨 아래 위치에서 오래된 LOT 부터 · 소수 6자리 · 모자란 몫은 미차감으로 남기고 입고는 막지 않는다) → 양품 합이 지시수량이면 W/O 마감. W/O 는 단말 공장에서만 찾는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다 — 원인을 고친 뒤 같은 전송을 다시 보내면 처리한다. 근거: flowtrack 연동 제안 §3-3 · 사용자 결정 2026-11-16",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -17360,7 +17360,7 @@
       }
      },
      "400": {
-      "description": "INVALID — Idempotency-Key ≠ transmissionId · 모르는 W/O(다른 공장 W/O 도) · 품목이 W/O 와 다름 · qty ≠ 시리얼 수 · 본문 안에서 겹친 시리얼 · W/O 에 완제품 위치가 없음 · 생산 LOT 이 하나가 아님 · 시스템 작업자가 없음. STATE_LOCKED — 마감·취소된 W/O · 실적 뒤에도 생산 LOT 이 정상이 아님(MES 공정 검사 기준·LOT 보류). RANGE — 양품 합이 지시수량을 넘음. UNIQUE_VIOLATION — MES 에 이미 있는 시리얼",
+      "description": "INVALID — Idempotency-Key ≠ transmissionId · 모르는 W/O(다른 공장 W/O 도) · 품목이 W/O 와 다름 · qty ≠ 시리얼 수 · 본문 안에서 겹친 시리얼 · W/O 에 완제품 위치가 없음 · 생산 LOT 이 하나가 아님 · 시스템 작업자가 없음 · 자재 차감 창고(운영 정책 BACKFLUSH_WAREHOUSE)가 없음. STATE_LOCKED — 마감·취소된 W/O · 실적 뒤에도 생산 LOT 이 정상이 아님(MES 공정 검사 기준·LOT 보류). RANGE — 양품 합이 지시수량을 넘음. UNIQUE_VIOLATION — MES 에 이미 있는 시리얼",
       "content": {
        "application/json": {
         "schema": {
@@ -17382,6 +17382,138 @@
     }
    }
   },
+   "/integration/tracking-system/stock-issues": {
+    "post": {
+     "tags": [
+      "integration"
+     ],
+     "summary": "추적 시스템 출하 출고 받기",
+     "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 컨테이너 하나의 출하를 보낸다(그 컨테이너 시리얼의 입고이동을 모두 보낸 뒤). 한 트랜잭션에서 시리얼 → LOT → 그 W/O 완제품 창고의 정상·가용 재고(W/O 완제품 위치 먼저)를 D/O 마다 출고 전표 하나(유형 SHIPMENT · 원천 TRACKING_TRANSMISSION · 비고에 컨테이너·VI·인보이스·D/O 번호)로 빼고 시리얼을 SHIPPED 로 바꾼다. 시리얼은 단말 공장에서만 찾는다. 출고 시각은 받은 시각이다. ERP 로 보내지 않는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다 — 원인을 고친 뒤 같은 전송을 다시 보내면 처리한다. 근거: flowtrack 연동 제안 §3-4 · 사용자 결정 2026-11-17",
+     "parameters": [
+      {
+       "$ref": "#/components/parameters/IdempotencyKey"
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TrackingStockIssue"
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "omfSession": []
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "처리함 · 이미 처리한 전송(replayed=true)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TrackingTransmissionResult"
+         }
+        }
+       }
+      },
+      "400": {
+       "description": "INVALID — Idempotency-Key ≠ transmissionId · qty ≠ 줄 qty 합 · 줄 qty ≠ 시리얼 수 · 본문 안에서 겹친 시리얼 · MES 에 없는 시리얼(다른 공장 시리얼도) · 시리얼의 품목이 줄의 품목과 다름 · LOT 의 W/O 에 완제품 위치가 없음 · 한 D/O 의 제품이 창고 둘 이상. STATE_LOCKED — 이미 출고된 시리얼 · LOT 이 정상이 아니거나 보류 중. NEGATIVE_BALANCE — 출고할 수 있는 재고가 모자람",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "토큰이 없거나 추적 시스템 연동 단말 토큰이 아니다(계정 세션 포함)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "/integration/tracking-system/work-order-closes": {
+    "post": {
+     "tags": [
+      "integration"
+     ],
+     "summary": "추적 시스템 마감 보고 받기",
+     "description": "추적 시스템 연동(TRACKING_SYSTEM) 단말 토큰 전용 — 계정 세션·POP·MOBILE 토큰은 401. flowtrack 이 W/O 를 닫으며 보낸다(그 W/O 의 입고이동을 모두 보낸 뒤). 한 트랜잭션에서 qty 만큼 실적(PL13 시스템 작업자) → 제품 입고(W/O 완제품 위치 · 정상·가용) → 자재 차감(입고이동과 같다) → 마감(마감자 PL13 시스템 작업자). S410(시리얼 없음)은 만든 수, 시리얼 품목은 0 이다 — 시리얼 품목의 양품은 입고이동으로 온다. 처분·사유는 관리웹 마감과 같은 규칙이다: 양품 합이 지시수량보다 적으면 remainderDispositionCode·reasonCode 가 둘 다 필요하고, 지시수량이면 둘 다 비운다. reasonCode 는 WORK_ORDER_COMPLETION_VARIANCE_REASON 의 사용 중인 코드다. remarks 는 W/O 비고에 그대로 남긴다. 양품 합이 0 이면 마감하지 않고 W/O 를 취소한다(생산 LOT 폐번) — 취소 사유는 reasonCode 가 WORK_ORDER_CANCEL_REASON 에도 있으면 같은 값, 없으면 OTHER 다. 실적·입고 시각은 받은 시각이다. ERP 로 보내지 않는다. W/O 는 단말 공장에서만 찾는다. Idempotency-Key 는 transmissionId 와 같아야 한다. 처리한 transmissionId 는 기한 없이 기억해, 다시 오면 아무것도 하지 않고 200(replayed=true)이다. 거절한 전송은 기억하지 않는다. 근거: flowtrack 연동 제안 §3-5 · 사용자 결정 2026-11-12 · 2026-11-17",
+     "parameters": [
+      {
+       "$ref": "#/components/parameters/IdempotencyKey"
+      }
+     ],
+     "requestBody": {
+      "required": true,
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TrackingWorkOrderClose"
+        }
+       }
+      }
+     },
+     "security": [
+      {
+       "omfSession": []
+      }
+     ],
+     "responses": {
+      "200": {
+       "description": "처리함 · 이미 처리한 전송(replayed=true)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/TrackingTransmissionResult"
+         }
+        }
+       }
+      },
+      "400": {
+       "description": "INVALID — Idempotency-Key ≠ transmissionId · 모르는 W/O(다른 공장 W/O 도) · 품목이 W/O 와 다름 · W/O 에 완제품 위치가 없음 · 생산 LOT 이 하나가 아님 · 시스템 작업자가 없음 · 자재 차감 창고가 없음 · 시리얼 품목 W/O 에 qty 가 1 이상 · 정상 마감에 사유 · 사용하지 않는 사유 코드. STATE_LOCKED — 마감·취소된 W/O · 생산 LOT 이 정상이 아님. RANGE — 양품 합이 지시수량을 넘음. REMAINDER_DISPOSITION_REQUIRED — 미달인데 처분이 없음. REMAINDER_DISPOSITION_NOT_ALLOWED — 정상인데 처분이 있음. REQUIRED — 미달인데 사유가 없음",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      },
+      "401": {
+       "description": "토큰이 없거나 추적 시스템 연동 단말 토큰이 아니다(계정 세션 포함)",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      },
+      "409": {
+       "description": "OPEN_SESSION_EXISTS — 그 W/O 에 열린 작업 세션(POP)이 있다",
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/ErrorResponse"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
   "/mdm/shifts": {
    "get": {
     "tags": [
@@ -24024,6 +24156,190 @@
      }
     }
    },
+    "TrackingStockIssue": {
+     "type": "object",
+     "description": "컨테이너 하나의 출하(flowtrack 연동 제안 §3-4)",
+     "required": [
+      "transmissionId",
+      "containerNo",
+      "viNo",
+      "invoiceNo",
+      "shipDate",
+      "destination",
+      "qty",
+      "lines",
+      "businessDate"
+     ],
+     "properties": {
+      "transmissionId": {
+       "type": "string",
+       "format": "uuid",
+       "description": "flowtrack 전송 번호 — Idempotency-Key 와 같다"
+      },
+      "containerNo": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 100
+      },
+      "viNo": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "maxLength": 100,
+       "description": "VI 번호 — 출고 전표 비고에 남긴다"
+      },
+      "invoiceNo": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "maxLength": 100,
+       "description": "인보이스 번호 — 출고 전표 비고에 남긴다"
+      },
+      "shipDate": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "format": "date",
+       "description": "선적일 — 출고 전표 비고에 남긴다. 출고 시각은 받은 시각이다"
+      },
+      "destination": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "maxLength": 200,
+       "description": "목적지 — 출고 전표 비고에 남긴다"
+      },
+      "qty": {
+       "type": "integer",
+       "minimum": 1,
+       "description": "줄 qty 의 합"
+      },
+      "lines": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "$ref": "#/components/schemas/TrackingStockIssueLine"
+       },
+       "description": "같은 doNo 의 줄은 출고 전표 하나로 모인다"
+      },
+      "businessDate": {
+       "type": "string",
+       "format": "date",
+       "description": "출고 업무일자(공유계약 C-8)"
+      }
+     }
+    },
+    "TrackingStockIssueLine": {
+     "type": "object",
+     "required": [
+      "doNo",
+      "itemCode",
+      "qty",
+      "serialNos"
+     ],
+     "properties": {
+      "doNo": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 100
+      },
+      "itemCode": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "qty": {
+       "type": "integer",
+       "minimum": 1,
+       "description": "serialNos 개수와 같다"
+      },
+      "serialNos": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 150
+       },
+       "description": "입고이동으로 MES 에 등록된 시리얼"
+      }
+     }
+    },
+    "TrackingWorkOrderClose": {
+     "type": "object",
+     "description": "W/O 하나의 마감 보고(flowtrack 연동 제안 §3-5)",
+     "required": [
+      "transmissionId",
+      "workOrderNo",
+      "mesWorkOrderId",
+      "itemCode",
+      "qty",
+      "businessDate"
+     ],
+     "properties": {
+      "transmissionId": {
+       "type": "string",
+       "format": "uuid",
+       "description": "flowtrack 전송 번호 — Idempotency-Key 와 같다"
+      },
+      "workOrderNo": {
+       "type": "string",
+       "maxLength": 100
+      },
+      "mesWorkOrderId": {
+       "type": [
+        "integer",
+        "null"
+       ],
+       "format": "int64",
+       "description": "null 이면 workOrderNo 로 찾는다"
+      },
+      "itemCode": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "qty": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "시리얼 없이 올릴 양품 수 — S410 은 만든 수, 시리얼 품목은 0"
+      },
+      "remainderDispositionCode": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "enum": [
+        "CARRY_OVER",
+        "WRITE_OFF",
+        null
+       ],
+       "description": "잔량 처분 — 양품 합이 지시수량보다 적을 때만 보낸다"
+      },
+      "reasonCode": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "maxLength": 50,
+       "description": "미달·초과 사유 — GET /mdm/code-values?codeGroupCode=WORK_ORDER_COMPLETION_VARIANCE_REASON 의 사용 중인 코드"
+      },
+      "remarks": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "description": "W/O 비고에 남긴다(flowtrack 마감자)"
+      },
+      "businessDate": {
+       "type": "string",
+       "format": "date",
+       "description": "제품 입고·자재 차감의 업무일자(공유계약 C-8)"
+      }
+     }
+    },
    "TrackingTransmissionResult": {
     "type": "object",
     "required": [

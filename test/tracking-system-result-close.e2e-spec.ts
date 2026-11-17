@@ -1,8 +1,9 @@
 /**
- * 추적 시스템 연동이 부르는 생산 쪽 입구 — 실적(`recordWithin`)과 마감(`closeWithin`)을 호출자의 트랜잭션 안에서(flowtrack 연동 제안 §8 의 7).
+ * 추적 시스템 연동이 부르는 생산 쪽 입구 — 실적(`recordWithin`)·마감(`closeWithin`)·취소(`cancelWithin`)를 호출자의 트랜잭션 안에서
+ * (flowtrack 연동 제안 §8 의 7 · 10-1).
  *
  * 실적은 PL13 시스템 작업자로 쓰고 LOT 을 정상으로 올린다. 마감은 자동 흐름이 세운 계획의 W/O 만 배포 상태에서 하고,
- * 그 W/O 는 ERP 생산입고 송신·마감 알림이 없다.
+ * 그 W/O 는 ERP 생산입고 송신·마감 알림이 없다. 관리웹·POP 은 자동 W/O 를 마감하지 않는다 — flowtrack 이 마감 보고로 닫는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -20,6 +21,7 @@ import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { IF_WO_CLOSE } from '../src/core/outbox';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ProductionResultService } from '../src/production/production-result/production-result.service';
+import { WorkOrderCancelService } from '../src/production/work-order/work-order-cancel.service';
 import { WorkOrderCloseService } from '../src/production/work-order/work-order-close.service';
 
 const PREFIX = `E2E_TRC_${randomUUID().slice(0, 8)}`;
@@ -30,6 +32,7 @@ describe('추적 시스템 연동 — 실적·마감 입구 (e2e)', () => {
   let prisma: PrismaService;
   let results: ProductionResultService;
   let closes: WorkOrderCloseService;
+  let cancels: WorkOrderCancelService;
   let cookie: string;
   let seq = 0;
   const ids: Record<string, bigint> = {};
@@ -42,6 +45,7 @@ describe('추적 시스템 연동 — 실적·마감 입구 (e2e)', () => {
     prisma = app.get(PrismaService);
     results = app.get(ProductionResultService);
     closes = app.get(WorkOrderCloseService);
+    cancels = app.get(WorkOrderCancelService);
     await fixtures();
   });
 
@@ -108,8 +112,23 @@ describe('추적 시스템 연동 — 실적·마감 입구 (e2e)', () => {
     expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).status_code).toBe('RELEASED');
   });
 
-  it('관리웹 :close 는 자동 계획 W/O 라도 배포 상태면 받지 않는다 — 배포 상태 마감은 연동만 한다', async () => {
+  it('마감 — 미달 마감의 사유가 쓰지 않는 코드면 거절한다', async () => {
+    const { workOrderId, lotId } = await releasedWorkOrder(true);
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await results.recordWithin(tx, {
+          workOrderId: Number(workOrderId), goodQty: 4, uomId: Number(ids.uom), lotId, occurredAt: OCCURRED,
+          resultSourceCode: 'TRACKING_SYSTEM', workerId: ids.worker, idempotencyKey: randomUUID(), productionResultNo: `${PREFIX}-PR-${++seq}`,
+        });
+        await closes.closeWithin(tx, Number(workOrderId), { remainderDispositionCode: 'WRITE_OFF', reasonCode: `${PREFIX}-NONE` }, ids.worker);
+      }),
+    ).rejects.toMatchObject({ errors: [expect.objectContaining({ field: 'reasonCode', code: 'INVALID' })] });
+    expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).status_code).toBe('RELEASED');
+  });
+
+  it.each(['RELEASED', 'IN_PROGRESS'])('관리웹 :close 는 자동 계획 W/O 를 받지 않는다(%s) — flowtrack 이 마감한다', async (status) => {
     const { workOrderId } = await releasedWorkOrder(true);
+    await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { status_code: status } });
     const response = await request(app.getHttpServer())
       .post(`/api/production/work-orders/${workOrderId}:close`)
       .set('Cookie', cookie)
@@ -117,7 +136,21 @@ describe('추적 시스템 연동 — 실적·마감 입구 (e2e)', () => {
       .set('If-Match', '1')
       .send({})
       .expect(400);
-    expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED', message: expect.stringContaining('flowtrack') });
+    expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).status_code).toBe(status);
+  });
+
+  it('취소 — 호출자의 트랜잭션 안에서 W/O 를 취소하고 생산 LOT 을 폐번한다 · 쓰지 않는 사유는 거절한다', async () => {
+    const { workOrderId, lotId } = await releasedWorkOrder(true);
+    await expect(prisma.$transaction((tx) => cancels.cancelWithin(tx, Number(workOrderId), { reasonCode: `${PREFIX}-NONE` })))
+      .rejects.toMatchObject({ errors: [expect.objectContaining({ field: 'reasonCode', code: 'INVALID' })] });
+
+    await prisma.$transaction((tx) => cancels.cancelWithin(tx, Number(workOrderId), { reasonCode: 'PLAN_CHANGE' }));
+
+    expect(await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).toMatchObject({
+      status_code: 'CANCELLED', cancellation_reason_code: 'PLAN_CHANGE', updated_by: null,
+    });
+    expect((await prisma.lot.findUniqueOrThrow({ where: { lot_id: lotId } })).lifecycle_status_code).toBe('VOIDED');
   });
 
   /** 배포 상태의 W/O 와 그 생산 LOT 하나 — 자동 흐름이 세운 계획이면 `automatic`. */
