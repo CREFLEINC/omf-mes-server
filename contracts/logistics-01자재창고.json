@@ -689,7 +689,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "입하 LOT 으로 거른다 — 그 입하 LOT 의 자재 관리 LOT 잔액만. 범위 조건으로 인정한다(이것 하나로 조회할 수 있다). 근거: 피처 005 FR-035 · D-29"
+      "description": "입하 LOT 으로 거른다 — 그 입하 LOT 의 자재 관리 LOT 잔액만. 범위 조건으로 인정한다(이것 하나로 조회할 수 있다). 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "inboundLotNo",
@@ -697,7 +697,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "입하 LOT 번호 정확 일치 — inboundLotId 와 같은 범위 조건. 근거: 피처 005 FR-035 · D-29"
+      "description": "입하 LOT 번호 정확 일치 — inboundLotId 와 같은 범위 조건. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "qualityStatusCode",
@@ -10490,7 +10490,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "투입한 LOT 의 입하 LOT — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
+      "description": "투입한 LOT 의 입하 LOT — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "inboundLotNo",
@@ -10498,7 +10498,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "투입한 LOT 의 입하 LOT 번호 정확 일치 — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
+      "description": "투입한 LOT 의 입하 LOT 번호 정확 일치 — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "supplierId",
@@ -21364,7 +21364,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "속한 입하 LOT(피처 005) — 입하 전·자재가 아닌 LOT 은 null"
+      "description": "속한 입하 LOT(피처 005) — 입하 전·자재가 아닌 LOT 은 null 단건 조회에서 분할 LOT 은 조상의 입하 LOT 을 낸다(피처 008)."
      },
      "inboundLotNo": {
       "type": [
@@ -21383,6 +21383,55 @@
        }
       ],
       "description": "패키징(피처 005 R-4) — 없으면 null. 분할로 생긴 자식 LOT 은 패키징이 없다"
+     },
+     "parentLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "부모 LOT 번호 — 단건 조회(GET /trace/lots/{lotId})만 싣는다(피처 008)"
+     },
+     "splitGoodsIssue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "원천이 GOODS_ISSUE_SPLIT(부분 출고 분할)이면 그 분할을 일으킨 출고 라인 — 단건 조회만",
+      "required": [
+       "goodsIssueId",
+       "goodsIssueNo",
+       "goodsIssueLineId",
+       "lineNo"
+      ],
+      "properties": {
+       "goodsIssueId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "goodsIssueNo": {
+        "type": "string"
+       },
+       "goodsIssueLineId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lineNo": {
+        "type": "integer"
+       }
+      }
+     },
+     "splitAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "분할 시각(SPLIT 계보) — 분할 LOT 이 아니면 null. 단건 조회만"
+     },
+     "splitChildCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "이 LOT 에서 나온 분할 LOT 수(자손 전체) — 단건 조회만"
      }
     },
     "x-internal-note": "입하 시점의 LOT 은 Hold 로 생긴다 — 가용 재고가 아니다(M-01-01 §5-4 · ✓확정 §재정의 #5). 📨 「W/O 내 순번」(별도 속성 — 선발행 슬롯 구간 지정용)은 계약이 앞서 세울 자리이고 저장 컬럼은 통지 대상이다 — 기다리지 않는다. 근거: 02-SW설계사양서 §4.6 · omf-mes#46."

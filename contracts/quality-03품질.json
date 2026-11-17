@@ -3351,7 +3351,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "자재 관리 LOT 의 입하 LOT 으로 거른다. 근거: 피처 005 FR-035 · D-29"
+      "description": "자재 관리 LOT 의 입하 LOT 으로 거른다. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "inboundLotNo",
@@ -3359,7 +3359,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "입하 LOT 번호 정확 일치. 근거: 피처 005 FR-035 · D-29"
+      "description": "입하 LOT 번호 정확 일치. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "heldOnly",

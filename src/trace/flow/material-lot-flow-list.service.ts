@@ -92,7 +92,7 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
   // ⛔ 하위 집계는 LOT 마다 LATERAL 로 센다(색인을 탄다). CTE 로 미리 모아 붙이면 기간 조건(MIN 위)의 행 수 추정이 1 로
   //    떨어져 CTE 를 LOT 마다 다시 훑는다.
   // 부분 출고 분할 LOT 의 투입·생산은 원래 LOT 의 것으로 함께 센다 — 분할 LOT 은 입고가 없어 목록 행이 되지 않는다(피처 008).
-  const family = splitFamilySql('b.lot_id');
+  const family = splitFamilySql('SELECT b.lot_id');
   const links = forwardLinksSql(family);
   return `
     WITH firsts AS (
