@@ -15575,6 +15575,142 @@
      }
     }
    }
+  },
+  "/logistics/split-material-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "분할 LOT 라벨 목록",
+    "description": "부분 출고가 만든 분할 LOT(원천 GOODS_ISSUE_SPLIT)과 그 자재 LOT 라벨(MATERIAL_LOT_LABEL) 발행 요약. 미발행 = 발행 기록이 없거나 마지막 인쇄 결과가 FAILED(인쇄 대기 PENDING 은 찍은 것으로 본다). labelState=UNPRINTED(기본)는 기간 제한 없이 분할 시각 오래된 순, PRINTED 는 출고일(issuedFrom·issuedTo, UTC 하루 경계, 기본 오늘까지 최근 7일) 안에서 최근 순. unprintedCount 는 기간과 상관없는 그 공장 전체 미발행 수다. 라벨 발행은 POST /app/document-issues(MATERIAL_LOT_LABEL · 대상 LOT)를 그대로 쓴다. 단말(POP)은 질의 plantId 가 단말 공장이어야 한다. 근거: P-01-02 · 피처 008(omf-all-around#289)",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "labelState",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "UNPRINTED",
+        "PRINTED"
+       ],
+       "default": "UNPRINTED"
+      },
+      "description": "UNPRINTED = 라벨 안 찍음(기간 무관) · PRINTED = 찍음"
+     },
+     {
+      "name": "issuedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "PRINTED 일 때 출고일 시작(기본 오늘−6일)"
+     },
+     {
+      "name": "issuedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "PRINTED 일 때 출고일 끝(기본 오늘)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "unprintedCount"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/SplitMaterialLot"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "unprintedCount": {
+           "type": "integer",
+           "minimum": 0,
+           "description": "이 공장의 라벨 안 찍은 분할 LOT 수(기간 무관)"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-02 가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -28971,6 +29107,197 @@
       }
      }
     ]
+   },
+   "SplitMaterialLot": {
+    "type": "object",
+    "description": "부분 출고 분할 LOT 한 줄(P-01-02 라벨 대상). 라벨 면 값은 자재 LOT 라벨과 같다 — 수량은 분할 수량(initial_qty), 패키징 줄은 없다.",
+    "required": [
+     "lotId",
+     "lotNo",
+     "statusCode",
+     "lifecycleStatusCode",
+     "item",
+     "uomId",
+     "uomCode",
+     "qty",
+     "supplier",
+     "parentLot",
+     "splitAt",
+     "goodsIssue",
+     "destination",
+     "labelIssue"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "040101-00022S|300|260731|100019|0001-S1"
+     },
+     "statusCode": {
+      "type": "string"
+     },
+     "lifecycleStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "item": {
+      "type": "object",
+      "required": [
+       "itemId",
+       "itemCode",
+       "itemName"
+      ],
+      "properties": {
+       "itemId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "itemCode": {
+        "type": "string"
+       },
+       "itemName": {
+        "type": "string"
+       }
+      }
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "description": "분할 수량(라벨 수량)"
+     },
+     "supplier": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "supplierId",
+       "supplierCode",
+       "supplierName"
+      ],
+      "properties": {
+       "supplierId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "supplierCode": {
+        "type": "string"
+       },
+       "supplierName": {
+        "type": "string"
+       }
+      },
+      "description": "원조 LOT 의 입하 공급사 — 분할 LOT 은 입하 LOT 칸이 비어 있어 원조를 따라 올라간다"
+     },
+     "parentLot": {
+      "type": "object",
+      "required": [
+       "lotId",
+       "lotNo"
+      ],
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lotNo": {
+        "type": "string"
+       }
+      }
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "분할 시각(출고 occurredAt)"
+     },
+     "goodsIssue": {
+      "type": "object",
+      "required": [
+       "goodsIssueId",
+       "goodsIssueNo",
+       "goodsIssueLineId",
+       "lineNo"
+      ],
+      "properties": {
+       "goodsIssueId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "goodsIssueNo": {
+        "type": "string"
+       },
+       "goodsIssueLineId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lineNo": {
+        "type": "integer"
+       }
+      }
+     },
+     "destination": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "warehouseCode",
+       "locationCode"
+      ],
+      "properties": {
+       "warehouseCode": {
+        "type": "string"
+       },
+       "locationCode": {
+        "type": "string"
+       }
+      },
+      "description": "출고 도착(위치 도착일 때만)"
+     },
+     "labelIssue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "자재 LOT 라벨 발행 요약 — 없으면 한 번도 안 찍음",
+      "required": [
+       "issueCount",
+       "lastIssueSeq",
+       "lastPrintOutcomeCode",
+       "lastIssuedAt"
+      ],
+      "properties": {
+       "issueCount": {
+        "type": "integer"
+       },
+       "lastIssueSeq": {
+        "type": "integer"
+       },
+       "lastPrintOutcomeCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "PENDING·SUCCEEDED·FAILED"
+       },
+       "lastIssuedAt": {
+        "type": "string",
+        "format": "date-time"
+       }
+      }
+     }
+    }
    }
   },
   "securitySchemes": {
