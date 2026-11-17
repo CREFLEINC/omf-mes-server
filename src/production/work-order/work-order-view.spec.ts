@@ -47,6 +47,7 @@ function workOrderRow(overrides: Partial<WorkOrderRow> = {}): WorkOrderRow {
     production_plan: null,
     routing_operation: { operation_name: '사출', process: { process_id: 41n, process_code: 'PR-INJ', process_name: '사출공정' } },
     item: { item_code: 'ITM-0001', item_name: '품목 하나' },
+    location_work_order_default_fg_location_idTolocation: null,
     equipment: null,
     closed_worker: null,
     ...overrides,
@@ -144,6 +145,24 @@ describe('WorkOrder 뷰', () => {
     );
 
     expect(Object.keys(view)).not.toContain('erpStorageLocationCode');
+  });
+
+  it.each([
+    ['SL_CD 창고와 같으면 다르지 않다', ' S410 ', 'S410', false],
+    ['사람이 다른 창고로 바꿨으면 다르다', 'S410', 'S420', true],
+    ['SL_CD 가 없으면 견줄 것이 없다', null, 'S420', false],
+    ['완제품 위치가 없으면 판정하지 않는다', 'S410', null, false],
+  ])('뷰 — 「ERP 입고 창고와 다름」은 읽을 때 판정한다: %s', (_, erpCode, fgCode, differs) => {
+    const view = workOrderView(
+      workOrderRow({
+        production_plan_id: 21n,
+        production_plan: { production_order_id: 31n, production_order: { production_order_no: 'PO-2026-0001', erp_storage_location_code: erpCode } },
+        location_work_order_default_fg_location_idTolocation: fgCode === null ? null : { warehouse: { warehouse_code: fgCode } },
+      }),
+      { erpMessageQueued: false },
+    );
+    expect(view).toMatchObject({ fgWarehouseDiffersFromErp: differs });
+    expect(view.fgWarehouseCode).toBe(fgCode ?? undefined);
   });
 
   it('뷰 — 공정 셋은 Routing 공정의 공정에서 낸다', () => {

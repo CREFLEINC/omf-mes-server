@@ -1,15 +1,15 @@
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 
-import { ERROR_CODE, ErrorItem } from '../../common/errors';
 import { FG_LINK_FAILURES } from '../../core/erp-warehouse/fg-location';
 import type { MasterReason } from '../production-plan/master-choice';
+import type { ExistingDraftAction } from './plan-set-rules';
 import { RESOURCE_CODES } from './resource-rules';
 
 /**
  * 계획 제안의 판정 — 구분·상태·사유 분류. 계산(`proposal-builder.ts`)과 확정(`plan-proposal.service.ts`)이 이 한 벌을 쓴다.
  * 업무 결정이 바뀔 수 있는 자리는 함수 하나씩으로 모아 둔다: `plansToPropose`(작성중 계획이 있으면 남은 수량을 제안하는가),
- * `wholeOrderError`(한 ERP W/O 안에서 일부 계획만 확정하는가).
+ * 본문의 계획 구성(나누기·더하기·기존 작성중 계획 선택)은 `plan-set-rules.ts` 다.
  */
 
 /** 계약 `ProductionPlanProposalReasonCode` — 응답은 이 순서로 낸다. */
@@ -77,15 +77,16 @@ const MASTER_MESSAGE: Record<MasterReason, string> = {
 export const masterIssue = (reason: MasterReason): ProposalIssue => blockIssue(reason, MASTER_MESSAGE[reason]);
 
 /**
- * 어떤 계획을 제안하는가. 작성중 계획이 있으면 그 계획들만 검토한다 — 남은 수량으로 새 계획을 더하지 않는다.
- * 없으면 확정 계획량을 뺀 수량으로 새 계획 하나.
+ * 어떤 계획을 제안하는가. 작성중 계획을 이어서 하면(CONTINUE) 그 계획들만 검토한다 — 남은 수량으로 새 계획을 더하지 않는다.
+ * 그 밖에는 작성중 계획을 대체한다고 보고 확정 계획량을 뺀 수량으로 새 계획 하나 — 작성중 계획은 요약으로만 보인다.
  */
 export function plansToPropose<T>(
   drafts: readonly T[],
   orderQty: Prisma.Decimal,
   confirmedQty: Prisma.Decimal,
+  action: ExistingDraftAction,
 ): { kind: 'REVIEW_DRAFT'; drafts: readonly T[] } | { kind: 'NEW_PLAN'; qty: Prisma.Decimal } {
-  if (drafts.length > 0) return { kind: 'REVIEW_DRAFT', drafts };
+  if (drafts.length > 0 && action === 'CONTINUE') return { kind: 'REVIEW_DRAFT', drafts };
   return { kind: 'NEW_PLAN', qty: orderQty.minus(confirmedQty) };
 }
 
@@ -119,24 +120,6 @@ export const calendarKey = (plantId: bigint, lineId: bigint | null, start: strin
 /** 새 계획은 `new-1`…, 작성중 계획은 `plan-{id}` — 저장된 번호·id 와 섞이지 않는 임시 식별자. */
 export const newPlanKey = (index: number): string => `new-${index + 1}`;
 export const draftPlanKey = (productionPlanId: bigint): string => `plan-${String(productionPlanId)}`;
-
-/**
- * 한 ERP W/O 는 제안한 계획을 전부 확정하거나 아무것도 하지 않는다 — 본문의 계획 집합이 제안과 다르면 오류(확정은 400).
- * 일부만 확정하게 바꾸려면 이 함수를 고친다.
- */
-export function wholeOrderError(proposedKeys: readonly string[], bodyKeys: readonly string[]): ErrorItem | null {
-  const proposed = [...proposedKeys].sort();
-  const sent = [...bodyKeys].sort();
-  if (proposed.length === sent.length && proposed.every((key, index) => key === sent[index])) return null;
-  return {
-    scope: 'field',
-    field: 'plans',
-    code: ERROR_CODE.INVALID,
-    message: proposed.length === 0
-      ? '이 ERP W/O 는 확정할 계획 제안이 없습니다. 제안을 다시 조회하세요.'
-      : `제안한 계획(${proposed.join(', ')})을 모두 실어 보내야 합니다 — 한 ERP W/O 는 전부 확정하거나 아무것도 하지 않습니다.`,
-  };
-}
 
 /** 변경 감지 값 — 기준의 «내용»을 해시한다(판을 올리지 않는 기준정보도 잡는다). 불투명 문자열이라 화면은 비교만 한다. */
 export function basisHash(value: unknown): string {
