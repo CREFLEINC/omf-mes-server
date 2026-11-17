@@ -69,7 +69,7 @@ export interface UserHolidayDate {
   productionPlanId: number;
   planNo: string;
   planDate: string;
-  /** 사람이 바꾸기 전의 시스템 날짜 — 시스템 날짜가 없는 계획이면 null. */
+  /** 시스템이 냈을 날짜(휴일 보정 뒤) — 사람이 그것을 보고 바꿨다는 뜻은 아니다. 시스템 날짜가 없는 계획이면 null. */
   systemDate: string | null;
   day: PlanningCalendarDay;
 }
