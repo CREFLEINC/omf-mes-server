@@ -70,6 +70,7 @@ export class WorkOrderCloseService {
    * 자동 흐름이 세운 계획의 W/O 만 배포 상태에서 바로 마감한다. 마감한 작업자는 호출자가 준다(연동은 시스템 작업자).
    */
   async closeWithin(tx: Tx, workOrderId: number, body: WorkOrderClose, closedWorkerId: bigint): Promise<void> {
+    await assertCodeValues(tx, [{ field: 'reasonCode', value: body.reasonCode, groupCode: VARIANCE_REASON_GROUP }]);
     await this.commit(tx, workOrderId, undefined, body, {}, closedWorkerId, AUTO_CLOSE_ACTION);
   }
 
@@ -85,10 +86,16 @@ export class WorkOrderCloseService {
     const { appUserId } = actor;
     const locked = await lockWorkOrder(tx, workOrderId);
     assertVersion(locked, version);
+    const automatic = await createdAutomatically(tx, workOrderId);
+    // 자동 흐름의 W/O 는 flowtrack 이 마감 보고로 닫는다 — 상태와 상관없이 막아야 세션 문구가 「끝내고 다시 마감하라」로 잘못 이끌지 않는다.
+    if (automatic && action === CLOSE_ACTION) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [{
+        scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: 'OA 자동 W/O 는 flowtrack 에서 마감합니다 — 관리웹·POP 에서는 마감하지 않습니다.',
+      }]);
+    }
     // ⭐ 열린 세션 검사가 전이 검사보다 «먼저»다 — 계약이 이 자리에만 409 봉투를 지정했고,
     //    전이가 먼저 걸리면 진행 중인 W/O 가 400 을 받아 화면이 띄울 문구를 잃는다(§5-1).
     await assertNoOpenSession(tx, workOrderId);
-    const automatic = await createdAutomatically(tx, workOrderId);
     // 상태가 본문보다 먼저다 — 마감할 수 없는 W/O 에 「처분을 고르라」를 먼저 보이면 고쳐도 다시 막힌다.
     const transition = this.assertClosable(locked.status_code, automatic ? action : CLOSE_ACTION);
 
