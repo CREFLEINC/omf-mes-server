@@ -2893,6 +2893,24 @@
       "description": "라인 단위 출고 QR 을 스캔했을 때. 그 라인이 속한 출고 전표를 낸다. 근거: P-01-02 §5-2 · M-01-09 §5-6"
      },
      {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "그 LOT 을 출고한 라인이 있는 전표. 자재 LOT 라벨(분할 LOT·전량 출고한 원래 LOT)을 스캔해 받을 출고를 찾을 때 쓴다(awaitingShopfloorReceiptOnly 와 함께). 근거: M-01-09 · 피처 008(omf-all-around#289)"
+     },
+     {
+      "name": "awaitingShopfloorReceiptOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "참이면 생산창고 입고 대상(원천 PICKING_ORDER)이고 전기 완료(POSTED)이며 생산창고 입고가 아직 없는 전표만. 폐기·반품 등 다른 원천 출고는 빠진다. 근거: M-01-09 · 피처 008(omf-all-around#289)"
+     },
+     {
       "name": "q",
       "in": "query",
       "schema": {
