@@ -14,7 +14,8 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
-import { StockMove, StockMoveService, SYSTEM_WORKER_NO } from '../src/integration/tracking-system/stock-move.service';
+import { StockMove, StockMoveService } from '../src/integration/tracking-system/stock-move.service';
+import { SYSTEM_WORKER_NO } from '../src/integration/tracking-system/tracking-production';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = `E2E_TSM_${randomUUID().slice(0, 8)}`;

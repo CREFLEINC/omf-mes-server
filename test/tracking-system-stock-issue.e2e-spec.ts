@@ -16,7 +16,8 @@ import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
 import { StockIssue, StockIssueLine, StockIssueService } from '../src/integration/tracking-system/stock-issue.service';
-import { StockMoveService, SYSTEM_WORKER_NO } from '../src/integration/tracking-system/stock-move.service';
+import { StockMoveService } from '../src/integration/tracking-system/stock-move.service';
+import { SYSTEM_WORKER_NO } from '../src/integration/tracking-system/tracking-production';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = `E2E_TSI_${randomUUID().slice(0, 8)}`;
