@@ -26,7 +26,7 @@ describe('resourceFindings — 공정 W/O 의 라인·설비·금형·기본 위
   };
   const noCode: FgResolution = { kind: 'NO_STORAGE_CODE' };
   const erp: FgResolution = {
-    kind: 'ERP_STORAGE_LOCATION', erpCode: 'S510', warehouse: { id: 1n, code: 'S510', name: '완제품' }, location: { id: 1n, code: 'WH', name: '창고 전체', isActive: true },
+    kind: 'ERP_STORAGE_LOCATION', erpCode: 'S510', warehouse: { id: 1n, code: 'S510', name: '완제품' }, location: { id: 1n, code: 'WH', name: '창고 전체', isActive: true, systemRoleCode: 'WAREHOUSE_WHOLE' },
   };
   const codes = (override: Partial<WorkOrderResources>, fg: FgResolution = noCode) => resourceFindings(PLANT, { ...ok, ...override }, refs, fg).map((finding) => [finding.field, finding.code]);
 

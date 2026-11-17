@@ -18,6 +18,9 @@ const STANDARD: LocationLabelValues = {
 const CASES: Array<{ name: string; values: LocationLabelValues; modules: number; cell: number }> = [
   { name: 'S230-01', values: STANDARD, modules: 21, cell: 12 },
   { name: 'A-01-03-C12-SHELF-7-LEVEL-02', values: { ...STANDARD, locationCode: 'A-01-03-C12-SHELF-7-LEVEL-02' }, modules: 25, cell: 12 },
+  // 창고 코드를 붙인 셀 코드(omf-all-around#292) — 25자 · 22자.
+  { name: 'OH100073-Z01-R001-L01-C01', values: { ...STANDARD, locationCode: 'OH100073-Z01-R001-L01-C01' }, modules: 25, cell: 12 },
+  { name: 'PTW-B-Z01-R001-L01-C01', values: { ...STANDARD, locationCode: 'PTW-B-Z01-R001-L01-C01' }, modules: 25, cell: 12 },
   { name: 'l×50', values: { ...STANDARD, locationCode: 'l'.repeat(50) }, modules: 33, cell: 11 },
   { name: '가×50', values: { ...STANDARD, locationCode: '가'.repeat(50) }, modules: 49, cell: 8 },
 ];
@@ -89,6 +92,20 @@ describe('위치 라벨 배치 (location-label-layout)', () => {
     expect(texts[0].y).toBe(qr.y);
     expect(Math.abs(bottom(texts[texts.length - 1]) - (qr.y + qr.modules.size * qr.cell))).toBeLessThanOrEqual(1);
     for (let index = 1; index < texts.length; index += 1) expect(texts[index].y).toBeGreaterThan(bottom(texts[index - 1]));
+  });
+
+  it.each([
+    'OH100073-Z01-R001-L01-C01',
+    'PTW-B-Z01-R001-L01-C01',
+    'OH100073-SYS-STAGING',
+    'OH100073-Z100-R1000-L100-C100',
+  ])('창고 코드를 붙인 %s 도 잘리지 않고 한 줄에 그대로 싣고 라벨 안에 든다(omf-all-around#292)', (locationCode) => {
+    const { width, texts } = layoutLocationLabel({ ...STANDARD, locationCode });
+    const code = texts[1];
+    expect(code.content).toBe(locationCode);
+    // 글자를 줄여 맞춘다 — 25자 셀 코드는 10pt 다(이름 줄보다 작아진다).
+    expect(code.point).toBeGreaterThanOrEqual(7);
+    for (const text of texts) expect(text.x + text.width).toBeLessThanOrEqual(width);
   });
 
   it('이름이 길면 글자를 줄이고, 더 줄일 수 없으면 ~ 를 남긴다', () => {

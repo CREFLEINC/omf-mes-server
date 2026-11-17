@@ -26,8 +26,14 @@ export interface FgPlace {
   name: string;
 }
 
+/**
+ * 입고 위치 — 「창고 전체」 또는 「적치 대기」. 역할(`systemRoleCode`)을 함께 싣는다 — 위치 코드가 창고 코드로 시작하게
+ * 바뀌어(omf-all-around#292) 화면이 코드 글자(`SYS-STAGING`)로 적치 대기를 가리지 않게.
+ */
+export type FgArrival = FgPlace & { isActive: boolean; systemRoleCode: string | null };
+
 export type FgResolution =
-  | { kind: 'ERP_STORAGE_LOCATION'; erpCode: string; warehouse: FgPlace; location: FgPlace & { isActive: boolean } }
+  | { kind: 'ERP_STORAGE_LOCATION'; erpCode: string; warehouse: FgPlace; location: FgArrival }
   | { kind: 'NO_STORAGE_CODE' }
   | { kind: 'LINK_FAILED'; erpCode: string; reason: FgLinkFailure };
 
@@ -76,16 +82,18 @@ export async function resolveFgLocations(db: Db, targets: readonly FgTarget[]): 
       warehouse_type_code: true, is_active: true, is_defect: true, is_external: true,
     },
   });
-  const arrivals = new Map<bigint, Promise<FgPlace & { isActive: boolean }>>();
-  const arrivalOf = (warehouseId: bigint): Promise<FgPlace & { isActive: boolean }> => {
+  const arrivals = new Map<bigint, Promise<FgArrival>>();
+  const arrivalOf = (warehouseId: bigint): Promise<FgArrival> => {
     const known = arrivals.get(warehouseId);
     if (known !== undefined) return known;
     const found = arrivalLocationId(db, warehouseId).then(async (locationId) => {
       const row = await db.location.findUniqueOrThrow({
         where: { location_id: locationId },
-        select: { location_id: true, location_code: true, location_name: true, is_active: true },
+        select: { location_id: true, location_code: true, location_name: true, is_active: true, system_role_code: true },
       });
-      return { id: row.location_id, code: row.location_code, name: row.location_name, isActive: row.is_active };
+      return {
+        id: row.location_id, code: row.location_code, name: row.location_name, isActive: row.is_active, systemRoleCode: row.system_role_code,
+      };
     });
     arrivals.set(warehouseId, found);
     return found;
