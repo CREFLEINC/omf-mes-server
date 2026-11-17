@@ -7,6 +7,8 @@ import type { Tx } from './lot-registry.service';
  * 제품에 그 LOT 이 들어갔다고 본다(선입선출 가정). 그래서 정확도는 언제나 「추정」이다.
  */
 export const CONSUMED_RELATION = 'CONSUMED';
+/** 분할 계보 — 부모 → 자식 LOT(`lot-split.ts`). 추적이 투입과 함께 따라간다(피처 008). */
+export const SPLIT_RELATION = 'SPLIT';
 export const INPUT_TIME_WINDOW = 'INPUT_TIME_WINDOW';
 export const ESTIMATED_ACCURACY = 'ESTIMATED';
 export const PRODUCTION_RESULT_EVENT = 'PRODUCTION_RESULT';
