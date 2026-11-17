@@ -2,7 +2,8 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { LOCATION_FACT_SELECT } from '../../core/erp-warehouse/fg-location';
+import { FgPlace, FgRule, LOCATION_FACT_SELECT } from '../../core/erp-warehouse/fg-location';
+import { FgOverrideBody, judgeFgOverride } from './fg-override';
 import { WorkOrderSupplement } from '../production-plan/expand';
 import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
@@ -36,6 +37,8 @@ export interface ProposalConfirmPlan {
   routingId: number;
   plannedLineId: number | null;
   remarks?: string;
+  /** 완제품 입고 창고 수동 변경 — 없으면 SL_CD 규칙 그대로(`fg-override.ts`). */
+  fgWarehouseOverride?: FgOverrideBody | null;
   workOrders: ProposalConfirmWorkOrder[];
 }
 
@@ -64,6 +67,8 @@ export interface ResolvedPlan {
   supplements: Map<bigint, WorkOrderSupplement>;
   /** 공정마다 저장할 계획 시각 — SYSTEM 은 계획일과 교대로 정했고 USER 는 본문 그대로다. */
   windows: Map<bigint, PlanWindow>;
+  /** 사람이 ERP 와 다르게 고른 입고 창고 — 바꾸지 않았으면 null. */
+  fgOverride: FgPlace | null;
 }
 
 export interface ConfirmJudgment {
@@ -149,6 +154,8 @@ export async function judgeConfirm(
       error(`${path}.workOrders`, ERROR_CODE.INVALID, 'Routing 공정마다 W/O 하나씩 실어야 합니다 — 공정이 빠졌거나 겹쳤거나 다른 Routing 의 공정입니다.');
     }
 
+    const fgOverride = judgeFgOverride(path, plan.fgWarehouseOverride, proposal.fg, order.plant_id, refs.warehouses, error);
+    const fgRule: FgRule = fgOverride === null ? proposal.fg : { kind: 'MANUAL_WAREHOUSE', warehouse: fgOverride };
     const supplements = new Map<bigint, WorkOrderSupplement>();
     const windows = new Map<bigint, PlanWindow>();
     const timed: TimedOperation[] = [];
@@ -167,7 +174,7 @@ export async function judgeConfirm(
         defaultScrapLocationId: idOf(workOrder.defaultScrapLocationId),
       };
       // 제안이 사유를 내는 판정과 같은 것 — 「확정 가능」 제안을 그대로 보내면 여기서 막히지 않는다.
-      for (const finding of resourceFindings(order.plant_id, resources, refs, proposal.fg)) {
+      for (const finding of resourceFindings(order.plant_id, resources, refs, fgRule)) {
         if (!EMPTY_CODES.has(finding.code)) error(field(finding.field), finding.code, finding.message);
       }
       const workerId = idOf(workOrder.responsibleWorkerId);
@@ -195,7 +202,7 @@ export async function judgeConfirm(
       }
     });
     warnings.push(...precedenceWarnings(timed, facts.dependencies.get(routingId) ?? [], timezone));
-    return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, windows }];
+    return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, windows, fgOverride }];
   });
 
   return { resolved, errors, warnings, corrections };
@@ -250,7 +257,8 @@ async function readReferences(client: Prisma.TransactionClient, body: ProposalCo
   const moldIds = ids(workOrders.map((workOrder) => workOrder.plannedMoldId));
   const workerIds = ids(workOrders.map((workOrder) => workOrder.responsibleWorkerId));
   const locationIds = ids(workOrders.flatMap((workOrder) => [workOrder.defaultWipLocationId, workOrder.defaultFgLocationId, workOrder.defaultScrapLocationId]));
-  const [lines, equipments, molds, workers, locations] = await Promise.all([
+  const warehouseIds = ids(body.plans.map((plan) => plan.fgWarehouseOverride?.warehouseId));
+  const [lines, equipments, molds, workers, locations, warehouses] = await Promise.all([
     client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true, is_active: true } }),
     client.equipment.findMany({ where: { equipment_id: { in: equipmentIds } }, select: { equipment_id: true, plant_id: true, status_code: true, is_active: true, production_line_id: true } }),
     client.mold.findMany({ where: { mold_id: { in: moldIds } }, select: { mold_id: true, plant_id: true, status_code: true, is_active: true } }),
@@ -259,6 +267,10 @@ async function readReferences(client: Prisma.TransactionClient, body: ProposalCo
       where: { location_id: { in: locationIds } },
       select: LOCATION_FACT_SELECT,
     }),
+    client.warehouse.findMany({
+      where: { warehouse_id: { in: warehouseIds } },
+      select: { warehouse_id: true, warehouse_code: true, warehouse_name: true, plant_id: true, is_active: true, warehouse_type_code: true, is_defect: true, is_external: true },
+    }),
   ]);
   return {
     lines: new Map(lines.map((row) => [row.production_line_id, row])),
@@ -266,6 +278,7 @@ async function readReferences(client: Prisma.TransactionClient, body: ProposalCo
     molds: new Map(molds.map((row) => [row.mold_id, row])),
     workers: new Map(workers.map((row) => [row.worker_id, row])),
     locations: new Map(locations.map((row) => [row.location_id, row])),
+    warehouses: new Map(warehouses.map((row) => [row.warehouse_id, row])),
   };
 }
 

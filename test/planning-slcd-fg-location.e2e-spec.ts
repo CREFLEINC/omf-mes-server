@@ -262,6 +262,81 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
     });
   });
 
+  describe('입고 창고 수동 변경', () => {
+    const revalidate = (orderId: bigint, body: unknown) =>
+      request(app.getHttpServer()).post(`/api/planning/production-orders/${orderId}:revalidate-plan-proposal`).set('Cookie', cookie).send(body as object);
+    const override = (warehouseId: bigint) => ({ warehouseId: Number(warehouseId), erpMismatchAcknowledged: true });
+    const withOverride = (body: ReturnType<typeof bodyOf>, value: unknown) => ({ ...body, plans: body.plans.map((plan) => ({ ...plan, fgWarehouseOverride: value })) });
+
+    it('SL_CD 와 다른 창고를 알고 고르면 그 창고 안 위치로 확정한다 — 재검증은 경고와 적용 창고, W/O 는 「ERP 입고 창고와 다름」, 기록은 작업지시 화면에서 조회된다', async () => {
+      const orderId = await makeOrder(`${PREFIX}A`);
+      const body = withOverride(bodyOf(await proposalOf(orderId), { defaultFgLocationId: Number(wh.B.staging) }), override(wh.B.id));
+
+      const checked = await revalidate(orderId, body).expect(200);
+      expect(validator(response200('/planning/production-orders/{productionOrderId}:revalidate-plan-proposal', 'post'))(checked.body)).toBe(true);
+      expect(checked.body).toMatchObject({ confirmable: true, errors: [] });
+      expect(checked.body.warnings).toContainEqual(expect.objectContaining({ code: 'FG_WAREHOUSE_DIFFERS_FROM_ERP', field: 'plans[0].fgWarehouseOverride' }));
+      expect(checked.body.plans[0].fgWarehouse).toEqual({
+        erpStorageLocationCode: `${PREFIX}A`, erpWarehouseId: Number(wh.A.id), appliedWarehouseId: Number(wh.B.id), arrivalLocationId: Number(wh.B.staging),
+        overridden: true, differsFromErp: true,
+      });
+
+      const key = randomUUID();
+      const response = await request(app.getHttpServer()).post(`/api/planning/production-orders/${orderId}:confirm-plan-proposal`)
+        .set('Cookie', cookie).set('Idempotency-Key', key).send(body).expect(200);
+      expect(await fgOfWorkOrders(orderId)).toEqual([wh.B.staging, wh.B.staging]);
+      const workOrderIds = response.body.plans[0].workOrders.map((workOrder: { workOrderId: number }) => workOrder.workOrderId);
+      const detail = await request(app.getHttpServer()).get(`/api/production/work-orders/${workOrderIds[0]}`).set('Cookie', cookie).expect(200);
+      expect(detail.body).toMatchObject({ erpStorageLocationCode: `${PREFIX}A`, fgWarehouseCode: `${PREFIX}B`, fgWarehouseDiffersFromErp: true });
+
+      const occurredFrom = new Date(Date.now() - 60_000).toISOString();
+      const occurredTo = new Date(Date.now() + 60_000).toISOString();
+      const events = await request(app.getHttpServer()).get('/api/audit/events')
+        .query({ occurredFrom, occurredTo, targetTypeCode: 'PRODUCTION_ORDER', targetId: String(orderId) }).set('Cookie', cookie).expect(200);
+      expect(events.body.items).toEqual([expect.objectContaining({
+        eventTypeCode: 'UPDATE', correlationId: key, performedBy: expect.any(Number),
+        beforeValue: { erpStorageLocationCode: `${PREFIX}A`, warehouseId: Number(wh.A.id), warehouseCode: `${PREFIX}A`, locationId: Number(wh.A.whole) },
+        afterValue: {
+          eventCode: 'FG_WAREHOUSE_OVERRIDDEN',
+          detail: expect.objectContaining({
+            productionPlanId: response.body.plans[0].productionPlanId, warehouseId: Number(wh.B.id), warehouseCode: `${PREFIX}B`, erpMismatchAcknowledged: true,
+            workOrders: workOrderIds.map((workOrderId: number) => ({ workOrderId, defaultFgLocationId: Number(wh.B.staging) })),
+          }),
+        },
+      })]);
+    });
+
+    it('바꾸지 않은 W/O 는 「ERP 입고 창고와 다름」이 아니다', async () => {
+      const orderId = await makeOrder(`${PREFIX}A`);
+      const response = await confirm(orderId, bodyOf(await proposalOf(orderId))).expect(200);
+      const detail = await request(app.getHttpServer()).get(`/api/production/work-orders/${response.body.plans[0].workOrders[0].workOrderId}`).set('Cookie', cookie).expect(200);
+      expect(detail.body).toMatchObject({ fgWarehouseCode: `${PREFIX}A`, fgWarehouseDiffersFromErp: false });
+    });
+
+    it.each([
+      ['바꾼 창고 밖 위치를 두면 W/O 칸마다 FG_LOCATION_OUTSIDE_WAREHOUSE', 'A', 'B', 'A', 'plans[0].workOrders[0].defaultFgLocationId', 'FG_LOCATION_OUTSIDE_WAREHOUSE'],
+      ['자재 창고로는 바꾸지 않는다', 'A', 'E', 'E', 'plans[0].fgWarehouseOverride.warehouseId', 'FG_WAREHOUSE_NOT_ALLOWED'],
+      ['다른 공장 창고로는 바꾸지 않는다', 'A', 'D', 'D', 'plans[0].fgWarehouseOverride.warehouseId', 'FG_WAREHOUSE_OTHER_PLANT'],
+      ['SL_CD 창고와 같으면 바꾼 것이 없다', 'A', 'A', 'A', 'plans[0].fgWarehouseOverride.warehouseId', 'INVALID'],
+      ['SL_CD 연결이 실패한 오더는 우회하지 않는다', 'Z', 'B', 'B', 'plans[0].fgWarehouseOverride', 'FG_OVERRIDE_LINK_FAILED'],
+      ['SL_CD 가 없는 오더는 바꿀 것이 없다', null, 'B', 'B', 'plans[0].fgWarehouseOverride', 'INVALID'],
+    ])('%s — 확정 400, 재검증도 같은 오류', async (_, slCd, target, fgWarehouse, field, code) => {
+      const orderId = await makeOrder(slCd === null ? null : `${PREFIX}${slCd}`);
+      const body = withOverride(bodyOf(await proposalOf(orderId), { defaultFgLocationId: Number(wh[fgWarehouse].whole) }), override(wh[target].id));
+      const response = await confirm(orderId, body).expect(400);
+      expect(response.body.errors).toContainEqual(expect.objectContaining({ field, code }));
+      expect((await revalidate(orderId, body).expect(200)).body.errors).toEqual(response.body.errors);
+      expect(await fgOfWorkOrders(orderId)).toEqual([]);
+    });
+
+    it('확인 응답이 true 가 아니면 계약 가드가 400 이다', async () => {
+      const orderId = await makeOrder(`${PREFIX}A`);
+      const body = withOverride(bodyOf(await proposalOf(orderId), { defaultFgLocationId: Number(wh.B.staging) }), { warehouseId: Number(wh.B.id), erpMismatchAcknowledged: false });
+      const response = await confirm(orderId, body).expect(400);
+      expect(response.body.errors).toContainEqual(expect.objectContaining({ field: 'plans[0].fgWarehouseOverride.erpMismatchAcknowledged' }));
+    });
+  });
+
   describe('직접 계획 확정(:confirm)과 자동 계획', () => {
     async function draftPlan(orderId: bigint): Promise<{ planId: bigint; version: string }> {
       const plan = await prisma.production_plan.create({ data: {
@@ -476,6 +551,8 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
     await prisma.work_order_dependency.deleteMany({ where: { OR: [{ predecessor_work_order_id: { in: workOrderIds } }, { successor_work_order_id: { in: workOrderIds } }] } });
     await prisma.work_order.deleteMany({ where: { work_order_id: { in: workOrderIds } } });
     await prisma.production_plan.deleteMany({ where: scope });
+    const orderIds = (await prisma.production_order.findMany({ where: { production_order_no: { startsWith: PREFIX } }, select: { production_order_id: true } })).map((row) => row.production_order_id);
+    await prisma.audit_event.deleteMany({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: { in: orderIds } } });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
     await prisma.item_resource_map.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
     await prisma.bom.deleteMany({ where: { bom_code: { startsWith: PREFIX } } });

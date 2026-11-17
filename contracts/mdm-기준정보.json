@@ -10367,11 +10367,12 @@
         "ITEM",
         "ROUTING",
         "INSPECTION_PLAN_VERSION",
-        "INSPECTION_SHEET_TEMPLATE"
+        "INSPECTION_SHEET_TEMPLATE",
+        "PRODUCTION_ORDER"
        ],
        "example": "APP_USER"
       },
-      "description": "감사 대상으로 거른다. 감사 대상 유형 — 사용자(APP_USER) · 역할(ROLE) · 작업자(WORKER) · 단말(TERMINAL) · 품목(ITEM) · 라우팅(ROUTING) · 검사기준 버전(INSPECTION_PLAN_VERSION) · 검사표 기준 버전(INSPECTION_SHEET_TEMPLATE · omf-all-around#214). ⭐ 값 일곱은 사용자와 협의해 확정했다(2026-09-03) — 변경 이력이 «남아야 하는» 마스터만 든다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고 공통코드 그룹으로 받지 않는다(A-10 · A-16 「가르는 물음 넷」 — 「가」·「나」 참). ⚠ 대상이 늘면 «화면이 문자열을 정해 넣기 전에» 계약이 먼저 값을 갖는다(A-16). ⚠ 개체 마스터(창고·위치·설비·금형·거래처 등)는 여기 들지 않는다 — 「무엇이 있나」가 바뀔 뿐 과거 판정이 소급해 달라지지 않고, B-4 물리 삭제 금지와 version_no 낙관적 잠금이 이미 받는다. 버전을 가진 마스터도 빠진다 — 결정 07 이 「변경 이력 요구는 Rev 이력 그 자체로 충족」이라 했다.",
+      "description": "감사 대상으로 거른다. 감사 대상 유형 — 사용자(APP_USER) · 역할(ROLE) · 작업자(WORKER) · 단말(TERMINAL) · 품목(ITEM) · 라우팅(ROUTING) · 검사기준 버전(INSPECTION_PLAN_VERSION) · 검사표 기준 버전(INSPECTION_SHEET_TEMPLATE · omf-all-around#214). ⭐ 값 일곱은 사용자와 협의해 확정했다(2026-09-03) — 변경 이력이 «남아야 하는» 마스터만 든다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고 공통코드 그룹으로 받지 않는다(A-10 · A-16 「가르는 물음 넷」 — 「가」·「나」 참). ⚠ 대상이 늘면 «화면이 문자열을 정해 넣기 전에» 계약이 먼저 값을 갖는다(A-16). ⚠ 개체 마스터(창고·위치·설비·금형·거래처 등)는 여기 들지 않는다 — 「무엇이 있나」가 바뀔 뿐 과거 판정이 소급해 달라지지 않고, B-4 물리 삭제 금지와 version_no 낙관적 잠금이 이미 받는다. 버전을 가진 마스터도 빠진다 — 결정 07 이 「변경 이력 요구는 Rev 이력 그 자체로 충족」이라 했다. ⭐ ERP W/O(PRODUCTION_ORDER)는 마스터가 아니지만 사람이 «알고 허용한 것»의 기록이 남아야 해서 든다(사용자 결정 — 기록·추적 필수) — 계획 제안 확정이 남긴다. eventTypeCode 는 시스템 소유 값 DELETE(작성중 계획 대체)·UPDATE(나머지)이고 사건은 afterValue.eventCode, 내용은 afterValue.detail 이다: PLAN_DRAFT_REPLACED(beforeValue.drafts 지운 작성중 계획의 id·번호·판·계획일·수량 · detail.newPlanIds) · FG_WAREHOUSE_OVERRIDDEN(beforeValue SL_CD·그 MES 창고·입고 위치 · detail 계획·적용 창고·W/O 마다 완제품 위치·확인 응답) · PLAN_DATE_USER_ON_HOLIDAY(beforeValue.systemDate · detail 계획·계획일·근무일 판정). performedBy 는 확정한 사용자, correlationId 는 확정 요청의 Idempotency-Key 다. 생산계획(W-02-01·W-02-02)·작업지시(W-02-03·W-02-04) 화면도 이 조회를 부른다 — 작업지시는 W/O 의 productionOrderId 로 찾는다.",
       "x-code-key": "CD-AUDIT-TARGET-TYPE"
      },
      {
@@ -10405,7 +10406,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "한 트랜잭션의 여러 이벤트를 묶는다[추정]"
+      "description": "한 트랜잭션의 여러 이벤트를 묶는다[추정]. ERP W/O(PRODUCTION_ORDER) 기록은 그것을 남긴 계획 제안 확정 요청의 Idempotency-Key 다"
      },
      {
       "name": "page",
