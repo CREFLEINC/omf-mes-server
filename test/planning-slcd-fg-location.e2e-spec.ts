@@ -57,7 +57,7 @@ interface Proposal {
     location: { id: number; code: string; name: string } | null;
     reasonCode: string | null;
   };
-  plans: { proposalPlanKey: string; planDate: string; proposedQty: number; bomId: number; routingId: number; plannedLineId: number | null; workOrders: ProposalWorkOrder[] }[];
+  plans: { proposalPlanKey: string; planDate: string; planDateSourceCode: string; proposedQty: number; bomId: number; routingId: number; plannedLineId: number | null; workOrders: ProposalWorkOrder[] }[];
 }
 
 describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
@@ -97,13 +97,14 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
     return {
       basis: proposal.basis,
       plans: proposal.plans.map((plan) => ({
-        proposalPlanKey: plan.proposalPlanKey, planDate: plan.planDate, plannedQty: plan.proposedQty,
+        proposalPlanKey: plan.proposalPlanKey, planDate: plan.planDate, planDateSourceCode: plan.planDateSourceCode, plannedQty: plan.proposedQty,
         bomId: plan.bomId, routingId: plan.routingId, plannedLineId: plan.plannedLineId,
         workOrders: plan.workOrders.map((workOrder) => ({
           routingOperationId: workOrder.routingOperationId,
           productionLineId: workOrder.productionLineId,
           plannedEquipmentId: workOrder.plannedEquipmentId,
           plannedMoldId: workOrder.plannedMoldId,
+          plannedTimeSourceCode: 'SYSTEM',
           defaultWipLocationId: override.defaultWipLocationId ?? workOrder.defaultWipLocationId ?? Number(id.locWip),
           defaultFgLocationId: override.defaultFgLocationId ?? workOrder.defaultFgLocationId ?? Number(id.locFg),
           defaultScrapLocationId: override.defaultScrapLocationId ?? workOrder.defaultScrapLocationId ?? Number(id.locScrap),

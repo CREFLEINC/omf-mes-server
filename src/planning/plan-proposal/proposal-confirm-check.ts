@@ -7,6 +7,8 @@ import { WorkOrderSupplement } from '../production-plan/expand';
 import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
 import { DraftRef, ExistingDraftAction, draftActionOf, draftChoiceErrors, planSetErrors } from './plan-set-rules';
+import { TimeCorrection, TimeSource, TimedOperation, judgeTime, precedenceWarnings } from './plan-times';
+import type { RevalidationWarning } from './proposal-warnings';
 import { ProposalFacts } from './proposal-reader';
 import { resourceFindings } from './resource-rules';
 import { pairKey } from '../production-plan/resource-assign';
@@ -27,6 +29,8 @@ export interface ProposalConfirmPlan {
   savedVersionNo?: number | null;
   splitFromPlanKey?: string | null;
   planDate: string;
+  /** 날짜 출처 — 서버가 추측하지 않고 이 값을 저장한다. SYSTEM 은 시스템 날짜 그대로일 때만. */
+  planDateSourceCode: 'SYSTEM' | 'USER';
   plannedQty: number;
   bomId: number;
   routingId: number;
@@ -42,6 +46,9 @@ export interface ProposalConfirmWorkOrder {
   plannedMoldId?: number | null;
   responsibleWorkerId?: number | null;
   plannedShiftId?: number | null;
+  plannedTimeSourceCode: TimeSource;
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
   defaultWipLocationId?: number | null;
   defaultFgLocationId?: number | null;
   defaultScrapLocationId?: number | null;
@@ -55,7 +62,7 @@ export interface ResolvedPlan {
   operationCount: number;
   /** 생산 라인·기본 위치 셋이 다 찬 공정만 — 빈 칸이 있으면 오류가 있어 저장하지 않는다. */
   supplements: Map<bigint, WorkOrderSupplement>;
-  /** 공정마다 계획 시각 — 계획일과 교대로 정했다. */
+  /** 공정마다 저장할 계획 시각 — SYSTEM 은 계획일과 교대로 정했고 USER 는 본문 그대로다. */
   windows: Map<bigint, PlanWindow>;
 }
 
@@ -63,6 +70,10 @@ export interface ConfirmJudgment {
   /** 계획 집합이 제안과 다르면 비어 있다 — 그때는 계획별 판정을 하지 않는다. */
   resolved: ResolvedPlan[];
   errors: ErrorItem[];
+  /** 확정을 막지 않는 시각 경고(교대 밖·선후관계) — 확정은 보지 않는다. */
+  warnings: RevalidationWarning[];
+  /** SYSTEM 시각을 다시 계산해 본문과 달라진 칸 — 확정은 다시 계산한 값을 저장한다. */
+  corrections: TimeCorrection[];
 }
 
 /** 확정 — 판정에 오류가 하나라도 있으면 모아 한 번에 400(field 는 본문 경로)이다. */
@@ -92,16 +103,19 @@ export async function judgeConfirm(
 ): Promise<ConfirmJudgment> {
   const drafts = draftRefsOf(proposal);
   const choice = draftChoiceErrors(drafts, body);
-  if (choice.length > 0) return { resolved: [], errors: choice };
+  if (choice.length > 0) return { resolved: [], errors: choice, warnings: [], corrections: [] };
   const planSet = planSetErrors(proposal.plans.length > 0, drafts, draftActionOf(drafts, body), body);
-  if (planSet.length > 0) return { resolved: [], errors: planSet };
+  if (planSet.length > 0) return { resolved: [], errors: planSet, warnings: [], corrections: [] };
   const { order } = proposal;
   const refs = await readReferences(client, body);
   const usable = new Set((facts.usableRoutings.get(pairKey(order.plant_id, order.item_id)) ?? []).map((row) => row.routing_id));
   const shifts = facts.shifts.get(order.plant_id) ?? [];
   const dayStart = dayStartOf(shifts.filter((shift) => shift.is_active).map((shift) => timeOfColumn(shift.start_time)));
-  const today = localDate(now, order.plant.timezone_code);
+  const timezone = order.plant.timezone_code;
+  const today = localDate(now, timezone);
   const errors: ErrorItem[] = [];
+  const warnings: RevalidationWarning[] = [];
+  const corrections: TimeCorrection[] = [];
   const error = (field: string, code: string, message: string): void => {
     errors.push({ scope: 'field', field, code, message });
   };
@@ -115,6 +129,12 @@ export async function judgeConfirm(
     }
     // 자정을 넘겨 확정하면 검토 때의 계획일이 지났을 수 있다 — 지난 날로 W/O 를 만들지 않는다. 제안은 늘 오늘 이후로 낸다.
     if (plan.planDate < today) error(`${path}.planDate`, ERROR_CODE.RANGE, `계획일이 지났습니다 — 공장 현지 오늘(${today}) 이후로 고르세요.`);
+    const systemDate = systemDateOf(proposal, proposed);
+    if (plan.planDateSourceCode === 'SYSTEM' && plan.planDate !== systemDate) {
+      error(`${path}.planDateSourceCode`, PLAN_DATE_SOURCE_MISMATCH, systemDate === null
+        ? '이 계획에는 시스템이 정한 날짜가 없습니다 — 날짜 출처를 USER 로 보내세요.'
+        : `시스템이 정한 날짜는 ${systemDate} 입니다 — 날짜를 바꿨으면 출처를 USER 로 보내세요.`);
+    }
     if (BigInt(plan.bomId) !== proposed.bom.id) {
       error(`${path}.bomId`, ERROR_CODE.BOM_NOT_DEFAULT, `품목의 ERP 기본 BOM 이 아닙니다 — 지금 기본은 ${proposed.bom.code} Rev ${proposed.bom.version} 입니다.`);
     }
@@ -131,6 +151,8 @@ export async function judgeConfirm(
 
     const supplements = new Map<bigint, WorkOrderSupplement>();
     const windows = new Map<bigint, PlanWindow>();
+    const timed: TimedOperation[] = [];
+    const day = dayWindow(plan.planDate, dayStart, timezone);
     plan.workOrders.forEach((workOrder, at) => {
       const field = (name: string): string => `${path}.workOrders[${at}].${name}`;
       // 재검증 본문은 빈 칸을 받는다 — 확정 본문은 계약 가드가 막는다. 빈 칸은 「고르세요」 하나로 내고 자원 판정의 같은 뜻 사유는 뺀다.
@@ -156,20 +178,38 @@ export async function judgeConfirm(
       const shiftId = idOf(workOrder.plannedShiftId);
       const shift = shiftId === null ? undefined : shifts.find((candidate) => candidate.shift_id === shiftId && candidate.is_active);
       if (shiftId !== null && shift === undefined) error(field('plannedShiftId'), ERROR_CODE.INVALID, '이 공장의 사용 중인 교대가 아닙니다.');
-      const window: PlanWindow = shift === undefined
-        ? dayWindow(plan.planDate, dayStart, order.plant.timezone_code)
-        : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time) }, order.plant.timezone_code);
+      const shiftTimes = shift === undefined
+        ? null
+        : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time) }, timezone);
+      const time = judgeTime(`${path}.workOrders[${at}]`, workOrder, { system: shiftTimes ?? day, day, shift: shiftTimes, planDate: plan.planDate, timezone });
+      errors.push(...time.errors);
+      warnings.push(...time.warnings);
+      corrections.push(...time.corrections);
+      const window = time.window;
       const operationId = BigInt(workOrder.routingOperationId);
       windows.set(operationId, window);
+      timed.push({ path: `${path}.workOrders[${at}]`, routingOperationId: operationId, source: workOrder.plannedTimeSourceCode, window });
       const { productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId } = resources;
       if (productionLineId !== null && defaultWipLocationId !== null && defaultFgLocationId !== null && defaultScrapLocationId !== null) {
         supplements.set(operationId, { ...resources, productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId, workerId, shiftId, window });
       }
     });
+    warnings.push(...precedenceWarnings(timed, facts.dependencies.get(routingId) ?? [], timezone));
     return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, windows }];
   });
 
-  return { resolved, errors };
+  return { resolved, errors, warnings, corrections };
+}
+
+export const PLAN_DATE_SOURCE_MISMATCH = 'PLAN_DATE_SOURCE_MISMATCH';
+
+/**
+ * 그 계획의 시스템 날짜 — 제안이 시스템 날짜로 낸 계획은 그 날(휴일 보정 뒤), 사람이 고른 날짜의 작성중 계획과 나누거나 더한 새 계획은
+ * 새 계획 제안의 시스템 날짜다. 새 계획을 세울 수 없으면 없다.
+ */
+export function systemDateOf(proposal: Proposal, proposed: ProposalPlan): string | null {
+  if (proposed.planDateSourceCode === 'SYSTEM') return proposed.planDate;
+  return proposal.newPlanTemplate?.planDate ?? null;
 }
 
 /** 제안에 있는 키는 그 계획, 사람이 나누거나 더한 new-N 은 새 계획의 기준(시스템 날짜·기본 BOM·Routing). */
@@ -190,10 +230,6 @@ const REQUIRED_MESSAGE: Record<(typeof REQUIRED_RESOURCES)[number], string> = {
   defaultScrapLocationId: '스크랩 위치가 비었습니다. 위치를 고르세요.',
 };
 const EMPTY_CODES: ReadonlySet<string> = new Set(['WORK_ORDER_LINE_REQUIRED', 'WORK_ORDER_LOCATION_REQUIRED']);
-
-/** 저장할 날짜 출처 — 제안 날짜를 그대로 실었으면 제안의 출처, 사람이 고쳤으면 사용자 지정이다. */
-export const planDateSourceOf = (plan: Pick<ResolvedPlan, 'body' | 'proposal'>): 'SYSTEM' | 'USER' =>
-  plan.body.planDate === plan.proposal.planDate ? plan.proposal.planDateSourceCode : 'USER';
 
 /**
  * 이번 확정이 계획 수량 합계에 더하는 양 — 새 계획은 수량, 작성중 계획은 저장값과의 차, 새로 해서 지우는 작성중 계획(`replacedQty`)은 뺀다.

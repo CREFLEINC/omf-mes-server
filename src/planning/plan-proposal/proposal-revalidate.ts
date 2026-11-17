@@ -6,7 +6,8 @@ import { PlanningCalendarDay } from '../../core/calendar/working-day';
 import { calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals, planDayIssues } from './proposal-builder';
-import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, judgeConfirm, planDateSourceOf, quantityDelta } from './proposal-confirm-check';
+import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, judgeConfirm, quantityDelta } from './proposal-confirm-check';
+import { TimeCorrection } from './plan-times';
 import { splitChildConflict } from './draft-replace';
 import { draftsChanged } from './plan-set-rules';
 import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
@@ -75,6 +76,7 @@ export interface ProposalRevalidation {
   existingDrafts: ExistingDraftView[];
   errors: ErrorItem[];
   warnings: RevalidationWarning[];
+  corrections: TimeCorrection[];
   plans: ReturnType<typeof planView>[];
 }
 
@@ -92,12 +94,12 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
     ...(proposalChanges.length === 0 ? {} : { currentProposal: proposalView(proposal) }),
     existingDrafts: proposal.drafts.map(existingDraftView),
   };
-  const nothing = { confirmable: false, warnings: [], plans: [] };
+  const nothing = { confirmable: false, warnings: [], corrections: [], plans: [] };
   if (proposal.order.status_code === 'CANCELLED') return { ...head, ...nothing, alreadyProcessed: false, errors: [ORDER_CANCELLED_ERROR] };
   if (proposal.kind === 'AUTO_WORK_ORDER') return { ...head, ...nothing, alreadyProcessed: false, errors: [AUTO_WORK_ORDER_PLANT_ERROR] };
   if (proposal.kind === 'KEEP_CONFIRMED') return { ...head, ...nothing, alreadyProcessed: true, errors: [] };
 
-  const { resolved, errors } = await judgeConfirm(client, proposal, facts, body, now);
+  const { resolved, errors, warnings: timeWarnings, corrections } = await judgeConfirm(client, proposal, facts, body, now);
   const pinned = splitChildConflict(proposal, body.existingDraftAction);
   if (pinned !== null) errors.unshift({ scope: 'screen', code: 'INVALID_STATE', message: pinned });
   if (resolved.length > 0) errors.push(...(await quantityErrors(client, orderId, resolved, replacedQtyOf(proposal, body))));
@@ -108,6 +110,7 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
   })));
   const warnings = [
     ...resolved.flatMap((plan, at) => planDayIssues(plan.body.planDate, days[at]).map((issue) => ({ code: issue.code, field: `plans[${plan.index}].planDate`, message: issue.message }))),
+    ...timeWarnings,
     ...(await workOrderWarnings(client, proposal.order, facts, resolved, now)),
   ];
   return {
@@ -116,6 +119,7 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
     alreadyProcessed: false,
     errors,
     warnings,
+    corrections,
     plans: resolved.map((plan, at) => planView(facts, plan, days[at])),
   };
 }
@@ -144,7 +148,7 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
     planSource: proposal.source,
     ...(proposal.saved === undefined ? {} : { productionPlanId: Number(proposal.saved.production_plan_id) }),
     planDate: body.planDate,
-    planDateSourceCode: planDateSourceOf(plan),
+    planDateSourceCode: body.planDateSourceCode,
     planDateCalendar: day,
     plannedQty: body.plannedQty,
     bomId: body.bomId,
@@ -168,6 +172,7 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
           .map((dependency) => ({ routingOperationId: Number(dependency.predecessor_operation_id), dependencyTypeCode: dependency.dependency_type_code })),
         plannedStartAt: window?.plannedStartAt.toISOString() ?? null,
         plannedEndAt: window?.plannedEndAt.toISOString() ?? null,
+        plannedTimeSourceCode: workOrder.plannedTimeSourceCode,
         plannedShiftId: workOrder.plannedShiftId ?? null,
         productionLineId: workOrder.productionLineId ?? null,
         plannedEquipmentId: equipmentId,
