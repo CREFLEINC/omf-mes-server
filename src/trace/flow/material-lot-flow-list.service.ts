@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { inboundLineLotSql } from '../../core/lot';
+import { inboundLineLotSql, splitFamilySql } from '../../core/lot';
 import { localPeriodSql, periodUnlessPinned, plantToday, utcMarginSql } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
@@ -91,7 +91,9 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
   });
   // ⛔ 하위 집계는 LOT 마다 LATERAL 로 센다(색인을 탄다). CTE 로 미리 모아 붙이면 기간 조건(MIN 위)의 행 수 추정이 1 로
   //    떨어져 CTE 를 LOT 마다 다시 훑는다.
-  const links = forwardLinksSql('SELECT b.lot_id');
+  // 부분 출고 분할 LOT 의 투입·생산은 원래 LOT 의 것으로 함께 센다 — 분할 LOT 은 입고가 없어 목록 행이 되지 않는다(피처 008).
+  const family = splitFamilySql('SELECT b.lot_id');
+  const links = forwardLinksSql(family);
   return `
     WITH firsts AS (
       SELECT lt.lot_id, lt.plant_id, MIN(gr.receipt_datetime) AS first_received_at
@@ -109,7 +111,7 @@ export function stagedSql(query: MaterialLotFlowQuery, bind: (value: unknown) =>
         FROM base b
         CROSS JOIN LATERAL (
           SELECT COUNT(DISTINCT mc.work_order_id) AS wo_count, COALESCE(SUM(mc.input_qty) FILTER (WHERE ${LIVE_CONSUMPTION}), 0) AS consumed_qty
-            FROM production.material_consumption mc WHERE mc.lot_id = b.lot_id
+            FROM production.material_consumption mc WHERE mc.lot_id IN (${family})
         ) c
         CROSS JOIN LATERAL (
           SELECT COUNT(DISTINCT k.target_lot_id) AS produced,

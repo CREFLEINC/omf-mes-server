@@ -15,6 +15,8 @@ describe('LotImpactService', () => {
       ),
     );
     const prisma = {
+      // 분할 자손이 없는 LOT — 가족은 자기 하나다(피처 008).
+      $queryRaw: jest.fn().mockResolvedValue([{ lot_id: 5n }]),
       lot_relation: { findMany: relationFindMany },
       lot: { findUnique: jest.fn().mockResolvedValue(exists ? { lot_id: 5n } : null), findMany: lotFindMany },
       material_consumption: { findMany: jest.fn().mockResolvedValue(consumptions) },

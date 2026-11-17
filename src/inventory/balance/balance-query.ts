@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { inboundLotFamilySql, inboundLotOfSql } from '../../core/lot';
 import { INVENTORY_AVAILABLE, QUALITY_NORMAL } from '../../core/picking/picking-generation';
 
 /**
@@ -113,7 +114,8 @@ const FROM = `
     JOIN mdm.warehouse w ON w.warehouse_id = b.warehouse_id
     JOIN mdm.location loc ON loc.location_id = b.location_id
     LEFT JOIN trace.lot l ON l.lot_id = b.lot_id
-    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = l.inbound_lot_id
+    -- 분할 LOT 은 입하 LOT 칸이 비어 있다 — 조상의 입하 LOT 을 보인다(피처 008).
+    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = ${inboundLotOfSql('l')}
     LEFT JOIN LATERAL (
       SELECT 1 AS held FROM trace.lot_hold h
        WHERE h.lot_id = b.lot_id AND h.released_at IS NULL LIMIT 1
@@ -145,8 +147,8 @@ function conditionsOf(filters: BalanceFilters, withExpiry: boolean): Conditions 
   if (filters.itemId !== undefined) c.add((p) => `b.item_id = ${p}::bigint`, filters.itemId);
   if (filters.lotId !== undefined) c.add((p) => `b.lot_id = ${p}::bigint`, filters.lotId);
   if (filters.locationId !== undefined) c.add((p) => `b.location_id = ${p}::bigint`, filters.locationId);
-  if (filters.inboundLotId !== undefined) c.add((p) => `l.inbound_lot_id = ${p}::bigint`, filters.inboundLotId);
-  if (filters.inboundLotNo !== undefined) c.add((p) => `il.inbound_lot_no = ${p}`, filters.inboundLotNo);
+  if (filters.inboundLotId !== undefined) c.add((p) => `b.lot_id IN (${inboundLotFamilySql('ID', p)})`, filters.inboundLotId);
+  if (filters.inboundLotNo !== undefined) c.add((p) => `b.lot_id IN (${inboundLotFamilySql('NO', p)})`, filters.inboundLotNo);
   if (filters.qualityStatusCode !== undefined) c.add((p) => `b.quality_status_code = ${p}`, filters.qualityStatusCode);
   if (filters.inventoryStatusCode !== undefined) c.add((p) => `b.inventory_status_code = ${p}`, filters.inventoryStatusCode);
   if (filters.ownershipTypeCode !== undefined) c.add((p) => `b.ownership_type_code = ${p}`, filters.ownershipTypeCode);
@@ -181,7 +183,7 @@ function foldedColumns(groupBy: GroupBy): string {
 
 /** LOT 으로 묶은 줄만 싣는다 — LOT 이 키라 줄마다 입하 LOT 이 하나다(계약: 다른 묶음 방식에는 칸 없음). */
 const INBOUND_LOT_COLUMNS = `
-           min(l.inbound_lot_id) AS inbound_lot_id,
+           min(il.inbound_lot_id) AS inbound_lot_id,
            min(il.inbound_lot_no) AS inbound_lot_no,`;
 
 export function balanceRowsQuery(groupBy: GroupBy, filters: BalanceFilters): BuiltQuery {

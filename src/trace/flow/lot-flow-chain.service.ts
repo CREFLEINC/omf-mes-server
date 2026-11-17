@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { CONSUMED_RELATION, tracedWorkOrders } from '../../core/lot/lot-genealogy';
+import { CONSUMED_RELATION, lotWithSplitDescendants, splitAncestors, splitDescendants, tracedWorkOrders } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
 import { LIVE_CONSUMPTION, estimateBasis, forwardLinksSql } from './flow-sql';
 import { LotHead, MaterialSide, Named, ProductSide, lotHeads, materialSides, productSides, pick } from './lot-flow-nodes';
+import { SplitLink, splitLinks } from './split-links';
 
 /** 한 호출이 싣는 생산 LOT 의 상한 — 넘으면 `truncated` 와 전체 수를 준다. */
 export const PRODUCTION_LOTS_SHOWN = 500;
@@ -35,11 +36,17 @@ export interface ProductionLotNode extends LotHead, ProductSide {
 
 export interface ForwardFlow extends MaterialSide {
   lot: LotHead;
+  /** 이 LOT 이 분할 LOT 이면 그 부모(분할된 원래 LOT · 피처 008). */
+  splitFrom: SplitLink | null;
+  /** 이 LOT 에서 나온 분할 LOT(자손 전체, 깊이 순). 투입·생산 LOT 이음은 이들의 투입을 함께 센다. */
+  splits: SplitLink[];
   /** 이음이 하나도 없으면(투입 없음·투입만) null — 이음은 모두 추정이라 값이 있으면 「추정 포함」이다. */
   basis: TraceBasis | null;
   workOrders: (WorkOrderHead & Consumption & {
     /** W/O 에 실적이 아직 없으면 null(투입만). 실적은 있는데 이 LOT 의 투입 구간과 겹치는 실적이 없으면 계보 근거에 빈 목록이다. */
     linkBasis: TraceBasis | null;
+    /** 이 LOT 이 아니라 분할 자손으로만 투입된 W/O 면 그 LOT(첫 투입). */
+    viaLot: { lotId: number; lotNo: string } | null;
     productionLots: ProductionLotNode[];
   })[];
   truncated: boolean;
@@ -51,6 +58,8 @@ export interface InputMaterialNode extends LotHead, MaterialSide, Consumption {
   /** 이 자재 LOT 이 생산 LOT(반제품)이면 그 W/O — 화면이 이 LOT 으로 역방향을 다시 부른다. */
   producedBy: { workOrderId: number; workOrderNo: string } | null;
   cyclic: boolean;
+  /** 투입된 LOT 이 분할 LOT 이면 그 조상(가까운 부모부터 뿌리까지 · 피처 008). */
+  splitAncestry: SplitLink[];
 }
 
 export interface BackwardFlow extends ProductSide {
@@ -75,14 +84,20 @@ export class LotFlowChainService {
   async forward(lotId: number): Promise<ForwardFlow> {
     const id = BigInt(lotId);
     const lot = await this.head(id);
-    const [side, consumptions, links] = await Promise.all([
+    // 분할 LOT 은 원래 LOT 의 일부다 — 투입·생산 LOT 이음을 자손까지 넓힌다(피처 008 R-9).
+    const family = await lotWithSplitDescendants(this.prisma, [id]);
+    const [side, consumptions, links, via, ancestors, descendants] = await Promise.all([
       materialSides(this.prisma, [id]),
-      this.consumptions(`mc.lot_id = $1`, [id], 'work_order_id'),
+      this.consumptions(`mc.lot_id = ANY($1::bigint[])`, [family], 'work_order_id'),
       this.prisma.$queryRawUnsafe<{ target_lot_id: bigint; work_order_id: bigint; basis: TraceBasis }[]>(
-        `SELECT DISTINCT target_lot_id, work_order_id, basis FROM (${forwardLinksSql('SELECT $1::bigint')}) k
-          ORDER BY work_order_id, target_lot_id`, id,
+        `SELECT DISTINCT target_lot_id, work_order_id, basis FROM (${forwardLinksSql('SELECT unnest($1::bigint[])')}) k
+          ORDER BY work_order_id, target_lot_id`, family,
       ),
+      this.viaLots(id, family),
+      splitAncestors(this.prisma, [id]),
+      splitDescendants(this.prisma, id),
     ]);
+    const [parent] = ancestors.get(id) ?? [];
     const targets = [...new Set(links.map((link) => link.target_lot_id))];
     const shown = targets.slice(0, this.productionLotsShown);
     const nodes = await this.productionLots(shown, id);
@@ -100,6 +115,7 @@ export class LotFlowChainService {
         ...pick(orders, workOrderId),
         ...consumption,
         linkBasis,
+        viaLot: via.get(workOrderId) ?? null,
         productionLots: mine.flatMap((link) => {
           const node = nodes.get(link.target_lot_id);
           return node === undefined ? [] : [{ ...node, linkBasis: link.basis }];
@@ -109,6 +125,8 @@ export class LotFlowChainService {
     return {
       lot,
       ...pick(side, id),
+      splitFrom: parent === undefined ? null : ((await splitLinks(this.prisma, [parent], 'parent'))[0] ?? null),
+      splits: await splitLinks(this.prisma, descendants, 'child'),
       basis: estimateBasis(links.length > 0, links.some((link) => link.basis === WORK_ORDER_BASIS)),
       workOrders,
       truncated: shown.length < targets.length,
@@ -134,13 +152,14 @@ export class LotFlowChainService {
           where: { work_order_id: workOrderId }, distinct: ['lot_id'], select: { lot_id: true },
         })).map((row) => row.lot_id);
     const linkBasis: TraceBasis = traced ? GENEALOGY_BASIS : WORK_ORDER_BASIS;
-    const [orders, results, heads, sides, consumptions, producers] = await Promise.all([
+    const [orders, results, heads, sides, consumptions, producers, ancestry] = await Promise.all([
       this.workOrderHeads([workOrderId]),
       this.results(workOrderId),
       lotHeads(this.prisma, sources),
       materialSides(this.prisma, sources),
       this.consumptions(`mc.work_order_id = $1 AND mc.lot_id = ANY($2::bigint[])`, [workOrderId, sources], 'lot_id'),
       this.producers(sources),
+      this.ancestryOf(sources),
     ]);
     return {
       ...base,
@@ -155,9 +174,33 @@ export class LotFlowChainService {
           linkBasis,
           producedBy: producers.get(sourceId) ?? null,
           cyclic: sourceId === id,
+          splitAncestry: ancestry.get(sourceId) ?? [],
         }))
         .sort((a, b) => a.firstConsumedAt.localeCompare(b.firstConsumedAt) || a.lotNo.localeCompare(b.lotNo)),
     };
+  }
+
+  /** 분할 자손으로만 투입된 W/O — 그 W/O 의 첫 투입 자손 LOT. 이 LOT 자신이 투입됐으면 없다. */
+  private async viaLots(id: bigint, family: bigint[]): Promise<Map<bigint, { lotId: number; lotNo: string }>> {
+    if (family.length === 1) return new Map();
+    const rows = await this.prisma.$queryRawUnsafe<{ work_order_id: bigint; lot_id: bigint; lot_no: string }[]>(
+      `SELECT DISTINCT ON (mc.work_order_id) mc.work_order_id, lt.lot_id, lt.lot_no
+         FROM production.material_consumption mc JOIN trace.lot lt ON lt.lot_id = mc.lot_id
+        WHERE mc.lot_id = ANY($1::bigint[]) AND ${LIVE_CONSUMPTION}
+          AND NOT EXISTS (SELECT 1 FROM production.material_consumption me WHERE me.work_order_id = mc.work_order_id AND me.lot_id = $2)
+        ORDER BY mc.work_order_id, mc.occurred_at, mc.material_consumption_id`, family, id,
+    );
+    return new Map(rows.map((row) => [row.work_order_id, { lotId: Number(row.lot_id), lotNo: row.lot_no }]));
+  }
+
+  /** 투입 LOT 마다 분할 조상 사슬. */
+  private async ancestryOf(lotIds: bigint[]): Promise<Map<bigint, SplitLink[]>> {
+    const chains = await splitAncestors(this.prisma, lotIds);
+    const rows = [...chains.values()].flat();
+    const links = await splitLinks(this.prisma, rows, 'parent');
+    const byLot = new Map<bigint, SplitLink[]>();
+    rows.forEach((row, index) => byLot.set(row.base_lot_id, [...(byLot.get(row.base_lot_id) ?? []), links[index]]));
+    return byLot;
   }
 
   private async head(id: bigint): Promise<LotHead> {

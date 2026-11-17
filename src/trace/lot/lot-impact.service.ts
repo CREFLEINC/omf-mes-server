@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { CONSUMED_RELATION, WORK_ORDER_LOT_SOURCE, tracedWorkOrders } from '../../core/lot';
+import { CONSUMED_RELATION, WORK_ORDER_LOT_SOURCE, lotWithSplitDescendants, tracedWorkOrders } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from './lot-genealogy-query.service';
 
@@ -33,8 +33,10 @@ export class LotImpactService {
     const lot = await this.prisma.lot.findUnique({ where: { lot_id: BigInt(lotId) }, select: { lot_id: true } });
     if (lot === null) throw new NotFoundException('없는 LOT 입니다.');
 
+    // 부분 출고 분할 LOT 은 이 LOT 의 일부다 — 자손의 투입도 영향 범위다(피처 008 D-13).
+    const family = await lotWithSplitDescendants(this.prisma, [BigInt(lotId)]);
     const consumptions = await this.prisma.material_consumption.findMany({
-      where: { lot_id: BigInt(lotId) },
+      where: { lot_id: { in: family } },
       distinct: ['work_order_id'],
       select: { work_order: { select: { work_order_id: true, work_order_no: true } } },
       orderBy: { work_order_id: 'asc' },
@@ -49,7 +51,7 @@ export class LotImpactService {
     const traced = await tracedWorkOrders(this.prisma, ids);
     const legacy = ids.filter((id) => !traced.has(id));
     const related = traced.size === 0 ? [] : await this.prisma.lot_relation.findMany({
-      where: { source_lot_id: BigInt(lotId), relation_type_code: CONSUMED_RELATION },
+      where: { source_lot_id: { in: family }, relation_type_code: CONSUMED_RELATION },
       distinct: ['target_lot_id'],
       select: { target_lot_id: true },
     });

@@ -1,3 +1,5 @@
+import { inboundLotFamilySql, inboundLotOfSql } from '../../core/lot';
+
 /**
  * `GET /quality/lot-statuses` 의 SQL — 원시 SQL 이다(0단계 선례 `src/inventory/balance/balance-query.ts`).
  *
@@ -79,7 +81,7 @@ class Conditions {
  */
 export const FROM = `
     FROM trace.lot l
-    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = l.inbound_lot_id
+    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = ${inboundLotOfSql('l')}
     LEFT JOIN LATERAL (
       SELECT sum(b.on_hand_qty) AS on_hand_qty,          -- ⛔ 0 행도 그대로 더한다(선례 balance-query.ts:128 은 행을 통째로 빼지만, 여긴 접는 칸만 뺀다 — 전량 소진 LOT 의 onHandQty=0 을 잃으면 안 된다)
              CASE WHEN count(DISTINCT b.uom_id) FILTER (WHERE b.on_hand_qty <> 0) = 1
@@ -148,11 +150,12 @@ export function conditionsOf(filters: LotStatusFilters): Conditions {
   if (filters.lotTypeCode !== undefined) c.add((p) => `l.lot_type_code = ${p}`, filters.lotTypeCode);
   if (filters.itemId !== undefined) c.add((p) => `l.item_id = ${p}::bigint`, filters.itemId);
   if (filters.plantId !== undefined) c.add((p) => `l.plant_id = ${p}::bigint`, filters.plantId);
-  if (filters.inboundLotId !== undefined) c.add((p) => `l.inbound_lot_id = ${p}::bigint`, filters.inboundLotId);
+  // 분할 LOT 은 원래 LOT 의 입하 LOT 으로 함께 걸린다(피처 008).
+  if (filters.inboundLotId !== undefined) c.add((p) => `l.lot_id IN (${inboundLotFamilySql('ID', p)})`, filters.inboundLotId);
   // 요약의 `FROM_TRANS_ONLY` 에는 `il` 이 없어 번호는 EXISTS 로 건다.
   if (filters.inboundLotNo !== undefined) {
     c.add(
-      (p) => `EXISTS (SELECT 1 FROM trace.inbound_lot fil WHERE fil.inbound_lot_id = l.inbound_lot_id AND fil.inbound_lot_no = ${p})`,
+      (p) => `l.lot_id IN (${inboundLotFamilySql('NO', p)})`,
       filters.inboundLotNo,
     );
   }
