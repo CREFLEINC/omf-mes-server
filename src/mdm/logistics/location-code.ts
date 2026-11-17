@@ -16,8 +16,8 @@ export async function lockWarehouse(tx: Prisma.TransactionClient, warehouseId: n
 /**
  * 다음 코드 — 상위 코드 뒤에 단계 조각과 같은 상위 밑 가장 큰 번호 + 1 을 붙인다. 꺼진 위치의 번호도 센다.
  * 자리 수를 넘으면 늘어난다(Z100). ⚠ `lockWarehouse` 뒤에 부른다.
- * 구역(상위 없음)은 창고 코드를 앞에 붙인다(`S230-Z01`) — 위치 QR 하나로 창고까지 풀린다(omf-all-around#292).
- * 하위는 상위 코드를 잇으므로 창고 코드가 따라온다.
+ * 구역(상위 없음)은 창고 위치 코드를 앞에 붙인다(`K7QX-Z01`) — 위치 QR 하나로 창고까지 풀린다(omf-all-around#292).
+ * 하위는 상위 코드를 잇으므로 창고 위치 코드가 따라온다.
  */
 export async function issueCode(
   tx: Prisma.TransactionClient,
@@ -26,7 +26,7 @@ export async function issueCode(
   level: string,
 ): Promise<string> {
   const { prefix, width } = SEGMENTS[level];
-  const head = parent === null ? `${await warehouseCode(tx, warehouseId)}-${prefix}` : `${parent.locationCode}-${prefix}`;
+  const head = parent === null ? `${await locationPrefixOf(tx, warehouseId)}-${prefix}` : `${parent.locationCode}-${prefix}`;
   const siblings = await tx.location.findMany({
     where: {
       warehouse_id: warehouseId,
@@ -49,7 +49,7 @@ export async function issueCode(
   }
 }
 
-async function warehouseCode(tx: Prisma.TransactionClient, warehouseId: number): Promise<string> {
-  const row = await tx.warehouse.findUniqueOrThrow({ where: { warehouse_id: warehouseId }, select: { warehouse_code: true } });
-  return row.warehouse_code;
+async function locationPrefixOf(tx: Prisma.TransactionClient, warehouseId: number): Promise<string> {
+  const row = await tx.warehouse.findUniqueOrThrow({ where: { warehouse_id: warehouseId }, select: { location_prefix: true } });
+  return row.location_prefix;
 }

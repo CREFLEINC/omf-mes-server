@@ -1,7 +1,6 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -21,6 +20,7 @@ import {
   referenceWhere,
 } from '../../common/master';
 import { assertErpWarehouse } from './erp-warehouse-rules';
+import { assertLocationPrefixFormat, assertLocationPrefixKept, locationPrefixTaken } from './location-prefix';
 
 /**
  * 창고를 FK 로 가리키는 자리 전부. `pg_constraint` 에서 뽑았고, e2e 가 같은 질의로
@@ -67,6 +67,8 @@ interface WarehouseView {
   isActive: boolean;
   /** MES 별칭 — 계약 밖(장부 P-148). */
   aliasName: string | null;
+  /** 창고 위치 코드 — 위치 코드 앞 조각(omf-all-around#292). */
+  locationPrefix: string;
 }
 
 interface WarehouseCreate {
@@ -77,6 +79,8 @@ interface WarehouseCreate {
   warehouseTypeCode: string;
   isExternal?: boolean;
   isDefect?: boolean;
+  /** 빼면 DB 가 쓰지 않은 무작위 4자를 채운다(`mdm.new_location_prefix()` · #292). */
+  locationPrefix?: string;
   /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
   aliasName?: unknown;
 }
@@ -88,6 +92,8 @@ interface WarehouseUpdate {
   warehouseTypeCode: string;
   isExternal: boolean;
   isDefect: boolean;
+  /** 등록한 뒤 바꾸지 않는다 — 빼거나 같은 값만 받는다(#292). */
+  locationPrefix?: string;
   aliasName?: unknown;
 }
 
@@ -156,11 +162,10 @@ export class WarehouseService {
     const fromErp = (await erpWarehouseName(this.prisma, row.warehouse_code)) !== null;
     return {
       warehouse: view(row),
-      // 창고 코드는 만든 뒤 바꾸지 않는다 — 위치 코드가 창고 코드로 시작하고 그 라벨이 현장에 붙는다(사용자 결정 · omf-all-around#292).
-      // ERP 창고는 그 전부터 늘 잠갔다(장부 P-148). 참조 건수는 그대로 센다.
+      // 창고 코드를 «글자»로 부르는 자리는 계약에 0곳이라 FK 건수가 곧 답이다(#114 와 같다). ERP 창고는 늘 잠근다(장부 P-148).
       editability: {
-        codeEditable: false,
-        reason: fromErp ? 'RECEIVED_FROM_ERP' : 'LABEL_ISSUED',
+        codeEditable: !fromErp && referenceCount === 0,
+        reason: fromErp ? 'RECEIVED_FROM_ERP' : referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
         referenceCount,
       },
       versionNo: row.version_no,
@@ -173,7 +178,7 @@ export class WarehouseService {
     const aliasName = aliasOf(input.aliasName);
     await this.assertCodes(input);
     await assertErpWarehouse(this.prisma, input, null);
-    await this.assertCodeFree(input.warehouseCode);
+    await this.assertLocationPrefixFree(input.locationPrefix);
     return view(
       await this.prisma.warehouse.create({
         data: {
@@ -186,6 +191,7 @@ export class WarehouseService {
           ...optional('is_external', input.isExternal),
           ...optional('is_defect', input.isDefect),
           ...optional('alias_name', aliasName),
+          ...optional('location_prefix', input.locationPrefix),
         },
       }),
     );
@@ -200,10 +206,10 @@ export class WarehouseService {
     await this.assertCodes(input);
     const current = await this.prisma.warehouse.findUnique({
       where: { warehouse_id: warehouseId },
-      select: { warehouse_code: true },
+      select: { warehouse_code: true, location_prefix: true },
     });
     if (!current) throw new NotFoundException('없는 창고입니다.');
-    assertCodeKept(current.warehouse_code, input.warehouseCode);
+    assertLocationPrefixKept(current.location_prefix, input.locationPrefix);
     await assertErpWarehouse(this.prisma, input, { warehouseId: BigInt(warehouseId), warehouseCode: current.warehouse_code });
     const updated = await this.prisma.warehouse.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
@@ -258,16 +264,14 @@ export class WarehouseService {
   }
 
   /**
-   * 창고 코드는 공장이 달라도 겹치지 않아야 한다 — 위치 코드가 창고 코드로 시작하고 모든 창고를 통틀어 유일해서(#292),
-   * 같은 코드의 창고가 둘이면 서버가 만드는 자리(`{창고}-SYS-STAGING`)부터 겹친다.
+   * 사람이 고쳐 보낸 창고 위치 코드 — 형식과 겹침을 저장 전에 본다(#292). 빼고 보내면 DB 기본값이 채운다.
+   * 동시에 같은 값으로 등록하면 `uq_warehouse_location_prefix` 가 막는다(그물 — `prismaErrorResponse`).
    */
-  private async assertCodeFree(warehouseCode: string): Promise<void> {
-    const other = await this.prisma.warehouse.findFirst({ where: { warehouse_code: warehouseCode }, select: { warehouse_id: true } });
-    if (other === null) return;
-    throw new ContractException(HttpStatus.BAD_REQUEST, [{
-      scope: 'field', field: 'warehouseCode', code: ERROR_CODE.UNIQUE_VIOLATION, uniqueScope: ['warehouseCode'],
-      message: '같은 코드의 창고가 이미 있습니다 — 다른 공장이어도 창고 코드는 겹칠 수 없습니다(위치 코드가 창고 코드로 시작합니다).',
-    }]);
+  private async assertLocationPrefixFree(prefix: string | undefined): Promise<void> {
+    if (prefix === undefined) return;
+    assertLocationPrefixFormat(prefix);
+    const other = await this.prisma.warehouse.findUnique({ where: { location_prefix: prefix }, select: { warehouse_id: true } });
+    if (other !== null) throw locationPrefixTaken();
   }
 
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
@@ -282,17 +286,6 @@ export class WarehouseService {
   }
 }
 
-/**
- * 창고 코드는 만든 뒤 바꾸지 않는다(사용자 결정 · omf-all-around#292) — 위치 코드 앞부분이 창고 코드라 바꾸면
- * 현장에 붙은 위치 라벨과 어긋난다. 같은 값은 통과한다(수정 본문은 코드를 늘 싣는다).
- */
-export function assertCodeKept(currentCode: string, sentCode: string): void {
-  if (currentCode === sentCode) return;
-  throw new ContractException(HttpStatus.BAD_REQUEST, [
-    field('warehouseCode', ERROR_CODE.STATE_LOCKED, '창고 코드는 만든 뒤 바꿀 수 없습니다 — 위치 코드 앞부분과 붙인 라벨이 어긋납니다.'),
-  ]);
-}
-
 function view(row: WarehouseRow): WarehouseView {
   return {
     warehouseId: Number(row.warehouse_id),
@@ -305,5 +298,6 @@ function view(row: WarehouseRow): WarehouseView {
     isDefect: row.is_defect,
     isActive: row.is_active,
     aliasName: row.alias_name,
+    locationPrefix: row.location_prefix,
   };
 }

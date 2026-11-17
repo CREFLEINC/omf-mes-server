@@ -105,7 +105,7 @@ describe('입고 기본값 (e2e · 장부 P-150)', () => {
       lotId: Number(lot), plantId: Number(ids.plant), itemId: Number(ids.item), uomId: Number(ids.uom),
       receiptTypeCode: 'MATERIAL', receiptQty: 30,
       warehouseId: Number(ids.wh), warehouseCode: `${PREFIX}-WH`, destinationLocationId: await slot(ids.wh),
-      destinationLocationCode: `${PREFIX}-WH-SYS-STAGING`, qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', issues: [],
+      destinationLocationCode: `${await prefixOf(ids.wh)}-SYS-STAGING`, qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', issues: [],
     });
   });
 
@@ -225,6 +225,11 @@ describe('입고 기본값 (e2e · 장부 P-150)', () => {
     });
     await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: line.inbound_receipt_line_id }, data: { lot_id: lot.lot_id } });
     return lot.lot_id;
+  }
+
+  /** 창고 위치 코드 — 위치 코드 앞 조각(#292). 창고를 넣을 때 DB 가 무작위로 채운다. */
+  async function prefixOf(warehouseId: bigint): Promise<string> {
+    return (await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: warehouseId } })).location_prefix;
   }
 
   async function warehouse(code: string, plant: bigint, isDefect = false): Promise<bigint> {

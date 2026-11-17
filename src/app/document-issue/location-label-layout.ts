@@ -25,8 +25,9 @@ const QRCode = require('qrcode') as {
  * 이 라벨을 읽는 곳은 적치 위치 검증이고, 모바일 화면들(적치·임시 적치·제품 입고·재고 이동·
  * 실물 카운트)은 스캔 값을 **그대로** `GET /mdm/locations?warehouseId=&locationCode=` 에 넣는다 —
  * 창고는 작업이 준다. 창고를 붙이면 그 조회가 0건이라 검증이 막힌다(개발 서버 실측).
- * 2026-11-17 부터 위치 코드는 창고 코드로 시작하고 모든 창고를 통틀어 유일하다(`uq_location_code` ·
- * omf-all-around#292) — QR 하나로 「어느 창고의 어디」까지 풀리고, `warehouseId` 없이도 한 건이 집힌다.
+ * 2026-11-17 부터 위치 코드는 창고 위치 코드(`warehouse.location_prefix`, 예 `K7QX`)로 시작하고 모든 창고를
+ * 통틀어 유일하다(`uq_location_code` · omf-all-around#292) — QR 하나로 「어느 창고의 어디」까지 풀리고,
+ * `warehouseId` 없이도 한 건이 집힌다.
  * 그 전에 뽑은 라벨의 옛 코드 → 새 코드는 `mdm.location_code_rename` 에 남겼다(다시 뽑을 목록).
  *
  * ⚠ 글자는 ASCII 로 제한하지 않는다 — 영문 입력은 **권고이지 제약이 아니다**(2026-09-16 사용자

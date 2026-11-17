@@ -2310,7 +2310,7 @@ model location {
   @@schema("mdm")
 }
 
-/// 위치 코드에 창고 코드를 붙일 때(omf-all-around#292) 바뀐 위치의 옛 코드 → 새 코드. 위치 라벨 재발행 목록
+/// 위치 코드에 창고 위치 코드를 붙일 때(omf-all-around#292) 바뀐 위치의 옛 코드 → 새 코드. 위치 라벨 재발행 목록
 model location_code_rename {
   location_id  BigInt   @id
   warehouse_id BigInt
@@ -2746,6 +2746,8 @@ model warehouse {
   version_no                                                                         Int                          @default(1)
   is_defect                                                                          Boolean                      @default(false)
   alias_name                                                                         String?                      @db.VarChar(200)
+  /// 창고 위치 코드 — 위치 코드 앞에 붙는다({창고 위치 코드}-Z01). 모든 창고에서 유일, 등록 뒤 바꾸지 않는다(omf-all-around#292)
+  location_prefix                                                                    String                       @unique(map: "uq_warehouse_location_prefix") @default(dbgenerated("mdm.new_location_prefix()")) @db.VarChar(6)
   handling_unit                                                                      handling_unit[]
   inventory_balance                                                                  inventory_balance[]
   inventory_count                                                                    inventory_count[]

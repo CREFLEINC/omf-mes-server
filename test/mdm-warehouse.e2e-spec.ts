@@ -145,15 +145,14 @@ describe('창고 마스터 (e2e)', () => {
     expect(validate(detail.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(etag).toMatch(/^\d+$/);
-    // 창고 코드는 만든 뒤 바꾸지 않는다 — 위치 코드가 창고 코드로 시작한다(omf-all-around#292).
     expect(detail.body.editability).toEqual({
-      codeEditable: false,
-      reason: 'LABEL_ISSUED',
+      codeEditable: true,
+      reason: 'EDITABLE',
       referenceCount: 0,
     });
   });
 
-  it('⭐ 참조 건수는 그대로 센다 — 16곳 중 하나가 걸려도 센다', async () => {
+  it('⭐ 위치가 붙으면 REFERENCED 로 잠긴다 — 16곳 중 하나가 걸려도 잠근다', async () => {
     const { id } = await createWarehouse(`${PREFIX}-REF`);
     await prisma.location.create({
       data: {
@@ -171,41 +170,66 @@ describe('창고 마스터 (e2e)', () => {
 
     expect(detail.body.editability).toEqual({
       codeEditable: false,
-      reason: 'LABEL_ISSUED',
+      reason: 'REFERENCED',
       referenceCount: 1,
     });
   });
 
-  it('⛔ 창고 코드는 만든 뒤 바꿀 수 없다 — 같은 값은 통과한다(omf-all-around#292)', async () => {
-    const { id, etag } = await createWarehouse(`${PREFIX}-FIX`);
-    const put = (warehouseCode: string, ifMatch: string) => request(app.getHttpServer())
-      .put(`/api/mdm/warehouses/${id}`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .set('If-Match', ifMatch)
-      .send({ businessUnitId, warehouseCode, warehouseName: '고친 이름', warehouseTypeCode, isExternal: false, isDefect: false });
+  describe('창고 위치 코드(locationPrefix · omf-all-around#292)', () => {
+    // 사람이 고친 값은 6자로 둔다 — 무작위 값은 4자라 다른 창고와 우연히 겹치지 않는다.
+    const FIXED = 'MDMWH6';
 
-    const locked = await put(`${PREFIX}-FIX2`, etag).expect(400);
-    expect(locked.body.errors).toEqual([expect.objectContaining({ field: 'warehouseCode', code: 'STATE_LOCKED' })]);
-    await put(`${PREFIX}-FIX`, etag).expect(200);
-  });
-
-  it('⛔ 창고 코드는 다른 공장과도 겹칠 수 없다 — 서버가 만드는 위치 코드가 겹친다(#292)', async () => {
-    await createWarehouse(`${PREFIX}-DUP`);
-    const first = await prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId } });
-    const other = await prisma.plant.create({
-      data: { legal_entity_id: first.legal_entity_id, plant_code: `${PREFIX}-P4`, plant_name: '창고 코드 둘째 공장', timezone_code: first.timezone_code },
-    });
-
-    const duplicated = await request(app.getHttpServer())
+    const post = (extra: Record<string, unknown>) => request(app.getHttpServer())
       .post('/api/mdm/warehouses')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send(body(`${PREFIX}-DUP`, { plantId: Number(other.plant_id) }))
-      .expect(400);
-    expect(duplicated.body.errors).toEqual([
-      expect.objectContaining({ field: 'warehouseCode', code: 'UNIQUE_VIOLATION', uniqueScope: ['warehouseCode'] }),
-    ]);
+      .send(body(`${PREFIX}-P${randomUUID().slice(0, 6)}`, extra));
+
+    it('⭐ 빼고 등록하면 서버가 무작위 4자를 채운다 — 시스템 위치도 그 값으로 시작한다', async () => {
+      const created = await post({}).expect(201);
+      expect(created.body.locationPrefix).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$/);
+      const systems = await prisma.location.findMany({
+        where: { warehouse_id: created.body.warehouseId }, select: { location_code: true }, orderBy: { location_code: 'asc' },
+      });
+      expect(systems.map((row) => row.location_code))
+        .toEqual([`${created.body.locationPrefix}-SYS-STAGING`, `${created.body.locationPrefix}-SYS-WHOLE`]);
+
+      const detail = await request(app.getHttpServer()).get(`/api/mdm/warehouses/${created.body.warehouseId}`).set('Cookie', cookie).expect(200);
+      expect(detail.body.warehouse.locationPrefix).toBe(created.body.locationPrefix);
+      const validate = validator('GET /mdm/warehouses/{warehouseId}');
+      expect(validate(detail.body)).toBe(true);
+    });
+
+    it('⭐ 고쳐 보낸 값을 쓰고, 다른 창고가 쓰면 400 UNIQUE_VIOLATION, 형식이 틀리면 400 INVALID', async () => {
+      const created = await post({ locationPrefix: FIXED }).expect(201);
+      expect(created.body.locationPrefix).toBe(FIXED);
+
+      const taken = await post({ locationPrefix: FIXED }).expect(400);
+      expect(taken.body.errors).toEqual([
+        expect.objectContaining({ field: 'locationPrefix', code: 'UNIQUE_VIOLATION', uniqueScope: ['locationPrefix'] }),
+      ]);
+      for (const bad of ['k7qx', 'K7-Q', 'A', 'ABCDEFG']) {
+        const rejected = await post({ locationPrefix: bad }).expect(400);
+        expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'locationPrefix', code: 'INVALID' })]);
+      }
+    });
+
+    it('⛔ 등록한 뒤에는 바꿀 수 없다 — 빼거나 같은 값은 통과한다', async () => {
+      const { id, etag } = await createWarehouse(`${PREFIX}-PFX`);
+      const current = (await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id } })).location_prefix;
+      const put = (extra: Record<string, unknown>, ifMatch: string) => request(app.getHttpServer())
+        .put(`/api/mdm/warehouses/${id}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key())
+        .set('If-Match', ifMatch)
+        .send({ businessUnitId, warehouseCode: `${PREFIX}-PFX`, warehouseName: '고친 이름', warehouseTypeCode, isExternal: false, isDefect: false, ...extra });
+
+      const locked = await put({ locationPrefix: 'ZZ99' }, etag).expect(400);
+      expect(locked.body.errors).toEqual([expect.objectContaining({ field: 'locationPrefix', code: 'STATE_LOCKED' })]);
+      const omitted = await put({}, etag).expect(200);
+      expect(omitted.body.locationPrefix).toBe(current);
+      await put({ locationPrefix: current }, omitted.headers.etag).expect(200);
+    });
   });
 
   it('⛔ 창고코드가 공백만이면 400 이다 — 계약이 「공백만 불가」로 적었다', async () => {
@@ -485,8 +509,7 @@ describe('창고 마스터 (e2e)', () => {
       .set('If-Match', ifMatch)
       .send({ ...body(code, { warehouseName: 'ERP 자재창고' }), plantId: undefined, isExternal: false, isDefect: false, ...changes });
     const locked = await put({ warehouseCode: `${PREFIX}-RENAMED`, warehouseName: '고친 이름' }, etag).expect(400);
-    // 코드가 바뀌어 오면 그것부터 막는다 — 창고 코드는 ERP 창고가 아니어도 바꿀 수 없다(#292).
-    expect(locked.body.errors).toEqual([expect.objectContaining({ field: 'warehouseCode', code: 'STATE_LOCKED' })]);
+    expect(locked.body.errors.map((e: { field: string }) => e.field).sort()).toEqual(['warehouseCode', 'warehouseName']);
 
     const aliased = await put({ aliasName: '1층 자재창고' }, etag).expect(200);
     expect(aliased.body).toMatchObject({ warehouseName: 'ERP 자재창고', aliasName: '1층 자재창고' });

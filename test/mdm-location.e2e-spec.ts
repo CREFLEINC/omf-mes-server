@@ -263,9 +263,11 @@ describe('위치 마스터 (e2e)', () => {
 
   it('⭐ 목록·상세가 역할을 싣고, 서버가 만든 자리는 SYSTEM_OWNED 로 잠긴다', async () => {
     const staging = await systemLocation(warehouseId, 'PUTAWAY_STAGING');
+    // 서버가 만든 자리도 창고 위치 코드로 시작한다(#292).
+    const { location_prefix: head } = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: warehouseId } });
 
     const list = await request(app.getHttpServer())
-      .get(`/api/mdm/locations?warehouseId=${warehouseId}&locationCode=${PREFIX}-WH1-SYS-STAGING`)
+      .get(`/api/mdm/locations?warehouseId=${warehouseId}&locationCode=${head}-SYS-STAGING`)
       .set('Cookie', cookie)
       .expect(200);
     expect(list.body.items).toEqual([
@@ -273,7 +275,7 @@ describe('위치 마스터 (e2e)', () => {
     ]);
     // 위치 코드는 모든 창고를 통틀어 유일하다 — 코드 하나로 창고 없이 한 건이 집힌다(#292).
     const scanned = await request(app.getHttpServer())
-      .get(`/api/mdm/locations?locationCode=${PREFIX}-WH1-SYS-STAGING`)
+      .get(`/api/mdm/locations?locationCode=${head}-SYS-STAGING`)
       .set('Cookie', cookie)
       .expect(200);
     expect(scanned.body.items).toEqual([expect.objectContaining({ locationId: staging, warehouseId })]);
