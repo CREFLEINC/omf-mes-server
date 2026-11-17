@@ -111,7 +111,8 @@ describe('계약 커버리지', () => {
     // 계획 제안 보완값 재검증 1 오퍼레이션: 625 → 626.
     // 추적 시스템 포장 입고이동 1 오퍼레이션(flowtrack 연동 제안 §3-3): 626 → 627.
     // ERP W/O 감사 기록 조회 1 오퍼레이션: 627 → 628.
-    expect(registry.size).toBe(628);
+    // 추적 시스템 출하 출고 1 오퍼레이션(flowtrack 연동 제안 §3-4): 628 → 629.
+    expect(registry.size).toBe(629);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
