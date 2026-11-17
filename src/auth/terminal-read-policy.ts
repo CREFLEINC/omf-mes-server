@@ -16,6 +16,14 @@ const isRecent = (value: unknown, windowMs: number): boolean => {
   return Number.isFinite(at) && Date.now() - at <= windowMs;
 };
 
+/** `statusCode` 가 끝난 상태(COMPLETED·CLOSED)만 쉼표로 나열했는가. */
+const FINISHED_STATUSES: ReadonlySet<string> = new Set(['COMPLETED', 'CLOSED']);
+const isFinishedStatusList = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const codes = value.split(',').map((code) => code.trim());
+  return codes.length > 0 && codes.every((code) => FINISHED_STATUSES.has(code));
+};
+
 type TerminalType = 'POP' | 'MOBILE' | 'TRACKING_SYSTEM';
 
 /** Explicit terminal GETs; each additional FR-005 group is reviewed for resource scope. */
@@ -133,9 +141,10 @@ export async function assertTerminalReadScope(
         // 재작업 실적(P-04-03)은 배포 전(PLANNED) 재작업 W/O 도 «보이기만» 한다 — 지시가 났는지 현장이 알게(장부 P-113).
         //   고르기·저장은 배포된 것만이다(실적 저장이 PLANNED 를 받지 않는다).
         const plannedRework = query.workOrderTypeCode === 'REWORK' && query.statusCode === 'PLANNED';
-        // POP 홈 「오늘 작업 현황」의 완료 수(omf-all-around#291) — 완료 W/O 는 «최근 갱신분»만 본다.
+        // POP 홈 「오늘 작업 현황」의 완료 수(omf-all-around#291) — 끝난 W/O(완료·마감)는 «최근 갱신분»만 본다.
+        //   현장의 [작업지시 마감]은 W/O 를 CLOSED 로 바로 보내므로 마감도 «끝난 것»으로 센다.
         //   지난 이력 전체를 단말이 훑지 않도록 `updatedSince` 를 48시간 안으로 묶는다.
-        const recentCompleted = query.statusCode === 'COMPLETED' && isRecent(query.updatedSince, RECENT_COMPLETED_MS);
+        const recentCompleted = isFinishedStatusList(query.statusCode) && isRecent(query.updatedSince, RECENT_COMPLETED_MS);
         if (query.open !== 'true' && !plannedRework && !recentCompleted) throw denied();
         // 설비를 걸면 단말 공장의 설비여야 한다 — 옆 설비의 W/O 도 찾는다(장부 P-123). 없는 설비와 남의 공장 설비는 같은 401 이다.
         if (query.plannedEquipmentId !== undefined) await plantEquipment(query.plannedEquipmentId);
