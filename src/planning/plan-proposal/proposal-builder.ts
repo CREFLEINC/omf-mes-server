@@ -94,6 +94,8 @@ export interface ExistingDraft {
   lineCode: string | null;
   lineName: string | null;
   createdByName: string | null;
+  /** 이 작성중 계획을 분할 원본으로 가리키는 다른 계획(같이 지울 작성중 계획은 빼고). */
+  splitChildIds: bigint[];
 }
 
 const CONFIRMED = 'CONFIRMED';
@@ -123,7 +125,7 @@ function buildOne(facts: ProposalFacts, order: OrderRow, now: Date, action: Exis
     const basis = { ...basisOf(facts, order, saved), calendar: calendarBasis(plans) };
     return {
       order, kind, status: statusOf(kind, order.status_code === CANCELLED, reasons), reasons, quantities, plans, issues, basis, fg: fgOf(facts, order),
-      drafts: drafts.map((row) => existingDraftOf(facts, row)), newPlanTemplate,
+      drafts: drafts.map((row) => existingDraftOf(facts, row, drafts)), newPlanTemplate,
     };
   };
 
@@ -215,13 +217,15 @@ function warnSiblingDoubleBooking(plans: readonly ProposalPlan[]): void {
   });
 }
 
-function existingDraftOf(facts: ProposalFacts, row: PlanRow): ExistingDraft {
-  const line = row.planned_line_id === null ? undefined : facts.draftLabels.lines.get(row.planned_line_id);
+function existingDraftOf(facts: ProposalFacts, row: PlanRow, drafts: readonly PlanRow[]): ExistingDraft {
+  const line = row.planned_line_id === null ? undefined : facts.draftFacts.lines.get(row.planned_line_id);
+  const draftIds = new Set(drafts.map((draft) => draft.production_plan_id));
   return {
     row,
+    splitChildIds: (facts.draftFacts.splitChildren.get(row.production_plan_id) ?? []).filter((id) => !draftIds.has(id)),
     lineCode: line?.code ?? null,
     lineName: line?.name ?? null,
-    createdByName: row.created_by === null ? null : (facts.draftLabels.users.get(row.created_by) ?? null),
+    createdByName: row.created_by === null ? null : (facts.draftFacts.users.get(row.created_by) ?? null),
   };
 }
 

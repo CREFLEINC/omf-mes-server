@@ -69,6 +69,11 @@ describe('planSetErrors — 계획 구성', () => {
     expect(fields(planSetErrors(true, DRAFTS, 'CONTINUE', { plans: [{ proposalPlanKey: 'plan-11' }, ...plans('plan-12')] }))).toEqual([['plans[0].savedVersionNo', 'REQUIRED']]);
   });
 
+  it('나누기 전 키가 서로를 가리키면(순환) 둘 다 INVALID', () => {
+    const body: PlanSetBody = { plans: [{ proposalPlanKey: 'new-1', splitFromPlanKey: 'new-2' }, { proposalPlanKey: 'new-2', splitFromPlanKey: 'new-1' }, { proposalPlanKey: 'new-3', splitFromPlanKey: 'new-1' }] };
+    expect(fields(planSetErrors(true, [], 'REPLACE', body))).toEqual([['plans[0].splitFromPlanKey', 'INVALID'], ['plans[1].splitFromPlanKey', 'INVALID']]);
+  });
+
   it('확정할 제안이 없으면 계획을 받지 않는다', () => {
     expect(fields(planSetErrors(false, [], 'REPLACE', { plans: plans('new-1') }))).toEqual([['plans', 'INVALID']]);
   });

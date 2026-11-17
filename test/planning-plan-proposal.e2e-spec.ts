@@ -897,7 +897,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const audits = await prisma.audit_event.findMany({ where: { target_type_code: 'PRODUCTION_ORDER', target_id: orderId } });
       expect(audits).toEqual([expect.objectContaining({
         event_type_code: 'DELETE', correlation_id: key, performed_by: expect.any(BigInt),
-        after_value: { eventCode: 'PLAN_DRAFT_REPLACED', newPlanIds: [Number(plans[0].production_plan_id)] },
+        after_value: { eventCode: 'PLAN_DRAFT_REPLACED', detail: { newPlanIds: [Number(plans[0].production_plan_id)] } },
         before_value: { drafts: [expect.objectContaining({ productionPlanId: Number(planId), versionNo: 1, plannedQty: 50 })] },
       })]);
       await confirm(orderId, body, key).expect(200);
@@ -912,6 +912,26 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(response.body).toMatchObject({ code: 'PROPOSAL_CHANGED', proposalChanges: [expect.objectContaining({ basis: 'plans' })] });
       expect(await prisma.production_plan.count({ where: { production_plan_id: planId } })).toBe(1);
       expect((await revalidateBody(orderId, stale).expect(200)).body).toMatchObject({ confirmable: false, proposalChanges: [expect.objectContaining({ basis: 'plans' })] });
+    });
+
+    it('새로 — 지울 작성중 계획을 다른 계획이 분할 원본으로 가리키면 재검증은 그 오류로 확정 불가, 확정은 번호를 뽑기 전에 409 INVALID_STATE', async () => {
+      const { orderId, planId } = await draftOrder('KEY-PINNED');
+      const child = await prisma.production_plan.create({ data: {
+        production_order_id: orderId, plan_no: `${PREFIX}-PP-KEY-PINNED-C`, plan_date: new Date(`${planStart}T00:00:00.000Z`), planned_qty: 30,
+        uom_id: id.uom, bom_id: id.bomOk, routing_id: id.routingOk, status_code: 'CONFIRMED', confirmed_at: new Date(), split_of_plan_id: planId,
+      } });
+      try {
+        const body = bodyOf(await proposalOf(orderId));
+        const checked = await revalidateBody(orderId, body).expect(200);
+        expect(checked.body.confirmable).toBe(false);
+        expect(checked.body.errors[0]).toMatchObject({ scope: 'screen', code: 'INVALID_STATE', message: expect.stringContaining(`${PREFIX}-PP-KEY-PINNED`) });
+        const before = await snapshot();
+        const response = await confirm(orderId, body).expect(409);
+        expect(response.body).toMatchObject({ code: 'INVALID_STATE', message: checked.body.errors[0].message });
+        expect(await snapshot()).toEqual(before);
+      } finally {
+        await prisma.production_plan.delete({ where: { production_plan_id: child.production_plan_id } });
+      }
     });
 
     it('새로 — 작성중 계획을 싣거나 지울 계획을 비우면 400', async () => {

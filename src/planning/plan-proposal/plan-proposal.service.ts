@@ -12,7 +12,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PlanConfirmService, isDuplicateWorkOrderNo } from '../production-plan/plan-confirm.service';
 import { PlanDateRow, calendarsOfPlans } from '../production-plan/plan-date-calendar';
 import { assertWithinOrder, isPlanCancelled, precheckWithinOrder } from '../production-plan/plan-quantity';
-import { deleteDrafts, recordDraftsReplaced } from './draft-replace';
+import { deleteDrafts, recordDraftsReplaced, splitChildConflict } from './draft-replace';
 import { ExistingDraftAction, draftChoiceErrors } from './plan-set-rules';
 import { Proposal, buildProposals } from './proposal-builder';
 import { recordUserHolidayDates } from './plan-date-audit';
@@ -241,7 +241,7 @@ export class PlanProposalService {
   }
 
   /**
-   * 취소 400 → OA 자동 W/O 공장 400 → 이미 처리됨 → 기존 작성중 계획 선택 없음 400 → basis·작성중 계획 판 409 → 본문 검증 400 순.
+   * 취소 400 → OA 자동 W/O 공장 400 → 이미 처리됨 → 기존 작성중 계획 선택 없음 400 → basis·작성중 계획 판 409 → 지울 작성중 계획의 분할 자식 409 → 본문 검증 400 순.
    * 같은 판정을 잠그지 않고(채번 전) 한 번, 잠근 트랜잭션에서 한 번 한다.
    */
   private async check(client: Prisma.TransactionClient, orderId: bigint, body: ProposalConfirmBody): Promise<Checked> {
@@ -255,6 +255,8 @@ export class PlanProposalService {
     const choice = draftChoiceErrors(draftRefsOf(proposal), body);
     if (choice.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, choice);
     assertUnchanged(proposal, body);
+    const pinned = splitChildConflict(proposal, body.existingDraftAction);
+    if (pinned !== null) throw new ConflictException('user', pinned, { code: 'INVALID_STATE' });
     return { already: false, proposal, resolved: await resolveConfirm(client, proposal, facts, body, now) };
   }
 

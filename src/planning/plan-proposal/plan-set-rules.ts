@@ -62,6 +62,18 @@ export function draftsChanged(drafts: readonly DraftRef[], body: PlanSetBody): b
   });
 }
 
+/** 나누기 전 키를 따라가다 자기 자신으로 돌아오는가(new-1 → new-2 → new-1). */
+function inSplitCycle(plans: PlanSetBody['plans'], key: string): boolean {
+  const parentOf = new Map(plans.map((plan) => [plan.proposalPlanKey, plan.splitFromPlanKey ?? null]));
+  const seen = new Set<string>();
+  for (let current = parentOf.get(key) ?? null; current !== null; current = parentOf.get(current) ?? null) {
+    if (current === key) return true;
+    if (seen.has(current)) return false;
+    seen.add(current);
+  }
+  return false;
+}
+
 /**
  * 계획 구성 — 키가 겹치지 않고, plan-{id} 는 CONTINUE 일 때 이 ERP W/O 의 작성중 계획만(판 필수), CONTINUE 면 작성중 계획을 하나도 빼지 않고,
  * splitFromPlanKey 는 본문의 다른 계획을 가리킨다. 확정할 제안이 없으면(기준정보 사유) 계획을 받지 않는다.
@@ -85,6 +97,8 @@ export function planSetErrors(proposable: boolean, drafts: readonly DraftRef[], 
     const split = plan.splitFromPlanKey;
     if (split !== undefined && split !== null && (split === key || !keys.includes(split))) {
       errors.push(field(`${path}.splitFromPlanKey`, ERROR_CODE.INVALID, '나누기 전 계획의 키는 본문의 다른 계획 키여야 합니다.'));
+    } else if (inSplitCycle(body.plans, key)) {
+      errors.push(field(`${path}.splitFromPlanKey`, ERROR_CODE.INVALID, '나누기 전 계획이 서로를 가리킵니다 — 나눈 계획은 원본 하나를 가리켜야 합니다.'));
     }
   });
   if (action === 'CONTINUE') {

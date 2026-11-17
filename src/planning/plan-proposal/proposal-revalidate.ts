@@ -8,6 +8,7 @@ import { precheckWithinOrder } from '../production-plan/plan-quantity';
 import { Proposal, ProposalBasis, buildProposals, planDayIssues } from './proposal-builder';
 import { ProposalConfirmBody, ResolvedPlan, draftRefsOf, judgeConfirm, quantityDelta } from './proposal-confirm-check';
 import { TimeCorrection } from './plan-times';
+import { splitChildConflict } from './draft-replace';
 import { draftsChanged } from './plan-set-rules';
 import { AUTO_WORK_ORDER_PLANT } from './proposal-policy';
 import { ProposalFacts, readProposalFacts } from './proposal-reader';
@@ -99,6 +100,8 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
   if (proposal.kind === 'KEEP_CONFIRMED') return { ...head, ...nothing, alreadyProcessed: true, errors: [] };
 
   const { resolved, errors, warnings: timeWarnings, corrections } = await judgeConfirm(client, proposal, facts, body, now);
+  const pinned = splitChildConflict(proposal, body.existingDraftAction);
+  if (pinned !== null) errors.unshift({ scope: 'screen', code: 'INVALID_STATE', message: pinned });
   if (resolved.length > 0) errors.push(...(await quantityErrors(client, orderId, resolved, replacedQtyOf(proposal, body))));
   const days = await calendarsOfPlans(client, resolved.map((plan) => ({
     production_order_id: orderId,
