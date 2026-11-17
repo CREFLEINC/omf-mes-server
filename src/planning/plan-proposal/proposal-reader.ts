@@ -48,6 +48,10 @@ export interface PlanRow {
   planned_line_id: bigint | null;
   plan_date_source_code: string;
   remarks: string | null;
+  created_by: bigint | null;
+  created_at: Date;
+  updated_at: Date;
+  created_automatically: boolean;
   work_order: { status_code: string }[];
 }
 
@@ -127,6 +131,13 @@ export interface ProposalFacts {
   calendar: Map<string, PlanningCalendarDay[]>;
   /** OA 자동 W/O 공장 — 공장 현지 오늘로 판정했다. */
   autoPlants: Set<bigint>;
+  /** 작성중 계획 요약에 보이는 라인 코드·이름과 작성자 이름 — 변경 감지(basis)에는 넣지 않는다. */
+  draftLabels: DraftLabels;
+}
+
+export interface DraftLabels {
+  lines: Map<bigint, { code: string; name: string }>;
+  users: Map<bigint, string>;
 }
 
 const CONFIRMED = 'CONFIRMED';
@@ -146,6 +157,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     select: {
       production_plan_id: true, production_order_id: true, plan_no: true, status_code: true, version_no: true, plan_date: true,
       planned_qty: true, uom_id: true, bom_id: true, routing_id: true, planned_line_id: true, plan_date_source_code: true, remarks: true,
+      created_by: true, created_at: true, updated_at: true, created_automatically: true,
       work_order: { select: { status_code: true }, orderBy: { work_order_id: 'asc' } },
     },
   });
@@ -260,6 +272,20 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
     rivals,
     calendar: await readCalendar(client, orders, planRows, now),
     autoPlants: await readAutoPlants(client, orders, now),
+    draftLabels: await readDraftLabels(client, planRows.filter((plan) => plan.status_code !== CONFIRMED)),
+  };
+}
+
+async function readDraftLabels(client: Prisma.TransactionClient, drafts: readonly PlanRow[]): Promise<DraftLabels> {
+  const lineIds = unique(drafts.map((plan) => plan.planned_line_id));
+  const userIds = unique(drafts.map((plan) => plan.created_by));
+  const [lines, users] = await Promise.all([
+    lineIds.length === 0 ? [] : client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, line_code: true, line_name: true } }),
+    userIds.length === 0 ? [] : client.app_user.findMany({ where: { app_user_id: { in: userIds } }, select: { app_user_id: true, user_name: true } }),
+  ]);
+  return {
+    lines: new Map(lines.map((row) => [row.production_line_id, { code: row.line_code, name: row.line_name }])),
+    users: new Map(users.map((row) => [row.app_user_id, row.user_name])),
   };
 }
 

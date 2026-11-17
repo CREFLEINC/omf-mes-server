@@ -9,18 +9,22 @@ import {
   reasonsOf,
   statusOf,
   warnIssue,
-  wholeOrderError,
 } from './proposal-policy';
 
 const D = (value: number): Prisma.Decimal => new Prisma.Decimal(value);
 
 describe('plansToPropose — 무엇을 제안하는가', () => {
-  it('작성중 계획이 있으면 그것만 검토한다 — 남은 수량이 있어도 새 계획을 더 제안하지 않는다', () => {
-    expect(plansToPropose(['draft'], D(100), D(20))).toEqual({ kind: 'REVIEW_DRAFT', drafts: ['draft'] });
+  it('작성중 계획을 이어서 하면 그것만 검토한다 — 남은 수량이 있어도 새 계획을 더 제안하지 않는다', () => {
+    expect(plansToPropose(['draft'], D(100), D(20), 'CONTINUE')).toEqual({ kind: 'REVIEW_DRAFT', drafts: ['draft'] });
+  });
+
+  it('작성중 계획이 있어도 이어서가 아니면 대체할 새 계획 하나 — 수량은 확정 계획량만 뺀다', () => {
+    const choice = plansToPropose(['draft'], D(100), D(20), 'REPLACE');
+    expect(choice.kind === 'NEW_PLAN' && choice.qty.toNumber()).toBe(80);
   });
 
   it('없으면 확정 계획량을 뺀 수량으로 새 계획 하나', () => {
-    const choice = plansToPropose([], D(100), D(30));
+    const choice = plansToPropose([], D(100), D(30), 'CONTINUE');
     expect(choice.kind).toBe('NEW_PLAN');
     expect(choice.kind === 'NEW_PLAN' && choice.qty.toNumber()).toBe(70);
   });
@@ -70,21 +74,6 @@ describe('reasonsOf · statusOf — 사유 분류와 상태', () => {
 
   it('OA 자동 W/O 공장은 실행기가 처리하므로 변경 없음이다', () => {
     expect(statusOf('AUTO_WORK_ORDER', false, [])).toBe('NO_CHANGE');
-  });
-});
-
-describe('wholeOrderError — 한 ERP W/O 는 전부 아니면 하나도', () => {
-  it('제안한 계획을 모두 실으면 순서와 무관하게 통과한다', () => {
-    expect(wholeOrderError(['plan-1', 'plan-2'], ['plan-2', 'plan-1'])).toBeNull();
-  });
-
-  it.each([
-    ['일부만', ['plan-1']],
-    ['겹쳐서', ['plan-1', 'plan-1']],
-    ['다른 키', ['plan-1', 'new-1']],
-    ['제안에 없는 계획을 더해', ['plan-1', 'plan-2', 'new-1']],
-  ])('%s 실으면 field plans 오류', (_, sent) => {
-    expect(wholeOrderError(['plan-1', 'plan-2'], sent)).toMatchObject({ scope: 'field', field: 'plans', code: 'INVALID' });
   });
 });
 
