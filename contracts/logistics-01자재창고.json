@@ -705,7 +705,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "품질 상태로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED · 공유계약 G-32). ⛔ 목록은 서버가 갖는다 — 값을 화면에 박지 않는다(고객이 W-06-06 에서 바꾼다 · 공유계약 G-31 마스터안전형). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "품질 상태로 거른다 — 응답 qualityStatusCode 와 같은 기준(LOT 판정 · omf-all-around#302). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED · 공유계약 G-32). ⛔ 목록은 서버가 갖는다 — 값을 화면에 박지 않는다(고객이 W-06-06 에서 바꾼다 · 공유계약 G-31 마스터안전형). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-code-key": "CD-LOT-STATUS"
      },
      {
@@ -20121,7 +20121,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). ⭐ LOT 이 있고 행 값이 정상·검사 대기면 LOT 의 현재 판정을 싣는다 — 검사 대기로 입고된 재고가 합격 뒤에도 「검사 대기」로 보이지 않게(omf-all-around#302). 근거: 공유계약 G-32",
       "example": "NORMAL",
       "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다.",
       "x-code-key": "CD-LOT-STATUS"
@@ -20188,14 +20188,14 @@
       "x-source-column": "blocked_qty",
       "type": "number",
       "minimum": 0,
-      "description": "내보낼 수 없게 묶인 수량. 묶인 수량에 더해 출고 할당이 집지 않는 잔액(정상 품질이 아님 · 가용 상태가 아님 · 풀리지 않은 LOT 보류)의 나머지(보유 − 예약 − 피킹)를 센다(omf-all-around#285). ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
+      "description": "내보낼 수 없게 묶인 수량. 묶인 수량에 더해 출고 할당이 집지 않는 잔액(정상 품질이 아님 · 가용 상태가 아님 · 풀리지 않은 LOT 보류)의 나머지(보유 − 예약 − 피킹)를 센다(omf-all-around#285). LOT 이 있는 잔액의 품질은 LOT 판정을 따른다(omf-all-around#302). ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
       "example": 0
      },
      "availableQty": {
       "x-source-column": "available_qty",
       "type": "number",
       "readOnly": true,
-      "description": "보유 − 예약 − 피킹 − 보류. 보류에 집을 수 없는 잔액이 들어가므로 출고 할당(정상 품질 · 가용 상태 · LOT 보류 아님)과 같은 기준이다(omf-all-around#285). 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
+      "description": "보유 − 예약 − 피킹 − 보류. 보류에 집을 수 없는 잔액이 들어가므로 출고 할당(정상 품질 · 가용 상태 · LOT 보류 아님)과 같은 기준이다(omf-all-around#285). LOT 이 있는 잔액의 정상 품질은 LOT 판정이 정상이고 행 품질이 정상 또는 검사 대기인 것이다 — 검사 대기로 입고된 재고는 PQC 합격으로 가용이 되고, 정상 LOT 이 검사 대기 · 불량으로 바뀌면 보류가 된다(omf-all-around#302). 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
       "example": 80
      },
      "uomId": {
