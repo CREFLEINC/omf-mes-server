@@ -120,6 +120,26 @@ describe('위치 이동 (e2e)', () => {
     };
   }
 
+  // 피처 009(2026-11-18 결정) — 품목 지정은 안내다. 「지정 품목만 받기」를 켠 위치만 재고 코어가 막는다.
+  it('FR-017b FR-017d Q25 Q29 다른 품목만 지정된 도착 위치 — 꺼져 있으면 옮기고, 켜면 400 LOCATION_ITEM_RESTRICTED', async () => {
+    const lot = await seedLot(10);
+    const other = await prisma.item.upsert({
+      where: { item_code: `${PREFIX}-IT9` }, update: {},
+      create: { item_code: `${PREFIX}-IT9`, item_name: '위치이동 다른 품목', item_type_code: 'RAW_MATERIAL', base_uom_id: ids.uom },
+    });
+    await prisma.location_item.create({ data: { location_id: ids.b, item_id: other.item_id } });
+    try {
+      await move([line(lot, ids.a, ids.b, 1)], 201);
+      await prisma.location.update({ where: { location_id: ids.b }, data: { item_restricted: true } });
+      const rejected = await move([line(lot, ids.a, ids.b, 1)], 400);
+      expect(rejected.errors).toEqual([expect.objectContaining({ code: 'LOCATION_ITEM_RESTRICTED' })]);
+      expect([await onHand(lot, ids.a), await onHand(lot, ids.b)]).toEqual([9, 1]);
+    } finally {
+      await prisma.location.update({ where: { location_id: ids.b }, data: { item_restricted: false } });
+      await prisma.location_item.deleteMany({ where: { location_id: ids.b } });
+    }
+  });
+
   async function move(lines: Record<string, unknown>[], expected: number): Promise<Record<string, unknown>> {
     const response = await request(app.getHttpServer())
       .post('/api/logistics/location-moves')

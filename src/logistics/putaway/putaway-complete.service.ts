@@ -10,7 +10,7 @@ import { LockedBalanceRow, lockBalancesInOrder } from '../../core/inventory-post
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { LogisticsWriteActor } from '../logistics-write-actor';
-import { AllowedLocation, allowedKey, allowedLocationsOf } from './allowed-locations';
+import { allowedKey, allowedLocationsOf } from './allowed-locations';
 import { PutawayOrigin, PutawayPart, postPutaway } from './putaway-posting';
 import { PutawayTaskView, TASK_INCLUDE, originDocumentNos, taskView } from './putaway-task-view';
 
@@ -52,7 +52,7 @@ interface LockedTask {
 /**
  * 적치 완료(`:complete`)와 임시 위치 적재(`:complete-temporary`) — **한 함수의 모드 분기**다.
  * 열한 단계 중 아홉이 글자 그대로 같아, 쪼개면 원장 쌓기·끝점 복제·전이·UPDATE 가 두 벌이
- * 되고 한쪽만 고치는 사고가 그 자리에서 난다. 갈리는 곳은 셋 — 사유 · 전이 액션 · 둬도 되는 위치 판정.
+ * 되고 한쪽만 고치는 사고가 그 자리에서 난다. 갈리는 곳은 둘 — 사유 · 전이 액션.
  */
 @Injectable()
 export class PutawayCompleteService {
@@ -93,8 +93,9 @@ export class PutawayCompleteService {
     }
     await assertLocation(tx, body.actualLocationId, task.warehouse_id);
     const pair = { itemId: task.item_id, warehouseId: task.warehouse_id };
+    // 둬도 되는 위치 목록은 안내다(피처 009 T054 · 사용자 결정 2026-11-18) — 목록 밖이라고 막지 않는다. 막는 것은
+    // 위 창고 일치 검사와 재고 코어(맨 아래 위치 · 「지정 품목만 받기」 켠 위치의 LOCATION_ITEM_RESTRICTED)뿐이다.
     const allowed = (await allowedLocationsOf(tx, [pair])).get(allowedKey(pair)) ?? [];
-    if (mode === 'NORMAL') assertAllowed(allowed, body.actualLocationId);
     // 창고 보충 수령 원천은 적치 대기에 «남은» 만큼만 옮긴다 — 그사이 피킹이 집어 갔을 수 있다(R-8 · US6-4·6-5).
     let parts: PutawayPart[];
     if (task.goods_receipt_line_id === null) {
@@ -178,15 +179,6 @@ async function assertLocation(tx: Tx, actualLocationId: number, warehouseId: big
   if (location === null || !location.is_active || location.warehouse_id !== warehouseId) {
     throw one(field('actualLocationId', ERROR_CODE.INVALID, '이 창고의 사용 가능한 위치가 아닙니다.'));
   }
-}
-
-/**
- * 둬도 되는 위치가 있으면 그 중 하나여야 한다. 비어 있으면 어디든 — 맨 아래 위치·보관 품목은 재고 코어가 막는다.
- * 임시 적재는 부르지 않는다 — 목록에 못 둘 때의 탈출구다.
- */
-function assertAllowed(allowed: AllowedLocation[], actualLocationId: number): void {
-  if (allowed.length === 0 || allowed.some((location) => location.locationId === actualLocationId)) return;
-  throw one(field('actualLocationId', ERROR_CODE.INVALID, '둬도 되는 위치가 아닙니다 — 목록 중 하나를 고르거나 임시 적재합니다.'));
 }
 
 /**

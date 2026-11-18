@@ -1093,7 +1093,7 @@
      "mdm"
     ],
     "summary": "위치의 지정 품목 바꾸기",
-    "description": "이 위치에 지정 품목만 들어오게 한다 — 그 밖의 품목이 들어오는 재고 전기는 400. 400: 없거나 쓰지 않는 품목(itemIds INVALID) · 지정 밖 품목의 재고가 이미 있음(itemIds STATE_LOCKED — 먼저 옮긴다) · 서버가 만든 자리(STATE_LOCKED — 적치 대기에는 어떤 품목이든 들어온다)",
+    "description": "이 위치에 둘 품목(보관 품목)을 통째로 바꾼다. ⭐ 품목 지정은 안내다 — 「지정 품목만 받기」(Location.itemRestricted)를 켠 위치만 그 밖의 품목이 들어오는 재고 전기를 400(LOCATION_ITEM_RESTRICTED)으로 막는다. PDA 미지정 위치 적치가 지정을 늘린다. 400: 없거나 쓰지 않는 품목(itemIds INVALID) · 「지정 품목만 받기」를 켠 위치에서 지정 밖 품목의 재고가 이미 있거나 지정을 모두 빼려 함(itemIds STATE_LOCKED) · 서버가 만든 자리(STATE_LOCKED — 적치 대기에는 어떤 품목이든 들어온다). 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -19464,7 +19464,8 @@
      "locationLevelCode",
      "isLeaf",
      "systemRoleCode",
-     "hasItemRestriction"
+     "hasItemRestriction",
+     "itemRestricted"
     ],
     "description": "Location. 창고 › 구역 › 랙 › 층 › 셀 계층(parent_location_id 자기참조). 코드는 서버가 발행하고 상위는 바꾸지 않는다. 근거: W-06-07 §4-B · 사용자 결정 2026-10-29",
     "properties": {
@@ -19557,7 +19558,13 @@
      "hasItemRestriction": {
       "type": "boolean",
       "example": false,
-      "description": "지정 품목이 있다 — 이 위치에는 그 품목만 들어온다(GET /mdm/locations/{locationId}/items)"
+      "description": "지정 품목이 있다(안내 — GET /mdm/locations/{locationId}/items). 막는 것은 itemRestricted 다. 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정"
+     },
+     "itemRestricted": {
+      "x-source-column": "item_restricted",
+      "type": "boolean",
+      "example": false,
+      "description": "지정 품목만 받기 — 켜면 모든 재고 기록 경로에서 지정 밖 품목을 400 LOCATION_ITEM_RESTRICTED 로 거절한다. 기본 끔(배포 때 모든 위치 끔). 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정"
      }
     }
    },
@@ -19644,6 +19651,11 @@
       "maxLength": 200,
       "example": "자재 랙 1",
       "description": "MES 별칭 — 화면이 이름처럼 보인다. 빈 글은 별칭 없음"
+     },
+     "itemRestricted": {
+      "x-source-column": "item_restricted",
+      "type": "boolean",
+      "description": "지정 품목만 받기 켜기/끄기 — 보내지 않으면 그대로. 켜기는 지정 품목이 1개 이상이고 지정 밖 품목 재고가 없고 사람이 만든 위치일 때만(아니면 400 itemRestricted STATE_LOCKED). 끄기는 늘 된다. 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정"
      }
     }
    },
