@@ -355,13 +355,30 @@ describe('적치 지시 조회 (e2e)', () => {
       expect(header.status_code).toBe('POSTED');
     });
 
-    it('⛔ 목록이 있는데 밖의 위치면 400 INVALID(actualLocationId)', async () => {
+    // 피처 009 T054(사용자 결정 2026-11-18 「명세대로 고침」) — 허용 위치 목록은 안내다. 목록 밖이라는 이유로 막지 않고,
+    // 막는 것은 「지정 품목만 받기」를 켠 위치(코어 LOCATION_ITEM_RESTRICTED)와 맨 아래 위치·창고 일치 검사뿐이다.
+    it('FR-017b T054 목록이 있어도 밖의 위치(「지정 품목만 받기」 꺼짐)로 완료하면 200 이다', async () => {
       const task = await freshTask(ruledItemId, 10);
 
-      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(400);
+      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(200);
 
-      expect(response.body.errors[0]).toMatchObject({ code: 'INVALID', field: 'actualLocationId' });
-      expect(await onHand(task.lotId, freeId)).toBe(0);
+      expect(response.body).toMatchObject({ statusCode: 'COMPLETED', actualLocationId: freeId });
+      expect(await onHand(task.lotId, freeId)).toBe(10);
+    });
+
+    it('FR-017d T054 목록 밖이고 「지정 품목만 받기」를 켠 위치면 400 LOCATION_ITEM_RESTRICTED — 잔액 그대로', async () => {
+      const task = await freshTask(ruledItemId, 10);
+      await prisma.location_item.create({ data: { location_id: freeId, item_id: plainItemId } });
+      await prisma.location.update({ where: { location_id: freeId }, data: { item_restricted: true } });
+      try {
+        const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(400);
+
+        expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'LOCATION_ITEM_RESTRICTED' });
+        expect(await onHand(task.lotId, freeId)).toBe(0);
+      } finally {
+        await prisma.location.update({ where: { location_id: freeId }, data: { item_restricted: false } });
+        await prisma.location_item.deleteMany({ where: { location_id: freeId } });
+      }
     });
 
     it('⭐ 목록 중 어느 것으로 완료해도 200 이다', async () => {
