@@ -162,8 +162,7 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/putaway-pending-lots/{lotId}/location-check':
     case 'GET /logistics/shipment-lot-allocations':
     case 'GET /logistics/shipment-requests':
-    // 지시서 코드 해석 — 서비스가 단말 공장 지시서만 찾는다(남의 공장은 404).
-    case 'GET /logistics/shipment-requests:lookup':
+    case 'GET /logistics/shipment-requests:lookup': // 지시서 코드 해석 — 서비스가 단말 공장 지시서만 찾는다(남의 공장은 404).
     case 'GET /logistics/shipping-units':
     case 'GET /logistics/shipments':
     case 'GET /logistics/shopfloor-receipts':
