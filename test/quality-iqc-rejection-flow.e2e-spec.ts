@@ -18,6 +18,7 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
 import { Authorize, InboundLotFixture, closeInboundLotFixture, defaultMatchedLotIds, issueAndReceive } from './support/inbound-lot-fixture';
+import { legacyGoodsReceiptCall } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-iqc-flow';
 const PASSWORD = 'IQC-흐름-비밀번호';
@@ -719,12 +720,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     lineId: number,
     qty: number,
     to: { warehouseId: number; locationId: number } = { warehouseId, locationId },
-  ): request.Test {
-    return request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({
+  ): ReturnType<typeof legacyGoodsReceiptCall> {
+    return legacyGoodsReceiptCall(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId,
         warehouseId: to.warehouseId,

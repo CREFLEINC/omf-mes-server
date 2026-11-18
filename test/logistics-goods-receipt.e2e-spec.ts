@@ -21,6 +21,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { NumberingService } from '../src/core/numbering';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceipt } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-gr-probe';
 const NOPERM_ID = 'e2e-gr-noperm';
@@ -242,8 +243,20 @@ describe('입고 (e2e)', () => {
     expect(first.body.goodsReceipt.goodsReceiptNo).not.toBe(second.body.goodsReceipt.goodsReceiptNo);
   });
 
+  it('Q21 R-2 구매 입하 LOT 이면 409 USE_PDA_PUTAWAY — 전표·원장 없음, 입하와 무관한 LOT 은 그대로 201', async () => {
+    const draft = await body();
+    draft.lines[0].lotId = await makeLot(itemId, 'INBOUND_RECEIPT_LINE');
+    const rejected = await send(draft).expect(409);
+    const validate = validator('POST /logistics/goods-receipts', 409);
+    expect(validate(rejected.body)).toBe(true);
+    expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines[0].lotId', code: 'USE_PDA_PUTAWAY' })]);
+    expect(await prisma.goods_receipt_line.count({ where: { lot_id: draft.lines[0].lotId } })).toBe(0);
+    await send(await body()).expect(201);
+  });
+
   it('⛔ 같은 입하 LOT 을 동시에 두 번 입고하면 하나만 들어간다 — 상한은 LOT 을 잠근 전기 트랜잭션 안에서 판정한다(#755)', async () => {
     const draft = await body();
+    draft.lines[0].lotId = await makeLot(itemId, 'INBOUND_RECEIPT_LINE');
     draft.lines[0].receiptQty = 60; // LOT 수량 100 — 둘을 합치면 넘는다.
     // 두 요청이 바깥 검사를 함께 지난 뒤에 전기로 가게 한다 — 입고번호 뽑기(검사 뒤 · 트랜잭션 앞)에서 서로를 기다린다.
     const numbering = app.get(NumberingService);
@@ -257,7 +270,8 @@ describe('입고 (e2e)', () => {
       return next(type, plant, day);
     });
 
-    const responses = await Promise.all([send(draft), send(draft)]).finally(() => spy.mockRestore());
+    // 구매 입하 LOT 은 API 가 409 다 — 배포 전 웹 입고를 재현하는 서비스 호출로 본다(입고 문은 PDA 적치도 같이 쓴다).
+    const responses = await Promise.all([legacyGoodsReceipt(app, cookie, draft), legacyGoodsReceipt(app, cookie, draft)]).finally(() => spy.mockRestore());
 
     expect(responses.map((response) => response.status).sort()).toEqual([201, 400]);
     expect(responses.find((response) => response.status === 400)?.body.errors).toEqual([
@@ -411,7 +425,11 @@ describe('입고 (e2e)', () => {
   }
 
   let lotSeq = 0;
-  async function makeLot(item: number): Promise<number> {
+  /**
+   * ⭐ 구매 입하 LOT 은 이 API 가 409 로 막는다(피처 009 · R-2) — API 의 공통 동작(전표·원장·멱등·번호·적치 지시)은
+   * 입하와 무관한 LOT(제품 LOT 모양)으로 본다. 입하 LOT 의 입고 문은 `legacyGoodsReceipt` 로 서비스를 직접 부른다.
+   */
+  async function makeLot(item: number, source = 'WORK_ORDER'): Promise<number> {
     lotSeq += 1;
     const lot = await prisma.lot.create({
       data: {
@@ -421,8 +439,8 @@ describe('입고 (e2e)', () => {
         plant_id: plantId,
         initial_qty: 100,
         uom_id: uomId,
-        source_type_code: 'INBOUND_RECEIPT_LINE',
-        // 없는 입하 줄 — 1번은 다른 검사가 만든 줄이라 ERP 발주에 이어져 있으면 송신을 적재하고,
+        source_type_code: source,
+        // 없는 원천 — 1번은 다른 검사가 만든 입하 줄이라 ERP 발주에 이어져 있으면 송신을 적재하고,
         // IQC 대상이면 입고가 막힌다. 이 검사는 입하 줄과 상관없는 입고만 본다.
         source_id: 0,
         status_code: 'INSPECTION_PENDING',

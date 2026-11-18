@@ -91,6 +91,7 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
       app, issuer: terminalAuth(await terminalToken('POP', ids.p1), WORKER_NO), receiver: terminalAuth(mobile, WORKER_NO),
       businessDate: DAY, keys, inspector: sessionAuth(cookie), prisma,
     };
+    ids.po = await purchaseOrder(ids.s1, ids.x, 1000);
     il1 = await passed(ids.s1, ids.x, 12);
     il2 = await closedLots(ids.s2, ids.x, 2);
     await prisma.lot.updateMany({ where: { lot_id: { in: il2.map((lot) => BigInt(lot.lotId)) } }, data: { status_code: 'DEFECTIVE' } });
@@ -458,7 +459,64 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
     expect(receipt.created_by).toBe(ids.user);
   });
 
+  // ── 관리웹 단계·입고 조회·배지(S5) ─────────────────────────────
+
+  it('US1-5 US1-6 US4-2 Q4 Q11 D-7 D-8 W-01-09 LOT 단계 — 적치한 LOT 「완료」+ 적치 방식·자리, 임시 적치 「임시 적치」, 남은 LOT 「적치 대기」', async () => {
+    const response = await request(app.getHttpServer()).get(`/api/logistics/purchase-orders/${String(ids.po)}/inbound-progress`).set('Cookie', cookie).expect(200);
+    type Row = { lotNo: string; stageCode: string; nextActionCode: string | null; putawayModeCode: string | null; putawayLocation: { locationCode: string } | null; putaway: unknown };
+    const rows = new Map((response.body.items as Row[]).map((row) => [row.lotNo, row]));
+    expect(rows.get(il1[0].lotNo)).toMatchObject({ stageCode: 'COMPLETED', putawayModeCode: 'DESIGNATED', putawayLocation: { locationCode: codes.R1 }, putaway: null });
+    expect(rows.get(il1[2].lotNo)).toMatchObject({ stageCode: 'COMPLETED', putawayModeCode: 'UNDESIGNATED', putawayLocation: { locationCode: codes.R2 } });
+    expect(rows.get(il1[8].lotNo)).toMatchObject({ stageCode: 'PUTAWAY_TEMPORARY', nextActionCode: 'PUTAWAY', putawayModeCode: 'TEMPORARY', putawayLocation: { locationCode: codes.BWHOLE } });
+    expect(rows.get(il1[9].lotNo)).toMatchObject({ stageCode: 'PUTAWAY_PENDING', nextActionCode: 'PUTAWAY', putawayModeCode: null, putawayLocation: null });
+    // 배포 전 지시로 입고한 LOT 은 지금처럼 지시 단계다.
+    expect(rows.get(il1[10].lotNo)).toMatchObject({ stageCode: 'PUTAWAY_PENDING', putawayModeCode: null });
+    expect([...rows.values()].some((row) => row.stageCode === 'RECEIPT_READY' || row.nextActionCode === 'POST_RECEIPT')).toBe(false);
+  });
+
+  it('D-4 입고 상세·라인이 적치 방식을 싣는다', async () => {
+    const line = await prisma.goods_receipt_line.findFirstOrThrow({ where: { lot_id: BigInt(il1[8].lotId) } });
+    const detail = await request(app.getHttpServer()).get(`/api/logistics/goods-receipts/${String(line.goods_receipt_id)}`).set('Cookie', cookie).expect(200);
+    expect(detail.body.lines[0]).toMatchObject({ putawayModeCode: 'TEMPORARY', putawayTaskId: null });
+    const lines = await request(app.getHttpServer()).get(`/api/logistics/goods-receipts/${String(line.goods_receipt_id)}/lines`).set('Cookie', cookie).expect(200);
+    expect(lines.body.items[0]).toMatchObject({ putawayModeCode: 'TEMPORARY' });
+  });
+
+  it('Q21 R-2 SC-001 옛 관리웹 입고 처리로 구매 입하 LOT 을 보내면 409 USE_PDA_PUTAWAY', async () => {
+    const lot = il1[9];
+    const response = await request(app.getHttpServer()).post('/api/logistics/goods-receipts').set('Cookie', cookie).set('Idempotency-Key', idempotencyKey(fx))
+      .send({
+        receiptTypeCode: 'MATERIAL', plantId: Number(ids.p1), warehouseId: Number(ids.a), receiptDatetime: AT, businessDate: DAY,
+        lines: [{ itemId: Number(ids.x), lotId: lot.lotId, receiptQty: lot.lotQty, uomId: Number(ids.ea), qualityStatusCode: 'NORMAL',
+          inventoryStatusCode: 'AVAILABLE', destinationLocationId: Number(ids.ASTAGING) }],
+      }).expect(409);
+    expect(response.body.errors).toEqual([expect.objectContaining({ field: 'lines[0].lotId', code: 'USE_PDA_PUTAWAY' })]);
+    const defaults = await request(app.getHttpServer()).get('/api/logistics/goods-receipts:defaults').query({ lotIds: String(lot.lotId) }).set('Cookie', cookie).expect(200);
+    expect(defaults.body.items[0].issues).toEqual([expect.objectContaining({ code: 'USE_PDA_PUTAWAY' })]);
+  });
+
+  it('US5-7 D-11 PDA 배지 putaway = PENDING 지시 + 적치 대기 LOT', async () => {
+    const counts = (await request(app.getHttpServer()).get('/api/app/terminal-work-counts').set('Authorization', `Bearer ${mobile}`).expect(200)).body as { putaway: number };
+    const pending = (await asMobile(request(app.getHttpServer()).get(LIST)).expect(200)).body.page.total as number;
+    const tasks = (await asMobile(request(app.getHttpServer()).get('/api/logistics/putaway-tasks').query({ statusCode: 'PENDING', size: 100 })).expect(200)).body.page.total as number;
+    expect(tasks).toBe(1);
+    expect(counts.putaway).toBe(pending + tasks);
+  });
+
   // ── 도우미 ─────────────────────────────────────────────────────
+
+  async function purchaseOrder(supplier: bigint, item: bigint, qty: number): Promise<bigint> {
+    const order = await prisma.purchase_order.create({
+      data: {
+        purchase_order_no: `${PREFIX}-PO-1`, supplier_id: supplier, business_unit_id: ids.unit, plant_id: ids.p1,
+        order_date: new Date(`${DAY}T00:00:00.000Z`), status_code: 'CONFIRMED',
+      },
+    });
+    await prisma.purchase_order_line.create({
+      data: { purchase_order_id: order.purchase_order_id, line_no: 1, item_id: item, uom_id: ids.ea, ordered_qty: qty, received_qty: 0 },
+    });
+    return order.purchase_order_id;
+  }
 
   function putaway(lotId: number, body: Record<string, unknown>, key = idempotencyKey(fx)): request.Test {
     return asMobile(request(app.getHttpServer()).post(`${LIST}/${String(lotId)}:putaway`)).set('Idempotency-Key', key)
@@ -660,6 +718,8 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
       `DELETE FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (${receipts})`,
       `DELETE FROM logistics.inbound_receipt WHERE plant_id IN (${plants})`,
       `DELETE FROM trace.material_lot_batch WHERE plant_id IN (${plants})`,
+      `DELETE FROM logistics.purchase_order_line WHERE purchase_order_id IN (SELECT purchase_order_id FROM logistics.purchase_order WHERE plant_id IN (${plants}))`,
+      `DELETE FROM logistics.purchase_order WHERE plant_id IN (${plants})`,
       `DELETE FROM mdm.location_item WHERE item_id IN (${items})`,
       `DELETE FROM mdm.location WHERE warehouse_id IN (${warehouses}) AND parent_location_id IS NOT NULL`,
       `DELETE FROM mdm.location WHERE warehouse_id IN (${warehouses})`,

@@ -20,8 +20,9 @@ import { PERMISSIONS } from '../src/common/permissions/permissions';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
-  InboundLotFixture, IssuedMaterialLot, ReceivedInboundLot, idempotencyKey, issueAndReceive, passInboundLotIqc, sessionAuth, terminalAuth,
+  InboundLotFixture, IssuedMaterialLot, ReceivedInboundLot, issueAndReceive, passInboundLotIqc, sessionAuth, terminalAuth,
 } from './support/inbound-lot-fixture';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const PREFIX = 'E5RF';
 const TZ = 'Asia/Ho_Chi_Minh';
@@ -238,13 +239,10 @@ describe('피처 005 S5b — 재고·LOT 조회의 입하 LOT 칸·조건 (e2e)'
   }
 
   async function postReceipt(receiptTypeCode: string, at: string, line: Record<string, unknown>): Promise<void> {
-    await request(app.getHttpServer()).post('/api/logistics/goods-receipts').set('Cookie', cookie)
-      .set('Idempotency-Key', idempotencyKey(fx))
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode, plantId: Number(ids.plant), warehouseId: Number(ids.warehouse), receiptDatetime: at, businessDate: DAY,
         lines: [{ uomId: Number(ids.ea), qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', destinationLocationId: Number(ids.location), ...line }],
-      })
-      .expect(201);
+      });
   }
 
   async function consume(lotId: bigint, qty: number, at: string): Promise<void> {

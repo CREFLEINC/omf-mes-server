@@ -33,6 +33,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-gi-probe';
 const NOPERM_ID = 'e2e-gi-noperm';
@@ -1102,11 +1103,7 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
    * 함께 만든다(cleanup ③).
    */
   async function stock(lot: number, qty = 100, locationOf = (): number => locationId): Promise<Stock> {
-    const response = await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    const response = await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId,
         warehouseId,
@@ -1123,8 +1120,7 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
             destinationLocationId: locationOf(),
           },
         ],
-      })
-      .expect(201);
+      });
     return { lotId: lot, goodsReceiptId: response.body.goodsReceipt.goodsReceiptId };
   }
 
