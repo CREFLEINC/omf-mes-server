@@ -93,7 +93,7 @@ export function checkDoubleBooked(ids: bigint[], self: PlanWindow, rivals: Rival
 
   return ids
     .filter((id) => rivals.some((rival) => overlaps(rival, id)))
-    .map((id) => finding('WARN', 'EQUIPMENT_DOUBLE_BOOKED', 'plannedEquipmentId', `설비(${id})가 같은 시간대의 다른 MES W/O 에 배정돼 있습니다.`));
+    .map((id) => finding('BLOCK', 'EQUIPMENT_DOUBLE_BOOKED', 'plannedEquipmentId', `설비(${id})가 같은 시간대의 다른 MES W/O 에 배정돼 있습니다.`));
 }
 
 /** 목록 `withValidation`·상세가 쓰는 요약 — 같은 report 를 세고 `findings` 만 버린다(PR ② `releasable` ⓒ). */
@@ -161,11 +161,14 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
 }
 
 /** 겹침 판정 자체는 순수 함수가 한다 — 여기서는 후보만 좁힌다(같은 산수를 두 곳에 두지 않는다). 4M 추천도 이 조회를 쓴다. */
-export function rivalWindows(prisma: PrismaService, workOrderId: number, equipmentIds: bigint[]): Promise<RivalWindow[]> | RivalWindow[] {
+export function rivalWindows(prisma: Pick<Prisma.TransactionClient, 'work_order'>, workOrderId: number, equipmentIds: bigint[]): Promise<RivalWindow[]> | RivalWindow[] {
   return when(equipmentIds, () => prisma.work_order.findMany({
     where: rivalWindowsWhere(workOrderId, equipmentIds),
-    select: { planned_equipment_id: true, planned_start_at: true, planned_end_at: true },
-  }));
+    select: { planned_equipment_id: true, planned_start_at: true, planned_end_at: true,
+      work_order_resource_assignment: { where: { resource_type_code: 'EQUIPMENT' }, select: { equipment_id: true } } },
+  }).then(rows => rows.flatMap(row => [...new Set([row.planned_equipment_id, ...(row.work_order_resource_assignment ?? []).map(resource => resource.equipment_id)])]
+    .filter((id): id is bigint => id !== null)
+    .map(id => ({ planned_equipment_id: id, planned_start_at: row.planned_start_at, planned_end_at: row.planned_end_at })))));
 }
 
 /**
@@ -176,7 +179,7 @@ export function rivalWindows(prisma: PrismaService, workOrderId: number, equipme
 export function rivalWindowsWhere(workOrderId: number, equipmentIds: bigint[]): Prisma.work_orderWhereInput {
   return {
     work_order_id: { not: BigInt(workOrderId) },
-    planned_equipment_id: { in: equipmentIds },
+    OR: [{ planned_equipment_id: { in: equipmentIds } }, { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: { in: equipmentIds } } } }],
     planned_start_at: { not: null },
     planned_end_at: { not: null },
     status_code: { notIn: RELEASED_WORK_ORDER_STATUSES },
