@@ -48,8 +48,9 @@ describe('ContractRegistry', () => {
   // 적치 대기 LOT 목록·확인·위치 판정 3건(피처 009 · omf-all-around#294): 635. 적치·임시 적치 2건: 637.
   // LOT 통째 피킹 1건(피처 010 S2 · omf-all-around#305): 638.
   // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 640.
-  it('계약 7파일에서 오퍼레이션 640건을 적재한다', () => {
-    expect(registry.size).toBe(640);
+  // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 642.
+  it('계약 7파일에서 오퍼레이션 642건을 적재한다', () => {
+    expect(registry.size).toBe(642);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

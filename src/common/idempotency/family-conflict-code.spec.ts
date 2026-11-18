@@ -142,7 +142,8 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     // IQC 판정 확정 1건(피처 005 S9): 59 → 60. 확정 취소는 409 가 막힘 봉투와 oneOf 라 계열이 아니다.
     // LOT 통째 피킹 `:pick-lot` 1건(피처 010 S2): 60 → 61.
     // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 61 → 63.
-    expect(sites.filter((site) => site.passes)).toHaveLength(63);
+    // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 63 → 64.
+    expect(sites.filter((site) => site.passes)).toHaveLength(64);
   });
 
   it('⭐ 두 값이 계열 네 enum «전부»에 있다 — 계약에서 직접 읽는다', () => {

@@ -623,6 +623,11 @@ describe('출하작업지시 편성 (e2e)', () => {
       code: `SHPREQ:${stored.shipment_request_no}`,
       pickingWarehouses: [],
       replacementCount: 0,
+      // 출하 완료 관문(피처 010 S5) — 편성 직후라 피킹 부족이고 완료 출하가 없다.
+      completionBlockers: [{ code: 'PICKING_SHORT', lineNo: 1 }, { code: 'PICKING_SHORT', lineNo: 2 }],
+      blockerSummary: { PICKING_SHORT: 2 },
+      lotJudgmentSummary: { notInspected: 0, accepted: 0, rejected: 0, held: 0 },
+      completedShipment: null,
       salesOrderId: ids.salesOrder,
       fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
       customerId: ids.customer,
