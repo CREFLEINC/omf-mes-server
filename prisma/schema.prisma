@@ -1014,6 +1014,8 @@ model goods_receipt_line {
   expected_qty                        Decimal?                    @db.Decimal(20, 6)
   variance_reason_code                String?                     @db.VarChar(50)
   variance_note                       String?
+  /// PDA 지시 없는 적치의 적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 그 밖의 입고는 NULL(omf-all-around#294)
+  putaway_mode_code                   String?                     @db.VarChar(30)
   shipment_lot_allocation             shipment_lot_allocation?    @relation(fields: [original_shipment_lot_allocation_id], references: [shipment_lot_allocation_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_goods_receipt_line_orig_shipment")
   location                            location                    @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   goods_receipt                       goods_receipt               @relation(fields: [goods_receipt_id], references: [goods_receipt_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2267,6 +2269,8 @@ model location {
   system_role_code                                                                  String?                      @db.VarChar(30)
   alias_name                                                                        String?                      @db.VarChar(200)
   location_level_code                                                               String?                      @db.VarChar(30)
+  /// 지정 품목만 받기 — true 면 지정 밖 품목의 재고 기록을 거절한다. false 면 지정은 안내(omf-all-around#294)
+  item_restricted                                                                   Boolean                      @default(false)
   location_item                                                                     location_item[]
   handling_unit                                                                     handling_unit[]
   inventory_adjustment_line                                                         inventory_adjustment_line[]
