@@ -732,7 +732,9 @@ describe('출하 공정 단순화 (e2e)', () => {
       await f.pickLot(plain, 0, { lotId: lot.lotId }).expect(200);
       const noOrder = (await f.complete(plain).expect(200)).body.shipmentId as number;
 
-      const detail = (await f.shipment(withOrder)).body as Record<string, unknown> & { lines: { allocations: { lotId: number; managementCode: string | null; warehouseId: number }[] }[] };
+      const detail = (await f.shipment(withOrder)).body as unknown as Record<string, unknown> & {
+        lines: { allocations: { lotId: number; managementCode: string | null; warehouseId: number }[] }[];
+      };
       expect(detail).toMatchObject({
         warehouseId: null, statusCode: 'CONFIRMED', erpSendStatus: 'PENDING', cancelRequestPending: false,
         completedTerminal: { terminalId: Number(f.pop.terminalId) }, completedWorker: { workerNo: f.pop.workerNo },
