@@ -63,6 +63,8 @@ export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly Terminal
   // POP 은 같은 공장의 가동 설비 목록만 — 옆 설비의 W/O 를 찾아 대신 시작하는 현장 흐름(장부 P-123).
   'GET /mdm/equipments': ['POP', 'MOBILE'],
   'GET /mdm/locations/{locationId}': ['MOBILE'],
+  // PDA 제품 입고·적치가 스캔한 위치의 지정 품목을 본다 — 다른 품목 전용 위치에 넣지 않게(omf-all-around#293).
+  'GET /mdm/locations/{locationId}/items': ['MOBILE'],
   'GET /maintenance/breakdowns': ['POP', 'MOBILE'],
   'GET /maintenance/downtimes': ['POP'],
   'GET /maintenance/downtimes/summary': ['POP'],
@@ -203,7 +205,8 @@ export async function assertTerminalReadScope(
       if (!warehouse) throw denied();
       break;
     }
-    case 'GET /mdm/locations/{locationId}': {
+    case 'GET /mdm/locations/{locationId}':
+    case 'GET /mdm/locations/{locationId}/items': {
       const locationId = positiveId(request.params.locationId);
       const location = locationId === null ? null : await prisma.location.findFirst({
         where: { location_id: locationId, warehouse: { plant_id: plantId } },
