@@ -131,8 +131,11 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
  */
 function plannedEquipmentWhere(equipmentId?: number, includeUnplanned?: boolean): Prisma.work_orderWhereInput {
   if (equipmentId === undefined) return {};
-  if (includeUnplanned !== true) return { planned_equipment_id: equipmentId };
-  return { OR: [{ planned_equipment_id: equipmentId }, { planned_equipment_id: null }] };
+  const assigned = [
+    { planned_equipment_id: equipmentId },
+    { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: BigInt(equipmentId) } } },
+  ];
+  return { OR: includeUnplanned === true ? [...assigned, { planned_equipment_id: null }] : assigned };
 }
 
 /** «계획 시작 시각» 반열림(From 이상·To 미만) — 비워도 400 이 아니다(계약 자인 · `plan.md` §5 규칙 11). */
