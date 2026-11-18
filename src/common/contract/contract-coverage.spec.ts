@@ -118,7 +118,8 @@ describe('계약 커버리지', () => {
     // 적치 대기 LOT 목록·확인·위치 판정 3 오퍼레이션(피처 009): 632 → 635.
     // 적치·임시 적치 2 오퍼레이션(피처 009): 635 → 637.
     // LOT 통째 피킹 1 오퍼레이션(피처 010 S2): 637 → 638.
-    expect(registry.size).toBe(638);
+    // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 638 → 640.
+    expect(registry.size).toBe(640);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

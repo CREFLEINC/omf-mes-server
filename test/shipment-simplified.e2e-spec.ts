@@ -351,4 +351,134 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect((await prisma.oqc_serial_result.findUniqueOrThrow({ where: { serial_number_id: inside } })).final_judgment_code).toBe('OK');
     });
   });
+  /** LOT 1·2 합격, LOT 3 불합격까지 — 교체 시험의 출발점. */
+  async function judgedThree(): Promise<Awaited<ReturnType<typeof pickedThree>> & { lots: Awaited<ReturnType<ShipmentSimplifiedFixture['lotsOf']>> }> {
+    const picked = await pickedThree();
+    await f.oqcResult(picked.oqc, { matchedLotIds: [picked.lotIds[0], picked.lotIds[1]], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+    await f.oqcResult(picked.oqc, { matchedLotIds: [picked.lotIds[2]], overallJudgmentCode: 'REJECTED' }).expect(201);
+    return { ...picked, lots: await f.lotsOf(picked.made) };
+  }
+
+  describe('교체 — OQC 불합격 피킹 LOT(:replace)', () => {
+    it('US2-1·US2-2·US2-3·FR-013·FR-014·Q6 [교체] 한 번에 예약 해제·LOT 불량·부적합 1건이 생기고 라인이 다시 받는다 — 새 LOT 은 미검사다', async () => {
+      const { made, lotIds, oqc, lots } = await judgedThree();
+      expect(lots.map((lot) => lot.oqcLotStatus)).toEqual(['ACCEPTED', 'ACCEPTED', 'REJECTED']);
+
+      const replaced = await f.replaceLot(lots[2].shipmentRequestLotId).expect(200);
+
+      expect(replaced.body.replacedLot).toMatchObject({ statusCode: 'REPLACED', oqcLotStatus: null, replacement: { judgment: 'REJECTED' } });
+      expect(replaced.body.replacedLot.replacement.worker).toMatchObject({ workerNo: f.pda.workerNo });
+      expect(replaced.body.nonconformanceNo).toEqual(expect.any(String));
+      expect(replaced.body.line).toMatchObject({ pickedQty: 80, overQty: 0 });
+      expect((await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotIds[2]) } })).status_code).toBe('DEFECTIVE');
+      const nonconformances = await prisma.nonconformance.findMany({ where: { nonconformance_lot: { some: { lot_id: BigInt(lotIds[2]) } } } });
+      expect(nonconformances.map((row) => [row.status_code, Number(row.inspection_request_id), row.nonconformance_no]))
+        .toEqual([['PENDING_DECISION', oqc, replaced.body.nonconformanceNo]]);
+      const reservations = await prisma.inventory_reservation.findMany({ where: { source_document_type_code: 'SHIPMENT_REQUEST_LINE', lot_id: BigInt(lotIds[2]) } });
+      expect(reservations.map((row) => [Number(row.reserved_qty), Number(row.released_qty), Number(row.consumed_qty)])).toEqual([[30, 30, 0]]);
+      const balance = await prisma.inventory_balance.findFirstOrThrow({ where: { lot_id: BigInt(lotIds[2]) } });
+      expect(Number(balance.picked_qty)).toBe(0);
+      expect((await prisma.lot_status_event.findMany({ where: { lot_id: BigInt(lotIds[2]) } })).map((row) => row.transition_code)).toEqual(['C6']);
+
+      const next = await f.lot({ balances: [{ warehouse: 'wh1', qty: 30 }] });
+      const repicked = await f.pickLot(made, 0, { lotId: next.lotId }).expect(200);
+
+      expect(repicked.body.line).toMatchObject({ pickedQty: 110 });
+      expect(repicked.body.pickedLot.oqcLotStatus).toBe('NOT_INSPECTED');
+    });
+
+    it('US2-7·FR-015·Q19 지시서 목록·상세에 교체 수와 교체 이력이 실리고 hasReplacement 로 거른다', async () => {
+      const { made, lots } = await judgedThree();
+      await f.replaceLot(lots[2].shipmentRequestLotId).expect(200);
+
+      const list = await f.asSession(f.http().get('/api/logistics/shipment-requests')
+        .query({ shipDateFrom: '2026-11-18', shipDateTo: '2026-11-18', hasReplacement: true, size: 100 })).expect(200);
+      const row = (list.body.items as { shipmentRequestId: number; replacementCount: number }[]).find((item) => item.shipmentRequestId === made.requestId);
+
+      expect(row?.replacementCount).toBe(1);
+      const history = (await f.lotsOf(made)).find((lot) => lot.shipmentRequestLotId === lots[2].shipmentRequestLotId) as unknown as { replacement: object };
+      expect(history.replacement).toMatchObject({ judgment: 'REJECTED', nonconformanceNo: expect.any(String), resultNo: expect.any(String) });
+    });
+
+    it('US2-6 교체 전에 재검 합격이 들어오면 [교체]는 409 LOT_NOT_REJECTED 다 — 합격·미검사·이미 교체한 LOT 도 같다', async () => {
+      const { lotIds, oqc, lots } = await judgedThree();
+      await f.oqcResult(oqc, { matchedLotIds: [lotIds[2]], overallJudgmentCode: 'ACCEPTED', reinspectionReasonCode: 'RETEST' }).expect(201);
+
+      const retested = await f.replaceLot(lots[2].shipmentRequestLotId).expect(409);
+      const accepted = await f.replaceLot(lots[0].shipmentRequestLotId).expect(409);
+
+      expect(retested.body).toMatchObject({ code: 'LOT_NOT_REJECTED' });
+      expect(retested.body.message).toContain('재검 합격');
+      expect(accepted.body.code).toBe('LOT_NOT_REJECTED');
+      const other = await judgedThree();
+      await f.replaceLot(other.lots[2].shipmentRequestLotId).expect(200);
+      expect((await f.replaceLot(other.lots[2].shipmentRequestLotId).expect(409)).body.code).toBe('LOT_NOT_REJECTED');
+    });
+
+    it('US3-5 교체된 LOT 은 매칭 대상에서 빠지고 OQC 의뢰 상세에 이력으로만 남는다', async () => {
+      const { lotIds, oqc, lots } = await judgedThree();
+      await f.replaceLot(lots[2].shipmentRequestLotId).expect(200);
+
+      await f.oqcResult(oqc, { matchedLotIds: [lotIds[2]], overallJudgmentCode: 'ACCEPTED', reinspectionReasonCode: 'RETEST' }).expect(400);
+      const detail = await f.asSession(f.http().get(`/api/quality/inspection-requests/${oqc}`)).expect(200);
+
+      expect(detail.body.lots.map((lot: { lotId: number; pickStatusCode: string }) => [lot.lotId, lot.pickStatusCode]))
+        .toEqual([[lotIds[0], 'PICKED'], [lotIds[1], 'PICKED'], [lotIds[2], 'REPLACED']]);
+    });
+
+    it('R-6 교체가 만든 부적합의 LOT 이 처분 후보(W-03-10)에 뜬다', async () => {
+      const { lotIds, lots } = await judgedThree();
+      await f.replaceLot(lots[2].shipmentRequestLotId).expect(200);
+
+      const candidates = await f.asSession(f.http().get('/api/quality/disposition-candidates').query({ lotId: lotIds[2] })).expect(200);
+
+      expect(candidates.body.items).toHaveLength(1);
+      expect(candidates.body.items[0]).toMatchObject({ lotId: lotIds[2], sourceCode: 'PRODUCT', nonconformanceNo: expect.any(String) });
+    });
+
+    it('SC-009 POP·남의 공장 PDA 는 [교체]를 부를 수 없다(401)', async () => {
+      const { lots } = await judgedThree();
+
+      await f.replaceLot(lots[2].shipmentRequestLotId, f.pop).expect(401);
+      await f.replaceLot(lots[2].shipmentRequestLotId, f.foreignPda).expect(401);
+    });
+  });
+
+  describe('출하 관리 코드(US5)', () => {
+    it('US5-1·US5-3·US5-4·Q12 스캔·입력한 코드가 저장되고, 같은 코드를 다른 LOT 에 넣어도 되며, 고치거나 지울 수 있다', async () => {
+      const ids = await pickedLotRowIds();
+
+      const saved = await f.saveCode(ids[0], 'BOX-0001').expect(200);
+      await f.saveCode(ids[1], 'BOX-0001').expect(200);
+      await f.saveCode(ids[0], 'BOX-0002', 'session').expect(200);
+      await f.saveCode(ids[1], null).expect(200);
+
+      expect(saved.body).toMatchObject({ managementCode: 'BOX-0001', statusCode: 'PICKED' });
+      const rows = await prisma.shipment_request_lot.findMany({ where: { shipment_request_lot_id: { in: ids.slice(0, 2).map(BigInt) } }, orderBy: { shipment_request_lot_id: 'asc' } });
+      expect(rows.map((row) => row.management_code)).toEqual(['BOX-0002', null]);
+    });
+
+    it('US5-2·SC-005 101자는 400 — 「100자까지」', async () => {
+      const ids = await pickedLotRowIds();
+
+      const response = await f.saveCode(ids[0], 'X'.repeat(101)).expect(400);
+
+      expect(response.body.errors[0]).toMatchObject({ field: 'managementCode', code: 'RANGE' });
+      await f.saveCode(ids[0], 'X'.repeat(100)).expect(200);
+    });
+
+    it('FR-021 교체한 LOT 의 코드는 고칠 수 없다(409) · POP 은 부를 수 없다(401)', async () => {
+      const { lots } = await judgedThree();
+      await f.replaceLot(lots[2].shipmentRequestLotId).expect(200);
+
+      await f.saveCode(lots[2].shipmentRequestLotId, 'BOX-9').expect(409);
+      await f.saveCode(lots[0].shipmentRequestLotId, 'BOX-9', f.pop).expect(401);
+    });
+  });
+
+  /** `pickedThree()` 의 피킹 LOT 행 id(라인 순서). */
+  async function pickedLotRowIds(): Promise<number[]> {
+    const { made } = await pickedThree();
+    return (await f.lotsOf(made)).map((lot) => lot.shipmentRequestLotId);
+  }
 });

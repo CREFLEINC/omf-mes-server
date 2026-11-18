@@ -80,6 +80,8 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick': ['MOBILE'],
   // 출하 공정 단순화(피처 010) — PDA LOT 통째 피킹. 소유는 지시서 이행 공장 = 단말 공장.
   'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot': ['MOBILE'],
+  'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace': ['MOBILE'],
+  'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code': ['MOBILE'],
   'POST /logistics/shopfloor-receipts': ['MOBILE'],
   'POST /logistics/stock-transfers': ['MOBILE'],
   'POST /logistics/stock-transfers/{stockTransferId}:arrive': ['MOBILE'],
@@ -240,6 +242,12 @@ export async function assertTerminalLogisticsScope(
       await shipmentRequest(p.shipmentRequestId);
       await check(await prisma.shipment_request_line.findFirst({ where: { shipment_request_line_id: id(p.shipmentRequestLineId), shipment_request_id: id(p.shipmentRequestId) }, select: { shipment_request_line_id: true } }));
       await optional(lot, b.lotId); break;
+    // 피킹 LOT 행 → 지시서 이행 공장 = 단말 공장(피처 010).
+    case 'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace':
+    case 'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code':
+      await check(await prisma.shipment_request_lot.findFirst({ where: {
+        shipment_request_lot_id: id(p.shipmentRequestLotId), shipment_request_line: { shipment_request: { fulfillment_plant_id: plant } },
+      }, select: { shipment_request_lot_id: true } })); break;
     case 'POST /logistics/shopfloor-receipts':
       // 창고 보충 출고 수령(피처 004)은 W/O 를 보내지 않는다.
       await Promise.all([issue(b.goodsIssueId), optional(workOrder, b.workOrderId)]); break;

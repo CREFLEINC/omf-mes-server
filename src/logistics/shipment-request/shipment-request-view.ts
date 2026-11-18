@@ -51,8 +51,23 @@ export type ShipmentRequestLotRow = Prisma.shipment_request_lotGetPayload<{
   include: {
     lot: { select: { lot_no: true; item_id: true } };
     picked_worker: { select: { worker_no: true; worker_name: true } };
+    replaced_worker: { select: { worker_no: true; worker_name: true } };
+    replace_inspection_result: { select: { inspection_result_no: true; inspected_at: true; overall_judgment_code: true } };
+    replace_nonconformance: { select: { nonconformance_no: true } };
   };
 }>;
+
+/** 교체 근거(FR-015) — 불합격 결과·부적합·작업자·시각. */
+export interface ShipmentLotReplacementView {
+  inspectionResultId: number;
+  resultNo: string;
+  resultAt: string;
+  judgment: string | null;
+  nonconformanceId: number | null;
+  nonconformanceNo: string | null;
+  replacedAt: string;
+  worker: { workerId: number; workerNo: string; workerName: string } | null;
+}
 
 /** 라인 id(문자열) → 그 라인의 피킹 LOT 행(교체된 행 포함). */
 export type ShipmentLotsByLine = Map<string, ShipmentRequestLotRow[]>;
@@ -87,6 +102,8 @@ export interface ShipmentRequestLotView {
   portions: ShipmentLotPortionView[];
   /** LOT OQC 판정 6종(FR-007). 교체된 행은 판정 대상이 아니라 null. */
   oqcLotStatus: OqcLotStatus | null;
+  /** 교체된 행(REPLACED)만 — 그 밖은 null. */
+  replacement: ShipmentLotReplacementView | null;
 }
 
 export interface ShipmentPickingWarehouseView {
@@ -138,6 +155,8 @@ export interface ShipmentRequestView {
   shipmentProgressCode: ShipmentProgressCode;
   /** 살아 있는 피킹 LOT 이 있는 창고들 — 출하 지시서는 창고를 정하지 않는다(공장 단위 · R-2). */
   pickingWarehouses: ShipmentPickingWarehouseView[];
+  /** OQC 불합격으로 교체한 LOT 수(FR-015 · 「LOT 교체 n」). */
+  replacementCount: number;
   lines?: ShipmentRequestLineView[];
   versionNo?: number;
 }
@@ -190,6 +209,7 @@ export function shipmentRequestView(
     shippingInspectionStatusCode: shipmentInspectionStatus(inspectionLines, inspections),
     shipmentProgressCode: shipmentProgressCode(totals),
     pickingWarehouses: pickingWarehouses(lineViews),
+    replacementCount: lineViews.reduce((count, line) => count + line.lots.filter((lot) => lot.statusCode === 'REPLACED').length, 0),
     lines: lineViews,
     versionNo: row.version_no,
   });
@@ -269,6 +289,24 @@ export function shipmentRequestLotView(
     shipmentId: row.shipment_id === null ? null : Number(row.shipment_id),
     portions: [...portions.values()],
     oqcLotStatus: oqcStatuses.get(row.shipment_request_lot_id) ?? null,
+    replacement: replacementView(row),
+  };
+}
+
+function replacementView(row: ShipmentRequestLotRow): ShipmentLotReplacementView | null {
+  const result = row.replace_inspection_result;
+  if (row.status_code !== 'REPLACED' || result === null || row.replace_inspection_result_id === null || row.replaced_at === null) return null;
+  return {
+    inspectionResultId: Number(row.replace_inspection_result_id),
+    resultNo: result.inspection_result_no,
+    resultAt: result.inspected_at.toISOString(),
+    judgment: result.overall_judgment_code,
+    nonconformanceId: row.replace_nonconformance_id === null ? null : Number(row.replace_nonconformance_id),
+    nonconformanceNo: row.replace_nonconformance?.nonconformance_no ?? null,
+    replacedAt: row.replaced_at.toISOString(),
+    worker: row.replaced_worker === null || row.replaced_worker_id === null
+      ? null
+      : { workerId: Number(row.replaced_worker_id), workerNo: row.replaced_worker.worker_no, workerName: row.replaced_worker.worker_name },
   };
 }
 

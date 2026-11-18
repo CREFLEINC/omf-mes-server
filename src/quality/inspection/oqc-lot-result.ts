@@ -121,3 +121,34 @@ export async function oqcLotStatusesOf(db: Db, shipmentRequestIds: readonly bigi
   }
   return statuses;
 }
+
+/**
+ * 한 피킹 LOT 의 판정을 정한 결과 — 그 지시서·품목 의뢰들의 결과 중 그 LOT 을 매칭한 마지막 것(옛 확정 결과는 전부 매칭).
+ * 교체(피처 010 R-4)가 근거 결과·부적합의 의뢰로 쓴다. 매칭한 결과가 없으면 `null`.
+ */
+export async function oqcLotDecidingResult(
+  db: Db,
+  shipmentRequestId: bigint,
+  itemId: bigint,
+  lotId: bigint,
+): Promise<{ inspectionResultId: bigint; inspectionRequestId: bigint; judgmentCode: string | null } | null> {
+  const requests = await db.inspection_request.findMany({
+    where: {
+      inspection_type_code: OQC, target_type_code: SHIPMENT_REQUEST_TARGET, lot_id: null,
+      target_id: shipmentRequestId, item_id: itemId, status_code: { not: CANCELLED },
+    },
+    orderBy: { inspection_request_id: 'asc' },
+    select: {
+      inspection_request_id: true,
+      inspection_result: {
+        orderBy: { inspection_round: 'asc' },
+        select: { inspection_result_id: true, overall_judgment_code: true, status_code: true, inspection_result_lot: { select: { lot_id: true } } },
+      },
+    },
+  });
+  const matching = requests.flatMap((request) => request.inspection_result
+    .filter((result) => result.inspection_result_lot.some((match) => match.lot_id === lotId)
+      || (result.inspection_result_lot.length === 0 && result.status_code === CONFIRMED))
+    .map((result) => ({ inspectionResultId: result.inspection_result_id, inspectionRequestId: request.inspection_request_id, judgmentCode: result.overall_judgment_code })));
+  return matching.at(-1) ?? null;
+}

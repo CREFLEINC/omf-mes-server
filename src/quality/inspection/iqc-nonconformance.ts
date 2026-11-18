@@ -75,6 +75,8 @@ export async function createIqcNonconformanceWithin(
     qty: number;
     appUserId: number | undefined;
     at: Date;
+    /** 설명의 머리 — 기본 「수입검사 불합격」. 출하 OQC 불합격 LOT 교체(피처 010)는 자기 문구를 넘긴다. */
+    title?: string;
   },
 ): Promise<bigint | null> {
   const candidates = input.lotIds ?? (input.request.lot_id === null ? [] : [input.request.lot_id]);
@@ -95,10 +97,11 @@ export async function createIqcNonconformanceWithin(
     orderBy: { defect_record_id: 'asc' },
     select: { defect_description: true, defect_code: { select: { defect_code: true, defect_name: true } } },
   });
+  const title = input.title ?? '수입검사 불합격';
   const description =
     reasons.length === 0
-      ? '수입검사 불합격'
-      : `수입검사 불합격 — ${reasons
+      ? title
+      : `${title} — ${reasons
           .map((reason) =>
             [`${reason.defect_code.defect_code} ${reason.defect_code.defect_name}`, reason.defect_description]
               .filter((part) => part !== null && part !== '')

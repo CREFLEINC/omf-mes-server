@@ -279,6 +279,19 @@ export class ShipmentSimplifiedFixture {
       .flatMap((line) => line.lots);
   }
 
+  /** PDA [교체](기본은 자기 공장 PDA). */
+  replaceLot(shipmentRequestLotId: number, session: TerminalSession | 'session' = this.pda): request.Test {
+    const test = this.http().post(`/api/logistics/shipment-request-lots/${shipmentRequestLotId}:replace`).set('Idempotency-Key', randomUUID()).send();
+    return session === 'session' ? this.asSession(test) : this.asTerminal(test, session);
+  }
+
+  /** 출하 관리 코드 저장(기본은 자기 공장 PDA). */
+  saveCode(shipmentRequestLotId: number, managementCode: string | null, session: TerminalSession | 'session' = this.pda): request.Test {
+    const test = this.http().put(`/api/logistics/shipment-request-lots/${shipmentRequestLotId}/management-code`)
+      .set('Idempotency-Key', randomUUID()).send({ managementCode });
+    return session === 'session' ? this.asSession(test) : this.asTerminal(test, session);
+  }
+
   /** PDA 통째 피킹(기본은 자기 공장 PDA). */
   pickLot(made: MadeRequest, lineIndex: number, body: Record<string, unknown>, session: TerminalSession | 'session' = this.pda): request.Test {
     const test = this.http()
