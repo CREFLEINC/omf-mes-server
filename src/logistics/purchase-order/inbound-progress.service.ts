@@ -26,6 +26,7 @@ type PutawayView = {
   locationAliasName: string | null;
   completedAt: string | null;
 };
+type PlaceView = { locationCode: string; locationName: string; locationAliasName: string | null };
 
 /** 계약 `InboundLotProgress` 와 동형(장부 P-110). */
 export interface InboundLotProgress {
@@ -53,6 +54,10 @@ export interface InboundLotProgress {
   inspection: InspectionView | null;
   goodsReceipt: GoodsReceiptView | null;
   putaway: PutawayView | null;
+  /** 살아 있는 입고 라인의 적치 방식(피처 009 — PDA 지시 없는 적치만). 지시로 입고했거나 입고 전이면 null. */
+  putawayModeCode: string | null;
+  /** 적치한 자리 — 지시 없이 적치했으면 입고 라인의 도착 위치, 지시로 적치했으면 그 지시의 실제 위치. 아직이면 null. */
+  putawayLocation: PlaceView | null;
 }
 
 /** 발주 id 를 함께 든 한 줄 — 목록의 묶음 수가 발주별로 센다. */
@@ -87,7 +92,8 @@ type InboundLine = Prisma.inbound_receipt_lineGetPayload<{ select: typeof LINE_S
 type LabelLine = InboundLine & { received_qty: Prisma.Decimal; uom: { uom_code: string } };
 /** LOT 이 따르는 입하 라인 — 선별 자식은 조상의 것. */
 type LotOrigin = { line: InboundLine; rootLotId: bigint };
-type ReceiptsOfLot = { goodsReceipt: GoodsReceiptView | null; putawayTasks: PutawayView[] };
+type ReceiptsOfLot = { goodsReceipt: GoodsReceiptView | null; putawayTasks: PutawayView[]; modes: string[]; directPlace: PlaceView | null };
+const NO_RECEIPT: ReceiptsOfLot = { goodsReceipt: null, putawayTasks: [], modes: [], directPlace: null };
 
 /**
  * 입고 관리 허브(W-01-09)의 LOT 줄. 발주 라인 → 입하 라인 → LOT(선별 자식 포함) → IQC 의뢰 → 입고 → 적치를
@@ -142,7 +148,7 @@ export class InboundProgressService {
       const header = line.inbound_receipt;
       const inspection = inspections.get(lot.lot_id) ?? inspections.get(rootLotId) ?? null;
       const receivableQty = receivable.get(lot.lot_id) ?? new Prisma.Decimal(0);
-      const { goodsReceipt, putawayTasks } = receipts.get(lot.lot_id) ?? { goodsReceipt: null, putawayTasks: [] };
+      const { goodsReceipt, putawayTasks, modes, directPlace } = receipts.get(lot.lot_id) ?? NO_RECEIPT;
       const stage = lotStage({
         receiptCancelled: RECEIPT_CANCEL_STATUSES.includes(header.status_code),
         lotStatusCode: lot.status_code,
@@ -151,7 +157,9 @@ export class InboundProgressService {
         openHolds: holds.get(lot.lot_id) ?? [],
         receivableQty,
         putawayStatusCodes: putawayTasks.map((task) => task.statusCode),
+        putawayModeCodes: modes,
       });
+      const task = putawayTasks[0] ?? null;
       const progress: OrderlessProgress = {
         ...lineFields(line),
         lotId: Number(lot.lot_id),
@@ -166,7 +174,11 @@ export class InboundProgressService {
         ...stage,
         inspection,
         goodsReceipt,
-        putaway: putawayTasks[0] ?? null,
+        putaway: task,
+        putawayModeCode: modes[0] ?? null,
+        putawayLocation: directPlace ?? (task?.locationCode == null ? null : {
+          locationCode: task.locationCode, locationName: task.locationName ?? '', locationAliasName: task.locationAliasName,
+        }),
       };
       return perOrder(orders, progress);
     });
@@ -305,6 +317,8 @@ export class InboundProgressService {
       orderBy: [{ goods_receipt: { receipt_datetime: 'desc' } }, { goods_receipt_line_id: 'desc' }],
       select: {
         lot_id: true,
+        putaway_mode_code: true,
+        location: { select: { location_code: true, location_name: true, alias_name: true } },
         goods_receipt: {
           select: { goods_receipt_id: true, goods_receipt_no: true, receipt_datetime: true, status_code: true },
         },
@@ -321,7 +335,7 @@ export class InboundProgressService {
       },
     });
     const byLot = new Map<bigint, ReceiptsOfLot>();
-    for (const { lot_id: lotId, goods_receipt: header, putaway_task: tasks } of lines) {
+    for (const { lot_id: lotId, goods_receipt: header, putaway_task: tasks, putaway_mode_code: mode, location: destination } of lines) {
       const entry = byLot.get(lotId) ?? {
         goodsReceipt: {
           goodsReceiptId: Number(header.goods_receipt_id),
@@ -330,7 +344,14 @@ export class InboundProgressService {
           statusCode: header.status_code,
         },
         putawayTasks: [],
+        modes: [],
+        directPlace: null,
       };
+      // 지시 없이 적치한 입고(피처 009)는 지시가 없다 — 라인의 적치 방식과 도착 위치가 적치 결과다.
+      if (header.status_code === POSTED && mode != null) {
+        entry.modes.push(mode);
+        entry.directPlace ??= { locationCode: destination.location_code, locationName: destination.location_name, locationAliasName: destination.alias_name };
+      }
       if (header.status_code === POSTED) {
         for (const task of tasks) {
           const location = task.location_putaway_task_actual_location_idTolocation;
@@ -416,6 +437,8 @@ function labelRow(line: LabelLine, wanted: ReadonlySet<bigint>): InboundLotRow[]
     inspection: null,
     goodsReceipt: null,
     putaway: null,
+    putawayModeCode: null,
+    putawayLocation: null,
   };
   return perOrder(orders, progress);
 }

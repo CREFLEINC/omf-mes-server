@@ -19,7 +19,7 @@ import {
   receiptLineView,
   receiptView,
 } from './goods-receipt-view';
-import { assertInboundLotsClosed, assertInboundLotsWithin, erpLinesOf, inboundGate, lotTotals } from './receipt-gate';
+import { assertInboundLotsClosed, assertInboundLotsWithin, assertNotPurchaseInbound, erpLinesOf, inboundGate, lotTotals } from './receipt-gate';
 import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
 /**
@@ -109,6 +109,14 @@ export class GoodsReceiptService {
       orderBy: { line_no: 'asc' },
     });
     return rows.map(receiptLineView);
+  }
+
+  /**
+   * 웹 입고 처리 API 의 문 — 구매 입하 LOT 이면 409 `USE_PDA_PUTAWAY`(피처 009 · R-2). `create` 자체에는 두지 않는다 —
+   * 서비스는 제품·반품 입고와 함께, 배포 전에 웹으로 만든 구매 입고(적치 지시가 남는 데이터)를 시험이 재현하는 자리다.
+   */
+  assertWebReceiptAllowed(input: GoodsReceiptCreate): Promise<void> {
+    return assertNotPurchaseInbound(this.prisma, input);
   }
 
   async create(input: GoodsReceiptCreate, actorOrUser: LogisticsWriteActor | number): Promise<GoodsReceiptDetail> {

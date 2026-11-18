@@ -156,8 +156,9 @@ describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)',
       requests: [request(90n, 10n, 'COMPLETED', 'HELD')],
     }).ofPurchaseOrder(1);
     expect(rows.map((row) => [row.lotNo, row.inboundReceiptLineId, row.purchaseOrderLineId, row.stageCode])).toEqual([
-      ['L-10', 7, 3, 'RECEIPT_READY'],
-      ['L-10-S1', 7, 3, 'RECEIPT_READY'],
+      // 피처 009(R-8) — 입고 가능 LOT 은 「적치 대기」다.
+      ['L-10', 7, 3, 'PUTAWAY_PENDING'],
+      ['L-10-S1', 7, 3, 'PUTAWAY_PENDING'],
     ]);
     expect(rows[1].inspection).toMatchObject({ inspectionRequestNo: 'IRQ-90', judgmentCode: 'HELD' });
     expect(rows[1]).toMatchObject({ receivedQty: 15, receivableQty: 15, uomCode: 'EA', lotStatusCode: 'DEFECTIVE' });
@@ -225,7 +226,7 @@ describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)',
     }).ofPurchaseOrder(1);
     expect(rows.map((row) => [row.inboundReceiptLineId, row.lotNo, row.stageCode])).toEqual([
       [8, null, 'LABEL_PENDING'],
-      [7, 'L-10', 'RECEIPT_READY'],
+      [7, 'L-10', 'PUTAWAY_PENDING'],
     ]);
     expect(rows[0]).toEqual({
       purchaseOrderLineId: 3,
@@ -249,6 +250,8 @@ describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)',
       inspection: null,
       goodsReceipt: null,
       putaway: null,
+      putawayModeCode: null,
+      putawayLocation: null,
     });
   });
 
