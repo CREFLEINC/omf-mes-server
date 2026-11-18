@@ -17,6 +17,8 @@ export interface WorkOrderMaterialRequirement {
   bomUomCode: string;
   stockUomId: number;
   stockUomCode: string;
+  /** 재고 단위 소수 자릿수 — 화면이 직접 넣은 비율로 변환 수량을 보일 때 같은 자릿수로 올림한다. */
+  stockUomScale: number;
   stockQty: number | null;
   conversionSource: 'ITEM' | 'COMMON' | 'NONE' | null;
   conversionRate: number | null;
@@ -35,10 +37,16 @@ export async function releaseMaterialPreview(
     where: { work_order_id: workOrderId },
     select: {
       order_qty: true,
+      production_line_id: true,
       routing_operation_id: true,
       work_order_type_code: true,
       production_plan: {
-        select: { bom_id: true, bom: { select: { base_qty: true } }, production_order: { select: { plant: { select: { timezone_code: true } } } } },
+        select: {
+          bom_id: true,
+          bom: { select: { base_qty: true } },
+          created_automatically: true,
+          production_order: { select: { plant: { select: { timezone_code: true } } } },
+        },
       },
     },
   });
@@ -55,6 +63,8 @@ export async function releaseMaterialPreview(
   });
   const itemOf = new Map(items.map((item) => [item.item_id, item]));
   const uomCode = (uomId: bigint) => table.uoms.get(uomId)?.code ?? '';
+  // 라인 없이 배포하는 자동 W/O 는 출고요청을 만들지 않아 배포가 단위 확인을 건너뛴다(`releasePlan` 의 lineless) — 같게 낸다.
+  const confirms = !(plan.created_automatically && row.production_line_id === null);
   return {
     items: stockUomLines(table, required).map(({ line, bomQty, conversion }) => ({
       bomComponentId: Number(line.bom_component_id),
@@ -66,10 +76,11 @@ export async function releaseMaterialPreview(
       bomUomCode: uomCode(conversion.bomUomId),
       stockUomId: Number(conversion.stockUomId),
       stockUomCode: uomCode(conversion.stockUomId),
+      stockUomScale: table.uoms.get(conversion.stockUomId)?.scale ?? 0,
       stockQty: conversion.stockQty?.toNumber() ?? null,
       conversionSource: conversion.source,
       conversionRate: conversion.rate?.toNumber() ?? null,
-      confirmationRequired: conversion.source !== null,
+      confirmationRequired: confirms && conversion.source !== null,
     })),
   };
 }

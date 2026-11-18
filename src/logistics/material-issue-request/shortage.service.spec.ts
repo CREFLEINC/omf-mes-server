@@ -100,4 +100,15 @@ describe('자재 출고요청 shortage', () => {
   it('합칠 라인이 없으면 빈 목록이다', () => {
     expect(shortageLines([], new Map())).toEqual([]);
   });
+
+  it('같은 품목이라도 환산이 없어 BOM 단위로 남은 줄은 따로 내고 출처를 줄마다 낸다 — 기출고는 재고 단위 줄에만 견준다', () => {
+    const line = (id: bigint, uomId: bigint, qty: string, conversionSource: 'ITEM' | 'NONE') => ({
+      line_no: Number(id), bom_component_id: id, item_id: 10n, requested_qty: new Prisma.Decimal(qty), uom_id: uomId, conversionSource,
+    });
+    const items = shortageLines([line(1n, 1n, '0.367', 'ITEM'), line(2n, 3n, '15', 'NONE')], new Map([['10', new Prisma.Decimal('0.1')]]));
+    expect(items).toEqual([
+      { itemId: 10, bomComponentId: 1, uomId: 1, conversionSource: 'ITEM', requiredQty: 0.367, issuedQty: 0.1, shortageQty: 0.267 },
+      { itemId: 10, bomComponentId: 2, uomId: 3, conversionSource: 'NONE', requiredQty: 15, issuedQty: 0, shortageQty: 15 },
+    ]);
+  });
 });

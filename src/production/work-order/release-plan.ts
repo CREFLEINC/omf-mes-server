@@ -155,7 +155,7 @@ export async function releasePlan(
     materials,
     waiting,
     issueRequestNo:
-      components.length === 0 || waiting !== null
+      materials.lines.length === 0 || waiting !== null
         ? null
         : await numbering.next(
             'MATERIAL_ISSUE_REQUEST',

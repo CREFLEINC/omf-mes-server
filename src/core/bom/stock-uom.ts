@@ -23,6 +23,19 @@ const COMMON_UNITS: Readonly<Record<string, { dimension: string; size: number }>
   PC: { dimension: 'COUNT', size: 1 },
 };
 
+/**
+ * 품목마다 다를 수 있어 배포 확인에서 비율을 바꿔 넣을 수 있는 차원 — 개수 코드 혼용(EA·PC)은 품목에 따라 1:1 이 아닐 수 있다.
+ * 질량은 물리적으로 고정이라 바꾸게 두지 않는다.
+ */
+const OVERRIDABLE_DIMENSIONS: ReadonlySet<string> = new Set(['COUNT']);
+
+/** 두 단위의 공통 환산을 품목 환산으로 바꿔 넣을 수 있는가 — 공통 환산이 아니면 `false`. */
+export function commonOverridable(table: StockUomTable, stockUomId: bigint, bomUomId: bigint): boolean {
+  const stock = COMMON_UNITS[table.uoms.get(stockUomId)?.code ?? ''];
+  const bom = COMMON_UNITS[table.uoms.get(bomUomId)?.code ?? ''];
+  return stock !== undefined && bom !== undefined && stock.dimension === bom.dimension && OVERRIDABLE_DIMENSIONS.has(stock.dimension);
+}
+
 interface ConversionRow {
   item_id: bigint;
   from_uom_id: bigint;

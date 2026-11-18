@@ -7,6 +7,7 @@ import {
   BomComponentRow,
   MaterialIssueLine,
   StockUomTable,
+  commonOverridable,
   itemRatio,
   loadStockUomTable,
   materialRequirements,
@@ -100,6 +101,12 @@ export async function releaseMaterials(
       }
       return converted(conversion.stockQty as Prisma.Decimal);
     }
+    if (conversion.source === 'COMMON' && !commonOverridable(table, conversion.stockUomId, line.uom_id)) {
+      if (!sameRate(conversion.rate, rate)) {
+        errors.push(field(`${at}.conversionRate`, ERROR_CODE.INVALID, `${uomLabel(table, line)} — 공통 환산이 정해진 단위라 비율을 바꿀 수 없습니다.`));
+      }
+      return converted(conversion.stockQty as Prisma.Decimal);
+    }
     const key = `${line.item_id}:${conversion.stockUomId}:${line.uom_id}`;
     const seen = entered.get(key);
     if (seen !== undefined && !seen.rate.eq(rate)) {
@@ -126,14 +133,24 @@ function uomLabel(table: StockUomTable, line: MaterialIssueLine): string {
   return `${table.itemCodeOf.get(line.item_id) ?? ''} BOM 단위 ${table.uoms.get(line.uom_id)?.code ?? ''} · 재고 단위 ${stock}`;
 }
 
-/** 배포 트랜잭션 안에서 저장한다 — 확인 뒤 다른 사람이 같은 환산을 먼저 넣었으면 같은 비율일 때만 넘어간다. */
+/**
+ * 배포 트랜잭션 안에서 저장한다. 품목 환산의 잠금은 품목 `version_no` 다 — 기준정보 화면(`item-detail.service.ts`
+ * `replaceUomConversions`)이 그 버전으로 환산을 통째로 갈아 끼우므로, 올리지 않으면 열어 둔 화면이 저장할 때 여기서 넣은 환산을
+ * 409 없이 지운다. 올리는 갱신이 품목 행을 잠가 같은 품목의 동시 배포도 줄을 세운다 — 그 뒤에 다시 읽어, 먼저 들어간 환산이
+ * 같은 비율이면 넘어가고 다르면 막는다.
+ */
 export async function saveEnteredConversions(
   tx: Prisma.TransactionClient,
   entered: EnteredConversion[],
   context: { workOrderId: number; plantToday: string; actorId: number | null; correlationId: string | null },
 ): Promise<void> {
   if (entered.length === 0) return;
-  const table = await loadStockUomTable(tx, entered.map((row) => row.itemId), context.plantToday);
+  // 잠금 순서를 품목 id 로 고정한다 — 두 배포가 같은 품목 둘을 거꾸로 잡으면 교착된다.
+  const itemIds = [...new Set(entered.map((row) => row.itemId))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const itemId of itemIds) {
+    await tx.item.update({ where: { item_id: itemId }, data: { version_no: { increment: 1 } }, select: { item_id: true } });
+  }
+  const table = await loadStockUomTable(tx, itemIds, context.plantToday);
   const day = new Date(`${context.plantToday}T00:00:00.000Z`);
   const occurredAt = new Date();
   for (const row of entered) {

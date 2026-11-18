@@ -23014,7 +23014,7 @@
      "shortageQty",
      "conversionSource"
     ],
-    "description": "한 W/O 의 품목별 소요·기출고·부족 한 줄",
+    "description": "한 W/O 의 품목별 소요·기출고·부족 한 줄. 같은 품목이라도 환산이 없어(NONE) BOM 단위로 남은 소요는 단위가 달라 따로 한 줄이다 — 그 줄의 기출고는 0 으로 낸다(기출고는 재고 단위)",
     "properties": {
      "itemId": {
       "type": "integer",
@@ -23061,7 +23061,7 @@
        "NONE",
        null
       ],
-      "description": "재고 단위 환산 출처 — ITEM(품목 환산) · COMMON(공통 환산 상수) · NONE(환산 없음 — 수량·단위가 BOM 단위 그대로다. 그대로 요청하면 400). BOM 단위와 재고 단위가 같으면 null. 근거: omf-all-around#297",
+      "description": "재고 단위 환산 출처 — ITEM(품목 환산) · COMMON(공통 환산 상수) · NONE(환산 없음 — 수량·단위가 BOM 단위 그대로다. 그대로 요청하면 400). BOM 단위와 재고 단위가 같으면 null. 근거: omf-all-around#297 — 줄마다 낸다",
       "example": "ITEM"
      }
     }

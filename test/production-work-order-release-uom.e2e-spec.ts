@@ -26,6 +26,7 @@ interface Requirement {
   bomQty: number;
   bomUomCode: string;
   stockUomCode: string;
+  stockUomScale: number;
   stockQty: number | null;
   conversionSource: string | null;
   conversionRate: number | null;
@@ -59,9 +60,9 @@ describe('W/O 배포 — 자재 출고요청 단위 환산·확인 (e2e)', () =>
     const workOrderId = await workOrder(ids.operationResin);
 
     const rows = await requirements(workOrderId);
-    expect(rows.map((row) => [row.itemId, row.bomQty, row.bomUomCode, row.stockQty, row.stockUomCode, row.conversionSource, row.conversionRate, row.confirmationRequired])).toEqual([
-      [Number(ids.resin), 367, 'GR', 0.367, 'KG', 'ITEM', 1000, true],
-      [Number(ids.bolt), 20, 'EA', 20, 'EA', null, null, false],
+    expect(rows.map((row) => [row.itemId, row.bomQty, row.bomUomCode, row.stockQty, row.stockUomCode, row.stockUomScale, row.conversionSource, row.conversionRate, row.confirmationRequired])).toEqual([
+      [Number(ids.resin), 367, 'GR', 0.367, 'KG', 3, 'ITEM', 1000, true],
+      [Number(ids.bolt), 20, 'EA', 20, 'EA', 0, null, null, false],
     ]);
 
     const refused = await release(workOrderId, {}).expect(400);
@@ -127,6 +128,49 @@ describe('W/O 배포 — 자재 출고요청 단위 환산·확인 (e2e)', () =>
     const conflict = await release(next, { materialUomConfirmations: [{ bomComponentId: again.bomComponentId, confirmed: true, conversionRate: 50 }] }).expect(400);
     expect(conflict.body.errors).toEqual([expect.objectContaining({ field: `${at}.conversionRate`, code: 'INVALID' })]);
     expect(await prisma.item_uom_conversion.count({ where: { item_id: ids.resinNoRule } })).toBe(1);
+  });
+
+  it('같은 품목에 같은 비율을 넣은 동시 배포 둘은 둘 다 되고 환산은 한 행이다 — 품목 버전이 올라 열어 둔 기준정보 화면의 저장은 409', async () => {
+    const openedVersion = (await prisma.item.findUniqueOrThrow({ where: { item_id: ids.resinConcurrent } })).version_no;
+    const [first, second] = [await workOrder(ids.operationConcurrent), await workOrder(ids.operationConcurrent)];
+    const [row] = await requirements(first);
+    const confirm = { materialUomConfirmations: [{ bomComponentId: row.bomComponentId, confirmed: true, conversionRate: 40 }] };
+
+    const responses = await Promise.all([release(first, confirm), release(second, confirm)]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(await prisma.item_uom_conversion.count({ where: { item_id: ids.resinConcurrent } })).toBe(1);
+    expect(await prisma.audit_event.count({ where: { target_type_code: 'ITEM', target_id: ids.resinConcurrent } })).toBe(1);
+
+    await request(app.getHttpServer())
+      .put(`/api/mdm/items/${ids.resinConcurrent}/uom-conversions`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(openedVersion))
+      .send({ conversions: [] })
+      .expect(409);
+    expect(await prisma.item_uom_conversion.count({ where: { item_id: ids.resinConcurrent } })).toBe(1);
+  });
+
+  it('질량 공통 환산(KG·GR)은 다른 비율로 바꿀 수 없다 — 같은 비율은 통과', async () => {
+    const workOrderId = await workOrder(ids.operationCommon);
+    const [row] = await requirements(workOrderId);
+    expect(row).toMatchObject({ conversionSource: 'COMMON', conversionRate: 1000, stockQty: 0.367 });
+    const at = `materialUomConfirmations[bomComponentId=${row.bomComponentId}].conversionRate`;
+    const refused = await release(workOrderId, { materialUomConfirmations: [{ bomComponentId: row.bomComponentId, confirmed: true, conversionRate: 900 }] }).expect(400);
+    expect(refused.body.errors).toEqual([expect.objectContaining({ field: at, code: 'INVALID' })]);
+    await release(workOrderId, { materialUomConfirmations: [{ bomComponentId: row.bomComponentId, confirmed: true, conversionRate: 1000 }] }).expect(200);
+    expect(await prisma.item_uom_conversion.count({ where: { item_id: ids.resinCommon } })).toBe(0);
+  });
+
+  it('라인 없이 배포하는 자동 W/O 는 배포가 단위 확인을 건너뛰므로 조회도 확인 필요로 내지 않는다', async () => {
+    const workOrderId = await workOrder(ids.operationResin);
+    await prisma.production_plan.update({ where: { production_plan_id: ids.plan }, data: { created_automatically: true } });
+    await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { production_line_id: null } });
+    try {
+      expect((await requirements(workOrderId)).map((row) => [row.conversionSource, row.confirmationRequired])).toEqual([['ITEM', false], [null, false]]);
+    } finally {
+      await prisma.production_plan.update({ where: { production_plan_id: ids.plan }, data: { created_automatically: false } });
+    }
   });
 
   it('단위가 같은 자재뿐인 W/O 는 지금 본문({ lotSize }) 그대로 배포된다', async () => {
@@ -217,6 +261,8 @@ describe('W/O 배포 — 자재 출고요청 단위 환산·확인 (e2e)', () =>
     ids.resin = await item('RESIN', 'RAW_MATERIAL', ids.kg);
     ids.resinNoRule = await item('RESIN-NR', 'RAW_MATERIAL', ids.kg);
     ids.bolt = await item('BOLT', 'RAW_MATERIAL', ids.ea);
+    ids.resinConcurrent = await item('RESIN-CC', 'RAW_MATERIAL', ids.kg);
+    ids.resinCommon = await item('RESIN-CM', 'RAW_MATERIAL', ids.kg);
     await prisma.item_uom_conversion.create({
       data: { item_id: ids.resin, from_uom_id: ids.kg, to_uom_id: ids.gr, conversion_rate: 1000, effective_from: new Date('2026-01-01T00:00:00.000Z') },
     });
@@ -225,7 +271,7 @@ describe('W/O 배포 — 자재 출고요청 단위 환산·확인 (e2e)', () =>
     const routing = await prisma.routing.create({
       data: { item_id: ids.itemFg, routing_code: `${PREFIX}-RT`, routing_version: 1, status_code: 'CONFIRMED' },
     });
-    for (const [key, seqNo] of [['operationResin', 10], ['operationNoRule', 20], ['operationBolt', 30]] as const) {
+    for (const [key, seqNo] of [['operationResin', 10], ['operationNoRule', 20], ['operationBolt', 30], ['operationConcurrent', 40], ['operationCommon', 50]] as const) {
       ids[key] = (await prisma.routing_operation.create({
         data: { routing_id: routing.routing_id, operation_seq: seqNo, process_id: process.process_id, operation_name: key },
       })).routing_operation_id;
@@ -241,6 +287,8 @@ describe('W/O 배포 — 자재 출고요청 단위 환산·확인 (e2e)', () =>
       [ids.bolt, '2', ids.ea, ids.operationResin],
       [ids.resinNoRule, '1.5', ids.ea, ids.operationNoRule],
       [ids.bolt, '1', ids.ea, ids.operationBolt],
+      [ids.resinConcurrent, '1.5', ids.ea, ids.operationConcurrent],
+      [ids.resinCommon, '36.7', ids.gr, ids.operationCommon],
     ];
     await prisma.bom_component.createMany({
       data: components.map(([itemId, qty, uomId, operation], index) => ({
@@ -304,7 +352,7 @@ describe('W/O 배포 — 자재 출고요청 단위 환산·확인 (e2e)', () =>
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '환산검사용' } });
     await prisma.role_permission.createMany({
-      data: ['W-02-04', 'W-02-10'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
+      data: ['W-02-04', 'W-02-10', 'W-06-05'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     const login = await request(app.getHttpServer())

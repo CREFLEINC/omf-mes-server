@@ -5148,7 +5148,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다. 생산 창고를 쓰는 공장(피처 003)은 빠진 기준정보를 errors 에 모아 낸다 — LINE_DEPARTMENT_MISSING(productionLineId · 라인에 담당 부서 없음) · PRODUCTION_WAREHOUSE_MISSING(departmentId · 부서에 이 공장의 활성 생산 창고 없음) · PRODUCTION_FLOOR_LOCATION_MISSING(productionLineId · 라인에 생산 현장 위치 없음). 재고 부족은 배포를 막지 않는다. 근거: omf-all-around#66 · BOM 단위 ≠ 재고 단위 자재: MATERIAL_UOM_CONFIRMATION_REQUIRED(materialUomConfirmations[bomComponentId=…].confirmed — 확인 안 함 · .conversionRate — 환산이 없는데 비율 없음) · INVALID(.conversionRate — 이미 있는 품목 환산과 다른 비율 · 같은 품목·단위에 서로 다른 비율 · 배포하는 사이 다른 환산이 등록됨) · RANGE(.conversionRate — 소수 8자리로 반올림하면 0). 근거: omf-all-around#297",
+      "description": "검증 실패. 고쳐야 풀린다. 생산 창고를 쓰는 공장(피처 003)은 빠진 기준정보를 errors 에 모아 낸다 — LINE_DEPARTMENT_MISSING(productionLineId · 라인에 담당 부서 없음) · PRODUCTION_WAREHOUSE_MISSING(departmentId · 부서에 이 공장의 활성 생산 창고 없음) · PRODUCTION_FLOOR_LOCATION_MISSING(productionLineId · 라인에 생산 현장 위치 없음). 재고 부족은 배포를 막지 않는다. 근거: omf-all-around#66 · BOM 단위 ≠ 재고 단위 자재: MATERIAL_UOM_CONFIRMATION_REQUIRED(materialUomConfirmations[bomComponentId=…].confirmed — 확인 안 함 · .conversionRate — 환산이 없는데 비율 없음) · INVALID(.conversionRate — 이미 있는 품목 환산과 다른 비율 · 질량 공통 환산과 다른 비율 · 같은 품목·단위에 서로 다른 비율 · 배포하는 사이 다른 환산이 등록됨) · RANGE(.conversionRate — 소수 8자리로 반올림하면 0). 근거: omf-all-around#297",
       "content": {
        "application/json": {
         "schema": {
@@ -11887,6 +11887,7 @@
      "bomUomCode",
      "stockUomId",
      "stockUomCode",
+     "stockUomScale",
      "stockQty",
      "conversionSource",
      "conversionRate",
@@ -11937,6 +11938,11 @@
       "type": "string",
       "example": "KG"
      },
+     "stockUomScale": {
+      "type": "integer",
+      "description": "재고 단위 소수 자릿수(uom.decimal_scale) — 서버가 이 자릿수로 올림한다. 환산이 없는(NONE) 행에 비율을 넣으면 화면이 bomQty ÷ 비율을 이 자릿수로 올려 보인다",
+      "example": 3
+     },
      "stockQty": {
       "type": [
        "number",
@@ -11969,7 +11975,7 @@
      },
      "confirmationRequired": {
       "type": "boolean",
-      "description": "BOM 단위 ≠ 재고 단위 — 배포 전에 사용자가 확인해야 한다(공통 환산이어도)",
+      "description": "BOM 단위 ≠ 재고 단위 — 배포 전에 사용자가 확인해야 한다(공통 환산이어도). 라인 없이 배포하는 자동 W/O(추적 시스템 연동)는 출고요청을 만들지 않아 false",
       "example": true
      }
     }
@@ -12774,7 +12780,7 @@
          ],
          "exclusiveMinimum": 0,
          "maximum": 9999999999,
-         "description": "직접 입력한 환산 — 「1 재고 단위 = N BOM 단위」의 N(예: 1 KG = 1,000 GR 이면 1000). 소수 8자리까지 저장한다(반올림). 환산이 없는(NONE) 행은 필수다. 공통 환산(COMMON) 행에 실으면 그 품목에서는 이 비율을 쓴다. 넣은 비율은 배포와 같은 트랜잭션에서 품목 환산(mdm.item_uom_conversion · from = 재고 단위 · to = BOM 단위 · effectiveFrom = 공장 현지 오늘)으로 저장되고 감사 기록(대상 ITEM · ITEM_UOM_CONVERSION_ENTERED_AT_RELEASE)이 남는다 — 저장 권한은 배포 권한 그대로다(승인 없음). 이미 품목 환산(ITEM)이 있는 행에 다른 비율을 실으면 400 INVALID — 덮어쓰지 않는다(품목 환산은 기준정보에서 고친다). 같은 비율이면 그대로 통과한다.",
+         "description": "직접 입력한 환산 — 「1 재고 단위 = N BOM 단위」의 N(예: 1 KG = 1,000 GR 이면 1000). 소수 8자리까지 저장한다(반올림). 환산이 없는(NONE) 행은 필수다. 공통 환산(COMMON) 행은 개수(EA·PC)일 때만 실어 그 품목에서 이 비율을 쓸 수 있다 — 질량(KG·GR·G)은 물리적으로 고정이라 다른 비율을 실으면 400 INVALID(같은 비율이면 그대로 통과). 넣은 비율은 배포와 같은 트랜잭션에서 품목 환산(mdm.item_uom_conversion · from = 재고 단위 · to = BOM 단위 · effectiveFrom = 공장 현지 오늘)으로 저장되고 감사 기록(대상 ITEM · ITEM_UOM_CONVERSION_ENTERED_AT_RELEASE)이 남는다 — 저장 권한은 배포 권한 그대로다(승인 없음). 이미 품목 환산(ITEM)이 있는 행에 다른 비율을 실으면 400 INVALID — 덮어쓰지 않는다(품목 환산은 기준정보에서 고친다). 같은 비율이면 그대로 통과한다.",
          "example": 1000
         }
        }
