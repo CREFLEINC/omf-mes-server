@@ -43,6 +43,8 @@ export const ERROR_CODE = {
   // 지었다 — `CD-…-CANCEL-BLOCKED-REASON` 「후속 문서가 있다」. 다형 취소(I-5)가 조회의
   // 사유와 실행 오류에 같은 문자열을 쓴다(plan-api.md §5.4).
   SUCCESSOR_EXISTS: 'SUCCESSOR_EXISTS',
+  // 「지정 품목만 받기」를 켠 위치에 지정 밖 품목이 들어온다(피처 009 · omf-all-around#294) — 재고 코어가 모든 경로에서 낸다.
+  LOCATION_ITEM_RESTRICTED: 'LOCATION_ITEM_RESTRICTED',
   // 계약이 이 자리(입하 등록의 P/O 귀속)에 코드를 안 줬다 — `ck_po_line_received`
   // (`received_qty <= ordered_qty + tolerance_over_qty`)를 손으로 앞당겨 막는 이름이다.
   // ⛔ `RANGE`(발주를 이미 받은 양보다 «적게» 고친다 — 반대 방향)와 갈린다. I-3.md §1-5.
