@@ -2,7 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { inboundLotFamilySql, inboundLotOfSql } from '../../core/lot';
-import { INVENTORY_AVAILABLE, QUALITY_NORMAL } from '../../core/picking/picking-generation';
+import { INVENTORY_AVAILABLE, LOT_JUDGED_QUALITIES, LOT_NORMAL, QUALITY_NORMAL } from '../../core/picking/picking-generation';
 
 /**
  * 잔액 집계 SQL 을 짓는다.
@@ -127,8 +127,12 @@ const FROM = `
  *
  * ⛔ 예전에는 가용을 `보유 − 예약 − 피킹 − blocked_qty` 로만 셌는데 `blocked_qty` 를 쓰는 경로가 없어(보류는
  * `lot_hold` 가 정본) 불량 · 보류 재고가 그대로 「가용」으로, 「보류」는 늘 0 으로 나갔다.
+ * LOT 이 있는 행은 LOT 판정이 정한다 — 검사 대기로 입고된 행도 PQC 합격이면 가용이다(omf-all-around#302).
  */
-const PICKABLE_ROW = `(b.quality_status_code = '${QUALITY_NORMAL}' AND b.inventory_status_code = '${INVENTORY_AVAILABLE}' AND hh.held IS NULL)`;
+const JUDGED = LOT_JUDGED_QUALITIES.map((code) => `'${code}'`).join(', ');
+const QUALITY_OK = `(CASE WHEN b.lot_id IS NULL THEN b.quality_status_code = '${QUALITY_NORMAL}'
+  ELSE l.status_code = '${LOT_NORMAL}' AND b.quality_status_code IN (${JUDGED}) END)`;
+const PICKABLE_ROW = `(${QUALITY_OK} AND b.inventory_status_code = '${INVENTORY_AVAILABLE}' AND hh.held IS NULL)`;
 
 /** 예약 · 피킹 · 묶음을 뺀 나머지 — 집을 수 있는 행이면 가용, 아니면 보류로 간다. */
 const FREE_QTY = '(b.on_hand_qty - b.reserved_qty - b.picked_qty - b.blocked_qty)';
