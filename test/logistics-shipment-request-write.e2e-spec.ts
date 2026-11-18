@@ -619,6 +619,9 @@ describe('출하작업지시 편성 (e2e)', () => {
     expect(body).toEqual({
       shipmentRequestId: Number(stored.shipment_request_id),
       shipmentRequestNo: stored.shipment_request_no,
+      // 피처 010 — 지시서 QR 값과 피킹 창고(편성 직후라 없다)가 더해졌다.
+      code: `SHPREQ:${stored.shipment_request_no}`,
+      pickingWarehouses: [],
       salesOrderId: ids.salesOrder,
       fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
       customerId: ids.customer,

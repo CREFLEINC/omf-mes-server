@@ -69,15 +69,16 @@ export function shipmentProgressTotals(lines: ShipmentProgressLine[]): ShipmentP
  * 되고 `NOT_ALLOCATED` 가 **어떤 데이터로도 안 나온다**(R-7 ⓐ · R-11). 그래서 맨 앞에서 잘라 낸다.
  * ⛔ 이 분기를 아래로 옮기거나 `A < 0`·`A <= 0` 으로 바꾸지 마라 — `app.qty_t` 가
  *    `CHECK (VALUE >= 0)` 라 이 예외의 전부가 「같음」이다.
- * ⚠ 나머지 전부가 `PARTIALLY_ALLOCATED` 인 것은 `ck_shipment_request_qty`(`S <= A <= R`)가 있어
+ * ⚠ 나머지 전부가 `PARTIALLY_ALLOCATED` 인 것은 `ck_shipment_request_qty`(`A <= R` · 피처 010 전에는 `S <= A <= R`)가 있어
  *   그 자리에 닿는 조건이 곧 계약의 `0 < A < R` 이기 때문이다.
  */
 export function shipmentProgressCode(totals: ShipmentProgressTotals): ShipmentProgressCode {
   const { requestedQty: r, allocatedQty: a, pickedQty: p, shippedQty: s } = totals;
   if (a.equals(ZERO)) return 'NOT_ALLOCATED';
-  if (s.equals(a) && a.greaterThan(ZERO)) return 'SHIPPED';
+  // ⭐ `≥` 다(피처 010) — LOT 통째 피킹은 마지막 LOT 에서 목표를 넘기고, 출하는 피킹 전부를 낸다.
+  if (s.greaterThanOrEqualTo(a) && a.greaterThan(ZERO)) return 'SHIPPED';
   if (s.greaterThan(ZERO) && s.lessThan(a)) return 'PARTIALLY_SHIPPED';
-  if (p.equals(a) && s.equals(ZERO)) return 'PICKED';
+  if (p.greaterThanOrEqualTo(a) && s.equals(ZERO)) return 'PICKED';
   if (a.equals(r) && p.lessThan(a)) return 'PICKING';
   return 'PARTIALLY_ALLOCATED';
 }
@@ -111,9 +112,9 @@ export const SHIPMENT_PROGRESS_TOTALS_SQL = `
 /** 6값의 경계 — 위 if 사슬과 **같은 순서·같은 경계**. `PARTIALLY_ALLOCATED` 는 `ELSE` 로 나간다. */
 const SQL_RULES: ReadonlyArray<readonly [ShipmentProgressCode, string]> = [
   ['NOT_ALLOCATED', 't.allocated_qty = 0'],
-  ['SHIPPED', 't.shipped_qty = t.allocated_qty AND t.allocated_qty > 0'],
+  ['SHIPPED', 't.shipped_qty >= t.allocated_qty AND t.allocated_qty > 0'],
   ['PARTIALLY_SHIPPED', 't.shipped_qty > 0 AND t.shipped_qty < t.allocated_qty'],
-  ['PICKED', 't.picked_qty = t.allocated_qty AND t.shipped_qty = 0'],
+  ['PICKED', 't.picked_qty >= t.allocated_qty AND t.shipped_qty = 0'],
   ['PICKING', 't.allocated_qty = t.requested_qty AND t.picked_qty < t.allocated_qty'],
 ];
 

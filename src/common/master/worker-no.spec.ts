@@ -49,7 +49,6 @@ const SHARED = 'common/master/worker-no.ts';
 const PRESENCE_ONLY = [
   'logistics/picking/picking-pick.service.ts',
   'logistics/shipment-allocation/allocation-packing.service.ts',
-  'logistics/shipment-request/shipment-pick.service.ts',
   'logistics/shopfloor-receipt/shopfloor-receipt.service.ts',
   'production/material-return/material-return.service.ts',
   'trace/lot/lot-complete.service.ts',

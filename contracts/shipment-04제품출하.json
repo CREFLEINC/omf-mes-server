@@ -1567,7 +1567,7 @@
      "shipment"
     ],
     "summary": "제품 LOT 피킹 확정",
-    "description": "현장이 집은 제품 LOT 과 수량을 이 라인에 기록한다. ⭐ 화면이 예약을 직접 쓰지 않는다 — 서버가 이 피킹의 결과로 inventory_reservation 을 걸고 푼다(01 자재창고 계약 · M-01-08 §5-5 와 같은 규약). 자재 피킹의 :pick 과 대칭이다. ⛔ 오프라인 대상이 아니다 — Release 판정값을 캐시할 수 없어 이 화면은 온라인에서만 돈다(공유계약 C-6 · M-04-01 §5-6). 권장 외 LOT 을 집어도 막지 않는다 — 경고 후 통과이고 사유는 남기지 않는다(M-04-01 §5-5). 근거: M-04-01 §5-7",
+    "description": "⛔ 피처 010(omf-all-around#305)부터 쓰지 않는다 — 늘 409 USE_PICK_LOT 이다. LOT 통째 피킹 :pick-lot 을 쓴다. 현장이 집은 제품 LOT 과 수량을 이 라인에 기록한다. ⭐ 화면이 예약을 직접 쓰지 않는다 — 서버가 이 피킹의 결과로 inventory_reservation 을 걸고 푼다(01 자재창고 계약 · M-01-08 §5-5 와 같은 규약). 자재 피킹의 :pick 과 대칭이다. ⛔ 오프라인 대상이 아니다 — Release 판정값을 캐시할 수 없어 이 화면은 온라인에서만 돈다(공유계약 C-6 · M-04-01 §5-6). 권장 외 LOT 을 집어도 막지 않는다 — 경고 후 통과이고 사유는 남기지 않는다(M-04-01 §5-5). 근거: M-04-01 §5-7",
     "parameters": [
      {
       "name": "shipmentRequestId",
@@ -1663,7 +1663,7 @@
       }
      },
      "409": {
-      "description": "충돌 — LOT 이 Hold 이거나 가용이 모자라거나 배정을 넘는다",
+      "description": "충돌 — 피처 010 부터 늘 USE_PICK_LOT",
       "content": {
        "application/json": {
         "schema": {
@@ -3612,6 +3612,121 @@
      }
     }
    }
+  },
+  "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "제품 LOT 통째 피킹",
+    "description": "PDA(M-04-01)가 LOT 을 스캔하면 그 LOT 의 공장 안 가용 잔액 전부(불량창고 제외 — 여러 창고·위치·적치 대기 자리 포함)를 이 라인에 피킹한다. 잔액 행마다 예약을 하나씩 걸고 곧바로 푼다(picked += 가용). 라인 피킹 합이 목표(allocatedQty)보다 작을 때만 받으므로 초과는 마지막 LOT 에서만 생긴다. 수량 입력은 없다. 피킹 LOT 행(shipment_request_lot)이 PICKED 로 생긴다. 근거: 피처 010 FR-004·004a·005·006",
+    "parameters": [
+     {
+      "name": "shipmentRequestId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "shipmentRequestLineId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShipmentLotPick"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "피킹됨 — 피킹 LOT 행과 갱신된 라인",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentLotPickResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — LOT 이 없다·이 공장 LOT 이 아니다·다른 라인 품목·출하할 수 없는 LOT 상태·잔여 유효기간 부족",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "라인이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — LOT_TARGET_REACHED · LOT_ALREADY_RESERVED · LOT_ALREADY_PICKED · NO_LINE_FOR_ITEM · INVALID_STATE(보류·피킹 막힌 상태·재고 없음·이행 공장 없음)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "단말은 PDA(MOBILE)만 부른다 — 소유 검사는 지시서 fulfillment_plant_id = 단말 공장. 세션은 M-04-01 권한."
+   }
   }
  },
  "components": {
@@ -3656,6 +3771,18 @@
     },
     "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
     "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178.",
+    "example": "100027"
+   },
+   "WorkerNoOptional": {
+    "name": "X-Worker-No",
+    "in": "header",
+    "required": false,
+    "schema": {
+     "type": "string",
+     "maxLength": 50
+    },
+    "description": "관리웹도 같은 오퍼레이션을 부르는 자리에서는 선택이다 — 관리웹은 계정 토큰으로 오므로 서버가 인증 주체에서 행위자를 푼다. 단말 토큰으로 온 요청에 이 헤더가 없으면 서버가 거부한다. 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
+    "x-internal-note": "현장 단말·모바일 전용 오퍼레이션에는 WorkerNo(required)를 그대로 쓴다 — 이 완화는 두 셸이 함께 부르는 오퍼레이션에만 적용한다. OpenAPI 로는 「단말 토큰이면 필수」를 표현할 수 없어 선택으로 두고 규칙을 설명에 적는다. 판정 근거는 인증 토큰의 종류(app_user / mdm.terminal)이지 헤더의 유무가 아니다. 이슈 #178.",
     "example": "100027"
    }
   },
@@ -5028,7 +5155,7 @@
        "PARTIALLY_SHIPPED",
        "SHIPPED"
       ],
-      "description": "⭐ W-04-02 「진행」 열의 판정 근거 — 출하작업지시 «한 건»의 진행이다. 라인 전체의 요청·배정·피킹·출하 4수량을 서버가 롤업해 하나로 낸다. ⛔ 서버가 계산한다 — 화면이 다시 계산하지 않는다(공유계약 L-2 · L-2-1 ⑴). ⛔ 저장하지 않는다 — A-17 의 두 질문이 둘 다 「아니오」다(달력이 값을 바꾸지 않고, 과거 값을 얼릴 이유도 없다). NOT_ALLOCATED=배정 합 0 · PARTIALLY_ALLOCATED=0 보다 크고 요청 합보다 작은 배정 합 · PICKING=배정 합이 요청 합과 같고 피킹 합이 배정 합보다 작다 · PICKED=피킹 합이 배정 합과 같고 출하 합 0 · PARTIALLY_SHIPPED=출하 합이 0 보다 크고 배정 합보다 작다 · SHIPPED=출하 합이 배정 합과 같다. ⭐ 판정 순서는 뒤가 이긴다 — NOT_ALLOCATED, PARTIALLY_ALLOCATED, PICKING, PICKED, PARTIALLY_SHIPPED, SHIPPED. ⚠ statusCode 와 축이 다르다 — 그 칸은 「칸 불필요」로 닫혔고(x-no-code-key) 값이 없다. ⚠ shippingInspectionStatusCode 와도 축이 다르다 — 「검사 대기」는 이 축의 값이 아니라 그 축의 PENDING 이다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⛔ 화면이 라인을 순회해 판정하지 않는다 — W-04-01·W-04-02·W-04-04 가 각자 접으면 같은 건을 다르게 부른다(W-04-02 §9-1). 근거: W-04-02 §3·§4-A·§5-3 · W-04-04 §3·§5-4 · omf-mes#402",
+      "description": "⭐ W-04-02 「진행」 열의 판정 근거 — 출하작업지시 «한 건»의 진행이다. 라인 전체의 요청·배정·피킹·출하 4수량을 서버가 롤업해 하나로 낸다. ⛔ 서버가 계산한다 — 화면이 다시 계산하지 않는다(공유계약 L-2 · L-2-1 ⑴). ⛔ 저장하지 않는다 — A-17 의 두 질문이 둘 다 「아니오」다(달력이 값을 바꾸지 않고, 과거 값을 얼릴 이유도 없다). NOT_ALLOCATED=배정 합 0 · PARTIALLY_ALLOCATED=0 보다 크고 요청 합보다 작은 배정 합 · PICKING=배정 합이 요청 합과 같고 피킹 합이 배정 합보다 작다 · PICKED=피킹 합이 배정 합과 같고 출하 합 0 · PARTIALLY_SHIPPED=출하 합이 0 보다 크고 배정 합보다 작다 · SHIPPED=출하 합이 배정 합과 같다. ⭐ 판정 순서는 뒤가 이긴다 — NOT_ALLOCATED, PARTIALLY_ALLOCATED, PICKING, PICKED, PARTIALLY_SHIPPED, SHIPPED. ⚠ statusCode 와 축이 다르다 — 그 칸은 「칸 불필요」로 닫혔고(x-no-code-key) 값이 없다. ⚠ shippingInspectionStatusCode 와도 축이 다르다 — 「검사 대기」는 이 축의 값이 아니라 그 축의 PENDING 이다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⛔ 화면이 라인을 순회해 판정하지 않는다 — W-04-01·W-04-02·W-04-04 가 각자 접으면 같은 건을 다르게 부른다(W-04-02 §9-1). 근거: W-04-02 §3·§4-A·§5-3 · W-04-04 §3·§5-4 · omf-mes#402 ⭐ 피처 010: PICKED 는 P ≥ A ∧ S = 0, SHIPPED 는 S ≥ A(초과 피킹·출하).",
       "example": "PICKING",
       "x-code-key": "CD-SHIPMENT-PROGRESS"
      },
@@ -5041,6 +5168,18 @@
      "versionNo": {
       "type": "integer",
       "example": 1
+     },
+     "code": {
+      "type": "string",
+      "description": "지시서 QR·스캔 값 SHPREQ:{shipmentRequestNo}(피처 010)",
+      "example": "SHPREQ:SR-20261118-0001"
+     },
+     "pickingWarehouses": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentPickingWarehouse"
+      },
+      "description": "살아 있는 피킹 LOT 의 몫이 있는 창고들 — 지시서는 창고를 정하지 않는다(공장 단위)."
      }
     },
     "required": [
@@ -5051,7 +5190,9 @@
      "requestedShipDate",
      "statusCode",
      "shippingInspectionStatusCode",
-     "shipmentProgressCode"
+     "shipmentProgressCode",
+     "code",
+     "pickingWarehouses"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },
@@ -5228,7 +5369,7 @@
       "type": "number",
       "example": 120,
       "x-source-column": "picked_qty",
-      "description": "누적 피킹 수량. ⭐ 서버가 유지한다 — 화면이 더하지 않는다(공유계약 L-2). 배정 잔여 = allocatedQty − pickedQty"
+      "description": "누적 피킹 수량. ⭐ 서버가 유지한다 — 화면이 더하지 않는다(공유계약 L-2). 배정 잔여 = allocatedQty − pickedQty ⭐ 피처 010: 목표(allocatedQty)를 넘을 수 있다 — LOT 통째 피킹의 마지막 LOT 이 초과를 만든다."
      },
      "shippedQty": {
       "type": "number",
@@ -5267,6 +5408,19 @@
        "$ref": "#/components/schemas/ShipmentLinePickedLot"
       },
       "description": "이 라인에서 실제로 집은 제품 LOT 별 내역. ⭐ 서버가 유지한다 — W-04-04 출하 처리가 ShipmentCreate.lines[].allocations 를 채우는 원천이 이것이다(공유계약 L-2). 근거: M-04-01 §5-7 · W-04-04 §3"
+     },
+     "overQty": {
+      "type": "number",
+      "format": "double",
+      "description": "초과 = 피킹 − 목표(배정 allocatedQty). 목표에 못 미치면 0(피처 010)",
+      "example": 40
+     },
+     "lots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestLot"
+      },
+      "description": "피킹 LOT 행(교체 이력 포함 · 피처 010). picks 는 예약 행 그대로다."
      }
     },
     "required": [
@@ -5279,7 +5433,9 @@
      "uomId",
      "shippingInspectionRequired",
      "pickedQty",
-     "picks"
+     "picks",
+     "overQty",
+     "lots"
     ]
    },
    "ShipmentRequestLineCreate": {
@@ -5350,9 +5506,14 @@
        "DUPLICATE_KEY",
        "INVALID_STATE",
        "ALREADY_CONFIRMED",
-       "CANCEL_IN_PROGRESS"
+       "CANCEL_IN_PROGRESS",
+       "USE_PICK_LOT",
+       "LOT_TARGET_REACHED",
+       "LOT_ALREADY_RESERVED",
+       "LOT_ALREADY_PICKED",
+       "NO_LINE_FOR_ITEM"
       ],
-      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8",
+      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다.",
       "example": "VERSION_CONFLICT"
      },
      "message": {
@@ -6003,6 +6164,222 @@
       "$ref": "#/components/schemas/PageMeta"
      }
     }
+   },
+   "ShipmentLotPick": {
+    "type": "object",
+    "description": "LOT 통째 피킹 본문 — lotId 나 lotNo 중 하나(스캔은 LOT 번호). 수량은 받지 않는다 — 서버가 그 LOT 의 공장 안 가용 전부(불량창고 제외)를 피킹한다(피처 010 · omf-all-around#305).",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "maxLength": 100,
+      "example": "LOT-0001"
+     }
+    }
+   },
+   "ShipmentLotPortion": {
+    "type": "object",
+    "description": "피킹 LOT 의 창고·위치별 몫 — 그 LOT 의 예약 행(잔액 행마다 하나)에서 읽는다. 적치 대기 자리 몫도 포함한다.",
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseCode": {
+      "type": "string",
+      "example": "WH-FG"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고"
+     },
+     "locationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "locationCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "FG-A01"
+     },
+     "qty": {
+      "type": "number",
+      "format": "double",
+      "example": 40
+     }
+    },
+    "required": [
+     "warehouseId",
+     "warehouseCode",
+     "warehouseName",
+     "locationId",
+     "locationCode",
+     "qty"
+    ]
+   },
+   "ShipmentRequestLot": {
+    "type": "object",
+    "description": "출하 지시서 피킹 LOT(logistics.shipment_request_lot) — 지시서 라인 × LOT 한 행. 교체된 행(REPLACED)도 이력으로 싣는다.",
+    "properties": {
+     "shipmentRequestLotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "LOT-0001"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "pickedQty": {
+      "type": "number",
+      "format": "double",
+      "description": "피킹 때 그 LOT 의 공장 안 가용 합(통째)",
+      "example": 40
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "statusCode": {
+      "type": "string",
+      "enum": [
+       "PICKED",
+       "REPLACED",
+       "SHIPPED"
+      ],
+      "x-code-key": "SHIPMENT_REQUEST_LOT_STATUS",
+      "example": "PICKED"
+     },
+     "managementCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "출하 관리 코드(선택, ≤100자)",
+      "example": "값"
+     },
+     "pickedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T03:00:00Z"
+     },
+     "pickedWorker": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "workerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "workerNo": {
+        "type": "string",
+        "example": "W-001"
+       },
+       "workerName": {
+        "type": "string",
+        "example": "작업자"
+       }
+      },
+      "required": [
+       "workerId",
+       "workerNo",
+       "workerName"
+      ]
+     },
+     "shipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "SHIPPED 가 된 출하",
+      "example": 1001
+     },
+     "portions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentLotPortion"
+      }
+     }
+    },
+    "required": [
+     "shipmentRequestLotId",
+     "lotId",
+     "lotNo",
+     "itemId",
+     "pickedQty",
+     "uomId",
+     "statusCode",
+     "managementCode",
+     "pickedAt",
+     "pickedWorker",
+     "shipmentId",
+     "portions"
+    ]
+   },
+   "ShipmentPickingWarehouse": {
+    "type": "object",
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseCode": {
+      "type": "string",
+      "example": "WH-FG"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고"
+     }
+    },
+    "required": [
+     "warehouseId",
+     "warehouseCode",
+     "warehouseName"
+    ]
+   },
+   "ShipmentLotPickResult": {
+    "type": "object",
+    "description": "통째 피킹 결과 — 만든 피킹 LOT 행과 갱신된 라인(목표·피킹·초과).",
+    "properties": {
+     "pickedLot": {
+      "$ref": "#/components/schemas/ShipmentRequestLot"
+     },
+     "line": {
+      "$ref": "#/components/schemas/ShipmentRequestLine"
+     }
+    },
+    "required": [
+     "pickedLot",
+     "line"
+    ]
    }
   },
   "securitySchemes": {

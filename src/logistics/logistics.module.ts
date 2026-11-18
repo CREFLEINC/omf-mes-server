@@ -123,7 +123,8 @@ import { StockReinstatementController } from './stock-reinstatement/stock-reinst
 import { StockReinstatementService } from './stock-reinstatement/stock-reinstatement.service';
 import { ShipmentConfirmService } from './shipment/shipment-confirm.service';
 import { ShipmentService } from './shipment/shipment.service';
-import { ShipmentPickService } from './shipment-request/shipment-pick.service';
+import { ShipmentLotPickService } from './shipment-request/shipment-lot-pick.service';
+import { ShipmentRequestLotController } from './shipment-request/shipment-request-lot.controller';
 import { ShipmentOqcSkipService } from './shipment-request/shipment-oqc-skip.service';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
@@ -181,6 +182,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentAllocationController,
     ShippingUnitController,
     ShipmentRequestController,
+    ShipmentRequestLotController,
     ShipmentController,
     ShipmentLineListController,
     StockReinstatementController,
@@ -292,7 +294,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShippingUnitBoxService,
     ShippingUnitQueryService,
     ShippingUnitService,
-    ShipmentPickService,
+    ShipmentLotPickService,
     ShipmentOqcSkipService,
     ShipmentRequestQueryService,
     ShipmentRequestService,
