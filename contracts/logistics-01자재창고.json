@@ -4037,7 +4037,7 @@
      "logistics"
     ],
     "summary": "입고 처리",
-    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다). ⭐ ERP 구매입고(IF-GR-SEND, 입고번호 키)는 입고 줄의 LOT 이 모두 새 흐름(erp_send_mode_code=ON_FINALIZE) 입하 LOT 소속이면 적재하지 않는다 — 새 흐름은 입하 LOT 마다 최종 마감 때 한 번 간다(피처 005 §6 · R-25, 그 송신은 #265). 이전 데이터(PER_RECEIPT)와 섞이면 적재하고 보낼 때 새 흐름 줄을 뺀다. ⭐ 입고는 입하 마감 뒤에만 한다(피처 005 FR-014a · 2026-11-13, 검사 불필요 품목 포함): 줄의 자재 관리 LOT 이 입하 중(RECEIVING)인 새 흐름(ON_FINALIZE) 입하 LOT 소속이면 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=INBOUND_LOT_RECEIVING(문구에 입하 LOT 번호). 이전 데이터(PER_RECEIPT)·입하 LOT 없는 LOT 은 지금 그대로.",
+    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다). ⭐ ERP 구매입고(IF-GR-SEND, 입고번호 키)는 입고 줄의 LOT 이 모두 새 흐름(erp_send_mode_code=ON_FINALIZE) 입하 LOT 소속이면 적재하지 않는다 — 새 흐름은 입하 LOT 마다 최종 마감 때 한 번 간다(피처 005 §6 · R-25, 그 송신은 #265). 이전 데이터(PER_RECEIPT)와 섞이면 적재하고 보낼 때 새 흐름 줄을 뺀다. ⭐ 입고는 입하 마감 뒤에만 한다(피처 005 FR-014a · 2026-11-13, 검사 불필요 품목 포함): 줄의 자재 관리 LOT 이 입하 중(RECEIVING)인 새 흐름(ON_FINALIZE) 입하 LOT 소속이면 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=INBOUND_LOT_RECEIVING(문구에 입하 LOT 번호). 이전 데이터(PER_RECEIPT)·입하 LOT 없는 LOT 은 지금 그대로. ⭐⭐ 구매 입하 자재는 PDA 적치로 입고한다(피처 009 · 2026-11-18): 줄의 LOT 이 입하에서 왔으면(선별 자식은 조상 기준) 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=USE_PDA_PUTAWAY. 제품 입고(M-04-04)·반품 입고(W-04-06)는 그대로다. 구매 입하 LOT 의 입고는 POST /logistics/putaway-pending-lots/{lotId}:putaway · :putaway-temporary. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4235,7 +4235,7 @@
      "logistics"
     ],
     "summary": "입고 기본값",
-    "description": "입고 처리 화면(W-01-10·W-04-06)이 LOT 마다 입고 칸을 미리 채운다 — 입고는 사람이 한다. 창고는 LOT 이 걸린 발주 라인의 ERP 창고와 같은 코드의 활성 MES 창고(입하와 같은 공장 · ERP 구매입고 송신도 같은 값), 불량 LOT 은 입하 공장의 활성 불량창고다. 위치는 그 창고의 적치 대기 자리. 상태는 정상 → NORMAL·AVAILABLE, 불량 → DEFECTIVE·ON_HOLD. 못 채운 칸은 null 이고 issues 가 까닭이다. 영업일·입고 시각은 화면이 채운다(공유계약 C-8). 근거: 사용자 결정 2026-10-29 · 장부 P-150 피처 005 FR-014a: 입하 중(RECEIVING)인 새 흐름 입하 LOT 의 자재 관리 LOT 은 입고 대상이 아니다 — 칸을 비우고 issues 에 INBOUND_LOT_RECEIVING.",
+    "description": "입고 처리 화면(W-01-10·W-04-06)이 LOT 마다 입고 칸을 미리 채운다 — 입고는 사람이 한다. 창고는 LOT 이 걸린 발주 라인의 ERP 창고와 같은 코드의 활성 MES 창고(입하와 같은 공장 · ERP 구매입고 송신도 같은 값), 불량 LOT 은 입하 공장의 활성 불량창고다. 위치는 그 창고의 적치 대기 자리. 상태는 정상 → NORMAL·AVAILABLE, 불량 → DEFECTIVE·ON_HOLD. 못 채운 칸은 null 이고 issues 가 까닭이다. 영업일·입고 시각은 화면이 채운다(공유계약 C-8). 근거: 사용자 결정 2026-10-29 · 장부 P-150 피처 005 FR-014a: 입하 중(RECEIVING)인 새 흐름 입하 LOT 의 자재 관리 LOT 은 입고 대상이 아니다 — 칸을 비우고 issues 에 INBOUND_LOT_RECEIVING. ⭐⭐ 피처 009 부터 입하에서 온 LOT 은 칸을 비우고(lotNo·itemId·uomId 만) issues 에 USE_PDA_PUTAWAY 하나 — 구매 입하 자재는 PDA 적치로 입고한다. 입하와 무관한 LOT 은 NOT_RECEIPT_READY, 없는 LOT 은 NOT_FOUND. 나머지 코드는 더 내지 않는다(옛 클라이언트를 위해 enum 에 남긴다). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
     "parameters": [
      {
       "name": "lotIds",
@@ -18230,6 +18230,20 @@
       "example": 1001,
       "description": "되돌아온 물건이 어느 출하의 어느 배분이었나 — 반품 입고에서 genealogy 가 역방향으로 이어지는 자리다(W-04-06 §4-B · 머리말). ⭐ 비울 수 있다 — 원 출하를 못 찾는 갈래가 정상이다(W-04-06 §5-3 · omf-mes#302 ①과 같은 근거). ⭐ 서버가 lotId 만으로는 못 잇는다 — 한 LOT 이 여러 출하에 나뉘어 나가므로 «어느 배분»인지를 화면이 보낸다(W-04-06 §5-3 「여러 출하가 섞였을 때」). 화면이 그 값을 얻는 곳: GET /logistics/shipments/{shipmentId} 응답의 lines[].allocations[].shipmentLotAllocationId. ⚠ 가리키는 곳은 04 제품출하 계약의 ShipmentLotAllocation 이다 — 계약이 갈린다.",
       "x-internal-note": "저장 컬럼은 late FK 로 이미 실재한다(goods_receipt_line.original_shipment_lot_allocation_id) — 데이터 모델 담당 대기 사항 없음. 근거: W-04-06 §2 · omf-mes#302"
+     },
+     "putawayModeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       null
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "PDA 지시 없는 적치의 적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 지정 위치 · 미지정 위치 적치 · 임시 적치. 그 밖의 입고는 null. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
      }
     }
    },
@@ -18504,7 +18518,8 @@
           "OTHER_PLANT_WAREHOUSE",
           "NO_DEFECT_WAREHOUSE",
           "MULTIPLE_DEFECT_WAREHOUSES",
-          "NO_STAGING_LOCATION"
+          "NO_STAGING_LOCATION",
+          "USE_PDA_PUTAWAY"
          ],
          "description": "NOT_FOUND 는 lotId·receiptTypeCode 밖의 칸을 비우고, NOT_RECEIPT_READY 는 lotNo·itemId·uomId 까지 싣는다. 입고 대기 = 입하가 취소·취소 요청이 아니고 LOT 이 정상·불량이고 입고 가능 수량이 남음. 그 밖의 까닭은 창고·위치 칸만 비운다(NO_STAGING_LOCATION 은 위치만)",
          "example": "NO_MES_WAREHOUSE"
@@ -26067,7 +26082,9 @@
      "putaway",
      "inboundLotId",
      "inboundLotNo",
-     "package"
+     "package",
+     "putawayModeCode",
+     "putawayLocation"
     ],
     "properties": {
      "purchaseOrderLineId": {
@@ -26158,7 +26175,7 @@
        "COMPLETED",
        "CANCELLED"
       ],
-      "description": "위에서부터 처음 맞는 줄 — 입하 취소(취소 요청 포함)는 CANCELLED · LOT 이 없는 입하 라인은 LABEL_PENDING · 입고할 수량이 남았으면: 폐기 LOT 은 CANCELLED, 검사 대기 LOT 은 검사 대상이면 의뢰 상태대로(없음 INSPECTION_REQUIRED · REQUESTED · IN_PROGRESS) 그 밖(판정 보류·합격 뒤 남은 보류·무검사 품목에 건 보류)은 INSPECTION_HELD, 합격·무검사·불량(불량창고로만)은 RECEIPT_READY · 다 입고했으면 살아 있는 입고의 적치 작업이 대기면 PUTAWAY_PENDING, 임시 적치면 PUTAWAY_TEMPORARY, 아니면 COMPLETED. 일부만 입고한 LOT 은 RECEIPT_READY 다(가장 뒤처진 단계 하나)"
+      "description": "위에서부터 처음 맞는 줄 — 입하 취소(취소 요청 포함)는 CANCELLED · LOT 이 없는 입하 라인은 LABEL_PENDING · 입고할 수량이 남았으면: 폐기 LOT 은 CANCELLED, 검사 대기 LOT 은 검사 대상이면 의뢰 상태대로(없음 INSPECTION_REQUIRED · REQUESTED · IN_PROGRESS) 그 밖(판정 보류·합격 뒤 남은 보류·무검사 품목에 건 보류)은 INSPECTION_HELD, 합격·무검사·불량(불량창고로만)은 RECEIPT_READY · 다 입고했으면 살아 있는 입고의 적치 작업이 대기면 PUTAWAY_PENDING, 임시 적치면 PUTAWAY_TEMPORARY, 아니면 COMPLETED. 일부만 입고한 LOT 은 RECEIPT_READY 다(가장 뒤처진 단계 하나) ⭐⭐ 피처 009(2026-11-18): 입고할 수량이 남은 합격·무검사·불량 LOT 은 RECEIPT_READY 가 아니라 PUTAWAY_PENDING(다음 할 일 PUTAWAY — PDA 적치가 곧 입고다), 일부만 입고한 LOT 도 PUTAWAY_PENDING. 입고 라인의 적치 방식이 TEMPORARY 면 PUTAWAY_TEMPORARY. RECEIPT_READY 는 더 내지 않는다(옛 클라이언트를 위해 enum 에 남긴다)."
      },
      "nextActionCode": {
       "type": [
@@ -26171,7 +26188,7 @@
        "PUTAWAY",
        null
       ],
-      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. 검사 의뢰는 입하 등록 때 서버가 만들므로 「의뢰 요청」은 없다(사용자 결정 2026-10-29 · #805)"
+      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. 검사 의뢰는 입하 등록 때 서버가 만들므로 「의뢰 요청」은 없다(사용자 결정 2026-10-29 · #805) ⭐⭐ POST_RECEIPT 는 더 내지 않는다 — 구매 입하 자재는 PDA 적치로 입고한다(피처 009)."
      },
      "blockedReasons": {
       "type": "array",
@@ -26359,6 +26376,46 @@
        }
       ],
       "description": "자재 관리 LOT 의 패키징(피처 005) — 없거나 라벨 대기 줄이면 null"
+     },
+     "putawayModeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       null
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "살아 있는 입고 라인의 적치 방식 — PDA 지시 없이 적치한 LOT 만 채운다(지시로 입고했거나 입고 전이면 null). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
+     },
+     "putawayLocation": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "적치한 자리 — 지시 없이 적치했으면 입고 라인의 도착 위치(임시 적치면 그 창고 「창고 전체」), 지시로 적치했으면 그 지시의 실제 위치(putaway 와 같다). 아직이면 null. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+      "required": [
+       "locationCode",
+       "locationName",
+       "locationAliasName"
+      ],
+      "properties": {
+       "locationCode": {
+        "type": "string"
+       },
+       "locationName": {
+        "type": "string"
+       },
+       "locationAliasName": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
      }
     }
    },
