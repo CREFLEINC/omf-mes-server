@@ -1362,6 +1362,18 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // logistics.goods_receipt_line.putaway_mode_code — PDA 지시 없는 적치(omf-all-around#294). 그 밖의 입고는 NULL.
+    // 마이그 `20261118090000_putaway_direct` 에도 같은 값(베트남어 이름 포함)이 있다.
+    groupCode: 'GOODS_RECEIPT_PUTAWAY_MODE',
+    groupName: '입고 적치 방식',
+    isSystemOwned: true,
+    values: [
+      { code: 'DESIGNATED', codeName: '지정 위치', order: 10 },
+      { code: 'UNDESIGNATED', codeName: '미지정 위치 적치', order: 20 },
+      { code: 'TEMPORARY', codeName: '임시 적치', order: 30 },
+    ],
+  },
+  {
     // 번복은 「수정」이 아니라 «재검사 회차» — 이 사유가 그 회차의 근거다. 입하 LOT IQC 는 불합격·보류를 덮는 결과에 필수(피처 005
     // FR-023a). 기본값 둘은 마이그 `20261113090000_reinspection_reason_defaults` 에도 같은 줄이 있다 — 열린 그룹이라 고객사가 더한다.
     groupCode: 'REINSPECTION_REASON',
