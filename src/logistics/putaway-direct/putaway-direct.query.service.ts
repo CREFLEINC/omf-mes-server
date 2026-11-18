@@ -4,7 +4,8 @@ import { ContractException } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
-  DesignatedGroupView, TemporaryWarehouseView, VERDICT_MESSAGES, VerdictCode, designationsOf, loadVerdictLocation, locationPaths, verdictOf,
+  DesignatedGroupView, TemporaryWarehouseView, VERDICT_MESSAGES, VerdictCode, designationAddable, designationsOf, loadVerdictLocation, locationPaths,
+  verdictOf,
 } from './location-verdict';
 import {
   PENDING_REASON_MESSAGES, PendingLotFacts, PendingLotView, PendingReason, pendingLotFacts, pendingLotView, pendingLotsOfPlant, pendingReasonOf,
@@ -23,6 +24,8 @@ export interface PendingLotLookup {
 export interface LocationCheckView {
   verdictCode: VerdictCode; locationId?: number; locationCode: string; locationPath?: string;
   warehouseId?: number; warehouseName?: string; isDefectWarehouse?: boolean; message: string;
+  /** 미지정 위치 적치로 기록하면 이 위치의 보관 품목에 이 품목이 더해지는가(FR-017a) — PDA 확인 문구가 이 값을 본다. */
+  designationAddable: boolean;
 }
 
 /** 지시 없는 적치의 읽기 셋(피처 009 contracts §1~§3) — 화면 M-01-05·M-01-07. 공장은 단말이면 단말 공장, 세션이면 질의 공장. */
@@ -59,12 +62,12 @@ export class PutawayDirectQueryService {
     const facts = await this.pendingFacts(plantId, BigInt(lotId));
     const location = await loadVerdictLocation(this.prisma, { locationCode });
     const verdictCode = verdictOf(location, { plantId: facts.plantId, itemId: facts.itemId, defective: facts.statusCode === 'DEFECTIVE' });
-    if (location === null) return { verdictCode, locationCode, message: VERDICT_MESSAGES[verdictCode] };
+    if (location === null) return { verdictCode, locationCode, message: VERDICT_MESSAGES[verdictCode], designationAddable: false };
     const path = (await locationPaths(this.prisma, [location.locationId])).get(location.locationId);
     return {
       verdictCode, locationId: Number(location.locationId), locationCode: location.locationCode, locationPath: path,
       warehouseId: Number(location.warehouseId), warehouseName: location.warehouseName, isDefectWarehouse: location.isDefect,
-      message: VERDICT_MESSAGES[verdictCode],
+      message: VERDICT_MESSAGES[verdictCode], designationAddable: designationAddable(verdictCode, location),
     };
   }
 

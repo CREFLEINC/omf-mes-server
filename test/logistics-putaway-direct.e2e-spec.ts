@@ -334,7 +334,14 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
     expect(body).toMatchObject({ putawayModeCode: 'DESIGNATED', itemDesignationAdded: false });
   });
 
-  it('Q24 FR-017a 나뉜 창고 A 의 「창고 전체」 미지정 적치 — 기록되지만 품목 지정은 더하지 않는다', async () => {
+  it('Q24 FR-017a 나뉜 창고 A 의 「창고 전체」 미지정 적치 — 판정이 designationAddable false 를 알리고, 기록되지만 품목 지정은 더하지 않는다', async () => {
+    // 판정 응답이 미리 알려 준다 — 시스템 자리는 UNDESIGNATED 여도 designationAddable false, 사람이 만든 미지정 위치는 true.
+    expect(await check(il1[6].lotId, codes.AWHOLE)).toMatchObject({ verdictCode: 'UNDESIGNATED', designationAddable: false });
+    expect(await check(il1[6].lotId, codes.R4)).toMatchObject({ verdictCode: 'UNDESIGNATED', designationAddable: true });
+    expect(await check(il1[6].lotId, codes.BWHOLE)).toMatchObject({ verdictCode: 'DESIGNATED', designationAddable: false });
+    expect(await check(il1[6].lotId, codes.R1)).toMatchObject({ verdictCode: 'DESIGNATED', designationAddable: false });
+    expect(await check(il1[6].lotId, codes.ASTAGING)).toMatchObject({ verdictCode: 'STAGING', designationAddable: false });
+    expect(await check(il1[6].lotId, `${PREFIX}-NOPE`)).toMatchObject({ verdictCode: 'NOT_FOUND', designationAddable: false });
     const body = (await putaway(il1[6].lotId, { locationId: Number(ids.AWHOLE), confirmUndesignated: true }).expect(201)).body as PutawayResult;
     expect(body).toMatchObject({ putawayModeCode: 'UNDESIGNATED', itemDesignationAdded: false });
     expect(await itemsOf(ids.AWHOLE)).toEqual([]);

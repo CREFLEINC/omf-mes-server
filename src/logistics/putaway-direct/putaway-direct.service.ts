@@ -14,7 +14,7 @@ import { MATERIAL_RECEIPT } from '../goods-receipt/erp-receipt';
 import { RECEIPT_STATUS_OF_LOT, assertInboundLotsWithin, erpLinesOf } from '../goods-receipt/receipt-gate';
 import { GoodsReceiptCreate, postReceipt } from '../goods-receipt/receipt-posting';
 import { LogisticsWriteActor } from '../logistics-write-actor';
-import { VERDICT_MESSAGES, VerdictCode, VerdictLocation, defectRuleVerdict, loadVerdictLocation, locationPaths, verdictOf } from './location-verdict';
+import { VERDICT_MESSAGES, VerdictCode, VerdictLocation, defectRuleVerdict, designationAddable, loadVerdictLocation, locationPaths, verdictOf } from './location-verdict';
 import { PendingLotFacts } from './pending-lot-query';
 import { PutawayDirectQueryService } from './putaway-direct.query.service';
 
@@ -96,7 +96,7 @@ export class PutawayDirectService {
 
     // 미지정 위치 적치는 전기 «전»에 보관 품목을 더한다(FR-017a) — 시스템 자리·임시 적치는 더하지 않는다.
     let itemDesignationAdded = false;
-    if (mode === 'UNDESIGNATED' && location.systemRoleCode === null) {
+    if (mode === 'UNDESIGNATED' && designationAddable(mode, location)) {
       itemDesignationAdded = (await tx.location_item.createMany({
         data: [{ location_id: location.locationId, item_id: facts.itemId }], skipDuplicates: true,
       })).count > 0;
