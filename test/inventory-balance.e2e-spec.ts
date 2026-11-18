@@ -40,6 +40,7 @@ interface BalanceRow {
   blockedQty: number;
   heldLotCount: number;
   earliestExpiryDate: string | null;
+  qualityStatusCode: string | null;
 }
 interface BalanceBody {
   items: BalanceRow[];
@@ -266,6 +267,41 @@ describe('재고 잔액 (e2e)', () => {
     const byItem = await list(`itemId=${itemId}`);
     expect(byItem.items[0]).toMatchObject({ onHandQty: 19, availableQty: 4, blockedQty: 15 });
     expect(byItem.summary).toMatchObject({ onHandQty: 19, availableQty: 4, blockedQty: 15 });
+  });
+
+  /**
+   * omf-all-around#302 — LOT 이 있는 잔액은 LOT 판정이 가용을 정한다. PDA 제품 입고는 검사 대기로 입고하고
+   * PQC 판정은 원장을 지나지 않아 잔액 행 품질이 그대로다. 정상 LOT 이 검사 대기 · 불량으로 바뀌면 바로 보류다.
+   */
+  it('⭐ 가용은 LOT 판정을 따른다 — 검사 대기 입고분은 합격하면 가용, 정상 LOT 이 바뀌면 보류', async () => {
+    const pending = await makeLot(BigInt(itemId), BigInt(plantId), BigInt(uomId), 'P', '2026-08-01');
+    const normal = await makeLot(BigInt(itemId), BigInt(plantId), BigInt(uomId), 'Q', '2026-08-01');
+    await prisma.lot.update({ where: { lot_id: pending }, data: { status_code: 'INSPECTION_PENDING' } });
+    await post({
+      transactionNo: `${PREFIX}-GR5`,
+      lines: [
+        { itemId, lotId: pending, qty: 3, uomId, to: { ...hereB, qualityStatusCode: 'INSPECTION_PENDING' }, ownershipTypeCode: 'OWNED' },
+        { itemId, lotId: normal, qty: 2, uomId, to: hereB, ownershipTypeCode: 'OWNED' },
+      ],
+    });
+    const rowOf = async (lotId: number) =>
+      (await list(`itemId=${itemId}&groupBy=LOT`)).items.find((r) => r.lotId === lotId);
+
+    const normalOnly = async () =>
+      (await list(`itemId=${itemId}&groupBy=LOT&qualityStatusCode=NORMAL`)).items.map((r) => r.lotId);
+
+    expect(await rowOf(pending)).toMatchObject({ onHandQty: 3, availableQty: 0, blockedQty: 3, qualityStatusCode: 'INSPECTION_PENDING' });
+    expect(await normalOnly()).not.toContain(pending);
+    await prisma.lot.update({ where: { lot_id: pending }, data: { status_code: 'NORMAL' } });
+    // 품질 칸도 LOT 판정을 따른다 — 가용인데 「검사 대기」로 보이지 않는다. 「정상」으로 거르면 나온다.
+    expect(await rowOf(pending)).toMatchObject({ onHandQty: 3, availableQty: 3, blockedQty: 0, qualityStatusCode: 'NORMAL' });
+    expect(await normalOnly()).toContain(pending);
+
+    expect(await rowOf(normal)).toMatchObject({ onHandQty: 2, availableQty: 2, blockedQty: 0, qualityStatusCode: 'NORMAL' });
+    for (const status of ['INSPECTION_PENDING', 'DEFECTIVE']) {
+      await prisma.lot.update({ where: { lot_id: normal }, data: { status_code: status } });
+      expect(await rowOf(normal)).toMatchObject({ onHandQty: 2, availableQty: 0, blockedQty: 2, qualityStatusCode: status });
+    }
   });
 
   it('⭐ 원장 합계와 잔액이 같다 — balance = 트랜잭션의 합', async () => {
