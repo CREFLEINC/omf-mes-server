@@ -40,6 +40,7 @@ interface BalanceRow {
   blockedQty: number;
   heldLotCount: number;
   earliestExpiryDate: string | null;
+  qualityStatusCode: string | null;
 }
 interface BalanceBody {
   items: BalanceRow[];
@@ -286,14 +287,20 @@ describe('재고 잔액 (e2e)', () => {
     const rowOf = async (lotId: number) =>
       (await list(`itemId=${itemId}&groupBy=LOT`)).items.find((r) => r.lotId === lotId);
 
-    expect(await rowOf(pending)).toMatchObject({ onHandQty: 3, availableQty: 0, blockedQty: 3 });
-    await prisma.lot.update({ where: { lot_id: pending }, data: { status_code: 'NORMAL' } });
-    expect(await rowOf(pending)).toMatchObject({ onHandQty: 3, availableQty: 3, blockedQty: 0 });
+    const normalOnly = async () =>
+      (await list(`itemId=${itemId}&groupBy=LOT&qualityStatusCode=NORMAL`)).items.map((r) => r.lotId);
 
-    expect(await rowOf(normal)).toMatchObject({ onHandQty: 2, availableQty: 2, blockedQty: 0 });
+    expect(await rowOf(pending)).toMatchObject({ onHandQty: 3, availableQty: 0, blockedQty: 3, qualityStatusCode: 'INSPECTION_PENDING' });
+    expect(await normalOnly()).not.toContain(pending);
+    await prisma.lot.update({ where: { lot_id: pending }, data: { status_code: 'NORMAL' } });
+    // 품질 칸도 LOT 판정을 따른다 — 가용인데 「검사 대기」로 보이지 않는다. 「정상」으로 거르면 나온다.
+    expect(await rowOf(pending)).toMatchObject({ onHandQty: 3, availableQty: 3, blockedQty: 0, qualityStatusCode: 'NORMAL' });
+    expect(await normalOnly()).toContain(pending);
+
+    expect(await rowOf(normal)).toMatchObject({ onHandQty: 2, availableQty: 2, blockedQty: 0, qualityStatusCode: 'NORMAL' });
     for (const status of ['INSPECTION_PENDING', 'DEFECTIVE']) {
       await prisma.lot.update({ where: { lot_id: normal }, data: { status_code: status } });
-      expect(await rowOf(normal)).toMatchObject({ onHandQty: 2, availableQty: 0, blockedQty: 2 });
+      expect(await rowOf(normal)).toMatchObject({ onHandQty: 2, availableQty: 0, blockedQty: 2, qualityStatusCode: status });
     }
   });
 
