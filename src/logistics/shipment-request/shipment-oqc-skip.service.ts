@@ -6,7 +6,7 @@ import { ApprovalService } from '../../core/approval';
 import { LotQualityStatusService, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertOqcPicked, oqcPickedLots } from './shipment-oqc-lots';
+import { oqcPickedLots } from './shipment-oqc-lots';
 
 /** 승인 다형 축 — `IQC_SKIP`·`INBOUND_LOT` 의 거울(omf-all-around#119 · 장부 P-83). */
 const OQC_SKIP_TYPE = 'OQC_SKIP';
@@ -17,15 +17,15 @@ const OPEN_REQUEST_STATUSES = ['REQUESTED', 'IN_PROGRESS'];
 const APPROVAL_SOURCE = 'APPROVAL_REQUEST';
 
 /**
- * 생략할 수 있는 OQC 의뢰 — 그 출하작업지시의 열린 의뢰 중 확정 결과가 «없는» 것.
- * ⛔ 확정 회차가 있는 의뢰(재검사 대기 등)는 건드리지 않는다 — 불합격 판정을 생략으로 덮으면 관문이 «통과»로 읽는다.
+ * 생략할 수 있는 OQC 의뢰 — 그 출하작업지시의 열린 의뢰 중 결과가 «하나도 없는» 것(피처 010 FR-012 — 결과가 작성중으로 쌓이므로
+ * 「확정 결과 없음」은 뜻이 바뀌었다). ⛔ 결과가 있는 의뢰는 건드리지 않는다 — 불합격 판정을 생략으로 덮으면 관문이 «통과»로 읽는다.
  */
 const skippableWhere = (shipmentRequestId: bigint): Prisma.inspection_requestWhereInput => ({
   inspection_type_code: 'OQC',
   target_type_code: OQC_SKIP_TARGET_TYPE,
   target_id: shipmentRequestId,
   status_code: { in: OPEN_REQUEST_STATUSES },
-  inspection_result: { none: { status_code: 'CONFIRMED' } },
+  inspection_result: { none: {} },
 });
 
 /**
@@ -79,9 +79,8 @@ export class ShipmentOqcSkipService {
         orderBy: { approval_request_id: 'desc' },
       });
       if (approval === null) throw stateLocked('승인된 OQC 생략 요청이 없습니다.');
-      // 피킹이 덜 끝났으면 이력을 남길 LOT 이 모자란다(D6-b) — 판정과 같은 전제다.
+      // 피킹 완료를 요구하지 않는다(피처 010 FR-012) — 지금 피킹된 LOT 에 C27 을 남기고, 뒤에 피킹되는 LOT(교체 포함)은 출하 완료가 남긴다.
       const picked = await oqcPickedLots(tx, id, null);
-      assertOqcPicked(picked, '생략을 실행하세요');
 
       const by = BigInt(appUserId);
       await tx.inspection_request.updateMany({

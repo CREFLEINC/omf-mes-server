@@ -5,6 +5,7 @@ import { InspectionConfirmService } from './inspection-confirm.service';
 import { reopenInspectionRequestWithin, startInspectionRequestWithin } from './inspection-request-reopen';
 import { InspectionResultCreate, InspectionResultWriteContext } from './inspection-result-write-input';
 import { preparePqcWrite } from './inspection-result-write-rules';
+import { OqcLotResultService } from './oqc-lot-result.service';
 import { InspectionResultWriteService } from './inspection-result-write.service';
 
 jest.mock('./inspection-request-reopen');
@@ -51,7 +52,9 @@ const serviceFor = (pqcDraftId: bigint | null = null, stored = { status_code: 'D
   const prisma = { $transaction: jest.fn((run: (client: typeof tx) => unknown) => Promise.resolve(run(tx))) } as unknown as PrismaService;
   const numbering = { next: jest.fn().mockResolvedValue('IRS-1') } as unknown as NumberingService;
   const confirms = { applyConfirmEffects: jest.fn() } as unknown as InspectionConfirmService;
-  return new InspectionResultWriteService(prisma, numbering, confirms, {} as DefectRecordWriteService);
+  // 출하 OQC 새 흐름 분기(피처 010)는 이 시험의 의뢰가 아니라 늘 지나친다.
+  const oqcResults = { create: jest.fn().mockResolvedValue(null), update: jest.fn().mockResolvedValue(null) } as unknown as OqcLotResultService;
+  return new InspectionResultWriteService(prisma, numbering, confirms, {} as DefectRecordWriteService, oqcResults);
 };
 
 const body = (patch: Partial<InspectionResultCreate> = {}): InspectionResultCreate => ({

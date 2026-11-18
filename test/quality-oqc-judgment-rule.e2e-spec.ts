@@ -1,13 +1,10 @@
 /**
- * OQC 판정 — 합격판정개수 기준 자동 판정과 다르면 변경 사유가 필요하다 (e2e · omf-all-around#126 · 장부 P-70).
+ * 출하 OQC — 확정 저장이 닫힌 것과 OQC 생략(요청 → 결재 → 실행) (e2e · omf-all-around#126 · #119 · 장부 P-70·P-83).
  *
- * 실제 API 로 잇는다 — 출하요청 편성(W-04-01)이 검사 필수 라인의 품목별 OQC 의뢰를 세우고, 판정(W-04-03)이
- * `POST …/inspection-results` statusCode=CONFIRMED 로 확정한다. 출하 관문은 출하요청
- * 상세(W-04-04)의 `shippingInspectionStatusCode` 로 본다 — 관문은 판정 코드만 보므로 규칙이 확정 시점에서 막는다.
- * 기준: 불합격 > 합격판정개수 → 불합격 · 아니면 보류 > 0 → 보류 · 아니면 합격. 합격판정개수가 없으면 규칙이 없다(IQC #125 와 같다).
- *
- * #119(장부 P-83) — OQC 확정은 검사 대상 라인의 피킹이 끝나야 하고(D6-b), 집은 LOT 에 판정을 남긴다(합격 C4 · 불합격 C6).
- * 피킹은 이 스위트의 관심 밖이라 예약 행을 직접 심는다(`pick`). 생략 경로(요청 → 결재 → 실행)도 여기서 잇는다.
+ * ⚠ 피처 010(omf-all-around#305)부터 출하 OQC 결과는 LOT 매칭·판정만으로 작성중에 쌓이고 출하 완료가 확정한다 — 확정 저장 경로의
+ *   합격판정개수 변경 사유(#126)·피킹 전제·LOT 이력(C4·C6) 시험은 그 경로가 없어져 지웠다(`shipment-simplified.e2e-spec.ts` 가 새 흐름).
+ * 생략: 결과가 하나도 없는 열린 의뢰만 생략하고, 실행은 피킹 완료를 요구하지 않는다(FR-012).
+ * 피킹은 이 스위트의 관심 밖이라 예약 행을 직접 심는다(`pick`).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -28,7 +25,6 @@ const ITEM_NO_AN = 'OQCJDG-ITEM-NOAN';
 const ROLE = 'E2E_OQC_JUDGMENT';
 const PERMISSIONS = ['W-04-01', 'W-04-03', 'W-04-04', 'W-03-09'];
 const DAY = '2026-10-20';
-const REASON = '고객 승인 — 경미한 외관 차이, 출하 허용';
 
 const key = (): string => randomUUID();
 
@@ -63,132 +59,17 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
   });
 
   /*
-   * ⚠ OQC 확정은 `POST …/inspection-results` statusCode=CONFIRMED 하나로 한다 — 관리웹 W-04-03 · POP P-04-06 둘 다 이 경로다
-   *   (`:confirm` 은 W-01-01 권한 · 관리웹 OQC 에는 작성중·잠금 갈래가 없다). 규칙 함수는 두 경로가 같다(단위 테스트).
+   * ⚠ 피처 010(omf-all-around#305)부터 출하 OQC 는 확정 버튼·확정 저장이 없다 — 결과는 LOT 매칭·판정만으로 작성중에 쌓이고 출하
+   *   완료가 한꺼번에 확정한다(그 흐름은 `shipment-simplified.e2e-spec.ts`). 확정 시점에 걸던 합격판정개수 변경 사유(#126)·피킹
+   *   전제·LOT 이력(C4·C6) 시험은 그 경로가 없어져 지웠다. 여기서는 확정 저장이 409 로 닫힌 것만 본다.
    */
-  describe('POST statusCode=CONFIRMED (W-04-03 · P-04-06 확정 경로)', () => {
-    it('⛔ 합격판정개수 5 · 불합격 10 + 합격 · 사유 없음 → 400 judgmentChangeReason REQUIRED · 결과 없음 · 출하 관문 대기', async () => {
-      const { shipmentRequestId, requestId } = await newOqcRequest(itemWithAn);
+  it('⛔ R-5 출하 OQC 의 확정 저장(statusCode=CONFIRMED)은 409 CONFIRMED_BY_SHIPMENT_COMPLETION · 결과 없음', async () => {
+    const { requestId } = await newOqcRequest(itemWithAn);
 
-      const response = await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
+    const response = await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'ACCEPTED' }).expect(409);
 
-      expect(JSON.stringify(response.body)).toContain('judgmentChangeReason');
-      expect(JSON.stringify(response.body)).toContain('합격판정개수(5)');
-      expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(requestId) } })).toBe(0);
-      expect(await gate(shipmentRequestId)).toBe('PENDING');
-    });
-
-    it('⛔ 공백만인 사유는 없는 것이다 · 501자는 계약이 막는다 → 400', async () => {
-      const { requestId } = await newOqcRequest(itemWithAn);
-
-      await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: '   ' }).expect(400);
-      await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: '가'.repeat(501) }).expect(400);
-    });
-
-    it('⭐ 사유가 있으면 201 · 비고 맨 앞에 사유 · 출하 관문 통과(판정 코드 그대로)', async () => {
-      const { shipmentRequestId, requestId } = await newOqcRequest(itemWithAn);
-
-      const response = await postConfirmed(
-        requestId,
-        { acceptedQty: 90, rejectedQty: 10 },
-        { overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: `  ${REASON} `, remarks: '출하 검사 비고' },
-      ).expect(201);
-
-      expect(response.body.remarks).toBe(`[판정 변경 사유] ${REASON}\n출하 검사 비고`);
-      expect(await gate(shipmentRequestId)).toBe('PASSED');
-    });
-
-    it('⭐ 불합격 10 + 불합격 → 201 · 출하 관문 불합격', async () => {
-      const { shipmentRequestId, requestId } = await newOqcRequest(itemWithAn);
-
-      const response = await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'REJECTED' }).expect(201);
-
-      expect(response.body.remarks ?? null).toBeNull();
-      expect(await gate(shipmentRequestId)).toBe('REJECTED');
-    });
-
-    it('⭐ 불합격 3(≤5) + 합격 → 사유 없이 201 · 실린 사유는 버린다 · 관문 통과', async () => {
-      const { shipmentRequestId, requestId } = await newOqcRequest(itemWithAn);
-
-      const response = await postConfirmed(
-        requestId,
-        { acceptedQty: 97, rejectedQty: 3 },
-        { overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: REASON },
-      ).expect(201);
-
-      expect(response.body.remarks ?? null).toBeNull();
-      expect(await gate(shipmentRequestId)).toBe('PASSED');
-    });
-
-    it('⛔ 보류 2 · 불합격 0 + 합격 · 사유 없음 → 400 (자동 판정 보류) · 보류로 고르면 201 · 관문 보류', async () => {
-      const { shipmentRequestId, requestId } = await newOqcRequest(itemWithAn);
-
-      const response = await postConfirmed(requestId, { acceptedQty: 98, rejectedQty: 0, heldQty: 2 }, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
-      expect(JSON.stringify(response.body)).toContain('보류');
-
-      await postConfirmed(requestId, { acceptedQty: 98, rejectedQty: 0, heldQty: 2 }, { overallJudgmentCode: 'HELD' }).expect(201);
-      expect(await gate(shipmentRequestId)).toBe('HELD');
-    });
-
-    it('⭐ 합격판정개수가 없는 기준이면 규칙이 없다 — 불합격 10 + 합격 → 201(종전 그대로) · 관문 통과', async () => {
-      const { shipmentRequestId, requestId } = await newOqcRequest(itemWithoutAn);
-
-      const response = await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'ACCEPTED' }).expect(201);
-
-      expect(response.body.remarks ?? null).toBeNull();
-      expect(await gate(shipmentRequestId)).toBe('PASSED');
-    });
-
-    it('⭐ 작성중(DRAFT) 저장은 보지 않는다 — 사유를 실어도 버린다', async () => {
-      const { requestId } = await newOqcRequest(itemWithAn);
-
-      const response = await request(app.getHttpServer())
-        .post('/api/quality/inspection-results')
-        .set('Cookie', cookie)
-        .set('Idempotency-Key', key())
-        .send({ ...resultBody(requestId, { acceptedQty: 90, rejectedQty: 10 }), statusCode: 'DRAFT', overallJudgmentCode: 'ACCEPTED', judgmentChangeReason: REASON })
-        .expect(201);
-
-      expect(response.body.remarks ?? null).toBeNull();
-    });
-  });
-
-  describe('#119 — 피킹 전제와 피킹 LOT 이력(D6)', () => {
-    it('⛔ 검사 대상 라인의 피킹이 덜 끝났으면 확정이 400 · 결과 없음', async () => {
-      const { requestId } = await newOqcRequest(itemWithoutAn, { picked: false });
-
-      const response = await postConfirmed(requestId, { acceptedQty: 100, rejectedQty: 0 }, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
-
-      expect(JSON.stringify(response.body)).toContain('피킹을 마친 뒤 판정하세요');
-      expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(requestId) } })).toBe(0);
-    });
-
-    it('⭐ 합격 확정은 집은 LOT 에 C4(정상 → 정상) 이력을 남긴다', async () => {
-      const { requestId, lotId } = await newOqcRequest(itemWithoutAn);
-
-      await postConfirmed(requestId, { acceptedQty: 100, rejectedQty: 0 }, { overallJudgmentCode: 'ACCEPTED' }).expect(201);
-
-      expect(await lotOf(lotId)).toBe('NORMAL');
-      expect(await transitionsOf(lotId)).toEqual(['C4']);
-    });
-
-    it('⭐ 불합격 확정은 집은 LOT 을 불량(C6)으로 옮긴다', async () => {
-      const { requestId, lotId } = await newOqcRequest(itemWithoutAn);
-
-      await postConfirmed(requestId, { acceptedQty: 90, rejectedQty: 10 }, { overallJudgmentCode: 'REJECTED' }).expect(201);
-
-      expect(await lotOf(lotId)).toBe('DEFECTIVE');
-      expect(await transitionsOf(lotId)).toEqual(['C6']);
-    });
-
-    it('보류 확정은 LOT 을 옮기지 않는다', async () => {
-      const { requestId, lotId } = await newOqcRequest(itemWithoutAn);
-
-      await postConfirmed(requestId, { acceptedQty: 98, rejectedQty: 0, heldQty: 2 }, { overallJudgmentCode: 'HELD' }).expect(201);
-
-      expect(await lotOf(lotId)).toBe('NORMAL');
-      expect(await transitionsOf(lotId)).toEqual([]);
-    });
+    expect(response.body.code).toBe('CONFIRMED_BY_SHIPMENT_COMPLETION');
+    expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(requestId) } })).toBe(0);
   });
 
   describe('#119 — OQC 생략(요청 → 결재 → 실행 · 장부 P-83)', () => {
@@ -210,8 +91,8 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
       expect(await transitionsOf(lotId)).toEqual(['C27']);
       // 같은 승인을 두 번 쓰지 못한다 — 생략할 열린 의뢰가 없다.
       expect(JSON.stringify((await skipExecute(shipmentRequestId).expect(400)).body)).toContain('생략을 실행할 수 없습니다');
-      // 생략된 의뢰에는 결과를 저장할 수 없다.
-      await postConfirmed(requestId, { acceptedQty: 100, rejectedQty: 0 }, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
+      // 생략된 의뢰에는 결과를 저장할 수 없다(작성중 저장도 — 피처 010).
+      await postConfirmed(requestId, { acceptedQty: 100, rejectedQty: 0 }, { overallJudgmentCode: 'ACCEPTED', statusCode: 'DRAFT', matchedLotIds: [Number(lotId)] }).expect(400);
     });
 
     it('⛔ 결재 대상 유형 SHIPMENT_REQUEST 로 자기 결재를 찾는다(W-04-03)', async () => {
@@ -230,19 +111,27 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
       await skipRequest(shipmentRequestId).expect(400);
     });
 
-    it('⛔ 판정이 끝난(확정) 출하작업지시는 생략을 요청할 수 없다', async () => {
+    it('⛔ FR-012 결과가 하나라도(작성중이어도) 있는 출하작업지시는 생략을 요청할 수 없다', async () => {
       const { shipmentRequestId, requestId } = await newOqcRequest(itemWithoutAn);
-      await postConfirmed(requestId, { acceptedQty: 100, rejectedQty: 0 }, { overallJudgmentCode: 'ACCEPTED' }).expect(201);
+      // 피처 010 — 결과는 작성중으로 쌓인다. 이 스위트는 피킹 LOT 행 없이 예약만 심으므로 결과 행을 직접 둔다.
+      const worker = await prisma.worker.findFirstOrThrow({ where: { app_user_id: userId } });
+      await prisma.inspection_result.create({ data: {
+        inspection_result_no: `${PREFIX}-IRS-${randomUUID().slice(0, 8)}`, inspection_request_id: BigInt(requestId), inspection_round: 1,
+        inspected_qty: 100, accepted_qty: 100, uom_id: BigInt(uomId), overall_judgment_code: 'ACCEPTED', inspector_id: worker.worker_id,
+        inspected_at: new Date(`${DAY}T03:00:00.000Z`), status_code: 'DRAFT', idempotency_key: key(),
+      } });
 
       expect(JSON.stringify((await skipRequest(shipmentRequestId).expect(400)).body)).toContain('생략을 요청할 수 없습니다');
     });
 
-    it('⛔ 피킹이 덜 끝났으면 승인돼도 실행이 400', async () => {
-      const { shipmentRequestId } = await newOqcRequest(itemWithoutAn, { picked: false });
+    it('⭐ FR-012·Q16 피킹이 덜 끝나도 승인 뒤 실행된다 — 지금 피킹된 LOT 에 C27 이 남는다(피처 010)', async () => {
+      const { shipmentRequestId, lotId } = await newOqcRequest(itemWithoutAn, { picked: false });
       const requested = await skipRequest(shipmentRequestId).expect(202);
       await approve(requested.body.approvalRequestId as number);
 
-      expect(JSON.stringify((await skipExecute(shipmentRequestId).expect(400)).body)).toContain('피킹을 마친 뒤 생략을 실행하세요');
+      await skipExecute(shipmentRequestId).expect(200);
+
+      expect(await transitionsOf(lotId)).toEqual(['C27']);
     });
   });
 
@@ -304,9 +193,6 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
     });
     return lot.lot_id;
   }
-
-  const lotOf = async (lotId: bigint): Promise<string> =>
-    (await prisma.lot.findUniqueOrThrow({ where: { lot_id: lotId } })).status_code;
 
   const transitionsOf = async (lotId: bigint): Promise<string[]> =>
     (await prisma.lot_status_event.findMany({ where: { lot_id: lotId }, orderBy: { lot_status_event_id: 'asc' } })).map(

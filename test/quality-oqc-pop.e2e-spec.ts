@@ -116,8 +116,12 @@ describe('POP OQC 출하검사 판정 (e2e)', () => {
     })).toBe(0);
   });
 
-  it('⭐ 판정 저장 — 같은 공장 의뢰에 확정으로 남고, 검사자·단말이 차며 의뢰가 끝나 대기 목록에서 빠진다', async () => {
-    const response = await save(ids.ownShipment, own).expect(201);
+  it('⭐ 판정 저장 — LOT 을 가리키는 옛 의뢰는 확정으로 남고, 검사자·단말이 차며 의뢰가 끝나 대기 목록에서 빠진다', async () => {
+    // 피처 010 — 품목별 헤더 의뢰(LOT 없음)는 새 흐름이라 확정 저장이 409 다. LOT 을 가리키는 옛 의뢰만 지금처럼 확정으로 태어난다.
+    const blocked = await save(ids.ownShipment, own).expect(409);
+    expect(blocked.body.code).toBe('CONFIRMED_BY_SHIPMENT_COMPLETION');
+
+    const response = await save(ids.ownLot, own).expect(201);
 
     expect(response.body).toMatchObject({ statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectionRound: 1 });
     const row = await prisma.inspection_result.findUniqueOrThrow({
@@ -127,18 +131,18 @@ describe('POP OQC 출하검사 판정 (e2e)', () => {
       inspector_id: own.workerId, terminal_id: own.terminalId, created_by: null, status_code: 'CONFIRMED',
     });
     expect(row.confirmed_at).not.toBeNull();
-    expect((await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: ids.ownShipment } })).status_code)
+    expect((await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: ids.ownLot } })).status_code)
       .toBe('COMPLETED');
 
     const queue = await asPop(request(app.getHttpServer())
       .get('/api/quality/inspection-requests')
       .query({ inspectionTypeCode: 'OQC', pendingOnly: true, size: 100 }), own).expect(200);
     expect((queue.body.items as { inspectionRequestId: number }[]).map((item) => BigInt(item.inspectionRequestId)))
-      .not.toContain(ids.ownShipment);
+      .not.toContain(ids.ownLot);
 
     // 저장 뒤 화면이 다시 읽는 회차 이력.
     const rounds = await asPop(request(app.getHttpServer())
-      .get('/api/quality/inspection-results').query({ inspectionRequestId: Number(ids.ownShipment) }), own).expect(200);
+      .get('/api/quality/inspection-results').query({ inspectionRequestId: Number(ids.ownLot) }), own).expect(200);
     expect(rounds.body.items).toHaveLength(1);
   });
 
@@ -248,6 +252,8 @@ describe('POP OQC 출하검사 판정 (e2e)', () => {
     await prisma.inspection_result.deleteMany({ where: { inspection_request: { inspection_request_no: { startsWith: PREFIX } } } });
     await prisma.inspection_request.deleteMany({ where: { inspection_request_no: { startsWith: PREFIX } } });
     await prisma.shipment_request.deleteMany({ where: { shipment_request_no: { startsWith: PREFIX } } });
+    // LOT 을 가리키는 옛 의뢰의 확정이 LOT 이력(C4)을 남긴다 — LOT 보다 먼저 지운다.
+    await prisma.lot_status_event.deleteMany({ where: { lot: { lot_no: { startsWith: PREFIX } } } });
     await prisma.lot.deleteMany({ where: { lot_no: { startsWith: PREFIX } } });
     await prisma.terminal_process.deleteMany({ where: { terminal_id: { in: terminalIds } } });
     await prisma.terminal.deleteMany({ where: { terminal_id: { in: terminalIds } } });

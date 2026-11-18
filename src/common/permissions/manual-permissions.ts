@@ -520,6 +520,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-results': ['W-03-11'],
   // 입하 LOT 검사의 작성중 결과 삭제(피처 005 §8 · omf-all-around#254) — IQC 판정 화면(W-01-01)이 결과 목록에서 지운다.
   'DELETE /quality/inspection-results/{inspectionResultId}': ['W-01-01'],
+  // 출하 OQC 새 흐름(피처 010)의 작성중 결과 고치기 — 출하검사 판정(W-04-03) 결과 목록에서 고친다. 도출표의 W-01-01 과 합집합이다.
+  'PUT /quality/inspection-results/{inspectionResultId}': ['W-04-03'],
   // 입하 LOT 검사의 판정 확정·확정 취소(피처 005 §8 · R-12·R-13) — 화면이 아니라 W-01-01 안의 동작 권한 W-01-15 만.
   // 결과 기록(W-01-01)만 가진 검사자는 확정·취소를 못 한다(US4-7).
   'POST /quality/inspection-requests/{inspectionRequestId}:confirm': ['W-01-15'],

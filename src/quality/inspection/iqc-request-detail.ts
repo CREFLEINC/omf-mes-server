@@ -214,7 +214,7 @@ const LINE_SELECT = {
   },
 } satisfies Prisma.inbound_receipt_lineSelect;
 
-const RESULT_SELECT = {
+export const RESULT_SELECT = {
   inspection_result_id: true, inspection_result_no: true, inspection_round: true, confirm_cycle: true, status_code: true,
   overall_judgment_code: true, reinspection_reason_code: true, inspected_qty: true, accepted_qty: true, rejected_qty: true, held_qty: true, inspected_at: true,
   version_no: true, worker: { select: { worker_name: true } },
@@ -222,9 +222,9 @@ const RESULT_SELECT = {
   defect_record: { orderBy: { defect_record_id: 'asc' }, select: { defect_code: { select: { defect_name: true } } } },
 } satisfies Prisma.inspection_resultSelect;
 
-type ResultRow = Prisma.inspection_resultGetPayload<{ select: typeof RESULT_SELECT }>;
+export type ResultRow = Prisma.inspection_resultGetPayload<{ select: typeof RESULT_SELECT }>;
 
-async function reinspectionReasonNames(prisma: PrismaService, results: readonly ResultRow[]): Promise<Map<string, string>> {
+export async function reinspectionReasonNames(prisma: PrismaService, results: readonly ResultRow[]): Promise<Map<string, string>> {
   const codes = [...new Set(results.flatMap((result) => (result.reinspection_reason_code === null ? [] : [result.reinspection_reason_code])))];
   if (codes.length === 0) return new Map();
   const found = await prisma.code_value.findMany({
@@ -234,7 +234,7 @@ async function reinspectionReasonNames(prisma: PrismaService, results: readonly 
 }
 
 /** LOT별 판정 근거 — 입하 LOT 의 자재 관리 LOT 전부(번호 순). 사유는 판정에 쓰인 결과의 것이다. */
-function lotJudgmentViews(
+export function lotJudgmentViews(
   lots: readonly { lot_id: bigint; lot_no: string }[],
   results: readonly ResultRow[],
   reasonNames: ReadonlyMap<string, string>,
@@ -262,7 +262,7 @@ function lotJudgmentViews(
   });
 }
 
-function resultView(row: ResultRow, reasonNames: ReadonlyMap<string, string>): InspectionRequestResultView {
+export function resultView(row: ResultRow, reasonNames: ReadonlyMap<string, string>): InspectionRequestResultView {
   const lots = row.inspection_result_lot.map((match) => match.lot);
   return {
     inspectionResultId: Number(row.inspection_result_id),
