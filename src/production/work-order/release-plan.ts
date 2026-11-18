@@ -10,6 +10,7 @@ import { NumberingService } from '../../core/numbering';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BOM_COMPONENT_SELECT, BomComponentRow, skipsMaterialIssue } from './material-issue';
+import { MaterialUomConfirmation, ReleaseMaterials, releaseMaterials } from './release-materials';
 
 /** 배포가 읽는 W/O — 공장은 계획을 거쳐 «한 축»으로만 푼다(R-7). */
 const RELEASE_SELECT = {
@@ -55,7 +56,11 @@ export interface ReleasePlan {
   /** 슬롯 N 개의 계획 수량 — 합이 지시수량과 정확히 같다. */
   qtys: Prisma.Decimal[];
   businessDate: string;
+  /** 공장 현지 오늘 — 품목 환산의 유효일이자 배포 때 넣은 환산의 시작일. */
+  plantToday: string;
   components: BomComponentRow[];
+  /** 재고 단위로 바꾼 자재 줄과 배포 확인에서 넣은 환산. */
+  materials: ReleaseMaterials;
   /** 담을 라인이 0건이면 뽑지 않는다 — 그때는 헤더도 만들지 않는다. */
   issueRequestNo: string | null;
   /** 생산 창고를 쓰는 공장(피처 003)이면 채운다. 비었으면 이 기능 전 경로 그대로다(FR-009a). */
@@ -90,6 +95,7 @@ export async function releasePlan(
   numbering: NumberingService,
   workOrderId: number,
   lotSize: number,
+  uom: { confirmations: MaterialUomConfirmation[] | undefined; automatic: boolean },
 ): Promise<ReleasePlan> {
   const row = await prisma.work_order.findUnique({
     where: { work_order_id: workOrderId },
@@ -128,6 +134,12 @@ export async function releasePlan(
   const components = await bomComponents(prisma, row, plan.bom_id);
   const businessDate = today();
   const plantId = plan.production_order.plant_id;
+  const plantToday = localDate(new Date(), plan.production_order.plant.timezone_code);
+  // 채번보다 «앞»이다 — 단위 확인이 빠져 400 이 나면 번호를 안 뽑는다. 라인 없이 배포하는 자동 W/O 는 생산 현장이 없어
+  // 출고요청을 만들지 않는다 — 담을 줄이 없으니 환산이 없는 자재로 배포를 막지 않는다.
+  const materials = lineless
+    ? { lines: [], entered: [] }
+    : await releaseMaterials(prisma, { components, orderQty: row.order_qty, baseQty: plan.bom.base_qty, plantToday, ...uom });
   const waiting =
     components.length > 0 && row.production_line_id !== null && (await usesProductionWarehouses(prisma, plantId))
       ? await waitingPlan(prisma, numbering, { row, plantId, productionLineId: row.production_line_id, businessDate })
@@ -138,10 +150,12 @@ export async function releasePlan(
     plan,
     qtys,
     businessDate,
+    plantToday,
     components,
+    materials,
     waiting,
     issueRequestNo:
-      components.length === 0 || waiting !== null
+      materials.lines.length === 0 || waiting !== null
         ? null
         : await numbering.next(
             'MATERIAL_ISSUE_REQUEST',
@@ -214,9 +228,9 @@ function lineErrors(row: ReleaseRow, plan: NonNullable<ReleaseRow['production_pl
  * 않는다(「공정 미지정 = 전 공정 공통」은 우리가 지어내는 뜻이다). 전건을 담으면 같은
  * 계획의 공정 W/O 여럿이 같은 자재를 겹쳐 요청한다.
  */
-function bomComponents(
+export function bomComponents(
   prisma: PrismaService,
-  row: ReleaseRow,
+  row: Pick<ReleaseRow, 'work_order_type_code' | 'routing_operation_id'>,
   bomId: bigint,
 ): Promise<BomComponentRow[]> {
   if (skipsMaterialIssue(row.work_order_type_code)) {

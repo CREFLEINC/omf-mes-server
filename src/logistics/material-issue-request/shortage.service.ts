@@ -2,14 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
-import { BOM_COMPONENT_SELECT, MaterialIssueLine, materialRequirements } from '../../core/bom';
+import { BOM_COMPONENT_SELECT, MaterialIssueLine, UomConversionSource, loadStockUomTable, materialRequirements, stockUomLines } from '../../core/bom';
+import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 계약 `MaterialIssueShortageLine` — 매퍼가 정본이다(`work-order-view.ts` 관행). */
 export type MaterialIssueShortageLine = ReturnType<typeof shortageLines>[number];
 
-/** ⓐ 축 — `bom.base_qty` 까지 한 번에 읽는다. */
-const PLAN_SELECT = { select: { bom_id: true, bom: { select: { base_qty: true } } } };
+/** ⓐ 축 — `bom.base_qty` 까지 한 번에 읽는다. 공장 시간대는 품목 환산의 유효일(공장 오늘)을 푼다. */
+const PLAN_SELECT = {
+  select: { bom_id: true, bom: { select: { base_qty: true } }, production_order: { select: { plant: { select: { timezone_code: true } } } } },
+};
 
 /**
  * `GET …/material-issue-requests/shortage` — 한 W/O 의 품목별 소요·기출고·부족. 화면
@@ -52,8 +55,11 @@ export class MaterialIssueShortageService {
       select: BOM_COMPONENT_SELECT,
       orderBy: { sequence_no: 'asc' },
     });
+    // 재고 단위로 낸다 — 기출고(출고 전기)가 재고 단위이고, 배포가 같은 함수로 출고요청을 만든다. 환산이 없는 자재만 BOM 단위로 남는다.
     const required = materialRequirements(components, row.order_qty, plan.bom.base_qty);
-    return { items: shortageLines(required, await this.issuedByItem(workOrderId)) };
+    const table = await loadStockUomTable(this.prisma, required.map((line) => line.item_id), localDate(new Date(), plan.production_order.plant.timezone_code));
+    const lines = stockUomLines(table, required).map(({ line, conversion }) => ({ ...line, conversionSource: conversion.source }));
+    return { items: shortageLines(lines, await this.issuedByItem(workOrderId)) };
   }
 
   /** 품목별 기출고 합 — FK 가 없는 다형 조인이라 Prisma `where` 로 못 쓴다. */
@@ -78,31 +84,40 @@ interface MergedItem {
   bomComponentId: number | null;
   uomId: number;
   qty: Prisma.Decimal;
+  conversionSource: UomConversionSource | null;
 }
 
+/** 소요 한 줄과 그 줄의 재고 단위 환산 출처(`core/bom` `stockUomLines`). */
+export type ShortageInput = MaterialIssueLine & { conversionSource?: UomConversionSource | null };
+
 /**
- * BOM 라인을 **품목으로 합친다**(계약 「품목별 소요·기출고·부족」). 입력이 `sequence_no`
+ * BOM 라인을 **품목·단위로 합친다**(계약 「품목별 소요·기출고·부족」). 입력이 `sequence_no`
  * 오름차순이라 처음 나온 순서가 곧 「합친 뒤 최소 `sequence_no`」다. `bomComponentId` 는
  * 라인이 하나일 때만 채우고 둘 이상이면 **널**이다(R-20).
+ * 같은 품목이라도 환산이 없어(NONE) BOM 단위로 남은 줄은 따로 낸다 — 단위가 다른 수량은 더할 수 없다. 기출고는 재고 단위라
+ * 재고 단위 행에만 견준다.
  */
-export function shortageLines(required: MaterialIssueLine[], issued: Map<string, Prisma.Decimal>) {
+export function shortageLines(required: ShortageInput[], issued: Map<string, Prisma.Decimal>) {
   const merged = new Map<string, MergedItem>();
   for (const line of required) {
-    const seen = merged.get(String(line.item_id));
+    const key = `${line.item_id}:${line.uom_id}`;
+    const seen = merged.get(key);
     if (seen === undefined) {
-      merged.set(String(line.item_id), {
+      merged.set(key, {
         itemId: Number(line.item_id),
         bomComponentId: Number(line.bom_component_id),
         uomId: Number(line.uom_id),
         qty: line.requested_qty,
+        conversionSource: line.conversionSource ?? null,
       });
       continue;
     }
     seen.qty = seen.qty.plus(line.requested_qty);
     seen.bomComponentId = null;
+    seen.conversionSource ??= line.conversionSource ?? null;
   }
-  return [...merged].map(([key, { qty, ...item }]) => {
-    const issuedQty = issued.get(key) ?? new Prisma.Decimal(0);
+  return [...merged.values()].map(({ qty, ...item }) => {
+    const issuedQty = item.conversionSource === 'NONE' ? new Prisma.Decimal(0) : (issued.get(String(item.itemId)) ?? new Prisma.Decimal(0));
     const shortage = qty.minus(issuedQty);
     return {
       ...item,

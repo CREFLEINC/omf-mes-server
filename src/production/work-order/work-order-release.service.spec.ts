@@ -72,7 +72,7 @@ function stub(options: {
     production_plan: {
       bom_id: BOM,
       bom: { bom_version: 2, base_qty: new Prisma.Decimal(1) },
-      production_order: { plant_id: 5n },
+      production_order: { plant_id: 5n, plant: { timezone_code: 'Asia/Ho_Chi_Minh' } },
     },
   };
 
@@ -127,6 +127,9 @@ function stub(options: {
     // 가용 재고가 없다 — 피킹 지시는 0건이고 채번도 안 부른다(피킹 규칙은 `core/picking` spec).
     inventory_balance: { findMany: () => Promise.resolve([]) },
     item: { findMany: () => Promise.resolve([]) },
+    // 환산 기준정보가 비면 단위를 그대로 둔다 — 단위 환산은 `release-materials.spec.ts` 가 본다.
+    uom: { findMany: () => Promise.resolve([]) },
+    item_uom_conversion: { findMany: () => Promise.resolve([]) },
     // 생산 창고를 연결한 적 없는 공장 — 이 기능 전 경로(피처 003 FR-009a)를 탄다.
     department_production_warehouse: { findFirst: () => Promise.resolve(null) },
     inspection_plan: { count: () => Promise.resolve(options.pqcTarget === true ? 1 : 0) },

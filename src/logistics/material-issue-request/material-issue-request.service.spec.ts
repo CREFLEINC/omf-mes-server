@@ -41,6 +41,9 @@ function stub(options: { status?: string; reasonCodes?: string[] } = {}) {
     item: { findMany: async () => [{ item_id: 10n }] },
     uom: { findMany: async () => [{ uom_id: 20n }] },
     bom_component: { findMany: async () => [] },
+    // 품목 기본 단위를 모르면 줄 단위를 그대로 둔다 — 단위 환산은 `core/bom/stock-uom.spec.ts` 가 본다.
+    plant: { findUniqueOrThrow: async () => ({ timezone_code: 'Asia/Ho_Chi_Minh' }) },
+    item_uom_conversion: { findMany: async () => [] },
     code_value: {
       findMany: async () =>
         (options.reasonCodes ?? []).map((code) => ({
