@@ -135,14 +135,11 @@ export async function releasePlan(
   const businessDate = today();
   const plantId = plan.production_order.plant_id;
   const plantToday = localDate(new Date(), plan.production_order.plant.timezone_code);
-  // 채번보다 «앞»이다 — 단위 확인이 빠져 400 이 나면 번호를 안 뽑는다.
-  const materials = await releaseMaterials(prisma, {
-    components,
-    orderQty: row.order_qty,
-    baseQty: plan.bom.base_qty,
-    plantToday,
-    ...uom,
-  });
+  // 채번보다 «앞»이다 — 단위 확인이 빠져 400 이 나면 번호를 안 뽑는다. 라인 없이 배포하는 자동 W/O 는 생산 현장이 없어
+  // 출고요청을 만들지 않는다 — 담을 줄이 없으니 환산이 없는 자재로 배포를 막지 않는다.
+  const materials = lineless
+    ? { lines: [], entered: [] }
+    : await releaseMaterials(prisma, { components, orderQty: row.order_qty, baseQty: plan.bom.base_qty, plantToday, ...uom });
   const waiting =
     components.length > 0 && row.production_line_id !== null && (await usesProductionWarehouses(prisma, plantId))
       ? await waitingPlan(prisma, numbering, { row, plantId, productionLineId: row.production_line_id, businessDate })
