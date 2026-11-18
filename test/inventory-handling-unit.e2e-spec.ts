@@ -47,8 +47,8 @@ const BUSINESS_DATE = '2026-09-09';
 const OCCURRED_AT = '2026-09-09T10:22:00+09:00';
 const ROLE = 'E2E_HU';
 // `POST /inventory/handling-units` 의 도출 권한 셋 중 하나(`derived-permissions.ts:165`).
-// ⭐ `:pack` 은 도출 권한이 다르다(`derived-permissions.ts:166` — `P-02-08`·`P-04-01`).
-const PERMISSIONS = ['M-04-03', 'P-02-08'];
+// ⭐ `:pack` 은 도출 권한이 다르다(`P-04-01` — 생산 포장 P-02-08 은 omf-all-around#293 에서 뺐다).
+const PERMISSIONS = ['M-04-03', 'P-04-01'];
 const WORKER_NO = 'HUE2E01';
 /**
  * 이 스위트가 만든 취급 단위 — 채번된 `HU-…` 도 잡아야 창고·위치 삭제가 안 막힌다(S-12).

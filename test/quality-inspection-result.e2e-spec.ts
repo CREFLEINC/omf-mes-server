@@ -37,7 +37,7 @@ const LOGIN_ID = 'e2e-i19qa-probe';
 const NOPERM_ID = 'e2e-i19qa-noperm';
 /** 계약이 403 을 선언한 셋 — 도출표(`derived-permissions.ts:250·251·280`)에 이미 있다. */
 const ROLE = 'E2E_I19_QUALITY';
-const PERMISSIONS = ['W-01-01', 'P-02-13', 'W-04-03'];
+const PERMISSIONS = ['W-01-01', 'W-03-11', 'W-04-03'];
 const PASSWORD = 'PR-검사의뢰-비밀번호';
 const REQUESTS = '/api/quality/inspection-requests';
 const RESULTS = '/api/quality/inspection-results';

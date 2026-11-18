@@ -102,7 +102,8 @@ export async function loadDocumentIssueTargets(
     add('SERIAL_NUMBER', row.serial_number_id, row.serial_no, 'P-02-05'),
   );
   units.forEach((row) =>
-    add('HANDLING_UNIT', row.handling_unit_id, row.handling_unit_no, 'P-02-09'),
+    // 포장 라벨 재출력(P-02-09)을 없앴다 — 포장 라벨은 납품·포장 라벨 출력(P-04-02)에서 다시 찍는다(omf-all-around#293).
+    add('HANDLING_UNIT', row.handling_unit_id, row.handling_unit_no, 'P-04-02'),
   );
   issueLines.forEach((row) =>
     add(
