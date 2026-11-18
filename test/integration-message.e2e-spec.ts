@@ -86,7 +86,8 @@ describe('연계 메시지 (e2e)', () => {
     await app.close();
   });
 
-  it('⭐ 상수 넷이 시드 그룹 INTEGRATION_MESSAGE_STATUS 와 같다 — 화면은 그룹을 읽고 서버는 상수를 쓴다', async () => {
+  // 피처 010 이 송신 전 취소 CANCELLED 를 더했다: 넷 → 다섯.
+  it('⭐ 상수 다섯이 시드 그룹 INTEGRATION_MESSAGE_STATUS 와 같다 — 화면은 그룹을 읽고 서버는 상수를 쓴다', async () => {
     // 계약이 값 목록을 GET /mdm/code-values?codeGroupCode=INTEGRATION_MESSAGE_STATUS 로 받으라 했다.
     // 둘이 어긋나면 화면 필터가 고른 값이 서버에 한 건도 없거나, 서버가 쓴 값이 이름 없이 보인다.
     const rows = await prisma.code_value.findMany({
