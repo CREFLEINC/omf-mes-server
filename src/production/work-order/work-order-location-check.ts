@@ -48,3 +48,20 @@ export async function assertLocationsAllowed(tx: Prisma.TransactionClient, workO
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
+
+/** WIP is derived before release; changing a line must not retain the previous line's destination. */
+export async function withLineWip<T extends LocationBody & { productionLineId?: number | null }>(tx: Prisma.TransactionClient, workOrderId: number, body: T): Promise<T> {
+  if (body.productionLineId === undefined && body.defaultWipLocationId === undefined) return body;
+  const row = await tx.work_order.findUniqueOrThrow({
+    where: { work_order_id: BigInt(workOrderId) },
+    select: { production_line_id: true, default_wip_location_id: true, production_plan: { select: { production_order: { select: { plant_id: true } } } } },
+  });
+  const lineId = body.productionLineId === undefined ? row.production_line_id : body.productionLineId === null ? null : BigInt(body.productionLineId);
+  if (lineId === row.production_line_id && row.default_wip_location_id !== null) return { ...body, defaultWipLocationId: Number(row.default_wip_location_id) };
+  if (lineId === null) return { ...body, defaultWipLocationId: null };
+  const line = await tx.production_line.findUnique({ where: { production_line_id: lineId }, select: { plant_id: true, is_active: true, default_wip_location_id: true } });
+  if (!line || !line.is_active || (row.production_plan && line.plant_id !== row.production_plan.production_order.plant_id)) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [field('productionLineId', 'INVALID', '이 공장의 사용 중인 생산 라인을 선택하세요.')]);
+  }
+  return { ...body, defaultWipLocationId: line.default_wip_location_id === null ? null : Number(line.default_wip_location_id) };
+}

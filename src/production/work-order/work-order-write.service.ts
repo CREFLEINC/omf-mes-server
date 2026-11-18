@@ -7,7 +7,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { WORK_ORDER_DEFAULT_PRIORITY, WORK_ORDER_DEFAULT_TYPE, WORK_ORDER_INITIAL_STATUS } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertLocationsAllowed } from './work-order-location-check';
+import { assertLocationsAllowed, withLineWip } from './work-order-location-check';
 
 /** 계약 `WorkOrderCreate` 11칸 — required 넷. */
 export interface WorkOrderCreate {
@@ -187,12 +187,13 @@ export class WorkOrderWriteService {
         body.plannedEndAt !== undefined ? at(body.plannedEndAt) ?? null : locked.planned_end_at,
       );
 
-      await assertLocationsAllowed(tx, workOrderId, body);
+      const resolved = await withLineWip(tx, workOrderId, body);
+      await assertLocationsAllowed(tx, workOrderId, resolved);
 
       await tx.work_order.update({
         where: { work_order_id: BigInt(workOrderId) },
         data: {
-          ...workOrderUpdateData(body),
+          ...workOrderUpdateData(resolved),
           updated_by: appUserId ?? null,
           version_no: { increment: 1 },
         },

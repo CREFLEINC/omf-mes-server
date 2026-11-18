@@ -183,9 +183,9 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
         plannedEquipmentId: equipmentId,
         plannedMoldId: moldId,
         responsibleWorkerId: workOrder.responsibleWorkerId ?? null,
-        defaultWipLocationId: workOrder.defaultWipLocationId ?? null,
+        defaultWipLocationId: Number(plan.locations?.get(operationId)?.defaultWipLocationId) || null,
         defaultFgLocationId: workOrder.defaultFgLocationId ?? null,
-        defaultScrapLocationId: workOrder.defaultScrapLocationId ?? null,
+        defaultScrapLocationId: Number(plan.locations?.get(operationId)?.defaultScrapLocationId) || null,
         equipmentRequired,
         moldRequired,
         // 확정·배포가 막지 않는 빈 칸이다 — 공정이 요구하는데 비었음을 알린다.

@@ -41,7 +41,7 @@ export interface ResourceFinding {
   message: string;
 }
 
-const LOCATION_FIELDS = ['defaultWipLocationId', 'defaultFgLocationId', 'defaultScrapLocationId'] as const;
+const LOCATION_FIELDS = ['defaultWipLocationId', 'defaultFgLocationId'] as const;
 
 /** `fg` 는 ERP W/O 의 완제품 위치 판정 — 완제품 위치 칸만 이 규칙을 따른다(`core/erp-warehouse/fg-location.ts`). */
 export function resourceFindings(plantId: bigint, values: WorkOrderResources, refs: ResourceRefs, fg: FgRule): ResourceFinding[] {
@@ -78,7 +78,7 @@ export function resourceFindings(plantId: bigint, values: WorkOrderResources, re
     const rule = field === 'defaultFgLocationId' ? fg : undefined;
     // 연결이 실패한 완제품 위치는 비어 있어도 «위치를 고르세요» 가 아니라 연결 실패가 사유다 — 고를 수 있는 위치가 없다.
     if (locationId === null && rule?.kind !== 'LINK_FAILED') {
-      findings.push({ code: 'WORK_ORDER_LOCATION_REQUIRED', field, message: '기본 위치가 없습니다. 위치를 고르세요.' });
+      findings.push({ code: 'WORK_ORDER_LOCATION_REQUIRED', field, message: field === 'defaultWipLocationId' ? '생산 라인의 기본 WIP 위치를 설정하세요.' : '기본 위치가 없습니다. 위치를 고르세요.' });
       continue;
     }
     const found = locationFinding(plantId, locationId === null ? undefined : refs.locations.get(locationId), rule);
