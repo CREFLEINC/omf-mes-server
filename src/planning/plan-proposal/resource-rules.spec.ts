@@ -54,9 +54,13 @@ describe('resourceFindings — 공정 W/O 의 라인·설비·금형·기본 위
     expect(codes({ defaultWipLocationId: null, defaultFgLocationId: 2n, defaultScrapLocationId: 3n })).toEqual([
       ['defaultWipLocationId', 'WORK_ORDER_LOCATION_REQUIRED'],
       ['defaultFgLocationId', 'LOCATION_INVALID'],
-      ['defaultScrapLocationId', 'LOCATION_INVALID'],
     ]);
     expect(codes({ defaultWipLocationId: 4n })).toEqual([['defaultWipLocationId', 'LOCATION_INVALID']]);
+  });
+
+  it('스크랩 위치는 비어 있거나 과거 값이어도 필수·자원 검사를 하지 않는다', () => {
+    expect(codes({ defaultScrapLocationId: null })).toEqual([]);
+    expect(codes({ defaultScrapLocationId: 3n })).toEqual([]);
   });
 
   it('완제품 위치 — SL_CD 가 없으면 외부창고·불량창고 위치는 LOCATION_INVALID', () => {

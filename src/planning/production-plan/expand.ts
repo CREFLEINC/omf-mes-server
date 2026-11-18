@@ -45,7 +45,7 @@ export interface WorkOrderSupplement {
   shiftId: bigint | null;
   defaultWipLocationId: bigint;
   defaultFgLocationId: bigint;
-  defaultScrapLocationId: bigint;
+  defaultScrapLocationId: bigint | null;
   window: PlanWindow;
 }
 

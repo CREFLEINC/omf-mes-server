@@ -356,6 +356,12 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.inspectionRequests).toEqual([]);
   });
 
+  it('배포 — 스크랩 위치가 없어도 배포한다', async () => {
+    const harness = stub({ scrapDestination: null, components: [component(1n, 2)] });
+    await release(harness);
+    expect(harness.updated).not.toEqual([]);
+  });
+
   it('배포 — 긴급 유형이면 출고요청을 만들지 않는다', async () => {
     const harness = stub({ typeCode: 'EMERGENCY' });
 
@@ -416,7 +422,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.calls).not.toContain('numbering');
   });
 
-  it('배포 — 기본 위치가 빠지면 세 필드의 400을 내고 아무 결과도 쓰지 않는다', async () => {
+  it('배포 — WIP·완제품 위치가 빠지면 두 필드의 400을 내고 아무 결과도 쓰지 않는다', async () => {
     const harness = stub({
       destination: null,
       fgDestination: null,
@@ -435,7 +441,6 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect((caught as ContractException).errors).toEqual([
       expect.objectContaining({ field: 'defaultWipLocationId', code: 'REQUIRED' }),
       expect.objectContaining({ field: 'defaultFgLocationId', code: 'REQUIRED' }),
-      expect.objectContaining({ field: 'defaultScrapLocationId', code: 'REQUIRED' }),
     ]);
     expect(harness.updated).toEqual([]);
     expect(harness.lots).toEqual([]);

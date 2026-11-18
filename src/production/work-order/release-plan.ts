@@ -113,11 +113,10 @@ export async function releasePlan(
     : [
         ['defaultWipLocationId', row.default_wip_location_id],
         ['defaultFgLocationId', row.default_fg_location_id],
-        ['defaultScrapLocationId', row.default_scrap_location_id],
       ];
   const locationErrors = requiredLocations
     .filter(([, value]) => value === null)
-    .map(([name]) => field(name, ERROR_CODE.REQUIRED, '배포 전에 기본 위치를 지정해야 합니다.'));
+    .map(([name]) => field(name, ERROR_CODE.REQUIRED, name === 'defaultWipLocationId' ? '생산 라인의 기본 WIP 위치를 설정한 뒤 배정을 저장하세요.' : '배포 전에 기본 위치를 지정해야 합니다.'));
   const preconditionErrors = [...locationErrors, ...(lineless ? [] : lineErrors(row, plan))];
   if (preconditionErrors.length > 0) {
     throw new ContractException(HttpStatus.BAD_REQUEST, preconditionErrors);
