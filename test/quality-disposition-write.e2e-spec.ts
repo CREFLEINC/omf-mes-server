@@ -389,7 +389,7 @@ describe('처분 판정 저장 (e2e)', () => {
     expect(response.body.errors[0]).toMatchObject({ code: 'REQUIRED' });
   });
 
-  it('⭐⭐ 권한 — `W-03-10` «만» 가진 계정이 201 을 받는다(도출표엔 P-02-13 하나뿐이다)', async () => {
+  it('⭐⭐ 권한 — `W-03-10` «만» 가진 계정이 201 을 받는다(도출표엔 없다 — POP PQC P-02-13 을 omf-all-around#293 에서 뺐다)', async () => {
     // ⛔ 이 스위트의 성공 시험 전부가 그 계정으로 돈다 — `manual-permissions.ts` 4행을 지우면
     //   전건이 403 이 된다. 여기서는 그것이 «의도»임을 이름으로 남긴다.
     await post(ncIds.perm, 1).send(body({ decisionQty: 1 })).expect(201);

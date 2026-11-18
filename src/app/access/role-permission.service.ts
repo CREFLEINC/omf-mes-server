@@ -17,7 +17,7 @@ interface RolePermissionView {
  * 내려 주면 격자가 「후보 밖 부여분」으로 그대로 들고 있다가 저장 때 실어 보내 `assertKnown` 400 이 난다.
  * 숨긴 줄은 그 역할을 다음에 저장할 때 `deleteMany` 로 함께 사라진다.
  */
-const RETIRED_PERMISSION_CODES = ['W-CO-05'];
+const RETIRED_PERMISSION_CODES = ['W-CO-05', 'P-02-08', 'P-02-09', 'P-02-13'];
 
 @Injectable()
 export class RolePermissionService {

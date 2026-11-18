@@ -69,12 +69,11 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-02-05', name: '인식표 발행·부착', groupCode: '02' },
   { code: 'P-02-06', name: '생산LOT 완료 처리', groupCode: '02' },
   { code: 'P-02-07', name: 'LOT 라벨 출력·부착', groupCode: '02' },
-  { code: 'P-02-08', name: '포장 작업 (LOT 스캔·제품 포장)', groupCode: '02' },
-  { code: 'P-02-09', name: '포장 라벨·인식표 재출력·부착', groupCode: '02' },
+  // P-02-08 포장 작업 · P-02-09 포장 라벨 재출력 — POP 화면을 없앴다(omf-all-around#293).
   { code: 'P-02-10', name: '작업 중단(홀드) 등록', groupCode: '02' },
   { code: 'P-02-11', name: '러닝체인지 부품 교체 등록', groupCode: '02' },
   { code: 'P-02-12', name: '긴급 W/O 현장 투입·실적', groupCode: '02' },
-  { code: 'P-02-13', name: 'PQC 제품 검사·검사 결과 입력', groupCode: '02' },
+  // P-02-13 PQC 제품 검사 — POP 화면을 없앴다. PQC 판정은 관리웹 W-03-11 에서만 한다(omf-all-around#293).
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(사용자 결정 · 장부 P-52).
   { code: 'P-02-14', name: '자재 불량 등록', groupCode: '02' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).

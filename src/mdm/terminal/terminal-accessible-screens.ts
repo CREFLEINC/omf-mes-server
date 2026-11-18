@@ -51,13 +51,10 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   { code: 'P-02-01', flag: 'can_start_work' },
   { code: 'P-02-03', flag: 'can_input_material' },
   { code: 'P-02-04', flag: 'can_input_result' },
-  { code: 'P-02-08', flag: 'can_complete_work' },
-  { code: 'P-02-09', flag: 'can_print_label' },
   { code: 'P-02-10', flag: 'can_start_work' },
   { code: 'P-02-11', flag: 'can_input_material' },
   // 긴급 W/O 는 플래그 축이 없다 — 긴급은 매핑 밖의 일을 여는 화면이다.
   { code: 'P-02-12', flag: null },
-  { code: 'P-02-13', flag: 'can_input_inspection' },
   // ⭐ 자재 불량 등록(장부 P-52) — 품질 POP 화면이라 검사 입력 공정 단말에만 연다(사용자 결정 2026-10-16).
   { code: 'P-02-14', flag: 'can_input_inspection' },
   // ⭐ 제품 검사표 입력(장부 P-102) — 품질 POP 화면이라 검사 입력 공정 단말에만 연다(P-02-14 와 같다).

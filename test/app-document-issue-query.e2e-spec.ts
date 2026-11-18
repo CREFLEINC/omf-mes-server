@@ -209,7 +209,7 @@ describe('발행 이력 목록·상세 (I-27 P1 e2e)', () => {
           'HANDLING_UNIT',
           expect.objectContaining({
             displayName: `${PREFIX}-HU`,
-            screenId: 'P-02-09',
+            screenId: 'P-04-02',
           }),
         ],
         [
