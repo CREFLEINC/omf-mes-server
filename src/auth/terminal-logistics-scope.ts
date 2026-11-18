@@ -43,6 +43,10 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/purchase-orders/{purchaseOrderId}': ['MOBILE'],
   'GET /logistics/putaway-tasks': ['MOBILE'],
   'GET /logistics/putaway-tasks/{putawayTaskId}': ['MOBILE'],
+  // 지시 없는 적치(피처 009) — LOT 은 단말 공장으로 서비스가 판정한다(다른 공장 LOT 은 이유 OTHER_PLANT 로 답한다).
+  'GET /logistics/putaway-pending-lots': ['MOBILE'],
+  'GET /logistics/putaway-pending-lots:lookup': ['MOBILE'],
+  'GET /logistics/putaway-pending-lots/{lotId}/location-check': ['MOBILE'],
   'GET /logistics/shipment-lot-allocations': ['POP', 'MOBILE'],
   'GET /logistics/shipment-requests': ['MOBILE'],
   'GET /logistics/shipments': ['POP'],
@@ -144,6 +148,9 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/picking-orders':
     case 'GET /logistics/purchase-orders':
     case 'GET /logistics/putaway-tasks':
+    case 'GET /logistics/putaway-pending-lots':
+    case 'GET /logistics/putaway-pending-lots:lookup':
+    case 'GET /logistics/putaway-pending-lots/{lotId}/location-check':
     case 'GET /logistics/shipment-lot-allocations':
     case 'GET /logistics/shipment-requests':
     case 'GET /logistics/shipping-units':

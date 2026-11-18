@@ -352,6 +352,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `permission.guard.ts:47-53`). ⛔ `M-04-04` 를 넣지 않는다 — 그 화면 §5-6 이
   // 「임시 위치 적재는 `M-01-07` 이 자재 전용이라 제품용 경로가 없다」라 적었다.
   'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary': ['M-01-07'],
+  // 지시 없는 구매 입고 적치(피처 009 · omf-all-around#294 · FR-041) — 목록·LOT 확인은 적치(M-01-05)와 임시 적치(M-01-07)가
+  // 함께 읽고, 위치 판정은 적치 화면만 부른다.
+  'GET /logistics/putaway-pending-lots': ['M-01-05', 'M-01-07'],
+  'GET /logistics/putaway-pending-lots:lookup': ['M-01-05', 'M-01-07'],
+  'GET /logistics/putaway-pending-lots/{lotId}/location-check': ['M-01-05'],
 
   // `W-06-09` ERP-MES I/F 연계정의 관리 — §3 이 「정의 추가」만 적어 수정·활성 전이·연결
   // 시험이 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
