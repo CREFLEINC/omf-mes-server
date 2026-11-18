@@ -3,9 +3,9 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
-import { LOT_JUDGED_QUALITIES } from '../../core/picking';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
+import { LOT_JUDGED_QUALITIES } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TrackingIssueLine, postTrackingIssue } from './goods-issue-write';
 import { claimTransmission } from './tracking-transmission';
