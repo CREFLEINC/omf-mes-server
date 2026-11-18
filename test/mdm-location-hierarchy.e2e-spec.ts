@@ -260,14 +260,45 @@ describe('위치 계층 (e2e)', () => {
     expect(await detail(zone.locationId)).toMatchObject({ hasItemRestriction: false });
   });
 
-  it('⛔ 지정 밖 품목의 재고가 있으면 걸 수 없다 — 400 STATE_LOCKED(itemIds) · 지정 품목의 재고만 있으면 된다', async () => {
+  // 피처 009(omf-all-around#294 · 2026-11-18 결정) — 품목 지정은 안내다. 지정 밖 재고 검사는 「지정 품목만 받기」를 켤 때·켠 위치에서만.
+  it('FR-017b 「지정 품목만 받기」가 꺼진 위치는 지정 밖 품목의 재고가 있어도 지정 품목을 저장한다', async () => {
     const zone = await create();
     const [one, two] = await itemIds();
     await stock(zone.locationId, 5);
 
-    const rejected = await restrict(zone.locationId, [two], 400);
-    expect(rejected.errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'STATE_LOCKED' })]);
+    const saved = await restrict(zone.locationId, [two], 200);
+    expect((saved.items as { itemId: number }[]).map((row) => row.itemId)).toEqual([two]);
+    expect(await detail(zone.locationId)).toMatchObject({ hasItemRestriction: true, itemRestricted: false });
     await restrict(zone.locationId, [one], 200);
+  });
+
+  it('FR-017c Q26 「지정 품목만 받기」 켜기 — 지정 0개·지정 밖 재고·시스템 자리는 400, 조건이 맞으면 켜지고 끄기는 늘 된다', async () => {
+    const zone = await create();
+    const [one, two] = await itemIds();
+    expect(await detail(zone.locationId)).toMatchObject({ itemRestricted: false });
+
+    const empty = await update(zone.locationId, { itemRestricted: true }, 400);
+    expect(empty.errors).toEqual([expect.objectContaining({ field: 'itemRestricted', code: 'STATE_LOCKED', message: expect.stringContaining('지정 품목') })]);
+
+    await restrict(zone.locationId, [two], 200);
+    await stock(zone.locationId, 5);
+    const outside = await update(zone.locationId, { itemRestricted: true }, 400);
+    expect(outside.errors).toEqual([expect.objectContaining({ field: 'itemRestricted', code: 'STATE_LOCKED', message: expect.stringContaining('지정 밖') })]);
+
+    await restrict(zone.locationId, [one, two], 200);
+    const on = await update(zone.locationId, { itemRestricted: true }, 200);
+    expect(on).toMatchObject({ itemRestricted: true, hasItemRestriction: true });
+    // 켠 위치는 지정을 바꿀 때도 같은 조건이다 — 지정 밖 재고·지정 0개면 막는다.
+    expect((await restrict(zone.locationId, [two], 400)).errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'STATE_LOCKED' })]);
+    expect((await restrict(zone.locationId, [], 400)).errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'STATE_LOCKED' })]);
+
+    const off = await update(zone.locationId, { itemRestricted: false }, 200);
+    expect(off).toMatchObject({ itemRestricted: false });
+
+    const staging = await prisma.location.findFirstOrThrow({ where: { warehouse_id: warehouseId, system_role_code: 'PUTAWAY_STAGING' }, select: { location_id: true } });
+    const system = await update(Number(staging.location_id), { itemRestricted: true }, 400);
+    expect(system.errors).toEqual([expect.objectContaining({ field: 'itemRestricted', code: 'STATE_LOCKED' })]);
+    await update(Number(staging.location_id), { itemRestricted: false }, 200);
   });
 
   it('⛔ 서버가 만든 자리 · 없는 품목은 400', async () => {

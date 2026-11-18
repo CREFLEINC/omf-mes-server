@@ -381,12 +381,17 @@ describe('적치 지시 조회 (e2e)', () => {
       expect(response.body).toMatchObject({ statusCode: 'COMPLETED', actualLocationId: freeId, allowedLocations: [] });
     });
 
-    it('⛔ 다른 품목 전용 위치로 완료하면 400 STATE_LOCKED — 코어가 막는다', async () => {
+    // 피처 009(2026-11-18 결정) — 품목 지정은 안내다. 「지정 품목만 받기」를 켠 위치만 코어가 막는다(FR-017d).
+    it('⛔ 「지정 품목만 받기」를 켠 다른 품목 전용 위치로 완료하면 400 LOCATION_ITEM_RESTRICTED — 코어가 막는다', async () => {
       const task = await freshTask(plainItemId, 10);
+      await prisma.location.update({ where: { location_id: rackId }, data: { item_restricted: true } });
+      try {
+        const response = await callComplete(task.taskId, { actualLocationId: rackId }).expect(400);
 
-      const response = await callComplete(task.taskId, { actualLocationId: rackId }).expect(400);
-
-      expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+        expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'LOCATION_ITEM_RESTRICTED' });
+      } finally {
+        await prisma.location.update({ where: { location_id: rackId }, data: { item_restricted: false } });
+      }
     });
 
     it('⭐ 출발 위치와 같아도 200 이고 잔액이 제자리다', async () => {

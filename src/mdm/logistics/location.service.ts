@@ -6,6 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { lockWarehouse, issueCode } from './location-code';
+import { assertRestrictable } from './location-item.service';
 import { assertBranchEmpty, assertKeptPlace, assertNoStock, assertParentEmpty, assertSentLevel, branchIds, levelUnder, parentError } from './location-hierarchy';
 import { Editability, PUTAWAY_STAGING, ReferenceQuery, Referrer, aliasOf, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
@@ -62,7 +63,9 @@ interface LocationView {
   locationLevelCode: string | null;
   isLeaf: boolean;
   systemRoleCode: string | null;
+  /** 지정 품목이 있다(안내). 막는 것은 `itemRestricted` 다(피처 009). */
   hasItemRestriction: boolean;
+  itemRestricted: boolean;
 }
 
 /** 계약 `LocationUpdate` — 이름과 별칭만 바꾼다. 상위·단계는 같은 값이면 받아 준다(화면이 저장된 값을 실어 보낸다). */
@@ -71,6 +74,8 @@ interface LocationWrite {
   aliasName?: unknown;
   parentLocationId?: number | null;
   locationLevelCode?: unknown;
+  /** 「지정 품목만 받기」 — 보내지 않으면 그대로(피처 009 · FR-017c). */
+  itemRestricted?: boolean;
 }
 
 /** 서버가 만든 위치에서 바뀌어 오면 막는 칸 — 별칭만 고친다(사용자 결정 2026-10-29). */
@@ -193,6 +198,10 @@ export class LocationService {
     if (!current) throw new NotFoundException('없는 위치입니다.');
     if (current.system_role_code !== null) return this.updateAlias(current, version, input, aliasName);
     assertKeptPlace(current, input);
+    if (input.itemRestricted === true && !current.item_restricted) {
+      const items = await this.prisma.location_item.findMany({ where: { location_id: locationId }, select: { item_id: true } });
+      await assertRestrictable(this.prisma, current.location_id, items.map((row) => row.item_id), 'itemRestricted');
+    }
 
     const updated = await this.prisma.location.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
@@ -200,6 +209,7 @@ export class LocationService {
       data: {
         location_name: input.locationName,
         ...optional('alias_name', aliasName),
+        ...(input.itemRestricted === undefined ? {} : { item_restricted: input.itemRestricted }),
         version_no: { increment: 1 },
       },
     });
@@ -217,6 +227,10 @@ export class LocationService {
         scope: 'field', field: key, code: ERROR_CODE.STATE_LOCKED, message: '서버가 만든 위치는 별칭만 고칠 수 있습니다.',
       }),
     );
+    // 시스템 자리(적치 대기·창고 전체)는 어떤 품목이든 받는다 — 「지정 품목만 받기」를 켤 수 없다(FR-017c).
+    if (input.itemRestricted === true) {
+      errors.push({ scope: 'field', field: 'itemRestricted', code: ERROR_CODE.STATE_LOCKED, message: '서버가 만든 자리는 「지정 품목만 받기」를 켤 수 없습니다.' });
+    }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     const locationId = Number(current.location_id);
     const updated = await this.prisma.location.updateMany({
@@ -323,5 +337,6 @@ function view(row: LocationRow, activeChildren: number, restrictedItems: number)
     isLeaf: activeChildren === 0,
     systemRoleCode: row.system_role_code,
     hasItemRestriction: restrictedItems > 0,
+    itemRestricted: row.item_restricted,
   };
 }
