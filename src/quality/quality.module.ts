@@ -6,7 +6,7 @@ import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { InspectionSheetModule } from '../core/inspection-sheet';
 import { InventoryPostingModule } from '../core/inventory-posting';
-import { LotRegistryModule } from '../core/lot';
+import { LotRegistryModule, PutawayPendingNotifier } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -135,6 +135,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InspectionResultWriteService,
     InspectionConfirmService,
     IqcRejectedHandoverNotifier,
+    PutawayPendingNotifier,
     IqcRequestConfirmService,
     InspectionSummaryService,
     InspectionMeasurementService,

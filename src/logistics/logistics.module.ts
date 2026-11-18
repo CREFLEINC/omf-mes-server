@@ -6,7 +6,7 @@ import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule, DocumentStateService } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
-import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
+import { IqcHandoverNotifier, LotRegistryModule, PutawayPendingNotifier } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule, NumberingService } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
@@ -264,6 +264,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
         ),
     },
     IqcHandoverNotifier,
+    PutawayPendingNotifier,
     GoodsIssueQueryService,
     SplitMaterialLotQueryService,
     GoodsIssueService,

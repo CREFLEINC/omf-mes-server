@@ -9,8 +9,8 @@ const RECEIPT_SELECT = {
   inbound_receipt: { select: { inbound_receipt_no: true, partner: { select: { partner_name: true } } } },
 } satisfies Prisma.inbound_receipt_lineSelect;
 
-/** 알림 끝에 붙이는 다음 할 일 — 불합격 LOT 실물은 관리웹 입하 처리로 불량 창고에 넣는다. */
-export const IQC_REJECTED_NEXT_STEP = '불량 창고로 입하 처리';
+/** 알림 끝에 붙이는 다음 할 일 — 불합격 LOT 실물은 PDA 적치로 불량창고에 넣는다(피처 009). */
+export const IQC_REJECTED_NEXT_STEP = 'PDA 적치로 불량창고에 입고';
 /** 입하 LOT 검사 불합격 — 입하 LOT 부적합을 W-03-10 에서 처분한다(피처 005 R-14). */
 export const IQC_REJECTED_INBOUND_LOT_NEXT_STEP = '부적합 처분(W-03-10)에서 처분 판정';
 
