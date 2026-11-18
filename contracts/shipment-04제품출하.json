@@ -1981,7 +1981,7 @@
        "type": "string",
        "example": "SH-2026-0813-0031"
       },
-      "description": "출하 번호 검색. ⛔ 범위는 shipment_no 하나다 — 고객은 customerId 를, LOT 은 lotId 를 쓴다(omf-mes#170 과 같은 처리). 근거: W-04-06 §3"
+      "description": "검색어 — 출하 번호 · 출하 지시서 번호 · 고객 코드·이름 부분 일치(피처 010 W-04-12 시안 「출하번호·지시서·고객」). ⛔ LOT 은 lotId 를 쓴다. 근거: W-04-06 §3 · 010 시안 W-04-12"
      },
      {
       "name": "lotId",
@@ -5202,15 +5202,130 @@
         "warehouseName": {
          "type": "string",
          "example": "완제품창고"
+        },
+        "goodsIssueNos": {
+         "type": "array",
+         "items": {
+          "type": "string",
+          "example": "GI-20261118-0011"
+         },
+         "description": "그 창고의 출고 전표(내부 재고 차감 기록) 번호 — 창고마다 한 장. 확정 전이면 빈 배열"
+        },
+        "qty": {
+         "type": "number",
+         "format": "double",
+         "example": 90,
+         "description": "그 창고에서 빠진 수량(출고 전표 합). 확정 전이면 0"
+        },
+        "locations": {
+         "type": "array",
+         "description": "위치별 빠진 수량",
+         "items": {
+          "type": "object",
+          "properties": {
+           "locationId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+           },
+           "locationCode": {
+            "type": "string",
+            "example": "A-01-01"
+           },
+           "locationSystemRoleCode": {
+            "type": [
+             "string",
+             "null"
+            ],
+            "example": "PUTAWAY_STAGING",
+            "description": "위치의 시스템 역할 — PUTAWAY_STAGING 이면 적치 대기 자리(화면 「적치 대기」). 보통 자리는 null"
+           },
+           "qty": {
+            "type": "number",
+            "format": "double",
+            "example": 70
+           }
+          },
+          "required": [
+           "locationId",
+           "locationCode",
+           "locationSystemRoleCode",
+           "qty"
+          ]
+         }
         }
        },
        "required": [
         "warehouseId",
         "warehouseCode",
-        "warehouseName"
+        "warehouseName",
+        "goodsIssueNos",
+        "qty",
+        "locations"
        ]
       },
       "description": "재고가 빠진 창고들 — 출하 창고와 내부 재고 차감 기록(goods_issue) 기준(피처 010)"
+     },
+     "shipmentRequestNo": {
+      "type": "string",
+      "example": "SR-20261118-0001",
+      "description": "출하 지시서 번호(출하 내역 W-04-12 「고객 · 지시서」 · 피처 010)"
+     },
+     "customer": {
+      "type": "object",
+      "description": "고객(출하 지시서 기준 · 피처 010)",
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "C001"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "고객사"
+       }
+      },
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ]
+     },
+     "shipTo": {
+      "type": "object",
+      "description": "납품처(출하 지시서 기준 · 피처 010)",
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "C001"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "고객사"
+       }
+      },
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ]
+     },
+     "salesOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "SO-0001",
+      "description": "수주 번호 — 수주 없는 지시서는 null(피처 010)"
      }
     },
     "required": [
@@ -5752,6 +5867,14 @@
         "type": "null"
        }
       ]
+     },
+     "salesOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "SO-0001",
+      "description": "수주 번호(피처 010 시안 — PDA 피킹 머리·W-04-02 상세). 수주 없는 지시서는 null"
      }
     },
     "required": [
@@ -5769,7 +5892,8 @@
      "completionBlockers",
      "blockerSummary",
      "lotJudgmentSummary",
-     "completedShipment"
+     "completedShipment",
+     "salesOrderNo"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },
@@ -5998,6 +6122,67 @@
        "$ref": "#/components/schemas/ShipmentRequestLot"
       },
       "description": "피킹 LOT 행(교체 이력 포함 · 피처 010). picks 는 예약 행 그대로다."
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "FG-A100",
+      "description": "품목 코드(표시용 · 피처 010)"
+     },
+     "itemName": {
+      "type": "string",
+      "example": "센서 모듈 A",
+      "description": "품목 이름(표시용 · POP 찾기 줄·W-04-02 · 피처 010)"
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "EA",
+      "description": "단위 코드(표시용 · 피처 010)"
+     },
+     "salesOrderLine": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "수주 라인(피처 010 W-04-02 「SO · 라인」·「수주 잔량」) — 수주 잔량 = orderedQty − shippedQty 이고 음수면 화면이 「0 + 초과 n」으로 보인다(D-16). 수주 없는 라인은 null",
+      "properties": {
+       "salesOrderLineId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "salesOrderNo": {
+        "type": "string",
+        "example": "SO-0001"
+       },
+       "lineNo": {
+        "type": "integer",
+        "example": 1
+       },
+       "orderedQty": {
+        "type": "number",
+        "format": "double",
+        "example": 100
+       },
+       "shippedQty": {
+        "type": "number",
+        "format": "double",
+        "example": 110,
+        "description": "수주 출하 수량 — 수주 수량을 넘을 수 있다(D-16)"
+       },
+       "cancelled": {
+        "type": "boolean",
+        "example": false,
+        "description": "ERP 에서 취소된 수주 라인"
+       }
+      },
+      "required": [
+       "salesOrderLineId",
+       "salesOrderNo",
+       "lineNo",
+       "orderedQty",
+       "shippedQty",
+       "cancelled"
+      ]
      }
     },
     "required": [
@@ -6012,7 +6197,11 @@
      "pickedQty",
      "picks",
      "overQty",
-     "lots"
+     "lots",
+     "itemCode",
+     "itemName",
+     "uomCode",
+     "salesOrderLine"
     ]
    },
    "ShipmentRequestLineCreate": {
@@ -6805,6 +6994,14 @@
       "type": "number",
       "format": "double",
       "example": 40
+     },
+     "locationSystemRoleCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "PUTAWAY_STAGING",
+      "description": "위치의 시스템 역할 — PUTAWAY_STAGING 이면 적치 대기 자리(화면 「적치 대기」). 보통 자리는 null"
      }
     },
     "required": [
@@ -6813,7 +7010,8 @@
      "warehouseName",
      "locationId",
      "locationCode",
-     "qty"
+     "qty",
+     "locationSystemRoleCode"
     ]
    },
    "ShipmentRequestLot": {
@@ -6941,6 +7139,41 @@
        }
       ],
       "description": "교체된 행(REPLACED)만 — 그 밖은 null"
+     },
+     "oqcResult": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "OQC 판정을 정한 결과(이 지시서에서 그 LOT 을 매칭한 마지막 결과) — PDA 불합격 줄 「OQC 결과 n · HH:mm」. 판정이 합격·불합격·보류일 때만, 미검사·검사 불필요·생략·교체된 행은 null",
+      "properties": {
+       "inspectionResultId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "resultNo": {
+        "type": "string",
+        "example": "IRS-20261118-0001"
+       },
+       "round": {
+        "type": "integer",
+        "example": 2,
+        "description": "결과 회차(의뢰 안 순번)"
+       },
+       "resultAt": {
+        "type": "string",
+        "format": "date-time",
+        "example": "2026-11-18T07:10:00Z",
+        "description": "검사 시각"
+       }
+      },
+      "required": [
+       "inspectionResultId",
+       "resultNo",
+       "round",
+       "resultAt"
+      ]
      }
     },
     "required": [
@@ -6957,7 +7190,8 @@
      "shipmentId",
      "portions",
      "oqcLotStatus",
-     "replacement"
+     "replacement",
+     "oqcResult"
     ]
    },
    "ShipmentPickingWarehouse": {
@@ -7069,6 +7303,11 @@
        "workerNo",
        "workerName"
       ]
+     },
+     "resultRound": {
+      "type": "integer",
+      "example": 2,
+      "description": "근거 결과의 회차(의뢰 안 순번) — 「결과 #n」"
      }
     },
     "required": [
@@ -7079,7 +7318,8 @@
      "nonconformanceId",
      "nonconformanceNo",
      "replacedAt",
-     "worker"
+     "worker",
+     "resultRound"
     ]
    },
    "ShipmentLotReplaceResult": {
@@ -7388,6 +7628,10 @@
          ],
          "format": "int64",
          "example": 1001
+        },
+        "uomCode": {
+         "type": "string",
+         "example": "EA"
         }
        },
        "required": [
@@ -7402,7 +7646,8 @@
         "overQty",
         "shippedQty",
         "lotCount",
-        "salesOrderLineId"
+        "salesOrderLineId",
+        "uomCode"
        ]
       }
      },
@@ -7471,6 +7716,22 @@
           "null"
          ],
          "example": "BOX-0001"
+        },
+        "uomId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "uomCode": {
+         "type": "string",
+         "example": "EA"
+        },
+        "portions": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ShipmentLotPortion"
+         },
+         "description": "창고·위치별 몫(적치 대기 자리 포함) — 「창고 A 20 · B 20」"
         }
        },
        "required": [
@@ -7482,7 +7743,10 @@
         "qty",
         "statusCode",
         "oqcLotStatus",
-        "managementCode"
+        "managementCode",
+        "uomId",
+        "uomCode",
+        "portions"
        ]
       }
      },
@@ -7502,6 +7766,86 @@
         "type": "null"
        }
       ]
+     },
+     "replacedLots": {
+      "type": "array",
+      "description": "교체로 빠진 LOT(REPLACED) — 출하에 들지 않는다. 확인 화면 「교체로 빠진 LOT n」",
+      "items": {
+       "type": "object",
+       "properties": {
+        "shipmentRequestLotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lineNo": {
+         "type": "integer",
+         "example": 1
+        },
+        "lotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lotNo": {
+         "type": "string",
+         "example": "LOT-0003"
+        },
+        "itemId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "qty": {
+         "type": "number",
+         "format": "double",
+         "example": 30
+        },
+        "uomCode": {
+         "type": "string",
+         "example": "EA"
+        },
+        "portions": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ShipmentLotPortion"
+         }
+        },
+        "judgment": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "REJECTED",
+         "description": "교체 근거 결과의 판정"
+        },
+        "nonconformanceNo": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "NC-20261118-0001"
+        },
+        "replacedAt": {
+         "type": "string",
+         "format": "date-time",
+         "example": "2026-11-18T04:00:00Z"
+        }
+       },
+       "required": [
+        "shipmentRequestLotId",
+        "lineNo",
+        "lotId",
+        "lotNo",
+        "itemId",
+        "qty",
+        "uomCode",
+        "portions",
+        "judgment",
+        "nonconformanceNo",
+        "replacedAt"
+       ]
+      }
      }
     },
     "required": [
@@ -7517,7 +7861,8 @@
      "lines",
      "lots",
      "blockers",
-     "completedShipment"
+     "completedShipment",
+     "replacedLots"
     ]
    },
    "ShipmentCompletion": {

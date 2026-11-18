@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { oqcLotStatusesOf } from '../../quality/inspection/oqc-lot-result';
+import { oqcLotDecisionsOf } from '../../quality/inspection/oqc-lot-result';
 import { OqcInspectionRow, skippedOqcRows } from './shipment-inspection';
 import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
 import {
@@ -19,6 +19,7 @@ import {
   CompletionFacts,
   ShipmentLotsByLine,
   ShipmentPicksByLine,
+  ShipmentRequestDisplayFacts,
   ShipmentRequestView,
   shipmentRequestView,
 } from './shipment-request-view';
@@ -170,16 +171,17 @@ export class ShipmentRequestQueryService {
       .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     const inspections = await this.oqcResults(ids, lotIds, db);
-    const [lots, oqcStatuses, facts] = await Promise.all([
+    const [lots, oqcStatuses, facts, display] = await Promise.all([
       this.lotsByLine(lines.map((line) => line.shipment_request_line_id), db),
-      oqcLotStatusesOf(db, ids),
+      oqcLotDecisionsOf(db, ids),
       completionFactsOf(db, ids, lines.flatMap((line) => (line.sales_order_line_id === null ? [] : [line.sales_order_line_id]))),
+      displayFactsOf(db, rows),
     ]);
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots, oqcStatuses, facts)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots, oqcStatuses, facts, display)];
     });
   }
 
@@ -191,7 +193,7 @@ export class ShipmentRequestQueryService {
         lot: { select: { lot_no: true, item_id: true } },
         picked_worker: { select: { worker_no: true, worker_name: true } },
         replaced_worker: { select: { worker_no: true, worker_name: true } },
-        replace_inspection_result: { select: { inspection_result_no: true, inspected_at: true, overall_judgment_code: true } },
+        replace_inspection_result: { select: { inspection_result_no: true, inspection_round: true, inspected_at: true, overall_judgment_code: true } },
         replace_nonconformance: { select: { nonconformance_no: true } },
       },
       orderBy: { shipment_request_lot_id: 'asc' },
@@ -224,7 +226,7 @@ export class ShipmentRequestQueryService {
       include: {
         lot: { select: { lot_no: true } },
         warehouse: { select: { warehouse_code: true, warehouse_name: true } },
-        location: { select: { location_code: true } },
+        location: { select: { location_code: true, system_role_code: true } },
       },
       orderBy: { inventory_reservation_id: 'asc' },
     });
@@ -294,6 +296,38 @@ export async function completionFactsOf(
       completedAt: (row.confirmed_at ?? row.shipped_at ?? new Date(0)).toISOString(),
     }])),
     cancelledSalesOrderLines: new Set(cancelled.map((row) => String(row.sales_order_line_id))),
+  };
+}
+
+/**
+ * 표시용 이름·번호(시안 차이 보완) — 수주 번호, 수주 라인(수주·출하 수량·취소), 품목 코드·이름, 단위 코드.
+ * 쪽 안의 지시서 전체를 표마다 한 방으로 읽는다(N+1 없음).
+ */
+async function displayFactsOf(
+  db: Db,
+  rows: { sales_order_id: bigint | null; shipment_request_line: { sales_order_line_id: bigint | null; item_id: bigint; uom_id: bigint }[] }[],
+): Promise<ShipmentRequestDisplayFacts> {
+  const lines = rows.flatMap((row) => row.shipment_request_line);
+  const unique = (values: bigint[]) => [...new Set(values.map(String))].map(BigInt);
+  const orderIds = unique(rows.flatMap((row) => (row.sales_order_id === null ? [] : [row.sales_order_id])));
+  const orderLineIds = unique(lines.flatMap((line) => (line.sales_order_line_id === null ? [] : [line.sales_order_line_id])));
+  const [orders, orderLines, items, uoms] = await Promise.all([
+    orderIds.length === 0 ? [] : db.sales_order.findMany({ where: { sales_order_id: { in: orderIds } }, select: { sales_order_id: true, sales_order_no: true } }),
+    orderLineIds.length === 0 ? [] : db.sales_order_line.findMany({
+      where: { sales_order_line_id: { in: orderLineIds } },
+      select: { sales_order_line_id: true, line_no: true, ordered_qty: true, shipped_qty: true, cancelled_at: true, sales_order: { select: { sales_order_no: true } } },
+    }),
+    lines.length === 0 ? [] : db.item.findMany({ where: { item_id: { in: unique(lines.map((line) => line.item_id)) } }, select: { item_id: true, item_code: true, item_name: true } }),
+    lines.length === 0 ? [] : db.uom.findMany({ where: { uom_id: { in: unique(lines.map((line) => line.uom_id)) } }, select: { uom_id: true, uom_code: true } }),
+  ]);
+  return {
+    salesOrderNos: new Map(orders.map((row) => [String(row.sales_order_id), row.sales_order_no])),
+    salesOrderLines: new Map(orderLines.map((row) => [String(row.sales_order_line_id), {
+      salesOrderNo: row.sales_order.sales_order_no, lineNo: row.line_no,
+      orderedQty: Number(row.ordered_qty), shippedQty: Number(row.shipped_qty), cancelled: row.cancelled_at !== null,
+    }])),
+    items: new Map(items.map((row) => [String(row.item_id), { itemCode: row.item_code, itemName: row.item_name }])),
+    uomCodes: new Map(uoms.map((row) => [String(row.uom_id), row.uom_code])),
   };
 }
 

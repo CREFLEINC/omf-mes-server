@@ -1,7 +1,7 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import type { OqcLotStatus } from '../../quality/inspection/oqc-lot-result';
 import { CompletionBlocker } from './shipment-completion-rules';
-import { CompletedShipmentView, ShipmentRequestView } from './shipment-request-view';
+import { CompletedShipmentView, ShipmentLotPortionView, ShipmentRequestView } from './shipment-request-view';
 
 /**
  * 계약 `ShipmentRequestCompletion` — POP 출하 완료 확인 화면(P-04-07)의 값. 스캔과 찾기가 같은 값을 본다(R-9).
@@ -25,6 +25,7 @@ export interface ShipmentRequestCompletionView {
     itemCode: string;
     itemName: string;
     uomId: number;
+    uomCode: string;
     targetQty: number;
     pickedQty: number;
     overQty: number;
@@ -39,9 +40,27 @@ export interface ShipmentRequestCompletionView {
     lotNo: string;
     itemId: number;
     qty: number;
+    uomId: number;
+    uomCode: string;
+    /** 창고·위치별 몫(적치 대기 자리 포함) — 「창고 A 20 · B 20」. */
+    portions: ShipmentLotPortionView[];
     statusCode: string;
     oqcLotStatus: OqcLotStatus | null;
     managementCode: string | null;
+  }[];
+  /** 교체로 빠진 LOT — 출하에 들지 않는다(확인 화면 「교체로 빠진 LOT n」). */
+  replacedLots: {
+    shipmentRequestLotId: number;
+    lineNo: number;
+    lotId: number;
+    lotNo: string;
+    itemId: number;
+    qty: number;
+    uomCode: string;
+    portions: ShipmentLotPortionView[];
+    judgment: string | null;
+    nonconformanceNo: string | null;
+    replacedAt: string;
   }[];
   blockers: CompletionBlocker[];
   completedShipment: CompletedShipmentView | null;
@@ -49,22 +68,17 @@ export interface ShipmentRequestCompletionView {
 
 export async function completionView(prisma: PrismaService, view: ShipmentRequestView): Promise<ShipmentRequestCompletionView> {
   const lines = view.lines ?? [];
-  const [partners, items, order] = await Promise.all([
-    prisma.partner.findMany({
-      where: { partner_id: { in: [BigInt(view.customerId), BigInt(view.shipToPartnerId)] } },
-      select: { partner_id: true, partner_code: true, partner_name: true },
-    }),
-    prisma.item.findMany({
-      where: { item_id: { in: lines.map((line) => BigInt(line.itemId)) } }, select: { item_id: true, item_code: true, item_name: true },
-    }),
-    view.salesOrderId === null ? null : prisma.sales_order.findUnique({ where: { sales_order_id: BigInt(view.salesOrderId) }, select: { sales_order_no: true } }),
-  ]);
+  const partners = await prisma.partner.findMany({
+    where: { partner_id: { in: [BigInt(view.customerId), BigInt(view.shipToPartnerId)] } },
+    select: { partner_id: true, partner_code: true, partner_name: true },
+  });
   const partner = (id: number) => {
     const row = partners.find((candidate) => candidate.partner_id === BigInt(id));
     return { partnerId: id, partnerCode: row?.partner_code ?? '', partnerName: row?.partner_name ?? '' };
   };
   // 교체된 LOT 은 낼 LOT 이 아니다 — 확인 화면은 살아 있는(또는 이미 출하된) LOT 만 보인다.
   const shown = lines.flatMap((line) => line.lots.filter((lot) => lot.statusCode !== 'REPLACED').map((lot) => ({ line, lot })));
+  const replaced = lines.flatMap((line) => line.lots.filter((lot) => lot.statusCode === 'REPLACED').map((lot) => ({ line, lot })));
   const warehouses = new Map<number, ShipmentRequestCompletionView['warehouses'][number] & { lots: Set<number> }>();
   for (const { lot } of shown) {
     for (const portion of lot.portions) {
@@ -84,20 +98,24 @@ export async function completionView(prisma: PrismaService, view: ShipmentReques
     requestedShipDate: view.requestedShipDate,
     customer: partner(view.customerId),
     shipTo: partner(view.shipToPartnerId),
-    salesOrderNo: order?.sales_order_no ?? null,
+    salesOrderNo: view.salesOrderNo,
     warehouses: [...warehouses.values()].map(({ lots: _lots, ...rest }) => rest),
-    lines: lines.map((line) => {
-      const item = items.find((row) => row.item_id === BigInt(line.itemId));
-      return {
-        shipmentRequestLineId: line.shipmentRequestLineId, lineNo: line.lineNo, itemId: line.itemId,
-        itemCode: item?.item_code ?? '', itemName: item?.item_name ?? '', uomId: line.uomId,
-        targetQty: line.allocatedQty, pickedQty: line.pickedQty, overQty: line.overQty, shippedQty: line.shippedQty,
-        lotCount: line.lots.filter((lot) => lot.statusCode !== 'REPLACED').length, salesOrderLineId: line.salesOrderLineId,
-      };
-    }),
+    lines: lines.map((line) => ({
+      shipmentRequestLineId: line.shipmentRequestLineId, lineNo: line.lineNo, itemId: line.itemId,
+      itemCode: line.itemCode, itemName: line.itemName, uomId: line.uomId, uomCode: line.uomCode,
+      targetQty: line.allocatedQty, pickedQty: line.pickedQty, overQty: line.overQty, shippedQty: line.shippedQty,
+      lotCount: line.lots.filter((lot) => lot.statusCode !== 'REPLACED').length, salesOrderLineId: line.salesOrderLineId,
+    })),
     lots: shown.map(({ line, lot }) => ({
       shipmentRequestLotId: lot.shipmentRequestLotId, lineNo: line.lineNo, lotId: lot.lotId, lotNo: lot.lotNo, itemId: lot.itemId,
-      qty: lot.pickedQty, statusCode: lot.statusCode, oqcLotStatus: lot.oqcLotStatus, managementCode: lot.managementCode,
+      qty: lot.pickedQty, uomId: lot.uomId, uomCode: line.uomCode, portions: lot.portions,
+      statusCode: lot.statusCode, oqcLotStatus: lot.oqcLotStatus, managementCode: lot.managementCode,
+    })),
+    replacedLots: replaced.map(({ line, lot }) => ({
+      shipmentRequestLotId: lot.shipmentRequestLotId, lineNo: line.lineNo, lotId: lot.lotId, lotNo: lot.lotNo, itemId: lot.itemId,
+      qty: lot.pickedQty, uomCode: line.uomCode, portions: lot.portions,
+      judgment: lot.replacement?.judgment ?? null, nonconformanceNo: lot.replacement?.nonconformanceNo ?? null,
+      replacedAt: lot.replacement?.replacedAt ?? lot.pickedAt,
     })),
     blockers: view.completionBlockers,
     completedShipment: view.completedShipment,

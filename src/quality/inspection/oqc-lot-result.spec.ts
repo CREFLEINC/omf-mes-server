@@ -1,4 +1,4 @@
-import { OqcLotFacts, OqcResultFacts, oqcLotStatuses } from './oqc-lot-result';
+import { OqcLotFacts, OqcResultFacts, oqcLotDecisions, oqcLotStatuses } from './oqc-lot-result';
 
 /** 피처 010 OQC LOT 판정(data-model 「LOT OQC 판정」) — 위에서부터 처음 맞는 값. */
 const lot = (lotId: number, inspectionRequired = true): OqcLotFacts => ({ lotId: BigInt(lotId), inspectionRequired });
@@ -47,5 +47,29 @@ describe('oqcLotStatuses — LOT 마다 마지막 매칭 결과의 판정', () =
   it('의뢰가 둘이면 의뢰 순서 → 순번으로 «마지막»을 고른다', () => {
     expect(statusesOf([lot(1)], [result(5, 'REJECTED', [1], 'DRAFT', 1), result(1, 'ACCEPTED', [1], 'DRAFT', 2)]))
       .toEqual({ 1: 'ACCEPTED' });
+  });
+});
+
+describe('oqcLotDecisions — 판정과 그 판정을 정한 결과(근거)', () => {
+  const at = new Date('2026-11-18T07:10:00.000Z');
+  const withResult = (seqNo: number, judgmentCode: string, lotIds: number[]): OqcResultFacts => ({
+    ...result(seqNo, judgmentCode, lotIds),
+    result: { inspectionResultId: BigInt(100 + seqNo), resultNo: `IR-${seqNo}`, round: seqNo, inspectedAt: at },
+  });
+
+  it('US2-1 불합격 LOT 의 근거는 그 LOT 을 매칭한 마지막 결과(번호·회차·시각)다 — 미검사·검사 불필요는 근거가 없다', () => {
+    const decisions = oqcLotDecisions(
+      [lot(1), lot(3), lot(4), lot(5, false)],
+      { skipped: false, results: [withResult(1, 'ACCEPTED', [1, 3]), withResult(2, 'REJECTED', [3])] },
+    );
+    expect(decisions.get(3n)).toEqual({ status: 'REJECTED', result: { inspectionResultId: 102n, resultNo: 'IR-2', round: 2, inspectedAt: at } });
+    expect(decisions.get(1n)?.result?.round).toBe(1);
+    expect(decisions.get(4n)).toEqual({ status: 'NOT_INSPECTED', result: null });
+    expect(decisions.get(5n)).toEqual({ status: 'NOT_REQUIRED', result: null });
+  });
+
+  it('US2-1 판정은 oqcLotStatuses 와 같다 — 생략된 의뢰는 근거 없이 SKIPPED', () => {
+    const decisions = oqcLotDecisions([lot(1)], { skipped: true, results: [withResult(1, 'REJECTED', [1])] });
+    expect(decisions.get(1n)).toEqual({ status: 'SKIPPED', result: null });
   });
 });

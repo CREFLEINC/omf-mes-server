@@ -629,6 +629,8 @@ describe('출하작업지시 편성 (e2e)', () => {
       lotJudgmentSummary: { notInspected: 0, accepted: 0, rejected: 0, held: 0 },
       completedShipment: null,
       salesOrderId: ids.salesOrder,
+      // 피처 010 시안 차이 보완 — 수주 번호를 함께 싣는다(PDA 피킹 머리·W-04-02 상세).
+      salesOrderNo: (await prisma.sales_order.findUniqueOrThrow({ where: { sales_order_id: BigInt(ids.salesOrder) } })).sales_order_no,
       fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,

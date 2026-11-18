@@ -72,10 +72,11 @@ describe('출하 목록 SQL', () => {
     expect(where({ pickedOnly: true }).sql).toContain(PICKED_ONLY_SQL);
   });
 
-  it('⛔ q 의 범위는 shipment_no 하나다 — 계약이 닫았다', () => {
+  it('US7-3 q 의 범위는 출하번호·지시서 번호·고객 코드·이름이다(W-04-12 시안) — LOT 은 넣지 않는다', () => {
     const built = where({ q: 'SH-2026' });
     expect(built.sql).toContain("s.shipment_no ILIKE '%' || $2 || '%'");
-    expect(built.sql).not.toContain('customer');
+    expect(built.sql).toContain("qr.shipment_request_no ILIKE '%' || $2 || '%'");
+    expect(built.sql).toContain("qc.partner_name ILIKE '%' || $2 || '%'");
     expect(built.sql).not.toContain('lot');
   });
 
