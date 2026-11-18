@@ -24,12 +24,16 @@ const input: GoodsReceiptCreate = {
 
 function fake() {
   const tasks: Array<Record<string, unknown>> = [];
+  const lines: Array<Record<string, unknown>> = [];
   const tx = {
     goods_receipt: {
       create: async () => ({ goods_receipt_id: 10n, warehouse_id: 2n }),
     },
     goods_receipt_line: {
-      create: async () => ({ goods_receipt_line_id: 20n }),
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        lines.push(data);
+        return { goods_receipt_line_id: 20n };
+      },
       update: async () => undefined,
     },
     inventory_transaction_line: {
@@ -42,7 +46,7 @@ function fake() {
   const posting = {
     post: async () => ({ inventoryTransactionId: 50n, businessDate: input.businessDate, alreadyPosted: false }),
   } as unknown as InventoryPostingService;
-  return { tx, posting, tasks };
+  return { tx, posting, tasks, lines };
 }
 
 // omf-all-around#26 — 적치에 담당자를 두지 않는다(2026-09-19 사용자 결정). 누가 입고하든
@@ -67,5 +71,25 @@ describe('입고 적치 지시 배정', () => {
     await postReceipt(tx, posting, input, undefined, 'GR-20260912-0002', ['PT-20260912-0002']);
 
     expect(tasks[0]).toMatchObject({ assigned_worker_id: null, created_by: null });
+  });
+});
+
+// 피처 009(omf-all-around#294) — PDA 지시 없는 적치는 라인에 적치 방식을 남긴다. 그 밖의 입고는 NULL.
+describe('입고 라인 적치 방식', () => {
+  it('D-4 라인이 실은 putawayModeCode 를 칸에 쓴다 — 지시 없이(putawayNos null) 부르면 지시를 만들지 않는다', async () => {
+    const { tx, posting, tasks, lines } = fake();
+
+    await postReceipt(tx, posting, { ...input, lines: [{ ...input.lines[0], putawayModeCode: 'DESIGNATED' }] }, undefined, 'GR-1', null);
+
+    expect(lines[0]).toMatchObject({ putaway_mode_code: 'DESIGNATED' });
+    expect(tasks).toHaveLength(0);
+  });
+
+  it('D-4 웹 입고·생산·직행처럼 싣지 않으면 NULL 이다', async () => {
+    const { tx, posting, lines } = fake();
+
+    await postReceipt(tx, posting, input, 9, 'GR-2', ['PT-2']);
+
+    expect(lines[0]).toMatchObject({ putaway_mode_code: null });
   });
 });
