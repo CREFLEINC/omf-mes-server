@@ -133,6 +133,15 @@ describe('OA 자동 W/O (e2e)', () => {
     ]);
   });
 
+  it('BOM 단위와 재고 단위가 다르고 환산이 없는 자재가 있어도 라인 없는 W/O 는 배포한다 — 출고요청을 만들지 않는다', async () => {
+    const orderId = await order('E');
+    await auto.run(orderId);
+    const plan = await prisma.production_plan.findFirstOrThrow({ where: { production_order_id: orderId }, include: { work_order: true } });
+    expect(plan.work_order.map((workOrder) => workOrder.status_code)).toEqual(['RELEASED']);
+    expect(await prisma.material_issue_request.count({ where: { work_order_id: plan.work_order[0].work_order_id } })).toBe(0);
+    expect(await prisma.item_uom_conversion.count({ where: { item_id: ids.resin } })).toBe(0);
+  });
+
   async function snapshot(orderId: bigint) {
     const plans = await prisma.production_plan.findMany({ where: { production_order_id: orderId }, select: { production_plan_id: true, version_no: true } });
     const workOrders = await prisma.work_order.findMany({
@@ -176,8 +185,8 @@ describe('OA 자동 W/O (e2e)', () => {
       where: { warehouse_id: warehouse.warehouse_id, system_role_code: 'WAREHOUSE_WHOLE' },
     })).location_id;
 
-    // A Routing 없음 · B 작성중 Routing 만 · C 기본 BOM 이 다른 공장 · D 쓸 수 있는 Routing 있음.
-    for (const key of ['A', 'B', 'C', 'D']) {
+    // A Routing 없음 · B 작성중 Routing 만 · C 기본 BOM 이 다른 공장 · D 쓸 수 있는 Routing 있음 · E 환산 없는 자재(KG 재고 · EA BOM).
+    for (const key of ['A', 'B', 'C', 'D', 'E']) {
       const code = `${PREFIX}-${key}`;
       const item = await prisma.item.create({ data: { item_code: code, item_name: code, item_type_code: 'FINISHED', base_uom_id: ids.uom } });
       const bom = await prisma.bom.create({ data: {
@@ -194,5 +203,17 @@ describe('OA 자동 W/O (e2e)', () => {
       routing_id: routingD.routing_id, operation_seq: 10, process_id: ids.process, operation_name: '조립',
     } });
     ids.routingD = routingD.routing_id;
+
+    const kg = (await prisma.uom.findUniqueOrThrow({ where: { uom_code: 'KG' } })).uom_id;
+    ids.resin = (await prisma.item.create({ data: { item_code: `${PREFIX}-RESIN`, item_name: 'RESIN', item_type_code: 'RAW_MATERIAL', base_uom_id: kg } })).item_id;
+    const routingE = await prisma.routing.create({ data: {
+      item_id: items.E.id, routing_code: `RT-${items.E.code}-01`, routing_version: 1, status_code: 'CONFIRMED',
+    } });
+    const operationE = await prisma.routing_operation.create({ data: {
+      routing_id: routingE.routing_id, operation_seq: 10, process_id: ids.process, operation_name: '조립',
+    } });
+    await prisma.bom_component.create({ data: {
+      bom_id: items.E.bomId, component_item_id: ids.resin, required_qty: 2, uom_id: ids.uom, routing_operation_id: operationE.routing_operation_id, sequence_no: 1,
+    } });
   }
 });

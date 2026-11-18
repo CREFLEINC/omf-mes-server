@@ -297,6 +297,52 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
 
   // US2-8 의 「지금 방식 요청은 PUT·:cancel 대상이 아니다(409)」는 material-issue-edit.e2e-spec.ts 가 본다.
 
+  it('BOM 단위(GR)와 재고 단위(KG)가 다른 자재 — 쓸 수 있는 양을 재고 단위로 견줘 0.037 KG 를 담고 부족을 남기지 않는다', async () => {
+    const [kg, gr] = await Promise.all(['KG', 'GR'].map(async (code) => (await prisma.uom.findUniqueOrThrow({ where: { uom_code: code } })).uom_id));
+    const resin = await prisma.item.create({ data: { item_code: `${PREFIX}-RESIN`, item_name: 'RESIN', item_type_code: 'RAW_MATERIAL', base_uom_id: kg } });
+    await prisma.item_uom_conversion.create({
+      data: { item_id: resin.item_id, from_uom_id: kg, to_uom_id: gr, conversion_rate: 1000, effective_from: new Date('2026-01-01T00:00:00.000Z') },
+    });
+    const process = await prisma.process.findUniqueOrThrow({ where: { process_code: `${PREFIX}-PR` } });
+    const operation = await prisma.routing_operation.create({
+      data: { routing_id: fx.ids.routing, operation_seq: 900, process_id: process.process_id, operation_name: 'RESIN' },
+    });
+    const component = await prisma.bom_component.create({
+      data: { bom_id: fx.ids.bom, component_item_id: resin.item_id, required_qty: 36.7, routing_operation_id: operation.routing_operation_id, uom_id: gr, sequence_no: 900 },
+    });
+    fx.operations.RESIN = operation.routing_operation_id;
+    const target = await fx.warehouse(fx.ids.p1, 'RESIN-A');
+    const resinLine = await fx.line('P1', 'RESIN-L', await fx.department('RESIN-D', [target.warehouseId]));
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-RESIN-LOT`, item_id: resin.item_id, lot_type_code: 'MATERIAL', plant_id: fx.ids.p1, initial_qty: 25,
+        uom_id: kg, source_type_code: 'GOODS_RECEIPT', source_id: 0, status_code: 'NORMAL',
+      },
+    });
+    await prisma.inventory_balance.create({
+      data: {
+        legal_entity_id: fx.ids.entity, business_unit_id: fx.ids.unit, plant_id: fx.ids.p1, warehouse_id: target.warehouseId, location_id: target.locationId,
+        item_id: resin.item_id, lot_id: lot.lot_id, quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE', ownership_type_code: 'OWNED',
+        on_hand_qty: 25, uom_id: kg,
+      },
+    });
+    const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId: resinLine, operation: 'RESIN', productionDate: localDate(new Date(), HANOI) });
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/production/work-orders/${workOrderId}:release`)
+      .set('Cookie', fx.cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', '1')
+      .send({ lotSize: 1, materialUomConfirmations: [{ bomComponentId: Number(component.bom_component_id), confirmed: true }] })
+      .expect(200);
+    expect(response.body.unsourcedShortages).toEqual([]);
+    const [only] = await fx.requests(workOrderId);
+    // 36.7 GR → 0.0367 KG → 재고 단위 3자리 올림 0.037 KG. 단위 없이 견주면 min(36.7, 25) = 25 · 부족 11.7 이 된다.
+    expect(only.material_issue_request_line.map((line) => [line.uom_id, line.requested_qty.toNumber(), line.shortage_qty.toNumber()])).toEqual([[kg, 0.037, 0]]);
+    const pickings = await fx.pickings(only.material_issue_request_id);
+    expect(pickings.flatMap((order) => order.picking_line.map((line) => [line.lot_id, line.uom_id, line.planned_qty.toNumber()]))).toEqual([[lot.lot_id, kg, 0.037]]);
+  });
+
   /** SC-007 — BOM 의 자재마다 요청 줄 또는 미배정 부족 행 «한 곳»에만 있다. */
   async function expectEachMaterialOnce(workOrderId: bigint, operation: string): Promise<void> {
     const rows = await fx.requests(workOrderId);

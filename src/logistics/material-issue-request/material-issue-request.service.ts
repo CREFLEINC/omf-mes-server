@@ -3,9 +3,11 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
+import { loadStockUomTable, toStockUom } from '../../core/bom';
 import { usesProductionWarehouses } from '../../core/material-issue/source-warehouse';
 import { NumberingService } from '../../core/numbering';
 import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
+import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   MaterialIssueRequestDetail,
@@ -64,10 +66,11 @@ export class MaterialIssueRequestService {
 
   /** 응답의 `requests` 는 만든 요청 전부다 — 지금 방식 공장은 한 장이다(피처 003 · 계약 `MaterialIssueRequestCreated`). */
   async create(
-    input: MaterialIssueRequestCreate,
+    requested: MaterialIssueRequestCreate,
     appUserId: number,
   ): Promise<PlannedCreateResult> {
-    const { plantId, responsibleWorkerId } = await this.assertCreatable(input);
+    const { plantId, responsibleWorkerId } = await this.assertCreatable(requested);
+    const input = await this.inStockUom(requested, plantId);
     // 생산 창고를 쓰는 공장은 생산 창고 → 생산 현장 요청이다(FR-011). 아니면 이 기능 전 경로 그대로(FR-009a).
     if (this.planned !== undefined && (await usesProductionWarehouses(this.prisma, plantId))) {
       return this.planned.create(input, appUserId, plantId);
@@ -92,6 +95,27 @@ export class MaterialIssueRequestService {
     });
     const detail = await this.prisma.$transaction((tx) => this.write(tx, input, no, picking, appUserId));
     return { ...detail, requests: [detail.materialIssueRequest] };
+  }
+
+  /**
+   * 줄을 재고 단위로 바꾼다 — 가용 비교·피킹 배정이 재고 단위로만 센다. 배포와 같은 함수(`core/bom` `toStockUom`)라
+   * 「BOM 소요량 불러오기」가 낸 수량과 어긋나지 않는다. 환산이 없는 단위는 받지 않는다(받으면 피킹이 비어 결품이 된다).
+   */
+  private async inStockUom(input: MaterialIssueRequestCreate, plantId: bigint): Promise<MaterialIssueRequestCreate> {
+    const plant = await this.prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId }, select: { timezone_code: true } });
+    const table = await loadStockUomTable(this.prisma, input.lines.map((line) => BigInt(line.itemId)), localDate(new Date(), plant.timezone_code));
+    const errors: ErrorItem[] = [];
+    const lines = input.lines.map((line, index) => {
+      const conversion = toStockUom(table, BigInt(line.itemId), BigInt(line.uomId), new Prisma.Decimal(line.requestedQty));
+      if (conversion.stockQty === null) {
+        const stock = table.uoms.get(conversion.stockUomId)?.code ?? '';
+        errors.push(field(`lines[${index}].uomId`, ERROR_CODE.INVALID, `재고 단위(${stock})로 환산할 수 없습니다. 품목 환산을 등록하거나 재고 단위로 요청하세요.`));
+        return line;
+      }
+      return { ...line, uomId: Number(conversion.stockUomId), requestedQty: conversion.stockQty.toNumber() };
+    });
+    if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+    return { ...input, lines };
   }
 
   /** 헤더 → 라인 → 같은 트랜잭션에서 되읽기(§4-1 ②③④ · 상세 매퍼는 PR ② 것 그대로다). */

@@ -282,6 +282,7 @@ export class MaterialIssueFixture {
     await p.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: prefix } } } });
     await p.routing.deleteMany({ where: { routing_code: { startsWith: prefix } } });
     await p.process.deleteMany({ where: { process_code: { startsWith: prefix } } });
+    await p.item_uom_conversion.deleteMany({ where: { item: { item_code: { startsWith: prefix } } } });
     await p.item.deleteMany({ where: { item_code: { startsWith: prefix } } });
     await p.plant.deleteMany({ where: { plant_code: { startsWith: prefix } } });
     await p.business_unit.deleteMany({ where: { business_unit_code: { startsWith: prefix } } });

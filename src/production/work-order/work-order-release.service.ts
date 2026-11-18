@@ -6,8 +6,9 @@ import { MaterialIssueReleaser } from '../../core/material-issue/release-request
 import { NumberingService } from '../../core/numbering';
 import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ISSUE_REGISTERED, MaterialIssueLine, materialRequirements } from './material-issue';
+import { ISSUE_REGISTERED, MaterialIssueLine } from './material-issue';
 import { PqcRequestPlan, preparePqcRequest, writePqcRequest } from './work-order-pqc-request';
+import { MaterialUomConfirmation, saveEnteredConversions } from './release-materials';
 import { ReleasePlan, operationSettings, releasePlan } from './release-plan';
 import { WaitingResult, writeWaitingRequests } from './release-waiting';
 import { WorkOrderHandoverNotifier } from './work-order-handover';
@@ -18,6 +19,8 @@ export interface WorkOrderRelease {
   lotSize: number;
   /** ⚠ 받되 **저장하지 않는다** — 담을 칸이 없고 `remarks` 에 덧붙이지도 않는다(§4-5). */
   handoverNote?: string;
+  /** BOM 단위와 재고 단위가 다른 자재마다 하나 — 단위가 같은 자재는 받지 않아도 된다. */
+  materialUomConfirmations?: MaterialUomConfirmation[];
 }
 
 const STATUS_COLUMN = 'production.work_order.status_code';
@@ -54,14 +57,19 @@ export class WorkOrderReleaseService {
   /**
    * 생산 창고 공장(피처 003)이면 만든 대기 요청과 미배정 자재를 돌려준다. 아니면 `null` — 지금 방식이다.
    * `appUserId` 가 `null` 이면 추적 시스템 연동의 자동 배포다 — 사람이 없어 기록자를 비운다(사용자 2026-11-16).
+   * 단위 확인도 할 사람이 없어 품목·공통 환산을 그대로 쓴다. `correlationId` 는 배포 요청의 Idempotency-Key 다.
    */
   async release(
     workOrderId: number,
     version: number,
     body: WorkOrderRelease,
     appUserId: number | null,
+    correlationId: string | null = null,
   ): Promise<WaitingResult | null> {
-    const plan = await releasePlan(this.prisma, this.numbering, workOrderId, body.lotSize);
+    const plan = await releasePlan(this.prisma, this.numbering, workOrderId, body.lotSize, {
+      confirmations: body.materialUomConfirmations,
+      automatic: appUserId === null,
+    });
     const issue = plan.issueRequestNo === null ? null : await this.issuePlan(plan, plan.issueRequestNo);
     /* PQC 대상 품목이면 PQC 의뢰도 이 배포가 만든다 — 채번·기준 조회는 트랜잭션 밖이다. */
     const pqc = await preparePqcRequest(this.prisma, this.numbering, {
@@ -70,12 +78,12 @@ export class WorkOrderReleaseService {
       businessDate: plan.businessDate,
     });
     return this.prisma.$transaction((tx) =>
-      this.commit(tx, workOrderId, version, plan, issue, pqc, appUserId),
+      this.commit(tx, workOrderId, version, plan, issue, pqc, appUserId, correlationId),
     );
   }
 
   private async issuePlan(plan: ReleasePlan, issueRequestNo: string): Promise<IssuePlan> {
-    const lines = materialRequirements(plan.components, plan.row.order_qty, plan.plan.bom.base_qty);
+    const lines = plan.materials.lines;
     const picking = await planPicking(this.prisma, this.numbering, {
       plantId: plan.plan.production_order.plant_id,
       demands: lines.map((line) => ({
@@ -98,6 +106,7 @@ export class WorkOrderReleaseService {
     issue: IssuePlan | null,
     pqc: PqcRequestPlan | null,
     appUserId: number | null,
+    correlationId: string | null,
   ): Promise<WaitingResult | null> {
     const locked = await lockWorkOrder(tx, workOrderId);
     // ⭐ 버전 대조가 전이 검사보다 «먼저»다(`document-cancel.service.ts` 선례).
@@ -109,6 +118,14 @@ export class WorkOrderReleaseService {
       locked.status_code,
       HttpStatus.BAD_REQUEST,
     );
+
+    // 출고요청보다 먼저 — 같은 트랜잭션이라 배포가 실패하면 넣은 환산도 남지 않는다.
+    await saveEnteredConversions(tx, plan.materials.entered, {
+      workOrderId,
+      plantToday: plan.plantToday,
+      actorId: appUserId,
+      correlationId,
+    });
 
     await tx.work_order.update({
       where: { work_order_id: BigInt(workOrderId) },
@@ -158,7 +175,7 @@ export class WorkOrderReleaseService {
             {
               workOrderId: BigInt(workOrderId),
               waiting: plan.waiting,
-              lines: materialRequirements(plan.components, plan.row.order_qty, plan.plan.bom.base_qty),
+              lines: plan.materials.lines,
               appUserId,
             },
             this.issueReleaser,

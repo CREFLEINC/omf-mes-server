@@ -162,7 +162,7 @@ describe('ERP W/O 작업지시 목록 칩 판정 (e2e)', () => {
     const numbering = app.get(NumberingService);
     const actual = [];
     for (const row of pending) {
-      const blocked = await releasePlan(prisma, numbering, Number(row.workOrderId), 1).then(() => false, (error: { getStatus?: () => number }) => {
+      const blocked = await releasePlan(prisma, numbering, Number(row.workOrderId), 1, { confirmations: undefined, automatic: true }).then(() => false, (error: { getStatus?: () => number }) => {
         if (error.getStatus?.() !== 400) throw error;
         return true;
       });
