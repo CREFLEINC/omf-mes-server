@@ -245,10 +245,17 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
       UPDATE integration.integration_message m
          SET status_code = ${MESSAGE_STATUS.PROCESSING}, locked_at = clock_timestamp(), locked_by = ${this.lease.owner}
        WHERE m.integration_message_id IN (
-         SELECT integration_message_id FROM integration.integration_message
-          WHERE direction_code = ${OUTBOX_DIRECTION} AND status_code = ${MESSAGE_STATUS.PENDING}
-            AND available_at <= ${now} AND interface_code = ANY(${[...this.builders.keys()]})
-          ORDER BY available_at, integration_message_id
+         SELECT im.integration_message_id FROM integration.integration_message im
+          WHERE im.direction_code = ${OUTBOX_DIRECTION} AND im.status_code = ${MESSAGE_STATUS.PENDING}
+            AND im.available_at <= ${now} AND im.interface_code = ANY(${[...this.builders.keys()]})
+            -- 취소를 상신했거나 승인됐지만 아직 실행하지 않은 출하는 보내지 않고 기다린다(피처 010 FR-024 · 송신 전 취소).
+            AND NOT (im.target_type_code = 'SHIPMENT' AND EXISTS (
+                  SELECT 1 FROM app.approval_request a
+                    LEFT JOIN logistics.shipment s ON s.shipment_id = a.target_id
+                   WHERE a.target_type_code = 'SHIPMENT' AND a.target_id = im.target_id
+                     AND a.approval_type_code = 'SHIPMENT_CANCEL'
+                     AND (a.status_code = 'PENDING' OR (a.status_code = 'APPROVED' AND s.status_code IS DISTINCT FROM 'CANCELLED'))))
+          ORDER BY im.available_at, im.integration_message_id
           LIMIT ${BATCH_SIZE}
           FOR UPDATE SKIP LOCKED)
       RETURNING m.integration_message_id, m.interface_code, m.target_type_code, m.target_id, m.payload, m.retry_count`;

@@ -12,6 +12,7 @@ import request from 'supertest';
 
 import { hashPassword } from '../../src/auth/password';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { seedRoute } from '../approval-request.fixture';
 
 export const SS_PREFIX = 'SSE2E';
 const LOGIN_ID = 'e2e-shipment-simplified';
@@ -303,6 +304,37 @@ export class ShipmentSimplifiedFixture {
   lookup(code: string, session: TerminalSession | 'session' = this.pop): request.Test {
     const test = this.http().get('/api/logistics/shipment-requests:lookup').query({ code });
     return session === 'session' ? this.asSession(test) : this.asTerminal(test, session);
+  }
+
+  /** 출하 상세(관리웹 세션). */
+  async shipment(shipmentId: number): Promise<{ body: Record<string, unknown> & { versionNo: number }; etag: string }> {
+    const response = await this.asSession(this.http().get(`/api/logistics/shipments/${shipmentId}`)).expect(200);
+    return { body: response.body, etag: response.headers.etag as string };
+  }
+
+  /** 취소 상신(관리웹 W-04-12). */
+  async requestCancel(shipmentId: number): Promise<request.Response> {
+    const { etag } = await this.shipment(shipmentId);
+    return this.asSession(this.http().post(`/api/logistics/shipments/${shipmentId}:request-cancel`)
+      .set('Idempotency-Key', randomUUID()).set('If-Match', etag).send({ reason: '고객 요청 — 출하 취소' }));
+  }
+
+  /** 취소 실행 — 결재 승인은 이 시험의 관심 밖이라 열린 결재를 바로 승인으로 둔다. */
+  async cancelApproved(shipmentId: number): Promise<request.Response> {
+    await this.prisma.approval_request.updateMany({
+      where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId), approval_type_code: 'SHIPMENT_CANCEL', status_code: 'PENDING' },
+      data: { status_code: 'APPROVED', decided_at: new Date(), decided_by: this.ids.userId },
+    });
+    const { etag } = await this.shipment(shipmentId);
+    return this.asSession(this.http().post(`/api/logistics/shipments/${shipmentId}:cancel`)
+      .set('Idempotency-Key', randomUUID()).set('If-Match', etag)
+      .send({ businessDate: '2026-11-18', occurredAt: '2026-11-18T06:00:00.000Z' }));
+  }
+
+  /** 출하 취소 결재선 — 없을 때만 이 계정으로 하나 심는다(둘이면 ROUTE_AMBIGUOUS). */
+  async ensureCancelRoute(): Promise<void> {
+    const found = await this.prisma.approval_route.findFirst({ where: { approval_type_code: 'SHIPMENT_CANCEL' } });
+    if (found === null) await seedRoute(this.prisma, 'SHIPMENT_CANCEL', [this.ids.userId]);
   }
 
   /** PDA 통째 피킹(기본은 자기 공장 PDA). */

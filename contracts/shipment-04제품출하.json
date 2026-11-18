@@ -2023,6 +2023,23 @@
        "example": 1
       },
       "description": "기본 50"
+     },
+     {
+      "name": "erpSendStatus",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NOT_QUEUED",
+        "NOT_SENT_NO_SALES_ORDER",
+        "CANCELLED",
+        "SEND_ERROR",
+        "PENDING",
+        "SENT"
+       ],
+       "example": "NOT_SENT_NO_SALES_ORDER"
+      },
+      "description": "ERP 송신 상태로 거른다(응답 erpSendStatus 와 같은 판정 · 피처 010)"
      }
     ],
     "security": [
@@ -2244,7 +2261,7 @@
      "shipment"
     ],
     "summary": "출하 취소 실행",
-    "description": "승인 완료 후 실행한다. ⭐ 승인만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이 확정됐으면 409 다. 근거: W-04-12 §5-8",
+    "description": "승인 완료 후 실행한다. ⭐ 승인만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이 확정됐으면 409 다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 완료 출하는 송신 전이면 실행한다 — 창고마다의 내부 재고 차감 기록 전부를 역전기·취소, 지시·수주 출하 수량을 내리고, 메시지를 CANCELLED 로, 피킹 LOT 을 PICKED 로 되돌려 같은 잔액 행에 예약을 다시 건다(다시 잡을 수 없는 LOT 은 풀린 채 피킹 LOT 행을 지운다). 지시서는 「출하 완료 전」이 된다. OQC 결과는 그대로. 보낸 뒤는 409 ERP_ALREADY_SENT.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2320,7 +2337,7 @@
       }
      },
      "409": {
-      "description": "충돌",
+      "description": "충돌 · ERP_ALREADY_SENT(POP 완료 출하 — 이미 보냄)",
       "content": {
        "application/json": {
         "schema": {
@@ -2446,7 +2463,7 @@
      "shipment"
     ],
     "summary": "출하 취소 요청",
-    "description": "미확정 구간에서만 된다. 사유가 필수다. 승인은 공통 계약이 소유한다. 01 자재창고가 쓰는 :request-cancel 과 같은 형태다. 근거: W-04-12 §5-8",
+    "description": "미확정 구간에서만 된다. 사유가 필수다. 승인은 공통 계약이 소유한다. 01 자재창고가 쓰는 :request-cancel 과 같은 형태다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 출하 완료로 확정된 출하도 ERP 로 보내기 전(메시지 PENDING · sentAt 없음 · 바깥 행 0 · 수주 없는 출하는 늘)이면 상신한다 — 보낸 뒤는 409 ERP_ALREADY_SENT. 상신 중에는 러너가 그 출하를 보내지 않는다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2522,7 +2539,7 @@
       }
      },
      "409": {
-      "description": "충돌",
+      "description": "충돌 · ERP_ALREADY_SENT(POP 완료 출하 — 이미 보냄)",
       "content": {
        "application/json": {
         "schema": {
@@ -5002,9 +5019,13 @@
       "example": 1001
      },
      "warehouseId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "출하 창고. ⭐ POP 출하 완료(피처 010)로 생긴 출하는 여러 창고라 null — warehouses[] 를 본다(응답 모양 변경)"
      },
      "vehicleNo": {
       "type": "string",
@@ -5096,6 +5117,100 @@
      "versionNo": {
       "type": "integer",
       "example": 1
+     },
+     "erpSendStatus": {
+      "type": "string",
+      "enum": [
+       "NOT_QUEUED",
+       "NOT_SENT_NO_SALES_ORDER",
+       "CANCELLED",
+       "SEND_ERROR",
+       "PENDING",
+       "SENT"
+      ],
+      "example": "PENDING",
+      "description": "ERP 송신 상태(출하 내역 W-04-12 · 피처 010) — 위에서부터 처음 맞는 값: 미확정 NOT_QUEUED(확정 전) · 수주 연결 라인 0 NOT_SENT_NO_SALES_ORDER(송신 안 함) · 메시지 없음 NOT_QUEUED · 메시지 취소 CANCELLED · 송신 실패 SEND_ERROR · 보내기 전(PENDING·sentAt 없음·바깥 행 0) PENDING(대기) · 그 밖 SENT(보냄). 출하 완료 단계 화면에는 표시하지 않는다"
+     },
+     "cancelRequestPending": {
+      "type": "boolean",
+      "example": false,
+      "description": "열린 취소 결재(SHIPMENT_CANCEL · 상신 중) — 그동안 ERP 송신을 보류한다(FR-024)"
+     },
+     "completedTerminal": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "terminalId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "terminalCode": {
+        "type": "string",
+        "example": "POP-01"
+       }
+      },
+      "required": [
+       "terminalId",
+       "terminalCode"
+      ],
+      "description": "POP 출하 완료 단말(피처 010) — 옛 흐름은 null"
+     },
+     "completedWorker": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "workerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "workerNo": {
+        "type": "string",
+        "example": "100027"
+       },
+       "workerName": {
+        "type": "string",
+        "example": "작업자"
+       }
+      },
+      "required": [
+       "workerId",
+       "workerNo",
+       "workerName"
+      ],
+      "description": "POP 출하 완료 작업자(피처 010)"
+     },
+     "warehouses": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "warehouseCode": {
+         "type": "string",
+         "example": "WH-FG"
+        },
+        "warehouseName": {
+         "type": "string",
+         "example": "완제품창고"
+        }
+       },
+       "required": [
+        "warehouseId",
+        "warehouseCode",
+        "warehouseName"
+       ]
+      },
+      "description": "재고가 빠진 창고들 — 출하 창고와 내부 재고 차감 기록(goods_issue) 기준(피처 010)"
      }
     },
     "required": [
@@ -5403,6 +5518,14 @@
       "format": "double",
       "description": "이미 포장에 담긴 수량. 배분 잔여 = allocatedQty − packedQty 를 서버가 파생한다(L-2) ⛔ 없으면 화면이 잔여를 계산할 수 없다 — 항상 내린다(P-04-01 §5-6).",
       "example": 120.0
+     },
+     "managementCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "BOX-0001",
+      "description": "출하 관리 코드(피처 010 FR-020) — 출하 상세에서만 싣는다(조회만)"
      }
     },
     "required": [
@@ -5968,9 +6091,10 @@
        "NO_LINE_FOR_ITEM",
        "LOT_NOT_REJECTED",
        "COMPLETION_BLOCKED",
-       "ALREADY_COMPLETED"
+       "ALREADY_COMPLETED",
+       "ERP_ALREADY_SENT"
       ],
-      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다. COMPLETION_BLOCKED 는 출하 완료를 막는 이유가 있다(blockers 에 실린다). ALREADY_COMPLETED 는 이미 POP 에서 출하 완료한 지시서다(다시 스캔·동시 완료).",
+      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다. COMPLETION_BLOCKED 는 출하 완료를 막는 이유가 있다(blockers 에 실린다). ALREADY_COMPLETED 는 이미 POP 에서 출하 완료한 지시서다(다시 스캔·동시 완료). ERP_ALREADY_SENT 는 ERP 로 이미 보낸(또는 보내는 중인) POP 완료 출하라 취소할 수 없다 — ERP 에서 처리한다.",
       "example": "VERSION_CONFLICT"
      },
      "message": {

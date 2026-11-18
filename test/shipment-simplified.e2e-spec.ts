@@ -14,6 +14,7 @@ import { join } from 'node:path';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { goodsIssueBuilder } from '../src/integration/erp/send/goods-issue.send';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ShipmentSimplifiedFixture } from './support/shipment-simplified-fixture';
 
@@ -660,6 +661,110 @@ describe('출하 공정 단순화 (e2e)', () => {
       await f.complete(made, f.pda).expect(401);
       await f.complete(made, 'session').expect(403);
       expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(0);
+    });
+  });
+  describe('송신 전 취소(US6)·출하 내역(US7)', () => {
+    beforeAll(async () => f.ensureCancelRoute());
+
+    it('US6-1·SC-006·Q13 완료 직후 취소를 상신·승인·실행하면 재고·전표·출하 수량이 되돌아가고, 메시지가 CANCELLED, 피킹 LOT 이 PICKED 로 예약이 다시 잡힌다', async () => {
+      const { made, lotIds } = await readyRequest();
+      const done = await f.complete(made).expect(200);
+      const shipmentId = done.body.shipmentId as number;
+
+      const requested = await f.requestCancel(shipmentId);
+      expect(requested.status).toBe(200);
+      expect((await f.shipment(shipmentId)).body).toMatchObject({ cancelRequestPending: true, erpSendStatus: 'PENDING' });
+      const cancelled = await f.cancelApproved(shipmentId);
+
+      expect(cancelled.status).toBe(200);
+      expect(cancelled.body).toMatchObject({ statusCode: 'CANCELLED', erpSendStatus: 'CANCELLED' });
+      expect((await prisma.goods_issue.findMany({ where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(shipmentId) } }))
+        .map((row) => row.status_code)).toEqual(['CANCELLED', 'CANCELLED']);
+      const balances = await prisma.inventory_balance.findMany({ where: { lot_id: { in: lotIds.map(BigInt) } }, orderBy: { lot_id: 'asc' } });
+      expect(balances.map((row) => [Number(row.on_hand_qty), Number(row.picked_qty)])).toEqual([[40, 40], [40, 40], [30, 30]]);
+      const line = await prisma.shipment_request_line.findUniqueOrThrow({ where: { shipment_request_line_id: BigInt(made.lineIds[0]) }, include: { sales_order_line: true } });
+      expect([Number(line.shipped_qty), Number(line.sales_order_line?.shipped_qty)]).toEqual([0, 0]);
+      expect((await prisma.shipment_request_lot.findMany({ where: { lot_id: { in: lotIds.map(BigInt) } } })).map((row) => [row.status_code, row.shipment_id]))
+        .toEqual(lotIds.map(() => ['PICKED', null]));
+      expect((await prisma.integration_message.findFirstOrThrow({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) } })).status_code).toBe('CANCELLED');
+      // OQC 결과는 판정 근거로 남는다 — 지시서는 「출하 완료 전」이고 다시 완료할 수 있다.
+      expect((await prisma.inspection_result.findMany({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) } })).map((row) => row.status_code)).toEqual(['CONFIRMED']);
+      const detail = await f.asSession(f.http().get(`/api/logistics/shipment-requests/${made.requestId}`)).expect(200);
+      expect(detail.body).toMatchObject({ shipmentProgressCode: 'PICKED', completedShipment: null, completionBlockers: [] });
+      expect(detail.body.lines[0]).toMatchObject({ pickedQty: 110, shippedQty: 0 });
+      await f.complete(made).expect(200);
+    });
+
+    it('US6-2·Q14 ERP 로 이미 보낸 출하는 취소 상신이 409 ERP_ALREADY_SENT 다', async () => {
+      const { made } = await readyRequest();
+      const done = await f.complete(made).expect(200);
+      await prisma.integration_message.updateMany({
+        where: { target_type_code: 'SHIPMENT', target_id: BigInt(done.body.shipmentId) },
+        data: { status_code: 'PROCESSING', sent_at: new Date() },
+      });
+
+      const response = await f.requestCancel(done.body.shipmentId as number);
+
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('ERP_ALREADY_SENT');
+      expect((await f.shipment(done.body.shipmentId as number)).body).toMatchObject({ erpSendStatus: 'SENT', cancelRequestPending: false });
+    });
+
+    it('US6-1 수주 없는 출하(보낼 것이 없다)도 송신 전으로 보고 취소된다', async () => {
+      const made = await f.request([{ item: 'B', allocated: 30 }]);
+      const lot = await f.lot({ item: 'B', balances: [{ warehouse: 'wh1', qty: 30 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      const done = await f.complete(made).expect(200);
+
+      expect((await f.requestCancel(done.body.shipmentId as number)).status).toBe(200);
+      const cancelled = await f.cancelApproved(done.body.shipmentId as number);
+
+      expect(cancelled.body).toMatchObject({ statusCode: 'CANCELLED', erpSendStatus: 'NOT_SENT_NO_SALES_ORDER' });
+    });
+
+    it('US7-1~4·SC-007·Q15 출하 내역 — 창고 둘·완료 단말·작업자·LOT 별 출하 관리 코드·ERP 송신 상태와 그 필터', async () => {
+      const { made } = await readyRequest();
+      const firstLot = (await f.lotsOf(made))[0];
+      await f.saveCode(firstLot.shipmentRequestLotId, 'BOX-7').expect(200);
+      const withOrder = (await f.complete(made).expect(200)).body.shipmentId as number;
+      const plain = await f.request([{ item: 'B', allocated: 30 }]);
+      const lot = await f.lot({ item: 'B', balances: [{ warehouse: 'wh2', qty: 30 }] });
+      await f.pickLot(plain, 0, { lotId: lot.lotId }).expect(200);
+      const noOrder = (await f.complete(plain).expect(200)).body.shipmentId as number;
+
+      const detail = (await f.shipment(withOrder)).body as Record<string, unknown> & { lines: { allocations: { lotId: number; managementCode: string | null; warehouseId: number }[] }[] };
+      expect(detail).toMatchObject({
+        warehouseId: null, statusCode: 'CONFIRMED', erpSendStatus: 'PENDING', cancelRequestPending: false,
+        completedTerminal: { terminalId: Number(f.pop.terminalId) }, completedWorker: { workerNo: f.pop.workerNo },
+      });
+      expect((detail.warehouses as { warehouseId: number }[]).map((row) => row.warehouseId).sort()).toEqual([Number(f.ids.wh1), Number(f.ids.wh2)].sort());
+      const allocation = detail.lines[0].allocations.find((row) => row.lotId === firstLot.lotId);
+      expect(allocation).toMatchObject({ managementCode: 'BOX-7', warehouseId: Number(f.ids.wh1) });
+      const filtered = await f.asSession(f.http().get('/api/logistics/shipments')
+        .query({ shipDateFrom: '2026-11-18', shipDateTo: '2026-11-18', erpSendStatus: 'NOT_SENT_NO_SALES_ORDER', size: 100 })).expect(200);
+      const ids = (filtered.body.items as { shipmentId: number; erpSendStatus: string }[]).map((row) => row.shipmentId);
+      expect(ids).toContain(noOrder);
+      expect(ids).not.toContain(withOrder);
+      for (const row of filtered.body.items as { erpSendStatus: string }[]) expect(row.erpSendStatus).toBe('NOT_SENT_NO_SALES_ORDER');
+
+      await prisma.integration_message.updateMany({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(withOrder) }, data: { status_code: 'FAILED' } });
+      expect((await f.shipment(withOrder)).body.erpSendStatus).toBe('SEND_ERROR');
+    });
+
+    it('US7-4·Q15 수주 라인과 수주 없는 라인이 섞인 지시서는 수주 라인만 송신 행이 된다', async () => {
+      const made = await f.request([{ allocated: 30, salesOrdered: 30, inspection: false }, { item: 'B', allocated: 20 }]);
+      const a = await f.lot({ balances: [{ warehouse: 'wh1', qty: 30 }] });
+      const b = await f.lot({ item: 'B', balances: [{ warehouse: 'wh1', qty: 20 }] });
+      await f.pickLot(made, 0, { lotId: a.lotId }).expect(200);
+      await f.pickLot(made, 1, { lotId: b.lotId }).expect(200);
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      const message = await prisma.integration_message.findFirstOrThrow({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) } });
+
+      const rows = await goodsIssueBuilder(prisma).build({
+        id: message.integration_message_id, interfaceCode: message.interface_code, targetTypeCode: 'SHIPMENT', targetId: BigInt(shipmentId), payload: message.payload,
+      });
+
+      expect(rows.map((row) => [row.values.DN_REQ_SEQ, row.values.GI_QTY, row.values.PLANT_CD])).toEqual([[1, '30', 'SSE2E-P1']]);
     });
   });
 });

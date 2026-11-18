@@ -109,7 +109,7 @@ async function pgiPayload(tx: Tx, shipment: LockedShipment): Promise<Prisma.Inpu
   return {
     shipmentNo: shipment.shipment_no,
     shipmentRequestId: Number(shipment.shipment_request_id),
-    warehouseId: Number(shipment.warehouse_id),
+    warehouseId: shipment.warehouse_id === null ? null : Number(shipment.warehouse_id),
     shippedAt: shipment.shipped_at === null ? null : shipment.shipped_at.toISOString(),
     lines: lines.map((line) => ({
       itemId: Number(line.item_id),

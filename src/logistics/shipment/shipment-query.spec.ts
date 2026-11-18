@@ -34,11 +34,13 @@ describe('출하 목록 SQL', () => {
 
   it('기간 축은 shipped_at 이고 «공장 로컬» 자정으로 펴며 끝 경계를 «포함»한다', () => {
     const built = where({ shipDateTo: '2026-09-30' });
-    expect(built.sql).toContain('s.shipped_at >= (($1::date)::timestamp AT TIME ZONE (SELECT p.timezone_code');
+    expect(built.sql).toContain('s.shipped_at >= (($1::date)::timestamp AT TIME ZONE COALESCE(');
     // ⛔ `<= to` 로 적으면 그 날 자정만 걸려 하루가 통째로 샌다 — timestamptz 칸이다.
-    expect(built.sql).toContain('s.shipped_at < (($2::date + 1)::timestamp AT TIME ZONE (SELECT p.timezone_code');
+    expect(built.sql).toContain('s.shipped_at < (($2::date + 1)::timestamp AT TIME ZONE COALESCE(');
     // ⭐ 시간대는 «출하 행의» 창고에서 푼다 — 요청 하나에 하나로 접으면 공장이 섞인 목록이 갈린다.
     expect(built.sql).toContain('WHERE w.warehouse_id = s.warehouse_id');
+    // 피처 010 — POP 완료 출하는 창고가 없어 지시서 이행 공장의 시간대로 떨어진다.
+    expect(built.sql).toContain('JOIN mdm.plant p ON p.plant_id = r.fulfillment_plant_id');
     expect(built.params).toEqual([FROM, '2026-09-30']);
   });
 

@@ -10,6 +10,7 @@ import {
 } from '../shipment-allocation/shipment-allocation-view';
 import { oqcPassedByLine } from '../shipment-request/shipment-oqc';
 import { BuiltWhere, FROM_SQL, ShipmentQuery, orderBySql, whereSql } from './shipment-query.sql';
+import { shipmentHistoryFacts } from './shipment-history';
 import {
   ShipmentDetailView,
   ShipmentView,
@@ -25,7 +26,15 @@ import {
 const ALLOCATION_SQL = `SELECT a.shipment_lot_allocation_id, a.shipment_line_id, a.lot_id,
               a.handling_unit_id, a.allocated_qty, a.uom_id,
               sl.shipment_id, sl.item_id, sl.shipment_request_line_id,
-              s.warehouse_id, i.item_code, lt.lot_no
+              COALESCE(s.warehouse_id, (SELECT gi.source_warehouse_id
+                                          FROM logistics.goods_issue_line gil
+                                          JOIN logistics.goods_issue gi ON gi.goods_issue_id = gil.goods_issue_id
+                                         WHERE gi.source_document_type_code = 'SHIPMENT' AND gi.source_document_id = s.shipment_id
+                                           AND gil.lot_id = a.lot_id AND gil.issue_qty = a.allocated_qty
+                                         ORDER BY gil.goods_issue_line_id LIMIT 1)) AS warehouse_id,
+              i.item_code, lt.lot_no,
+              (SELECT x.management_code FROM logistics.shipment_request_lot x
+                WHERE x.shipment_id = s.shipment_id AND x.lot_id = a.lot_id LIMIT 1) AS management_code
          FROM logistics.shipment_lot_allocation a
          JOIN logistics.shipment_line sl ON sl.shipment_line_id = a.shipment_line_id
          JOIN logistics.shipment s ON s.shipment_id = sl.shipment_id
@@ -127,7 +136,8 @@ export class ShipmentQueryService {
         ),
       ),
     );
-    return { view: shipmentDetailView(row, views), versionNo: row.version_no };
+    const facts = (await shipmentHistoryFacts(this.prisma, [row.shipment_id])).get(String(row.shipment_id));
+    return { view: shipmentDetailView(row, views, facts), versionNo: row.version_no };
   }
 
   /**
@@ -137,14 +147,15 @@ export class ShipmentQueryService {
    */
   private async views(ids: bigint[]): Promise<ShipmentView[]> {
     if (ids.length === 0) return [];
-    const [rows, unassigned] = await Promise.all([
+    const [rows, unassigned, facts] = await Promise.all([
       this.prisma.shipment.findMany({ where: { shipment_id: { in: ids } } }),
       this.unassignedPackedBoxCounts(ids),
+      shipmentHistoryFacts(this.prisma, ids),
     ]);
     const byId = new Map(rows.map((row) => [row.shipment_id.toString(), row]));
     return ids.flatMap((id) => {
       const row = byId.get(id.toString());
-      return row === undefined ? [] : [shipmentView(row, unassigned.get(id.toString()) ?? 0)];
+      return row === undefined ? [] : [shipmentView(row, unassigned.get(id.toString()) ?? 0, facts.get(id.toString()))];
     });
   }
 
@@ -176,7 +187,10 @@ export class ShipmentQueryService {
 export function shipmentWhereSql(query: ShipmentQuery, terminal?: TerminalListScope): BuiltWhere {
   const where = whereSql(query);
   if (terminal !== undefined) {
-    where.sql = `(${where.sql}) AND EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)`;
+    // POP 완료 출하(피처 010)는 창고가 없다 — 지시서 이행 공장으로 본다.
+    where.sql = `(${where.sql}) AND (EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)
+       OR (s.warehouse_id IS NULL AND EXISTS (SELECT 1 FROM logistics.shipment_request tr
+                                               WHERE tr.shipment_request_id = s.shipment_request_id AND tr.fulfillment_plant_id = $${where.params.length + 1}::bigint)))`;
     where.params.push(terminal.plantId);
   }
   if (terminal?.warehouseId != null) {
