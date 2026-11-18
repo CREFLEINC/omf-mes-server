@@ -23,6 +23,8 @@ export const MESSAGE_STATUS = {
   PROCESSING: 'PROCESSING',
   DONE: 'DONE',
   FAILED: 'FAILED',
+  /** 보내기 전에 취소된 출하 메시지(피처 010 · omf-all-around#305) — 러너는 PENDING 만 집으므로 다시 보내지 않는다. */
+  CANCELLED: 'CANCELLED',
 } as const;
 
 /** 계약 `IntegrationMessage` 와 동형. ⛔ `payload` 는 여기 없다 — 상세에만 있다. */
