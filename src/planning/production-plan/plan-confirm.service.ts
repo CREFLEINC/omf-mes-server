@@ -1,3 +1,4 @@
+import { assertEquipmentOccupancy, lockEquipmentOccupancy } from '../../production/work-order/equipment-occupancy';
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -126,6 +127,7 @@ export class PlanConfirmService {
     appUserId: number | undefined,
     supplements?: ReadonlyMap<bigint, WorkOrderSupplement>,
   ): Promise<ProductionPlanView> {
+    await lockEquipmentOccupancy(tx);
     const productionPlanId = BigInt(plan.productionPlanId);
     const locked = await lockPlan(tx, plan.productionPlanId);
     assertPlanVersion(locked, version);
@@ -153,6 +155,7 @@ export class PlanConfirmService {
       data: workOrderRows({ ...plan, fg }, workOrderNos, appUserId, supplements),
       select: { work_order_id: true, routing_operation_id: true },
     });
+    for (const row of created) await assertEquipmentOccupancy(tx, row.work_order_id);
     if (plan.dependencies.length > 0) {
       const workOrderIdOf = new Map(created.map((row) => [row.routing_operation_id, row.work_order_id]));
       await tx.work_order_dependency.createMany({ data: dependencyRows(plan, workOrderIdOf, appUserId) });

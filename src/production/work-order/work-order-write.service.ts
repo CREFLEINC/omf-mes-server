@@ -1,3 +1,4 @@
+import { assertEquipmentOccupancy, lockEquipmentOccupancy } from './equipment-occupancy';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -172,6 +173,7 @@ export class WorkOrderWriteService {
     appUserId: number | undefined,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      await lockEquipmentOccupancy(tx);
       const locked = await lockWorkOrder(tx, workOrderId);
       assertVersion(locked, version);
       if (locked.released_at !== null) {
@@ -198,6 +200,7 @@ export class WorkOrderWriteService {
           version_no: { increment: 1 },
         },
       });
+      await assertEquipmentOccupancy(tx, workOrderId);
     });
   }
 }

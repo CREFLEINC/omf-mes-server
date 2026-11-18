@@ -1,3 +1,4 @@
+import { assertEquipmentOccupancy, lockEquipmentOccupancy } from '../../production/work-order/equipment-occupancy';
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -80,6 +81,7 @@ export class AcknowledgeService {
   }
 
   private async commit(tx: Prisma.TransactionClient, orderId: number, version: number, body: ProductionOrderAcknowledge, appUserId: number): Promise<void> {
+    await lockEquipmentOccupancy(tx);
     const [locked] = await tx.$queryRaw<{ version_no: number; last_change_received_at: Date | null }[]>(Prisma.sql`
       SELECT version_no, last_change_received_at FROM planning.production_order
        WHERE production_order_id = ${BigInt(orderId)} FOR UPDATE`);
@@ -114,6 +116,7 @@ export class AcknowledgeService {
       assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT });
     }
 
+    for (const adjustment of adjustments) await assertEquipmentOccupancy(tx, adjustment.workOrderId);
     await this.markMismatch(tx, impacted, body.decisionCode, adjustments);
     await this.upsertAcknowledgement(tx, orderId, receivedAt, body, appUserId);
   }
