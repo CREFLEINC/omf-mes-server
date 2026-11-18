@@ -116,7 +116,8 @@ describe('계약 커버리지', () => {
     // 분할 LOT 라벨 목록 1 오퍼레이션(피처 008): 630 → 631.
     // 배포 전 자재 소요·단위 환산 1 오퍼레이션: 631 → 632.
     // 적치 대기 LOT 목록·확인·위치 판정 3 오퍼레이션(피처 009): 632 → 635.
-    expect(registry.size).toBe(635);
+    // 적치·임시 적치 2 오퍼레이션(피처 009): 635 → 637.
+    expect(registry.size).toBe(637);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
