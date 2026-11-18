@@ -7,9 +7,9 @@ describe('work-order-list-where', () => {
   describe('buildWorkOrderWhere', () => {
     it('where — includeUnplannedEquipment 면 그 설비 또는 설비 미지정 W/O 다', () => {
       expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: true })).toEqual({
-        AND: [{ OR: [{ planned_equipment_id: 5 }, { planned_equipment_id: null }] }],
+        AND: [{ OR: [{ planned_equipment_id: 5 }, { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: 5n } } }, { planned_equipment_id: null }] }],
       });
-      expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: false })).toEqual({ AND: [{ planned_equipment_id: 5 }] });
+      expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: false })).toEqual({ AND: [{ OR: [{ planned_equipment_id: 5 }, { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: 5n } } }] }] });
       // 설비 축이 없으면 스위치는 뜻이 없다.
       expect(buildWorkOrderWhere({ includeUnplannedEquipment: true })).toEqual({});
     });

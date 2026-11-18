@@ -1,3 +1,4 @@
+import { rivalWindows } from '../../production/work-order/validation';
 import { Prisma } from '@prisma/client';
 
 import { RELEASED_WORK_ORDER_STATUSES } from '../../core/work-order';
@@ -69,10 +70,7 @@ export async function workOrderWarnings(
       where: { mold_id: { in: moldIds } },
       select: { mold_id: true, status_code: true, is_active: true, guaranteed_shot_count: true, current_shot_count: true },
     }),
-    equipmentIds.length === 0 ? [] : client.work_order.findMany({
-      where: { planned_equipment_id: { in: equipmentIds }, planned_start_at: { not: null }, planned_end_at: { not: null }, status_code: { notIn: RELEASED_WORK_ORDER_STATUSES } },
-      select: { planned_equipment_id: true, planned_start_at: true, planned_end_at: true },
-    }),
+    rivalWindows(client, 0, equipmentIds),
     pairs.length === 0 ? [] : client.worker_qualification.findMany({
       where: { OR: pairs.map((row) => ({ worker_id: row.workerId as bigint, ...validProcessQualification(row.processId as bigint, today) })) },
       select: { worker_id: true, process_id: true },

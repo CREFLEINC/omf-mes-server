@@ -22,6 +22,7 @@ export const PROPOSAL_REASONS = [
   'DRAFT_PLAN_EXCEEDS_ORDER',
   ...RESOURCE_CODES,
   'PLAN_QTY_EXCEEDS_ORDER',
+  'EQUIPMENT_DOUBLE_BOOKED',
 ] as const;
 export type ProposalReasonCode = (typeof PROPOSAL_REASONS)[number];
 

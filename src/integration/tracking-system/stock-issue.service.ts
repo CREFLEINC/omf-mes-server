@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
+import { LOT_JUDGED_QUALITIES } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TrackingIssueLine, postTrackingIssue } from './goods-issue-write';
 import { claimTransmission } from './tracking-transmission';
@@ -198,7 +199,7 @@ async function lockStock(tx: Tx, lots: Map<bigint, ShippableLot>): Promise<Slot[
        FOR UPDATE`;
   const fgFirst = (row: { lot_id: bigint; location_id: bigint }) => (row.location_id === lots.get(row.lot_id)?.fgLocationId ? 0 : 1);
   return rows
-    .filter((row) => row.warehouse_id === lots.get(row.lot_id)?.warehouseId && row.quality_status_code === 'NORMAL'
+    .filter((row) => row.warehouse_id === lots.get(row.lot_id)?.warehouseId && LOT_JUDGED_QUALITIES.includes(row.quality_status_code)
       && row.inventory_status_code === 'AVAILABLE' && row.available_qty !== null && row.available_qty.gt(0))
     .sort((a, b) => fgFirst(a) - fgFirst(b) || (a.location_id < b.location_id ? -1 : a.location_id > b.location_id ? 1 : 0))
     .map((row) => ({ lotId: row.lot_id, itemId: row.item_id, uomId: row.uom_id, locationId: row.location_id, left: row.available_qty as Prisma.Decimal }));

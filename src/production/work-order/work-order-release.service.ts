@@ -1,3 +1,4 @@
+import { assertEquipmentOccupancy, lockEquipmentOccupancy } from './equipment-occupancy';
 import { HttpStatus, Injectable } from '@nestjs/common';
 
 import { DocumentStateService } from '../../core/document-state';
@@ -108,6 +109,7 @@ export class WorkOrderReleaseService {
     appUserId: number | null,
     correlationId: string | null,
   ): Promise<WaitingResult | null> {
+    await lockEquipmentOccupancy(tx);
     const locked = await lockWorkOrder(tx, workOrderId);
     // ⭐ 버전 대조가 전이 검사보다 «먼저»다(`document-cancel.service.ts` 선례).
     assertVersion(locked, version);
@@ -118,6 +120,8 @@ export class WorkOrderReleaseService {
       locked.status_code,
       HttpStatus.BAD_REQUEST,
     );
+
+    await assertEquipmentOccupancy(tx, workOrderId, true);
 
     // 출고요청보다 먼저 — 같은 트랜잭션이라 배포가 실패하면 넣은 환산도 남지 않는다.
     await saveEnteredConversions(tx, plan.materials.entered, {

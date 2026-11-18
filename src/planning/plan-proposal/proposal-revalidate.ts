@@ -110,11 +110,13 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
     planned_line_id: plan.body.plannedLineId === null ? null : BigInt(plan.body.plannedLineId),
     plan_date: new Date(`${plan.body.planDate}T00:00:00.000Z`),
   })));
+  const resourceWarnings = await workOrderWarnings(client, proposal.order, facts, resolved, now);
+  errors.push(...resourceWarnings.filter(finding => finding.code === 'EQUIPMENT_DOUBLE_BOOKED').map(finding => ({...finding, scope:'field' as const})));
   const warnings = [
     ...resolved.flatMap((plan, at) => planDayIssues(plan.body.planDate, days[at]).map((issue) => ({ code: issue.code, field: `plans[${plan.index}].planDate`, message: issue.message }))),
     ...timeWarnings,
     ...resolved.flatMap((plan) => fgOverrideWarning(`plans[${plan.index}]`, proposal.fg, plan.fgOverride)),
-    ...(await workOrderWarnings(client, proposal.order, facts, resolved, now)),
+    ...resourceWarnings.filter(finding => finding.code !== 'EQUIPMENT_DOUBLE_BOOKED'),
   ];
   const arrivalOf = (warehouseId: bigint) => findArrivalLocationId(client, warehouseId);
   const fgWarehouses = await Promise.all(resolved.map((plan) => fgWarehouseView(proposal.fg, { sent: plan.fgOverrideSent, applied: plan.fgOverride }, arrivalOf)));
