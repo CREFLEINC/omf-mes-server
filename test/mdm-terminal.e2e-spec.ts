@@ -459,8 +459,8 @@ describe('단말 마스터 (e2e)', () => {
       expect(screens.body.screenCodes).toContain(code);
     }
     // 켜지 않은 축은 닫혀 있다.
-    expect(screens.body.screenCodes).not.toContain('P-02-08');
-    expect(screens.body.screenCodes).not.toContain('P-02-13');
+    expect(screens.body.screenCodes).not.toContain('P-04-01');
+    expect(screens.body.screenCodes).not.toContain('P-02-14');
   });
 
   it('⭐ 빠진 공정은 지워진다', async () => {

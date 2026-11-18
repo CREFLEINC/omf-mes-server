@@ -60,7 +60,7 @@ function erpStorageView(fg: Proposal['fg']) {
   return {
     erpStorageLocationCode: fg.kind === 'NO_STORAGE_CODE' ? null : fg.erpCode,
     warehouse: fg.kind === 'ERP_STORAGE_LOCATION' ? place(fg.warehouse) : null,
-    location: fg.kind === 'ERP_STORAGE_LOCATION' ? place(fg.location) : null,
+    location: fg.kind === 'ERP_STORAGE_LOCATION' ? { ...place(fg.location), systemRoleCode: fg.location.systemRoleCode } : null,
     reasonCode: fg.kind === 'LINK_FAILED' ? fg.reason : null,
   };
 }

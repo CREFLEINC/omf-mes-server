@@ -129,7 +129,8 @@ describe('오퍼레이션 권한 매핑', () => {
     // 제품 LOT OQC 스캔 1 — `W-04-03`: 373.
     // 계획 제안 보완값 재검증 1 — `W-02-01`·`W-02-02`: 374.
     // ERP W/O 감사 기록 조회 1 — `W-02-01`~`W-02-04`: 375.
-    expect(declares403).toHaveLength(375);
+    // 분할 LOT 라벨 목록 1 — `P-01-02`(피처 008): 376.
+    expect(declares403).toHaveLength(376);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
@@ -197,7 +198,7 @@ describe('오퍼레이션 권한 매핑', () => {
   // W-03-11(PQC 검사 등록·조회)은 설계 밖 관리웹 화면이다 — 장부 P-51. 도출된 화면이 빠지지 않아야 한다.
   it('⛔ 검사 결과 저장에 관리웹 PQC 화면이 도출된 화면들과 함께 있다 — 장부 P-51', () => {
     expect(OPERATION_PERMISSIONS['POST /quality/inspection-results']).toEqual(
-      expect.arrayContaining(['P-02-13', 'W-01-01', 'W-04-03', 'W-03-11']),
+      expect.arrayContaining(['W-01-01', 'W-04-03', 'W-03-11']),
     );
   });
 

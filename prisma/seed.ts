@@ -1175,6 +1175,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'LOT_SPLIT', codeName: 'LOT 분할(선별 불량분)', order: 40 },
       // 미리 만든 자재 관리 LOT — 받기 때 INBOUND_RECEIPT_LINE 으로 바뀐다(피처 005 · 마이그 20261112090000).
       { code: 'MATERIAL_LOT_BATCH', codeName: '자재 관리 LOT 발행 묶음', order: 50 },
+      // 부분 출고가 떼어 낸 분할 LOT — source_id 는 출고 라인이다(피처 008 · 마이그레이션 없음).
+      { code: 'GOODS_ISSUE_SPLIT', codeName: '분할 출고', order: 60 },
     ],
   },
   {

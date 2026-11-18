@@ -9,7 +9,7 @@ const warehouse = (id: bigint, overrides: Partial<WarehouseRef> = {}): Warehouse
 const WAREHOUSES = new Map([10n, 20n, 30n, 40n].map((id) => [id, warehouse(id, id === 30n ? { warehouse_type_code: 'MATERIAL' } : id === 40n ? { plant_id: 2n } : {})]));
 const ERP: FgResolution = {
   kind: 'ERP_STORAGE_LOCATION', erpCode: 'W10',
-  warehouse: { id: 10n, code: 'W10', name: '창고10' }, location: { id: 101n, code: 'WH-ALL', name: '창고 전체', isActive: true },
+  warehouse: { id: 10n, code: 'W10', name: '창고10' }, location: { id: 101n, code: 'WH-ALL', name: '창고 전체', isActive: true, systemRoleCode: 'WAREHOUSE_WHOLE' },
 };
 
 function judge(body: { warehouseId: number; erpMismatchAcknowledged: boolean } | null, fg: FgResolution = ERP) {

@@ -4,7 +4,10 @@ import {
   materialMesLotNo,
   normalizeLotQty,
   parseMaterialLotNo,
+  splitLotNoFamily,
+  splitMaterialLotNo,
 } from './lot-number';
+import { Prisma } from '@prisma/client';
 
 describe('materialMesLotNo', () => {
   it('실 자재 코드로 구분자 5칸 번호를 조립한다(#620 회귀 확인 — 옛 형식은 이 코드를 거절했다)', () => {
@@ -218,5 +221,56 @@ describe('parseMaterialLotNo', () => {
 
   it('빈 칸(공급사)은 거절한다', () => {
     expect(() => parseMaterialLotNo('A|1|260731||0001')).toThrow(MaterialLotFormatError);
+  });
+});
+
+describe('splitMaterialLotNo (피처 008 R-5)', () => {
+  const ROOT = '040101-00022S|1000|260731|100019|0001';
+  const qty = (value: string) => new Prisma.Decimal(value);
+
+  it('US1-3 수량 칸을 분할 수량으로 바꾸고 번호 칸에 -S1 을 붙인다 — 품목·날짜·공급사 칸은 그대로', () => {
+    expect(splitMaterialLotNo(ROOT, qty('300'), [ROOT])).toBe('040101-00022S|300|260731|100019|0001-S1');
+  });
+
+  it('US1-5 같은 가족의 -S 최댓값 + 1 — 수량이 달라도, 중간 번호가 빠져도 센다', () => {
+    const family = [ROOT, '040101-00022S|300|260731|100019|0001-S1', '040101-00022S|50|260731|100019|0001-S3'];
+    expect(splitMaterialLotNo(ROOT, qty('200'), family)).toBe('040101-00022S|200|260731|100019|0001-S4');
+  });
+
+  it('원조 번호 칸이 같은 다른 수량의 LOT 과도 번호가 겹치지 않는다 — 가족은 수량을 가르지 않는다', () => {
+    const other = '040101-00022S|500|260731|100019|0001';
+    const family = [ROOT, other, '040101-00022S|300|260731|100019|0001-S1'];
+    expect(splitMaterialLotNo(other, qty('300'), family)).toBe('040101-00022S|300|260731|100019|0001-S2');
+  });
+
+  it('소수 수량은 normalizeLotQty 표기 — 뒤 0 을 뗀다', () => {
+    expect(splitMaterialLotNo(ROOT, qty('12.500'), [])).toBe('040101-00022S|12.5|260731|100019|0001-S1');
+  });
+
+  it('US5-3 분할 LOT 을 다시 나누면 -S1-S1 — 손자 번호는 자식 가족의 차례가 아니다', () => {
+    const child = '040101-00022S|300|260731|100019|0001-S1';
+    const family = [ROOT, child, '040101-00022S|20|260731|100019|0001-S1-S1-S1'];
+    expect(splitMaterialLotNo(child, qty('50'), family)).toBe('040101-00022S|50|260731|100019|0001-S1-S1');
+  });
+
+  it('64자를 넘으면 원조 번호 칸 + 원조 기준 차례로 줄인다', () => {
+    const deep = 'ITEM-CODE-13X|1000|260731|SUPPLIER10|0001-S1-S1-S1-S1-S1-S1-S1';
+    const family = [deep, 'ITEM-CODE-13X|300|260731|SUPPLIER10|0001-S1'];
+    const no = splitMaterialLotNo(deep, qty('123.456789'), family);
+    expect(no).toBe('ITEM-CODE-13X|123.456789|260731|SUPPLIER10|0001-S2');
+    expect(no.length).toBeLessThanOrEqual(64);
+  });
+
+  it('5칸이 아닌 옛 번호는 원번호-S{n}', () => {
+    expect(splitMaterialLotNo('PIE2E-LOT', qty('100'), ['PIE2E-LOT', 'PIE2E-LOT-S1', 'PIE2E-LOT-S1-S1'])).toBe('PIE2E-LOT-S2');
+  });
+
+  it('가족 조회 조건과 잠금 열쇠는 원조 번호 칸 기준이다', () => {
+    expect(splitLotNoFamily('040101-00022S|300|260731|100019|0001-S1')).toEqual({
+      lockKey: '040101-00022S|260731|100019|0001',
+      startsWith: '040101-00022S|',
+      contains: '|260731|100019|0001',
+    });
+    expect(splitLotNoFamily('PIE2E-LOT')).toEqual({ lockKey: 'PIE2E-LOT', startsWith: 'PIE2E-LOT-S', contains: '' });
   });
 });

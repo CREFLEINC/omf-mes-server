@@ -703,6 +703,10 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
       DELETE FROM logistics.material_issue_request WHERE issue_request_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.inventory_balance WHERE item_id IN (${items})`);
+    // 부분 출고 분할 계보(피처 008) — 분할 LOT 번호도 같은 접두로 시작한다.
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM trace.lot_relation
+       WHERE target_lot_id IN (SELECT lot_id FROM trace.lot WHERE lot_no LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`);

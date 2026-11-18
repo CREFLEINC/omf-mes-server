@@ -596,6 +596,51 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
     expect(reversal.transaction_no).toBe(`${original.transaction_no}-R`);
   });
 
+  it('US5-2·Q22 :cancel — 부분 출고 분할을 취소하면 분할 LOT 이 출고 창고로 돌아오고 분할 LOT·계보·분할 원장은 남는다(피처 008)', async () => {
+    const receipt = await receiveViaApi(100);
+    const picking = await insertPickingOrder();
+    // 피킹이 집어 둔 40 — 원천 PICKING_ORDER 출고는 picked 를 소진한다.
+    await prisma.inventory_balance.updateMany({ where: { lot_id: BigInt(receipt.lotId) }, data: { picked_qty: 40 } });
+    const created = await request(app.getHttpServer())
+      .post('/api/logistics/goods-issues')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        issueTypeCode: 'PRODUCTION',
+        sourceDocumentTypeCode: 'PICKING_ORDER',
+        sourceDocumentId: picking.pickingOrderId,
+        sourceWarehouseId: warehouseId,
+        issuedAt: AT,
+        businessDate: DAY,
+        occurredAt: AT,
+        postImmediately: true,
+        lines: [{ itemId, lotId: receipt.lotId, issueQty: 40, uomId, sourceLocationId: locationId }],
+      })
+      .expect(201);
+    const goodsIssueId = created.body.goodsIssue.goodsIssueId as number;
+    const childLotId = created.body.lines[0].lotId as number;
+    expect(created.body.lines[0].splitFromLotId).toBe(receipt.lotId);
+    expect(await onHand(childLotId)).toBe(0);
+    expect(await onHand(receipt.lotId)).toBe(60);
+
+    await approveCancel('GOODS_ISSUE', goodsIssueId, 1);
+    // 역전기는 원천 GOODS_ISSUE 원장 «하나»만 찾는다 — 분할 원장은 원천이 달라 500 이 나지 않는다.
+    const response = await callCancel('GOODS_ISSUE', goodsIssueId, 2).expect(200);
+    expect(response.body).toMatchObject({ statusCode: 'CANCELLED', reversed: true });
+
+    // 분할 LOT 으로 출고 창고에 돌아오고, 원래 LOT 과 합치지 않는다(FR-015).
+    expect(await onHand(childLotId)).toBe(40);
+    expect(await onHand(receipt.lotId)).toBe(60);
+    const child = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(childLotId) } });
+    expect(child.parent_lot_id).toBe(BigInt(receipt.lotId));
+    expect(await prisma.lot_relation.count({ where: { target_lot_id: BigInt(childLotId), relation_type_code: 'SPLIT' } })).toBe(1);
+    const split = await prisma.inventory_transaction.findMany({
+      where: { source_document_type_code: 'GOODS_ISSUE_SPLIT', source_document_id: BigInt(goodsIssueId) },
+    });
+    expect(split).toHaveLength(1);
+    expect(await prisma.inventory_transaction.count({ where: { reversal_of_transaction_id: split[0].inventory_transaction_id } })).toBe(0);
+  });
+
   /** 취소 실행 한 벌. 본문이 없다 — 계약에 requestBody 가 0건이다. */
   function callCancel(
     typeCode: string,
@@ -1104,6 +1149,8 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
     const lotScope = `(SELECT lot_id FROM trace.lot WHERE item_id IN ${itemScope})`;
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot_hold WHERE lot_id IN ${lotScope}`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot_external_identifier WHERE lot_id IN ${lotScope}`);
+    // 부분 출고 분할 계보(피처 008).
+    await prisma.$executeRawUnsafe(`DELETE FROM trace.lot_relation WHERE target_lot_id IN ${lotScope}`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE item_id IN ${itemScope}`);
     await prisma.$executeRawUnsafe(
       `DELETE FROM logistics.purchase_order_line WHERE purchase_order_id IN

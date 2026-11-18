@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { pageRequest } from '../../common/pagination';
-import { inboundLineLotSql } from '../../core/lot';
+import { inboundLineLotSql, inboundLotFamilySql, inboundLotOfSql } from '../../core/lot';
 import { localPeriodSql, periodUnlessPinned, plantToday } from '../../common/period/plant-local-period';
 import { BuiltSql, Named, PagedWithTotals, named } from '../../logistics/line-list';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -73,11 +73,9 @@ export function materialInputLineWhere(query: MaterialInputLineListQuery, today:
   if (query.itemId !== undefined) and.push(`mc.item_id = ${bind(query.itemId)}::bigint`);
   if (query.lotNo !== undefined) and.push(`lt.lot_no = ${bind(query.lotNo)}`);
   if (query.workOrderNo !== undefined) and.push(`wo.work_order_no = ${bind(query.workOrderNo)}`);
-  if (query.inboundLotId !== undefined) and.push(`lt.inbound_lot_id = ${bind(query.inboundLotId)}::bigint`);
-  if (query.inboundLotNo !== undefined) {
-    and.push(`EXISTS (SELECT 1 FROM trace.inbound_lot qil
-      WHERE qil.inbound_lot_id = lt.inbound_lot_id AND qil.inbound_lot_no = ${bind(query.inboundLotNo)})`);
-  }
+  // 분할 LOT 은 원래 LOT 의 입하 LOT 으로 함께 걸린다(피처 008).
+  if (query.inboundLotId !== undefined) and.push(`lt.lot_id IN (${inboundLotFamilySql('ID', bind(query.inboundLotId))})`);
+  if (query.inboundLotNo !== undefined) and.push(`lt.lot_id IN (${inboundLotFamilySql('NO', bind(query.inboundLotNo))})`);
   const inbound: string[] = [];
   if (query.inboundReceiptNo !== undefined) inbound.push(`ir.inbound_receipt_no = ${bind(query.inboundReceiptNo)}`);
   if (query.supplierId !== undefined) inbound.push(`ir.supplier_id = ${bind(query.supplierId)}::bigint`);
@@ -129,7 +127,7 @@ export class MaterialInputLineListService {
       from: `${FROM}
         JOIN mdm.item i ON i.item_id = mc.item_id
         JOIN mdm.uom u ON u.uom_id = mc.uom_id
-        LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = lt.inbound_lot_id`,
+        LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = ${inboundLotOfSql('lt')}`,
       qtyColumn: 'mc.input_qty',
       uomColumn: 'mc.uom_id',
       orderBy: 'mc.occurred_at DESC, mc.material_consumption_id DESC',

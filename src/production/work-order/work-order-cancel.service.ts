@@ -46,10 +46,16 @@ export class WorkOrderCancelService {
     await this.prisma.$transaction((tx) => this.commit(tx, workOrderId, version, body, appUserId));
   }
 
+  /** 추적 시스템 연동의 취소 — 호출자의 트랜잭션 안에서 부른다. 계정이 없어 `updated_by` 는 비운다. */
+  async cancelWithin(tx: Tx, workOrderId: number, body: WorkOrderCancel): Promise<void> {
+    await assertCodeValues(tx, [{ field: 'reasonCode', value: body.reasonCode, groupCode: CANCEL_REASON_GROUP }]);
+    await this.commit(tx, workOrderId, undefined, body, undefined);
+  }
+
   private async commit(
     tx: Tx,
     workOrderId: number,
-    version: number,
+    version: number | undefined,
     body: WorkOrderCancel,
     appUserId: number | undefined,
   ): Promise<void> {

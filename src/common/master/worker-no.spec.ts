@@ -162,7 +162,7 @@ const WORKER_TABLE_READERS = [
   // ERP 사원 수신 — 원본 행의 사번으로 작업자를 만들고 고친다. 사번 헤더 판정이 아니다.
   'integration/erp/apply/employee.apply.ts',
   // 추적 시스템 연동의 시스템 작업자(사용자 2026-11-16) — 고정 사번으로 찾는다. 사번 헤더 판정이 아니다.
-  'integration/tracking-system/stock-move.service.ts',
+  'integration/tracking-system/tracking-production.ts',
   'inventory/count/inventory-count-update.service.ts',
   // 인계 알림의 처리자 이름 — 이미 판정된 작업자 id 로 이름만 읽는다(omf-all-around#190). 사번 판정이 아니다.
   'logistics/logistics-handover.ts',

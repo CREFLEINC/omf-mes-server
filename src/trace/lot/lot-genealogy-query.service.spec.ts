@@ -35,6 +35,9 @@ function harness(options: Options) {
     Promise.resolve(args.where.lot_id.in.map((id) => material(id, id === 78n ? { change_type_code: 'MATERIAL', remarks: null } : null))),
   );
   const prisma = {
+    // 분할 자손이 없는 LOT — 가족은 자기 하나다(피처 008).
+    $queryRaw: jest.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+      Promise.resolve((values[0] as bigint[]).map((lot_id) => ({ lot_id })))),
     lot: {
       findUnique: jest.fn().mockResolvedValue(options.lot === undefined ? { source_type_code: 'WORK_ORDER', source_id: 70n, lot_id: 5n } : options.lot),
       findMany: lotFindMany,

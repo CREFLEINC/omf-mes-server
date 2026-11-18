@@ -54,7 +54,7 @@ interface Proposal {
   erpStorage: {
     erpStorageLocationCode: string | null;
     warehouse: { id: number; code: string; name: string } | null;
-    location: { id: number; code: string; name: string } | null;
+    location: { id: number; code: string; name: string; systemRoleCode: string | null } | null;
     reasonCode: string | null;
   };
   plans: { proposalPlanKey: string; planDate: string; planDateSourceCode: string; proposedQty: number; bomId: number; routingId: number; plannedLineId: number | null; workOrders: ProposalWorkOrder[] }[];
@@ -136,7 +136,7 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
       expect(proposal.status).toBe('CONFIRMABLE');
       expect(proposal.erpStorage).toEqual({
         erpStorageLocationCode: `${PREFIX}A`, warehouse: { id: Number(wh.A.id), code: `${PREFIX}A`, name: `${PREFIX} 완제품 A` },
-        location: expect.objectContaining({ id: Number(wh.A.whole) }), reasonCode: null,
+        location: expect.objectContaining({ id: Number(wh.A.whole), systemRoleCode: 'WAREHOUSE_WHOLE' }), reasonCode: null,
       });
       const workOrders = proposal.plans[0].workOrders;
       expect(workOrders).toHaveLength(2);
@@ -151,7 +151,7 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
     it('나뉜 창고는 「적치 대기」를 쓴다', async () => {
       const proposal = await proposalOf(await makeOrder(`${PREFIX}B`));
 
-      expect(proposal.erpStorage.location).toMatchObject({ id: Number(wh.B.staging) });
+      expect(proposal.erpStorage.location).toMatchObject({ id: Number(wh.B.staging), systemRoleCode: 'PUTAWAY_STAGING' });
       expect(proposal.plans[0].workOrders[0]).toMatchObject({ defaultFgLocationId: Number(wh.B.staging), defaultFgLocationSource: 'ERP_STORAGE_LOCATION' });
     });
 

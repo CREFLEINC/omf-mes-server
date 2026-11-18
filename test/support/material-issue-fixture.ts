@@ -256,6 +256,8 @@ export class MaterialIssueFixture {
     await p.material_issue_request.deleteMany({ where: workOrder });
     await p.inventory_balance.deleteMany({ where: plant });
     await p.lot_lifecycle_history.deleteMany({ where: { lot: plant } });
+    // 부분 출고 분할 계보(피처 008) — 부모·자식이 같은 공장이라 lot 은 한 문장으로 지운다.
+    await p.lot_relation.deleteMany({ where: { lot_lot_relation_target_lot_idTolot: plant } });
     await p.lot.deleteMany({ where: plant });
     await p.work_order.deleteMany({ where: { work_order_no: { startsWith: prefix } } });
     await p.production_plan.deleteMany({ where: { plan_no: { startsWith: prefix } } });

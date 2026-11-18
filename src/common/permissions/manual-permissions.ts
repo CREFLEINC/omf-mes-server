@@ -132,6 +132,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/waiting-material-lots': ['P-01-01', 'W-01-14'],
+  // 분할 LOT 라벨(피처 008 · omf-all-around#289) — POP P-01-02 가 출고 QR 대신 부분 출고 분할 LOT 의 자재 LOT 라벨을 찍는다.
+  'GET /logistics/split-material-lots': ['P-01-02'],
   'POST /trace/lots:void': ['P-01-01', 'W-01-14'],
   // PDA 입하 받기·해제·공급사 LOT(피처 005 §3) — 받기와 공급사 LOT 입력은 스캔 화면 M-01-01 뿐이고(M-01-03 에는 입력
   // 화면이 없다), 해제는 스캔 화면 카드와 입하 마감 화면 M-01-03 둘 다 한다.
@@ -466,7 +468,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
 
   // `W-03-10` 처분 판정 처리 — ⭐ 도출 원천이 화면보다 «낡아» 한 줄도 안 도출된 자리다(그 화면은
   // DR-008 확정 3-A 로 2026-08-13 «신설»됐다). 그 결과 판정 저장이 `P-02-13`(POP · PQC) 하나만
-  // 요구해 **정작 그 화면 담당자가 403 을 받는다**(계약 본문이 화면 코드를 직접 적었다).
+  // 요구해 **정작 그 화면 담당자가 403 을 받았다**(계약 본문이 화면 코드를 직접 적었다). P-02-13 은
+  // #293 에서 없앴다 — 지금은 이 줄만 남는다.
   // ⚠ 조회 셋은 계약이 403 을 «선언하지 않아» 오늘은 가드가 안 본다(`permission.guard.ts:40`).
   // // 결정 — 통보 181
   'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
@@ -500,7 +503,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['P-04-05'],
   'POST /logistics/shipping-units/{shippingUnitId}:close': ['P-04-05'],
   // `W-03-11` PQC 검사 등록·조회(설계 밖 관리웹 화면 · 장부 P-51) — 그 화면이 «스스로» PQC 판정을
-  // 확정한다. 도출표의 `P-02-13`(POP)과 합집합이다. ⭐ 같은 화면이 부르는 조회(의뢰·회차·기준 항목·
+  // 확정한다. 도출표에 있던 `P-02-13`(POP)은 #293 에서 없앴다. ⭐ 같은 화면이 부르는 조회(의뢰·회차·기준 항목·
   // 코드)는 계약에 403 이 없어 권한표가 보지 않으므로 적지 않는다.
   'POST /quality/inspection-results': ['W-03-11'],
   // 입하 LOT 검사의 작성중 결과 삭제(피처 005 §8 · omf-all-around#254) — IQC 판정 화면(W-01-01)이 결과 목록에서 지운다.

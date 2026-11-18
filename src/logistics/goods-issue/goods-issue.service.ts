@@ -20,6 +20,7 @@ import { GoodsIssueCreate, REGISTERED, assertCreatable } from './goods-issue-rul
 import {
   GoodsIssueDetail,
   GoodsIssueView,
+  GOODS_ISSUE_LINE_INCLUDE,
   goodsIssueLineView,
   goodsIssueView,
 } from './goods-issue-view';
@@ -161,6 +162,7 @@ export class GoodsIssueService {
     const rows = await tx.goods_issue_line.findMany({
       where: { goods_issue_id: issue.goods_issue_id },
       orderBy: { line_no: 'asc' },
+      include: GOODS_ISSUE_LINE_INCLUDE,
     });
     return {
       detail: { goodsIssue: goodsIssueView(row), lines: rows.map(goodsIssueLineView) },
@@ -202,6 +204,7 @@ export class GoodsIssueService {
         // ⛔ 본문 값 그대로다 — 참일 때만 원장 키의 일부가 된다(§2-5 · C-8 · C-1).
         businessDate: input.businessDate,
         occurredAt: new Date(input.occurredAt),
+        splitPartial: splitsPartial(input.sourceDocumentTypeCode),
       },
       appUserId,
     );
@@ -311,6 +314,7 @@ export class GoodsIssueService {
           })),
           businessDate: input.businessDate,
           occurredAt: new Date(input.occurredAt),
+          splitPartial: splitsPartial(header.source_document_type_code),
         },
         appUserId,
       );
@@ -337,6 +341,14 @@ export class GoodsIssueService {
       return goodsIssueView(row);
     }, TRANSACTION_OPTIONS);
   }
+}
+
+/**
+ * 부분 출고 분할은 원천 피킹 지시(생산 창고로 가는 자재 출고 — 계획·보충·추가 출고)만이다. 출고 유형 값은
+ * 작업자가 바꿀 수 있어 보지 않는다(피처 008 R-1).
+ */
+function splitsPartial(sourceDocumentTypeCode: string): boolean {
+  return sourceDocumentTypeCode === 'PICKING_ORDER';
 }
 
 interface HeaderRow {

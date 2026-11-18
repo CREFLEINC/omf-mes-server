@@ -28,6 +28,8 @@ import { LotFlowChainService, PRODUCTION_LOTS_SHOWN } from '../src/trace/flow/lo
 
 const PREFIX = 'TLFE2E';
 const DAY = '2026-08-12';
+/** 분할 사슬(피처 008)은 다른 날·다른 품목에 둔다 — 기존 기간·품목 기대값을 흔들지 않는다. */
+const SPLIT_DAY = '2026-08-14';
 const USERS = { allowed: `${PREFIX}-allowed`, denied: `${PREFIX}-denied` };
 const PASSWORD = 'TL-추적-비밀번호';
 const CONTRACT = 'logistics-01자재창고.json';
@@ -66,7 +68,9 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     await cleanup();
     await makeMasters();
     await makeChain();
-    cookies.allowed = await login(USERS.allowed, ['W-02-09']);
+    await makeSplitChain();
+    // W-03-01(LOT 상세·LOT 현황)·W-04-08(재고) — 분할 LOT 상세와 입하 LOT 축(피처 008)을 같은 계정으로 본다.
+    cookies.allowed = await login(USERS.allowed, ['W-02-09', 'W-03-01', 'W-04-08']);
     cookies.denied = await login(USERS.denied, ['W-02-08']);
   }, 120_000);
 
@@ -373,6 +377,97 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     });
   });
 
+  describe('분할 추적 (피처 008 · omf-all-around#289)', () => {
+    it('US4-1·SC-003 분할 LOT 을 투입한 생산 LOT 을 거꾸로 — 투입 자재에 분할 조상(부모 → 뿌리)과 뿌리의 입하가 붙는다', async () => {
+      const body = (await get(`lots/${ids.p1}/backward-flow`).expect(200)).body as Body;
+
+      conforms('/trace/lots/{lotId}/backward-flow', body);
+      expect(no(body.inputMaterials)).toEqual([`${PREFIX}-SA-S1-S1`]);
+      const [input] = body.inputMaterials as Body[];
+      expect(input.splitAncestry.map((link: Body) => [link.relationTypeCode, link.lot.lotNo, link.qty])).toEqual([
+        ['SPLIT', `${PREFIX}-SA-S1`, 30],
+        ['SPLIT', `${PREFIX}-SA`, 60],
+      ]);
+      expect(input.splitAncestry[0].goodsIssue).toMatchObject({ goodsIssueNo: `${PREFIX}-GI`, lineNo: 2 });
+      // 분할 LOT 은 입하 LOT 칸이 비어 있다 — 뿌리의 입하가 보인다(FR-003).
+      expect(input.inbound).toMatchObject({ inboundReceiptNo: `${PREFIX}-IR-SA`, supplierLotNo: 'SUP-LOT-SA' });
+    });
+
+    it('US4-2 원래 LOT 을 앞으로 — 분할 LOT 들(깊이 순)과 자손으로 투입된 W/O·생산 LOT 이 보인다', async () => {
+      const body = (await get(`lots/${ids.sa}/forward-flow`).expect(200)).body as Body;
+
+      conforms('/trace/lots/{lotId}/forward-flow', body);
+      expect(body.splitFrom).toBeNull();
+      expect(body.splits.map((link: Body) => [link.lot.lotNo, link.qty, link.goodsIssue?.lineNo])).toEqual([
+        [`${PREFIX}-SA-S1`, 60, 1],
+        [`${PREFIX}-SA-S1-S1`, 30, 2],
+      ]);
+      expect(body.workOrders).toHaveLength(1);
+      expect(body.workOrders[0]).toMatchObject({
+        workOrderNo: `${PREFIX}-WO-P`, consumedQty: 30, viaLot: { lotId: Number(ids.sa11), lotNo: `${PREFIX}-SA-S1-S1` },
+      });
+      expect(no(body.workOrders[0].productionLots)).toEqual([`${PREFIX}-P1`]);
+      expect(body.totalProductionLotCount).toBe(1);
+
+      const child = (await get(`lots/${ids.sa11}/forward-flow`).expect(200)).body as Body;
+      conforms('/trace/lots/{lotId}/forward-flow', child);
+      expect(child.splitFrom).toMatchObject({ relationTypeCode: 'SPLIT', lot: { lotNo: `${PREFIX}-SA-S1` }, qty: 30 });
+      // 자기 자신이 투입된 W/O 는 viaLot 이 없다.
+      expect(child.workOrders[0].viaLot).toBeNull();
+      expect(child.inbound).toMatchObject({ inboundReceiptNo: `${PREFIX}-IR-SA` });
+    });
+
+    it('D-13 영향 생산 LOT·사용 시리얼·정방향 목록 단계는 원래 LOT 의 분할 자손 투입을 포함한다', async () => {
+      const impact = (await get(`lots/${ids.sa}/affected-production-lots`).expect(200)).body as Body;
+      expect(impact.items.map((row: Body) => row.lotNo)).toEqual([`${PREFIX}-P1`]);
+      const serials = (await get(`lots/${ids.sa}/used-serials`).expect(200)).body as Body;
+      expect(serials.items.map((row: Body) => row.serialNo)).toEqual([`${PREFIX}-SN-P1`]);
+
+      const list = (await get('material-lot-flows', { lotNo: `${PREFIX}-SA` }).expect(200)).body as Body;
+      conforms('/trace/material-lot-flows', list);
+      expect(list.items[0]).toMatchObject({
+        lotNo: `${PREFIX}-SA`, consumedQty: 30, stages: { consumed: { workOrderCount: 1 }, produced: { lotCount: 1 } },
+      });
+    });
+
+    it('US4-3·FR-014 분할 LOT 상세에 부모 번호·분할 출고·분할 시각, 원래 LOT 에 분할 자손 수가 실린다', async () => {
+      const child = (await request(app.getHttpServer()).get(`/api/trace/lots/${ids.sa11}`).set('Cookie', cookies.allowed).expect(200)).body as Body;
+      expect(child.lot).toMatchObject({
+        parentLotId: Number(ids.sa1), parentLotNo: `${PREFIX}-SA-S1`, splitChildCount: 0,
+        splitGoodsIssue: { goodsIssueNo: `${PREFIX}-GI`, lineNo: 2 }, splitAt: (await local(SPLIT_DAY, '09:10')).toISOString(),
+        // 분할 LOT 은 입하 LOT 칸이 비어 있다 — 뿌리의 입하 LOT 이 보인다(FR-003).
+        inboundLotId: Number(ids.inboundLot), inboundLotNo: `${PREFIX}-IL-SA`,
+      });
+      const root = (await request(app.getHttpServer()).get(`/api/trace/lots/${ids.sa}`).set('Cookie', cookies.allowed).expect(200)).body as Body;
+      expect(root.lot).toMatchObject({ parentLotNo: null, splitGoodsIssue: null, splitAt: null, splitChildCount: 2, inboundLotNo: `${PREFIX}-IL-SA` });
+    });
+
+    it('§8 입하 LOT 칸 — 재고·LOT 현황·투입 이력에서 분할 LOT 은 원래 LOT 의 입하 LOT 으로 나오고, 그 입하 LOT 으로 거르면 함께 나온다', async () => {
+      const statuses = (await request(app.getHttpServer()).get('/api/quality/lot-statuses').query({ inboundLotId: Number(ids.inboundLot) })
+        .set('Cookie', cookies.allowed).expect(200)).body as Body;
+      expect(no(statuses.items).sort()).toEqual([`${PREFIX}-SA`, `${PREFIX}-SA-S1`, `${PREFIX}-SA-S1-S1`]);
+      expect((statuses.items as Body[]).every((row) => row.inboundLotNo === `${PREFIX}-IL-SA`)).toBe(true);
+      const byNo = (await request(app.getHttpServer()).get('/api/quality/lot-statuses').query({ inboundLotNo: `${PREFIX}-IL-SA` })
+        .set('Cookie', cookies.allowed).expect(200)).body as Body;
+      expect(byNo.items).toHaveLength(3);
+
+      const balances = (await request(app.getHttpServer()).get('/api/inventory/balances')
+        .query({ inboundLotId: Number(ids.inboundLot), groupBy: 'LOT' }).set('Cookie', cookies.allowed).expect(200)).body as Body;
+      expect(balances.items.map((row: Body) => [row.lotId, row.inboundLotNo])).toEqual([[Number(ids.sa11), `${PREFIX}-IL-SA`]]);
+
+      const inputs = (await get('material-input-lines', { inboundLotId: Number(ids.inboundLot) }).expect(200)).body as Body;
+      expect(inputs.items.map((row: Body) => [row.lotNo, row.inboundLotNo])).toEqual([[`${PREFIX}-SA-S1-S1`, `${PREFIX}-IL-SA`]]);
+    });
+
+    it('분할이 없는 LOT 의 응답은 그대로다 — splitFrom null·splits 빈 목록·viaLot null·splitAncestry 빈 목록', async () => {
+      const forward = (await get(`lots/${ids.m1}/forward-flow`).expect(200)).body as Body;
+      expect(forward).toMatchObject({ splitFrom: null, splits: [] });
+      expect((forward.workOrders as Body[]).every((wo) => wo.viaLot === null)).toBe(true);
+      const backward = (await get(`lots/${ids.g1}/backward-flow`).expect(200)).body as Body;
+      expect((backward.inputMaterials as Body[]).every((input) => input.splitAncestry.length === 0)).toBe(true);
+    });
+  });
+
   async function local(day: string, time: string): Promise<Date> {
     const [row] = await prisma.$queryRawUnsafe<{ at: Date }[]>(
       `SELECT ($1::timestamp AT TIME ZONE p.timezone_code) AS at FROM mdm.plant p WHERE p.plant_id = $2::bigint`, `${day} ${time}`, ids.plant,
@@ -544,6 +639,66 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
     await ship('SH-CXL', 'CANCELLED', '17:00', 7, null);
   }
 
+  /** 부분 출고 분할 사슬 — SA(입하) → SA-S1(60) → SA-S1-S1(30), SA-S1-S1 을 W/O P 가 투입해 P1 을 만든다. */
+  async function makeSplitChain(): Promise<void> {
+    ids.splitItem = (await ensure(prisma.item, { item_code: `${PREFIX}-SPL` }, {
+      item_code: `${PREFIX}-SPL`, item_name: 'LOT추적분할자재', item_type_code: 'RAW_MATERIAL', base_uom_id: ids.uom,
+    })).item_id;
+    const wo = await workOrder('P', ids.product);
+    ids.sa = await lot('SA', ids.splitItem, 'MATERIAL', 'INBOUND_RECEIPT_LINE', 1n);
+    ids.p1 = await lot('P1', ids.product, 'PRODUCTION', 'WORK_ORDER', wo);
+    const issue = await prisma.goods_issue.create({
+      data: {
+        goods_issue_no: `${PREFIX}-GI`, issue_type_code: 'PRODUCTION', source_document_type_code: 'PICKING_ORDER', source_document_id: 1,
+        source_warehouse_id: ids.warehouse, issued_at: await local(SPLIT_DAY, '09:00'), status_code: 'POSTED',
+      },
+    });
+    const line = (lineNo: number, qty: number) => prisma.goods_issue_line.create({
+      data: { goods_issue_id: issue.goods_issue_id, line_no: lineNo, item_id: ids.splitItem, lot_id: ids.sa, issue_qty: qty, uom_id: ids.uom, source_location_id: ids.location },
+    });
+    const first = await line(1, 60);
+    const second = await line(2, 30);
+    ids.sa1 = await lot('SA-S1', ids.splitItem, 'MATERIAL', 'GOODS_ISSUE_SPLIT', first.goods_issue_line_id);
+    ids.sa11 = await lot('SA-S1-S1', ids.splitItem, 'MATERIAL', 'GOODS_ISSUE_SPLIT', second.goods_issue_line_id);
+    for (const [parent, child, qty, eventId, time] of [
+      [ids.sa, ids.sa1, 60, first.goods_issue_line_id, '09:00'], [ids.sa1, ids.sa11, 30, second.goods_issue_line_id, '09:10'],
+    ] as const) {
+      await prisma.lot.update({ where: { lot_id: child }, data: { parent_lot_id: parent } });
+      await prisma.lot_relation.create({ data: {
+        source_lot_id: parent, target_lot_id: child, relation_type_code: 'SPLIT', relation_qty: qty, uom_id: ids.uom,
+        source_event_type_code: 'GOODS_ISSUE_LINE', source_event_id: eventId, allocation_method_code: 'EXACT', trace_accuracy_code: 'EXACT',
+        occurred_at: await local(SPLIT_DAY, time),
+      } });
+    }
+    await prisma.goods_issue_line.update({ where: { goods_issue_line_id: first.goods_issue_line_id }, data: { lot_id: ids.sa1 } });
+    await prisma.goods_issue_line.update({ where: { goods_issue_line_id: second.goods_issue_line_id }, data: { lot_id: ids.sa11 } });
+    const inbound = await prisma.inbound_receipt.create({
+      data: { inbound_receipt_no: `${PREFIX}-IR-SA`, supplier_id: ids.supplier, plant_id: ids.plant, receipt_datetime: await local(SPLIT_DAY, '08:00'), status_code: 'RECEIVED',
+        inbound_receipt_line: { create: [{ line_no: 1, item_id: ids.splitItem, received_qty: 100, uom_id: ids.uom, inspection_required: false,
+          supplier_lot_label_attached: true, supplier_lot_no: 'SUP-LOT-SA', status_code: 'RECEIVED', lot_id: ids.sa }] } },
+      include: { inbound_receipt_line: true },
+    });
+    await receive('SA', 'MATERIAL', ids.sa, ids.splitItem, 100, await local(SPLIT_DAY, '08:30'), inbound.inbound_receipt_line[0].inbound_receipt_line_id);
+    // 원래 LOT 의 입하 LOT(피처 005) — 분할 LOT 은 칸이 비어 있다.
+    ids.inboundLot = (await prisma.inbound_lot.create({ data: {
+      inbound_lot_no: `${PREFIX}-IL-SA`, plant_id: ids.plant, item_id: ids.splitItem, supplier_id: ids.supplier, uom_id: ids.uom, status_code: 'RECEIVING',
+      receiving_date: new Date(`${SPLIT_DAY}T00:00:00.000Z`), erp_send_mode_code: 'PER_RECEIPT', open_since_date: new Date(`${SPLIT_DAY}T00:00:00.000Z`), inbound_receipt_line_id: inbound.inbound_receipt_line[0].inbound_receipt_line_id,
+    } })).inbound_lot_id;
+    await prisma.lot.update({ where: { lot_id: ids.sa }, data: { inbound_lot_id: ids.inboundLot } });
+    await prisma.inventory_balance.create({ data: {
+      legal_entity_id: (await prisma.plant.findUniqueOrThrow({ where: { plant_id: ids.plant } })).legal_entity_id,
+      business_unit_id: (await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: ids.warehouse } })).business_unit_id,
+      plant_id: ids.plant, warehouse_id: ids.warehouse, location_id: ids.location, item_id: ids.splitItem, lot_id: ids.sa11,
+      quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE', ownership_type_code: 'OWNED', on_hand_qty: 30, uom_id: ids.uom,
+    } });
+    await consume(wo, ids.sa11, ids.splitItem, 30, await local(SPLIT_DAY, '10:00'));
+    await produce(wo, ids.p1, 30, await local(SPLIT_DAY, '11:00'), [ids.sa11]);
+    await prisma.serial_number.deleteMany({ where: { serial_no: `${PREFIX}-SN-P1` } });
+    await prisma.serial_number.create({ data: {
+      serial_no: `${PREFIX}-SN-P1`, item_id: ids.product, lot_id: ids.p1, status_code: 'PRODUCED', produced_at: await local(SPLIT_DAY, '11:00'),
+    } });
+  }
+
   async function login(loginId: string, permissions: string[]): Promise<string[]> {
     const user = await prisma.app_user.create({ data: { login_id: loginId, user_name: loginId, status_code: 'EMPLOYED' } });
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
@@ -574,6 +729,12 @@ describe('LOT 추적 정방향·역방향 (e2e)', () => {
       `DELETE FROM logistics.goods_receipt_line WHERE goods_receipt_id IN (
          SELECT goods_receipt_id FROM logistics.goods_receipt WHERE goods_receipt_no LIKE '${PREFIX}%')`,
       `DELETE FROM logistics.goods_receipt WHERE goods_receipt_no LIKE '${PREFIX}%'`,
+      `DELETE FROM trace.serial_number WHERE serial_no LIKE '${PREFIX}%'`,
+      `DELETE FROM logistics.goods_issue_line WHERE goods_issue_id IN (SELECT goods_issue_id FROM logistics.goods_issue WHERE goods_issue_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.goods_issue WHERE goods_issue_no LIKE '${PREFIX}%'`,
+      `DELETE FROM inventory.inventory_balance WHERE lot_id IN (${OUR_LOTS})`,
+      `UPDATE trace.lot SET inbound_lot_id = NULL WHERE lot_no LIKE '${PREFIX}%'`,
+      `DELETE FROM trace.inbound_lot WHERE inbound_lot_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.inbound_receipt_line WHERE inbound_receipt_id IN (
          SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%')`,
       `DELETE FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%'`,

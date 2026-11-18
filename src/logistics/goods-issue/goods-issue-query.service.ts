@@ -9,6 +9,7 @@ import {
   GoodsIssueDetail,
   GoodsIssueLineView,
   GoodsIssueView,
+  GOODS_ISSUE_LINE_INCLUDE,
   goodsIssueLineView,
   goodsIssueView,
 } from './goods-issue-view';
@@ -22,6 +23,8 @@ export interface GoodsIssueQuery {
   reasonCode?: string;
   supplierId?: unknown;
   goodsIssueLineId?: unknown;
+  lotId?: unknown;
+  awaitingShopfloorReceiptOnly?: unknown;
   q?: string;
   page?: unknown;
   size?: unknown;
@@ -30,6 +33,16 @@ export interface GoodsIssueQuery {
 /** `supplierId` 짝 — 물리에 `supplier_id` 칸이 없다(I-4.md §1-2 · §8-3 ⓔ). 도착지를
  *  비운 자체 폐기는 이 필터로 안 잡힌다 — 사실이 그렇다. */
 const SUPPLIER_DESTINATION_TYPES = ['PARTNER', 'DISPOSAL_SITE'];
+
+/**
+ * 생산창고 입고를 기다리는 출고 — 전기된 원천 피킹 지시 출고(생산 창고로 가는 자재 출고)이고 생산창고 입고가 없다.
+ * 같은 LOT 의 폐기·반품 출고가 후보에 걸리지 않게 원천으로 가른다(피처 008 R-7). 수령 중복 판정과 같은 축이다.
+ */
+const AWAITING_SHOPFLOOR_RECEIPT: Prisma.goods_issueWhereInput = {
+  source_document_type_code: 'PICKING_ORDER',
+  status_code: 'POSTED',
+  shopfloor_receipt: { none: {} },
+};
 
 /** 조회 3건. 화면은 `W-01-05`·`W-01-06`·`P-01-02` 가 소유한다(등록·전기·상신은 다른 PR). */
 @Injectable()
@@ -42,6 +55,7 @@ export class GoodsIssueQueryService {
     const sourceWarehouseId = numeric('sourceWarehouseId', query.sourceWarehouseId);
     const supplierId = numeric('supplierId', query.supplierId);
     const goodsIssueLineId = numeric('goodsIssueLineId', query.goodsIssueLineId);
+    const lotId = numeric('lotId', query.lotId);
 
     const where: Prisma.goods_issueWhereInput = {
       ...filter('source_warehouse_id', sourceWarehouseId),
@@ -53,6 +67,9 @@ export class GoodsIssueQueryService {
       ...(goodsIssueLineId === undefined
         ? {}
         : { goods_issue_line: { some: { goods_issue_line_id: goodsIssueLineId } } }),
+      // 자재 LOT 라벨 스캔(M-01-09 · 피처 008 R-7) — 분할 LOT 이면 그 분할을 일으킨 출고, 전량 출고면 원래 LOT 의 출고.
+      ...(lotId === undefined ? {} : { goods_issue_line: { some: { lot_id: lotId } } }),
+      ...(isTrue(query.awaitingShopfloorReceiptOnly) ? AWAITING_SHOPFLOOR_RECEIPT : {}),
       // 「출고번호 검색」(계약) — goodsIssueLineId 축과 갈린다(라인 QR 은 이 축으로 안 풀린다).
       ...(query.q === undefined ? {} : { goods_issue_no: { contains: query.q, mode: 'insensitive' } }),
       ...issuedAtWhere(query.issuedAtFrom, query.issuedAtTo),
@@ -95,6 +112,7 @@ export class GoodsIssueQueryService {
     const rows = await this.prisma.goods_issue_line.findMany({
       where: { goods_issue_id: goodsIssueId },
       orderBy: { line_no: 'asc' },
+      include: GOODS_ISSUE_LINE_INCLUDE,
     });
     return rows.map(goodsIssueLineView);
   }
@@ -129,6 +147,10 @@ function numeric(name: string, value: unknown): number | undefined {
   const parsed = Number(value);
   if (Number.isInteger(parsed) && parsed >= 0) return parsed;
   throw one(field(name, ERROR_CODE.INVALID, '숫자여야 합니다.'));
+}
+
+function isTrue(value: unknown): boolean {
+  return value === true || value === 'true';
 }
 
 function number(value: unknown): number | undefined {

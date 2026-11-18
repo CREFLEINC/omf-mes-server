@@ -11,6 +11,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { Transition, TRANSITIONS } from '../../core/document-state';
+import { lotWithSplitDescendants } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** LOT 품질 판정 축 — `lot-quality-status.service.ts` 와 같은 키(그 파일의 상수를 다시 만들지 않는다). */
@@ -107,8 +108,10 @@ export class LotStatusTransitionService {
     // `POSTED`·`CANCEL_REQUESTED` 둘 다 — 0단계 선례 `shortage.service.ts#issuedByItem`(I-8.md
     // R-18)의 `POSTED` 단독에 더했다: 전기까지 갔다가 취소 «요청»만 된 출고는 원장 역분개가
     // `:cancel`(→CANCELLED)에서만 나 아직 안 돌아왔다 — 뺀 채 두면 과소 보고다. // 결정 — 통보 078(갱신)
+    // 부분 출고는 분할 LOT 이 나간다(피처 008) — 원래 LOT 의 출고량은 분할 자손의 출고를 함께 센다.
+    const family = await lotWithSplitDescendants(this.prisma, [lotId]);
     const shipped = await this.prisma.goods_issue_line.aggregate({
-      where: { lot_id: lotId, goods_issue: { status_code: { in: ['POSTED', 'CANCEL_REQUESTED'] } } },
+      where: { lot_id: { in: family }, goods_issue: { status_code: { in: ['POSTED', 'CANCEL_REQUESTED'] } } },
       _sum: { issue_qty: true },
     });
 
