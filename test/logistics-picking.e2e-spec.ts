@@ -22,6 +22,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-pk-probe';
 const NOPERM_ID = 'e2e-pk-noperm';
@@ -414,11 +415,7 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
    * 맞춰야 하고, 그것이 `:pick` 이 잠그고 되읽는 행이다(출고 e2e §6-5 와 같은 규약).
    */
   async function stock(lot: number, qty = 100): Promise<void> {
-    await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId,
         warehouseId,
@@ -435,8 +432,7 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
             destinationLocationId: locationId,
           },
         ],
-      })
-      .expect(201);
+      });
   }
 
   function balanceOf(lot: number) {

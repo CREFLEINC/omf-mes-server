@@ -46,6 +46,8 @@ export interface GoodsReceiptLineView {
   inventoryTransactionLineId: number | null;
   putawayTaskId: number | null;
   originalShipmentLotAllocationId: number | null;
+  /** PDA 지시 없는 적치의 적치 방식(피처 009) — 그 밖의 입고는 null. */
+  putawayModeCode: string | null;
 }
 
 export interface GoodsReceiptDetail {
@@ -93,6 +95,7 @@ export function receiptLineView(row: ReceiptLineRow): GoodsReceiptLineView {
     putawayTaskId:
       row.putaway_task.length === 0 ? null : Number(row.putaway_task[0].putaway_task_id),
     originalShipmentLotAllocationId: id(row.original_shipment_lot_allocation_id),
+    putawayModeCode: row.putaway_mode_code,
   };
 }
 

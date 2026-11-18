@@ -23,6 +23,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-ia-probe';
 const NOPERM_ID = 'e2e-ia-noperm';
@@ -1254,11 +1255,7 @@ describe('재고 조정 7 오퍼레이션 (e2e)', () => {
     intoItemId = itemId,
     intoLotId = lotId,
   ): Promise<void> {
-    await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId,
         warehouseId: intoWarehouseId,
@@ -1275,8 +1272,7 @@ describe('재고 조정 7 오퍼레이션 (e2e)', () => {
             destinationLocationId,
           },
         ],
-      })
-      .expect(201);
+      });
   }
 
   /** 전기됨(inventoryCountId 로 이어짐) 한 벌 · 미전기 한 벌 — 목록 필터 축을 가른다. */

@@ -7837,7 +7837,7 @@
       "type": "integer",
       "minimum": 0,
       "example": 3,
-      "description": "모바일 적치 — 적치 지시 PENDING(단말 공장, 창고가 있으면 그 창고의 입고)."
+      "description": "모바일 적치 — 적치 지시 PENDING(단말 공장, 창고가 있으면 그 창고의 입고) + 적치 대기 LOT(GET /logistics/putaway-pending-lots 의 page.total — 단말 공장 기준, LOT 은 아직 창고에 없다). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
      },
      "materialPicking": {
       "type": "integer",

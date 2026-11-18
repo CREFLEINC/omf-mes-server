@@ -24,6 +24,15 @@ export interface InboundGateLot {
   source_id: bigint;
 }
 
+/**
+ * 구매 입하 LOT 의 입고 상태 — 합격·무검사는 정상, IQC 불합격은 불량. 불량은 불량창고에 두고 처분·특채를 기다린다 — 쓰지 못하게
+ * 막는 것은 LOT 상태가 한다(사용자 결정 2026-10-29). PDA 지시 없는 적치(피처 009)가 이 규칙으로 입고 상태를 정한다.
+ */
+export const RECEIPT_STATUS_OF_LOT: Readonly<Record<string, { quality: string; inventory: string }>> = {
+  NORMAL: { quality: 'NORMAL', inventory: 'AVAILABLE' },
+  DEFECTIVE: { quality: 'DEFECTIVE', inventory: 'ON_HOLD' },
+};
+
 /** 같은 LOT 이 여러 줄이면 상한은 줄마다가 아니라 «LOT 합계»로 본다(#108 리뷰 m2). */
 export function lotTotals(lines: GoodsReceiptCreate['lines']): Map<number, Prisma.Decimal> {
   const totals = new Map<number, Prisma.Decimal>();
@@ -71,6 +80,20 @@ export async function assertInboundLotsClosed(db: Pick<PrismaService, 'lot'>, in
     return inboundLotNo === undefined ? [] : [field(`lines[${index}].lotId`, 'INBOUND_LOT_RECEIVING',
       `입하 마감 전인 입하 LOT(${inboundLotNo})의 자재 관리 LOT 은 입고할 수 없습니다 — 먼저 입하 마감하세요.`)];
   }));
+}
+
+/**
+ * 구매 입하 자재는 PDA 적치로 입고한다(피처 009 · research R-2) — 웹 입고 처리(`POST /logistics/goods-receipts`)가 입하에서 온
+ * LOT(선별 자식은 조상 기준)을 받으면 409 `USE_PDA_PUTAWAY`. 배포 사이·옛 탭의 관리웹이 적치 지시를 새로 만들지 않게 막는다.
+ * 제품 입고(M-04-04)·반품 입고(W-04-06)는 입하 LOT 이 아니라 그대로다.
+ */
+export async function assertNotPurchaseInbound(db: Pick<PrismaService, 'lot'>, input: GoodsReceiptCreate): Promise<void> {
+  const errors: ErrorItem[] = [];
+  for (const [index, line] of input.lines.entries()) {
+    if ((await inboundLineOfLot(db as Prisma.TransactionClient, BigInt(line.lotId))) === null) continue;
+    errors.push(field(`lines[${index}].lotId`, 'USE_PDA_PUTAWAY', '구매 입하 자재는 PDA 적치로 입고합니다.'));
+  }
+  if (errors.length > 0) throw new ContractException(HttpStatus.CONFLICT, errors);
 }
 
 /** 입하 LOT 의 문 셋 — 입고 상한 · 불량은 불량창고만 · IQC 합격 전 금지. 입하와 무관한 LOT 은 지나간다. */

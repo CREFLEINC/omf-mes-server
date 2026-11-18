@@ -29,6 +29,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-dp-probe';
 const PASSWORD = 'DP-진행현황-비밀번호';
@@ -682,11 +683,7 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
     receiptQty: number,
   ): Promise<{ goodsReceiptId: number; lotId: number }> {
     const lotId = await makeLot();
-    const response = await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    const response = await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId,
         warehouseId,
@@ -703,8 +700,7 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
             destinationLocationId: locationId,
           },
         ],
-      })
-      .expect(201);
+      });
     return { goodsReceiptId: response.body.goodsReceipt.goodsReceiptId as number, lotId };
   }
 

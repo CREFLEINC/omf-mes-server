@@ -14,17 +14,19 @@ const facts = (overrides: Partial<LotStageFacts> = {}): LotStageFacts => ({
   openHolds: [IQC_HOLD],
   receivableQty: new Prisma.Decimal('100'),
   putawayStatusCodes: [],
+  putawayModeCodes: [],
   ...overrides,
 });
 
 /** 입고를 다 마친 LOT — 적치 작업 상태만 바꿔 본다. */
-const received = (putawayStatusCodes: string[]): LotStageFacts =>
+const received = (putawayStatusCodes: string[], putawayModeCodes: string[] = []): LotStageFacts =>
   facts({
     lotStatusCode: 'NORMAL',
     inspectionStatusCode: 'COMPLETED',
     openHolds: [],
     receivableQty: new Prisma.Decimal('0'),
     putawayStatusCodes,
+    putawayModeCodes,
   });
 
 describe('lotStage — 입고 관리 허브의 LOT 단계(장부 P-110)', () => {
@@ -88,31 +90,32 @@ describe('lotStage — 입고 관리 허브의 LOT 단계(장부 P-110)', () => 
     expect(stage).toEqual({ stageCode: 'INSPECTION_HELD', nextActionCode: null, blockedReasons: [CLAIM_HOLD] });
   });
 
-  it('합격(NORMAL)이면 RECEIPT_READY · POST_RECEIPT 다', () => {
+  // 피처 009(R-8) — 구매 입하 자재는 PDA 적치로 입고한다. 입고 가능 LOT 은 「적치 대기」다(RECEIPT_READY 는 더 내지 않는다).
+  it('D-7 합격(NORMAL)이면 PUTAWAY_PENDING · PUTAWAY 다', () => {
     expect(lotStage(facts({ lotStatusCode: 'NORMAL', inspectionStatusCode: 'COMPLETED', openHolds: [] }))).toEqual({
-      stageCode: 'RECEIPT_READY',
-      nextActionCode: 'POST_RECEIPT',
+      stageCode: 'PUTAWAY_PENDING',
+      nextActionCode: 'PUTAWAY',
       blockedReasons: [],
     });
   });
 
-  it('불량(DEFECTIVE) LOT 은 RECEIPT_READY 다 — 불량창고로 입고해 처분을 기다린다', () => {
+  it('D-7 불량(DEFECTIVE) LOT 은 PUTAWAY_PENDING 이다 — 불량창고에 적치해 처분을 기다린다', () => {
     for (const inspectionRequired of [true, false]) {
       const stage = lotStage(facts({ lotStatusCode: 'DEFECTIVE', inspectionRequired, openHolds: [CLAIM_HOLD] }));
-      expect(stage).toEqual({ stageCode: 'RECEIPT_READY', nextActionCode: 'POST_RECEIPT', blockedReasons: [] });
+      expect(stage).toEqual({ stageCode: 'PUTAWAY_PENDING', nextActionCode: 'PUTAWAY', blockedReasons: [] });
     }
   });
 
-  it('무검사 품목 LOT 은 의뢰 없이 RECEIPT_READY 다', () => {
+  it('D-7 무검사 품목 LOT 은 의뢰 없이 PUTAWAY_PENDING 이다', () => {
     const stage = lotStage(
       facts({ lotStatusCode: 'NORMAL', inspectionRequired: false, inspectionStatusCode: null, openHolds: [] }),
     );
-    expect(stage.stageCode).toBe('RECEIPT_READY');
+    expect(stage.stageCode).toBe('PUTAWAY_PENDING');
   });
 
-  it('일부만 입고했으면 RECEIPT_READY 로 남는다 — 적치 대기가 있어도 가장 뒤처진 단계를 말한다', () => {
-    const stage = lotStage({ ...received(['PENDING']), receivableQty: new Prisma.Decimal('0.5') });
-    expect(stage.stageCode).toBe('RECEIPT_READY');
+  it('일부만 입고했으면 PUTAWAY_PENDING 으로 남는다 — 가장 뒤처진 단계를 말한다', () => {
+    const stage = lotStage({ ...received(['COMPLETED']), receivableQty: new Prisma.Decimal('0.5') });
+    expect(stage).toMatchObject({ stageCode: 'PUTAWAY_PENDING', nextActionCode: 'PUTAWAY' });
   });
 
   it('다 입고하고 적치 PENDING 이면 PUTAWAY_PENDING · PUTAWAY 다 — 끝난 작업이 함께 있어도 그렇다', () => {
@@ -129,6 +132,12 @@ describe('lotStage — 입고 관리 허브의 LOT 단계(장부 P-110)', () => 
       nextActionCode: 'PUTAWAY',
       blockedReasons: [],
     });
+  });
+
+  it('US4-2 D-8 지시 없이 임시 적치한 입고(라인 모드 TEMPORARY)도 PUTAWAY_TEMPORARY 다', () => {
+    expect(lotStage(received([], ['TEMPORARY']))).toEqual({ stageCode: 'PUTAWAY_TEMPORARY', nextActionCode: 'PUTAWAY', blockedReasons: [] });
+    expect(lotStage(received([], ['DESIGNATED'])).stageCode).toBe('COMPLETED');
+    expect(lotStage(received([], ['UNDESIGNATED'])).stageCode).toBe('COMPLETED');
   });
 
   it('적치가 다 끝나면 COMPLETED 다', () => {

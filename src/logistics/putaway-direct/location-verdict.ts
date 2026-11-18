@@ -57,6 +57,14 @@ export function verdictOf(location: VerdictLocation | null, lot: VerdictLot): Ve
   return 'UNDESIGNATED';
 }
 
+/**
+ * 미지정 위치 적치가 그 위치의 보관 품목에 이 품목을 더하는가(FR-017a) — 판정이 UNDESIGNATED 이고 사람이 만든 위치일 때뿐이다.
+ * 시스템 자리(나뉜 창고의 「창고 전체」)는 UNDESIGNATED 여도 더하지 않는다. 판정 응답과 적치 쓰기가 같은 규칙을 쓴다.
+ */
+export function designationAddable(verdict: VerdictCode, location: Pick<VerdictLocation, 'systemRoleCode'> | null): boolean {
+  return verdict === 'UNDESIGNATED' && location !== null && location.systemRoleCode === null;
+}
+
 type Db = Pick<Prisma.TransactionClient, 'location' | 'location_item' | 'warehouse'>;
 
 /** 위치 하나의 판정 재료 — 코드(스캔) 또는 id(쓰기)로 찾는다. */

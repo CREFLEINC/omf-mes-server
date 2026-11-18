@@ -1,4 +1,4 @@
-import { VerdictLocation, VerdictLot, verdictOf } from './location-verdict';
+import { VerdictLocation, VerdictLot, designationAddable, verdictOf } from './location-verdict';
 
 /** research R-5 판정 표 — 위에서부터 처음 맞는 것이 답이다. */
 const lot: VerdictLot = { plantId: 1n, itemId: 10n, defective: false };
@@ -49,5 +49,15 @@ describe('위치 판정 표 (research R-5)', () => {
         }
       }
     }
+  });
+});
+
+describe('designationAddable — 미지정 위치 적치가 보관 품목을 더하는가(FR-017a)', () => {
+  it('Q24 UNDESIGNATED 이고 사람이 만든 위치일 때만 true', () => {
+    expect(designationAddable('UNDESIGNATED', { ...base, systemRoleCode: null })).toBe(true);
+    expect(designationAddable('UNDESIGNATED', { ...base, systemRoleCode: 'WAREHOUSE_WHOLE' })).toBe(false);
+    expect(designationAddable('DESIGNATED', base)).toBe(false);
+    expect(designationAddable('RESTRICTED_LOCATION', base)).toBe(false);
+    expect(designationAddable('NOT_FOUND', null)).toBe(false);
   });
 });

@@ -16,6 +16,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-st-probe';
 /** 403 을 재려면 «권한 없는» 계정이 하나 더 있어야 한다 — 정리 루프도 함께 고친다(출고 선례). */
@@ -1129,11 +1130,7 @@ describe('재고 이동 조회 (e2e)', () => {
   /** 잔액은 입고 오퍼레이션이 세운다 — 입고가 세운 차원이 곧 반출이 되읽을 차원이다. */
   async function seedBalance(qty: number): Promise<number> {
     const forLotId = await makeLot();
-    await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId,
         warehouseId: warehouse1Id,
@@ -1150,8 +1147,7 @@ describe('재고 이동 조회 (e2e)', () => {
             destinationLocationId: location1Id,
           },
         ],
-      })
-      .expect(201);
+      });
     return forLotId;
   }
 
