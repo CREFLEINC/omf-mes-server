@@ -13,6 +13,7 @@ import {
   lotsFreeOfOpenHolds,
   pqcAcceptanceExceeded,
   PREISSUED_LIFECYCLE,
+  PutawayPendingNotifier,
   VOIDED_LIFECYCLE,
   Tx,
   WORK_ORDER_LOT_SOURCE,
@@ -121,6 +122,7 @@ export class InspectionConfirmService {
     private readonly numbering: NumberingService,
     private readonly defects: DefectRecordWriteService,
     private readonly rejectedNotices: IqcRejectedHandoverNotifier,
+    private readonly putawayNotices: PutawayPendingNotifier,
   ) {}
 
   async confirm(
@@ -289,6 +291,11 @@ export class InspectionConfirmService {
     const c14 = await this.spreadC14(tx, request, input.rejectedQty, moveContext);
     // ⛔ C14 가 걸린 합격은 정상 전환을 하지 않는다 — 방금 검사 대기로 돌린 LOT 을 같은 트랜잭션에서 되돌린다(#105 리뷰).
     if (!c14) await this.releasePqcLots(tx, request, input.judgment, moveContext);
+    // 005 이전 흐름 IQC 단건 확정 — 정상·불량이 된 대상 LOT 마다 「적치 대기」(피처 009 · 입하 LOT 요청은 요청 확정이 보낸다).
+    if (request.inspection_type_code === IQC) {
+      const by = input.appUserId !== undefined ? { appUserId: input.appUserId } : { workerId: terminalAudit?.workerId };
+      for (const lotId of lotIds) await this.putawayNotices.lot(tx, lotId, by);
+    }
   }
 
   /**

@@ -6,7 +6,7 @@ import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule, DocumentStateService } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
-import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
+import { IqcHandoverNotifier, LotRegistryModule, PutawayPendingNotifier } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule, NumberingService } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
@@ -89,6 +89,9 @@ import { ReplenishmentSettingService } from './replenishment/replenishment-setti
 import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayCompleteService } from './putaway/putaway-complete.service';
+import { PutawayDirectController } from './putaway-direct/putaway-direct.controller';
+import { PutawayDirectQueryService } from './putaway-direct/putaway-direct.query.service';
+import { PutawayDirectService } from './putaway-direct/putaway-direct.service';
 import { PutawayTaskController } from './putaway/putaway-task.controller';
 import { PutawayTaskService } from './putaway/putaway-task.service';
 import { InboundProgressService } from './purchase-order/inbound-progress.service';
@@ -170,6 +173,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     GoodsReceiptLineListController,
     PickingController,
     PutawayTaskController,
+    PutawayDirectController,
     PurchaseOrderController,
     PurchaseOrderLineListController,
     InboundStageCountController,
@@ -264,6 +268,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
         ),
     },
     IqcHandoverNotifier,
+    PutawayPendingNotifier,
     GoodsIssueQueryService,
     SplitMaterialLotQueryService,
     GoodsIssueService,
@@ -275,6 +280,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PickingQueryService,
     PutawayCompleteService,
     PutawayTaskService,
+    PutawayDirectQueryService,
+    PutawayDirectService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
     PurchaseOrderLineListService,

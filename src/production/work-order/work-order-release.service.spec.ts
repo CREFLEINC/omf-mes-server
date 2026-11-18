@@ -79,6 +79,7 @@ function stub(options: {
   const tx = {
     $queryRaw: () => Promise.resolve([{ status_code: 'PLANNED', released_at: null, version_no: 1 }]),
     work_order: {
+      findUniqueOrThrow: () => Promise.resolve({work_order_id: 700n, status_code: 'PLANNED', planned_equipment_id: null, planned_start_at: null, planned_end_at: null, work_order_resource_assignment: []}),
       update: ({ data }: { data: Row }) => {
         updated.push(data);
         return Promise.resolve({});

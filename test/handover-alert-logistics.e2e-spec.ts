@@ -17,6 +17,7 @@ import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { NotificationEmitter } from '../src/core/notification';
 import { LogisticsHandoverNotifier } from '../src/logistics/logistics-handover';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const ROOT = 'E2E_HOLOG_';
 const PREFIX = `${ROOT}${randomUUID().slice(0, 6)}`;
@@ -325,11 +326,7 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
   }
 
   async function postReceipt(warehouseId: bigint, locationId: bigint, itemId: bigint, plantId: bigint, lotId: bigint) {
-    await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId: Number(plantId),
         warehouseId: Number(warehouseId),
@@ -346,8 +343,7 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
             destinationLocationId: Number(locationId),
           },
         ],
-      })
-      .expect(201);
+      });
   }
 
   async function createShipmentRequest(plantId: bigint | null): Promise<bigint> {

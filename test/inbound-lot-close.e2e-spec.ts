@@ -131,6 +131,8 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     });
     expect(alerts).toHaveLength(1);
     expect(alerts[0].payload).toMatchObject({ receipt_no: header.inbound_receipt.inbound_receipt_no, lot_count: 3 });
+    // FR-034 — 검사 필요 LOT 은 마감 때 적치 대기가 아니다(판정 확정 때 알린다).
+    expect(await prisma.notification_event.count({ where: { event_type_code: 'PUTAWAY_PENDING', aggregate_id: row.inbound_lot_id } })).toBe(0);
     const event = await prisma.inbound_lot_event.findFirstOrThrow({ where: { inbound_lot_id: row.inbound_lot_id, event_type_code: 'RECEIPT_CLOSED' } });
     expect(event).toMatchObject({ actor_worker_id: ids.worker, summary: expect.objectContaining({ auto: false, unallocatedQty: '500' }) });
 
@@ -177,6 +179,12 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect((await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(closed.inboundLotId) } })).map((lot) => lot.status_code)).toEqual(['NORMAL', 'NORMAL']);
     const line = await lineOf(closed.inboundLotId);
     expect(await prisma.notification_event.count({ where: { event_type_code: 'IQC_INSPECTION_REQUESTED', aggregate_id: line.inbound_receipt_id } })).toBe(0);
+    // FR-034 Q20 — 검사 불필요 LOT 은 마감으로 바로 적치 대기다: 「적치 대기」 1건(입하 LOT 단위).
+    const pending = await prisma.notification_event.findMany({
+      where: { event_type_code: 'PUTAWAY_PENDING', aggregate_type_code: 'INBOUND_LOT', aggregate_id: BigInt(closed.inboundLotId) },
+    });
+    expect(pending).toHaveLength(1);
+    expect(pending[0].payload).toMatchObject({ inbound_lot_no: closed.inboundLotNo, lot_count: 2 });
   });
 
   it('US2-7 iqcDefaultSkipApplies — 검사 불필요·기본 생략 기준 있음 true, 기준 없음 false(마감해도 IQC 요청 없음), 검사 필요 false — 받기 카드·목록·상세', async () => {
@@ -705,7 +713,8 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     const results = `SELECT inspection_result_id FROM quality.inspection_result WHERE inspection_request_id IN (${requests})`;
     const events = `SELECT notification_event_id FROM app.notification_event
       WHERE (aggregate_type_code = 'INBOUND_RECEIPT' AND aggregate_id IN (${receipts}))
-         OR (aggregate_type_code = 'INSPECTION_REQUEST' AND aggregate_id IN (${requests}))`;
+         OR (aggregate_type_code = 'INSPECTION_REQUEST' AND aggregate_id IN (${requests}))
+         OR (aggregate_type_code = 'INBOUND_LOT' AND aggregate_id IN (${inboundLots}))`;
     const users = `SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${PREFIX}%'`;
     const roles = `SELECT role_id FROM app.role WHERE role_code LIKE '${PREFIX}%'`;
     const keyList = [...keys].map((key) => `'${key}'`).join(',');

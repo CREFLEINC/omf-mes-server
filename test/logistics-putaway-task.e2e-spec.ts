@@ -21,6 +21,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-pt-probe';
 const PASSWORD = 'PT-검사-비밀번호';
@@ -754,12 +755,7 @@ describe('적치 지시 조회 (e2e)', () => {
   }
 
   async function createReceipt(draft: ReceiptDraft): Promise<ReceiptResult> {
-    const response = await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send(draft)
-      .expect(201);
+    const response = await legacyGoodsReceiptOk(app, cookie, draft);
     return response.body as ReceiptResult;
   }
 

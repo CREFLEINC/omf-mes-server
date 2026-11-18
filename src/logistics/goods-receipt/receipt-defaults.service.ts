@@ -1,46 +1,23 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 
-import { PUTAWAY_STAGING } from '../../common/master';
-import { matchErpWarehouse } from '../../core/erp-warehouse/erp-warehouse-match';
 import { PrismaService } from '../../prisma/prisma.service';
-import { inboundLineOfLot, receivableQtyOf, receivingInboundLotOf } from './lot-receivable';
+import { inboundLineOfLot } from './lot-receivable';
 
-/** 입고 대기 LOT 상태 — `inbound-stage.ts` 의 RECEIPT_READY 와 같다(검사 대기·폐기는 아니다). 합격·무검사는 정상, IQC 불합격은 불량. */
-const STATUSES: Readonly<Record<string, { quality: string; inventory: string }>> = {
-  NORMAL: { quality: 'NORMAL', inventory: 'AVAILABLE' },
-  // 불량은 불량창고에 두고 처분·특채를 기다린다 — 쓰지 못하게 막는 것은 LOT 상태가 한다(사용자 결정 2026-10-29).
-  DEFECTIVE: { quality: 'DEFECTIVE', inventory: 'ON_HOLD' },
-};
-const RECEIPT_CANCEL_STATUSES = ['CANCELLED', 'CANCEL_REQUESTED'];
 const MATERIAL_RECEIPT = 'MATERIAL';
 
-export type ReceiptDefaultIssueCode =
-  | 'NOT_FOUND'
-  | 'NOT_RECEIPT_READY'
-  | 'INBOUND_LOT_RECEIVING'
-  | 'NO_ERP_WAREHOUSE'
-  | 'MULTIPLE_ERP_WAREHOUSES'
-  | 'NO_MES_WAREHOUSE'
-  | 'OTHER_PLANT_WAREHOUSE'
-  | 'NO_DEFECT_WAREHOUSE'
-  | 'MULTIPLE_DEFECT_WAREHOUSES'
-  | 'NO_STAGING_LOCATION';
+/**
+ * ⚠ `USE_PDA_PUTAWAY` 밖의 코드는 더 내지 않는다 — 구매 입하 LOT 은 PDA 적치로 입고한다(피처 009 · R-2). 계약 enum 에는
+ * 옛 클라이언트를 위해 남겨 둔다.
+ */
+export type ReceiptDefaultIssueCode = 'NOT_FOUND' | 'NOT_RECEIPT_READY' | 'USE_PDA_PUTAWAY';
 
 const MESSAGES: Readonly<Record<ReceiptDefaultIssueCode, string>> = {
   NOT_FOUND: '없는 LOT 입니다.',
   NOT_RECEIPT_READY: '입고 대기인 LOT 이 아닙니다.',
-  INBOUND_LOT_RECEIVING: '입하 마감 전인 입하 LOT 의 자재 관리 LOT 입니다 — 입하 마감 뒤에 입고합니다.',
-  NO_ERP_WAREHOUSE: '발주 라인에 ERP 창고가 없습니다.',
-  MULTIPLE_ERP_WAREHOUSES: '이 LOT 이 걸린 발주 라인들의 ERP 창고가 서로 다릅니다.',
-  NO_MES_WAREHOUSE: 'ERP 창고의 MES 창고가 없거나 꺼져 있습니다 — ERP 연동 현황의 창고에서 만듭니다.',
-  OTHER_PLANT_WAREHOUSE: 'ERP 창고의 MES 창고가 입하와 다른 공장에 있습니다.',
-  NO_DEFECT_WAREHOUSE: '공장에 불량창고가 없습니다.',
-  MULTIPLE_DEFECT_WAREHOUSES: '공장에 불량창고가 둘 이상입니다.',
-  NO_STAGING_LOCATION: '창고에 적치 대기 자리가 없습니다.',
+  USE_PDA_PUTAWAY: '구매 입하 자재는 PDA 적치로 입고합니다.',
 };
 
-/** 장부 P-150. 못 채운 칸은 null 이고 `issues` 가 까닭이다 — 사람이 그 칸만 고른다. */
+/** 장부 P-150. 못 채운 칸은 null 이고 `issues` 가 까닭이다. */
 export interface ReceiptDefaults {
   lotId: number;
   lotNo: string | null;
@@ -61,141 +38,31 @@ export interface ReceiptDefaults {
   issues: { code: ReceiptDefaultIssueCode; message: string }[];
 }
 
-type LotRow = { lot_id: bigint; lot_no: string; item_id: bigint; uom_id: bigint; status_code: string };
-type LineRow = Prisma.inbound_receipt_lineGetPayload<{ select: typeof LINE_SELECT }>;
-type WarehouseRow = { warehouse_id: bigint; warehouse_code: string; warehouse_name: string; plant_id: bigint; is_active: boolean };
-
-const LINE_SELECT = {
-  inbound_receipt_line_id: true,
-  inbound_receipt: { select: { inbound_receipt_id: true, plant_id: true, status_code: true } },
-  inbound_receipt_po_allocation: { select: { purchase_order_line: { select: { erp_storage_location_code: true } } } },
-} satisfies Prisma.inbound_receipt_lineSelect;
+type LotRow = { lot_id: bigint; lot_no: string; item_id: bigint; uom_id: bigint };
 
 /**
- * 입고 기본값 — 입고는 사람이 하되 서버가 입고 칸을 미리 채운다(사용자 결정 2026-10-29). 창고는 발주 라인의 ERP 창고
- * (`SL_CD`)와 같은 코드의 MES 창고 — ERP 구매입고 송신도 그 값을 쓴다 — 불량은 공장 불량창고. 위치는 그 창고의 적치 대기 자리.
- * 영업일·입고 시각은 화면이 채운다(C-8).
+ * 입고 기본값 — 관리웹 입고 처리(W-01-10)가 구매 입하 LOT 의 입고 칸을 미리 채우던 자리(사용자 결정 2026-10-29).
+ * 피처 009 부터 구매 입하 LOT 은 PDA 적치로 입고하므로(R-2) 입하에서 온 LOT 은 칸을 비우고 `USE_PDA_PUTAWAY` 를 낸다.
+ * 입하와 무관한 LOT 은 예전처럼 `NOT_RECEIPT_READY` 다.
  */
 @Injectable()
 export class ReceiptDefaultsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async of(lotIds: readonly bigint[]): Promise<ReceiptDefaults[]> {
-    const [lots, receivable, receiving] = await Promise.all([
-      this.prisma.lot.findMany({
-        where: { lot_id: { in: [...lotIds] } },
-        select: { lot_id: true, lot_no: true, item_id: true, uom_id: true, status_code: true },
-      }),
-      receivableQtyOf(this.prisma, lotIds),
-      receivingInboundLotOf(this.prisma, lotIds),
-    ]);
-    const lotById = new Map(lots.map((lot) => [lot.lot_id, lot]));
-    const lineOf = new Map<bigint, bigint | null>();
-    for (const lot of lots) lineOf.set(lot.lot_id, await inboundLineOfLot(this.prisma, lot.lot_id));
-    const lines = await this.prisma.inbound_receipt_line.findMany({
-      where: { inbound_receipt_line_id: { in: [...lineOf.values()].filter((id): id is bigint => id !== null) } },
-      select: LINE_SELECT,
+    const lots = await this.prisma.lot.findMany({
+      where: { lot_id: { in: [...lotIds] } },
+      select: { lot_id: true, lot_no: true, item_id: true, uom_id: true },
     });
-    const lineById = new Map(lines.map((line) => [line.inbound_receipt_line_id, line]));
-    const places = await this.places(lines, lots);
-
+    const lotById = new Map(lots.map((lot) => [lot.lot_id, lot]));
+    const inbound = new Set<bigint>();
+    for (const lot of lots) if ((await inboundLineOfLot(this.prisma, lot.lot_id)) !== null) inbound.add(lot.lot_id);
     return lotIds.map((lotId) => {
       const lot = lotById.get(lotId);
       if (lot === undefined) return blank(lotId, 'NOT_FOUND');
-      if (receiving.has(lotId)) return { ...blank(lotId, 'INBOUND_LOT_RECEIVING'), ...lotFields(lot) };
-      const lineId = lineOf.get(lotId) ?? null;
-      const line = lineId === null ? undefined : lineById.get(lineId);
-      const qty = receivable.get(lotId) ?? new Prisma.Decimal(0);
-      const statuses = STATUSES[lot.status_code];
-      if (line === undefined || statuses === undefined || qty.lessThanOrEqualTo(0)
-        || RECEIPT_CANCEL_STATUSES.includes(line.inbound_receipt.status_code)) {
-        return { ...blank(lotId, 'NOT_RECEIPT_READY'), ...lotFields(lot) };
-      }
-      return { ...ready(lot, line, qty, statuses), ...places.pick(lot, line) };
+      return { ...blank(lotId, inbound.has(lotId) ? 'USE_PDA_PUTAWAY' : 'NOT_RECEIPT_READY'), ...lotFields(lot) };
     });
   }
-
-  /** 창고·적치 대기 자리를 한꺼번에 읽어 두고 LOT 마다 고른다. */
-  private async places(lines: LineRow[], lots: LotRow[]): Promise<{
-    pick: (lot: LotRow, line: LineRow) => Pick<ReceiptDefaults,
-      'warehouseId' | 'warehouseCode' | 'warehouseName' | 'destinationLocationId' | 'destinationLocationCode' | 'issues'>;
-  }> {
-    const codes = [...new Set(lines.flatMap(erpCodesOf))];
-    const plants = [...new Set(lines.map((line) => line.inbound_receipt.plant_id))];
-    const select = { warehouse_id: true, warehouse_code: true, warehouse_name: true, plant_id: true, is_active: true } as const;
-    const [byCode, defects] = await Promise.all([
-      this.prisma.warehouse.findMany({ where: { warehouse_code: { in: codes }, is_active: true }, select }),
-      lots.some((lot) => lot.status_code === 'DEFECTIVE')
-        ? this.prisma.warehouse.findMany({ where: { plant_id: { in: plants }, is_defect: true, is_active: true }, select })
-        : Promise.resolve<WarehouseRow[]>([]),
-    ]);
-    const staging = await this.prisma.location.findMany({
-      where: {
-        warehouse_id: { in: [...byCode, ...defects].map((row) => row.warehouse_id) },
-        system_role_code: PUTAWAY_STAGING,
-        is_active: true,
-      },
-      select: { warehouse_id: true, location_id: true, location_code: true },
-    });
-    const stagingOf = new Map(staging.map((row) => [row.warehouse_id, row]));
-
-    const located = (warehouse: WarehouseRow) => {
-      const slot = stagingOf.get(warehouse.warehouse_id);
-      return {
-        warehouseId: Number(warehouse.warehouse_id),
-        warehouseCode: warehouse.warehouse_code,
-        warehouseName: warehouse.warehouse_name,
-        destinationLocationId: slot === undefined ? null : Number(slot.location_id),
-        destinationLocationCode: slot?.location_code ?? null,
-        issues: slot === undefined ? [issue('NO_STAGING_LOCATION')] : [],
-      };
-    };
-    const unplaced = (code: ReceiptDefaultIssueCode) => ({
-      warehouseId: null, warehouseCode: null, warehouseName: null,
-      destinationLocationId: null, destinationLocationCode: null, issues: [issue(code)],
-    });
-
-    return {
-      pick: (lot, line) => {
-        const plantId = line.inbound_receipt.plant_id;
-        if (lot.status_code === 'DEFECTIVE') {
-          const candidates = defects.filter((row) => row.plant_id === plantId);
-          if (candidates.length === 0) return unplaced('NO_DEFECT_WAREHOUSE');
-          if (candidates.length > 1) return unplaced('MULTIPLE_DEFECT_WAREHOUSES');
-          return located(candidates[0]);
-        }
-        const erpCodes = [...new Set(erpCodesOf(line))];
-        if (erpCodes.length === 0) return unplaced('NO_ERP_WAREHOUSE');
-        if (erpCodes.length > 1) return unplaced('MULTIPLE_ERP_WAREHOUSES');
-        // 생산 완제품 위치(`core/erp-warehouse/fg-location.ts`)와 같은 매칭 함수다. 후보가 활성만이라 꺼진 창고는 «없음»으로 나온다.
-        const match = matchErpWarehouse(erpCodes[0], plantId, byCode);
-        if (match.kind === 'MATCHED') return located(match.warehouse);
-        return unplaced(match.kind === 'OTHER_PLANT' ? 'OTHER_PLANT_WAREHOUSE' : 'NO_MES_WAREHOUSE');
-      },
-    };
-  }
-}
-
-function erpCodesOf(line: LineRow): string[] {
-  return line.inbound_receipt_po_allocation
-    .map((allocation) => allocation.purchase_order_line.erp_storage_location_code?.trim() ?? '')
-    .filter((code) => code !== '');
-}
-
-function ready(
-  lot: LotRow, line: LineRow, qty: Prisma.Decimal, statuses: { quality: string; inventory: string },
-): Omit<ReceiptDefaults, 'warehouseId' | 'warehouseCode' | 'warehouseName' | 'destinationLocationId' | 'destinationLocationCode' | 'issues'> {
-  return {
-    lotId: Number(lot.lot_id),
-    ...lotFields(lot),
-    plantId: Number(line.inbound_receipt.plant_id),
-    inboundReceiptId: Number(line.inbound_receipt.inbound_receipt_id),
-    inboundReceiptLineId: Number(line.inbound_receipt_line_id),
-    receiptTypeCode: MATERIAL_RECEIPT,
-    receiptQty: qty.toNumber(),
-    qualityStatusCode: statuses.quality,
-    inventoryStatusCode: statuses.inventory,
-  };
 }
 
 function lotFields(lot: LotRow): Pick<ReceiptDefaults, 'lotNo' | 'itemId' | 'uomId'> {
@@ -207,8 +74,6 @@ function blank(lotId: bigint, code: ReceiptDefaultIssueCode): ReceiptDefaults {
     lotId: Number(lotId), lotNo: null, itemId: null, uomId: null, plantId: null,
     inboundReceiptId: null, inboundReceiptLineId: null, receiptTypeCode: MATERIAL_RECEIPT, receiptQty: null,
     warehouseId: null, warehouseCode: null, warehouseName: null, destinationLocationId: null, destinationLocationCode: null,
-    qualityStatusCode: null, inventoryStatusCode: null, issues: [issue(code)],
+    qualityStatusCode: null, inventoryStatusCode: null, issues: [{ code, message: MESSAGES[code] }],
   };
 }
-
-const issue = (code: ReceiptDefaultIssueCode) => ({ code, message: MESSAGES[code] });

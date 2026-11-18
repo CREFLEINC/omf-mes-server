@@ -6,7 +6,9 @@ import type { IdempotencyContext } from '../../common/idempotency';
 import { IdempotencyService } from '../../common/idempotency';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
-import { INITIAL_LOT_STATUS, INSPECTION_HOLD_REASON, LotHoldService, LotQualityMoveContext, LotQualityStatusService, Tx } from '../../core/lot';
+import {
+  INITIAL_LOT_STATUS, INSPECTION_HOLD_REASON, LotHoldService, LotQualityMoveContext, LotQualityStatusService, PutawayPendingNotifier, Tx,
+} from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordIqcInspectionLevelWithin } from '../inspection-level/inspection-level-switch';
@@ -70,6 +72,7 @@ export class IqcRequestConfirmService {
     private readonly holds: LotHoldService,
     private readonly confirms: InspectionConfirmService,
     private readonly rejectedNotices: IqcRejectedHandoverNotifier,
+    private readonly putawayNotices: PutawayPendingNotifier,
   ) {}
 
   async confirm(context: IdempotencyContext, inspectionRequestId: number, body: InspectionRequestConfirm, appUserId: number): Promise<void> {
@@ -176,6 +179,8 @@ export class IqcRequestConfirmService {
     await recordIqcInspectionLevelWithin(tx, { inspectionRequestId: id, inspectionTypeCode: 'IQC', itemId: request.item_id });
     const context: LotQualityMoveContext = { changedBy: by, changedAt: at, sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE, sourceDocumentId: id };
     await this.confirms.moveTargetLots(tx, lots.map((lot) => lot.lot_id), judgment, ACTION_BY_JUDGMENT[judgment], context);
+    // 합격·불합격 확정으로 LOT 이 PDA 적치를 기다린다 — 「적치 대기」 입하 LOT 당 1건(보류면 옮긴 LOT 이 없어 보내지 않는다 · 피처 009).
+    await this.putawayNotices.inboundLot(tx, request.inbound_lot_id, { appUserId });
     let nonconformanceId: bigint | null = null;
     if (judgment === REJECTED) {
       nonconformanceId = await createIqcNonconformanceWithin(tx, {

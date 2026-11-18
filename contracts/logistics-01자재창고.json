@@ -705,7 +705,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "품질 상태로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED · 공유계약 G-32). ⛔ 목록은 서버가 갖는다 — 값을 화면에 박지 않는다(고객이 W-06-06 에서 바꾼다 · 공유계약 G-31 마스터안전형). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "품질 상태로 거른다 — 응답 qualityStatusCode 와 같은 기준(LOT 판정 · omf-all-around#302). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED · 공유계약 G-32). ⛔ 목록은 서버가 갖는다 — 값을 화면에 박지 않는다(고객이 W-06-06 에서 바꾼다 · 공유계약 G-31 마스터안전형). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-code-key": "CD-LOT-STATUS"
      },
      {
@@ -4037,7 +4037,7 @@
      "logistics"
     ],
     "summary": "입고 처리",
-    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다). ⭐ ERP 구매입고(IF-GR-SEND, 입고번호 키)는 입고 줄의 LOT 이 모두 새 흐름(erp_send_mode_code=ON_FINALIZE) 입하 LOT 소속이면 적재하지 않는다 — 새 흐름은 입하 LOT 마다 최종 마감 때 한 번 간다(피처 005 §6 · R-25, 그 송신은 #265). 이전 데이터(PER_RECEIPT)와 섞이면 적재하고 보낼 때 새 흐름 줄을 뺀다. ⭐ 입고는 입하 마감 뒤에만 한다(피처 005 FR-014a · 2026-11-13, 검사 불필요 품목 포함): 줄의 자재 관리 LOT 이 입하 중(RECEIVING)인 새 흐름(ON_FINALIZE) 입하 LOT 소속이면 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=INBOUND_LOT_RECEIVING(문구에 입하 LOT 번호). 이전 데이터(PER_RECEIPT)·입하 LOT 없는 LOT 은 지금 그대로.",
+    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다). ⭐ ERP 구매입고(IF-GR-SEND, 입고번호 키)는 입고 줄의 LOT 이 모두 새 흐름(erp_send_mode_code=ON_FINALIZE) 입하 LOT 소속이면 적재하지 않는다 — 새 흐름은 입하 LOT 마다 최종 마감 때 한 번 간다(피처 005 §6 · R-25, 그 송신은 #265). 이전 데이터(PER_RECEIPT)와 섞이면 적재하고 보낼 때 새 흐름 줄을 뺀다. ⭐ 입고는 입하 마감 뒤에만 한다(피처 005 FR-014a · 2026-11-13, 검사 불필요 품목 포함): 줄의 자재 관리 LOT 이 입하 중(RECEIVING)인 새 흐름(ON_FINALIZE) 입하 LOT 소속이면 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=INBOUND_LOT_RECEIVING(문구에 입하 LOT 번호). 이전 데이터(PER_RECEIPT)·입하 LOT 없는 LOT 은 지금 그대로. ⭐⭐ 구매 입하 자재는 PDA 적치로 입고한다(피처 009 · 2026-11-18): 줄의 LOT 이 입하에서 왔으면(선별 자식은 조상 기준) 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=USE_PDA_PUTAWAY. 제품 입고(M-04-04)·반품 입고(W-04-06)는 그대로다. 구매 입하 LOT 의 입고는 POST /logistics/putaway-pending-lots/{lotId}:putaway · :putaway-temporary. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4235,7 +4235,7 @@
      "logistics"
     ],
     "summary": "입고 기본값",
-    "description": "입고 처리 화면(W-01-10·W-04-06)이 LOT 마다 입고 칸을 미리 채운다 — 입고는 사람이 한다. 창고는 LOT 이 걸린 발주 라인의 ERP 창고와 같은 코드의 활성 MES 창고(입하와 같은 공장 · ERP 구매입고 송신도 같은 값), 불량 LOT 은 입하 공장의 활성 불량창고다. 위치는 그 창고의 적치 대기 자리. 상태는 정상 → NORMAL·AVAILABLE, 불량 → DEFECTIVE·ON_HOLD. 못 채운 칸은 null 이고 issues 가 까닭이다. 영업일·입고 시각은 화면이 채운다(공유계약 C-8). 근거: 사용자 결정 2026-10-29 · 장부 P-150 피처 005 FR-014a: 입하 중(RECEIVING)인 새 흐름 입하 LOT 의 자재 관리 LOT 은 입고 대상이 아니다 — 칸을 비우고 issues 에 INBOUND_LOT_RECEIVING.",
+    "description": "입고 처리 화면(W-01-10·W-04-06)이 LOT 마다 입고 칸을 미리 채운다 — 입고는 사람이 한다. 창고는 LOT 이 걸린 발주 라인의 ERP 창고와 같은 코드의 활성 MES 창고(입하와 같은 공장 · ERP 구매입고 송신도 같은 값), 불량 LOT 은 입하 공장의 활성 불량창고다. 위치는 그 창고의 적치 대기 자리. 상태는 정상 → NORMAL·AVAILABLE, 불량 → DEFECTIVE·ON_HOLD. 못 채운 칸은 null 이고 issues 가 까닭이다. 영업일·입고 시각은 화면이 채운다(공유계약 C-8). 근거: 사용자 결정 2026-10-29 · 장부 P-150 피처 005 FR-014a: 입하 중(RECEIVING)인 새 흐름 입하 LOT 의 자재 관리 LOT 은 입고 대상이 아니다 — 칸을 비우고 issues 에 INBOUND_LOT_RECEIVING. ⭐⭐ 피처 009 부터 입하에서 온 LOT 은 칸을 비우고(lotNo·itemId·uomId 만) issues 에 USE_PDA_PUTAWAY 하나 — 구매 입하 자재는 PDA 적치로 입고한다. 입하와 무관한 LOT 은 NOT_RECEIPT_READY, 없는 LOT 은 NOT_FOUND. 나머지 코드는 더 내지 않는다(옛 클라이언트를 위해 enum 에 남긴다). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
     "parameters": [
      {
       "name": "lotIds",
@@ -15774,6 +15774,504 @@
      }
     }
    }
+  },
+  "/logistics/putaway-pending-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 대기 LOT 목록",
+    "description": "적치 지시 없이 PDA 에서 적치할 구매 입하 자재 관리 LOT. 단말이면 단말 공장으로 고정한다(창고로는 거르지 않는다 — LOT 이 아직 창고에 없다). 정렬: 입하 마감 오래된 순(입하 LOT 없는 이전 흐름 LOT 먼저) → 입하 LOT → LOT 번호. page.total 은 PDA 배지에 더하는 수와 같다. 근거: M-01-05 · M-01-07 ·피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 — 세션 호출이면 필수(없으면 400), 단말은 단말 공장"
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "한 LOT 만"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 200,
+       "default": 100
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/PutawayPendingLot"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/putaway-pending-lots:lookup": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 대기 LOT 확인(라벨 스캔)",
+    "description": "자재 관리 LOT 번호로 찾는다. 적치 대기가 아니어도 이유를 돌려준다(FR-011) — HAS_TASK 면 PDA 는 지금 적치 지시 경로로 연다. 다른 공장 LOT·입하 LOT 아님은 LOT 칸 없이 이유만. 근거: M-01-05 · M-01-07 ·피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "name": "lotNo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 100
+      }
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장(세션) — 없으면 LOT 의 공장으로 본다. 단말은 단말 공장"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "찾은 결과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayPendingLotLookup"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/putaway-pending-lots/{lotId}/location-check": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 위치 판정",
+    "description": "스캔한 위치 코드(전체 유일 — omf-all-around#292)로 위치를 찾고 판정·경로를 돌려준다. 창고를 먼저 고르지 않는다. 적치 쓰기가 같은 판정을 다시 한다. LOT 이 적치 대기가 아니면 409(code = PutawayPendingReason, ALREADY_PUT_AWAY 는 메시지에 위치). 근거: M-01-05 ·피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "name": "locationCode",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 50
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "판정",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayLocationCheck"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/putaway-pending-lots/{lotId}:putaway": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치(입고)",
+    "description": "LOT 을 잠근 뒤 적치 대기 조건과 위치 판정을 다시 하고, 입고 1건(라인 1줄 · 수량 = 입고 가능 수량)을 적치 지시 없이 전기한다. 재고는 적치 대기 자리를 거치지 않고 그 위치로 바로 들어간다. DESIGNATED → 모드 DESIGNATED. UNDESIGNATED 는 confirmUndesignated=true 일 때만 모드 UNDESIGNATED 로 기록하고, 같은 트랜잭션에서 그 위치의 보관 품목에 이 품목을 더한다(이미 있으면 그대로 · 시스템 자리 제외 · FR-017a). 그 밖 판정은 400. 코어가 「지정 품목만 받기」로 거절하면(잠금 사이에 옵션이 켜짐) RESTRICTED_LOCATION 으로 돌려준다. 입고 상태: 정상 LOT NORMAL/AVAILABLE, 불량 LOT DEFECTIVE/ON_HOLD. ERP 구매입고 적재 규칙은 웹 입고와 같다(새 흐름 입하 LOT 은 최종 마감 때). 처리자는 단말 작업자 감사(대상 GOODS_RECEIPT·LOCATION_ITEM)로 남는다. 근거: M-01-05 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PutawayDirect"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "입고됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayDirectResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 또는 막힌 위치·창고 — code 가 판정 코드(PutawayLocationVerdict: NOT_FOUND · INACTIVE · OTHER_PLANT · STAGING · NOT_LEAF · DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE · NORMAL_LOT_IN_DEFECT_WAREHOUSE · RESTRICTED_LOCATION)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — 단말은 작업자 사번·멱등 키가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason · ALREADY_PUT_AWAY 는 메시지에 위치) · 또는 UNDESIGNATED_NEEDS_CONFIRM(미지정 위치인데 확인 표시 없음)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수다. 같은 LOT 동시 적치는 LOT 잠금으로 하나만 성공한다(FR-030)."
+   }
+  },
+  "/logistics/putaway-pending-lots/{lotId}:putaway-temporary": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "임시 적치(창고만)",
+    "description": "창고만 골라 그 창고의 「창고 전체」 자리로 입고한다(모드 TEMPORARY · 사유 없음 · 보관 품목 지정은 더하지 않는다). 창고 판정: 없음(NOT_FOUND)·꺼짐(INACTIVE)·다른 공장(OTHER_PLANT)·불량 규칙(DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE·NORMAL_LOT_IN_DEFECT_WAREHOUSE)이면 400. 같은 창고 안 정위치 이동 화면은 별도(omf-all-around#304). 근거: M-01-07 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PutawayTemporary"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "입고됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayDirectResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 또는 막힌 위치·창고 — code 가 판정 코드(PutawayLocationVerdict: NOT_FOUND · INACTIVE · OTHER_PLANT · STAGING · NOT_LEAF · DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE · NORMAL_LOT_IN_DEFECT_WAREHOUSE · RESTRICTED_LOCATION)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — 단말은 작업자 사번·멱등 키가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason · ALREADY_PUT_AWAY 는 메시지에 위치)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수다."
+   }
   }
  },
  "components": {
@@ -17732,6 +18230,20 @@
       "example": 1001,
       "description": "되돌아온 물건이 어느 출하의 어느 배분이었나 — 반품 입고에서 genealogy 가 역방향으로 이어지는 자리다(W-04-06 §4-B · 머리말). ⭐ 비울 수 있다 — 원 출하를 못 찾는 갈래가 정상이다(W-04-06 §5-3 · omf-mes#302 ①과 같은 근거). ⭐ 서버가 lotId 만으로는 못 잇는다 — 한 LOT 이 여러 출하에 나뉘어 나가므로 «어느 배분»인지를 화면이 보낸다(W-04-06 §5-3 「여러 출하가 섞였을 때」). 화면이 그 값을 얻는 곳: GET /logistics/shipments/{shipmentId} 응답의 lines[].allocations[].shipmentLotAllocationId. ⚠ 가리키는 곳은 04 제품출하 계약의 ShipmentLotAllocation 이다 — 계약이 갈린다.",
       "x-internal-note": "저장 컬럼은 late FK 로 이미 실재한다(goods_receipt_line.original_shipment_lot_allocation_id) — 데이터 모델 담당 대기 사항 없음. 근거: W-04-06 §2 · omf-mes#302"
+     },
+     "putawayModeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       null
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "PDA 지시 없는 적치의 적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 지정 위치 · 미지정 위치 적치 · 임시 적치. 그 밖의 입고는 null. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
      }
     }
    },
@@ -18006,7 +18518,8 @@
           "OTHER_PLANT_WAREHOUSE",
           "NO_DEFECT_WAREHOUSE",
           "MULTIPLE_DEFECT_WAREHOUSES",
-          "NO_STAGING_LOCATION"
+          "NO_STAGING_LOCATION",
+          "USE_PDA_PUTAWAY"
          ],
          "description": "NOT_FOUND 는 lotId·receiptTypeCode 밖의 칸을 비우고, NOT_RECEIPT_READY 는 lotNo·itemId·uomId 까지 싣는다. 입고 대기 = 입하가 취소·취소 요청이 아니고 LOT 이 정상·불량이고 입고 가능 수량이 남음. 그 밖의 까닭은 창고·위치 칸만 비운다(NO_STAGING_LOCATION 은 위치만)",
          "example": "NO_MES_WAREHOUSE"
@@ -20121,7 +20634,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). ⭐ LOT 이 있고 행 값이 정상·검사 대기면 LOT 의 현재 판정을 싣는다 — 검사 대기로 입고된 재고가 합격 뒤에도 「검사 대기」로 보이지 않게(omf-all-around#302). 근거: 공유계약 G-32",
       "example": "NORMAL",
       "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다.",
       "x-code-key": "CD-LOT-STATUS"
@@ -20188,14 +20701,14 @@
       "x-source-column": "blocked_qty",
       "type": "number",
       "minimum": 0,
-      "description": "내보낼 수 없게 묶인 수량. 묶인 수량에 더해 출고 할당이 집지 않는 잔액(정상 품질이 아님 · 가용 상태가 아님 · 풀리지 않은 LOT 보류)의 나머지(보유 − 예약 − 피킹)를 센다(omf-all-around#285). ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
+      "description": "내보낼 수 없게 묶인 수량. 묶인 수량에 더해 출고 할당이 집지 않는 잔액(정상 품질이 아님 · 가용 상태가 아님 · 풀리지 않은 LOT 보류)의 나머지(보유 − 예약 − 피킹)를 센다(omf-all-around#285). LOT 이 있는 잔액의 품질은 LOT 판정을 따른다(omf-all-around#302). ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
       "example": 0
      },
      "availableQty": {
       "x-source-column": "available_qty",
       "type": "number",
       "readOnly": true,
-      "description": "보유 − 예약 − 피킹 − 보류. 보류에 집을 수 없는 잔액이 들어가므로 출고 할당(정상 품질 · 가용 상태 · LOT 보류 아님)과 같은 기준이다(omf-all-around#285). 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
+      "description": "보유 − 예약 − 피킹 − 보류. 보류에 집을 수 없는 잔액이 들어가므로 출고 할당(정상 품질 · 가용 상태 · LOT 보류 아님)과 같은 기준이다(omf-all-around#285). LOT 이 있는 잔액의 정상 품질은 LOT 판정이 정상이고 행 품질이 정상 또는 검사 대기인 것이다 — 검사 대기로 입고된 재고는 PQC 합격으로 가용이 되고, 정상 LOT 이 검사 대기 · 불량으로 바뀌면 보류가 된다(omf-all-around#302). 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
       "example": 80
      },
      "uomId": {
@@ -25569,7 +26082,9 @@
      "putaway",
      "inboundLotId",
      "inboundLotNo",
-     "package"
+     "package",
+     "putawayModeCode",
+     "putawayLocation"
     ],
     "properties": {
      "purchaseOrderLineId": {
@@ -25660,7 +26175,7 @@
        "COMPLETED",
        "CANCELLED"
       ],
-      "description": "위에서부터 처음 맞는 줄 — 입하 취소(취소 요청 포함)는 CANCELLED · LOT 이 없는 입하 라인은 LABEL_PENDING · 입고할 수량이 남았으면: 폐기 LOT 은 CANCELLED, 검사 대기 LOT 은 검사 대상이면 의뢰 상태대로(없음 INSPECTION_REQUIRED · REQUESTED · IN_PROGRESS) 그 밖(판정 보류·합격 뒤 남은 보류·무검사 품목에 건 보류)은 INSPECTION_HELD, 합격·무검사·불량(불량창고로만)은 RECEIPT_READY · 다 입고했으면 살아 있는 입고의 적치 작업이 대기면 PUTAWAY_PENDING, 임시 적치면 PUTAWAY_TEMPORARY, 아니면 COMPLETED. 일부만 입고한 LOT 은 RECEIPT_READY 다(가장 뒤처진 단계 하나)"
+      "description": "위에서부터 처음 맞는 줄 — 입하 취소(취소 요청 포함)는 CANCELLED · LOT 이 없는 입하 라인은 LABEL_PENDING · 입고할 수량이 남았으면: 폐기 LOT 은 CANCELLED, 검사 대기 LOT 은 검사 대상이면 의뢰 상태대로(없음 INSPECTION_REQUIRED · REQUESTED · IN_PROGRESS) 그 밖(판정 보류·합격 뒤 남은 보류·무검사 품목에 건 보류)은 INSPECTION_HELD, 합격·무검사·불량(불량창고로만)은 RECEIPT_READY · 다 입고했으면 살아 있는 입고의 적치 작업이 대기면 PUTAWAY_PENDING, 임시 적치면 PUTAWAY_TEMPORARY, 아니면 COMPLETED. 일부만 입고한 LOT 은 RECEIPT_READY 다(가장 뒤처진 단계 하나) ⭐⭐ 피처 009(2026-11-18): 입고할 수량이 남은 합격·무검사·불량 LOT 은 RECEIPT_READY 가 아니라 PUTAWAY_PENDING(다음 할 일 PUTAWAY — PDA 적치가 곧 입고다), 일부만 입고한 LOT 도 PUTAWAY_PENDING. 입고 라인의 적치 방식이 TEMPORARY 면 PUTAWAY_TEMPORARY. RECEIPT_READY 는 더 내지 않는다(옛 클라이언트를 위해 enum 에 남긴다)."
      },
      "nextActionCode": {
       "type": [
@@ -25673,7 +26188,7 @@
        "PUTAWAY",
        null
       ],
-      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. 검사 의뢰는 입하 등록 때 서버가 만들므로 「의뢰 요청」은 없다(사용자 결정 2026-10-29 · #805)"
+      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. 검사 의뢰는 입하 등록 때 서버가 만들므로 「의뢰 요청」은 없다(사용자 결정 2026-10-29 · #805) ⭐⭐ POST_RECEIPT 는 더 내지 않는다 — 구매 입하 자재는 PDA 적치로 입고한다(피처 009)."
      },
      "blockedReasons": {
       "type": "array",
@@ -25861,6 +26376,46 @@
        }
       ],
       "description": "자재 관리 LOT 의 패키징(피처 005) — 없거나 라벨 대기 줄이면 null"
+     },
+     "putawayModeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       null
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "살아 있는 입고 라인의 적치 방식 — PDA 지시 없이 적치한 LOT 만 채운다(지시로 입고했거나 입고 전이면 null). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
+     },
+     "putawayLocation": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "적치한 자리 — 지시 없이 적치했으면 입고 라인의 도착 위치(임시 적치면 그 창고 「창고 전체」), 지시로 적치했으면 그 지시의 실제 위치(putaway 와 같다). 아직이면 null. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+      "required": [
+       "locationCode",
+       "locationName",
+       "locationAliasName"
+      ],
+      "properties": {
+       "locationCode": {
+        "type": "string"
+       },
+       "locationName": {
+        "type": "string"
+       },
+       "locationAliasName": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
      }
     }
    },
@@ -29497,6 +30052,417 @@
         "format": "date-time"
        }
       }
+     }
+    }
+   },
+   "PutawayPendingLot": {
+    "type": "object",
+    "description": "적치 대기 자재 관리 LOT — 입하에서 온 LOT 이고 입하 LOT 이 마감됐고(또는 입하 LOT 없는 이전 흐름), 상태가 정상·불량이고, 입고 가능 수량이 0 보다 크고, 취소되지 않은 입고·PENDING 적치 지시가 없다. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "required": [
+     "lotId",
+     "lotNo",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "qty",
+     "uomCode",
+     "lotStatusCode"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "description": "입고 가능 수량 — 적치하면 이만큼 입고된다(요청에 수량 없음)"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "lotStatusCode": {
+      "type": "string",
+      "enum": [
+       "NORMAL",
+       "DEFECTIVE"
+      ],
+      "description": "판정 — 불량(DEFECTIVE)은 불량창고에만 둔다"
+     },
+     "inboundLotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inboundLotNo": {
+      "type": "string",
+      "description": "입하 LOT — 입하 LOT 없는 이전 흐름 LOT 은 비운다"
+     },
+     "supplierName": {
+      "type": "string"
+     },
+     "inboundClosedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "입하 마감 시각"
+     }
+    }
+   },
+   "PutawayPendingReason": {
+    "type": "string",
+    "enum": [
+     "RECEIVING",
+     "INSPECTION",
+     "ALREADY_PUT_AWAY",
+     "HAS_TASK",
+     "DISPOSED",
+     "OTHER_PLANT",
+     "NOT_INBOUND"
+    ],
+    "description": "적치 대기가 아닌 이유 — 입하 마감 전 · IQC 판정 전(검사 대기·보류) · 이미 적치됨 · 배포 전 적치 지시 있음(지시로 끝낸다) · 처분됨(폐기·입고 가능 0) · 다른 공장 LOT · 구매 입하 LOT 아님. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
+   },
+   "PutawayPendingLotLookup": {
+    "type": "object",
+    "description": "스캔한 자재 관리 LOT 번호로 찾은 결과. 적치 대기면 지정 위치·임시 적치 창고를 함께 준다. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "required": [
+     "lotNo",
+     "found",
+     "eligible"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "found": {
+      "type": "boolean"
+     },
+     "eligible": {
+      "type": "boolean",
+      "description": "적치 대기인가"
+     },
+     "reasonCode": {
+      "$ref": "#/components/schemas/PutawayPendingReason"
+     },
+     "putAway": {
+      "type": "object",
+      "description": "ALREADY_PUT_AWAY 일 때 적치된 자리",
+      "required": [
+       "warehouseName",
+       "locationCode",
+       "locationPath"
+      ],
+      "properties": {
+       "warehouseName": {
+        "type": "string"
+       },
+       "locationCode": {
+        "type": "string"
+       },
+       "locationPath": {
+        "type": "string"
+       },
+       "putawayModeCode": {
+        "type": "string",
+        "enum": [
+         "DESIGNATED",
+         "UNDESIGNATED",
+         "TEMPORARY"
+        ]
+       }
+      }
+     },
+     "putawayTaskIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "HAS_TASK 일 때 PENDING 적치 지시 — PDA 는 지금 지시 경로로 연다"
+     },
+     "lot": {
+      "$ref": "#/components/schemas/PutawayPendingLot"
+     },
+     "designated": {
+      "type": "array",
+      "description": "지정 위치(창고별) — 단말 공장의 활성 창고 중 불량 규칙에 맞는 창고에서, 이 품목이 보관 품목으로 지정된 켜진 맨 아래 위치와 위치를 나누지 않은 창고의 「창고 전체」. 지정 위치가 없는 창고는 빠진다",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouseId",
+        "warehouseName",
+        "isDefect",
+        "locations"
+       ],
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "warehouseName": {
+         "type": "string"
+        },
+        "isDefect": {
+         "type": "boolean"
+        },
+        "locations": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "locationId",
+           "locationCode",
+           "locationPath"
+          ],
+          "properties": {
+           "locationId": {
+            "type": "integer",
+            "format": "int64"
+           },
+           "locationCode": {
+            "type": "string"
+           },
+           "locationPath": {
+            "type": "string",
+            "description": "창고 › 구역 › 랙 … (이름)"
+           },
+           "aliasName": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "temporaryWarehouses": {
+      "type": "array",
+      "description": "임시 적치로 고를 수 있는 창고 — 불량 규칙에 맞는 활성 창고, 지정 위치가 있는 창고가 위",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouseId",
+        "warehouseName",
+        "isDefect",
+        "designatedCount"
+       ],
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "warehouseName": {
+         "type": "string"
+        },
+        "isDefect": {
+         "type": "boolean"
+        },
+        "designatedCount": {
+         "type": "integer"
+        }
+       }
+      }
+     }
+    }
+   },
+   "PutawayLocationVerdict": {
+    "type": "string",
+    "enum": [
+     "DESIGNATED",
+     "UNDESIGNATED",
+     "NOT_FOUND",
+     "INACTIVE",
+     "OTHER_PLANT",
+     "STAGING",
+     "NOT_LEAF",
+     "DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE",
+     "NORMAL_LOT_IN_DEFECT_WAREHOUSE",
+     "RESTRICTED_LOCATION"
+    ],
+    "description": "위치 판정(위에서부터 처음 맞는 것) — 없음 · 꺼짐(위치·창고) · 다른 공장 · 적치 대기 자리 · 맨 아래 아님 · 불량 LOT 인데 일반 창고 · 정상 LOT 인데 불량창고 · 「지정 품목만 받기」 위치에 지정 밖 품목 · 이 품목이 지정된 위치(또는 위치를 나누지 않은 창고의 「창고 전체」)면 DESIGNATED · 그 밖(지정 없는 위치·다른 품목만 지정된 위치·나뉜 창고의 「창고 전체」)은 UNDESIGNATED. 품목 지정은 안내다(2026-11-18 결정). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
+   },
+   "PutawayLocationCheck": {
+    "type": "object",
+    "required": [
+     "verdictCode",
+     "locationCode",
+     "message",
+     "designationAddable"
+    ],
+    "properties": {
+     "verdictCode": {
+      "$ref": "#/components/schemas/PutawayLocationVerdict"
+     },
+     "locationId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "locationCode": {
+      "type": "string"
+     },
+     "locationPath": {
+      "type": "string"
+     },
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "warehouseName": {
+      "type": "string"
+     },
+     "isDefectWarehouse": {
+      "type": "boolean"
+     },
+     "message": {
+      "type": "string"
+     },
+     "designationAddable": {
+      "type": "boolean",
+      "description": "미지정 위치 적치로 기록하면 이 위치의 보관 품목에 이 품목이 더해지는가 — 판정이 UNDESIGNATED 이고 사람이 만든 위치(시스템 자리 아님)일 때만 true. 나뉜 창고의 「창고 전체」는 UNDESIGNATED 여도 false(FR-017a). PDA 는 true 일 때만 「적치하면 보관 품목에 더해집니다」를 보인다. 근거: 피처 009 · omf-all-around#294 · 검증 뒤 추가"
+     }
+    }
+   },
+   "PutawayDirect": {
+    "type": "object",
+    "required": [
+     "locationId",
+     "businessDate",
+     "occurredAt"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "locationId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "스캔한 위치(location-check 의 locationId)"
+     },
+     "confirmUndesignated": {
+      "type": "boolean",
+      "default": false,
+      "description": "미지정 위치 적치 확인 — 판정이 UNDESIGNATED 면 true 여야 기록한다(아니면 409 UNDESIGNATED_NEEDS_CONFIRM)"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "영업일 — 클라이언트가 보낸다(공유계약 C-8)"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "적치한 시각 — 입고 일시가 된다"
+     }
+    }
+   },
+   "PutawayTemporary": {
+    "type": "object",
+    "required": [
+     "warehouseId",
+     "businessDate",
+     "occurredAt"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "고른 창고 — 재고는 그 창고의 「창고 전체」 자리에 들어간다. 사유는 받지 않는다"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "영업일 — 클라이언트가 보낸다(공유계약 C-8)"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "적치한 시각 — 입고 일시가 된다"
+     }
+    }
+   },
+   "PutawayDirectResult": {
+    "type": "object",
+    "description": "적치로 생긴 입고 1건(LOT 1개 · 라인 1줄). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "required": [
+     "goodsReceiptId",
+     "goodsReceiptNo",
+     "lotId",
+     "lotNo",
+     "qty",
+     "uomCode",
+     "warehouseId",
+     "warehouseName",
+     "locationId",
+     "locationCode",
+     "locationPath",
+     "putawayModeCode",
+     "itemDesignationAdded"
+    ],
+    "properties": {
+     "goodsReceiptId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "goodsReceiptNo": {
+      "type": "string"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "description": "입고 수량 = 입고 가능 수량 전부"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "warehouseName": {
+      "type": "string"
+     },
+     "locationId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "locationCode": {
+      "type": "string"
+     },
+     "locationPath": {
+      "type": "string"
+     },
+     "putawayModeCode": {
+      "type": "string",
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY"
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 지정 위치 · 미지정 위치 적치 · 임시 적치"
+     },
+     "itemDesignationAdded": {
+      "type": "boolean",
+      "description": "미지정 위치 적치로 그 위치의 보관 품목에 이 품목을 더했는가(이미 있었거나 시스템 자리·임시 적치면 false)"
      }
     }
    }

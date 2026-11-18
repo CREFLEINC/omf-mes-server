@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { DocumentStateService } from '../../core/document-state';
-import { LotHoldService, LotQualityStatusService } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService, PutawayPendingNotifier } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
@@ -31,7 +31,8 @@ function harness(
   } as unknown as Prisma.TransactionClient;
   const lots = { moveWithin: jest.fn().mockResolvedValue({ movedLotIds: [] }) } as unknown as LotQualityStatusService;
   const holds = { lockLotsWithin: jest.fn().mockResolvedValue([]) } as unknown as LotHoldService;
-  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService, { rejected: jest.fn() } as unknown as IqcRejectedHandoverNotifier);
+  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService, { rejected: jest.fn() } as unknown as IqcRejectedHandoverNotifier,
+    { lot: jest.fn() } as unknown as PutawayPendingNotifier);
   const run = () =>
     service.applyConfirmEffects(tx, {
       inspectionResultId: 8n,

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { TerminalContext } from '../../auth/terminal-context';
 import { pickingOrderWhere } from '../../logistics/picking/picking-query.service';
 import { putawayTaskWhere } from '../../logistics/putaway/putaway-task.service';
+import { pendingLotsOfPlant } from '../../logistics/putaway-direct/pending-lot-query';
 import { FROM_SQL as SHIPMENT_FROM_SQL } from '../../logistics/shipment/shipment-query.sql';
 import { shipmentWhereSql } from '../../logistics/shipment/shipment-query.service';
 import { FROM_SQL as REQUEST_FROM_SQL, PICKING_COMPLETE_SQL } from '../../logistics/shipment-request/shipment-request-query.sql';
@@ -47,9 +48,11 @@ export class TerminalWorkCountService {
 
   private async mobile(scope: TerminalListScope, today: string): Promise<MobileWorkCounts> {
     const request = shipmentRequestWhereSql({ shipDateFrom: today, shipDateTo: today }, scope.plantId);
-    const [putaway, materialPicking, stockTransferArrival, shipmentPicking] = await Promise.all([
+    const [putawayTasks, pendingLots, materialPicking, stockTransferArrival, shipmentPicking] = await Promise.all([
       // M-01-05 적치: statusCode=PENDING
       this.prisma.putaway_task.count({ where: putawayTaskWhere({ statusCode: 'PENDING' }, scope) }),
+      // M-01-05 적치 대기 LOT(피처 009): GET /logistics/putaway-pending-lots — 공장 기준(LOT 은 아직 창고에 없다)
+      pendingLotsOfPlant(this.prisma, scope.plantId).then((rows) => rows.length),
       // M-01-08 자재 출고·피킹: statusCode=REGISTERED, 화면이 출처를 자재 출고 요청으로 거른다
       this.prisma.picking_order.count({
         where: { AND: [pickingOrderWhere({ statusCode: 'REGISTERED' }, scope), { source_document_type_code: 'MATERIAL_ISSUE_REQUEST' }] },
@@ -59,7 +62,7 @@ export class TerminalWorkCountService {
       // 제품 출하 피킹: 오늘 출하일 중 피킹이 끝나지 않은 출하지시(확정 항목 5 — 목록은 끝난 것도 보인다)
       this.rawCount(`SELECT count(*)::int AS total FROM ${REQUEST_FROM_SQL} WHERE (${request.sql}) AND NOT ${PICKING_COMPLETE_SQL}`, request.params),
     ]);
-    return { putaway, materialPicking, stockTransferArrival, shipmentPicking };
+    return { putaway: putawayTasks + pendingLots, materialPicking, stockTransferArrival, shipmentPicking };
   }
 
   private async pop(terminal: TerminalContext, scope: TerminalListScope, today: string): Promise<PopWorkCounts> {

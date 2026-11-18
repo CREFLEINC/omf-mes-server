@@ -7341,7 +7341,7 @@
      },
      "targetTypeCode": {
       "type": "string",
-      "description": "무엇에 대한 알림인가 — EQUIPMENT → 설비(설비 고장 발생) · MOLD → 툴·금형(적정타수 초과) · INSTRUMENT → 계측기(검교정 만료 임박) · PURCHASE_ORDER → 구매발주(P/O 변경 수신) · INTEGRATION_SYNC → 연계 메시지(연계 실패) · APPROVAL_REQUEST → 승인 요청(승인·결재 도착) · LOT / WORK_ORDER / NONCONFORMANCE. ⚠ 뒤 셋은 대응 이벤트가 알림센터 목록에 아직 없다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 공통코드 그룹으로 받지 않는다(A-10 · A-16 · 2026-09-03 정정). ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다",
+      "description": "무엇에 대한 알림인가 — EQUIPMENT → 설비(설비 고장 발생) · MOLD → 툴·금형(적정타수 초과) · INSTRUMENT → 계측기(검교정 만료 임박) · PURCHASE_ORDER → 구매발주(P/O 변경 수신) · INTEGRATION_SYNC → 연계 메시지(연계 실패) · APPROVAL_REQUEST → 승인 요청(승인·결재 도착) · LOT / WORK_ORDER / NONCONFORMANCE. ⚠ 뒤 셋은 대응 이벤트가 알림센터 목록에 아직 없다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 공통코드 그룹으로 받지 않는다(A-10 · A-16 · 2026-09-03 정정). ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 적치 대기(PUTAWAY_PENDING)는 입하 LOT(INBOUND_LOT)이다 — 005 이전 흐름 IQC 단건 확정은 LOT. 근거: 피처 009 · omf-all-around#294",
       "x-code-key": "CD-NOTIFICATION-TARGET-TYPE",
       "enum": [
        "EQUIPMENT",
@@ -7353,7 +7353,8 @@
        "LOT",
        "WORK_ORDER",
        "NONCONFORMANCE",
-       "INBOUND_RECEIPT"
+       "INBOUND_RECEIPT",
+       "INBOUND_LOT"
       ],
       "example": "EQUIPMENT"
      },
@@ -7637,9 +7638,10 @@
        "SHIPMENT",
        "WORK_ORDER",
        "INBOUND_RECEIPT",
-       "LOT"
+       "LOT",
+       "INBOUND_LOT"
       ],
-      "description": "알림 대상 유형. IQC(IQC_INSPECTION_REQUESTED)는 LOT 단건 등록이면 알림 대상이 LOT 이다. 검사 불합격(IQC_INSPECTION_REJECTED)은 불합격 확정된 LOT 이다.",
+      "description": "알림 대상 유형. IQC(IQC_INSPECTION_REQUESTED)는 LOT 단건 등록이면 알림 대상이 LOT 이다. 검사 불합격(IQC_INSPECTION_REJECTED)은 불합격 확정된 LOT 이다. 적치 대기(PUTAWAY_PENDING)는 입하 LOT(INBOUND_LOT)이다 — 005 이전 흐름 IQC 단건 확정은 LOT. 근거: 피처 009 · omf-all-around#294",
       "example": "PICKING_ORDER"
      }
     }
@@ -7837,7 +7839,7 @@
       "type": "integer",
       "minimum": 0,
       "example": 3,
-      "description": "모바일 적치 — 적치 지시 PENDING(단말 공장, 창고가 있으면 그 창고의 입고)."
+      "description": "모바일 적치 — 적치 지시 PENDING(단말 공장, 창고가 있으면 그 창고의 입고) + 적치 대기 LOT(GET /logistics/putaway-pending-lots 의 page.total — 단말 공장 기준, LOT 은 아직 창고에 없다). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
      },
      "materialPicking": {
       "type": "integer",
@@ -8252,10 +8254,11 @@
           "SHIPMENT_REQUEST",
           "SHIPMENT",
           "INBOUND_RECEIPT",
-          "LOT"
+          "LOT",
+          "INBOUND_LOT"
          ],
          "example": "WORK_ORDER",
-         "description": "인계 작업 알림 대상 7종을 더했다(장부 P-135)."
+         "description": "인계 작업 알림 대상 7종을 더했다(장부 P-135). 적치 대기(PUTAWAY_PENDING)는 입하 LOT(INBOUND_LOT)이다 — 005 이전 흐름 IQC 단건 확정은 LOT. 근거: 피처 009 · omf-all-around#294"
         },
         "targetId": {
          "type": "integer",
