@@ -159,6 +159,8 @@ const WORKER_TABLE_READERS = [
   'auth/terminal-quality-write-scope.ts',
   'auth/terminal-read-policy.ts',
   SHARED,
+  // 인계 알림 「적치 대기」의 처리자 이름(피처 009) — 이미 판정된 작업자 id 로 이름만 읽는다. 사번 판정이 아니다.
+  'core/lot/putaway-pending-handover.ts',
   // ERP 사원 수신 — 원본 행의 사번으로 작업자를 만들고 고친다. 사번 헤더 판정이 아니다.
   'integration/erp/apply/employee.apply.ts',
   // 추적 시스템 연동의 시스템 작업자(사용자 2026-11-16) — 고정 사번으로 찾는다. 사번 헤더 판정이 아니다.
