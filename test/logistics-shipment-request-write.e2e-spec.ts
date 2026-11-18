@@ -616,6 +616,10 @@ describe('출하작업지시 편성 (e2e)', () => {
 
     // ⭐ ajv 는 «타입»만 본다 — 열두 칸을 뒤바꿔도 통과한다(§6-3 ⑴). 값으로 못 박는다.
     //   고객·배송처가 «다른» 파트너이고 진행·검사가 «다른» 문자열이라 뒤바꿈이 드러난다.
+    const partnerOf = async (partnerId: number) => {
+      const row = await prisma.partner.findUniqueOrThrow({ where: { partner_id: BigInt(partnerId) } });
+      return { partnerId, partnerCode: row.partner_code, partnerName: row.partner_name };
+    };
     expect(body).toEqual({
       shipmentRequestId: Number(stored.shipment_request_id),
       shipmentRequestNo: stored.shipment_request_no,
@@ -634,6 +638,9 @@ describe('출하작업지시 편성 (e2e)', () => {
       fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
+      // 피처 010 검증 1회차 — 고객·납품처 이름을 함께 싣는다(PDA 카드·POP 찾기·P-04-06 머리).
+      customer: await partnerOf(ids.customer),
+      shipTo: await partnerOf(ids.shipTo),
       requestedShipDate: SHIP_DATE,
       statusCode: 'REGISTERED',
       timeSlotCode: 'AFTERNOON',

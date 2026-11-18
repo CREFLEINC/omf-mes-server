@@ -6979,6 +6979,26 @@
        "rejected",
        "held"
       ]
+     },
+     "itemCode": {
+      "type": "string",
+      "description": "출하 OQC 새 흐름 — 품목 코드(P-04-06 목록·머리 · 피처 010)",
+      "example": "FG-A100"
+     },
+     "itemName": {
+      "type": "string",
+      "description": "출하 OQC 새 흐름 — 품목 이름",
+      "example": "센서 모듈 A"
+     },
+     "pickedQty": {
+      "type": "number",
+      "description": "출하 OQC 새 흐름 — 살아 있는 피킹 LOT 수량 합(목록)",
+      "example": 110
+     },
+     "uomCode": {
+      "type": "string",
+      "description": "출하 OQC 새 흐름 — 단위 코드",
+      "example": "EA"
      }
     },
     "required": [

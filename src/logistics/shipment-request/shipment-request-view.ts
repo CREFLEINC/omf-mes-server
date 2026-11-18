@@ -93,6 +93,15 @@ export interface ShipmentRequestDisplayFacts {
   salesOrderLines: Map<string, SalesOrderLineFact>;
   items: Map<string, { itemCode: string; itemName: string }>;
   uomCodes: Map<string, string>;
+  /** 고객·납품처(거래처) — PDA 카드·POP 찾기·P-04-06 머리(피처 010 검증 1회차). */
+  partners?: Map<string, ShipmentRequestPartnerView>;
+}
+
+/** 거래처 표시 칸 — 출하 내역(`Shipment.customer`)·완료 확인 값과 같은 모양. */
+export interface ShipmentRequestPartnerView {
+  partnerId: number;
+  partnerCode: string;
+  partnerName: string;
 }
 
 const NO_DISPLAY: ShipmentRequestDisplayFacts = { salesOrderNos: new Map(), salesOrderLines: new Map(), items: new Map(), uomCodes: new Map() };
@@ -208,6 +217,9 @@ export interface ShipmentRequestView {
   fulfillmentPlantId: number | null;
   customerId: number;
   shipToPartnerId: number;
+  /** 고객·납품처 이름 — 거래처가 없으면 null. */
+  customer: ShipmentRequestPartnerView | null;
+  shipTo: ShipmentRequestPartnerView | null;
   requestedShipDate: string;
   statusCode: string;
   timeSlotCode: string | null;
@@ -285,6 +297,8 @@ export function shipmentRequestView(
       row.fulfillment_plant_id === null ? null : Number(row.fulfillment_plant_id),
     customerId: Number(row.customer_id),
     shipToPartnerId: Number(row.ship_to_partner_id),
+    customer: display.partners?.get(String(row.customer_id)) ?? null,
+    shipTo: display.partners?.get(String(row.ship_to_partner_id)) ?? null,
     requestedShipDate: toDateString(row.requested_ship_date) as string,
     statusCode: REGISTERED,
     timeSlotCode: row.ship_time_slot_code,

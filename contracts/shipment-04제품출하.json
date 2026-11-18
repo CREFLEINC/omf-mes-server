@@ -1441,7 +1441,7 @@
      "shipment"
     ],
     "summary": "출하작업지시 한 건",
-    "description": "라인을 함께 내린다",
+    "description": "라인을 함께 내린다 · POP 단말도 읽는다(P-04-06 머리·피킹 LOT 몫 — 단말 공장 지시서만, 피처 010)",
     "security": [
      {
       "omfSession": []
@@ -2063,6 +2063,18 @@
           },
           "page": {
            "$ref": "#/components/schemas/PageMeta"
+          },
+          "erpSendStatusCounts": {
+           "type": "object",
+           "description": "ERP 송신 상태별 건수(W-04-12 거르기 칩 · 피처 010) — erpSendStatus 를 뺀 나머지 조건으로 센다. 키는 erpSendStatus 값(NOT_QUEUED·PENDING·SENT·SEND_ERROR·CANCELLED·NOT_SENT_NO_SALES_ORDER) — 0건인 상태는 빠진다",
+           "additionalProperties": {
+            "type": "integer"
+           },
+           "example": {
+            "PENDING": 2,
+            "SENT": 5,
+            "NOT_SENT_NO_SALES_ORDER": 1
+           }
           }
          },
          "required": [
@@ -5875,6 +5887,68 @@
       ],
       "example": "SO-0001",
       "description": "수주 번호(피처 010 시안 — PDA 피킹 머리·W-04-02 상세). 수주 없는 지시서는 null"
+     },
+     "customer": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "고객(피처 010 — PDA 카드·POP 찾기·P-04-06 머리). 거래처가 없으면 null",
+        "properties": {
+         "partnerId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 1001
+         },
+         "partnerCode": {
+          "type": "string",
+          "example": "C001"
+         },
+         "partnerName": {
+          "type": "string",
+          "example": "고객사"
+         }
+        },
+        "required": [
+         "partnerId",
+         "partnerCode",
+         "partnerName"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "shipTo": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "납품처(피처 010). 거래처가 없으면 null",
+        "properties": {
+         "partnerId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 1001
+         },
+         "partnerCode": {
+          "type": "string",
+          "example": "C001"
+         },
+         "partnerName": {
+          "type": "string",
+          "example": "고객사"
+         }
+        },
+        "required": [
+         "partnerId",
+         "partnerCode",
+         "partnerName"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "required": [
@@ -5893,7 +5967,9 @@
      "blockerSummary",
      "lotJudgmentSummary",
      "completedShipment",
-     "salesOrderNo"
+     "salesOrderNo",
+     "customer",
+     "shipTo"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },

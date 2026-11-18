@@ -10,7 +10,7 @@ import {
 } from '../shipment-allocation/shipment-allocation-view';
 import { oqcPassedByLine } from '../shipment-request/shipment-oqc';
 import { BuiltWhere, FROM_SQL, ShipmentQuery, orderBySql, whereSql } from './shipment-query.sql';
-import { shipmentHistoryFacts } from './shipment-history';
+import { ERP_SEND_STATUS_SQL, shipmentHistoryFacts } from './shipment-history';
 import {
   ShipmentDetailView,
   ShipmentView,
@@ -75,7 +75,7 @@ export class ShipmentQueryService {
    * ⛔ **`lines` 를 싣지 않는다**(§4-3) — `Shipment.required` 에 없고 목록 화면 어느 열도 라인을
    * 읽지 않는다. 상세(PR ②b)가 싣는다.
    */
-  async list(query: ShipmentQuery, terminal?: TerminalListScope): Promise<PagedResponse<ShipmentView>> {
+  async list(query: ShipmentQuery, terminal?: TerminalListScope): Promise<PagedResponse<ShipmentView> & { erpSendStatusCounts: Record<string, number> }> {
     const page = pageRequest(query);
     const where = shipmentWhereSql(query, terminal);
     const order = orderBySql(query.sort);
@@ -83,7 +83,9 @@ export class ShipmentQueryService {
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다. `total` 은 쪽이 아니라 필터
     //    «전체» 기준이다(선례 넷 — `shipment-request-query.service.ts:75` 와 같은 모양).
     // `LIMIT`·`OFFSET` 은 `pageRequest` 가 이미 정수로 자른 값이라 그대로 편다(주입 자리 없음).
-    const [ids, counted] = await Promise.all([
+    // ERP 송신 거르기 칩의 건수(W-04-12 · 피처 010) — 송신 상태 조건만 빼고 같은 조건으로 센다.
+    const facetWhere = shipmentWhereSql({ ...query, erpSendStatus: undefined }, terminal);
+    const [ids, counted, facets] = await Promise.all([
       this.prisma.$queryRawUnsafe<{ shipment_id: bigint }[]>(
         `SELECT s.shipment_id
            FROM ${FROM_SQL}
@@ -96,8 +98,15 @@ export class ShipmentQueryService {
         `SELECT count(*)::int AS total FROM ${FROM_SQL} WHERE ${where.sql}`,
         ...where.params,
       ),
+      this.prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
+        `SELECT ${ERP_SEND_STATUS_SQL} AS status, count(*)::int AS count FROM ${FROM_SQL} WHERE ${facetWhere.sql} GROUP BY 1`,
+        ...facetWhere.params,
+      ),
     ]);
-    return pagedResponse(await this.views(ids.map((row) => row.shipment_id)), counted[0].total, page);
+    return {
+      ...pagedResponse(await this.views(ids.map((row) => row.shipment_id)), counted[0].total, page),
+      erpSendStatusCounts: Object.fromEntries(facets.map((row) => [row.status, row.count])),
+    };
   }
 
   /**

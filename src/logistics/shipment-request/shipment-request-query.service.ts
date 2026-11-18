@@ -305,13 +305,14 @@ export async function completionFactsOf(
  */
 async function displayFactsOf(
   db: Db,
-  rows: { sales_order_id: bigint | null; shipment_request_line: { sales_order_line_id: bigint | null; item_id: bigint; uom_id: bigint }[] }[],
+  rows: { sales_order_id: bigint | null; customer_id: bigint; ship_to_partner_id: bigint; shipment_request_line: { sales_order_line_id: bigint | null; item_id: bigint; uom_id: bigint }[] }[],
 ): Promise<ShipmentRequestDisplayFacts> {
   const lines = rows.flatMap((row) => row.shipment_request_line);
   const unique = (values: bigint[]) => [...new Set(values.map(String))].map(BigInt);
   const orderIds = unique(rows.flatMap((row) => (row.sales_order_id === null ? [] : [row.sales_order_id])));
   const orderLineIds = unique(lines.flatMap((line) => (line.sales_order_line_id === null ? [] : [line.sales_order_line_id])));
-  const [orders, orderLines, items, uoms] = await Promise.all([
+  const partnerIds = unique(rows.flatMap((row) => [row.customer_id, row.ship_to_partner_id]));
+  const [orders, orderLines, items, uoms, partners] = await Promise.all([
     orderIds.length === 0 ? [] : db.sales_order.findMany({ where: { sales_order_id: { in: orderIds } }, select: { sales_order_id: true, sales_order_no: true } }),
     orderLineIds.length === 0 ? [] : db.sales_order_line.findMany({
       where: { sales_order_line_id: { in: orderLineIds } },
@@ -319,6 +320,7 @@ async function displayFactsOf(
     }),
     lines.length === 0 ? [] : db.item.findMany({ where: { item_id: { in: unique(lines.map((line) => line.item_id)) } }, select: { item_id: true, item_code: true, item_name: true } }),
     lines.length === 0 ? [] : db.uom.findMany({ where: { uom_id: { in: unique(lines.map((line) => line.uom_id)) } }, select: { uom_id: true, uom_code: true } }),
+    partnerIds.length === 0 ? [] : db.partner.findMany({ where: { partner_id: { in: partnerIds } }, select: { partner_id: true, partner_code: true, partner_name: true } }),
   ]);
   return {
     salesOrderNos: new Map(orders.map((row) => [String(row.sales_order_id), row.sales_order_no])),
@@ -328,6 +330,9 @@ async function displayFactsOf(
     }])),
     items: new Map(items.map((row) => [String(row.item_id), { itemCode: row.item_code, itemName: row.item_name }])),
     uomCodes: new Map(uoms.map((row) => [String(row.uom_id), row.uom_code])),
+    partners: new Map(partners.map((row) => [String(row.partner_id), {
+      partnerId: Number(row.partner_id), partnerCode: row.partner_code, partnerName: row.partner_name,
+    }])),
   };
 }
 

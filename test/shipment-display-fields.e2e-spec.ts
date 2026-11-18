@@ -264,4 +264,66 @@ describe('출하 공정 단순화 — 시안 표시 칸 (e2e)', () => {
       expect(await search(lotNo)).not.toContain(shipmentId);
     });
   });
+
+  describe('검증 1회차 보탬 — 고객·납품처, POP 지시서 상세, ERP 송신 건수, OQC 품목 칸', () => {
+    it('US4-4·Q10 지시서 목록·상세에 고객·납품처(코드·이름)가 실린다 — PDA 카드·POP 찾기가 쓴다', async () => {
+      const made = await f.request([{ allocated: 10 }]);
+      const head = {
+        customer: { partnerId: Number(f.ids.customer), partnerCode: `${SS_PREFIX}-C`, partnerName: '출하단순화C' },
+        shipTo: { partnerId: Number(f.ids.shipTo), partnerCode: `${SS_PREFIX}-S`, partnerName: '출하단순화S' },
+      };
+
+      const detail = await detailOf(made);
+      const list = await f.asTerminal(f.http().get('/api/logistics/shipment-requests')
+        .query({ shipDateFrom: '2026-11-18', shipDateTo: '2026-11-18', q: made.requestNo, size: 100 }), f.pda).expect(200);
+
+      expect(detail).toMatchObject(head);
+      const validate = validator('/logistics/shipment-requests/{shipmentRequestId}', 'get', '200');
+      expect(validate(detail) ? [] : validate.errors).toEqual([]);
+      expect((list.body.items as { shipmentRequestId: number }[]).find((row) => row.shipmentRequestId === made.requestId)).toMatchObject(head);
+    });
+
+    it('US3-1 POP 단말은 자기 공장 지시서 상세를 읽는다(P-04-06 머리·피킹 LOT 몫) — PDA 는 401', async () => {
+      const made = await f.request([{ allocated: 10 }]);
+
+      const pop = await f.asTerminal(f.http().get(`/api/logistics/shipment-requests/${made.requestId}`), f.pop).expect(200);
+      await f.asTerminal(f.http().get(`/api/logistics/shipment-requests/${made.requestId}`), f.pda).expect(401);
+
+      expect(pop.body).toMatchObject({ shipmentRequestId: made.requestId, customer: { partnerName: '출하단순화C' } });
+    });
+
+    it('US7-2·Q15 출하 목록에 ERP 송신 상태별 건수가 실린다 — 송신 상태 거르기를 걸어도 다른 조건으로만 센다', async () => {
+      const made = await f.request([{ allocated: 10, salesOrdered: 10, inspection: false }]);
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 10 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      await f.complete(made).expect(200);
+      const query = { shipDateFrom: '2026-11-18', shipDateTo: '2026-11-18', shipmentRequestId: made.requestId, size: 100 };
+
+      const all = await f.asSession(f.http().get('/api/logistics/shipments').query(query)).expect(200);
+      const sent = await f.asSession(f.http().get('/api/logistics/shipments').query({ ...query, erpSendStatus: 'SENT' })).expect(200);
+
+      expect(all.body.erpSendStatusCounts).toEqual({ PENDING: 1 });
+      expect(sent.body.items).toEqual([]);
+      expect(sent.body.erpSendStatusCounts).toEqual({ PENDING: 1 });
+      const validate = validator('/logistics/shipments', 'get', '200');
+      expect(validate(all.body) ? [] : validate.errors).toEqual([]);
+    });
+
+    it('US3-1 출하 OQC 의뢰 목록·상세에 품목 코드·이름·단위와 (목록) 피킹 수량 합이 실린다 — POP 카드 「FG · 피킹 LOT n개 · 합 EA」', async () => {
+      const made = await f.request([{ allocated: 100 }]);
+      for (const qty of [40, 30]) {
+        const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty }] });
+        await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      }
+      const requestId = made.oqcRequestIds.A;
+
+      const detail = await f.asTerminal(f.http().get(`/api/quality/inspection-requests/${requestId}`), f.pop).expect(200);
+      const list = await f.asTerminal(f.http().get('/api/quality/inspection-requests').query({ inspectionTypeCode: 'OQC', size: 200 }), f.pop).expect(200);
+
+      const item = { itemCode: `${SS_PREFIX}-A`, itemName: '출하단순화품목A' };
+      expect(detail.body).toMatchObject({ ...item, uomCode: expect.any(String) });
+      expect((list.body.items as { inspectionRequestId: number }[]).find((row) => row.inspectionRequestId === requestId))
+        .toMatchObject({ ...item, pickedLotCount: 2, pickedQty: 70 });
+    });
+  });
 });
