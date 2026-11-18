@@ -438,6 +438,19 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
     expect(await lookup(lot.lotNo)).toMatchObject({ eligible: true });
   });
 
+  it('FR-031 Q18 PDA 적치로 입고된 LOT 이 있으면 IQC 확정 취소·입하 마감 취소는 지금처럼 409 GOODS_RECEIVED', async () => {
+    const iqc = await prisma.inspection_request.findFirstOrThrow({ where: { inbound_lot: { lot: { some: { lot_id: BigInt(il1[0].lotId) } } }, status_code: 'COMPLETED' } });
+    const cancel = await request(app.getHttpServer()).post(`/api/quality/inspection-requests/${String(iqc.inspection_request_id)}:cancel-confirm`)
+      .set('Cookie', cookie).set('Idempotency-Key', idempotencyKey(fx)).send({ versionNo: iqc.version_no }).expect(409);
+    expect((cancel.body.errors as { code: string }[]).map((error) => error.code)).toContain('GOODS_RECEIVED');
+
+    await putaway(il5[0].lotId, { locationId: Number(ids.BWHOLE) }).expect(201);
+    const inbound = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(il5[0].lotId) }, include: { inbound_lot: true } });
+    const reopen = await request(app.getHttpServer()).post(`/api/logistics/inbound-lots/${String(inbound.inbound_lot_id)}:reopen-receipt`)
+      .set('Cookie', cookie).set('Idempotency-Key', idempotencyKey(fx)).send({ versionNo: inbound.inbound_lot?.version_no }).expect(409);
+    expect((reopen.body.errors as { code: string }[]).map((error) => error.code)).toContain('GOODS_RECEIVED');
+  });
+
   it('US5-6 US6-1 SC-005 Q14 배포 전 구매 입고 지시가 있는 LOT — 목록에 없고 확인은 HAS_TASK·지시 id', async () => {
     const lot = il1[10];
     await prisma.$transaction((tx) => postReceipt(tx, app.get(InventoryPostingService), {
