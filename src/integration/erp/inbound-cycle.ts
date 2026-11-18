@@ -18,10 +18,15 @@ export type InboundTable = RowTable | UnitTable;
 export interface RowTable {
   readonly source: RelayTable;
   /** 커밋 뒤에 할 일을 돌려줄 수 있다 — 반영 트랜잭션을 길게 잡거나 그 실패로 반영을 되돌리지 않게. */
-  apply(tx: Tx, row: RelayRow): Promise<void | AfterCommit>;
+  apply(tx: Tx, row: RelayRow): Promise<void | AfterCommit | ApplyWarning>;
 }
 
 export type AfterCommit = () => Promise<void>;
+
+/** 반영은 했지만 남길 경고 — 그 행의 처리 기록(`integration_message` DONE)의 `last_error_message` 에 싣는다(피처 010 D-16). */
+export interface ApplyWarning {
+  warning: string;
+}
 
 export interface UnitTable {
   readonly source: RelayTable;
@@ -90,8 +95,10 @@ export class InboundCycle {
         try {
           const afterCommit = await this.prisma.$transaction(async (tx) => {
             const after = await ('applyUnit' in table ? table.applyUnit(tx, unit) : table.apply(tx, unit[0]));
-            for (const row of unit) await recordDone(tx, source, row);
-            return after;
+            const warning = typeof after === 'object' && after !== null ? after.warning : null;
+            if (warning !== null) this.logger.warn(`${source.name} 반영 경고 — ${warning}`);
+            for (const row of unit) await recordDone(tx, source, row, warning);
+            return typeof after === 'function' ? after : undefined;
           });
           applied.push(...unit.map((row) => row.MES_INF_ID));
           result.applied += unit.length;
@@ -179,7 +186,7 @@ function payloadOf(source: RelayTable, row: RelayRow): Prisma.InputJsonValue {
   ) as Prisma.InputJsonValue;
 }
 
-async function recordDone(tx: Tx, source: RelayTable, row: RelayRow): Promise<void> {
+async function recordDone(tx: Tx, source: RelayTable, row: RelayRow, warning: string | null = null): Promise<void> {
   const now = new Date();
   const payload = payloadOf(source, row);
   await tx.integration_message.upsert({
@@ -194,12 +201,13 @@ async function recordDone(tx: Tx, source: RelayTable, row: RelayRow): Promise<vo
       payload,
       status_code: MESSAGE_STATUS.DONE,
       completed_at: now,
+      last_error_message: warning,
     },
     update: {
       payload,
       status_code: MESSAGE_STATUS.DONE,
       completed_at: now,
-      last_error_message: null,
+      last_error_message: warning,
     },
   });
 }

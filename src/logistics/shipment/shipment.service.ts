@@ -71,8 +71,7 @@ export class ShipmentService {
 
   /**
    * ⭐ 롤업 둘 — 출하작업지시 라인과 그 수주 라인의 `shipped_qty`.
-   * ⛔ 둘 다 **CHECK 가 걸려 있다**(`ck_shipment_request_qty` · `ck_sales_shipped_qty`) — 넘치면
-   * 500 이라 아래 `assertWritable` 이 **미리** 400 으로 막는다. 여기서는 더하기만 한다.
+   * ⛔ 지시 라인은 배정 한도를 `assertWritable` 이 400 으로 막는다(옛 W-04-04 규칙). 수주 라인은 한도가 없다(피처 010 D-16).
    * ⚠ 수주 라인은 **없을 수 있다**(`sales_order_line_id` 가 nullable) — 그때는 그 쪽만 건너뛴다.
    */
   private async rollUp(tx: Prisma.TransactionClient, input: ShipmentCreateWrite): Promise<void> {
@@ -167,12 +166,7 @@ export class ShipmentService {
         errors.push(field(`lines[${index}].shipmentRequestLineId`, ERROR_CODE.INVALID, CANCELLED_SO_LINE));
         continue;
       }
-      // ⛔ `ck_sales_shipped_qty(shipped ≤ ordered)` 도 같다. ⚠ 수주 라인은 없을 수 있다.
-      if (order !== null && order.shipped_qty.plus(shipped).greaterThan(order.ordered_qty)) {
-        errors.push(
-          field(`lines[${index}].shippedQty`, ERROR_CODE.RANGE, '수주 수량보다 많이 낼 수 없습니다.'),
-        );
-      }
+      // ⭐ 수주 수량은 한도가 아니다 — ERP 가 수주 초과 출고를 받는다(피처 010 D-16 · `ck_sales_shipped_qty` 삭제).
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     const found = warehouse as { plant_id: bigint };
