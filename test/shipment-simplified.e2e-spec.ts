@@ -541,6 +541,41 @@ describe('출하 공정 단순화 (e2e)', () => {
       await f.saveCode(firstLot.shipmentRequestLotId, 'BOX-0002').expect(409);
     });
 
+    describe.each([
+      ['같은 창고 두 위치', [{ warehouse: 'wh1', location: 'loc1a', qty: 10 }, { warehouse: 'wh1', location: 'loc1b', qty: 15 }]],
+      ['보통 자리 + 적치 대기', [{ warehouse: 'wh1', location: 'loc1a', qty: 20 }, { warehouse: 'wh1', location: 'staging1', qty: 5 }]],
+      ['두 창고', [{ warehouse: 'wh1', location: 'loc1a', qty: 10 }, { warehouse: 'wh2', qty: 15 }]],
+    ] as const)('R-2·FR-004a·Q2 한 LOT 의 잔액이 %s 에 나뉘어 있어도', (_, balances) => {
+      it('Q2 완료된다 — 배분은 LOT 하나로 합치고, 창고마다 출고 전표·위치마다 출고 라인으로 그 몫만 빠진다', async () => {
+        const made = await f.request([{ allocated: 25, salesOrdered: 25 }]);
+        const lot = await f.lot({ balances: [...balances] });
+        await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+        await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [lot.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+
+        const done = await f.complete(made).expect(200);
+
+        const shipmentId = BigInt(done.body.shipmentId);
+        expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(1);
+        const allocations = await prisma.shipment_lot_allocation.findMany({ where: { shipment_line: { shipment_id: shipmentId } } });
+        expect(allocations.map((row) => [Number(row.lot_id), Number(row.allocated_qty)])).toEqual([[lot.lotId, 25]]);
+        const shipmentLines = await prisma.shipment_line.findMany({ where: { shipment_id: shipmentId } });
+        expect(shipmentLines.map((row) => Number(row.shipped_qty))).toEqual([25]);
+        const issues = await prisma.goods_issue.findMany({
+          where: { source_document_type_code: 'SHIPMENT', source_document_id: shipmentId },
+          include: { goods_issue_line: true },
+        });
+        const warehouseIds = [...new Set(balances.map((balance) => String(f.ids[balance.warehouse])))].sort();
+        expect(issues.map((row) => String(row.source_warehouse_id)).sort()).toEqual(warehouseIds);
+        const locationOf = (balance: (typeof balances)[number]): bigint => ('location' in balance ? f.ids[balance.location] : f.ids.loc2);
+        expect(issues.flatMap((row) => row.goods_issue_line.map((line) => [String(row.source_warehouse_id), String(line.source_location_id), Number(line.issue_qty)])).sort())
+          .toEqual(balances.map((balance) => [String(f.ids[balance.warehouse]), String(locationOf(balance)), balance.qty]).sort());
+        const left = await prisma.inventory_balance.findMany({ where: { lot_id: BigInt(lot.lotId) } });
+        expect(left.map((row) => [Number(row.on_hand_qty), Number(row.picked_qty)])).toEqual(balances.map(() => [0, 0]));
+        const line = await prisma.shipment_request_line.findUniqueOrThrow({ where: { shipment_request_line_id: BigInt(made.lineIds[0]) }, include: { sales_order_line: true } });
+        expect([Number(line.shipped_qty), Number(line.sales_order_line?.shipped_qty)]).toEqual([25, 25]);
+      });
+    });
+
     it('US1-4·US1-7·US2-5·FR-016·SC-004·Q8 피킹 부족·미검사·불합격·보류면 409 COMPLETION_BLOCKED 와 이유 목록 — 출하가 생기지 않는다', async () => {
       const short = await f.request([{ allocated: 100 }]);
       const lots = [];
@@ -692,6 +727,30 @@ describe('출하 공정 단순화 (e2e)', () => {
       const detail = await f.asSession(f.http().get(`/api/logistics/shipment-requests/${made.requestId}`)).expect(200);
       expect(detail.body).toMatchObject({ shipmentProgressCode: 'PICKED', completedShipment: null, completionBlockers: [] });
       expect(detail.body.lines[0]).toMatchObject({ pickedQty: 110, shippedQty: 0 });
+      await f.complete(made).expect(200);
+    });
+
+    it('US6-1·Q13·Q2 두 창고·적치 대기에 나뉜 LOT 의 출하를 취소하면 몫마다 제자리로 돌아가고 예약이 다시 잡힌다', async () => {
+      const made = await f.request([{ allocated: 30, salesOrdered: 30 }]);
+      const lot = await f.lot({ balances: [
+        { warehouse: 'wh1', location: 'loc1a', qty: 10 }, { warehouse: 'wh1', location: 'staging1', qty: 5 }, { warehouse: 'wh2', qty: 15 },
+      ] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [lot.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      expect((await f.requestCancel(shipmentId)).status).toBe(200);
+
+      expect((await f.cancelApproved(shipmentId)).status).toBe(200);
+
+      const balances = await prisma.inventory_balance.findMany({ where: { lot_id: BigInt(lot.lotId) }, orderBy: { inventory_balance_id: 'asc' } });
+      expect(balances.map((row) => [String(row.location_id), Number(row.on_hand_qty), Number(row.picked_qty)])).toEqual([
+        [String(f.ids.loc1a), 10, 10], [String(f.ids.staging1), 5, 5], [String(f.ids.loc2), 15, 15],
+      ]);
+      const reservations = await prisma.inventory_reservation.findMany({
+        where: { source_document_type_code: 'SHIPMENT_REQUEST_LINE', source_document_id: BigInt(made.lineIds[0]), lot_id: BigInt(lot.lotId) },
+      });
+      expect(reservations.filter((row) => Number(row.consumed_qty) - Number(row.released_qty) > 0).map((row) => Number(row.consumed_qty) - Number(row.released_qty)).sort((a, b) => a - b))
+        .toEqual([5, 10, 15]);
       await f.complete(made).expect(200);
     });
 

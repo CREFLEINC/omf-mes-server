@@ -29,7 +29,7 @@ export interface TerminalSession {
 
 export interface BalanceSpec {
   warehouse: 'wh1' | 'wh2' | 'defect';
-  location?: 'loc1a' | 'loc1b' | 'loc2' | 'defect';
+  location?: 'loc1a' | 'loc1b' | 'loc2' | 'defect' | 'staging1';
   qty: number;
   /** 다른 작업의 피킹분 — 통째 피킹을 막는다. */
   picked?: number;
@@ -61,7 +61,7 @@ export class ShipmentSimplifiedFixture {
   foreignPda!: TerminalSession;
   readonly ids = {
     entity: 0n, unit: 0n, plant: 0n, plant2: 0n, uom: 0n, itemA: 0n, itemB: 0n, customer: 0n, shipTo: 0n,
-    wh1: 0n, wh2: 0n, defect: 0n, loc1a: 0n, loc1b: 0n, loc2: 0n, locDefect: 0n, userId: 0n,
+    wh1: 0n, wh2: 0n, defect: 0n, loc1a: 0n, loc1b: 0n, loc2: 0n, locDefect: 0n, staging1: 0n, userId: 0n,
   };
 
   constructor(private readonly app: INestApplication, private readonly prisma: PrismaService) {}
@@ -114,6 +114,8 @@ export class ShipmentSimplifiedFixture {
     this.ids.loc1b = await location(this.ids.wh1, 'L1B');
     this.ids.loc2 = await location(this.ids.wh2, 'L2');
     this.ids.locDefect = await location(this.ids.defect, 'LD');
+    // 적치 대기 자리 — 창고를 만들 때 트리거(`mdm.create_system_locations`)가 세운다.
+    this.ids.staging1 = (await p.location.findFirstOrThrow({ where: { warehouse_id: this.ids.wh1, system_role_code: 'PUTAWAY_STAGING' } })).location_id;
 
     const item = async (code: string) => (await ensure(
       () => p.item.findFirst({ where: { item_code: `${SS_PREFIX}-${code}` } }),
