@@ -36,6 +36,16 @@ export interface PopWorkCounts {
  * 그대로 불러 센다. 화면이 부르는 질의(아래 각 줄)를 바꾸면 여기도 바꾼다. 알림 설정과 무관하다(FR-019).
  * 「오늘」은 공장 시간대 날짜다(화면은 기기 날짜 — 현장은 같은 시간대다).
  */
+/** P-04-07 찾기가 보는 출하일 범위(오늘부터 거꾸로) — 클라 `pop-shipment-complete/model.ts` `SEARCH_LOOKBACK_DAYS`. */
+export const SHIPMENT_COMPLETION_LOOKBACK_DAYS = 30;
+
+/** `YYYY-MM-DD` 에서 n 일 전(달력 날짜 — 시간대 무관). */
+export function daysBefore(date: string, days: number): string {
+  const at = new Date(`${date}T00:00:00.000Z`);
+  at.setUTCDate(at.getUTCDate() - days);
+  return at.toISOString().slice(0, 10);
+}
+
 @Injectable()
 export class TerminalWorkCountService {
   constructor(private readonly prisma: PrismaService) {}
@@ -91,9 +101,12 @@ export class TerminalWorkCountService {
     return { shipmentPacking, workStart, emergencyWorkOrder, reworkResult, oqcInspection, shipmentCompletion };
   }
 
-  /** P-04-07 출하 완료(피처 010): 오늘 출하일 중 완료 대기 지시서 — 찾기 「완료 대기만」과 같은 조건. */
+  /**
+   * P-04-07 출하 완료(피처 010): 완료 대기 지시서 — 찾기 「완료 대기만」과 같은 범위(출하일 오늘 −30일부터 끝 없이,
+   * 클라 `SEARCH_LOOKBACK_DAYS`). 검증 1회차: 오늘 하루만 세어 다음 날 출하분이 배지에서 빠졌다.
+   */
   private async shipmentCompletion(plantId: bigint, today: string): Promise<number> {
-    const ready = shipmentRequestWhereSql({ shipDateFrom: today, shipDateTo: today, completionReadyOnly: true }, plantId);
+    const ready = shipmentRequestWhereSql({ shipDateFrom: daysBefore(today, SHIPMENT_COMPLETION_LOOKBACK_DAYS), completionReadyOnly: true }, plantId);
     return this.rawCount(`SELECT count(*)::int AS total FROM ${REQUEST_FROM_SQL} WHERE ${ready.sql}`, ready.params);
   }
 
