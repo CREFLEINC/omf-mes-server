@@ -16060,6 +16060,218 @@
      }
     }
    }
+  },
+  "/logistics/putaway-pending-lots/{lotId}:putaway": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치(입고)",
+    "description": "LOT 을 잠근 뒤 적치 대기 조건과 위치 판정을 다시 하고, 입고 1건(라인 1줄 · 수량 = 입고 가능 수량)을 적치 지시 없이 전기한다. 재고는 적치 대기 자리를 거치지 않고 그 위치로 바로 들어간다. DESIGNATED → 모드 DESIGNATED. UNDESIGNATED 는 confirmUndesignated=true 일 때만 모드 UNDESIGNATED 로 기록하고, 같은 트랜잭션에서 그 위치의 보관 품목에 이 품목을 더한다(이미 있으면 그대로 · 시스템 자리 제외 · FR-017a). 그 밖 판정은 400. 코어가 「지정 품목만 받기」로 거절하면(잠금 사이에 옵션이 켜짐) RESTRICTED_LOCATION 으로 돌려준다. 입고 상태: 정상 LOT NORMAL/AVAILABLE, 불량 LOT DEFECTIVE/ON_HOLD. ERP 구매입고 적재 규칙은 웹 입고와 같다(새 흐름 입하 LOT 은 최종 마감 때). 처리자는 단말 작업자 감사(대상 GOODS_RECEIPT·LOCATION_ITEM)로 남는다. 근거: M-01-05 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PutawayDirect"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "입고됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayDirectResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 또는 막힌 위치·창고 — code 가 판정 코드(PutawayLocationVerdict: NOT_FOUND · INACTIVE · OTHER_PLANT · STAGING · NOT_LEAF · DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE · NORMAL_LOT_IN_DEFECT_WAREHOUSE · RESTRICTED_LOCATION)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — 단말은 작업자 사번·멱등 키가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason · ALREADY_PUT_AWAY 는 메시지에 위치) · 또는 UNDESIGNATED_NEEDS_CONFIRM(미지정 위치인데 확인 표시 없음)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수다. 같은 LOT 동시 적치는 LOT 잠금으로 하나만 성공한다(FR-030)."
+   }
+  },
+  "/logistics/putaway-pending-lots/{lotId}:putaway-temporary": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "임시 적치(창고만)",
+    "description": "창고만 골라 그 창고의 「창고 전체」 자리로 입고한다(모드 TEMPORARY · 사유 없음 · 보관 품목 지정은 더하지 않는다). 창고 판정: 없음(NOT_FOUND)·꺼짐(INACTIVE)·다른 공장(OTHER_PLANT)·불량 규칙(DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE·NORMAL_LOT_IN_DEFECT_WAREHOUSE)이면 400. 같은 창고 안 정위치 이동 화면은 별도(omf-all-around#304). 근거: M-01-07 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PutawayTemporary"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "입고됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayDirectResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 또는 막힌 위치·창고 — code 가 판정 코드(PutawayLocationVerdict: NOT_FOUND · INACTIVE · OTHER_PLANT · STAGING · NOT_LEAF · DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE · NORMAL_LOT_IN_DEFECT_WAREHOUSE · RESTRICTED_LOCATION)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — 단말은 작업자 사번·멱등 키가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason · ALREADY_PUT_AWAY 는 메시지에 위치)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수다."
+   }
   }
  },
  "components": {
@@ -30059,6 +30271,136 @@
      },
      "message": {
       "type": "string"
+     }
+    }
+   },
+   "PutawayDirect": {
+    "type": "object",
+    "required": [
+     "locationId",
+     "businessDate",
+     "occurredAt"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "locationId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "스캔한 위치(location-check 의 locationId)"
+     },
+     "confirmUndesignated": {
+      "type": "boolean",
+      "default": false,
+      "description": "미지정 위치 적치 확인 — 판정이 UNDESIGNATED 면 true 여야 기록한다(아니면 409 UNDESIGNATED_NEEDS_CONFIRM)"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "영업일 — 클라이언트가 보낸다(공유계약 C-8)"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "적치한 시각 — 입고 일시가 된다"
+     }
+    }
+   },
+   "PutawayTemporary": {
+    "type": "object",
+    "required": [
+     "warehouseId",
+     "businessDate",
+     "occurredAt"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "고른 창고 — 재고는 그 창고의 「창고 전체」 자리에 들어간다. 사유는 받지 않는다"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "영업일 — 클라이언트가 보낸다(공유계약 C-8)"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "적치한 시각 — 입고 일시가 된다"
+     }
+    }
+   },
+   "PutawayDirectResult": {
+    "type": "object",
+    "description": "적치로 생긴 입고 1건(LOT 1개 · 라인 1줄). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "required": [
+     "goodsReceiptId",
+     "goodsReceiptNo",
+     "lotId",
+     "lotNo",
+     "qty",
+     "uomCode",
+     "warehouseId",
+     "warehouseName",
+     "locationId",
+     "locationCode",
+     "locationPath",
+     "putawayModeCode",
+     "itemDesignationAdded"
+    ],
+    "properties": {
+     "goodsReceiptId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "goodsReceiptNo": {
+      "type": "string"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "description": "입고 수량 = 입고 가능 수량 전부"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "warehouseName": {
+      "type": "string"
+     },
+     "locationId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "locationCode": {
+      "type": "string"
+     },
+     "locationPath": {
+      "type": "string"
+     },
+     "putawayModeCode": {
+      "type": "string",
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY"
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 지정 위치 · 미지정 위치 적치 · 임시 적치"
+     },
+     "itemDesignationAdded": {
+      "type": "boolean",
+      "description": "미지정 위치 적치로 그 위치의 보관 품목에 이 품목을 더했는가(이미 있었거나 시스템 자리·임시 적치면 false)"
      }
     }
    }

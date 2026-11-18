@@ -6,8 +6,11 @@ import { matchErpWarehouse } from '../../core/erp-warehouse/erp-warehouse-match'
 import { PrismaService } from '../../prisma/prisma.service';
 import { inboundLineOfLot, receivableQtyOf, receivingInboundLotOf } from './lot-receivable';
 
-/** 입고 대기 LOT 상태 — `inbound-stage.ts` 의 RECEIPT_READY 와 같다(검사 대기·폐기는 아니다). 합격·무검사는 정상, IQC 불합격은 불량. */
-const STATUSES: Readonly<Record<string, { quality: string; inventory: string }>> = {
+/**
+ * 입고 대기 LOT 상태 — `inbound-stage.ts` 의 RECEIPT_READY 와 같다(검사 대기·폐기는 아니다). 합격·무검사는 정상, IQC 불합격은 불량.
+ * PDA 지시 없는 적치(피처 009)도 이 규칙으로 입고 상태를 정한다.
+ */
+export const RECEIPT_STATUS_OF_LOT: Readonly<Record<string, { quality: string; inventory: string }>> = {
   NORMAL: { quality: 'NORMAL', inventory: 'AVAILABLE' },
   // 불량은 불량창고에 두고 처분·특채를 기다린다 — 쓰지 못하게 막는 것은 LOT 상태가 한다(사용자 결정 2026-10-29).
   DEFECTIVE: { quality: 'DEFECTIVE', inventory: 'ON_HOLD' },
@@ -106,7 +109,7 @@ export class ReceiptDefaultsService {
       const lineId = lineOf.get(lotId) ?? null;
       const line = lineId === null ? undefined : lineById.get(lineId);
       const qty = receivable.get(lotId) ?? new Prisma.Decimal(0);
-      const statuses = STATUSES[lot.status_code];
+      const statuses = RECEIPT_STATUS_OF_LOT[lot.status_code];
       if (line === undefined || statuses === undefined || qty.lessThanOrEqualTo(0)
         || RECEIPT_CANCEL_STATUSES.includes(line.inbound_receipt.status_code)) {
         return { ...blank(lotId, 'NOT_RECEIPT_READY'), ...lotFields(lot) };

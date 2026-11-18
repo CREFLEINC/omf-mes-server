@@ -17,9 +17,12 @@ import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
 import { PERMISSIONS } from '../src/common/permissions/permissions';
 import { localDate } from '../src/planning/production-plan/plan-window';
+import { InventoryPostingService } from '../src/core/inventory-posting';
+import { DocumentCancelExecuteService } from '../src/logistics/document-progress/document-cancel-execute.service';
+import { postReceipt } from '../src/logistics/goods-receipt/receipt-posting';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
-  InboundLotFixture, IssuedMaterialLot, closeInboundLotFixture, issueAndReceive, passInboundLotIqc, sessionAuth, terminalAuth,
+  InboundLotFixture, IssuedMaterialLot, closeInboundLotFixture, idempotencyKey, issueAndReceive, passInboundLotIqc, sessionAuth, terminalAuth,
 } from './support/inbound-lot-fixture';
 
 const PREFIX = 'E9PD';
@@ -28,10 +31,15 @@ const DAY = localDate(new Date(), TZ);
 const WORKER_NO = `${PREFIX}-W1`;
 const LIST = '/api/logistics/putaway-pending-lots';
 const LOOKUP = '/api/logistics/putaway-pending-lots:lookup';
+const AT = `${DAY}T04:00:00.000Z`;
 
 interface PendingItem {
   lotId: number; lotNo: string; itemId: number; itemCode: string; qty: number; uomCode: string; lotStatusCode: string;
   inboundLotId?: number; inboundLotNo?: string; supplierName?: string; inboundClosedAt?: string;
+}
+interface PutawayResult {
+  goodsReceiptId: number; goodsReceiptNo: string; lotId: number; lotNo: string; qty: number; uomCode: string; warehouseId: number; warehouseName: string;
+  locationId: number; locationCode: string; locationPath: string; putawayModeCode: string; itemDesignationAdded: boolean;
 }
 interface DesignatedGroup { warehouseId: number; warehouseName: string; isDefect: boolean; locations: { locationId: number; locationCode: string; locationPath: string }[] }
 interface LookupBody {
@@ -83,7 +91,7 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
       app, issuer: terminalAuth(await terminalToken('POP', ids.p1), WORKER_NO), receiver: terminalAuth(mobile, WORKER_NO),
       businessDate: DAY, keys, inspector: sessionAuth(cookie), prisma,
     };
-    il1 = await passed(ids.s1, ids.x, 3);
+    il1 = await passed(ids.s1, ids.x, 12);
     il2 = await closedLots(ids.s2, ids.x, 2);
     await prisma.lot.updateMany({ where: { lot_id: { in: il2.map((lot) => BigInt(lot.lotId)) } }, data: { status_code: 'DEFECTIVE' } });
     il3 = (await issueAndReceive(fx, batch(ids.s3, ids.x, 1))).lots;
@@ -102,7 +110,7 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
 
   // ── 목록 · LOT 확인 · 위치 판정(S3) ─────────────────────────────
 
-  it('US1-1 Q1 US5-3 US5-7 단말 목록 — IL-1 3개·IL-2 2개(불량)·IL-5·이전 흐름 LOT, 입하 중·검사 대기·처분·제품·다른 공장 LOT 은 없다', async () => {
+  it('US1-1 Q1 US5-3 US5-7 단말 목록 — IL-1 전부·IL-2 2개(불량)·IL-5·이전 흐름 LOT, 입하 중·검사 대기·처분·제품·다른 공장 LOT 은 없다', async () => {
     const response = await asMobile(request(app.getHttpServer()).get(LIST)).expect(200);
     const items = response.body.items as PendingItem[];
     const lotNos = items.map((item) => item.lotNo);
@@ -232,7 +240,239 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
     expect(body).toMatchObject({ found: true, eligible: false, reasonCode: 'OTHER_PLANT' });
   });
 
+  // ── 적치 · 임시 적치(S4) ──────────────────────────────────────
+
+  it('US1-3 US1-4 US1-5 Q3 SC-003 FR-033 지정 위치 R1 적치 — 입고 1건·라인 1줄·DESIGNATED·원장 to 만·STAGING 없음·작업자 감사·지시 없음·목록에서 빠짐', async () => {
+    const lot = il1[0];
+    const body = (await putaway(lot.lotId, { locationId: Number(ids.R1) }).expect(201)).body as PutawayResult;
+
+    expect(body).toMatchObject({
+      lotId: lot.lotId, lotNo: lot.lotNo, qty: lot.lotQty, uomCode: 'EA', warehouseId: Number(ids.a), locationId: Number(ids.R1),
+      locationCode: codes.R1, locationPath: `${PREFIX} 창고 A › Z01 구역 › R1 랙`, putawayModeCode: 'DESIGNATED', itemDesignationAdded: false,
+    });
+    const receipts = await prisma.goods_receipt.findMany({ where: { goods_receipt_line: { some: { lot_id: BigInt(lot.lotId) } } }, include: { goods_receipt_line: true } });
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({ status_code: 'POSTED', receipt_type_code: 'MATERIAL', warehouse_id: ids.a, source_document_type_code: 'INBOUND_RECEIPT', created_by: null });
+    expect(receipts[0].goods_receipt_line).toHaveLength(1);
+    expect(receipts[0].goods_receipt_line[0]).toMatchObject({
+      destination_location_id: ids.R1, putaway_mode_code: 'DESIGNATED', quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE',
+    });
+    expect(Number(receipts[0].goods_receipt_line[0].receipt_qty)).toBe(lot.lotQty);
+    const ledger = await prisma.inventory_transaction_line.findMany({ where: { lot_id: BigInt(lot.lotId) }, include: { inventory_transaction: true } });
+    expect(ledger.map((line) => [line.inventory_transaction.transaction_type_code, line.from_location_id, line.to_location_id]))
+      .toEqual([['GOODS_RECEIPT', null, ids.R1]]);
+    const balances = await prisma.inventory_balance.findMany({ where: { lot_id: BigInt(lot.lotId) } });
+    expect(balances.map((row) => [row.location_id, Number(row.on_hand_qty)])).toEqual([[ids.R1, lot.lotQty]]);
+    expect(await prisma.putaway_task.count({ where: { lot_id: BigInt(lot.lotId) } })).toBe(0);
+    expect(await prisma.audit_event.count({ where: { target_type_code: 'GOODS_RECEIPT', target_id: BigInt(body.goodsReceiptId) } })).toBe(1);
+    // 새 흐름 입하 LOT 은 입고 때 ERP 로 보내지 않는다(최종 마감 때 · #265).
+    expect(await prisma.integration_message.count({ where: { message_key: `IF-GR-SEND:${body.goodsReceiptNo}` } })).toBe(0);
+
+    const left = ((await asMobile(request(app.getHttpServer()).get(LIST)).expect(200)).body.items as PendingItem[]).map((item) => item.lotNo);
+    expect(left).not.toContain(lot.lotNo);
+    expect(left).toContain(il1[1].lotNo);
+    expect(await lookup(lot.lotNo)).toMatchObject({ eligible: false, reasonCode: 'ALREADY_PUT_AWAY', putAway: { locationCode: codes.R1, putawayModeCode: 'DESIGNATED' } });
+  });
+
+  it('같은 Idempotency-Key 재전송 → 같은 응답, 입고 1건', async () => {
+    const key = idempotencyKey(fx);
+    const first = (await putaway(il1[11].lotId, { locationId: Number(ids.R1) }, key).expect(201)).body as PutawayResult;
+    const again = (await putaway(il1[11].lotId, { locationId: Number(ids.R1) }, key).expect(201)).body as PutawayResult;
+    expect(again).toEqual(first);
+    expect(await prisma.goods_receipt_line.count({ where: { lot_id: BigInt(il1[11].lotId) } })).toBe(1);
+  });
+
+  it('FR-030 Q16 SC-004 같은 LOT 동시 적치 두 번 → 201 하나·409 ALREADY_PUT_AWAY 하나, 입고 1건', async () => {
+    const lot = il1[1].lotId;
+    const [a, b] = await Promise.all([putaway(lot, { locationId: Number(ids.R1) }), putaway(lot, { locationId: Number(ids.R1) })]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    const rejected = a.status === 409 ? a : b;
+    expect(JSON.stringify(rejected.body)).toContain('ALREADY_PUT_AWAY');
+    expect(JSON.stringify(rejected.body)).toContain('R1 랙');
+    expect(await prisma.goods_receipt_line.count({ where: { lot_id: BigInt(lot) } })).toBe(1);
+  });
+
+  it('US2-1 US2-2 Q6 미지정 위치 R2 — 확인 없이 409 UNDESIGNATED_NEEDS_CONFIRM, 확인하면 UNDESIGNATED·품목 지정이 더해진다', async () => {
+    const lot = il1[2].lotId;
+    const refused = await putaway(lot, { locationId: Number(ids.R2) }).expect(409);
+    expect(JSON.stringify(refused.body)).toContain('UNDESIGNATED_NEEDS_CONFIRM');
+    expect(await prisma.goods_receipt_line.count({ where: { lot_id: BigInt(lot) } })).toBe(0);
+
+    const body = (await putaway(lot, { locationId: Number(ids.R2), confirmUndesignated: true }).expect(201)).body as PutawayResult;
+    expect(body).toMatchObject({ putawayModeCode: 'UNDESIGNATED', itemDesignationAdded: true, warehouseId: Number(ids.a) });
+    expect(await itemsOf(ids.R2)).toEqual([ids.x]);
+    const added = await prisma.location_item.findUniqueOrThrow({ where: { location_id_item_id: { location_id: ids.R2, item_id: ids.x } } });
+    expect(added.created_by).toBeNull();
+    expect(await prisma.audit_event.count({ where: { target_type_code: 'LOCATION_ITEM', target_id: ids.R2 } })).toBe(1);
+  });
+
+  it('US2-3 다른 창고 위치(B 「창고 전체」) → 입고 창고 = 그 위치의 창고', async () => {
+    const body = (await putaway(il1[3].lotId, { locationId: Number(ids.BWHOLE) }).expect(201)).body as PutawayResult;
+    expect(body).toMatchObject({ warehouseId: Number(ids.b), locationCode: codes.BWHOLE, putawayModeCode: 'DESIGNATED' });
+  });
+
+  it('US2-4 US2-5 FR-019 Q7 막히는 위치 — 없음·꺼짐·다른 공장·적치 대기·맨 아래 아님은 400 판정 코드, 기록 없음', async () => {
+    const lot = il1[7].lotId;
+    for (const [locationId, code] of [
+      [99999999, 'NOT_FOUND'], [ids.R7, 'INACTIVE'], [ids.C1, 'OTHER_PLANT'], [ids.ASTAGING, 'STAGING'], [ids.Z01, 'NOT_LEAF'],
+    ] as const) {
+      const response = await putaway(lot, { locationId: Number(locationId), confirmUndesignated: true }).expect(400);
+      expect(JSON.stringify(response.body)).toContain(code);
+    }
+    expect(await prisma.goods_receipt_line.count({ where: { lot_id: BigInt(lot) } })).toBe(0);
+  });
+
+  it('US2-6 US2-7 Q8 SC-007 다른 품목만 지정된 R3({Y}) — 확인 뒤 적치·R3 = {Y, X}, 다음 LOT 은 확인 없이 DESIGNATED', async () => {
+    expect(await check(il1[4].lotId, codes.R3)).toMatchObject({ verdictCode: 'UNDESIGNATED' });
+    await putaway(il1[4].lotId, { locationId: Number(ids.R3), confirmUndesignated: true }).expect(201);
+    expect(await itemsOf(ids.R3)).toEqual([ids.x, ids.y].sort());
+
+    expect(await check(il1[5].lotId, codes.R3)).toMatchObject({ verdictCode: 'DESIGNATED' });
+    expect((await lookup(il1[5].lotNo)).designated?.find((group) => group.warehouseId === Number(ids.a))?.locations.map((l) => l.locationCode)).toContain(codes.R3);
+    const body = (await putaway(il1[5].lotId, { locationId: Number(ids.R3) }).expect(201)).body as PutawayResult;
+    expect(body).toMatchObject({ putawayModeCode: 'DESIGNATED', itemDesignationAdded: false });
+  });
+
+  it('Q24 FR-017a 나뉜 창고 A 의 「창고 전체」 미지정 적치 — 기록되지만 품목 지정은 더하지 않는다', async () => {
+    const body = (await putaway(il1[6].lotId, { locationId: Number(ids.AWHOLE), confirmUndesignated: true }).expect(201)).body as PutawayResult;
+    expect(body).toMatchObject({ putawayModeCode: 'UNDESIGNATED', itemDesignationAdded: false });
+    expect(await itemsOf(ids.AWHOLE)).toEqual([]);
+  });
+
+  it('US2-8 Q27 FR-017d 「지정 품목만 받기」 R5({Y})에 X — 확인 표시가 있어도 400 RESTRICTED_LOCATION, 지정 그대로', async () => {
+    await prisma.location.update({ where: { location_id: ids.R5 }, data: { item_restricted: true } });
+    try {
+      const response = await putaway(il1[7].lotId, { locationId: Number(ids.R5), confirmUndesignated: true }).expect(400);
+      expect(JSON.stringify(response.body)).toContain('RESTRICTED_LOCATION');
+      expect(await itemsOf(ids.R5)).toEqual([ids.y]);
+    } finally {
+      await prisma.location.update({ where: { location_id: ids.R5 }, data: { item_restricted: false } });
+    }
+  });
+
+  it('US2-9 Q28 판정 뒤 R6 옵션을 켜고 기록 → 400 RESTRICTED_LOCATION, LOT 은 목록에 남고 R6 지정 그대로 {Y}', async () => {
+    expect(await check(il1[7].lotId, codes.R6)).toMatchObject({ verdictCode: 'UNDESIGNATED' });
+    await prisma.location.update({ where: { location_id: ids.R6 }, data: { item_restricted: true } });
+    try {
+      const response = await putaway(il1[7].lotId, { locationId: Number(ids.R6), confirmUndesignated: true }).expect(400);
+      expect(JSON.stringify(response.body)).toContain('RESTRICTED_LOCATION');
+      expect(await itemsOf(ids.R6)).toEqual([ids.y]);
+      const left = ((await asMobile(request(app.getHttpServer()).get(LIST)).expect(200)).body.items as PendingItem[]).map((item) => item.lotNo);
+      expect(left).toContain(il1[7].lotNo);
+    } finally {
+      await prisma.location.update({ where: { location_id: ids.R6 }, data: { item_restricted: false } });
+    }
+  });
+
+  it('US3-3 US3-4 Q10 불량 양방향 — 확인 표시가 있어도 막히고 품목 지정은 더해지지 않는다', async () => {
+    const defect = await putaway(il2[1].lotId, { locationId: Number(ids.R2), confirmUndesignated: true }).expect(400);
+    expect(JSON.stringify(defect.body)).toContain('DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE');
+    const normal = await putaway(il1[7].lotId, { locationId: Number(ids.D1), confirmUndesignated: true }).expect(400);
+    expect(JSON.stringify(normal.body)).toContain('NORMAL_LOT_IN_DEFECT_WAREHOUSE');
+    expect(await itemsOf(ids.D1)).toEqual([ids.x]);
+  });
+
+  it('US3-2 Q9 FR-033 불합격 LOT 을 불량창고 D1 에 — 라인 품질 DEFECTIVE·재고 ON_HOLD, ERP 적재 없음', async () => {
+    const body = (await putaway(il2[0].lotId, { locationId: Number(ids.D1) }).expect(201)).body as PutawayResult;
+    expect(body).toMatchObject({ warehouseId: Number(ids.d), putawayModeCode: 'DESIGNATED' });
+    const line = await prisma.goods_receipt_line.findFirstOrThrow({ where: { lot_id: BigInt(il2[0].lotId) } });
+    expect(line).toMatchObject({ quality_status_code: 'DEFECTIVE', inventory_status_code: 'ON_HOLD' });
+    expect(await prisma.integration_message.count({ where: { message_key: `IF-GR-SEND:${body.goodsReceiptNo}` } })).toBe(0);
+  });
+
+  it('US4-2 Q11 Q24 임시 적치 — 창고 B 「창고 전체」·TEMPORARY·사유 없음·품목 지정 안 더함', async () => {
+    const body = (await temporary(il1[8].lotId, { warehouseId: Number(ids.b) }).expect(201)).body as PutawayResult;
+    expect(body).toMatchObject({ warehouseId: Number(ids.b), locationCode: codes.BWHOLE, putawayModeCode: 'TEMPORARY', itemDesignationAdded: false });
+    const line = await prisma.goods_receipt_line.findFirstOrThrow({ where: { lot_id: BigInt(il1[8].lotId) }, include: { goods_receipt: true } });
+    expect(line.putaway_mode_code).toBe('TEMPORARY');
+    expect(line.goods_receipt.reason_code).toBeNull();
+    expect(await itemsOf(ids.BWHOLE)).toEqual([]);
+  });
+
+  it('US4-4 임시 적치 창고 판정 — 불량 LOT 은 불량창고만, 정상 LOT 은 불량창고 불가, 없음·꺼짐·다른 공장 400', async () => {
+    expect(JSON.stringify((await temporary(il2[1].lotId, { warehouseId: Number(ids.b) }).expect(400)).body)).toContain('DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE');
+    expect(JSON.stringify((await temporary(il1[7].lotId, { warehouseId: Number(ids.d) }).expect(400)).body)).toContain('NORMAL_LOT_IN_DEFECT_WAREHOUSE');
+    expect(JSON.stringify((await temporary(il1[7].lotId, { warehouseId: 99999999 }).expect(400)).body)).toContain('NOT_FOUND');
+    expect(JSON.stringify((await temporary(il1[7].lotId, { warehouseId: Number(ids.c) }).expect(400)).body)).toContain('OTHER_PLANT');
+    expect(JSON.stringify((await temporary(il1[7].lotId, { warehouseId: Number(ids.e) }).expect(400)).body)).toContain('INACTIVE');
+    const body = (await temporary(il2[1].lotId, { warehouseId: Number(ids.d) }).expect(201)).body as PutawayResult;
+    expect(body).toMatchObject({ warehouseId: Number(ids.d), putawayModeCode: 'TEMPORARY' });
+  });
+
+  it('FR-041 Q22 쓰기 권한 — 적치는 M-01-05, 임시 적치는 M-01-07', async () => {
+    const lot = il1[7].lotId;
+    await request(app.getHttpServer()).post(`${LIST}/${String(lot)}:putaway`).set('Cookie', users.m0107)
+      .set('Idempotency-Key', idempotencyKey(fx)).send({ locationId: Number(ids.R1), businessDate: DAY, occurredAt: AT }).expect(403);
+    await request(app.getHttpServer()).post(`${LIST}/${String(lot)}:putaway-temporary`).set('Cookie', users.m0105)
+      .set('Idempotency-Key', idempotencyKey(fx)).send({ warehouseId: Number(ids.b), businessDate: DAY, occurredAt: AT }).expect(403);
+    await request(app.getHttpServer()).post(`${LIST}/${String(lot)}:putaway`).set('Cookie', users.none)
+      .set('Idempotency-Key', idempotencyKey(fx)).send({ locationId: Number(ids.R1), businessDate: DAY, occurredAt: AT }).expect(403);
+    expect(await prisma.goods_receipt_line.count({ where: { lot_id: BigInt(lot) } })).toBe(0);
+  });
+
+  it('Q17 FR-035 판정 확정이 취소돼 검사 대기로 돌아간 LOT 의 기록 → 409 INSPECTION', async () => {
+    await prisma.lot.update({ where: { lot_id: BigInt(il1[7].lotId) }, data: { status_code: 'INSPECTION_PENDING' } });
+    try {
+      const response = await putaway(il1[7].lotId, { locationId: Number(ids.R1) }).expect(409);
+      expect(JSON.stringify(response.body)).toContain('INSPECTION');
+    } finally {
+      await prisma.lot.update({ where: { lot_id: BigInt(il1[7].lotId) }, data: { status_code: 'NORMAL' } });
+    }
+  });
+
+  it('US6-2 Q15 이전 흐름 LOT(입하 LOT 없음) 적치 → 입고·ERP 구매입고 적재 1건', async () => {
+    const body = (await putaway(Number(extra.legacy.lotId), { locationId: Number(ids.R2), confirmUndesignated: true }).expect(201)).body as PutawayResult;
+    expect(await prisma.integration_message.count({ where: { message_key: `IF-GR-SEND:${body.goodsReceiptNo}` } })).toBe(1);
+  });
+
+  it('R-11 FR-032 Q18 적치 직후 입고 취소 → 역처리는 그 위치, LOT 은 목록에 다시 나온다', async () => {
+    const lot = il1[9];
+    const body = (await putaway(lot.lotId, { locationId: Number(ids.R1) }).expect(201)).body as PutawayResult;
+    await prisma.goods_receipt.update({ where: { goods_receipt_id: BigInt(body.goodsReceiptId) }, data: { status_code: 'CANCEL_REQUESTED' } });
+    const version = (await prisma.goods_receipt.findUniqueOrThrow({ where: { goods_receipt_id: BigInt(body.goodsReceiptId) } })).version_no;
+    const cancelled = await app.get(DocumentCancelExecuteService).cancel('GOODS_RECEIPT', BigInt(body.goodsReceiptId), version, Number(ids.user));
+    expect(cancelled.statusCode).toBe('CANCELLED');
+    const balance = await prisma.inventory_balance.findMany({ where: { lot_id: BigInt(lot.lotId) } });
+    expect(balance.map((row) => [row.location_id, Number(row.on_hand_qty)])).toEqual([[ids.R1, 0]]);
+    expect(await lookup(lot.lotNo)).toMatchObject({ eligible: true });
+  });
+
+  it('US5-6 US6-1 SC-005 Q14 배포 전 구매 입고 지시가 있는 LOT — 목록에 없고 확인은 HAS_TASK·지시 id', async () => {
+    const lot = il1[10];
+    await prisma.$transaction((tx) => postReceipt(tx, app.get(InventoryPostingService), {
+      receiptTypeCode: 'MATERIAL', plantId: Number(ids.p1), warehouseId: Number(ids.a), receiptDatetime: AT, businessDate: DAY,
+      lines: [{ itemId: Number(ids.x), lotId: lot.lotId, receiptQty: lot.lotQty, uomId: Number(ids.ea), qualityStatusCode: 'NORMAL',
+        inventoryStatusCode: 'AVAILABLE', destinationLocationId: Number(ids.ASTAGING) }],
+    }, Number(ids.user), `${PREFIX}-GR-OLD`, [`${PREFIX}-PT-OLD`]));
+    const task = await prisma.putaway_task.findFirstOrThrow({ where: { lot_id: BigInt(lot.lotId) } });
+    const body = await lookup(lot.lotNo);
+    expect(body).toMatchObject({ eligible: false, reasonCode: 'HAS_TASK', putawayTaskIds: [Number(task.putaway_task_id)] });
+    const left = ((await asMobile(request(app.getHttpServer()).get(LIST)).expect(200)).body.items as PendingItem[]).map((item) => item.lotNo);
+    expect(left).not.toContain(lot.lotNo);
+  });
+
+  it('세션 호출도 적치한다(created_by = 계정)', async () => {
+    const response = await request(app.getHttpServer()).post(`${LIST}/${String(il1[7].lotId)}:putaway`).set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey(fx)).send({ locationId: Number(ids.R1), businessDate: DAY, occurredAt: AT }).expect(201);
+    const receipt = await prisma.goods_receipt.findUniqueOrThrow({ where: { goods_receipt_id: BigInt((response.body as PutawayResult).goodsReceiptId) } });
+    expect(receipt.created_by).toBe(ids.user);
+  });
+
   // ── 도우미 ─────────────────────────────────────────────────────
+
+  function putaway(lotId: number, body: Record<string, unknown>, key = idempotencyKey(fx)): request.Test {
+    return asMobile(request(app.getHttpServer()).post(`${LIST}/${String(lotId)}:putaway`)).set('Idempotency-Key', key)
+      .send({ businessDate: DAY, occurredAt: AT, ...body });
+  }
+
+  function temporary(lotId: number, body: Record<string, unknown>): request.Test {
+    return asMobile(request(app.getHttpServer()).post(`${LIST}/${String(lotId)}:putaway-temporary`)).set('Idempotency-Key', idempotencyKey(fx))
+      .send({ businessDate: DAY, occurredAt: AT, ...body });
+  }
+
+  async function itemsOf(locationId: bigint): Promise<bigint[]> {
+    return (await prisma.location_item.findMany({ where: { location_id: locationId }, orderBy: { item_id: 'asc' } })).map((row) => row.item_id);
+  }
 
   function asMobile(test: request.Test): request.Test {
     return test.set('Authorization', `Bearer ${mobile}`).set('X-Worker-No', WORKER_NO);
@@ -296,7 +536,9 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
         warehouse_type_code: 'MATERIAL', management_level_code: 'LOCATION', is_defect: isDefect },
     });
     for (const system of await prisma.location.findMany({ where: { warehouse_id: row.warehouse_id, system_role_code: { not: null } } })) {
-      codes[`${key}${system.system_role_code === 'WAREHOUSE_WHOLE' ? 'WHOLE' : 'STAGING'}`] = system.location_code;
+      const name = `${key}${system.system_role_code === 'WAREHOUSE_WHOLE' ? 'WHOLE' : 'STAGING'}`;
+      codes[name] = system.location_code;
+      ids[name] = system.location_id;
     }
     return row.warehouse_id;
   }
@@ -343,6 +585,8 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
     ids.b = await warehouse(ids.p1, 'B');
     ids.d = await warehouse(ids.p1, 'D', true);
     ids.c = await warehouse(ids.p2, 'C');
+    ids.e = await warehouse(ids.p1, 'E');
+    await prisma.warehouse.update({ where: { warehouse_id: ids.e }, data: { is_active: false } });
     const zone = await location(ids.a, 'Z01', 'Z01 구역');
     await location(ids.a, 'R1', 'R1 랙', zone, [ids.x]);
     await location(ids.a, 'R2', 'R2 랙', zone);
