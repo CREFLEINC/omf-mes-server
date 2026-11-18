@@ -136,13 +136,14 @@ END $$;
 -- 도착지를 정한다(src/logistics/destination-location.ts).
 INSERT INTO mdm.location
   (warehouse_id, location_code, location_name, location_type_code, created_by)
-SELECT context.warehouse_id, 'S240-01', '자재창고 기본 위치', 'DEFAULT', context.admin_user_id
+SELECT context.warehouse_id, warehouse.location_prefix || '-S240-01', '자재창고 기본 위치', 'DEFAULT', context.admin_user_id
 FROM scenario_context context
+JOIN mdm.warehouse warehouse ON warehouse.warehouse_id = context.warehouse_id
 WHERE NOT EXISTS (
   SELECT 1 FROM mdm.location location
   WHERE location.warehouse_id = context.warehouse_id AND location.is_active
 )
-ON CONFLICT (warehouse_id, location_code) DO NOTHING;
+ON CONFLICT (location_code) DO NOTHING;
 
 \echo 'OMF MES scenario seed: 제품 기초재고 (GR-SEED-0001)'
 -- 기초재고는 제품입고(PRODUCT) 전표로 싣는다. 재고 조정은 서버가 «없는 재고 차원»을 만들지 않아
@@ -175,7 +176,7 @@ BEGIN
   SELECT location_id INTO target_location_id
   FROM mdm.location
   WHERE warehouse_id = context.warehouse_id AND is_active
-  ORDER BY (location_code = 'S240-01') DESC, location_id
+  ORDER BY (location_code LIKE '%-S240-01') DESC, location_id
   LIMIT 1;
   IF target_location_id IS NULL THEN
     RAISE EXCEPTION 'S240 에 활성 위치가 없습니다';

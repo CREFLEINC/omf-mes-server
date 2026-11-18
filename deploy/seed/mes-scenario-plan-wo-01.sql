@@ -263,12 +263,12 @@ UPDATE mdm.warehouse warehouse
    AND warehouse.management_level_code = 'WAREHOUSE';
 
 INSERT INTO mdm.location (warehouse_id, location_code, location_name, location_type_code, created_by)
-SELECT warehouse.warehouse_id, source.location_code, source.location_name, 'DEFAULT', context.admin_user_id
+SELECT warehouse.warehouse_id, warehouse.location_prefix || '-' || source.location_code, source.location_name, 'DEFAULT', context.admin_user_id
 FROM pw_location source
 CROSS JOIN pw_context context
 JOIN mdm.warehouse warehouse ON warehouse.plant_id = context.plant_id AND warehouse.warehouse_code = source.warehouse_code
 ORDER BY source.seq
-ON CONFLICT (warehouse_id, location_code) DO NOTHING;
+ON CONFLICT (location_code) DO NOTHING;
 
 \echo 'PLAN-WO-01 seed: A 완성형 — 라우팅·공정 구성'
 INSERT INTO planning.routing
@@ -327,7 +327,7 @@ BEGIN
   SELECT * INTO context FROM pw_context;
   SELECT location_id INTO target_location_id
   FROM mdm.location
-  WHERE warehouse_id = context.material_warehouse_id AND location_code = 'S230-01' AND is_active;
+  WHERE warehouse_id = context.material_warehouse_id AND location_code LIKE '%-S230-01' AND is_active;
   IF target_location_id IS NULL THEN
     RAISE EXCEPTION 'S230-01 활성 위치가 없습니다';
   END IF;
@@ -501,7 +501,7 @@ BEGIN
   FROM pw_location source
   JOIN mdm.warehouse warehouse ON warehouse.plant_id = context.plant_id AND warehouse.warehouse_code = source.warehouse_code
   JOIN mdm.location location ON location.warehouse_id = warehouse.warehouse_id
-   AND location.location_code = source.location_code AND location.is_active;
+   AND location.location_code = warehouse.location_prefix || '-' || source.location_code AND location.is_active;
   IF actual_count <> 4 THEN RAISE EXCEPTION '위치: 4곳이어야 하는데 %곳', actual_count; END IF;
 
   SELECT count(*) INTO actual_count
@@ -565,7 +565,7 @@ SELECT 'location', location.location_code, warehouse.warehouse_code, warehouse.m
 FROM mdm.location location
 JOIN mdm.warehouse warehouse ON warehouse.warehouse_id = location.warehouse_id
 JOIN pw_context context ON context.plant_id = warehouse.plant_id
-JOIN pw_location source ON source.location_code = location.location_code
+JOIN pw_location source ON warehouse.location_prefix || '-' || source.location_code = location.location_code
 UNION ALL
 SELECT 'routing-op', operation.operation_seq::text, operation.operation_name, process.process_code
 FROM planning.routing_operation operation
