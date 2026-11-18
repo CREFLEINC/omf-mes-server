@@ -39,6 +39,8 @@ export interface GoodsReceiptLineCreate {
   inventoryStatusCode: string;
   destinationLocationId: number;
   originalShipmentLotAllocationId?: number | null;
+  /** PDA 지시 없는 적치의 적치 방식(`GOODS_RECEIPT_PUTAWAY_MODE` · 피처 009). 그 밖의 입고는 싣지 않는다(NULL). */
+  putawayModeCode?: string | null;
 }
 
 export interface GoodsReceiptCreate {
@@ -104,6 +106,7 @@ export async function postReceipt(
         inventory_status_code: line.inventoryStatusCode,
         destination_location_id: line.destinationLocationId,
         original_shipment_lot_allocation_id: line.originalShipmentLotAllocationId ?? null,
+        putaway_mode_code: line.putawayModeCode ?? null,
         created_by: appUserId == null ? null : BigInt(appUserId),
       },
     });
