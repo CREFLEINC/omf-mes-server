@@ -357,6 +357,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /logistics/putaway-pending-lots': ['M-01-05', 'M-01-07'],
   'GET /logistics/putaway-pending-lots:lookup': ['M-01-05', 'M-01-07'],
   'GET /logistics/putaway-pending-lots/{lotId}/location-check': ['M-01-05'],
+  // 적치(지정·미지정 위치 — 미지정이면 보관 품목 자동 추가 포함)는 M-01-05, 창고만 고르는 임시 적치는 M-01-07.
+  'POST /logistics/putaway-pending-lots/{lotId}:putaway': ['M-01-05'],
+  'POST /logistics/putaway-pending-lots/{lotId}:putaway-temporary': ['M-01-07'],
 
   // `W-06-09` ERP-MES I/F 연계정의 관리 — §3 이 「정의 추가」만 적어 수정·활성 전이·연결
   // 시험이 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.

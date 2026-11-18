@@ -47,6 +47,8 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/putaway-pending-lots': ['MOBILE'],
   'GET /logistics/putaway-pending-lots:lookup': ['MOBILE'],
   'GET /logistics/putaway-pending-lots/{lotId}/location-check': ['MOBILE'],
+  'POST /logistics/putaway-pending-lots/{lotId}:putaway': ['MOBILE'],
+  'POST /logistics/putaway-pending-lots/{lotId}:putaway-temporary': ['MOBILE'],
   'GET /logistics/shipment-lot-allocations': ['POP', 'MOBILE'],
   'GET /logistics/shipment-requests': ['MOBILE'],
   'GET /logistics/shipments': ['POP'],
@@ -223,6 +225,11 @@ export async function assertTerminalLogisticsScope(
     case 'POST /logistics/putaway-tasks/{putawayTaskId}:complete':
     case 'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary':
       await Promise.all([putaway(p.putawayTaskId)]); break;
+    // 지시 없는 적치(피처 009) — LOT·위치·창고의 공장은 서비스가 판정 코드(OTHER_PLANT)로 답한다. 아래 본문 자원 검사에서도 뺀다
+    //   (다른 공장 위치를 401 이 아니라 400 OTHER_PLANT 로 돌려줘야 PDA 가 판정 문구를 보인다).
+    case 'POST /logistics/putaway-pending-lots/{lotId}:putaway':
+    case 'POST /logistics/putaway-pending-lots/{lotId}:putaway-temporary':
+      return;
     case 'POST /logistics/recycle-entries':
       // 재생재 본문에는 plantId가 없다. 실제 창고/위치 소유 공장으로 검증한다.
       await warehouse(b.warehouseId); break;

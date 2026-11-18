@@ -1,12 +1,17 @@
-import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Param, ParseIntPipe, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { PagedResponse } from '../../common/pagination';
+import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { PendingLotView } from './pending-lot-query';
 import { LocationCheckView, PendingLotLookup, PendingLotQuery, PutawayDirectQueryService } from './putaway-direct.query.service';
+import { PutawayDirectBody, PutawayDirectResult, PutawayDirectService, PutawayTemporaryBody } from './putaway-direct.service';
+
+const PUTAWAY = 'POST /logistics/putaway-pending-lots/{lotId}:putaway';
+const PUTAWAY_TEMPORARY = 'POST /logistics/putaway-pending-lots/{lotId}:putaway-temporary';
 
 /**
  * 적치 지시 없는 구매 입고 적치(피처 009 · omf-all-around#294) — 화면 M-01-05·M-01-07.
@@ -14,7 +19,7 @@ import { LocationCheckView, PendingLotLookup, PendingLotQuery, PutawayDirectQuer
  */
 @Controller('logistics')
 export class PutawayDirectController {
-  constructor(private readonly queries: PutawayDirectQueryService) {}
+  constructor(private readonly queries: PutawayDirectQueryService, private readonly writes: PutawayDirectService) {}
 
   @Get('putaway-pending-lots')
   @Contract('GET /logistics/putaway-pending-lots')
@@ -38,6 +43,18 @@ export class PutawayDirectController {
     @Req() request: Request, @Param('lotId', ParseIntPipe) lotId: number, @Query('locationCode') locationCode: string,
   ): Promise<LocationCheckView> {
     return this.queries.locationCheck(plantOf(request, undefined), lotId, locationCode);
+  }
+
+  @Post('putaway-pending-lots/:lotId\\:putaway')
+  @Contract(PUTAWAY)
+  putaway(@Req() request: Request, @Param('lotId', ParseIntPipe) lotId: number, @Body() body: PutawayDirectBody): Promise<PutawayDirectResult> {
+    return this.writes.putaway(request, lotId, body, logisticsWriteActorOf(request, PUTAWAY), plantOf(request, undefined));
+  }
+
+  @Post('putaway-pending-lots/:lotId\\:putaway-temporary')
+  @Contract(PUTAWAY_TEMPORARY)
+  putawayTemporary(@Req() request: Request, @Param('lotId', ParseIntPipe) lotId: number, @Body() body: PutawayTemporaryBody): Promise<PutawayDirectResult> {
+    return this.writes.putawayTemporary(request, lotId, body, logisticsWriteActorOf(request, PUTAWAY_TEMPORARY), plantOf(request, undefined));
   }
 }
 
