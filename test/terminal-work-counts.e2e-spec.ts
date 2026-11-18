@@ -20,6 +20,7 @@ import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const ROOT = 'E2EHOWC';
 const PREFIX = `${ROOT}${randomUUID().slice(0, 6).toUpperCase()}`;
@@ -53,15 +54,20 @@ describe('단말 작업 수 (e2e)', () => {
     expect(Object.keys(counts).sort()).toEqual(['materialPicking', 'putaway', 'shipmentPicking', 'stockTransferArrival']);
     expect(contractValidator()(counts)).toBe(true);
 
-    expect(counts.putaway).toBe(await total('M1', '/api/logistics/putaway-tasks', { statusCode: 'PENDING', size: 100 }));
+    // D-11 US5-7 — 적치 = PENDING 지시 + 적치 대기 LOT(공장 기준 — LOT 은 아직 창고에 없다 · 피처 009).
+    expect(counts.putaway).toBe(await total('M1', '/api/logistics/putaway-tasks', { statusCode: 'PENDING', size: 100 })
+      + await total('M1', '/api/logistics/putaway-pending-lots', { size: 100 }));
     expect(counts.materialPicking).toBe(await materialPickingListed('M1'));
     expect(counts.stockTransferArrival).toBe(await total('M1', '/api/logistics/stock-transfers', { inTransitOnly: 'true', size: 100 }));
     // 확정 항목 5 — 목록은 피킹 끝난 지시도 보이지만 배지는 남은 일(피킹 미완료)만 센다.
     const requests = await list('M1', '/api/logistics/shipment-requests', { shipDateFrom: TODAY, shipDateTo: TODAY, size: 100 });
     expect(counts.shipmentPicking).toBe(requests.items.filter((r: { pickingStatusCode?: string; pickingProgressCode?: string }) => isPickingOpen(r)).length);
 
-    // 고정값 — 창고 A 의 것만 센다(창고 B 의 같은 일은 세지 않는다).
-    expect(counts).toMatchObject({ putaway: 1, materialPicking: 1, stockTransferArrival: 1, shipmentPicking: 1 });
+    // 고정값 — 창고 A 의 것만 센다(창고 B 의 같은 일은 세지 않는다). 적치는 창고 A 지시 1 + 공장의 적치 대기 LOT(공장 전체 —
+    // 이 스위트가 재고 없이 만든 입하 원천 LOT 이 모두 든다 · 피처 009).
+    const pending = await total('M1', '/api/logistics/putaway-pending-lots', { size: 100 });
+    expect(pending).toBeGreaterThanOrEqual(1);
+    expect(counts).toMatchObject({ putaway: 1 + pending, materialPicking: 1, stockTransferArrival: 1, shipmentPicking: 1 });
   });
 
   it('FR-017 창고가 지정된 단말의 목록도 같은 창고로 걸리고, 창고 없는 단말 목록은 공장 전체다', async () => {
@@ -75,8 +81,10 @@ describe('단말 작업 수 (e2e)', () => {
 
   it('US3-8 FR-016 창고 없는 단말 M3 는 공장 전체 수다', async () => {
     const counts = await countsOf('M3');
-    expect(counts).toMatchObject({ putaway: 2, materialPicking: 2, stockTransferArrival: 2, shipmentPicking: 1 });
-    expect(counts.putaway).toBe(await total('M3', '/api/logistics/putaway-tasks', { statusCode: 'PENDING', size: 100 }));
+    const pending = await total('M3', '/api/logistics/putaway-pending-lots', { size: 100 });
+    expect(counts).toMatchObject({ putaway: 2 + pending, materialPicking: 2, stockTransferArrival: 2, shipmentPicking: 1 });
+    expect(counts.putaway).toBe(await total('M3', '/api/logistics/putaway-tasks', { statusCode: 'PENDING', size: 100 })
+      + await total('M3', '/api/logistics/putaway-pending-lots', { size: 100 }));
   });
 
   it('US3-6 SC-003 POP P1 — 다섯 키가 같은 단말로 부른 각 목록의 건수와 같다', async () => {
@@ -196,6 +204,11 @@ describe('단말 작업 수 (e2e)', () => {
 
     // 적치 — 창고 A·B 에 입고 1건씩(적치 지시 PENDING 1건씩).
     for (const name of ['A', 'B']) await receive(ids[`wh${name}`], ids[`loc${name}`]);
+    // 적치 대기 LOT 하나(피처 009) — 입하에서 왔고 입고가 없다. 공장을 다시 쓰므로 앞 실행이 남긴 것은 먼저 지운다.
+    await prisma.lot.deleteMany({ where: { plant_id: ids.plant, lot_no: { endsWith: '-PENDING' } } });
+    await prisma.lot.create({
+      data: { lot_no: `${PREFIX}-PENDING`, item_id: ids.itemA, lot_type_code: 'MATERIAL', plant_id: ids.plant, initial_qty: 5, uom_id: ids.uom, source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 1, status_code: 'NORMAL' },
+    });
 
     // 피킹 지시 — A·B 에 자재 출고 요청 출처 1건씩 + A 에 제품 출하 출처 1건(화면이 거르는 것).
     for (const [name, source] of [['A', 'MATERIAL_ISSUE_REQUEST'], ['B', 'MATERIAL_ISSUE_REQUEST'], ['A', 'SHIPMENT_REQUEST']] as const) {
@@ -315,23 +328,19 @@ describe('단말 작업 수 (e2e)', () => {
     const lot = await prisma.lot.create({
       data: { lot_no: `${PREFIX}-LOT-${randomUUID().slice(0, 6)}`, item_id: ids.itemA, lot_type_code: 'MATERIAL', plant_id: ids.plant, initial_qty: 10, uom_id: ids.uom, source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 1, status_code: 'NORMAL' },
     });
-    await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId: Number(ids.plant),
         warehouseId: Number(warehouseId),
         receiptDatetime: new Date().toISOString(),
         businessDate: TODAY,
         lines: [{ itemId: Number(ids.itemA), lotId: Number(lot.lot_id), receiptQty: 10, uomId: Number(ids.uom), qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', destinationLocationId: Number(locationId) }],
-      })
-      .expect(201);
+      });
   }
 
   /** 전역 목록에 끼어드는 전표는 지운다(이전 실행 찌꺼기 포함). ⛔ 원장·LOT·마스터는 남긴다. */
   async function cleanup(): Promise<void> {
+    await prisma.lot.deleteMany({ where: { lot_no: `${PREFIX}-PENDING` } });
     const plants = `SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${ROOT}%'`;
     const wh = `SELECT warehouse_id FROM mdm.warehouse WHERE plant_id IN (${plants})`;
     const requests = `SELECT shipment_request_id FROM logistics.shipment_request WHERE fulfillment_plant_id IN (${plants})`;

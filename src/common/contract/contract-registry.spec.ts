@@ -45,8 +45,9 @@ describe('ContractRegistry', () => {
   // 추적 시스템 마감 보고 1건(flowtrack 연동 제안 §3-5): 630.
   // 분할 LOT 라벨 목록 1건(피처 008 · omf-all-around#289): 631.
   // 배포 전 자재 소요·단위 환산 1건: 632.
-  it('계약 7파일에서 오퍼레이션 632건을 적재한다', () => {
-    expect(registry.size).toBe(632);
+  // 적치 대기 LOT 목록·확인·위치 판정 3건(피처 009 · omf-all-around#294): 635. 적치·임시 적치 2건: 637.
+  it('계약 7파일에서 오퍼레이션 637건을 적재한다', () => {
+    expect(registry.size).toBe(637);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

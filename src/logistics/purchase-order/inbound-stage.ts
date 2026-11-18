@@ -22,6 +22,7 @@ export type InboundStageCode =
  * `ISSUE_LABEL` 은 POP 「자재LOT 등록·라벨 발행」의 일이다 — 관리웹은 글자로만 보인다.
  */
 export type InboundNextActionCode = 'ISSUE_LABEL' | 'POST_RECEIPT' | 'PUTAWAY' | null;
+// ⚠ `RECEIPT_READY`·`POST_RECEIPT` 는 더 내지 않는다(피처 009 · R-8) — 구매 입하 자재는 PDA 적치로 입고한다. 옛 클라이언트를 위해 계약에 남긴다.
 
 export interface BlockedReason {
   code: string;
@@ -43,6 +44,8 @@ export interface LotStageFacts {
   receivableQty: Prisma.Decimal;
   /** 살아 있는 입고(POSTED 전표)의 적치 작업 상태. 취소된 작업은 뺀다. */
   putawayStatusCodes: readonly string[];
+  /** 살아 있는 입고 라인의 적치 방식(피처 009 — PDA 지시 없는 적치만 채운다). */
+  putawayModeCodes: readonly string[];
 }
 
 export interface LotStage {
@@ -75,14 +78,16 @@ const INSPECTION_PENDING = 'INSPECTION_PENDING';
 const SCRAPPED = 'SCRAPPED';
 
 /**
- * 위에서부터 보고 처음 맞는 줄이 답이다. 입고할 수량이 남으면 적치가 진행 중이어도 입고 단계로 본다 —
+ * 위에서부터 보고 처음 맞는 줄이 답이다. 입고할 수량이 남으면 적치가 진행 중이어도 적치 대기로 본다 —
  * 한 줄은 가장 뒤처진 단계 하나만 말한다(C-17).
  */
 export function lotStage(facts: LotStageFacts): LotStage {
   if (facts.receiptCancelled) return stage('CANCELLED', null);
   if (facts.receivableQty.greaterThan(0)) return beforeReceipt(facts);
   if (facts.putawayStatusCodes.includes('PENDING')) return stage('PUTAWAY_PENDING', 'PUTAWAY');
-  if (facts.putawayStatusCodes.includes('COMPLETED_TEMPORARY')) return stage('PUTAWAY_TEMPORARY', 'PUTAWAY');
+  if (facts.putawayStatusCodes.includes('COMPLETED_TEMPORARY') || facts.putawayModeCodes.includes('TEMPORARY')) {
+    return stage('PUTAWAY_TEMPORARY', 'PUTAWAY');
+  }
   return stage('COMPLETED', null);
 }
 
@@ -97,8 +102,9 @@ export function labelStage(receiptCancelled: boolean): LotStage {
 function beforeReceipt(facts: LotStageFacts): LotStage {
   // 폐기된 LOT 은 남은 수량이 있어도 더 받을 일이 없다.
   if (facts.lotStatusCode === SCRAPPED) return stage('CANCELLED', null);
-  // 불량(IQC 불합격·클레임 재Hold)은 불량창고로 입고해 처분을 기다린다 — 입고 검사가 창고를 가른다.
-  if (facts.lotStatusCode !== INSPECTION_PENDING) return stage('RECEIPT_READY', 'POST_RECEIPT');
+  // 입고할 수 있는 LOT 은 PDA 적치를 기다린다 — 적치가 곧 입고다(피처 009 · R-8). 불량(IQC 불합격·클레임 재Hold)은
+  // 불량창고에 적치해 처분을 기다린다 — 위치 판정이 창고를 가른다.
+  if (facts.lotStatusCode !== INSPECTION_PENDING) return stage('PUTAWAY_PENDING', 'PUTAWAY');
   if (facts.inspectionRequired) {
     if (facts.inspectionStatusCode === 'REQUESTED') return stage('INSPECTION_REQUESTED', null);
     if (facts.inspectionStatusCode === 'IN_PROGRESS') return stage('INSPECTION_IN_PROGRESS', null);

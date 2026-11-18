@@ -1,3 +1,4 @@
+import { rivalWindows } from '../../production/work-order/validation';
 import { Prisma } from '@prisma/client';
 
 import { FgResolution, LOCATION_FACT_SELECT, LocationFact, fgKey, resolveFgLocations } from '../../core/erp-warehouse/fg-location';
@@ -220,10 +221,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
       orderBy: { mold_id: 'asc' },
       select: { mold_id: true, plant_id: true, status_code: true, is_active: true, guaranteed_shot_count: true, current_shot_count: true, version_no: true },
     }),
-    equipmentIds.length === 0 ? [] : client.work_order.findMany({
-      where: { planned_equipment_id: { in: equipmentIds }, planned_start_at: { not: null }, planned_end_at: { not: null }, status_code: { notIn: RELEASED_WORK_ORDER_STATUSES } },
-      select: { planned_equipment_id: true, planned_start_at: true, planned_end_at: true },
-    }),
+    rivalWindows(client, 0, equipmentIds),
   ]);
 
   const lineIds = unique([

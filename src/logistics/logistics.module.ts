@@ -89,6 +89,9 @@ import { ReplenishmentSettingService } from './replenishment/replenishment-setti
 import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayCompleteService } from './putaway/putaway-complete.service';
+import { PutawayDirectController } from './putaway-direct/putaway-direct.controller';
+import { PutawayDirectQueryService } from './putaway-direct/putaway-direct.query.service';
+import { PutawayDirectService } from './putaway-direct/putaway-direct.service';
 import { PutawayTaskController } from './putaway/putaway-task.controller';
 import { PutawayTaskService } from './putaway/putaway-task.service';
 import { InboundProgressService } from './purchase-order/inbound-progress.service';
@@ -170,6 +173,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     GoodsReceiptLineListController,
     PickingController,
     PutawayTaskController,
+    PutawayDirectController,
     PurchaseOrderController,
     PurchaseOrderLineListController,
     InboundStageCountController,
@@ -276,6 +280,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PickingQueryService,
     PutawayCompleteService,
     PutawayTaskService,
+    PutawayDirectQueryService,
+    PutawayDirectService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
     PurchaseOrderLineListService,
