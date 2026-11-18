@@ -43,6 +43,7 @@ const TEMPLATE_PARAMS: Record<string, string[]> = {
   REWORK_WORK_ORDER_CREATED: ['wo_no', 'item', 'qty', 'ncr_no', 'process', 'event_time', 'actor'],
   IQC_INSPECTION_REQUESTED: ['receipt_no', 'lot_count', 'supplier', 'event_time'],
   IQC_INSPECTION_REJECTED: ['receipt_no', 'item', 'lot_no', 'supplier', 'qty', 'next_step', 'event_time'],
+  PUTAWAY_PENDING: ['inbound_lot_no', 'item', 'lot_count', 'event_time', 'actor'],
 };
 
 describe('인계 작업 알림 — Zalo (e2e · 대역)', () => {
@@ -159,10 +160,10 @@ describe('인계 작업 알림 — Zalo (e2e · 대역)', () => {
     expect(BATCH_SIZE).toBe(20);
   });
 
-  it('SC-006 FR-022 인계 템플릿 11종을 연결 설정에 저장하면 기존 6종은 그대로이고, 대역이 받은 template_data 키가 템플릿 표와 같다', async () => {
+  it('SC-006 FR-022 FR-034 인계 템플릿 12종을 연결 설정에 저장하면 기존 6종은 그대로이고, 대역이 받은 template_data 키가 템플릿 표와 같다', async () => {
     const before = await request(app.getHttpServer()).get('/api/app/zalo-connection').set('Cookie', cookie).expect(200);
     expect(before.body.templates).toHaveLength(6);
-    expect(before.body.handoverTemplates).toHaveLength(11);
+    expect(before.body.handoverTemplates).toHaveLength(12);
     expect(before.body.handoverTemplates.every((t: { templateId: string | null }) => t.templateId === null)).toBe(true);
 
     const handoverTemplates = HANDOVER_ALERT_TYPES.map((type, index) => ({ alertTypeCode: type.alertTypeCode, templateId: `TPL-HO-${index}` }));

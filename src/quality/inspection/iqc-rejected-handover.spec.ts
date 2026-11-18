@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { DocumentStateService } from '../../core/document-state';
-import { LotHoldService, LotQualityStatusService } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService, PutawayPendingNotifier } from '../../core/lot';
 import { NotificationEmitter } from '../../core/notification';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -73,7 +73,8 @@ describe('IQC 확정 → 검사 불합격 인계 알림', () => {
     const lots = { moveWithin: jest.fn().mockResolvedValue({ movedLotIds: [lotId] }) } as unknown as LotQualityStatusService;
     const notices = { rejected: jest.fn() };
     const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds,
-      {} as NumberingService, {} as DefectRecordWriteService, notices as unknown as IqcRejectedHandoverNotifier);
+      {} as NumberingService, {} as DefectRecordWriteService, notices as unknown as IqcRejectedHandoverNotifier,
+      { lot: jest.fn() } as unknown as PutawayPendingNotifier);
     await service.applyConfirmEffects(tx, {
       inspectionResultId: 8n, inspectionRequestId: 9n, judgment, rejectedQty: 2,
       changedAt: new Date('2026-11-10T01:00:00Z'), appUserId: 5,

@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { DocumentStateService } from '../../core/document-state';
-import { LotHoldService, LotQualityStatusService } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService, PutawayPendingNotifier } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
@@ -21,7 +21,8 @@ it('uses the real terminal worker for IQC LOT transition and hold release', asyn
     releaseWithin: jest.fn().mockResolvedValue({ openAfter: 0 }),
   } as unknown as LotHoldService;
   const lots = { moveWithin: jest.fn().mockResolvedValue({ movedLotIds: [3n] }) } as unknown as LotQualityStatusService;
-  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService, { rejected: jest.fn() } as unknown as IqcRejectedHandoverNotifier);
+  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService, { rejected: jest.fn() } as unknown as IqcRejectedHandoverNotifier,
+    { lot: jest.fn() } as unknown as PutawayPendingNotifier);
   const changedAt = new Date('2026-09-12T01:00:00Z');
   await service.applyConfirmEffects(tx, {
     inspectionResultId: 8n, inspectionRequestId: 9n,
