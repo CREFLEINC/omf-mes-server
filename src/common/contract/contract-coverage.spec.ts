@@ -114,7 +114,8 @@ describe('계약 커버리지', () => {
     // 추적 시스템 출하 출고 1 오퍼레이션(flowtrack 연동 제안 §3-4): 628 → 629.
     // 추적 시스템 마감 보고 1 오퍼레이션(flowtrack 연동 제안 §3-5): 629 → 630.
     // 분할 LOT 라벨 목록 1 오퍼레이션(피처 008): 630 → 631.
-    expect(registry.size).toBe(631);
+    // 배포 전 자재 소요·단위 환산 1 오퍼레이션: 631 → 632.
+    expect(registry.size).toBe(632);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

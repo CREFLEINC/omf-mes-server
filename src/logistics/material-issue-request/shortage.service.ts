@@ -2,14 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
-import { BOM_COMPONENT_SELECT, MaterialIssueLine, materialRequirements } from '../../core/bom';
+import { BOM_COMPONENT_SELECT, MaterialIssueLine, UomConversionSource, loadStockUomTable, materialRequirements, stockUomLines } from '../../core/bom';
+import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 계약 `MaterialIssueShortageLine` — 매퍼가 정본이다(`work-order-view.ts` 관행). */
-export type MaterialIssueShortageLine = ReturnType<typeof shortageLines>[number];
+export type MaterialIssueShortageLine = ReturnType<typeof shortageLines>[number] & { conversionSource: UomConversionSource | null };
 
-/** ⓐ 축 — `bom.base_qty` 까지 한 번에 읽는다. */
-const PLAN_SELECT = { select: { bom_id: true, bom: { select: { base_qty: true } } } };
+/** ⓐ 축 — `bom.base_qty` 까지 한 번에 읽는다. 공장 시간대는 품목 환산의 유효일(공장 오늘)을 푼다. */
+const PLAN_SELECT = {
+  select: { bom_id: true, bom: { select: { base_qty: true } }, production_order: { select: { plant: { select: { timezone_code: true } } } } },
+};
 
 /**
  * `GET …/material-issue-requests/shortage` — 한 W/O 의 품목별 소요·기출고·부족. 화면
@@ -52,8 +55,14 @@ export class MaterialIssueShortageService {
       select: BOM_COMPONENT_SELECT,
       orderBy: { sequence_no: 'asc' },
     });
+    // 재고 단위로 낸다 — 기출고(출고 전기)가 재고 단위이고, 배포가 같은 함수로 출고요청을 만든다. 환산이 없는 자재만 BOM 단위로 남는다.
     const required = materialRequirements(components, row.order_qty, plan.bom.base_qty);
-    return { items: shortageLines(required, await this.issuedByItem(workOrderId)) };
+    const table = await loadStockUomTable(this.prisma, required.map((line) => line.item_id), localDate(new Date(), plan.production_order.plant.timezone_code));
+    const converted = stockUomLines(table, required);
+    const sourceOf = new Map<number, UomConversionSource | null>();
+    for (const { line, conversion } of converted) if (!sourceOf.has(Number(line.item_id))) sourceOf.set(Number(line.item_id), conversion.source);
+    const items = shortageLines(converted.map(({ line }) => line), await this.issuedByItem(workOrderId));
+    return { items: items.map((item) => ({ ...item, conversionSource: sourceOf.get(item.itemId) ?? null })) };
   }
 
   /** 품목별 기출고 합 — FK 가 없는 다형 조인이라 Prisma `where` 로 못 쓴다. */

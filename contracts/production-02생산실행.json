@@ -4483,6 +4483,84 @@
     }
    }
   },
+  "/production/work-orders/{workOrderId}/material-requirements": {
+   "get": {
+    "tags": [
+     "production"
+    ],
+    "summary": "배포 전 자재 소요·단위 환산",
+    "description": "W/O 확정·배포(W-02-04) 확인 단계의 자재 소요 표. :release 가 담을 BOM 구성 행(이 공정의 것 · 소요량 0 제외 · 긴급 W/O 는 빈 목록)마다 BOM 소요·BOM 단위·재고 단위(품목 기본 단위)·변환 수량·환산 출처·비율·확인 필요 여부를 낸다. :release 와 같은 함수로 계산하므로 확인한 수량이 그대로 출고요청 수량이 된다. 저장하지 않으므로 상태 전이가 아니다 — :동사 를 쓰지 않는다(validation 과 같은 자리). 출고요청 부족 조회(GET /logistics/material-issue-requests/shortage)를 넓히지 않은 까닭 — 그것은 품목으로 합친 행(bomComponentId 가 비기도 한다)이고 배포의 자동 발행 조건(긴급 제외)을 걸지 않아, 배포 확인의 BOM 구성 행 단위 확인과 맞지 않는다. 근거: omf-all-around#297",
+    "parameters": [
+     {
+      "name": "workOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "자재 소요 표",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkOrderMaterialRequirementList"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 공장을 풀 계획이 없는 W/O(productionPlanId · REQUIRED)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/production/work-orders/{workOrderId}/validation": {
    "get": {
     "tags": [
@@ -5070,7 +5148,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다. 생산 창고를 쓰는 공장(피처 003)은 빠진 기준정보를 errors 에 모아 낸다 — LINE_DEPARTMENT_MISSING(productionLineId · 라인에 담당 부서 없음) · PRODUCTION_WAREHOUSE_MISSING(departmentId · 부서에 이 공장의 활성 생산 창고 없음) · PRODUCTION_FLOOR_LOCATION_MISSING(productionLineId · 라인에 생산 현장 위치 없음). 재고 부족은 배포를 막지 않는다. 근거: omf-all-around#66",
+      "description": "검증 실패. 고쳐야 풀린다. 생산 창고를 쓰는 공장(피처 003)은 빠진 기준정보를 errors 에 모아 낸다 — LINE_DEPARTMENT_MISSING(productionLineId · 라인에 담당 부서 없음) · PRODUCTION_WAREHOUSE_MISSING(departmentId · 부서에 이 공장의 활성 생산 창고 없음) · PRODUCTION_FLOOR_LOCATION_MISSING(productionLineId · 라인에 생산 현장 위치 없음). 재고 부족은 배포를 막지 않는다. 근거: omf-all-around#66 · BOM 단위 ≠ 재고 단위 자재: MATERIAL_UOM_CONFIRMATION_REQUIRED(materialUomConfirmations[bomComponentId=…].confirmed — 확인 안 함 · .conversionRate — 환산이 없는데 비율 없음) · INVALID(.conversionRate — 이미 있는 품목 환산과 다른 비율 · 같은 품목·단위에 서로 다른 비율 · 배포하는 사이 다른 환산이 등록됨) · RANGE(.conversionRate — 소수 8자리로 반올림하면 0). 근거: omf-all-around#297",
       "content": {
        "application/json": {
         "schema": {
@@ -11797,6 +11875,119 @@
     ],
     "description": "DEFAULT = 품목 기본 매핑 · MAPPED = 그 밖의 매핑(우선순위 순) · RECENT = 같은 품목·공정의 최근 W/O 가 쓴 것. 장부 P-61"
    },
+   "WorkOrderMaterialRequirement": {
+    "type": "object",
+    "required": [
+     "bomComponentId",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "bomQty",
+     "bomUomId",
+     "bomUomCode",
+     "stockUomId",
+     "stockUomCode",
+     "stockQty",
+     "conversionSource",
+     "conversionRate",
+     "confirmationRequired"
+    ],
+    "description": "배포 확인의 자재 소요 한 행 — BOM 구성 행마다. 화면 표시 예: BOM 367 GR → 0.367 KG (1 KG = 1,000 GR · 품목 환산)",
+    "properties": {
+     "bomComponentId": {
+      "type": "integer",
+      "format": "int64",
+      "description": ":release 의 materialUomConfirmations[].bomComponentId 로 그대로 싣는다",
+      "example": 1001
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "040101-00064"
+     },
+     "itemName": {
+      "type": "string",
+      "example": "RESIN PC"
+     },
+     "bomQty": {
+      "type": "number",
+      "description": "BOM 소요 = 구성 소요량 × 지시수량 ÷ BOM 기준수량(BOM 단위)",
+      "example": 367
+     },
+     "bomUomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "bomUomCode": {
+      "type": "string",
+      "example": "GR"
+     },
+     "stockUomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "재고 단위 = 품목 기본 단위 — 출고요청 라인 단위",
+      "example": 1002
+     },
+     "stockUomCode": {
+      "type": "string",
+      "example": "KG"
+     },
+     "stockQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "재고 단위 수량 — 재고 단위 decimal_scale 로 올림. 단위가 같으면 bomQty 와 같다. 환산이 없으면(NONE) null — 화면이 입력한 비율로 bomQty ÷ 비율을 같은 자릿수로 올려 보인다",
+      "example": 0.367
+     },
+     "conversionSource": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "ITEM",
+       "COMMON",
+       "NONE",
+       null
+      ],
+      "description": "환산 출처 — ITEM(품목 환산 · 유효일 = 공장 현지 오늘 · 역방향 포함) · COMMON(공통 환산 상수: KG = 1,000 GR = 1,000 G, GR = G · EA = PC) · NONE(환산 없음 — 비율 직접 입력). BOM 단위와 재고 단위가 같으면 null 이다. 품목 환산이 공통 환산보다 먼저다. 근거: omf-all-around#297",
+      "example": "ITEM"
+     },
+     "conversionRate": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "「1 재고 단위 = N BOM 단위」의 N. 단위가 같거나 환산이 없으면 null",
+      "example": 1000
+     },
+     "confirmationRequired": {
+      "type": "boolean",
+      "description": "BOM 단위 ≠ 재고 단위 — 배포 전에 사용자가 확인해야 한다(공통 환산이어도)",
+      "example": true
+     }
+    }
+   },
+   "WorkOrderMaterialRequirementList": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/WorkOrderMaterialRequirement"
+      }
+     }
+    }
+   },
    "ValidationReport": {
     "type": "object",
     "properties": {
@@ -12554,6 +12745,40 @@
       "description": "전달사항. 공지 확인 이력이 별도로 받는다 — 근거: DR-005",
       "example": "비고",
       "x-internal-note": "현장 도달 경로는 판정 대기다 — W-CO-04 §8 미결 4 · 미결-대장 1259행. 확정 노선은 DR-005 5-C(전사 + 작업지시 두 범위)로, 전달사항은 작업지시 범위 공지로 현장에 내려간다. ⛔ POP 두 화면(P-02-01 96행 · P-02-02 95행)은 「미확인 공지를 셸이 먼저 띄운다 · 화면이 그리지 않는다」(G-14)이므로 이 값을 POP 화면이 직접 읽는 것으로 적지 않는다."
+     },
+     "materialUomConfirmations": {
+      "type": "array",
+      "description": "BOM 단위와 재고 단위(품목 기본 단위)가 다른 자재의 확인 — 배포 전 조회(GET /production/work-orders/{workOrderId}/material-requirements)에서 confirmationRequired=true 인 행마다 하나. 단위가 같은 자재는 싣지 않아도 된다(단위가 다른 자재가 없는 W/O 는 칸을 비워도 지금처럼 배포된다). 확인되지 않은 행이 있거나, 환산이 없는(NONE) 행에 conversionRate 가 없으면 400 MATERIAL_UOM_CONFIRMATION_REQUIRED(field = materialUomConfirmations[bomComponentId=…].confirmed | .conversionRate). 출고요청 라인은 재고 단위·재고 단위 수량(재고 단위 decimal_scale 로 올림)으로 만든다. 근거: omf-all-around#297",
+      "items": {
+       "type": "object",
+       "required": [
+        "bomComponentId",
+        "confirmed"
+       ],
+       "properties": {
+        "bomComponentId": {
+         "type": "integer",
+         "format": "int64",
+         "description": "배포 전 조회 행의 bomComponentId",
+         "example": 1001
+        },
+        "confirmed": {
+         "type": "boolean",
+         "description": "변환 수량을 보고 확인했다 — true 여야 배포된다",
+         "example": true
+        },
+        "conversionRate": {
+         "type": [
+          "number",
+          "null"
+         ],
+         "exclusiveMinimum": 0,
+         "maximum": 9999999999,
+         "description": "직접 입력한 환산 — 「1 재고 단위 = N BOM 단위」의 N(예: 1 KG = 1,000 GR 이면 1000). 소수 8자리까지 저장한다(반올림). 환산이 없는(NONE) 행은 필수다. 공통 환산(COMMON) 행에 실으면 그 품목에서는 이 비율을 쓴다. 넣은 비율은 배포와 같은 트랜잭션에서 품목 환산(mdm.item_uom_conversion · from = 재고 단위 · to = BOM 단위 · effectiveFrom = 공장 현지 오늘)으로 저장되고 감사 기록(대상 ITEM · ITEM_UOM_CONVERSION_ENTERED_AT_RELEASE)이 남는다 — 저장 권한은 배포 권한 그대로다(승인 없음). 이미 품목 환산(ITEM)이 있는 행에 다른 비율을 실으면 400 INVALID — 덮어쓰지 않는다(품목 환산은 기준정보에서 고친다). 같은 비율이면 그대로 통과한다.",
+         "example": 1000
+        }
+       }
+      }
      }
     },
     "required": [

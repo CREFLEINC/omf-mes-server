@@ -287,6 +287,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 보지 않지만, 화면이 부르는 자리를 같은 줄로 남긴다.
   'GET /production/work-orders/{workOrderId}/validation': ['W-02-04'],
   'GET /production/work-orders/{workOrderId}': ['W-02-04'],
+  // 배포 확인의 자재 소요·단위 환산 — 설계 밖 경로라 도출표에 없다. 배포 화면이 확인 단계에서 부른다.
+  'GET /production/work-orders/{workOrderId}/material-requirements': ['W-02-04'],
 
   // `W-06-10` 연계 동기화 현황·실패 재처리 — 계약 x-internal-note 가 「소관 = W-06-10
   // (공유계약 B-4-1 ④ · 중복 구현 금지)」라 직접 적었다. `W-06-10` §5-1 액션 8건에 이

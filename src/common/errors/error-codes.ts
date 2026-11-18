@@ -102,6 +102,8 @@ export const ERROR_CODE = {
   PRODUCTION_FLOOR_LOCATION_MISSING: 'PRODUCTION_FLOOR_LOCATION_MISSING',
   // 새 요청이 생산 창고의 쓸 수 있는 양(가용 − 출고 예정)을 넘는다(409 · 긴급 대응·부족 보충만 확인 뒤 진행).
   PLANNED_STOCK_CONFLICT: 'PLANNED_STOCK_CONFLICT',
+  // W/O 배포 — BOM 단위와 재고 단위가 다른 자재를 확인하지 않았거나, 환산이 없는데 비율을 넣지 않았다(400 · field 가 자재를 가리킨다).
+  MATERIAL_UOM_CONFIRMATION_REQUIRED: 'MATERIAL_UOM_CONFIRMATION_REQUIRED',
   // 출고 작업일을 휴일로 바꾸려면 확인(acknowledgeHoliday)이 필요하다(422).
   HOLIDAY_ACK_REQUIRED: 'HOLIDAY_ACK_REQUIRED',
 } as const;

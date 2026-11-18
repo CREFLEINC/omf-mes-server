@@ -29,9 +29,17 @@ function stub(components: Component[], issued: { item_id: bigint; issued_qty: st
       findUnique: async () => ({
         order_qty: new Prisma.Decimal(100),
         routing_operation_id: 7n,
-        production_plan: { bom_id: 3n, bom: { base_qty: new Prisma.Decimal(1) } },
+        production_plan: {
+          bom_id: 3n,
+          bom: { base_qty: new Prisma.Decimal(1) },
+          production_order: { plant: { timezone_code: 'Asia/Ho_Chi_Minh' } },
+        },
       }),
     },
+    // 환산 기준정보가 비면 단위를 그대로 둔다 — 단위 환산 자체는 `core/bom/stock-uom.spec.ts` 가 본다.
+    item: { findMany: async () => [] },
+    uom: { findMany: async () => [] },
+    item_uom_conversion: { findMany: async () => [] },
     bom_component: {
       findMany: async (args: Args) => {
         findManyCalls.push(args);

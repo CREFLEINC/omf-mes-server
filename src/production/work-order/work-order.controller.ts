@@ -25,6 +25,7 @@ import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderClose } from './close-rules';
+import { WorkOrderMaterialRequirement, releaseMaterialPreview } from './release-material-preview';
 import { ResourceRecommendations, recommendResources } from './resource-recommendation';
 import { ValidationReport, validateWorkOrder } from './validation';
 import { WorkOrderCancel, WorkOrderCancelService } from './work-order-cancel.service';
@@ -140,7 +141,7 @@ export class WorkOrderController {
   ): Promise<WorkOrderView> {
     const version = versionOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      const waiting = await this.releases.release(workOrderId, version, body, userOf(request));
+      const waiting = await this.releases.release(workOrderId, version, body, userOf(request), String(request.headers['idempotency-key']));
       // 생산 창고 공장이면 창고별 요청 요약·미배정 자재를 함께 싣는다(피처 003). 지금 방식 공장은 그대로다.
       return { ...(await this.queries.detail(workOrderId, {})).view, ...(waiting ?? {}) };
     }, FAMILY_CONFLICT_CODE);
@@ -286,6 +287,13 @@ export class WorkOrderController {
       await this.resourcePlans.remove(workOrderId, workOrderResourcePlanId);
       return undefined;
     });
+  }
+
+  /** 배포 확인 화면의 자재 소요 표 — 배포와 같은 함수로 재고 단위까지 낸다. 저장하지 않는다. */
+  @Get(':workOrderId/material-requirements')
+  @Contract('GET /production/work-orders/{workOrderId}/material-requirements')
+  materialRequirements(@Param('workOrderId', ParseIntPipe) workOrderId: number): Promise<{ items: WorkOrderMaterialRequirement[] }> {
+    return releaseMaterialPreview(this.prisma, workOrderId);
   }
 
   @Get(':workOrderId/validation')

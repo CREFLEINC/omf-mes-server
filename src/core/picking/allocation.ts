@@ -74,7 +74,7 @@ export function allocatePicking(
   const shortages: PickingShortage[] = [];
 
   for (const demand of demands) {
-    // 단위가 다르면 수량을 견줄 수 없다 — 환산 규칙이 없어 같은 단위의 재고만 본다.
+    // 요청은 재고 단위로 온다(`core/bom` `toStockUom`). 그래도 단위가 다른 재고는 수량을 견줄 수 없어 보지 않는다.
     const pool = slots.filter(
       ({ candidate }) => candidate.itemId === demand.itemId && candidate.uomId === demand.uomId,
     );
