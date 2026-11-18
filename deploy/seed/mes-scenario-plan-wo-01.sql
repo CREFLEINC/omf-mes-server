@@ -327,7 +327,8 @@ BEGIN
   SELECT * INTO context FROM pw_context;
   SELECT location_id INTO target_location_id
   FROM mdm.location
-  WHERE warehouse_id = context.material_warehouse_id AND location_code LIKE '%-S230-01' AND is_active;
+  WHERE warehouse_id = context.material_warehouse_id AND is_active
+    AND location_code = (SELECT location_prefix FROM mdm.warehouse WHERE warehouse_id = context.material_warehouse_id) || '-S230-01';
   IF target_location_id IS NULL THEN
     RAISE EXCEPTION 'S230-01 활성 위치가 없습니다';
   END IF;

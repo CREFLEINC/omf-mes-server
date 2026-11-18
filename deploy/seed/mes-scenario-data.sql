@@ -133,7 +133,8 @@ END $$;
 
 \echo 'OMF MES scenario seed: S240 위치'
 -- 활성 위치가 이미 있으면 만들지 않는다 — 긴급 직행·재등록은 창고의 활성 위치가 «정확히 하나»일 때만
--- 도착지를 정한다(src/logistics/destination-location.ts).
+-- 도착지를 정한다(src/logistics/destination-location.ts). 창고를 만들 때 시스템 위치(적치 대기·창고 전체)가
+-- 함께 생기므로 새 DB 에서는 만들지 않고, 아래 기초재고는 「창고 전체」에 선다.
 INSERT INTO mdm.location
   (warehouse_id, location_code, location_name, location_type_code, created_by)
 SELECT context.warehouse_id, warehouse.location_prefix || '-S240-01', '자재창고 기본 위치', 'DEFAULT', context.admin_user_id
@@ -176,7 +177,9 @@ BEGIN
   SELECT location_id INTO target_location_id
   FROM mdm.location
   WHERE warehouse_id = context.warehouse_id AND is_active
-  ORDER BY (location_code LIKE '%-S240-01') DESC, location_id
+  ORDER BY (location_code = (SELECT location_prefix FROM mdm.warehouse WHERE warehouse_id = context.warehouse_id) || '-S240-01') DESC,
+    -- 적치 대기는 아직 자리에 들지 않은 물건의 자리다 — 기초재고를 거기에 세우지 않는다.
+    (system_role_code IS NOT DISTINCT FROM 'PUTAWAY_STAGING'), location_id
   LIMIT 1;
   IF target_location_id IS NULL THEN
     RAISE EXCEPTION 'S240 에 활성 위치가 없습니다';
