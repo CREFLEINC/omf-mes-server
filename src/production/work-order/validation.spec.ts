@@ -125,7 +125,7 @@ describe('4M 유효성 점검', () => {
 
     expect(where).toEqual({
       work_order_id: { not: 7n },
-      planned_equipment_id: { in: [5n] },
+      OR: [{ planned_equipment_id: { in: [5n] } }, { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: { in: [5n] } } } }],
       planned_start_at: { not: null },
       planned_end_at: { not: null },
       status_code: { notIn: ['CANCELLED', 'CLOSED', 'COMPLETED'] },

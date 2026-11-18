@@ -213,7 +213,7 @@ function warnSiblingDoubleBooking(plans: readonly ProposalPlan[]): void {
   rows.forEach((row, index) => {
     if (row.equipmentId === null || row.issues.some((issue) => issue.code === 'EQUIPMENT_DOUBLE_BOOKED')) return;
     const rivals = rows.filter((other, at) => at !== index && other.equipmentId !== null).map((other) => ({ planned_equipment_id: other.equipmentId, ...windowOf(other) }));
-    for (const finding of checkDoubleBooked([row.equipmentId], windowOf(row), rivals)) row.issues.push(warnIssue(finding.code, finding.message, finding.field));
+    for (const finding of checkDoubleBooked([row.equipmentId], windowOf(row), rivals)) row.issues.push(finding.code === 'EQUIPMENT_DOUBLE_BOOKED' ? blockIssue('EQUIPMENT_DOUBLE_BOOKED', finding.message, finding.field) : warnIssue(finding.code, finding.message, finding.field));
   });
 }
 
@@ -285,7 +285,7 @@ function workOrdersOf(
       defaultFgLocationSource: fgPick.source,
       issues: [
         ...resourceFindings(order.plant_id, values, facts, fg).map((finding) => blockIssue(finding.code, finding.message, finding.field)),
-        ...findings.map((finding) => warnIssue(finding.code, finding.message, finding.field)),
+        ...findings.map((finding) => finding.code === 'EQUIPMENT_DOUBLE_BOOKED' ? blockIssue('EQUIPMENT_DOUBLE_BOOKED', finding.message, finding.field) : warnIssue(finding.code, finding.message, finding.field)),
       ],
     };
   });

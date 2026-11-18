@@ -25,6 +25,8 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { localDate } from '../src/planning/production-plan/plan-window';
+import { WorkOrderWriteService } from '../src/production/work-order/work-order-write.service';
+import { WorkOrderResourcePlanService } from '../src/production/work-order/work-order-resource-plan.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-wo-probe';
@@ -96,6 +98,39 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     /** 배포가 막아야 할 어긋난 라인 — 다른 공장 소속이다. */
     otherPlantLine: 0n,
   };
+
+  it('설비 중복 — 동시에 같은 설비를 저장하면 하나만 적용되고 맞닿는 구간은 허용한다', async () => {
+    const targets: bigint[] = [];
+    try {
+      for (let n = 0; n < 2; n++) {
+        const row = await prisma.work_order.create({ data: {
+          work_order_no: `WO-OCC-${randomUUID()}`, production_plan_id: ids.productionPlan,
+          routing_operation_id: ids.routingOperation, item_id: ids.item, uom_id: ids.uom,
+          order_qty: 5, status_code: 'PLANNED', work_order_type_code: 'NORMAL', priority_no: 100,
+        }});
+        targets.push(row.work_order_id);
+      }
+      const service = app.get(WorkOrderWriteService);
+      const body = { plannedEquipmentId: Number(ids.equipment), plannedStartAt: '2036-11-23T01:00:00Z', plannedEndAt: '2036-11-23T10:00:00Z' };
+      const results = await Promise.allSettled(targets.map(id => service.update(Number(id), 1, body, undefined)));
+      expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter(result => result.status === 'rejected')).toHaveLength(1);
+      const winner = targets[results.findIndex(result => result.status === 'fulfilled')];
+      const loser = targets.find(id => id !== winner)!;
+      expect(await prisma.work_order.count({where:{work_order_id:{in:targets},planned_equipment_id:ids.equipment}})).toBe(1);
+      await service.update(Number(loser), 1, {...body, plannedStartAt:body.plannedEndAt, plannedEndAt:'2036-11-23T12:00:00Z'}, undefined);
+      expect(await prisma.work_order.count({where:{work_order_id:{in:targets},planned_equipment_id:ids.equipment}})).toBe(2);
+      const extra = app.get(WorkOrderResourcePlanService);
+      await prisma.work_order.update({where:{work_order_id:loser},data:{planned_equipment_id:null}});
+      await extra.add(Number(loser), {resourceTypeCode:'EQUIPMENT',resourceId:Number(ids.equipment)});
+      await expect(service.update(Number(loser),2,{plannedStartAt:'2036-11-23T09:00:00Z'},undefined)).rejects.toThrow();
+      await prisma.work_order.update({where:{work_order_id:winner},data:{status_code:'CANCELLED'}});
+      await service.update(Number(loser),2,{plannedStartAt:'2036-11-23T09:00:00Z'},undefined);
+    } finally {
+      await prisma.work_order_resource_assignment.deleteMany({where:{work_order_id:{in:targets}}});
+      await prisma.work_order.deleteMany({where:{work_order_id:{in:targets}}});
+    }
+  });
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

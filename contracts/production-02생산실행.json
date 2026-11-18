@@ -1,4 +1,5 @@
 {
+ "x-equipment-occupancy-policy": "설비 시간 중복은 BLOCK 및 400 EQUIPMENT_DOUBLE_BOOKED. 저장·계획 확정·배포·추가 설비 배정·ERP 일정 조정에서 트랜잭션 내 잠금 후 재검증한다. 자기 W/O와 취소·완료·마감은 제외하고 [시작,종료)로 비교한다. 설비 배정의 작성중 시간 미등록은 허용하되 배포 시 시간이 없거나, 배정 시 종료가 시작 이후가 아니면 400 EQUIPMENT_WINDOW_REQUIRED. 기존 중복 자료는 조회 유지하며 해소 변경 가능.",
  "openapi": "3.1.0",
  "info": {
   "title": "omf-mes 02 생산실행 도메인 API (초안)",
@@ -3836,7 +3837,7 @@
       "schema": {
        "type": "integer"
       },
-      "description": "계획 설비로 거른다. POP 작업 시작 화면(P-02-01 §4 ②)의 기본 목록 「이 설비 · 배포됨」이 이 축으로 선다 — 응답의 plannedEquipmentId 를 클라이언트가 거르는 것으로는 성립하지 않는다(목록이 페이지 단위라 페이지 안에서만 걸러진다). 저장 자리가 실재하므로 필터를 둔다(공유계약 L-11 의 반대쪽). 근거: P-02-01 §4·§5-5 · omf-mes#247"
+      "description": "계획 설비 또는 EQUIPMENT 추가 자원 배정으로 거른다. POP 작업 시작 화면(P-02-01 §4 ②)의 기본 목록 「이 설비 · 배포됨」이 이 축으로 선다 — 응답의 plannedEquipmentId 를 클라이언트가 거르는 것으로는 성립하지 않는다(목록이 페이지 단위라 페이지 안에서만 걸러진다). 저장 자리가 실재하므로 필터를 둔다(공유계약 L-11 의 반대쪽). 근거: P-02-01 §4·§5-5 · omf-mes#247"
      },
      {
       "name": "includeUnplannedEquipment",
@@ -8364,7 +8365,8 @@
      "FG_WAREHOUSE_OTHER_PLANT",
      "FG_WAREHOUSE_NOT_ALLOWED",
      "FG_LOCATION_OUTSIDE_WAREHOUSE",
-     "PLAN_QTY_EXCEEDS_ORDER"
+     "PLAN_QTY_EXCEEDS_ORDER",
+     "EQUIPMENT_DOUBLE_BOOKED"
     ],
     "description": "BLOCK 사유. 분류 BLOCKED(제안 불가 — 이 화면에서 풀 수 없다. 표시 분류라 plans 를 비우는지는 별개다): ORDER_CANCELLED 취소된 ERP W/O · BOM_DEFAULT_REQUIRED 기본 BOM 지정 필요(품목의 ERP 기본 BOM 이 없거나 둘 이상) · ROUTING_REQUIRED 공정 등록 필요(확정·유효 기간 안 Routing 이 없다) · ROUTING_DEFAULT_REQUIRED 기본 공정 지정 필요(쓸 수 있는 Routing 이 여럿인데 기본이 하나로 정해지지 않는다) · ROUTING_OPERATION_REQUIRED 고른 Routing 에 공정이 한 줄도 없다 · DRAFT_PLAN_EXCEEDS_ORDER 확정 계획이 이미 수량을 채웠는데 작성중 계획이 남았다(계획 화면에서 작성중 계획을 줄이거나 삭제한다) · FG_WAREHOUSE_UNMAPPED·FG_WAREHOUSE_INACTIVE·FG_WAREHOUSE_OTHER_PLANT·FG_WAREHOUSE_NOT_ALLOWED ERP W/O 의 SL_CD 와 코드가 같은 MES 창고가 없다·꺼져 있다·다른 공장에 있다·자재/불량/외부 창고다 — 라인 기본 위치로 대체하지 않고 완제품 위치(defaultFgLocationId)를 막는다. 위치를 골라도 풀리지 않고 창고 기준정보나 ERP 의 SL_CD 를 고친 뒤 제안을 다시 조회하면 풀린다. 분류 INPUT(보완 필요 — 화면에서 골라 확정 본문에 실으면 풀린다): WORK_ORDER_LINE_REQUIRED 공정 W/O 의 생산 라인이 정해지지 않는다(계획 라인도 없고 배정 설비도 라인에 속하지 않는다) · LINE_PLANT_MISMATCH 라인이 ERP W/O 공장의 사용 중인 라인이 아니다 · RESOURCE_PLANT_MISMATCH 설비·금형이 ERP W/O 공장 것이 아니다 · EQUIPMENT_NOT_IN_SERVICE 가동 상태가 아닌 설비 · EQUIPMENT_LINE_MISMATCH 설비가 W/O 라인이 아닌 다른 라인에 속한다(라인이 없는 설비는 된다) · MOLD_NOT_IN_SERVICE 가동 상태가 아닌 금형 · WORK_ORDER_LOCATION_REQUIRED 공정 W/O 의 기본 위치(WIP·완제품·스크랩) 가운데 빈 것이 있다 · LOCATION_INVALID 기본 위치가 이 공장의, 자재창고가 아닌 사용 중인 창고의 사용 중인 위치가 아니다(완제품 위치는 SL_CD 가 없을 때 외부창고·불량창고도 아니어야 한다) · FG_LOCATION_OUTSIDE_WAREHOUSE 확정 본문 전용 — 완제품 위치가 SL_CD 창고 안이 아니다(제안은 늘 그 창고의 위치를 낸다) · PLAN_QTY_EXCEEDS_ORDER 작성중 계획 수량을 더하면 ERP W/O 수량을 넘는다(수량을 줄인다). ⭐ 라인·설비·금형·위치 사유는 확정(POST …:confirm-plan-proposal)의 400 과 같은 판정·같은 코드다 — CONFIRMABLE 제안을 그대로 확정하면 이 판정으로 막히지 않는다."
    },
@@ -8447,7 +8449,7 @@
        "PLAN_DATE_HOLIDAY",
        "PLAN_DATE_UNDETERMINED"
       ],
-      "description": "BLOCK 은 ProductionPlanProposalReasonCode 의 값. WARN 은 4M 점검(GET /production/work-orders/{workOrderId}/validation)의 WARN 코드와 같은 판정이다. 예외로 PLAN_DATE_HOLIDAY(계획일이 휴일)·PLAN_DATE_UNDETERMINED(계획일 판정 불가)는 계획 단위 WARN 이고 field 는 planDate 다 — 확정을 막지 않는다. EQUIPMENT_DOUBLE_BOOKED 는 저장된 다른 MES W/O 와 이 제안의 다른 공정 W/O 를 함께 본다(재검증과 같은 비교)",
+      "description": "BLOCK 은 ProductionPlanProposalReasonCode 의 값. WARN 은 4M 점검(GET /production/work-orders/{workOrderId}/validation)의 WARN 코드와 같은 판정이다. 예외로 PLAN_DATE_HOLIDAY(계획일이 휴일)·PLAN_DATE_UNDETERMINED(계획일 판정 불가)는 계획 단위 WARN 이고 field 는 planDate 다 — 확정을 막지 않는다. EQUIPMENT_DOUBLE_BOOKED 는 BLOCK이며 저장된 다른 MES W/O(단일/N 설비 배정)와 이 제안의 다른 공정 W/O 를 함께 본다(재검증과 같은 비교)",
       "example": "WORK_ORDER_LINE_REQUIRED"
      },
      "field": {
@@ -10583,7 +10585,7 @@
        "FG_WAREHOUSE_DIFFERS_FROM_ERP"
       ],
       "example": "EQUIPMENT_DOUBLE_BOOKED",
-      "description": "4M 점검(GET /production/work-orders/{workOrderId}/validation)의 WARN 과 같은 판정·같은 문장 — 본문이 고른 설비·금형·작업자와 계획 시각으로 본다. EQUIPMENT_DOUBLE_BOOKED 는 저장된 다른 MES W/O 와 «이 본문의 다른 공정 W/O» 를 함께 본다. PLAN_DATE_HOLIDAY·PLAN_DATE_UNDETERMINED 는 본문 계획일·계획 라인의 근무일 판정(제안의 계획 단위 WARN 과 같은 문장). 제안 조회의 공정 W/O 경고도 같은 비교다(저장된 W/O 와 같은 ERP W/O 의 다른 공정 W/O). 작업자 자격(WORKER_QUALIFICATION_EXPIRED)은 제안이 작업자를 정하지 않아 재검증에만 나온다. PLAN_TIME_OUTSIDE_SHIFT 사람이 정한(USER) 시각이 고른 교대 창 밖 · PLAN_TIME_PRECEDENCE 후행 공정이 선행 공정(FINISH_TO_START)이 끝나기 전에 시작한다(둘 중 하나라도 USER 일 때) — 둘 다 field 는 그 공정 W/O 의 plannedStartAt. FG_WAREHOUSE_DIFFERS_FROM_ERP 입고 창고를 ERP(SL_CD)와 다르게 바꿨다 — 확인 응답을 받았어도 알린다(field plans[i].fgWarehouseOverride)"
+      "description": "4M 점검(GET /production/work-orders/{workOrderId}/validation)의 WARN 과 같은 판정·같은 문장 — 본문이 고른 설비·금형·작업자와 계획 시각으로 본다. EQUIPMENT_DOUBLE_BOOKED 는 WARN 목록 대신 errors에 반환해 확정을 막으며, 저장된 다른 MES W/O(단일/N 설비 배정)와 «이 본문의 다른 공정 W/O» 를 함께 본다. PLAN_DATE_HOLIDAY·PLAN_DATE_UNDETERMINED 는 본문 계획일·계획 라인의 근무일 판정(제안의 계획 단위 WARN 과 같은 문장). 제안 조회의 공정 W/O 경고도 같은 비교다(저장된 W/O 와 같은 ERP W/O 의 다른 공정 W/O). 작업자 자격(WORKER_QUALIFICATION_EXPIRED)은 제안이 작업자를 정하지 않아 재검증에만 나온다. PLAN_TIME_OUTSIDE_SHIFT 사람이 정한(USER) 시각이 고른 교대 창 밖 · PLAN_TIME_PRECEDENCE 후행 공정이 선행 공정(FINISH_TO_START)이 끝나기 전에 시작한다(둘 중 하나라도 USER 일 때) — 둘 다 field 는 그 공정 W/O 의 plannedStartAt. FG_WAREHOUSE_DIFFERS_FROM_ERP 입고 창고를 ERP(SL_CD)와 다르게 바꿨다 — 확인 응답을 받았어도 알린다(field plans[i].fgWarehouseOverride)"
      },
      "field": {
       "type": "string",
