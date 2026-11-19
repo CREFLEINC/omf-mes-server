@@ -4181,7 +4181,7 @@
      "app"
     ],
     "summary": "첨부 올리기",
-    "description": "파일을 올리고 첨부 식별자를 돌려준다. 다형 참조라 대상 유형과 대상 식별자를 함께 받는다.",
+    "description": "파일을 올리고 첨부 식별자를 돌려준다. 다형 참조라 대상 유형과 대상 식별자를 함께 받는다. 검사 의뢰(INSPECTION_REQUEST) 대상은 판정 확정 전(작성 중·대기)에만 — 확정된 의뢰면 targetId 의 400(omf-all-around#296).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4207,9 +4207,10 @@
            "WAREHOUSE",
            "NOTICE",
            "LOT",
-           "INSPECTION_RESULT"
+           "INSPECTION_RESULT",
+           "INSPECTION_REQUEST"
           ],
-          "x-server-ahead": "LOT·INSPECTION_RESULT 는 서버 선행(장부 P-57 · omf-all-around#58) — 검사 문서(시험성적서 등). 사람이 볼 수 있는 문서만(PDF·PNG·JPEG·WEBP·엑셀/워드/파워포인트·CSV·TXT) 받고 파일 머리 바이트로 판정한다. 크기 10MB.",
+          "x-server-ahead": "LOT·INSPECTION_RESULT 는 서버 선행(장부 P-57 · omf-all-around#58) — 검사 문서(시험성적서 등). INSPECTION_REQUEST 는 검사 의뢰(IQC 입하 LOT) 자체에 붙는 문서다 — 자재 관리 LOT 을 고르지 않고 올린 성적서(omf-all-around#296). 사람이 볼 수 있는 문서만(PDF·PNG·JPEG·WEBP·엑셀/워드/파워포인트·CSV·TXT) 받고 파일 머리 바이트로 판정한다. 크기 10MB.",
           "example": "WAREHOUSE",
           "x-code-key": "CD-ATTACHMENT-TARGET-TYPE"
          },
@@ -4303,7 +4304,8 @@
         "BREAKDOWN",
         "LOT",
         "INSPECTION_RESULT",
-        "INSPECTION_PLAN_VERSION"
+        "INSPECTION_PLAN_VERSION",
+        "INSPECTION_REQUEST"
        ],
        "example": "WAREHOUSE"
       },
@@ -4431,6 +4433,108 @@
      }
     },
     "x-internal-note": "이 계약에서 application/json 이 아닌 두 번째 응답이다 — 첫째는 출력물 rendition 이다(06-API-요구서-app공통출력물.md §6 편차 2)."
+   }
+  },
+  "/app/attachments/{attachmentId}:link-lots": {
+   "post": {
+    "tags": [
+     "app"
+    ],
+    "summary": "검사 의뢰 첨부를 자재 관리 LOT 에 연결",
+    "description": "IQC 파일 첨부에서 자재 관리 LOT 을 고르지 않아 검사 의뢰(INSPECTION_REQUEST)에 붙은 첨부를, 나중에 고른 자재 관리 LOT 마다의 첨부(LOT)로 옮긴다. 효과(한 트랜잭션): 고른 LOT 마다 같은 파일(저장 위치·이름·크기·올린 사람·올린 시각 그대로)의 LOT 첨부를 만들고, 검사 의뢰 첨부 행은 지운다(파일은 LOT 첨부가 그대로 쓴다). 고를 수 있는 LOT 은 그 검사 의뢰의 입하 LOT 에서 나온 자재 관리 LOT 뿐이다 — 밖이면 lotIds 칸의 400. 검사 의뢰 첨부가 아니거나(이미 LOT 에 붙은 첨부 등) 그 검사 의뢰의 판정이 확정됐으면 attachmentId 의 400(확정 전 작성 중·대기에만 연결한다). 근거: omf-all-around#296(사용자 지시 2026-11-19)",
+    "parameters": [
+     {
+      "name": "attachmentId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 31
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AttachmentLotLink"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "연결됨 — 새로 만든 LOT 첨부들(고른 LOT 순서).",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Attachment"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — lotIds 형식·이 검사 의뢰 밖의 LOT · 검사 의뢰 첨부가 아님 · 판정 확정됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — IQC(W-01-01)·OQC(W-04-03) 판정 화면. 근거: omf-all-around#296",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 첨부",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/app/notices/{noticeId}:dismiss": {
@@ -7833,7 +7937,7 @@
    },
    "TerminalWorkCounts": {
     "type": "object",
-    "description": "단말 작업 화면의 남은 작업 수. 단말 유형에 맞는 키만 온다(모바일 4 · POP 5). 각 수는 그 화면 목록과 같은 조건으로 센다(배지 = 목록). 「오늘」은 공장 시간대. 알림 설정과 무관하다. 근거: 서버 선행 · 장부 P-137 · omf-all-around#190(피처 002 대기 작업 배지)",
+    "description": "단말 작업 화면의 남은 작업 수. 단말 유형에 맞는 키만 온다(모바일 4 · POP 6). 각 수는 그 화면 목록과 같은 조건으로 센다(배지 = 목록). 「오늘」은 공장 시간대. 알림 설정과 무관하다. 근거: 서버 선행 · 장부 P-137 · omf-all-around#190(피처 002 대기 작업 배지)",
     "properties": {
      "putaway": {
       "type": "integer",
@@ -7888,6 +7992,12 @@
       "minimum": 0,
       "example": 3,
       "description": "POP OQC — OQC 대기·진행 의뢰(단말 공장)."
+     },
+     "shipmentCompletion": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 2,
+      "description": "POP 출하 완료(P-04-07) — 오늘 출하일의 완료 대기 지시서(GET /logistics/shipment-requests?completionReadyOnly=true, 단말 공장). 근거: 피처 010 · omf-all-around#305"
      }
     }
    },
@@ -10889,7 +10999,7 @@
       "type": "string",
       "maxLength": 40,
       "x-no-example": true,
-      "description": "무엇에 붙은 첨부인가 — WAREHOUSE 창고 도면, NOTICE 공지, BREAKDOWN 설비 고장 사진. BREAKDOWN은 전용 업로드 경로에서만 등록한다.",
+      "description": "무엇에 붙은 첨부인가 — WAREHOUSE 창고 도면, NOTICE 공지, BREAKDOWN 설비 고장 사진, INSPECTION_REQUEST 검사 의뢰(IQC 입하 LOT) 문서. BREAKDOWN은 전용 업로드 경로에서만 등록한다.",
       "x-code-key": "CD-ATTACHMENT-TARGET-TYPE",
       "enum": [
        "WAREHOUSE",
@@ -10897,7 +11007,8 @@
        "BREAKDOWN",
        "LOT",
        "INSPECTION_RESULT",
-       "INSPECTION_PLAN_VERSION"
+       "INSPECTION_PLAN_VERSION",
+       "INSPECTION_REQUEST"
       ],
       "example": "WAREHOUSE"
      },
@@ -10935,6 +11046,27 @@
       "example": 1001
      }
     }
+   },
+   "AttachmentLotLink": {
+    "type": "object",
+    "required": [
+     "lotIds"
+    ],
+    "description": "검사 의뢰 첨부를 연결할 자재 관리 LOT(omf-all-around#296).",
+    "properties": {
+     "lotIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "description": "연결할 자재 관리 LOT — 그 검사 의뢰의 입하 LOT 에서 나온 것만."
+     }
+    },
+    "additionalProperties": false
    }
   },
   "securitySchemes": {

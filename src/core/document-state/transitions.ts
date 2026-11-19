@@ -644,5 +644,11 @@ export const TRANSITIONS: TransitionRegistry = {
       to: 'CANCELLED',
       sourceOperation: 'POST /logistics/shipments/{shipmentId}:cancel',
     },
+    // POP 출하 완료 출하는 확정으로 태어난다 — ERP 로 보내기 «전»이면 취소된다(피처 010 · 송신 전 판정은 서비스가 한다).
+    'shipment-cancel-unsent': {
+      from: ['CONFIRMED'],
+      to: 'CANCELLED',
+      sourceOperation: 'POST /logistics/shipments/{shipmentId}:cancel',
+    },
   },
 };

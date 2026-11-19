@@ -137,7 +137,8 @@ describe('역할·기능 권한 (e2e)', () => {
     // W-02-12(생산 창고 보충)(피처 004 · omf-all-around#230).
     // M-01-03·W-01-14·W-01-15·W-01-16·W-06-25(피처 005 · omf-all-around#254).
     // P-02-08·P-02-09·P-02-13(생산 포장·포장 라벨 재출력·PQC 제품 검사 POP 화면)은 없앴다(omf-all-around#293).
-    expect(response.body.items).toHaveLength(142);
+    // P-04-07(출하 완료)(피처 010 · omf-all-around#305).
+    expect(response.body.items).toHaveLength(143);
     for (const retired of ['W-CO-05', 'P-02-08', 'P-02-09', 'P-02-13']) {
       expect(response.body.items.map((p: { code: string }) => p.code)).not.toContain(retired);
     }
@@ -333,6 +334,21 @@ describe('역할·기능 권한 (e2e)', () => {
     await prisma.role_permission.createMany({
       data: ['P-02-08', 'P-02-09', 'P-02-13'].map((permission_code) => ({ role_id: BigInt(target.roleId), permission_code })),
     });
+
+    const read = await request(app.getHttpServer())
+      .get(`/api/app/roles/${target.roleId}/permissions`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(read.body.items.map((i: { permissionCode: string }) => i.permissionCode)).toEqual(['W-01-03']);
+
+    await putPermissions(target.roleId, ['W-01-03']);
+    expect(await prisma.role_permission.count({ where: { role_id: BigInt(target.roleId) } })).toBe(1);
+  });
+
+  it('⭐ 이미 저장된 W-06-14 도 내려 주지 않고, 다음 저장에서 사라진다(omf-all-around#328)', async () => {
+    const target = await create(`${PREFIX}_PERM6`);
+    await putPermissions(target.roleId, ['W-01-03']);
+    await prisma.role_permission.create({ data: { role_id: BigInt(target.roleId), permission_code: 'W-06-14' } });
 
     const read = await request(app.getHttpServer())
       .get(`/api/app/roles/${target.roleId}/permissions`)

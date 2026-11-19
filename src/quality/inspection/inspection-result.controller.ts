@@ -27,6 +27,7 @@ import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertNotShipmentOqcConfirm } from './oqc-flow-guard';
 import { InspectionConfirmService, InspectionResultConfirm } from './inspection-confirm.service';
 import { InspectionResultListQuery, InspectionResultQueryService } from './inspection-result-query.service';
 import {
@@ -137,8 +138,11 @@ export class InspectionResultController {
     @Body() body: InspectionResultConfirm,
   ): Promise<InspectionResultView> {
     const appUserId = userOf(request);
-    return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', (version) =>
-      this.confirms.confirm(inspectionResultId, version, body, appUserId), FAMILY_CONFLICT_CODE);
+    return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', async (version) => {
+      // 출하 OQC 새 흐름은 확정 버튼이 없다 — 출하 완료가 확정한다(피처 010 · 409).
+      await assertNotShipmentOqcConfirm(this.prisma, { inspectionResultId });
+      return this.confirms.confirm(inspectionResultId, version, body, appUserId);
+    }, FAMILY_CONFLICT_CODE);
   }
 
   /**

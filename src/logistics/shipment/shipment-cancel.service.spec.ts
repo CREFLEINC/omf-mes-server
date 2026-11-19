@@ -59,7 +59,7 @@ function build(seed: Seed = {}) {
         order.push('lock');
         return Promise.resolve([{
           shipment_id: BigInt(SHIPMENT_ID), shipment_no: 'SH-20260901-0009', shipment_request_id: 1n,
-          warehouse_id: 2n, shipped_at: null, status_code: seed.status ?? 'UNCONFIRMED',
+          warehouse_id: 2n, completed_terminal_id: null, shipped_at: null, status_code: seed.status ?? 'UNCONFIRMED',
           version_no: seed.version ?? VERSION,
         }]);
       }

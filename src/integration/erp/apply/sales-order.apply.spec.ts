@@ -160,11 +160,14 @@ describe('salesOrderTable', () => {
     ]);
   });
 
-  it('출하된 수량 밑으로 줄이면 고치지 않고 실패한다', async () => {
+  it('Q3·D-16 출하된 수량 밑으로 줄여도 막지 않는다 — 새 수량을 반영하고 경고를 돌려준다(피처 010)', async () => {
     const f = fake({ header: HEADER, line: { ...LINE, shipped_qty: D(50) } });
 
-    await expect(salesOrderTable.apply(f.tx, erp({ SO_QTY: 40 }))).rejects.toThrow('출하 수량 50');
-    expect(f.writes).toEqual([]);
+    const outcome = await salesOrderTable.apply(f.tx, erp({ SO_QTY: 40 }));
+
+    expect(f.writes).toEqual([{ op: 'line.update', data: expect.objectContaining({ ordered_qty: D(40) }) }]);
+    expect(outcome).toEqual({ warning: expect.stringContaining('출하 수량 50') });
+    expect((outcome as { warning: string }).warning).toContain('수량 40');
   });
 
   it('출하가 있는 라인의 품목을 바꾸면 실패한다', async () => {

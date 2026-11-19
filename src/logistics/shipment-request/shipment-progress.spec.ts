@@ -81,6 +81,19 @@ describe('shipmentProgressCode — 6값 각각(계약 ShipmentRequest.shipmentPr
   });
 });
 
+describe('shipmentProgressCode — 피처 010 초과(P ≥ A · S ≥ A)', () => {
+  it('US1-1 PICKED — 마지막 LOT 이 목표를 넘겨도(P > A) 피킹 완료다', () => {
+    expect(codeOf(100, 100, 110, 0)).toBe('PICKED');
+    // 부분 배정이어도 같다 — PICKED 는 A = R 을 요구하지 않는다.
+    expect(codeOf(100, 60, 70, 0)).toBe('PICKED');
+  });
+
+  it('US1-3 SHIPPED — 초과분까지 출하해도(S > A) 출하 완료다', () => {
+    expect(codeOf(100, 100, 110, 110)).toBe('SHIPPED');
+    expect(codeOf(100, 80, 90, 90)).toBe('SHIPPED');
+  });
+});
+
 describe('shipmentProgressCode — 계획안이 이름을 대며 지목한 자리', () => {
   it('⭐ A = 0 이면 NOT_ALLOCATED 다 — 공허참으로 SHIPPED 가 되지 않는다', () => {
     // R-11: 이 값이 안 나오면 `W-04-02` 「상태」 드롭다운의 NOT_ALLOCATED 가 영영 빈 목록이다.

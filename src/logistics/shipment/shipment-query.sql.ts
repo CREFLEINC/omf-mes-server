@@ -1,5 +1,6 @@
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { shipmentLinePickedSql } from '../shipment-request/shipment-progress';
+import { ERP_SEND_STATUS_SQL } from './shipment-history';
 
 /**
  * `GET /logistics/shipments`(13축)의 SQL 조립. 갈라 둔 이유는 **정렬 2차 키와 「이 축은 «안» 건다」가
@@ -19,6 +20,8 @@ export interface ShipmentFilters {
   q?: string;
   lotId?: number;
   hasUnassignedPackedBox?: boolean;
+  /** ERP 송신 상태(피처 010 US7) — 응답 칸과 같은 CASE 로 거른다. */
+  erpSendStatus?: string;
 }
 
 export interface ShipmentQuery extends ShipmentFilters {
@@ -99,8 +102,20 @@ function allocationExists(condition: string): string {
  * ⛔ 요청 하나를 시간대 하나로 접지 않는다 — `warehouseId` 가 선택이라 한 목록에 공장이 섞인다 ⇒ 행마다 푼다.
  */
 function plantMidnightSql(date: string): string {
-  return `((${date})::timestamp AT TIME ZONE (SELECT p.timezone_code FROM mdm.warehouse w
-                    JOIN mdm.plant p ON p.plant_id = w.plant_id WHERE w.warehouse_id = s.warehouse_id))`;
+  // POP 완료 출하(피처 010)는 창고가 없다 — 지시서 이행 공장의 시간대다.
+  return `((${date})::timestamp AT TIME ZONE COALESCE(
+                    (SELECT p.timezone_code FROM mdm.warehouse w JOIN mdm.plant p ON p.plant_id = w.plant_id WHERE w.warehouse_id = s.warehouse_id),
+                    (SELECT p.timezone_code FROM logistics.shipment_request r JOIN mdm.plant p ON p.plant_id = r.fulfillment_plant_id
+                      WHERE r.shipment_request_id = s.shipment_request_id)))`;
+}
+
+/** `q` — 출하번호 · 출하 지시서 번호 · 고객 코드·이름 부분 일치. */
+export function keywordSql(param: string): string {
+  const like = `'%' || ${param} || '%'`;
+  return `(s.shipment_no ILIKE ${like}
+        OR EXISTS (SELECT 1 FROM logistics.shipment_request qr JOIN mdm.partner qc ON qc.partner_id = qr.customer_id
+                    WHERE qr.shipment_request_id = s.shipment_request_id
+                      AND (qr.shipment_request_no ILIKE ${like} OR qc.partner_code ILIKE ${like} OR qc.partner_name ILIKE ${like})))`;
 }
 
 export function whereSql(query: ShipmentFilters): BuiltWhere {
@@ -139,8 +154,13 @@ export function whereSql(query: ShipmentFilters): BuiltWhere {
   }
   if (query.statusCode !== undefined) and.push(`s.status_code = ${bind(query.statusCode)}`);
   if (query.warehouseId !== undefined) {
-    and.push(`s.warehouse_id = ${bind(query.warehouseId)}::bigint`);
+    // POP 완료 출하는 그 창고에서 재고가 빠졌으면(내부 차감 기록) 걸린다(피처 010).
+    const warehouse = bind(query.warehouseId);
+    and.push(`(s.warehouse_id = ${warehouse}::bigint OR EXISTS (SELECT 1 FROM logistics.goods_issue gw
+                 WHERE gw.source_document_type_code = 'SHIPMENT' AND gw.source_document_id = s.shipment_id
+                   AND gw.source_warehouse_id = ${warehouse}::bigint))`);
   }
+  if (query.erpSendStatus !== undefined) and.push(`${ERP_SEND_STATUS_SQL} = ${bind(query.erpSendStatus)}`);
   // ⭐ `statusCode` 와 **AND** 로 겹친다 — 둘이 오면 교집합이다(`statusCode=CONFIRMED` +
   //    `unconfirmedOnly=true` 는 0건이 «정답»이다. 한쪽을 이기게 만들면 화면이 못 믿는다).
   //    계약이 한 방향만 적었으므로 `false` 는 절을 «안 건다»(선례 `unassignedOnly`).
@@ -148,8 +168,9 @@ export function whereSql(query: ShipmentFilters): BuiltWhere {
   if (query.pickedOnly === true) and.push(PICKED_ONLY_SQL);
   // 계약이 한 방향만 적었으므로 `false` 는 절을 «안 건다»(`unconfirmedOnly` 와 같은 관례).
   if (query.hasUnassignedPackedBox === true) and.push(UNASSIGNED_PACKED_BOX_SQL);
-  // ⛔ 범위는 `shipment_no` 하나다 — 계약이 「고객은 customerId 를, LOT 은 lotId 를 쓴다」로 닫았다.
-  if (query.q !== undefined) and.push(`s.shipment_no ILIKE '%' || ${bind(query.q)} || '%'`);
+  // 범위는 출하번호·지시서 번호·고객(코드·이름)이다 — 출하 내역(W-04-12) 시안 「출하번호·지시서·고객」(피처 010).
+  // ⛔ LOT 은 넣지 않는다 — LOT 은 `lotId` 를 쓴다.
+  if (query.q !== undefined) and.push(keywordSql(bind(query.q)));
   if (query.lotId !== undefined) {
     and.push(allocationExists(`a.lot_id = ${bind(query.lotId)}::bigint`));
   }

@@ -85,6 +85,8 @@ function pick(overrides: Partial<ShipmentPickRow> = {}): ShipmentPickRow {
     updated_by: null,
     version_no: 1,
     lot: { lot_no: 'LOT-0001' },
+    warehouse: { warehouse_code: 'WH-1', warehouse_name: '창고1' },
+    location: null,
     ...overrides,
   };
 }

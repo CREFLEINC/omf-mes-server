@@ -115,7 +115,7 @@ export class LocationService {
       ]);
     }
     const page = referencePage(query);
-    const where = referenceWhere(query, { code: 'location_code', name: 'location_name' }, {
+    const where = referenceWhere(query, { code: 'location_code', name: 'location_name', alias: 'alias_name' }, {
       ...(query.warehouseId === undefined ? {} : { warehouse_id: query.warehouseId }),
       // 스캔한 코드로 한 건을 집는 자리라 정확 일치다. 부분 일치는 `q` 가 맡는다 —
       // 계약이 「q 로 받은 페이지를 화면이 걸러 쓰는 것으로는 성립하지 않는다」로 적었다.

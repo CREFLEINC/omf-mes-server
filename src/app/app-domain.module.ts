@@ -14,6 +14,7 @@ import { AppUserController } from './access/app-user.controller';
 import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
 import { AttachmentController } from './attachment/attachment.controller';
+import { AttachmentLinkService } from './attachment/attachment-link.service';
 import { AttachmentUploadService } from './attachment/attachment-upload.service';
 import { AttachmentService } from './attachment/attachment.service';
 import { DashboardAvailabilityService } from './dashboard/dashboard-availability.service';
@@ -113,6 +114,7 @@ import { TerminalWorkCountService } from './terminal-work/terminal-work-count.se
     UserWorkerLinkService,
     AttachmentService,
     AttachmentUploadService,
+    AttachmentLinkService,
     DashboardSummaryService,
     DashboardAvailabilityService,
     DashboardEquipmentService,
