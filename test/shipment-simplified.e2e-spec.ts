@@ -481,4 +481,185 @@ describe('출하 공정 단순화 (e2e)', () => {
     const { made } = await pickedThree();
     return (await f.lotsOf(made)).map((lot) => lot.shipmentRequestLotId);
   }
+  /** 수주 연결 라인(목표 100) + LOT 40(창고1 위치 A)·40(창고2)·30(창고1 위치 B) 피킹 + 셋 다 합격. */
+  async function readyRequest(): Promise<{ made: Awaited<ReturnType<ShipmentSimplifiedFixture['request']>>; lotIds: number[] }> {
+    const made = await f.request([{ allocated: 100, salesOrdered: 100 }]);
+    const lotIds: number[] = [];
+    for (const balance of [
+      { warehouse: 'wh1', location: 'loc1a', qty: 40 }, { warehouse: 'wh2', qty: 40 }, { warehouse: 'wh1', location: 'loc1b', qty: 30 },
+    ] as const) {
+      const lot = await f.lot({ balances: [balance] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      lotIds.push(lot.lotId);
+    }
+    await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: lotIds, overallJudgmentCode: 'ACCEPTED' }).expect(201);
+    return { made, lotIds };
+  }
+
+  describe('출하 완료 — POP(:lookup · :complete)', () => {
+    it('US1-3·SC-002·SC-009·Q9·Q2 완료 한 번에 출하 하나·창고마다 출고 기록·재고 차감·수주 출하 수량·OQC 확정·ERP 송신 대기가 함께 생긴다', async () => {
+      const { made, lotIds } = await readyRequest();
+      const firstLot = (await f.lotsOf(made))[0];
+      await f.saveCode(firstLot.shipmentRequestLotId, 'BOX-0001').expect(200);
+
+      const looked = await f.lookup(`SHPREQ:${made.requestNo}`).expect(200);
+      expect(looked.body).toMatchObject({ shipmentRequestId: made.requestId, blockers: [], completedShipment: null });
+      expect(looked.body.warehouses.map((row: { warehouseId: number; qty: number; lotCount: number }) => [row.warehouseId, row.qty, row.lotCount]))
+        .toEqual([[Number(f.ids.wh1), 70, 2], [Number(f.ids.wh2), 40, 1]]);
+      expect(looked.body.lines[0]).toMatchObject({ targetQty: 100, pickedQty: 110, overQty: 10, lotCount: 3 });
+      expect(JSON.stringify(looked.body)).not.toMatch(/erp/i);
+
+      const done = await f.complete(made).expect(200);
+
+      const shipment = await prisma.shipment.findUniqueOrThrow({ where: { shipment_id: BigInt(done.body.shipmentId) } });
+      expect(shipment).toMatchObject({
+        status_code: 'CONFIRMED', warehouse_id: null, completed_terminal_id: f.pop.terminalId, completed_worker_id: f.pop.workerId, created_by: null,
+      });
+      expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(1);
+      const issues = await prisma.goods_issue.findMany({ where: { source_document_type_code: 'SHIPMENT', source_document_id: shipment.shipment_id }, orderBy: { goods_issue_id: 'asc' } });
+      expect(issues.map((row) => row.source_warehouse_id).sort()).toEqual([f.ids.wh1, f.ids.wh2].sort());
+      const allocations = await prisma.shipment_lot_allocation.findMany({ where: { shipment_line: { shipment_id: shipment.shipment_id } } });
+      expect(allocations.map((row) => Number(row.allocated_qty)).sort()).toEqual([30, 40, 40]);
+      for (const lotId of lotIds) {
+        const balance = await prisma.inventory_balance.findFirstOrThrow({ where: { lot_id: BigInt(lotId) } });
+        expect([Number(balance.on_hand_qty), Number(balance.picked_qty)]).toEqual([0, 0]);
+      }
+      const line = await prisma.shipment_request_line.findUniqueOrThrow({ where: { shipment_request_line_id: BigInt(made.lineIds[0]) }, include: { sales_order_line: true } });
+      expect([Number(line.shipped_qty), Number(line.sales_order_line?.shipped_qty)]).toEqual([110, 110]);
+      expect((await prisma.shipment_request_lot.findMany({ where: { lot_id: { in: lotIds.map(BigInt) } } })).map((row) => [row.status_code, row.shipment_id]))
+        .toEqual(lotIds.map(() => ['SHIPPED', shipment.shipment_id]));
+      const oqc = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, include: { inspection_result: true } });
+      expect([oqc.status_code, oqc.overall_judgment_code, oqc.inspection_result.map((row) => row.status_code)]).toEqual(['COMPLETED', 'ACCEPTED', ['CONFIRMED']]);
+      expect((await prisma.lot_status_event.findMany({ where: { lot_id: { in: lotIds.map(BigInt) } } })).map((row) => row.transition_code)).toEqual(['C4', 'C4', 'C4']);
+      const messages = await prisma.integration_message.findMany({ where: { target_type_code: 'SHIPMENT', target_id: shipment.shipment_id } });
+      expect(messages.map((row) => [row.message_key, row.status_code])).toEqual([[`IF-SHIPMENT-PGI-SEND:${shipment.shipment_no}`, 'PENDING']]);
+      expect(done.body.completion).toMatchObject({ completedShipment: { shipmentNo: shipment.shipment_no }, blockers: [{ code: 'ALREADY_COMPLETED' }] });
+      const detail = await f.asSession(f.http().get(`/api/logistics/shipment-requests/${made.requestId}`)).expect(200);
+      expect(detail.body.shipmentProgressCode).toBe('SHIPPED');
+      // US5 — 출하 완료 뒤에는 출하 관리 코드를 고칠 수 없다.
+      await f.saveCode(firstLot.shipmentRequestLotId, 'BOX-0002').expect(409);
+    });
+
+    it('US1-4·US1-7·US2-5·FR-016·SC-004·Q8 피킹 부족·미검사·불합격·보류면 409 COMPLETION_BLOCKED 와 이유 목록 — 출하가 생기지 않는다', async () => {
+      const short = await f.request([{ allocated: 100 }]);
+      const lots = [];
+      for (const qty of [40, 20, 20]) {
+        const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty }] });
+        await f.pickLot(short, 0, { lotId: lot.lotId }).expect(200);
+        lots.push(lot);
+      }
+      await f.oqcResult(short.oqcRequestIds.A, { matchedLotIds: [lots[1].lotId], overallJudgmentCode: 'REJECTED' }).expect(201);
+      await f.oqcResult(short.oqcRequestIds.A, { matchedLotIds: [lots[2].lotId], overallJudgmentCode: 'HELD' }).expect(201);
+
+      const blocked = await f.complete(short).expect(409);
+
+      expect(blocked.body).toMatchObject({ code: 'COMPLETION_BLOCKED' });
+      expect(blocked.body.blockers).toEqual([
+        { code: 'PICKING_SHORT', lineNo: 1 }, { code: 'NOT_INSPECTED', lotNo: lots[0].lotNo },
+        { code: 'REJECTED', lotNo: lots[1].lotNo }, { code: 'HELD', lotNo: lots[2].lotNo },
+      ]);
+      expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(short.requestId) } })).toBe(0);
+      expect((await f.lookup(`SHPREQ:${short.requestNo}`).expect(200)).body.blockers).toEqual(blocked.body.blockers);
+    });
+
+    it('US1-5 검사 불필요 품목만 있는 지시서는 OQC 없이 완료된다 · US7-2·Q15 수주 없는 지시서는 ERP 송신 대기를 쌓지 않는다', async () => {
+      const made = await f.request([{ item: 'B', allocated: 30 }]);
+      const lot = await f.lot({ item: 'B', balances: [{ warehouse: 'wh1', qty: 30 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+
+      const done = await f.complete(made).expect(200);
+
+      expect(await prisma.integration_message.count({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(done.body.shipmentId) } })).toBe(0);
+      expect(await prisma.goods_issue.count({ where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(done.body.shipmentId) } })).toBe(1);
+    });
+
+    it('FR-019·Q11·US1-6 다시 완료하면 409 ALREADY_COMPLETED, 두 POP 이 동시에 완료해도 하나만 성공한다', async () => {
+      const { made } = await readyRequest();
+
+      const results = await Promise.all([f.complete(made), f.complete(made)]);
+
+      expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
+      expect(results.find((response) => response.status === 409)?.body.code).toBe('ALREADY_COMPLETED');
+      expect((await f.complete(made).expect(409)).body.code).toBe('ALREADY_COMPLETED');
+      expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(1);
+    });
+
+    it('Q3·D-16 수주 잔량 20 인 라인에 30 LOT 이 통째로 나간다 — 수주 출하 수량이 수주 수량을 넘고 송신 행에 30 이 실린다', async () => {
+      const made = await f.request([{ allocated: 20, salesOrdered: 20, inspection: false }]);
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 30 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+
+      const done = await f.complete(made).expect(200);
+
+      const orderLine = await prisma.sales_order_line.findUniqueOrThrow({ where: { sales_order_line_id: BigInt(made.salesOrderLineIds[0] as number) } });
+      expect([Number(orderLine.ordered_qty), Number(orderLine.shipped_qty)]).toEqual([20, 30]);
+      const message = await prisma.integration_message.findFirstOrThrow({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(done.body.shipmentId) } });
+      expect((message.payload as { lines: { shippedQty: number }[] }).lines[0].shippedQty).toBe(30);
+    });
+
+    it('Q16 OQC 생략된 지시서는 생략 뒤 피킹한 LOT 까지 완료 때 C27 이 남는다', async () => {
+      const made = await f.request([{ allocated: 40 }]);
+      await prisma.inspection_request.update({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, data: { status_code: 'SKIPPED', skip_basis_code: 'APPROVAL' } });
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 40 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      expect((await f.lotsOf(made))[0].oqcLotStatus).toBe('SKIPPED');
+
+      await f.complete(made).expect(200);
+
+      expect((await prisma.lot_status_event.findMany({ where: { lot_id: BigInt(lot.lotId) } })).map((row) => row.transition_code)).toEqual(['C27']);
+    });
+
+    it('Q21 수주 라인이 취소된 지시서는 막힌다(담당자에게 문의)', async () => {
+      const made = await f.request([{ allocated: 30, salesOrdered: 30, inspection: false }]);
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 30 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      await prisma.sales_order_line.update({ where: { sales_order_line_id: BigInt(made.salesOrderLineIds[0] as number) }, data: { cancelled_at: new Date() } });
+
+      const blocked = await f.complete(made).expect(409);
+
+      expect(blocked.body.blockers).toEqual([{ code: 'SALES_ORDER_LINE_CANCELLED', lineNo: 1 }]);
+    });
+
+    it('US4-3·Q10·Q21 지시서 코드가 아니면 400 NOT_SHIPMENT_REQUEST_CODE, 없는 지시서·남의 공장은 404 SHIPMENT_REQUEST_NOT_FOUND', async () => {
+      const made = await f.request([{ allocated: 10 }]);
+
+      const notCode = await f.lookup('SSE2E-LOT-1').expect(400);
+      const missing = await f.lookup('SHPREQ:SR-00000000-9999').expect(404);
+      await f.lookup(`SHPREQ:${made.requestNo}`, f.foreignPda).expect(404);
+      await f.lookup(`SHPREQ:${made.requestNo}`, f.pda).expect(200);
+
+      expect(notCode.body.errors[0]).toMatchObject({ field: 'code', code: 'NOT_SHIPMENT_REQUEST_CODE' });
+      expect(missing.body.errors[0]).toMatchObject({ code: 'SHIPMENT_REQUEST_NOT_FOUND' });
+    });
+
+    it('US4-4·Q10 POP 찾기 — 번호·고객·품목 q 와 완료 대기만, 막힌 지시서는 blockerSummary 가 실린다', async () => {
+      const { made: ready } = await readyRequest();
+      const pending = await f.request([{ allocated: 30 }]);
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 30 }] });
+      await f.pickLot(pending, 0, { lotId: lot.lotId }).expect(200);
+      const search = (query: Record<string, unknown>) => f.asTerminal(f.http().get('/api/logistics/shipment-requests')
+        .query({ shipDateFrom: '2026-11-18', shipDateTo: '2026-11-18', size: 100, ...query }), f.pop).expect(200);
+
+      const readyOnly = await search({ q: `SSE2E-${f.run}`, completionReadyOnly: true });
+      const all = await search({ q: `SSE2E-${f.run}` });
+      const byItem = await search({ q: '출하단순화품목A', completionReadyOnly: true });
+
+      const ids = (body: { items: { shipmentRequestId: number }[] }) => body.items.map((item) => item.shipmentRequestId);
+      expect(ids(readyOnly.body)).toContain(ready.requestId);
+      expect(ids(readyOnly.body)).not.toContain(pending.requestId);
+      expect(ids(byItem.body)).toContain(ready.requestId);
+      const row = (all.body.items as { shipmentRequestId: number; blockerSummary: object; lotJudgmentSummary: object }[])
+        .find((item) => item.shipmentRequestId === pending.requestId);
+      expect(row).toMatchObject({ blockerSummary: { NOT_INSPECTED: 1 }, lotJudgmentSummary: { notInspected: 1 } });
+      for (const item of readyOnly.body.items as { completionBlockers: unknown[] }[]) expect(item.completionBlockers).toEqual([]);
+    });
+
+    it('SC-009 PDA 는 :complete 를 부를 수 없고(401) 계정 세션은 403 이다', async () => {
+      const { made } = await readyRequest();
+
+      await f.complete(made, f.pda).expect(401);
+      await f.complete(made, 'session').expect(403);
+      expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(0);
+    });
+  });
 });

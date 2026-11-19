@@ -87,9 +87,13 @@ describe('단말 작업 수 (e2e)', () => {
       + await total('M3', '/api/logistics/putaway-pending-lots', { size: 100 }));
   });
 
-  it('US3-6 SC-003 POP P1 — 다섯 키가 같은 단말로 부른 각 목록의 건수와 같다', async () => {
+  it('US3-6 SC-003 POP P1 — 여섯 키가 같은 단말로 부른 각 목록의 건수와 같다', async () => {
     const counts = await countsOf('P1');
-    expect(Object.keys(counts).sort()).toEqual(['emergencyWorkOrder', 'oqcInspection', 'reworkResult', 'shipmentPacking', 'workStart']);
+    // 피처 010 이 P-04-07 출하 완료(완료 대기 지시서)를 더했다: 5 → 6.
+    expect(Object.keys(counts).sort()).toEqual(['emergencyWorkOrder', 'oqcInspection', 'reworkResult', 'shipmentCompletion', 'shipmentPacking', 'workStart']);
+    expect(counts.shipmentCompletion).toBe(
+      await total('P1', '/api/logistics/shipment-requests', { completionReadyOnly: 'true', shipDateFrom: TODAY, shipDateTo: TODAY, size: 100 }),
+    );
     expect(counts.shipmentPacking).toBe(
       await total('P1', '/api/logistics/shipments', { pickedOnly: 'true', shipDateFrom: TODAY, shipDateTo: TODAY, size: 100 }),
     );

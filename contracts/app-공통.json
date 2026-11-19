@@ -7937,7 +7937,7 @@
    },
    "TerminalWorkCounts": {
     "type": "object",
-    "description": "단말 작업 화면의 남은 작업 수. 단말 유형에 맞는 키만 온다(모바일 4 · POP 5). 각 수는 그 화면 목록과 같은 조건으로 센다(배지 = 목록). 「오늘」은 공장 시간대. 알림 설정과 무관하다. 근거: 서버 선행 · 장부 P-137 · omf-all-around#190(피처 002 대기 작업 배지)",
+    "description": "단말 작업 화면의 남은 작업 수. 단말 유형에 맞는 키만 온다(모바일 4 · POP 6). 각 수는 그 화면 목록과 같은 조건으로 센다(배지 = 목록). 「오늘」은 공장 시간대. 알림 설정과 무관하다. 근거: 서버 선행 · 장부 P-137 · omf-all-around#190(피처 002 대기 작업 배지)",
     "properties": {
      "putaway": {
       "type": "integer",
@@ -7992,6 +7992,12 @@
       "minimum": 0,
       "example": 3,
       "description": "POP OQC — OQC 대기·진행 의뢰(단말 공장)."
+     },
+     "shipmentCompletion": {
+      "type": "integer",
+      "minimum": 0,
+      "example": 2,
+      "description": "POP 출하 완료(P-04-07) — 오늘 출하일의 완료 대기 지시서(GET /logistics/shipment-requests?completionReadyOnly=true, 단말 공장). 근거: 피처 010 · omf-all-around#305"
      }
     }
    },

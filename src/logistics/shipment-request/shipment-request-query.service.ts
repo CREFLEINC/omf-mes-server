@@ -16,11 +16,15 @@ import {
   whereSql,
 } from './shipment-request-query.sql';
 import {
+  CompletionFacts,
   ShipmentLotsByLine,
   ShipmentPicksByLine,
   ShipmentRequestView,
   shipmentRequestView,
 } from './shipment-request-view';
+
+/** 조회 클라이언트 — 서비스 자신 또는 트랜잭션. */
+type Db = Prisma.TransactionClient;
 
 /** 03 품질에서 이 축이 세는 것 — 출하검사뿐이다(§1-5). 좁히기용이고 판정은 ③a 가 다시 한다. */
 const OQC = 'OQC';
@@ -145,35 +149,43 @@ export class ShipmentRequestQueryService {
    * 헤더 id 집합 → 뷰. **세 질의**로 끝낸다 — 헤더+라인 1 · 예약 1 · 검사 1. ⛔ 건마다·라인마다
    * 부르면 쪽 크기만큼 N+1 이다(e2e L-42 가 예약 조회 «횟수»를 센다). ⭐ 단건도 이 길을 쓴다.
    */
-  private async views(ids: bigint[]): Promise<ShipmentRequestView[]> {
+  /** 트랜잭션 안에서 같은 뷰를 읽는다 — 출하 완료 관문이 잠근 뒤의 값으로 판정한다(피처 010). */
+  async getWithin(db: Db, shipmentRequestId: bigint): Promise<ShipmentRequestView> {
+    const [view] = await this.views([shipmentRequestId], db);
+    if (view === undefined) throw new NotFoundException('없는 출하작업지시입니다.');
+    return view;
+  }
+
+  private async views(ids: bigint[], db: Db = this.prisma): Promise<ShipmentRequestView[]> {
     if (ids.length === 0) return [];
-    const rows = await this.prisma.shipment_request.findMany({
+    const rows = await db.shipment_request.findMany({
       where: { shipment_request_id: { in: ids } },
       include: { shipment_request_line: { orderBy: { line_no: 'asc' } } },
     });
     const lines = rows.flatMap((row) => row.shipment_request_line);
-    const picks = await this.picksByLine(lines.map((line) => line.shipment_request_line_id));
+    const picks = await this.picksByLine(lines.map((line) => line.shipment_request_line_id), db);
     // ⛔ 맵 «전체»를 훑지 않는다 — 이 건들의 라인에서 뽑는다. 앞 질의가 느슨해지면 섞여 든 남의
     //    LOT 이 그대로 둘째 질의의 `IN` 목록으로 새 나간다(응답은 ③a 가 다시 걸러 안 바뀐다).
     const lotIds = lines
       .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
-    const inspections = await this.oqcResults(ids, lotIds);
-    const [lots, oqcStatuses] = await Promise.all([
-      this.lotsByLine(lines.map((line) => line.shipment_request_line_id)),
-      oqcLotStatusesOf(this.prisma, ids),
+    const inspections = await this.oqcResults(ids, lotIds, db);
+    const [lots, oqcStatuses, facts] = await Promise.all([
+      this.lotsByLine(lines.map((line) => line.shipment_request_line_id), db),
+      oqcLotStatusesOf(db, ids),
+      completionFactsOf(db, ids, lines.flatMap((line) => (line.sales_order_line_id === null ? [] : [line.sales_order_line_id]))),
     ]);
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots, oqcStatuses)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots, oqcStatuses, facts)];
     });
   }
 
   /** 피킹 LOT 행(피처 010) — 라인 id 를 모아 한 방으로 읽는다. 교체된 행도 이력으로 싣는다. */
-  private async lotsByLine(lineIds: bigint[]): Promise<ShipmentLotsByLine> {
-    const rows = await this.prisma.shipment_request_lot.findMany({
+  private async lotsByLine(lineIds: bigint[], db: Db): Promise<ShipmentLotsByLine> {
+    const rows = await db.shipment_request_lot.findMany({
       where: { shipment_request_line_id: { in: lineIds } },
       include: {
         lot: { select: { lot_no: true, item_id: true } },
@@ -203,8 +215,8 @@ export class ShipmentRequestQueryService {
    *    `ck_reservation_qty` 가 올리는 것 자체를 막는다(**통보 241** · §11 ①). 그래서 지금은 상태와
    *    무관하게 예약 행 전건이 `pickedQty` 에 남는다 — I-23 이 되돌림 칸을 정할 때 함께 푼다.
    */
-  private async picksByLine(lineIds: bigint[]): Promise<ShipmentPicksByLine> {
-    const rows = await this.prisma.inventory_reservation.findMany({
+  private async picksByLine(lineIds: bigint[], db: Db): Promise<ShipmentPicksByLine> {
+    const rows = await db.inventory_reservation.findMany({
       where: {
         source_document_type_code: SHIPMENT_REQUEST_LINE,
         source_document_id: { in: lineIds },
@@ -233,18 +245,19 @@ export class ShipmentRequestQueryService {
   private async oqcResults(
     shipmentRequestIds: bigint[],
     lotIds: bigint[],
+    db: Db,
   ): Promise<OqcInspectionRow[]> {
     const targets: Prisma.inspection_requestWhereInput[] = [
       { lot_id: { in: lotIds } },
       { target_type_code: LOT, target_id: { in: lotIds } },
       { target_type_code: SHIPMENT_REQUEST, target_id: { in: shipmentRequestIds } },
     ];
-    const rows = await this.prisma.inspection_result.findMany({
+    const rows = await db.inspection_result.findMany({
       where: { inspection_request: { inspection_type_code: OQC, OR: targets } },
       include: { inspection_request: true },
     });
     // 생략된 의뢰는 결과가 없다 — 같은 축으로 따로 읽어 «합격»으로 더한다(omf-all-around#119 · 장부 P-83).
-    const skipped = await this.prisma.inspection_request.findMany({
+    const skipped = await db.inspection_request.findMany({
       where: { inspection_type_code: OQC, status_code: 'SKIPPED', OR: targets },
     });
     return [...rows.map((row) => ({
@@ -258,6 +271,30 @@ export class ShipmentRequestQueryService {
       overallJudgmentCode: row.overall_judgment_code,
     })), ...skippedOqcRows(skipped)];
   }
+}
+
+/** 출하 완료 관문의 바깥 사실 — POP 완료 출하(취소 아님)와 취소된 수주 라인(피처 010). */
+export async function completionFactsOf(
+  prisma: Db,
+  shipmentRequestIds: bigint[],
+  salesOrderLineIds: bigint[],
+): Promise<CompletionFacts> {
+  const [shipments, cancelled] = await Promise.all([
+    prisma.shipment.findMany({
+      where: { shipment_request_id: { in: shipmentRequestIds }, completed_terminal_id: { not: null }, status_code: { not: 'CANCELLED' } },
+      select: { shipment_id: true, shipment_no: true, shipment_request_id: true, confirmed_at: true, shipped_at: true },
+    }),
+    salesOrderLineIds.length === 0 ? [] : prisma.sales_order_line.findMany({
+      where: { sales_order_line_id: { in: salesOrderLineIds }, cancelled_at: { not: null } }, select: { sales_order_line_id: true },
+    }),
+  ]);
+  return {
+    completed: new Map(shipments.map((row) => [String(row.shipment_request_id), {
+      shipmentId: Number(row.shipment_id), shipmentNo: row.shipment_no,
+      completedAt: (row.confirmed_at ?? row.shipped_at ?? new Date(0)).toISOString(),
+    }])),
+    cancelledSalesOrderLines: new Set(cancelled.map((row) => String(row.sales_order_line_id))),
+  };
 }
 
 /** 출하작업지시 목록의 조건 + 단말 공장 — 단말 작업 수(모바일 제품 출하 피킹)가 같은 함수로 센다(omf-all-around#190). */

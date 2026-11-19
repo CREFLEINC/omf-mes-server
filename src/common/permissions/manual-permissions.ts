@@ -174,6 +174,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // OQC 불합격 LOT 교체·출하 관리 코드 — 같은 PDA 피킹 화면의 조작이다(피처 010).
   'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace': ['M-04-01'],
   'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code': ['M-04-01'],
+  // 출하 완료 — POP P-04-07 전용 화면이다. 계정 세션은 서비스가 403 으로 막는다(단말만 완료한다).
+  'POST /logistics/shipment-requests/{shipmentRequestId}:complete': ['P-04-07'],
   // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
   'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
   'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],

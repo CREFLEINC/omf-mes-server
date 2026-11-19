@@ -292,6 +292,19 @@ export class ShipmentSimplifiedFixture {
     return session === 'session' ? this.asSession(test) : this.asTerminal(test, session);
   }
 
+  /** POP 출하 완료(기본은 자기 공장 POP). */
+  complete(made: MadeRequest, session: TerminalSession | 'session' = this.pop, key: string = randomUUID()): request.Test {
+    const test = this.http().post(`/api/logistics/shipment-requests/${made.requestId}:complete`).set('Idempotency-Key', key)
+      .send({ businessDate: '2026-11-18', occurredAt: '2026-11-18T05:00:00.000Z' });
+    return session === 'session' ? this.asSession(test) : this.asTerminal(test, session);
+  }
+
+  /** 지시서 코드 해석(기본은 자기 공장 POP). */
+  lookup(code: string, session: TerminalSession | 'session' = this.pop): request.Test {
+    const test = this.http().get('/api/logistics/shipment-requests:lookup').query({ code });
+    return session === 'session' ? this.asSession(test) : this.asTerminal(test, session);
+  }
+
   /** PDA 통째 피킹(기본은 자기 공장 PDA). */
   pickLot(made: MadeRequest, lineIndex: number, body: Record<string, unknown>, session: TerminalSession | 'session' = this.pda): request.Test {
     const test = this.http()

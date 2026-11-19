@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import type { OqcLotStatus } from '../../quality/inspection/oqc-lot-result';
+import { CompletionBlocker, CompletionBlockerCode, blockerSummary, completionBlockers } from './shipment-completion-rules';
 import { toDateString } from '../../common/master';
 import {
   OqcInspectionRow,
@@ -74,6 +75,25 @@ export type ShipmentLotsByLine = Map<string, ShipmentRequestLotRow[]>;
 
 /** 피킹 LOT 행 id → OQC 판정(살아 있는 행만 — `oqcLotStatusesOf`). */
 export type OqcLotStatusByLot = Map<bigint, OqcLotStatus>;
+
+/** 출하 완료 관문의 바깥 사실 — 지시서별 살아 있는 POP 완료 출하, 취소된 수주 라인 id. */
+export interface CompletionFacts {
+  completed: Map<string, CompletedShipmentView>;
+  cancelledSalesOrderLines: Set<string>;
+}
+
+export interface CompletedShipmentView {
+  shipmentId: number;
+  shipmentNo: string;
+  completedAt: string;
+}
+
+export interface LotJudgmentSummaryView {
+  notInspected: number;
+  accepted: number;
+  rejected: number;
+  held: number;
+}
 
 /** 지시서 QR·POP 스캔 값의 접두 — 번호 `SR-…` 가 생산 현장 입고와 같아 유형을 붙인다(R-9). */
 export const SHIPMENT_REQUEST_CODE_PREFIX = 'SHPREQ:';
@@ -157,6 +177,14 @@ export interface ShipmentRequestView {
   pickingWarehouses: ShipmentPickingWarehouseView[];
   /** OQC 불합격으로 교체한 LOT 수(FR-015 · 「LOT 교체 n」). */
   replacementCount: number;
+  /** 출하 완료를 막는 이유(FR-016) — 비면 완료 대기. */
+  completionBlockers: CompletionBlocker[];
+  /** 목록의 「막힘 n」 — 이유 코드별 수. */
+  blockerSummary: Partial<Record<CompletionBlockerCode, number>>;
+  /** 살아 있는 피킹 LOT 의 OQC 판정 수. */
+  lotJudgmentSummary: LotJudgmentSummaryView;
+  /** POP 에서 완료한 출하(취소 아님) — 없으면 null. */
+  completedShipment: CompletedShipmentView | null;
   lines?: ShipmentRequestLineView[];
   versionNo?: number;
 }
@@ -167,6 +195,7 @@ export function shipmentRequestView(
   inspections: OqcInspectionRow[],
   lotsByLine: ShipmentLotsByLine = new Map(),
   oqcStatuses: OqcLotStatusByLot = new Map(),
+  facts: CompletionFacts = { completed: new Map(), cancelledSalesOrderLines: new Set() },
 ): ShipmentRequestView {
   const lines = row.shipment_request_line.map((line) => ({
     line,
@@ -174,6 +203,17 @@ export function shipmentRequestView(
     lots: lotsByLine.get(String(line.shipment_request_line_id)) ?? [],
   }));
   const lineViews = lines.map(({ line, picks, lots }) => shipmentRequestLineView(line, picks, lots, oqcStatuses));
+  const completedShipment = facts.completed.get(String(row.shipment_request_id)) ?? null;
+  const liveLots = lineViews.flatMap((line) => line.lots).filter((lot) => lot.statusCode === 'PICKED');
+  const blockers = completionBlockers({
+    completed: completedShipment !== null,
+    lines: lines.map(({ line }, index) => ({
+      lineNo: line.line_no, allocatedQty: Number(line.allocated_qty), pickedQty: lineViews[index].pickedQty,
+      salesOrderLineCancelled: line.sales_order_line_id !== null && facts.cancelledSalesOrderLines.has(String(line.sales_order_line_id)),
+    })),
+    lots: liveLots.map((lot) => ({ lotNo: lot.lotNo, oqcLotStatus: lot.oqcLotStatus })),
+  });
+  const judged = (status: OqcLotStatus) => liveLots.filter((lot) => lot.oqcLotStatus === status).length;
 
   const totals = shipmentProgressTotals(
     lines.map(({ line, picks }) => ({
@@ -210,6 +250,10 @@ export function shipmentRequestView(
     shipmentProgressCode: shipmentProgressCode(totals),
     pickingWarehouses: pickingWarehouses(lineViews),
     replacementCount: lineViews.reduce((count, line) => count + line.lots.filter((lot) => lot.statusCode === 'REPLACED').length, 0),
+    completionBlockers: blockers,
+    blockerSummary: blockerSummary(blockers),
+    lotJudgmentSummary: { notInspected: judged('NOT_INSPECTED'), accepted: judged('ACCEPTED'), rejected: judged('REJECTED'), held: judged('HELD') },
+    completedShipment,
     lines: lineViews,
     versionNo: row.version_no,
   });

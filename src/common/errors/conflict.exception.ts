@@ -51,6 +51,8 @@ export interface ConflictExtra {
   proposalChanges?: { basis: string; message: string }[];
   /** `ProductionConflictResponse.currentProposal` — 같은 때 지금 기준으로 다시 계산한 제안(계약 `ProductionPlanProposal`). */
   currentProposal?: object;
+  /** `ShipmentConflictResponse.blockers` — `COMPLETION_BLOCKED` 일 때 출하 완료를 막는 이유(피처 010). */
+  blockers?: { code: string; lineNo?: number; lotNo?: string }[];
 }
 
 export interface OpenSessionView {

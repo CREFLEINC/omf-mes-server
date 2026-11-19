@@ -28,6 +28,7 @@ export interface PopWorkCounts {
   emergencyWorkOrder: number;
   reworkResult: number;
   oqcInspection: number;
+  shipmentCompletion: number;
 }
 
 /**
@@ -71,7 +72,7 @@ export class TerminalWorkCountService {
     const equipment = terminal.equipmentId === null ? {} : { plannedEquipmentId: Number(terminal.equipmentId), includeUnplannedEquipment: true };
     const workOrders = (query: Parameters<typeof workOrderListWhere>[1]) =>
       workOrderListWhere(this.prisma, query, terminal).then((where) => this.prisma.work_order.count({ where }));
-    const [shipmentPacking, workStart, emergencyWorkOrder, reworkResult, oqcInspection] = await Promise.all([
+    const [shipmentPacking, workStart, emergencyWorkOrder, reworkResult, oqcInspection, shipmentCompletion] = await Promise.all([
       // P-04-01 출하 포장: pickedOnly=true, 오늘
       this.rawCount(`SELECT count(*)::int AS total FROM ${SHIPMENT_FROM_SQL} WHERE ${packing.sql}`, packing.params),
       workOrders({ open: true, ...equipment }),
@@ -85,8 +86,15 @@ export class TerminalWorkCountService {
         terminalId: terminal.terminalId,
         terminalTypeCode: 'POP',
       }).then((where) => this.prisma.inspection_request.count({ where })),
+      this.shipmentCompletion(scope.plantId, today),
     ]);
-    return { shipmentPacking, workStart, emergencyWorkOrder, reworkResult, oqcInspection };
+    return { shipmentPacking, workStart, emergencyWorkOrder, reworkResult, oqcInspection, shipmentCompletion };
+  }
+
+  /** P-04-07 출하 완료(피처 010): 오늘 출하일 중 완료 대기 지시서 — 찾기 「완료 대기만」과 같은 조건. */
+  private async shipmentCompletion(plantId: bigint, today: string): Promise<number> {
+    const ready = shipmentRequestWhereSql({ shipDateFrom: today, shipDateTo: today, completionReadyOnly: true }, plantId);
+    return this.rawCount(`SELECT count(*)::int AS total FROM ${REQUEST_FROM_SQL} WHERE ${ready.sql}`, ready.params);
   }
 
   private async rawCount(sql: string, params: unknown[]): Promise<number> {

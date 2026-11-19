@@ -126,6 +126,7 @@ import { ShipmentService } from './shipment/shipment.service';
 import { ShipmentLotPickService } from './shipment-request/shipment-lot-pick.service';
 import { ShipmentLotReplaceService } from './shipment-request/shipment-lot-replace.service';
 import { ShipmentLotCodeService } from './shipment-request/shipment-lot-code.service';
+import { ShipmentCompletionService } from './shipment-request/shipment-completion.service';
 import { ShipmentRequestLotController } from './shipment-request/shipment-request-lot.controller';
 import { ShipmentOqcSkipService } from './shipment-request/shipment-oqc-skip.service';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
@@ -299,6 +300,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentLotPickService,
     ShipmentLotReplaceService,
     ShipmentLotCodeService,
+    ShipmentCompletionService,
     ShipmentOqcSkipService,
     ShipmentRequestQueryService,
     ShipmentRequestService,

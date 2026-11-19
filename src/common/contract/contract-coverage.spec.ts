@@ -119,7 +119,8 @@ describe('계약 커버리지', () => {
     // 적치·임시 적치 2 오퍼레이션(피처 009): 635 → 637. 검사 의뢰 첨부 LOT 연결(omf-all-around#296): 638.
     // LOT 통째 피킹 1 오퍼레이션(피처 010 S2): 638 → 639.
     // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 639 → 641.
-    expect(registry.size).toBe(641);
+    // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 641 → 643.
+    expect(registry.size).toBe(643);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

@@ -1,4 +1,5 @@
 import { ERROR_CODE, field, one } from '../../common/errors';
+import { COMPLETION_READY_SQL, keywordSql } from './shipment-completion.sql';
 import {
   SHIPMENT_PROGRESS_CASE_SQL,
   SHIPMENT_PROGRESS_TOTALS_SQL,
@@ -30,6 +31,10 @@ export interface ShipmentRequestFilters {
   shippableRemainderOnly?: boolean;
   /** OQC 불합격으로 교체한 LOT 이 있는 지시서만(피처 010 FR-015). */
   hasReplacement?: boolean;
+  /** POP 찾기(피처 010) — 번호·고객·품목 부분 일치. */
+  q?: string;
+  /** POP 찾기 「완료 대기만」 — 막는 이유가 없는 지시서(`completionBlockers` 가 빈). */
+  completionReadyOnly?: boolean;
 }
 
 export interface ShipmentRequestQuery extends ShipmentRequestFilters {
@@ -132,6 +137,8 @@ export function whereSql(query: ShipmentRequestFilters): BuiltWhere {
   if (query.pickingCompleteOnly === true) and.push(PICKING_COMPLETE_SQL);
   if (query.shippableRemainderOnly === true) and.push(SHIPPABLE_REMAINDER_SQL);
   if (query.hasReplacement === true) and.push(HAS_REPLACEMENT_SQL);
+  if (query.completionReadyOnly === true) and.push(COMPLETION_READY_SQL);
+  if (query.q !== undefined && query.q.trim() !== '') and.push(keywordSql(bind(`%${query.q.trim()}%`)));
   return { sql: and.join('\n      AND '), params };
 }
 
