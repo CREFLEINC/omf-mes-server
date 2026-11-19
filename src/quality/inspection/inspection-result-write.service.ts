@@ -52,6 +52,7 @@ import {
   resultSummaryWithin,
 } from './iqc-inbound-lot-result';
 import { prepareOqcSerials, recordOqcSerialsWithin } from './oqc-serials';
+import { OqcLotResultService } from './oqc-lot-result.service';
 
 /** 채번 문서 유형 — `DEFAULT_PREFIX` 의 `IRS`(규칙 미등재 · §1-5). */
 const NUMBERING_DOCUMENT = 'INSPECTION_RESULT';
@@ -74,9 +75,13 @@ export class InspectionResultWriteService {
     private readonly numbering: NumberingService,
     private readonly confirms: InspectionConfirmService,
     private readonly defects: DefectRecordWriteService,
+    private readonly oqcResults: OqcLotResultService,
   ) {}
 
   async create(body: InspectionResultCreate, context: InspectionResultWriteContext): Promise<InspectionResultView> {
+    // 출하 OQC 새 흐름(피처 010) — LOT 매칭·판정만·작성중으로만 선다.
+    const oqc = await this.oqcResults.create(body, context);
+    if (oqc !== null) return oqc;
     await assertCodes(this.prisma, body.statusCode, body.overallJudgmentCode, body.measurements);
     // 물리 하한이 먼저다 — 여기서 안 막으면 CHECK 위반이 500 으로 나간다(작성중도 그대로 산다).
     assertQuantityBounds(body);
@@ -237,6 +242,8 @@ export class InspectionResultWriteService {
     body: InspectionResultUpdate,
     context: InspectionResultWriteContext,
   ): Promise<{ view: InspectionResultView; versionNo: number }> {
+    const oqc = await this.oqcResults.update(inspectionResultId, version, body, context);
+    if (oqc !== null) return oqc;
     await assertCodes(this.prisma, undefined, body.overallJudgmentCode, body.measurements);
     assertQuantityBounds(body);
     assertMeasurementValues(body.measurements);

@@ -16,7 +16,7 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 export const SS_PREFIX = 'SSE2E';
 const LOGIN_ID = 'e2e-shipment-simplified';
 const PASSWORD = '출하단순화-비밀번호';
-const PERMISSIONS = ['M-04-01', 'W-04-01', 'W-04-02', 'W-04-03', 'W-04-12', 'W-03-09', 'W-03-10', 'W-04-04', 'W-04-05'];
+const PERMISSIONS = ['M-04-01', 'W-04-01', 'W-04-02', 'W-04-03', 'W-04-12', 'W-03-09', 'W-03-10', 'W-04-04', 'W-04-05', 'W-01-01', 'W-01-15'];
 
 export interface TerminalSession {
   terminalId: bigint;
@@ -156,11 +156,22 @@ export class ShipmentSimplifiedFixture {
       user = await p.app_user.create({ data: { login_id: LOGIN_ID, user_name: '출하단순화검사', status_code: 'EMPLOYED' } });
       await p.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
       const role = await p.role.create({ data: { role_code: `${SS_PREFIX}-ROLE`, role_name: '출하단순화검사용' } });
-      await p.role_permission.createMany({ data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })) });
       await p.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
       await p.user_data_scope.create({ data: { app_user_id: user.app_user_id, business_unit_id: this.ids.unit, plant_id: this.ids.plant } });
     }
+    // 권한은 매번 맞춘다 — 마스터를 다시 쓰므로 앞 실행의 권한 목록이 남아 있을 수 있다.
+    const role = await p.role.findUniqueOrThrow({ where: { role_code: `${SS_PREFIX}-ROLE` } });
+    await p.role_permission.createMany({
+      data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })), skipDuplicates: true,
+    });
     this.ids.userId = user.app_user_id;
+    // 관리웹 검사 저장은 계정에 지정된 작업자가 검사자다(`resolveInspector`).
+    if ((await p.worker.findFirst({ where: { worker_no: `${SS_PREFIX}-W-WEB` } })) === null) {
+      await p.worker.create({ data: {
+        worker_no: `${SS_PREFIX}-W-WEB`, worker_name: '출하단순화관리자', business_unit_id: this.ids.unit, plant_id: this.ids.plant,
+        status_code: 'EMPLOYED', app_user_id: user.app_user_id,
+      } });
+    }
     const response = await this.http().post('/api/app/sessions').set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: PASSWORD }).expect(200);
     const raw: unknown = response.headers['set-cookie'];
@@ -246,6 +257,26 @@ export class ShipmentSimplifiedFixture {
 
   asSession(test: request.Test): request.Test {
     return test.set('Cookie', this.cookie);
+  }
+
+  /** OQC 결과 저장(기본은 POP) — 새 흐름은 수량 칸을 무시하므로 0 을 싣는다. */
+  oqcResult(
+    inspectionRequestId: number,
+    body: { matchedLotIds?: number[]; overallJudgmentCode?: string; reinspectionReasonCode?: string; statusCode?: string; serials?: unknown[] },
+    session: TerminalSession | 'session' = this.pop,
+  ): request.Test {
+    const test = this.http().post('/api/quality/inspection-results').set('Idempotency-Key', randomUUID()).send({
+      inspectionRequestId, inspectedQty: 0, acceptedQty: 0, rejectedQty: 0, heldQty: 0, uomId: Number(this.ids.uom),
+      inspectedAt: '2026-11-18T03:00:00.000Z', statusCode: 'DRAFT', ...body,
+    });
+    return session === 'session' ? this.asSession(test) : this.asTerminal(test, session);
+  }
+
+  /** 지시서 상세의 피킹 LOT(라인 순서대로 평탄화). */
+  async lotsOf(made: MadeRequest): Promise<{ lotId: number; shipmentRequestLotId: number; statusCode: string; oqcLotStatus: string | null }[]> {
+    const response = await this.asSession(this.http().get(`/api/logistics/shipment-requests/${made.requestId}`)).expect(200);
+    return (response.body.lines as { lots: { lotId: number; shipmentRequestLotId: number; statusCode: string; oqcLotStatus: string | null }[] }[])
+      .flatMap((line) => line.lots);
   }
 
   /** PDA 통째 피킹(기본은 자기 공장 PDA). */

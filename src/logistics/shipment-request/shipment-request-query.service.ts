@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { oqcLotStatusesOf } from '../../quality/inspection/oqc-lot-result';
 import { OqcInspectionRow, skippedOqcRows } from './shipment-inspection';
 import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
 import {
@@ -158,12 +159,15 @@ export class ShipmentRequestQueryService {
       .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     const inspections = await this.oqcResults(ids, lotIds);
-    const lots = await this.lotsByLine(lines.map((line) => line.shipment_request_line_id));
+    const [lots, oqcStatuses] = await Promise.all([
+      this.lotsByLine(lines.map((line) => line.shipment_request_line_id)),
+      oqcLotStatusesOf(this.prisma, ids),
+    ]);
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots, oqcStatuses)];
     });
   }
 

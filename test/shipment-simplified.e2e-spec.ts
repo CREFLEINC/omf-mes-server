@@ -217,4 +217,138 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect(row).toMatchObject({ picked_worker_id: null, created_by: f.ids.userId });
     });
   });
+  /** 지시서(품목 A 목표 110) + LOT 40·40·30 피킹 — OQC 묶음 하나. */
+  async function pickedThree(): Promise<{ made: Awaited<ReturnType<ShipmentSimplifiedFixture['request']>>; lotIds: number[]; oqc: number }> {
+    const made = await f.request([{ allocated: 110 }]);
+    const lotIds: number[] = [];
+    for (const qty of [40, 40, 30]) {
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      lotIds.push(lot.lotId);
+    }
+    return { made, lotIds, oqc: made.oqcRequestIds.A };
+  }
+
+  describe('OQC — LOT 매칭·판정만(새 흐름)', () => {
+    it('US3-1·Q4 매칭 LOT 없이 저장하면 400 MATCHED_LOT_REQUIRED, 이 지시서·품목의 피킹 LOT 이 아니면 400', async () => {
+      const { oqc } = await pickedThree();
+      const stranger = await f.lot({ balances: [{ warehouse: 'wh1', qty: 10 }] });
+
+      const none = await f.oqcResult(oqc, { overallJudgmentCode: 'ACCEPTED' }).expect(400);
+      const foreign = await f.oqcResult(oqc, { matchedLotIds: [stranger.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(400);
+
+      expect(none.body.errors[0]).toMatchObject({ field: 'matchedLotIds', code: 'MATCHED_LOT_REQUIRED' });
+      expect(foreign.body.errors[0]).toMatchObject({ field: 'matchedLotIds', code: 'INVALID' });
+      expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(oqc) } })).toBe(0);
+    });
+
+    it('US3-2·US3-4·Q4·Q22 LOT 1·2 합격·LOT 3 불합격 — 수량은 서버가 채우고 작성중으로 쌓이며 의뢰가 진행이 된다', async () => {
+      const { made, lotIds, oqc } = await pickedThree();
+
+      const first = await f.oqcResult(oqc, { matchedLotIds: [lotIds[0], lotIds[1]], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+      expect((await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(oqc) } })).status_code).toBe('IN_PROGRESS');
+      await f.oqcResult(oqc, { matchedLotIds: [lotIds[2]], overallJudgmentCode: 'REJECTED' }, 'session').expect(201);
+
+      expect(first.body).toMatchObject({ statusCode: 'DRAFT', overallJudgmentCode: 'ACCEPTED', inspectionRound: 1 });
+      const rows = await prisma.inspection_result.findMany({ where: { inspection_request_id: BigInt(oqc) }, orderBy: { inspection_round: 'asc' } });
+      expect(rows.map((row) => [row.inspection_round, row.status_code, Number(row.inspected_qty), Number(row.accepted_qty), Number(row.rejected_qty)]))
+        .toEqual([[1, 'DRAFT', 80, 80, 0], [2, 'DRAFT', 30, 0, 30]]);
+      expect((await f.lotsOf(made)).map((lot) => lot.oqcLotStatus)).toEqual(['ACCEPTED', 'ACCEPTED', 'REJECTED']);
+      const detail = await f.asSession(f.http().get(`/api/quality/inspection-requests/${oqc}`)).expect(200);
+      expect(detail.body.shipmentRequestNo).toBe(made.requestNo);
+      expect(detail.body.lotJudgments.map((row: { lotId: number; judgmentCode: string }) => [row.lotId, row.judgmentCode]))
+        .toEqual([[lotIds[0], 'ACCEPTED'], [lotIds[1], 'ACCEPTED'], [lotIds[2], 'REJECTED']]);
+      expect(detail.body.lots.map((row: { lotQty: number; pickStatusCode: string }) => [row.lotQty, row.pickStatusCode]))
+        .toEqual([[40, 'PICKED'], [40, 'PICKED'], [30, 'PICKED']]);
+      const list = await f.asTerminal(f.http().get('/api/quality/inspection-requests')
+        .query({ inspectionTypeCode: 'OQC', pendingOnly: true, size: 100 }), f.pop).expect(200);
+      const row = (list.body.items as { inspectionRequestId: number }[]).find((item) => item.inspectionRequestId === oqc);
+      expect(row).toMatchObject({ shipmentRequestNo: made.requestNo, pickedLotCount: 3, lotJudgmentSummary: { notInspected: 0, accepted: 2, rejected: 1, held: 0 } });
+    });
+
+    it('US3-3·FR-010·Q5 LOT 3 만 다시 합격으로 덮으면 재검 사유가 필수이고, 사유와 함께면 LOT 3 이 합격이 된다', async () => {
+      const { made, lotIds, oqc } = await pickedThree();
+      await f.oqcResult(oqc, { matchedLotIds: lotIds, overallJudgmentCode: 'REJECTED' }).expect(201);
+
+      const missing = await f.oqcResult(oqc, { matchedLotIds: [lotIds[2]], overallJudgmentCode: 'ACCEPTED' }).expect(400);
+      await f.oqcResult(oqc, { matchedLotIds: [lotIds[2]], overallJudgmentCode: 'ACCEPTED', reinspectionReasonCode: 'RETEST' }).expect(201);
+
+      expect(missing.body.errors[0]).toMatchObject({ code: 'REINSPECTION_REASON_REQUIRED' });
+      expect((await f.lotsOf(made)).map((lot) => lot.oqcLotStatus)).toEqual(['REJECTED', 'REJECTED', 'ACCEPTED']);
+    });
+
+    it('US3-6 피킹이 끝나지 않은 묶음에도 결과를 기록한다 — 지금 피킹된 LOT 만 매칭 대상이다', async () => {
+      const made = await f.request([{ allocated: 100 }]);
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 40 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [lot.lotId], overallJudgmentCode: 'HELD' }).expect(201);
+
+      expect((await f.lotsOf(made))[0].oqcLotStatus).toBe('HELD');
+    });
+
+    it('FR-011·Q7 다른 지시서에서 그 LOT 을 합격시킨 결과는 잇지 않는다 — 이 지시서에서는 미검사다', async () => {
+      const other = await f.request([{ allocated: 100 }]);
+      const made = await f.request([{ allocated: 100 }]);
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 40 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      const foreign = await prisma.inspection_result.create({ data: {
+        inspection_result_no: `SSE2E-${f.run}-IRS-${f.next()}`, inspection_request_id: BigInt(other.oqcRequestIds.A), inspection_round: 1,
+        inspected_qty: 40, accepted_qty: 40, uom_id: f.ids.uom, overall_judgment_code: 'ACCEPTED', inspector_id: f.pop.workerId,
+        inspected_at: new Date('2026-11-18T03:00:00.000Z'), status_code: 'CONFIRMED', idempotency_key: `SSE2E-${f.run}-${f.next()}`,
+      } });
+      await prisma.inspection_result_lot.create({ data: { inspection_result_id: foreign.inspection_result_id, lot_id: BigInt(lot.lotId) } });
+
+      expect((await f.lotsOf(made))[0].oqcLotStatus).toBe('NOT_INSPECTED');
+    });
+
+    it('검사 불필요 라인의 LOT 은 NOT_REQUIRED 다', async () => {
+      const made = await f.request([{ item: 'B', allocated: 100 }]);
+      const lot = await f.lot({ item: 'B', balances: [{ warehouse: 'wh1', qty: 40 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+
+      expect((await f.lotsOf(made))[0].oqcLotStatus).toBe('NOT_REQUIRED');
+    });
+
+    it('R-5 새 흐름 의뢰의 :confirm(의뢰·결과)과 확정 저장은 409 CONFIRMED_BY_SHIPMENT_COMPLETION 이다', async () => {
+      const { lotIds, oqc } = await pickedThree();
+      const saved = await f.oqcResult(oqc, { matchedLotIds: lotIds, overallJudgmentCode: 'ACCEPTED' }).expect(201);
+
+      const confirmed = await f.oqcResult(oqc, { matchedLotIds: lotIds, overallJudgmentCode: 'ACCEPTED', statusCode: 'CONFIRMED' }).expect(409);
+      const requestConfirm = await f.asSession(f.http().post(`/api/quality/inspection-requests/${oqc}:confirm`)
+        .set('Idempotency-Key', randomUUID()).send({ versionNo: 1 })).expect(409);
+      const resultConfirm = await f.asSession(f.http().post(`/api/quality/inspection-results/${saved.body.inspectionResultId}:confirm`)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', '"1"').send({})).expect(409);
+
+      for (const response of [confirmed, requestConfirm, resultConfirm]) expect(response.body.code).toBe('CONFIRMED_BY_SHIPMENT_COMPLETION');
+      expect((await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(saved.body.inspectionResultId) } })).status_code).toBe('DRAFT');
+    });
+
+    it('R-5 작성중 결과를 PUT 으로 고치면 매칭·판정이 바뀌고 수량이 다시 채워진다', async () => {
+      const { made, lotIds, oqc } = await pickedThree();
+      const saved = await f.oqcResult(oqc, { matchedLotIds: [lotIds[0]], overallJudgmentCode: 'ACCEPTED' }, 'session').expect(201);
+
+      await f.asSession(f.http().put(`/api/quality/inspection-results/${saved.body.inspectionResultId}`)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', '"1"')
+        .send({ matchedLotIds: [lotIds[0], lotIds[2]], overallJudgmentCode: 'HELD' })).expect(200);
+
+      const row = await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(saved.body.inspectionResultId) } });
+      expect([Number(row.inspected_qty), Number(row.held_qty), Number(row.accepted_qty)]).toEqual([70, 70, 0]);
+      expect((await f.lotsOf(made)).map((lot) => lot.oqcLotStatus)).toEqual(['HELD', 'NOT_INSPECTED', 'HELD']);
+    });
+
+    it('R-5 시리얼 OK/NG 는 작성중 저장에서도 받는다 — 매칭 LOT 밖 시리얼은 400', async () => {
+      const { lotIds, oqc } = await pickedThree();
+      const serial = async (lotId: number) => (await prisma.serial_number.create({ data: {
+        serial_no: `SSE2E-${f.run}-SN-${f.next()}`, item_id: f.ids.itemA, lot_id: BigInt(lotId), status_code: 'ACTIVE',
+      } })).serial_number_id;
+      const inside = await serial(lotIds[0]);
+      const outside = await serial(lotIds[1]);
+
+      await f.oqcResult(oqc, { matchedLotIds: [lotIds[0]], overallJudgmentCode: 'ACCEPTED', serials: [{ serialNumberId: Number(outside), judgmentCode: 'OK' }] }).expect(400);
+      await f.oqcResult(oqc, { matchedLotIds: [lotIds[0]], overallJudgmentCode: 'ACCEPTED', serials: [{ serialNumberId: Number(inside), judgmentCode: 'OK' }] }).expect(201);
+
+      expect((await prisma.oqc_serial_result.findUniqueOrThrow({ where: { serial_number_id: inside } })).final_judgment_code).toBe('OK');
+    });
+  });
 });

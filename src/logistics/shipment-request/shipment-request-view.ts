@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
+import type { OqcLotStatus } from '../../quality/inspection/oqc-lot-result';
 import { toDateString } from '../../common/master';
 import {
   OqcInspectionRow,
@@ -56,6 +57,9 @@ export type ShipmentRequestLotRow = Prisma.shipment_request_lotGetPayload<{
 /** 라인 id(문자열) → 그 라인의 피킹 LOT 행(교체된 행 포함). */
 export type ShipmentLotsByLine = Map<string, ShipmentRequestLotRow[]>;
 
+/** 피킹 LOT 행 id → OQC 판정(살아 있는 행만 — `oqcLotStatusesOf`). */
+export type OqcLotStatusByLot = Map<bigint, OqcLotStatus>;
+
 /** 지시서 QR·POP 스캔 값의 접두 — 번호 `SR-…` 가 생산 현장 입고와 같아 유형을 붙인다(R-9). */
 export const SHIPMENT_REQUEST_CODE_PREFIX = 'SHPREQ:';
 
@@ -81,6 +85,8 @@ export interface ShipmentRequestLotView {
   pickedWorker: { workerId: number; workerNo: string; workerName: string } | null;
   shipmentId: number | null;
   portions: ShipmentLotPortionView[];
+  /** LOT OQC 판정 6종(FR-007). 교체된 행은 판정 대상이 아니라 null. */
+  oqcLotStatus: OqcLotStatus | null;
 }
 
 export interface ShipmentPickingWarehouseView {
@@ -141,13 +147,14 @@ export function shipmentRequestView(
   picksByLine: ShipmentPicksByLine,
   inspections: OqcInspectionRow[],
   lotsByLine: ShipmentLotsByLine = new Map(),
+  oqcStatuses: OqcLotStatusByLot = new Map(),
 ): ShipmentRequestView {
   const lines = row.shipment_request_line.map((line) => ({
     line,
     picks: picksByLine.get(String(line.shipment_request_line_id)) ?? [],
     lots: lotsByLine.get(String(line.shipment_request_line_id)) ?? [],
   }));
-  const lineViews = lines.map(({ line, picks, lots }) => shipmentRequestLineView(line, picks, lots));
+  const lineViews = lines.map(({ line, picks, lots }) => shipmentRequestLineView(line, picks, lots, oqcStatuses));
 
   const totals = shipmentProgressTotals(
     lines.map(({ line, picks }) => ({
@@ -196,6 +203,7 @@ export function shipmentRequestLineView(
   row: ShipmentRequestLineRow,
   picks: ShipmentPickRow[],
   lots: ShipmentRequestLotRow[] = [],
+  oqcStatuses: OqcLotStatusByLot = new Map(),
 ): ShipmentRequestLineView {
   const picked = pickedQtyOf(picks.map((pick) => ({ reservedQty: pick.reserved_qty, releasedQty: pick.released_qty })));
   const over = picked.minus(row.allocated_qty);
@@ -214,7 +222,7 @@ export function shipmentRequestLineView(
     minimumRemainingShelfLifeDays: row.minimum_remaining_shelf_life_days,
     picks: picks.map(shipmentLinePickedLotView),
     overQty: over.greaterThan(0) ? Number(over) : 0,
-    lots: lots.map((lot) => shipmentRequestLotView(lot, picks)),
+    lots: lots.map((lot) => shipmentRequestLotView(lot, picks, oqcStatuses)),
   });
 }
 
@@ -222,7 +230,11 @@ export function shipmentRequestLineView(
  * 피킹 LOT 한 행. 창고·위치별 몫은 그 라인·LOT 의 예약 행(잔액 행마다 하나)에서 읽는다 — 살아 있는 행은
  * `reserved − released`, 교체된 행은 풀린 수량이라 `reserved` 를 그대로 보인다(이력).
  */
-export function shipmentRequestLotView(row: ShipmentRequestLotRow, picks: ShipmentPickRow[]): ShipmentRequestLotView {
+export function shipmentRequestLotView(
+  row: ShipmentRequestLotRow,
+  picks: ShipmentPickRow[],
+  oqcStatuses: OqcLotStatusByLot = new Map(),
+): ShipmentRequestLotView {
   const replaced = row.status_code === 'REPLACED';
   const portions = new Map<string, ShipmentLotPortionView>();
   for (const pick of picks) {
@@ -256,6 +268,7 @@ export function shipmentRequestLotView(row: ShipmentRequestLotRow, picks: Shipme
       : { workerId: Number(row.picked_worker_id), workerNo: row.picked_worker.worker_no, workerName: row.picked_worker.worker_name },
     shipmentId: row.shipment_id === null ? null : Number(row.shipment_id),
     portions: [...portions.values()],
+    oqcLotStatus: oqcStatuses.get(row.shipment_request_lot_id) ?? null,
   };
 }
 

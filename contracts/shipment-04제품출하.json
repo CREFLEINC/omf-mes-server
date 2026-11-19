@@ -1694,7 +1694,7 @@
      "shipment"
     ],
     "summary": "OQC 생략 요청",
-    "description": "출하작업지시의 출하검사(OQC)를 생략하도록 결재를 요청한다. 요청을 만들기만 하고 의뢰·LOT 은 옮기지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)가 없으면 400(code=STATE_LOCKED), 결재선이 없으면 400(code=ROUTE_NOT_FOUND), 진행 중인 요청이 있으면 400(code=APPROVAL_IN_PROGRESS). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83)",
+    "description": "출하작업지시의 출하검사(OQC)를 생략하도록 결재를 요청한다. 요청을 만들기만 하고 의뢰·LOT 은 옮기지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)가 없으면 400(code=STATE_LOCKED), 결재선이 없으면 400(code=ROUTE_NOT_FOUND), 진행 중인 요청이 있으면 400(code=APPROVAL_IN_PROGRESS). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83) ⭐ 피처 010(FR-012): 결과가 하나도 없는 열린 의뢰가 있어야 한다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1788,7 +1788,7 @@
      "shipment"
     ],
     "summary": "승인된 OQC 생략 실행",
-    "description": "OQC 생략 요청이 **승인된** 출하작업지시의 출하검사를 생략한다 — 확정 결과가 없는 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)를 `SKIPPED` 로 닫고, 검사 대상 라인이 집은(피킹) LOT 마다 이력을 남긴다(정상 → 정상 · 전이 C27). 생략된 의뢰는 출하검사 판정에서 «통과»로 센다. ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8). 승인된 요청이 없거나, 생략할 열린 의뢰가 없거나, 검사 대상 라인의 피킹이 끝나지 않았으면 400(code=STATE_LOCKED). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83)",
+    "description": "OQC 생략 요청이 **승인된** 출하작업지시의 출하검사를 생략한다 — 확정 결과가 없는 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)를 `SKIPPED` 로 닫고, 검사 대상 라인이 집은(피킹) LOT 마다 이력을 남긴다(정상 → 정상 · 전이 C27). 생략된 의뢰는 출하검사 판정에서 «통과»로 센다. ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8). 승인된 요청이 없거나, 생략할 열린 의뢰가 없거나, 검사 대상 라인의 피킹이 끝나지 않았으면 400(code=STATE_LOCKED). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83) ⭐ 피처 010(FR-012): 생략할 수 있는 의뢰 = 결과가 하나도 없는 열린 의뢰. 실행이 피킹 완료를 요구하지 않는다 — 지금 피킹된 LOT 에 C27 을 남기고, 뒤에 피킹되는 LOT 은 출하 완료가 남긴다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6325,6 +6325,23 @@
       "items": {
        "$ref": "#/components/schemas/ShipmentLotPortion"
       }
+     },
+     "oqcLotStatus": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "NOT_REQUIRED",
+       "SKIPPED",
+       "NOT_INSPECTED",
+       "ACCEPTED",
+       "REJECTED",
+       "HELD",
+       null
+      ],
+      "description": "LOT OQC 판정 6종(FR-007) — 위에서부터 처음 맞는 값: 검사 불필요 NOT_REQUIRED · 의뢰 생략 SKIPPED · 이 지시서에서 그 LOT 을 매칭한 마지막 결과의 판정 · 없으면 NOT_INSPECTED(다른 지시서의 합격은 잇지 않는다). 교체된 행은 null.",
+      "example": "NOT_INSPECTED"
      }
     },
     "required": [
@@ -6339,7 +6356,8 @@
      "pickedAt",
      "pickedWorker",
      "shipmentId",
-     "portions"
+     "portions",
+     "oqcLotStatus"
     ]
    },
    "ShipmentPickingWarehouse": {
