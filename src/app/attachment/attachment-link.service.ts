@@ -48,8 +48,14 @@ export class AttachmentLinkService {
     }
     const request = await tx.inspection_request.findUnique({
       where: { inspection_request_id: source.target_id },
-      select: { inbound_lot_id: true },
+      select: { inbound_lot_id: true, confirmed_at: true },
     });
+    /* 파일 첨부·LOT 연결은 판정 확정 전(작성 중·대기)에만(사용자 지시 2026-11-19) — 확정 뒤 LOT 첨부가 바뀌지 않게. */
+    if (request?.confirmed_at != null) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('attachmentId', ERROR_CODE.INVALID, '판정이 확정된 검사 의뢰입니다. 판정 수정 뒤 연결하세요.'),
+      ]);
+    }
     const lotIds = body.lotIds.map((id) => BigInt(id));
     if (new Set(body.lotIds).size !== body.lotIds.length) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('lotIds', ERROR_CODE.INVALID, '같은 LOT 이 두 번 들어 있습니다.')]);

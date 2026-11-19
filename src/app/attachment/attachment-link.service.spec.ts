@@ -12,7 +12,7 @@ const source = (targetType = 'INSPECTION_REQUEST') => ({
   uploaded_at: new Date('2099-11-11T01:00:00Z'),
 });
 
-const txOf = (row: ReturnType<typeof source> | null, owned: number) => {
+const txOf = (row: ReturnType<typeof source> | null, owned: number, confirmedAt: Date | null = null) => {
   const created: Record<string, unknown>[] = [];
   const tx = {
     attachment: {
@@ -23,7 +23,7 @@ const txOf = (row: ReturnType<typeof source> | null, owned: number) => {
       }),
       delete: jest.fn().mockResolvedValue(row),
     },
-    inspection_request: { findUnique: jest.fn().mockResolvedValue({ inbound_lot_id: 9n }) },
+    inspection_request: { findUnique: jest.fn().mockResolvedValue({ inbound_lot_id: 9n, confirmed_at: confirmedAt }) },
     lot: { count: jest.fn().mockResolvedValue(owned) },
   };
   return { tx: tx as unknown as Prisma.TransactionClient, raw: tx, created };
@@ -61,5 +61,13 @@ describe('AttachmentLinkService.linkLots', () => {
     const twice = txOf(source(), 2);
     await expect(service.linkLots(twice.tx, 31, { lotIds: [11, 11] })).rejects.toBeInstanceOf(ContractException);
     expect(twice.raw.attachment.create).not.toHaveBeenCalled();
+  });
+
+  it('⛔ 판정이 확정된 검사 의뢰면 400 이고 아무것도 바꾸지 않는다', async () => {
+    const { tx, raw } = txOf(source(), 1, new Date('2099-11-11T02:00:00Z'));
+
+    await expect(service.linkLots(tx, 31, { lotIds: [11] })).rejects.toBeInstanceOf(ContractException);
+    expect(raw.attachment.create).not.toHaveBeenCalled();
+    expect(raw.attachment.delete).not.toHaveBeenCalled();
   });
 });

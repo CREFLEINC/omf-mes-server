@@ -4441,7 +4441,7 @@
      "app"
     ],
     "summary": "검사 의뢰 첨부를 자재 관리 LOT 에 연결",
-    "description": "IQC 파일 첨부에서 자재 관리 LOT 을 고르지 않아 검사 의뢰(INSPECTION_REQUEST)에 붙은 첨부를, 나중에 고른 자재 관리 LOT 마다의 첨부(LOT)로 옮긴다. 효과(한 트랜잭션): 고른 LOT 마다 같은 파일(저장 위치·이름·크기·올린 사람·올린 시각 그대로)의 LOT 첨부를 만들고, 검사 의뢰 첨부 행은 지운다(파일은 LOT 첨부가 그대로 쓴다). 고를 수 있는 LOT 은 그 검사 의뢰의 입하 LOT 에서 나온 자재 관리 LOT 뿐이다 — 밖이면 lotIds 칸의 400. 검사 의뢰 첨부가 아니면(이미 LOT 에 붙은 첨부 등) attachmentId 의 400. 근거: omf-all-around#296(사용자 지시 2026-11-19)",
+    "description": "IQC 파일 첨부에서 자재 관리 LOT 을 고르지 않아 검사 의뢰(INSPECTION_REQUEST)에 붙은 첨부를, 나중에 고른 자재 관리 LOT 마다의 첨부(LOT)로 옮긴다. 효과(한 트랜잭션): 고른 LOT 마다 같은 파일(저장 위치·이름·크기·올린 사람·올린 시각 그대로)의 LOT 첨부를 만들고, 검사 의뢰 첨부 행은 지운다(파일은 LOT 첨부가 그대로 쓴다). 고를 수 있는 LOT 은 그 검사 의뢰의 입하 LOT 에서 나온 자재 관리 LOT 뿐이다 — 밖이면 lotIds 칸의 400. 검사 의뢰 첨부가 아니거나(이미 LOT 에 붙은 첨부 등) 그 검사 의뢰의 판정이 확정됐으면 attachmentId 의 400(확정 전 작성 중·대기에만 연결한다). 근거: omf-all-around#296(사용자 지시 2026-11-19)",
     "parameters": [
      {
       "name": "attachmentId",
@@ -4495,7 +4495,7 @@
       }
      },
      "400": {
-      "description": "검증 실패 — lotIds 형식·이 검사 의뢰 밖의 LOT · 검사 의뢰 첨부가 아님",
+      "description": "검증 실패 — lotIds 형식·이 검사 의뢰 밖의 LOT · 검사 의뢰 첨부가 아님 · 판정 확정됨",
       "content": {
        "application/json": {
         "schema": {
