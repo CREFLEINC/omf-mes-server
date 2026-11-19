@@ -2,10 +2,10 @@ import { Prisma } from '@prisma/client';
 
 import { plantPolicyText } from '../../app/policy/plant-policy-text';
 import { ERROR_CODE } from '../../common/errors';
-import { BOM_COMPONENT_SELECT, materialRequirements } from '../../core/bom';
+import { leafRequirements } from '../../core/bom';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { recordLateInputGenealogyWithin } from '../../core/lot';
-import { PickingDemand, allocatePicking } from '../../core/picking';
+import { allocatePicking } from '../../core/picking';
 import { CONSUMPTION_STATUS } from '../../production/material-consumption/material-consumption.constants';
 import { postTrackingIssue } from './goods-issue-write';
 import { issuableStock } from './issuable-stock';
@@ -31,11 +31,6 @@ export interface BackflushInput {
 const ISSUE_TYPE = 'PRODUCTION';
 const SOURCE_DOCUMENT_TYPE = 'PRODUCTION_RESULT';
 const CONSUMPTION_TYPE = 'BACKFLUSH';
-/** PL13 ERP BOM 은 9단까지 내려간다(2026-11-17) — 이보다 깊으면 BOM 이 돌고 있다. */
-const MAX_BOM_LEVELS = 20;
-/** 재고·소요 칸이 소수 6자리다 — 더 잘게 남기면 미차감이 0 으로 저장된다. */
-const QTY_SCALE = 6;
-const ZERO = new Prisma.Decimal(0);
 
 /**
  * 자재 차감(백플러시 · flowtrack 연동 제안 §4) — BOM 을 끝까지 풀어 차감 창고의 맨 아래 위치에서 오래된 LOT 부터 뺀다.
@@ -44,7 +39,9 @@ const ZERO = new Prisma.Decimal(0);
  */
 export async function backflush(tx: Tx, posting: InventoryPostingService, input: BackflushInput): Promise<bigint | null> {
   const warehouseId = await backflushWarehouse(tx, input);
-  const demands = await leafDemands(tx, input);
+  const demands = (await leafRequirements(tx, input)).map((line) => ({
+    lineNo: line.line_no, itemId: line.item_id, uomId: line.uom_id, qty: line.requested_qty,
+  }));
   const stock = await issuableStock(tx, {
     warehouseId, itemIds: [...new Set(demands.map((demand) => demand.itemId))], lock: true, withoutSerials: false,
   });
@@ -87,42 +84,4 @@ async function backflushWarehouse(tx: Tx, input: BackflushInput): Promise<bigint
     throw screen(ERROR_CODE.INVALID, `자재 차감 창고가 없습니다(운영 정책 BACKFLUSH_WAREHOUSE: ${code ?? '없음'}) — 이 공장의 정책 행과 그 창고를 확인하세요.`);
   }
   return warehouse.warehouse_id;
-}
-
-/** PL13 기본 BOM 이 있는 구성품은 그 BOM 으로 다시 풀고, 맨 끝 자재의 소요를 품목·단위마다 더한다. */
-async function leafDemands(tx: Tx, input: BackflushInput): Promise<PickingDemand[]> {
-  const leaves = new Map<string, PickingDemand>();
-  let level = [{ bomId: input.bomId, qty: input.qty }];
-  for (let depth = 0; level.length > 0; depth += 1) {
-    if (depth === MAX_BOM_LEVELS) throw new Error(`BOM 이 ${MAX_BOM_LEVELS}단을 넘는다 — 돌고 있는지 확인: bom ${input.bomId}`);
-    const boms = await tx.bom.findMany({
-      where: { bom_id: { in: level.map((entry) => entry.bomId) } },
-      select: { bom_id: true, base_qty: true, bom_component: { select: BOM_COMPONENT_SELECT } },
-    });
-    const bomOf = new Map(boms.map((bom) => [bom.bom_id, bom]));
-    const needs = level.flatMap(({ bomId, qty }) => {
-      const bom = bomOf.get(bomId) as (typeof boms)[number];
-      return materialRequirements(bom.bom_component, qty, bom.base_qty);
-    });
-    const subs = await tx.bom.findMany({
-      where: { parent_item_id: { in: [...new Set(needs.map((need) => need.item_id))] }, plant_id: input.plantId, is_default: true },
-      select: { bom_id: true, parent_item_id: true, base_uom_id: true },
-    });
-    const subOf = new Map(subs.map((bom) => [bom.parent_item_id, bom]));
-    level = [];
-    for (const need of needs) {
-      const sub = subOf.get(need.item_id);
-      // 단위가 다르면 환산 규칙이 없어 풀지 않는다 — 그 품목 그대로 빼러 간다.
-      if (sub !== undefined && sub.base_uom_id === need.uom_id) {
-        level.push({ bomId: sub.bom_id, qty: need.requested_qty });
-        continue;
-      }
-      const key = `${need.item_id}:${need.uom_id}`;
-      const seen = leaves.get(key);
-      leaves.set(key, {
-        lineNo: seen?.lineNo ?? leaves.size + 1, itemId: need.item_id, uomId: need.uom_id, qty: (seen?.qty ?? ZERO).plus(need.requested_qty),
-      });
-    }
-  }
-  return [...leaves.values()].map((demand) => ({ ...demand, qty: demand.qty.toDecimalPlaces(QTY_SCALE) }));
 }
