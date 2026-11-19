@@ -47,7 +47,8 @@ describe('ContractRegistry', () => {
   // 배포 전 자재 소요·단위 환산 1건: 632.
   // 적치 대기 LOT 목록·확인·위치 판정 3건(피처 009 · omf-all-around#294): 635. 적치·임시 적치 2건: 637.
   it('계약 7파일에서 오퍼레이션 637건을 적재한다', () => {
-    expect(registry.size).toBe(637);
+    // 검사 의뢰 첨부 LOT 연결(omf-all-around#296): 638.
+    expect(registry.size).toBe(638);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
