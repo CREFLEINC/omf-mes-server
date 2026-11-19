@@ -326,4 +326,25 @@ describe('출하 공정 단순화 — 시안 표시 칸 (e2e)', () => {
         .toMatchObject({ ...item, pickedLotCount: 2, pickedQty: 70 });
     });
   });
+
+  describe('6회차 — 완료 출하의 단말·작업자(W-04-02 상세 · P-04-07 결과·이미 완료)', () => {
+    it('US1-6·Q11 지시서 상세·:lookup·:complete 결과의 completedShipment 에 완료 단말(코드)과 작업자(사번·이름)가 실린다', async () => {
+      const made = await f.request([{ allocated: 10, inspection: false }]);
+      const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 10 }] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+
+      const done = await f.complete(made).expect(200);
+
+      const who = {
+        completedTerminal: { terminalId: Number(f.pop.terminalId), terminalCode: `${SS_PREFIX}-POP1` },
+        completedWorker: { workerId: Number(f.pop.workerId), workerNo: f.pop.workerNo, workerName: '출하단순화작업자POP1' },
+      };
+      expect(done.body.completion.completedShipment).toMatchObject({ shipmentId: done.body.shipmentId, ...who });
+      expect((await detailOf(made)).completedShipment).toMatchObject(who);
+      const looked = await f.lookup(`SHPREQ:${made.requestNo}`).expect(200);
+      expect(looked.body.completedShipment).toMatchObject(who);
+      const validate = validator('/logistics/shipment-requests:lookup', 'get', '200');
+      expect(validate(looked.body) ? [] : validate.errors).toEqual([]);
+    });
+  });
 });

@@ -124,6 +124,9 @@ export interface CompletedShipmentView {
   shipmentId: number;
   shipmentNo: string;
   completedAt: string;
+  /** 완료한 POP 단말 — W-04-02 상세·P-04-07 결과·이미 완료(시안 「POP-출하-01 · 김작업(W-0102)」). */
+  completedTerminal: { terminalId: number; terminalCode: string } | null;
+  completedWorker: { workerId: number; workerNo: string; workerName: string } | null;
 }
 
 export interface LotJudgmentSummaryView {

@@ -284,7 +284,11 @@ export async function completionFactsOf(
   const [shipments, cancelled] = await Promise.all([
     prisma.shipment.findMany({
       where: { shipment_request_id: { in: shipmentRequestIds }, completed_terminal_id: { not: null }, status_code: { not: 'CANCELLED' } },
-      select: { shipment_id: true, shipment_no: true, shipment_request_id: true, confirmed_at: true, shipped_at: true },
+      select: {
+        shipment_id: true, shipment_no: true, shipment_request_id: true, confirmed_at: true, shipped_at: true,
+        completed_terminal: { select: { terminal_id: true, terminal_code: true } },
+        completed_worker: { select: { worker_id: true, worker_no: true, worker_name: true } },
+      },
     }),
     salesOrderLineIds.length === 0 ? [] : prisma.sales_order_line.findMany({
       where: { sales_order_line_id: { in: salesOrderLineIds }, cancelled_at: { not: null } }, select: { sales_order_line_id: true },
@@ -294,6 +298,10 @@ export async function completionFactsOf(
     completed: new Map(shipments.map((row) => [String(row.shipment_request_id), {
       shipmentId: Number(row.shipment_id), shipmentNo: row.shipment_no,
       completedAt: (row.confirmed_at ?? row.shipped_at ?? new Date(0)).toISOString(),
+      completedTerminal: row.completed_terminal === null ? null
+        : { terminalId: Number(row.completed_terminal.terminal_id), terminalCode: row.completed_terminal.terminal_code },
+      completedWorker: row.completed_worker === null ? null
+        : { workerId: Number(row.completed_worker.worker_id), workerNo: row.completed_worker.worker_no, workerName: row.completed_worker.worker_name },
     }])),
     cancelledSalesOrderLines: new Set(cancelled.map((row) => String(row.sales_order_line_id))),
   };

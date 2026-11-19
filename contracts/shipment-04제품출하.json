@@ -7514,12 +7514,71 @@
       "type": "string",
       "format": "date-time",
       "example": "2026-11-18T05:00:00Z"
+     },
+     "completedTerminal": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "완료한 POP 단말(피처 010 6회차 — 시안 「POP-출하-01 · 김작업(W-0102)」)",
+        "properties": {
+         "terminalId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 61
+         },
+         "terminalCode": {
+          "type": "string",
+          "example": "POP-SHIP-01"
+         }
+        },
+        "required": [
+         "terminalId",
+         "terminalCode"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "completedWorker": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "완료한 작업자",
+        "properties": {
+         "workerId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 71
+         },
+         "workerNo": {
+          "type": "string",
+          "example": "W-0102"
+         },
+         "workerName": {
+          "type": "string",
+          "example": "김작업"
+         }
+        },
+        "required": [
+         "workerId",
+         "workerNo",
+         "workerName"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "required": [
      "shipmentId",
      "shipmentNo",
-     "completedAt"
+     "completedAt",
+     "completedTerminal",
+     "completedWorker"
     ]
    },
    "ShipmentRequestCompletion": {
