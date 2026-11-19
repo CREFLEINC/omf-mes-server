@@ -18,9 +18,9 @@
 --   * ERP warehouse codes carry no plant. WH* go to PL11 and S<digit>* to PL13. Other codes
 --     go to PL11, except 100667 and 100668, which the customer warehouse list (2026-10-29)
 --     assigns to PL13. Every warehouse is loaded as internal and carries no partner.
---   * Not ERP data: process OA-ASSY, two PL13 operation policies and the PL13 system worker
+--   * Not ERP data: process OA-ASSY, three PL13 operation policies and the PL13 system worker
 --     TRACKING-SYSTEM for the flowtrack integration (AUTO_ROUTING_PROCESS = OA-ASSY,
---     BACKFLUSH_WAREHOUSE = S530).
+--     BACKFLUSH_WAREHOUSE = S530, AUTO_ISSUE_SOURCE_WAREHOUSE = S540).
 
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -35063,22 +35063,23 @@ WHERE source.type_code = 'SL_TYPE'
   AND entity.legal_entity_code = 'SAMJIN_LND_VINA'
 ON CONFLICT (plant_id, warehouse_code) DO NOTHING;
 
--- OA (PL13) settings for the flowtrack integration (user decision 2026-11-16). A plant that already
--- has a row for the policy keeps it, whatever its start date.
+-- OA (PL13) settings for the flowtrack integration (user decisions 2026-11-16 and 2026-11-19). A plant
+-- that already has a row for the policy keeps it, whatever its start date.
 \echo 'OMF MES initial-data seed: OA integration settings'
 INSERT INTO mdm.process (process_code, process_name, process_type_code)
 VALUES ('OA-ASSY', '조립', 'ASSEMBLY')
 ON CONFLICT (process_code) DO NOTHING;
 
 INSERT INTO app.operation_policy (policy_code, plant_id, value_text, effective_from)
-SELECT policy.code, plant.plant_id, policy.value, DATE '2026-11-16'
+SELECT policy.code, plant.plant_id, policy.value, policy.effective_from
 FROM mdm.legal_entity entity
 JOIN mdm.plant plant
   ON plant.legal_entity_id = entity.legal_entity_id AND plant.plant_code = 'PL13'
 CROSS JOIN (VALUES
-  ('AUTO_ROUTING_PROCESS', 'OA-ASSY'),
-  ('BACKFLUSH_WAREHOUSE', 'S530')
-) AS policy(code, value)
+  ('AUTO_ROUTING_PROCESS', 'OA-ASSY', DATE '2026-11-16'),
+  ('BACKFLUSH_WAREHOUSE', 'S530', DATE '2026-11-16'),
+  ('AUTO_ISSUE_SOURCE_WAREHOUSE', 'S540', DATE '2026-11-19')
+) AS policy(code, value, effective_from)
 WHERE entity.legal_entity_code = 'SAMJIN_LND_VINA'
   AND NOT EXISTS (
     SELECT 1 FROM app.operation_policy existing
@@ -35244,12 +35245,12 @@ BEGIN
   WHERE (policy.policy_code = 'AUTO_ROUTING_PROCESS' AND EXISTS (
           SELECT 1 FROM mdm.process process
           WHERE process.process_code = policy.value_text AND process.is_active))
-     OR (policy.policy_code = 'BACKFLUSH_WAREHOUSE' AND EXISTS (
+     OR (policy.policy_code IN ('BACKFLUSH_WAREHOUSE', 'AUTO_ISSUE_SOURCE_WAREHOUSE') AND EXISTS (
           SELECT 1 FROM mdm.warehouse warehouse
           WHERE warehouse.plant_id = policy.plant_id
             AND warehouse.warehouse_code = policy.value_text AND warehouse.is_active));
-  IF actual_count <> 2 THEN
-    RAISE EXCEPTION 'PL13 OA policies naming an active process and warehouse: expected 2, got %', actual_count;
+  IF actual_count <> 3 THEN
+    RAISE EXCEPTION 'PL13 OA policies naming an active process and warehouse: expected 3, got %', actual_count;
   END IF;
 
   SELECT count(*) INTO actual_count
