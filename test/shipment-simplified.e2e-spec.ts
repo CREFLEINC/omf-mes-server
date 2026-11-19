@@ -325,6 +325,41 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect((await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(saved.body.inspectionResultId) } })).status_code).toBe('DRAFT');
     });
 
+    it('US3-1·FR-009·T052 새 흐름 결과도 검사 항목 측정을 저장한다 — 측정 조회에 나오고, PUT 으로 고치면 바뀐다', async () => {
+      const { lotIds, oqc } = await pickedThree();
+      const plan = await prisma.inspection_plan.create({ data: {
+        inspection_plan_code: `${f.run}-OQC-PLAN-${randomUUID().slice(0, 6)}`, inspection_plan_name: '출하단순화측정기준', item_id: f.ids.itemA, inspection_type_code: 'OQC',
+      } });
+      const version = await prisma.inspection_plan_version.create({ data: {
+        inspection_plan_id: plan.inspection_plan_id, plan_version: 1, effective_from: new Date('2026-01-01T00:00:00.000Z'),
+        sampling_method_code: 'FULL', inspection_frequency_code: 'EVERY_LOT', status_code: 'DRAFT',
+      } });
+      const spec = await prisma.inspection_item_spec.create({ data: {
+        inspection_plan_version_id: version.inspection_plan_version_id, sequence_no: 1, inspection_item_code: 'LEN', inspection_item_name: '길이',
+        data_type_code: 'NUMERIC', uom_id: f.ids.uom,
+      } });
+      const measured = (value: number, judgmentCode: string) => [{
+        inspectionItemSpecId: Number(spec.inspection_item_spec_id), sampleNo: 1, numericValue: value, judgmentCode, measuredAt: '2026-11-18T03:00:00.000Z',
+      }];
+      const measurementsOf = async (resultId: number) =>
+        ((await f.asSession(f.http().get(`/api/quality/inspection-results/${resultId}/measurements`)).expect(200)).body as
+          { items: { inspectionItemSpecId: number; numericValue: number | null; judgmentCode: string }[] }).items;
+
+      const saved = await f.oqcResult(oqc, { matchedLotIds: [lotIds[0]], overallJudgmentCode: 'ACCEPTED', measurements: measured(1.5, 'ACCEPTED') }, 'session').expect(201);
+
+      expect((await measurementsOf(saved.body.inspectionResultId as number)).map((row) => [row.inspectionItemSpecId, row.numericValue, row.judgmentCode]))
+        .toEqual([[Number(spec.inspection_item_spec_id), 1.5, 'ACCEPTED']]);
+
+      await f.asSession(f.http().put(`/api/quality/inspection-results/${saved.body.inspectionResultId}`)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', '"1"')
+        .send({ measurements: measured(2.5, 'REJECTED') })).expect(200);
+
+      expect((await measurementsOf(saved.body.inspectionResultId as number)).map((row) => [row.numericValue, row.judgmentCode])).toEqual([[2.5, 'REJECTED']]);
+      // 수량은 여전히 서버가 매칭 LOT 피킹 합으로 채운다(R-5 — 판정만은 「수량은 받지 않음」으로 읽는다).
+      const row = await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(saved.body.inspectionResultId) } });
+      expect([Number(row.inspected_qty), Number(row.accepted_qty)]).toEqual([40, 40]);
+    });
+
     it('R-5 작성중 결과를 PUT 으로 고치면 매칭·판정이 바뀌고 수량이 다시 채워진다', async () => {
       const { made, lotIds, oqc } = await pickedThree();
       const saved = await f.oqcResult(oqc, { matchedLotIds: [lotIds[0]], overallJudgmentCode: 'ACCEPTED' }, 'session').expect(201);
@@ -541,6 +576,41 @@ describe('출하 공정 단순화 (e2e)', () => {
       await f.saveCode(firstLot.shipmentRequestLotId, 'BOX-0002').expect(409);
     });
 
+    describe.each([
+      ['같은 창고 두 위치', [{ warehouse: 'wh1', location: 'loc1a', qty: 10 }, { warehouse: 'wh1', location: 'loc1b', qty: 15 }]],
+      ['보통 자리 + 적치 대기', [{ warehouse: 'wh1', location: 'loc1a', qty: 20 }, { warehouse: 'wh1', location: 'staging1', qty: 5 }]],
+      ['두 창고', [{ warehouse: 'wh1', location: 'loc1a', qty: 10 }, { warehouse: 'wh2', qty: 15 }]],
+    ] as const)('R-2·FR-004a·Q2 한 LOT 의 잔액이 %s 에 나뉘어 있어도', (_, balances) => {
+      it('Q2 완료된다 — 배분은 LOT 하나로 합치고, 창고마다 출고 전표·위치마다 출고 라인으로 그 몫만 빠진다', async () => {
+        const made = await f.request([{ allocated: 25, salesOrdered: 25 }]);
+        const lot = await f.lot({ balances: [...balances] });
+        await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+        await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [lot.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+
+        const done = await f.complete(made).expect(200);
+
+        const shipmentId = BigInt(done.body.shipmentId);
+        expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(1);
+        const allocations = await prisma.shipment_lot_allocation.findMany({ where: { shipment_line: { shipment_id: shipmentId } } });
+        expect(allocations.map((row) => [Number(row.lot_id), Number(row.allocated_qty)])).toEqual([[lot.lotId, 25]]);
+        const shipmentLines = await prisma.shipment_line.findMany({ where: { shipment_id: shipmentId } });
+        expect(shipmentLines.map((row) => Number(row.shipped_qty))).toEqual([25]);
+        const issues = await prisma.goods_issue.findMany({
+          where: { source_document_type_code: 'SHIPMENT', source_document_id: shipmentId },
+          include: { goods_issue_line: true },
+        });
+        const warehouseIds = [...new Set(balances.map((balance) => String(f.ids[balance.warehouse])))].sort();
+        expect(issues.map((row) => String(row.source_warehouse_id)).sort()).toEqual(warehouseIds);
+        const locationOf = (balance: (typeof balances)[number]): bigint => ('location' in balance ? f.ids[balance.location] : f.ids.loc2);
+        expect(issues.flatMap((row) => row.goods_issue_line.map((line) => [String(row.source_warehouse_id), String(line.source_location_id), Number(line.issue_qty)])).sort())
+          .toEqual(balances.map((balance) => [String(f.ids[balance.warehouse]), String(locationOf(balance)), balance.qty]).sort());
+        const left = await prisma.inventory_balance.findMany({ where: { lot_id: BigInt(lot.lotId) } });
+        expect(left.map((row) => [Number(row.on_hand_qty), Number(row.picked_qty)])).toEqual(balances.map(() => [0, 0]));
+        const line = await prisma.shipment_request_line.findUniqueOrThrow({ where: { shipment_request_line_id: BigInt(made.lineIds[0]) }, include: { sales_order_line: true } });
+        expect([Number(line.shipped_qty), Number(line.sales_order_line?.shipped_qty)]).toEqual([25, 25]);
+      });
+    });
+
     it('US1-4·US1-7·US2-5·FR-016·SC-004·Q8 피킹 부족·미검사·불합격·보류면 409 COMPLETION_BLOCKED 와 이유 목록 — 출하가 생기지 않는다', async () => {
       const short = await f.request([{ allocated: 100 }]);
       const lots = [];
@@ -693,6 +763,118 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect(detail.body).toMatchObject({ shipmentProgressCode: 'PICKED', completedShipment: null, completionBlockers: [] });
       expect(detail.body.lines[0]).toMatchObject({ pickedQty: 110, shippedQty: 0 });
       await f.complete(made).expect(200);
+    });
+
+    it('US6-1·Q13·Q2 두 창고·적치 대기에 나뉜 LOT 의 출하를 취소하면 몫마다 제자리로 돌아가고 예약이 다시 잡힌다', async () => {
+      const made = await f.request([{ allocated: 30, salesOrdered: 30 }]);
+      const lot = await f.lot({ balances: [
+        { warehouse: 'wh1', location: 'loc1a', qty: 10 }, { warehouse: 'wh1', location: 'staging1', qty: 5 }, { warehouse: 'wh2', qty: 15 },
+      ] });
+      await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [lot.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      expect((await f.requestCancel(shipmentId)).status).toBe(200);
+
+      expect((await f.cancelApproved(shipmentId)).status).toBe(200);
+
+      const balances = await prisma.inventory_balance.findMany({ where: { lot_id: BigInt(lot.lotId) }, orderBy: { inventory_balance_id: 'asc' } });
+      expect(balances.map((row) => [String(row.location_id), Number(row.on_hand_qty), Number(row.picked_qty)])).toEqual([
+        [String(f.ids.loc1a), 10, 10], [String(f.ids.staging1), 5, 5], [String(f.ids.loc2), 15, 15],
+      ]);
+      const reservations = await prisma.inventory_reservation.findMany({
+        where: { source_document_type_code: 'SHIPMENT_REQUEST_LINE', source_document_id: BigInt(made.lineIds[0]), lot_id: BigInt(lot.lotId) },
+      });
+      expect(reservations.filter((row) => Number(row.consumed_qty) - Number(row.released_qty) > 0).map((row) => Number(row.consumed_qty) - Number(row.released_qty)).sort((a, b) => a - b))
+        .toEqual([5, 10, 15]);
+      await f.complete(made).expect(200);
+    });
+
+    /** 완료한 출하의 PGI 메시지를 송신 오류로 둔다 — 러너가 보내다 실패한 모양(재시도 1회, 오류 문구). */
+    const failSend = async (shipmentId: number, rowStatus?: string): Promise<bigint> => {
+      const message = await prisma.integration_message.findFirstOrThrow({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) } });
+      await prisma.integration_message.update({
+        where: { integration_message_id: message.integration_message_id },
+        data: { status_code: 'FAILED', retry_count: 1, last_error_message: '중계 DB 거절' },
+      });
+      if (rowStatus !== undefined) {
+        await prisma.erp_outbound_row.create({ data: {
+          integration_message_id: message.integration_message_id, relay_table_name: 'RCV_DN', document_no: `DN-${shipmentId}`,
+          relay_key: `K-${shipmentId}-${randomUUID().slice(0, 6)}`, create_type_code: 'A', row_values: {}, status_code: rowStatus,
+        } });
+      }
+      return message.integration_message_id;
+    };
+
+    it('FR-023·Q14 송신 오류(FAILED, ERP 반영 행 없음) 출하도 취소를 상신·실행한다 — 메시지는 CANCELLED 라 다시 보내지 않는다', async () => {
+      const { made } = await readyRequest();
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      const messageId = await failSend(shipmentId, 'REJECTED');
+      expect((await f.shipment(shipmentId)).body).toMatchObject({ erpSendStatus: 'SEND_ERROR' });
+
+      expect((await f.requestCancel(shipmentId)).status).toBe(200);
+      const cancelled = await f.cancelApproved(shipmentId);
+
+      expect(cancelled.status).toBe(200);
+      expect(cancelled.body).toMatchObject({ statusCode: 'CANCELLED', erpSendStatus: 'CANCELLED' });
+      // CANCELLED 는 러너가 잡지 않고(PENDING 만) 재처리도 받지 않는다(FAILED 만) — 다시 시도되지 않는다.
+      expect((await prisma.integration_message.findUniqueOrThrow({ where: { integration_message_id: messageId } })).status_code).toBe('CANCELLED');
+    });
+
+    it('FR-023·Q14 송신 오류라도 ERP 에 들어간 행(INSERTED·APPLIED)이 있으면 보낸 것으로 보고 409 ERP_ALREADY_SENT', async () => {
+      for (const rowStatus of ['INSERTED', 'APPLIED']) {
+        const { made } = await readyRequest();
+        const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+        await failSend(shipmentId, rowStatus);
+
+        const response = await f.requestCancel(shipmentId);
+
+        expect([rowStatus, response.status, response.body.code]).toEqual([rowStatus, 409, 'ERP_ALREADY_SENT']);
+      }
+    });
+
+    it('Q14 ERP 반영이 끝난(DONE) 출하도 409 ERP_ALREADY_SENT 다', async () => {
+      const { made } = await readyRequest();
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      await prisma.integration_message.updateMany({
+        where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) },
+        data: { status_code: 'DONE', sent_at: new Date(), completed_at: new Date() },
+      });
+
+      const response = await f.requestCancel(shipmentId);
+
+      expect([response.status, response.body.code]).toEqual([409, 'ERP_ALREADY_SENT']);
+    });
+
+    it('US6-1·FR-023 취소 실행이 출하 OQC 의뢰를 진행으로 다시 연다 — 새로 피킹한 LOT 에 결과를 넣고 다시 완료한다', async () => {
+      const { made, lotIds } = await readyRequest();
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      expect((await f.requestCancel(shipmentId)).status).toBe(200);
+      expect((await f.cancelApproved(shipmentId)).status).toBe(200);
+
+      const reopened = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, include: { inspection_result: true } });
+      expect([reopened.status_code, reopened.overall_judgment_code, reopened.confirmed_at]).toEqual(['IN_PROGRESS', null, null]);
+      // 확정됐던 결과는 확정 그대로 남는다(판정 근거) — 새 결과는 작성중으로 쌓인다.
+      expect(reopened.inspection_result.map((row) => row.status_code)).toEqual(['CONFIRMED']);
+
+      // 다시 열린 의뢰에 결과를 더한다 — LOT 3 을 재검 불합격으로 덮고 PDA 에서 교체한 뒤, 새 LOT 을 피킹해 판정한다.
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [lotIds[2]], overallJudgmentCode: 'REJECTED', reinspectionReasonCode: 'RETEST' }).expect(201);
+      const third = (await f.lotsOf(made)).find((lot) => lot.lotId === lotIds[2]);
+      await f.replaceLot(third?.shipmentRequestLotId as number).expect(200);
+      const extra = await f.lot({ balances: [{ warehouse: 'wh2', qty: 25 }] });
+      await f.pickLot(made, 0, { lotId: extra.lotId }).expect(200);
+      expect((await f.lookup(`SHPREQ:${made.requestNo}`).expect(200)).body.blockers).toEqual([{ code: 'NOT_INSPECTED', lotNo: extra.lotNo }]);
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [extra.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+
+      const again = await f.complete(made).expect(200);
+
+      expect(again.body.shipmentId).not.toBe(shipmentId);
+      const closed = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, include: { inspection_result: { orderBy: { inspection_round: 'asc' } } } });
+      expect([closed.status_code, closed.overall_judgment_code, closed.inspection_result.map((row) => row.status_code)])
+        .toEqual(['COMPLETED', 'ACCEPTED', ['CONFIRMED', 'CONFIRMED', 'CONFIRMED']]);
+      const shipped = await prisma.shipment_request_lot.findMany({
+        where: { lot_id: { in: [lotIds[0], lotIds[1], extra.lotId].map(BigInt) }, shipment_id: BigInt(again.body.shipmentId) },
+      });
+      expect(shipped).toHaveLength(3);
     });
 
     it('US6-2·Q14 ERP 로 이미 보낸 출하는 취소 상신이 409 ERP_ALREADY_SENT 다', async () => {

@@ -29,7 +29,14 @@ export interface OqcRequestLotView {
   managementCode: string | null;
 }
 
-export interface OqcRequestDetailView {
+/** 품목 표시 칸(P-04-06 목록 카드·머리 · 피처 010 검증 1회차) — POP 은 품목 마스터를 읽지 않는다. */
+export interface OqcItemDisplay {
+  itemCode: string;
+  itemName: string;
+  uomCode: string;
+}
+
+export interface OqcRequestDetailView extends OqcItemDisplay {
   shipmentRequestNo: string;
   lots: OqcRequestLotView[];
   results: InspectionRequestResultView[];
@@ -44,13 +51,31 @@ export interface OqcLotJudgmentSummary {
   held: number;
 }
 
-export interface OqcRequestSummary {
+export interface OqcRequestSummary extends OqcItemDisplay {
   shipmentRequestNo: string;
   pickedLotCount: number;
+  /** 살아 있는 피킹 LOT 수량 합 — 카드 「피킹 LOT 3개 · 110 EA」. */
+  pickedQty: number;
   lotJudgmentSummary: OqcLotJudgmentSummary;
 }
 
-type Row = { inspection_request_id: bigint; inspection_type_code: string; target_type_code: string; target_id: bigint; item_id: bigint; lot_id: bigint | null };
+type Row = { inspection_request_id: bigint; inspection_type_code: string; target_type_code: string; target_id: bigint; item_id: bigint; uom_id: bigint; lot_id: bigint | null };
+
+/** 품목 코드·이름·단위 코드 — 의뢰 행들을 한 방씩 읽는다. */
+async function itemDisplaysOf(prisma: PrismaService, rows: readonly Row[]): Promise<(row: Row) => OqcItemDisplay> {
+  const unique = (values: bigint[]) => [...new Set(values.map(String))].map(BigInt);
+  const [items, uoms] = await Promise.all([
+    prisma.item.findMany({ where: { item_id: { in: unique(rows.map((row) => row.item_id)) } }, select: { item_id: true, item_code: true, item_name: true } }),
+    prisma.uom.findMany({ where: { uom_id: { in: unique(rows.map((row) => row.uom_id)) } }, select: { uom_id: true, uom_code: true } }),
+  ]);
+  const itemOf = new Map(items.map((item) => [String(item.item_id), item]));
+  const uomOf = new Map(uoms.map((uom) => [String(uom.uom_id), uom.uom_code]));
+  return (row) => ({
+    itemCode: itemOf.get(String(row.item_id))?.item_code ?? '',
+    itemName: itemOf.get(String(row.item_id))?.item_name ?? '',
+    uomCode: uomOf.get(String(row.uom_id)) ?? '',
+  });
+}
 
 const lotsOf = (prisma: PrismaService, shipmentRequestIds: bigint[], itemIds: bigint[]) =>
   prisma.shipment_request_lot.findMany({
@@ -66,11 +91,12 @@ const lotsOf = (prisma: PrismaService, shipmentRequestIds: bigint[], itemIds: bi
 /** 상세 — 새 흐름 의뢰만. 그 밖은 `undefined`. */
 export async function oqcRequestDetail(prisma: PrismaService, row: Row): Promise<OqcRequestDetailView | undefined> {
   if (!isShipmentOqc(row)) return undefined;
-  const [request, lots, results, nextSeqNo] = await Promise.all([
+  const [request, lots, results, nextSeqNo, display] = await Promise.all([
     prisma.shipment_request.findUnique({ where: { shipment_request_id: row.target_id }, select: { shipment_request_no: true } }),
     lotsOf(prisma, [row.target_id], [row.item_id]),
     prisma.inspection_result.findMany({ where: { inspection_request_id: row.inspection_request_id }, orderBy: { inspection_round: 'asc' }, select: RESULT_SELECT }),
     nextResultSequence(prisma, row.inspection_request_id),
+    itemDisplaysOf(prisma, [row]),
   ]);
   const live = lots.filter((lot) => lot.status_code !== 'REPLACED').map((lot) => ({ lot: { lot_id: lot.lot_id, lot_no: lot.lot.lot_no } }));
   // 배포 전 확정 결과(매칭 행 없음)는 피킹 LOT 전부를 매칭한 것으로 본다 — 판정 계산과 같은 규칙(`oqcLotStatuses`).
@@ -78,6 +104,7 @@ export async function oqcRequestDetail(prisma: PrismaService, row: Row): Promise
     result.inspection_result_lot.length === 0 && result.status_code === 'CONFIRMED' ? { ...result, inspection_result_lot: live } : result);
   const reasonNames = await reinspectionReasonNames(prisma, results);
   return {
+    ...display(row),
     shipmentRequestNo: request?.shipment_request_no ?? '',
     lots: lots.map((lot) => ({
       lotId: Number(lot.lot_id), lotNo: lot.lot.lot_no, lotQty: Number(lot.picked_qty), package: null, statusCode: lot.lot.status_code,
@@ -95,10 +122,11 @@ export async function oqcListSummaries(prisma: PrismaService, rows: readonly Row
   const oqc = rows.filter(isShipmentOqc);
   if (oqc.length === 0) return rows.map(() => undefined);
   const requestIds = [...new Set(oqc.map((row) => row.target_id))];
-  const [requests, lots, statuses] = await Promise.all([
+  const [requests, lots, statuses, display] = await Promise.all([
     prisma.shipment_request.findMany({ where: { shipment_request_id: { in: requestIds } }, select: { shipment_request_id: true, shipment_request_no: true } }),
     lotsOf(prisma, requestIds, [...new Set(oqc.map((row) => row.item_id))]),
     oqcLotStatusesOf(prisma, requestIds),
+    itemDisplaysOf(prisma, oqc),
   ]);
   const noOf = new Map(requests.map((request) => [String(request.shipment_request_id), request.shipment_request_no]));
   return rows.map((row) => {
@@ -107,8 +135,10 @@ export async function oqcListSummaries(prisma: PrismaService, rows: readonly Row
       && lot.shipment_request_line.shipment_request_id === row.target_id && lot.shipment_request_line.item_id === row.item_id);
     const count = (status: OqcLotStatus) => members.filter((lot) => statuses.get(lot.shipment_request_lot_id) === status).length;
     return {
+      ...display(row),
       shipmentRequestNo: noOf.get(String(row.target_id)) ?? '',
       pickedLotCount: members.length,
+      pickedQty: members.reduce((sum, lot) => sum + Number(lot.picked_qty), 0),
       lotJudgmentSummary: { notInspected: count('NOT_INSPECTED'), accepted: count('ACCEPTED'), rejected: count('REJECTED'), held: count('HELD') },
     };
   });

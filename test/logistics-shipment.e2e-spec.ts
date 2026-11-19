@@ -222,9 +222,10 @@ describe('출하 목록 (e2e)', () => {
     expect(rows.map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
   });
 
-  it('L-9 ⛔ q 는 shipment_no «만» 본다 — 고객명·LOT 번호로는 0건', async () => {
+  it('L-9·US7-3 q 는 출하번호·지시서 번호·고객을 본다(피처 010 W-04-12 시안) — LOT 번호로는 0건', async () => {
     expect((await ours({ q: `${PREFIX}-A` })).map((i) => i.shipmentNo)).toEqual([`${PREFIX}-A`]);
-    expect(await ours({ q: '출하검사파트너' })).toEqual([]);
+    expect((await ours({ q: '출하검사파트너C2' })).map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
+    expect((await ours({ q: `${PREFIX}-R2` })).map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
     expect(await ours({ q: `${PREFIX}-LOT` })).toEqual([]);
   });
 

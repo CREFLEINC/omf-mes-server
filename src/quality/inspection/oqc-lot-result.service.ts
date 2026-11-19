@@ -10,7 +10,9 @@ import { startInspectionRequestWithin } from './inspection-request-reopen';
 import { recordInspectionRequestEvent } from './inspection-request-event';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { InspectionResultCreate, InspectionResultUpdate, InspectionResultWriteContext } from './inspection-result-write-input';
-import { VERSION_CONFLICT, resolveInspector } from './inspection-result-write-rules';
+import { VERSION_CONFLICT, assertCodes, resolveInspector } from './inspection-result-write-rules';
+import { replaceMeasurementsWithin, writeMeasurementsWithin } from './inspection-measurement-write';
+import { assertMeasurementValues } from './inspection-rules';
 import {
   assertReinspectionReason,
   eventActor,
@@ -47,7 +49,8 @@ interface MatchedLots {
  * 출하 OQC 새 흐름의 결과 쓰기(피처 010 · research R-5) — `InspectionResultWriteService` 가 분기 한 줄로 넘긴다.
  * ⭐ 매칭 LOT 1개 이상 필수(그 지시서·품목의 PICKED 피킹 LOT 만), 판정만 받고 수량은 서버가 채운다(검사 = 매칭 LOT 피킹 합,
  *    판정 칸 하나에 같은 값). 결과는 작성중(DRAFT)으로만 서고 확정은 출하 완료가 한다. 순번 = 최대 + 1, 재검 사유는 IQC 규칙 재사용.
- * ⛔ 측정치·불량·4M 은 받지 않는다(판정만 — 계약 설명).
+ * ⭐ 검사 항목 측정은 지금처럼 받는다(FR-009 · T052) — IQC·PQC·OQC 와 같은 검사·저장 함수. 「판정만」은 수량을 받지 않는다는 뜻이다.
+ * ⛔ 불량·4M 은 받지 않는다(계약 설명).
  */
 @Injectable()
 export class OqcLotResultService {
@@ -66,6 +69,8 @@ export class OqcLotResultService {
     }
     assertOpen(request.status_code);
     const judgment = assertJudgment(body.overallJudgmentCode);
+    await assertCodes(this.prisma, undefined, undefined, body.measurements);
+    assertMeasurementValues(body.measurements);
     const matched = await matchedLots(this.prisma, request, body.matchedLotIds);
     const seqNo = await nextResultSequence(this.prisma, request.inspection_request_id);
     await assertReinspectionReason(this.prisma, request.inspection_request_id, {
@@ -98,6 +103,7 @@ export class OqcLotResultService {
         select: { inspection_result_id: true },
       });
       await replaceMatchedLotsWithin(tx, created.inspection_result_id, matched.lotIds);
+      await writeMeasurementsWithin(tx, created.inspection_result_id, body.measurements, context.appUserId);
       // 첫 결과가 의뢰를 «진행»으로 옮긴다(2026-11-18 결정 — 대기 → 진행 → 출하 완료 때 완료).
       await startInspectionRequestWithin(tx, request.inspection_request_id, context.appUserId);
       if (serials !== null) {
@@ -120,7 +126,7 @@ export class OqcLotResultService {
     });
   }
 
-  /** 작성중 결과만 고친다 — 매칭·판정·재검 사유. 수량은 고친 뒤 매칭으로 다시 채운다. 새 흐름이 아니면 `null`. */
+  /** 작성중 결과만 고친다 — 매칭·판정·재검 사유·측정치. 수량은 고친 뒤 매칭으로 다시 채운다. 새 흐름이 아니면 `null`. */
   async update(
     inspectionResultId: number,
     version: number,
@@ -143,6 +149,8 @@ export class OqcLotResultService {
     }
     assertOpen(request.status_code);
     const judgment = body.overallJudgmentCode === undefined ? current.overall_judgment_code : assertJudgment(body.overallJudgmentCode);
+    await assertCodes(this.prisma, undefined, undefined, body.measurements);
+    assertMeasurementValues(body.measurements);
     const matched = await matchedLots(
       this.prisma, request, body.matchedLotIds ?? current.inspection_result_lot.map((match) => Number(match.lot_id)),
     );
@@ -169,6 +177,7 @@ export class OqcLotResultService {
       });
       assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT, currentVersion: String(current.version_no) });
       await replaceMatchedLotsWithin(tx, BigInt(inspectionResultId), matched.lotIds);
+      await replaceMeasurementsWithin(tx, BigInt(inspectionResultId), body.measurements, context.appUserId);
       await startInspectionRequestWithin(tx, request.inspection_request_id, context.appUserId);
       const after = await resultSummaryWithin(tx, BigInt(inspectionResultId));
       await recordInspectionRequestEvent(tx, {

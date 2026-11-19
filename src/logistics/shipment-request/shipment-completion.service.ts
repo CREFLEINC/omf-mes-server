@@ -149,13 +149,28 @@ export class ShipmentCompletionService {
       await this.enqueueErpSend(tx, shipment.shipment_id, shipmentNo, id, occurredAt);
       await recordTerminalWorkerAudit(tx, { actor: audit, targetTypeCode: 'SHIPMENT', targetId: shipment.shipment_id, eventTypeCode: 'COMPLETE' });
       return shipment.shipment_id;
-    }).catch((error: unknown) => {
-      // 마지막 그물 — 헤더 잠금을 비켜 간 동시 완료는 부분 유일 인덱스가 막는다.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw alreadyCompleted();
+    }).catch(async (error: unknown) => {
+      // 마지막 그물 — 헤더 잠금을 비켜 간 동시 완료는 부분 유일 인덱스가 막는다. 다른 유일 위반은 「이미 완료」로 가리지 않는다.
+      if (await this.isCompletedRequestViolation(error, id)) throw alreadyCompleted();
       throw error;
     });
 
     return { shipmentId: Number(shipmentId), shipmentNo, completedAt: occurredAt.toISOString(), completion: await this.view(id) };
+  }
+
+  /**
+   * P2002 가 «출하 완료» 유일 인덱스(`uq_shipment_completed_request` — 지시서마다 살아 있는 새 흐름 출하 하나) 위반인가.
+   * `meta.target` 이 그 인덱스 이름이나 `shipment_request_id` 를 담으면 그렇다. 부분 인덱스라 비어 올 수 있어, 비었으면
+   * 지시서에 살아 있는 완료 출하가 정말 있는지 본다(앞선 쪽이 이미 커밋했다).
+   */
+  private async isCompletedRequestViolation(error: unknown, requestId: bigint): Promise<boolean> {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
+    const target = error.meta?.target;
+    const names = (Array.isArray(target) ? target.map(String) : [String(target ?? '')]).filter((name) => name !== '');
+    if (names.length > 0) return names.some((name) => name.includes('uq_shipment_completed_request') || name === 'shipment_request_id');
+    return (await this.prisma.shipment.count({
+      where: { shipment_request_id: requestId, completed_terminal_id: { not: null }, status_code: { not: 'CANCELLED' } },
+    })) > 0;
   }
 
   /** 수주 연결 라인이 하나라도 있으면 적재한다 — 수주 없는 라인은 빌더가 뺀다(R-11). 모두 수주 없으면 적재하지 않는다. */

@@ -109,6 +109,15 @@ function plantMidnightSql(date: string): string {
                       WHERE r.shipment_request_id = s.shipment_request_id)))`;
 }
 
+/** `q` — 출하번호 · 출하 지시서 번호 · 고객 코드·이름 부분 일치. */
+export function keywordSql(param: string): string {
+  const like = `'%' || ${param} || '%'`;
+  return `(s.shipment_no ILIKE ${like}
+        OR EXISTS (SELECT 1 FROM logistics.shipment_request qr JOIN mdm.partner qc ON qc.partner_id = qr.customer_id
+                    WHERE qr.shipment_request_id = s.shipment_request_id
+                      AND (qr.shipment_request_no ILIKE ${like} OR qc.partner_code ILIKE ${like} OR qc.partner_name ILIKE ${like})))`;
+}
+
 export function whereSql(query: ShipmentFilters): BuiltWhere {
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
@@ -159,8 +168,9 @@ export function whereSql(query: ShipmentFilters): BuiltWhere {
   if (query.pickedOnly === true) and.push(PICKED_ONLY_SQL);
   // 계약이 한 방향만 적었으므로 `false` 는 절을 «안 건다»(`unconfirmedOnly` 와 같은 관례).
   if (query.hasUnassignedPackedBox === true) and.push(UNASSIGNED_PACKED_BOX_SQL);
-  // ⛔ 범위는 `shipment_no` 하나다 — 계약이 「고객은 customerId 를, LOT 은 lotId 를 쓴다」로 닫았다.
-  if (query.q !== undefined) and.push(`s.shipment_no ILIKE '%' || ${bind(query.q)} || '%'`);
+  // 범위는 출하번호·지시서 번호·고객(코드·이름)이다 — 출하 내역(W-04-12) 시안 「출하번호·지시서·고객」(피처 010).
+  // ⛔ LOT 은 넣지 않는다 — LOT 은 `lotId` 를 쓴다.
+  if (query.q !== undefined) and.push(keywordSql(bind(query.q)));
   if (query.lotId !== undefined) {
     and.push(allocationExists(`a.lot_id = ${bind(query.lotId)}::bigint`));
   }

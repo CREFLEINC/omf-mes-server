@@ -386,6 +386,24 @@ describe('ERP 보내기 실행기 (e2e · 대역)', () => {
     expect(builds).toBe(1);
   });
 
+  it('FR-023·FR-024·Q14 송신 오류(FAILED) 출하도 취소 결재가 열려 있으면 재시도로 대기가 돼도 잡지 않는다(피처 010)', async () => {
+    const shipmentId = 900_000_000n + BigInt(Math.floor(Math.random() * 1_000_000));
+    const held = await message(CODE, { type: 'SHIPMENT', id: shipmentId });
+    await prisma.integration_message.update({ where: { integration_message_id: held }, data: { status_code: 'FAILED', retry_count: 1 } });
+    const user = await prisma.app_user.findFirstOrThrow({ select: { app_user_id: true } });
+    await prisma.approval_request.create({ data: {
+      approval_request_no: `${CODE}-APF-${shipmentId}`, approval_type_code: 'SHIPMENT_CANCEL', target_type_code: 'SHIPMENT',
+      target_id: shipmentId, requested_by: user.app_user_id, requested_at: new Date(), status_code: 'PENDING', reason: '송신 오류 출하 취소 상신',
+    } });
+    // 관리자가 재처리(`:retry`)를 눌러 대기로 돌린 모양 — 재처리 서비스와 같은 갱신.
+    await prisma.integration_message.update({ where: { integration_message_id: held }, data: { status_code: 'PENDING', available_at: READY() } });
+
+    await runner.tick();
+
+    expect((await stateOf(held)).status_code).toBe('PENDING');
+    expect(builds).toBe(0);
+  });
+
   it('종료 신호 뒤에는 잡은 메시지를 보내지 않고 대기로 돌려놓는다', async () => {
     const id = await message();
     const stopped = new ErpSendRunner(false, prisma, lease, relay, [builder], RCV_TABLES);

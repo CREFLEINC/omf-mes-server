@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
-import type { OqcLotStatus } from '../../quality/inspection/oqc-lot-result';
+import type { OqcLotDecision, OqcLotStatus } from '../../quality/inspection/oqc-lot-result';
 import { CompletionBlocker, CompletionBlockerCode, blockerSummary, completionBlockers } from './shipment-completion-rules';
 import { toDateString } from '../../common/master';
 import {
@@ -40,7 +40,7 @@ export type ShipmentPickRow = Prisma.inventory_reservationGetPayload<{
   include: {
     lot: { select: { lot_no: true } };
     warehouse: { select: { warehouse_code: true; warehouse_name: true } };
-    location: { select: { location_code: true } };
+    location: { select: { location_code: true; system_role_code: true } };
   };
 }>;
 
@@ -53,7 +53,7 @@ export type ShipmentRequestLotRow = Prisma.shipment_request_lotGetPayload<{
     lot: { select: { lot_no: true; item_id: true } };
     picked_worker: { select: { worker_no: true; worker_name: true } };
     replaced_worker: { select: { worker_no: true; worker_name: true } };
-    replace_inspection_result: { select: { inspection_result_no: true; inspected_at: true; overall_judgment_code: true } };
+    replace_inspection_result: { select: { inspection_result_no: true; inspection_round: true; inspected_at: true; overall_judgment_code: true } };
     replace_nonconformance: { select: { nonconformance_no: true } };
   };
 }>;
@@ -62,6 +62,8 @@ export type ShipmentRequestLotRow = Prisma.shipment_request_lotGetPayload<{
 export interface ShipmentLotReplacementView {
   inspectionResultId: number;
   resultNo: string;
+  /** 근거 결과의 회차(의뢰 안 순번) — 화면의 「결과 #n」. */
+  resultRound: number;
   resultAt: string;
   judgment: string | null;
   nonconformanceId: number | null;
@@ -73,8 +75,44 @@ export interface ShipmentLotReplacementView {
 /** 라인 id(문자열) → 그 라인의 피킹 LOT 행(교체된 행 포함). */
 export type ShipmentLotsByLine = Map<string, ShipmentRequestLotRow[]>;
 
-/** 피킹 LOT 행 id → OQC 판정(살아 있는 행만 — `oqcLotStatusesOf`). */
-export type OqcLotStatusByLot = Map<bigint, OqcLotStatus>;
+/** 피킹 LOT 행 id → OQC 판정과 근거 결과(살아 있는 행만 — `oqcLotDecisionsOf`). */
+export type OqcLotStatusByLot = Map<bigint, OqcLotDecision>;
+
+/** 수주 라인 표시 값 — W-04-02 「수주 잔량」(「0 + 초과 n」)과 「SO · 라인」. */
+export interface SalesOrderLineFact {
+  salesOrderNo: string;
+  lineNo: number;
+  orderedQty: number;
+  shippedQty: number;
+  cancelled: boolean;
+}
+
+/** 표시용 이름·번호(시안 차이 보완) — 호출자가 한 방씩 읽어 넘긴다. 없으면 빈 값으로 싣는다. */
+export interface ShipmentRequestDisplayFacts {
+  salesOrderNos: Map<string, string>;
+  salesOrderLines: Map<string, SalesOrderLineFact>;
+  items: Map<string, { itemCode: string; itemName: string }>;
+  uomCodes: Map<string, string>;
+  /** 고객·납품처(거래처) — PDA 카드·POP 찾기·P-04-06 머리(피처 010 검증 1회차). */
+  partners?: Map<string, ShipmentRequestPartnerView>;
+}
+
+/** 거래처 표시 칸 — 출하 내역(`Shipment.customer`)·완료 확인 값과 같은 모양. */
+export interface ShipmentRequestPartnerView {
+  partnerId: number;
+  partnerCode: string;
+  partnerName: string;
+}
+
+const NO_DISPLAY: ShipmentRequestDisplayFacts = { salesOrderNos: new Map(), salesOrderLines: new Map(), items: new Map(), uomCodes: new Map() };
+
+/** OQC 판정을 정한 결과 — PDA 불합격 줄의 「OQC 결과 n · 시각」. */
+export interface ShipmentLotOqcResultView {
+  inspectionResultId: number;
+  resultNo: string;
+  round: number;
+  resultAt: string;
+}
 
 /** 출하 완료 관문의 바깥 사실 — 지시서별 살아 있는 POP 완료 출하, 취소된 수주 라인 id. */
 export interface CompletionFacts {
@@ -86,6 +124,9 @@ export interface CompletedShipmentView {
   shipmentId: number;
   shipmentNo: string;
   completedAt: string;
+  /** 완료한 POP 단말 — W-04-02 상세·P-04-07 결과·이미 완료(시안 「POP-출하-01 · 김작업(W-0102)」). */
+  completedTerminal: { terminalId: number; terminalCode: string } | null;
+  completedWorker: { workerId: number; workerNo: string; workerName: string } | null;
 }
 
 export interface LotJudgmentSummaryView {
@@ -104,6 +145,8 @@ export interface ShipmentLotPortionView {
   warehouseName: string;
   locationId: number | null;
   locationCode: string | null;
+  /** 위치의 시스템 역할 — `PUTAWAY_STAGING` 이면 적치 대기 자리(화면 「적치 대기」). 보통 자리는 null. */
+  locationSystemRoleCode: string | null;
   qty: number;
 }
 
@@ -122,6 +165,8 @@ export interface ShipmentRequestLotView {
   portions: ShipmentLotPortionView[];
   /** LOT OQC 판정 6종(FR-007). 교체된 행은 판정 대상이 아니라 null. */
   oqcLotStatus: OqcLotStatus | null;
+  /** 판정을 정한 결과(합격·불합격·보류) — 미검사·검사 불필요·생략·교체된 행은 null. */
+  oqcResult: ShipmentLotOqcResultView | null;
   /** 교체된 행(REPLACED)만 — 그 밖은 null. */
   replacement: ShipmentLotReplacementView | null;
 }
@@ -145,11 +190,16 @@ export interface ShipmentRequestLineView {
   lineNo: number;
   salesOrderLineId: number | null;
   itemId: number;
+  itemCode: string;
+  itemName: string;
   requestedQty: number;
   allocatedQty: number;
   pickedQty: number;
   shippedQty: number;
   uomId: number;
+  uomCode: string;
+  /** 수주 라인(수주·출하 수량) — 수주 없는 라인은 null. */
+  salesOrderLine: (SalesOrderLineFact & { salesOrderLineId: number }) | null;
   customerLotRequirement: string | null;
   shippingInspectionRequired: boolean;
   minimumRemainingShelfLifeDays: number | null;
@@ -165,9 +215,14 @@ export interface ShipmentRequestView {
   /** 지시서 QR 값 `SHPREQ:{no}`. */
   code: string;
   salesOrderId: number | null;
+  /** 수주 번호 — 수주 없는 지시서는 null. */
+  salesOrderNo: string | null;
   fulfillmentPlantId: number | null;
   customerId: number;
   shipToPartnerId: number;
+  /** 고객·납품처 이름 — 거래처가 없으면 null. */
+  customer: ShipmentRequestPartnerView | null;
+  shipTo: ShipmentRequestPartnerView | null;
   requestedShipDate: string;
   statusCode: string;
   timeSlotCode: string | null;
@@ -196,13 +251,14 @@ export function shipmentRequestView(
   lotsByLine: ShipmentLotsByLine = new Map(),
   oqcStatuses: OqcLotStatusByLot = new Map(),
   facts: CompletionFacts = { completed: new Map(), cancelledSalesOrderLines: new Set() },
+  display: ShipmentRequestDisplayFacts = NO_DISPLAY,
 ): ShipmentRequestView {
   const lines = row.shipment_request_line.map((line) => ({
     line,
     picks: picksByLine.get(String(line.shipment_request_line_id)) ?? [],
     lots: lotsByLine.get(String(line.shipment_request_line_id)) ?? [],
   }));
-  const lineViews = lines.map(({ line, picks, lots }) => shipmentRequestLineView(line, picks, lots, oqcStatuses));
+  const lineViews = lines.map(({ line, picks, lots }) => shipmentRequestLineView(line, picks, lots, oqcStatuses, display));
   const completedShipment = facts.completed.get(String(row.shipment_request_id)) ?? null;
   const liveLots = lineViews.flatMap((line) => line.lots).filter((lot) => lot.statusCode === 'PICKED');
   const blockers = completionBlockers({
@@ -239,10 +295,13 @@ export function shipmentRequestView(
     shipmentRequestNo: row.shipment_request_no,
     code: `${SHIPMENT_REQUEST_CODE_PREFIX}${row.shipment_request_no}`,
     salesOrderId: row.sales_order_id === null ? null : Number(row.sales_order_id),
+    salesOrderNo: row.sales_order_id === null ? null : display.salesOrderNos.get(String(row.sales_order_id)) ?? null,
     fulfillmentPlantId:
       row.fulfillment_plant_id === null ? null : Number(row.fulfillment_plant_id),
     customerId: Number(row.customer_id),
     shipToPartnerId: Number(row.ship_to_partner_id),
+    customer: display.partners?.get(String(row.customer_id)) ?? null,
+    shipTo: display.partners?.get(String(row.ship_to_partner_id)) ?? null,
     requestedShipDate: toDateString(row.requested_ship_date) as string,
     statusCode: REGISTERED,
     timeSlotCode: row.ship_time_slot_code,
@@ -268,7 +327,10 @@ export function shipmentRequestLineView(
   picks: ShipmentPickRow[],
   lots: ShipmentRequestLotRow[] = [],
   oqcStatuses: OqcLotStatusByLot = new Map(),
+  display: ShipmentRequestDisplayFacts = NO_DISPLAY,
 ): ShipmentRequestLineView {
+  const item = display.items.get(String(row.item_id));
+  const orderLine = row.sales_order_line_id === null ? undefined : display.salesOrderLines.get(String(row.sales_order_line_id));
   const picked = pickedQtyOf(picks.map((pick) => ({ reservedQty: pick.reserved_qty, releasedQty: pick.released_qty })));
   const over = picked.minus(row.allocated_qty);
   return omitEmpty({
@@ -276,11 +338,17 @@ export function shipmentRequestLineView(
     lineNo: row.line_no,
     salesOrderLineId: row.sales_order_line_id === null ? null : Number(row.sales_order_line_id),
     itemId: Number(row.item_id),
+    itemCode: item?.itemCode ?? '',
+    itemName: item?.itemName ?? '',
     requestedQty: Number(row.requested_qty),
     allocatedQty: Number(row.allocated_qty),
     pickedQty: Number(picked),
     shippedQty: Number(row.shipped_qty),
     uomId: Number(row.uom_id),
+    uomCode: display.uomCodes.get(String(row.uom_id)) ?? '',
+    salesOrderLine: orderLine === undefined || row.sales_order_line_id === null
+      ? null
+      : { salesOrderLineId: Number(row.sales_order_line_id), ...orderLine },
     customerLotRequirement: row.customer_lot_requirement,
     shippingInspectionRequired: row.shipping_inspection_required,
     minimumRemainingShelfLifeDays: row.minimum_remaining_shelf_life_days,
@@ -300,6 +368,7 @@ export function shipmentRequestLotView(
   oqcStatuses: OqcLotStatusByLot = new Map(),
 ): ShipmentRequestLotView {
   const replaced = row.status_code === 'REPLACED';
+  const decision = oqcStatuses.get(row.shipment_request_lot_id);
   const portions = new Map<string, ShipmentLotPortionView>();
   for (const pick of picks) {
     if (pick.lot_id !== row.lot_id) continue;
@@ -314,6 +383,7 @@ export function shipmentRequestLotView(
       warehouseName: pick.warehouse.warehouse_name,
       locationId: pick.location_id === null ? null : Number(pick.location_id),
       locationCode: pick.location?.location_code ?? null,
+      locationSystemRoleCode: pick.location?.system_role_code ?? null,
       qty,
     });
   }
@@ -332,7 +402,11 @@ export function shipmentRequestLotView(
       : { workerId: Number(row.picked_worker_id), workerNo: row.picked_worker.worker_no, workerName: row.picked_worker.worker_name },
     shipmentId: row.shipment_id === null ? null : Number(row.shipment_id),
     portions: [...portions.values()],
-    oqcLotStatus: oqcStatuses.get(row.shipment_request_lot_id) ?? null,
+    oqcLotStatus: decision?.status ?? null,
+    oqcResult: decision?.result == null ? null : {
+      inspectionResultId: Number(decision.result.inspectionResultId), resultNo: decision.result.resultNo,
+      round: decision.result.round, resultAt: decision.result.inspectedAt.toISOString(),
+    },
     replacement: replacementView(row),
   };
 }
@@ -343,6 +417,7 @@ function replacementView(row: ShipmentRequestLotRow): ShipmentLotReplacementView
   return {
     inspectionResultId: Number(row.replace_inspection_result_id),
     resultNo: result.inspection_result_no,
+    resultRound: result.inspection_round,
     resultAt: result.inspected_at.toISOString(),
     judgment: result.overall_judgment_code,
     nonconformanceId: row.replace_nonconformance_id === null ? null : Number(row.replace_nonconformance_id),

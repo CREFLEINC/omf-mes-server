@@ -31,6 +31,22 @@ export interface OqcResultFacts {
   judgmentCode: string | null;
   statusCode: string;
   lotIds: readonly bigint[];
+  /** 판정 근거 표시용(PDA 「OQC 결과 n · 시각」) — 없으면 근거를 싣지 않는다. */
+  result?: OqcDecidingResult;
+}
+
+/** 한 LOT 의 판정을 정한 결과 — 번호·회차(의뢰 안 순번)·검사 시각. */
+export interface OqcDecidingResult {
+  inspectionResultId: bigint;
+  resultNo: string;
+  round: number;
+  inspectedAt: Date;
+}
+
+/** LOT 판정과 그 근거 결과(검사 불필요·생략·미검사는 근거 없음). */
+export interface OqcLotDecision {
+  status: OqcLotStatus;
+  result: OqcDecidingResult | null;
 }
 
 /** 새 흐름 의뢰인가 — 품목별 헤더 대상 OQC. */
@@ -46,6 +62,14 @@ export function oqcLotStatuses(
   lots: readonly OqcLotFacts[],
   group: { skipped: boolean; results: readonly OqcResultFacts[] },
 ): Map<bigint, OqcLotStatus> {
+  return new Map([...oqcLotDecisions(lots, group)].map(([lotId, decision]) => [lotId, decision.status]));
+}
+
+/** `oqcLotStatuses` 와 같은 판정에 그 판정을 정한 결과(근거)를 함께 낸다 — 판정은 이 함수 하나가 한다. */
+export function oqcLotDecisions(
+  lots: readonly OqcLotFacts[],
+  group: { skipped: boolean; results: readonly OqcResultFacts[] },
+): Map<bigint, OqcLotDecision> {
   const live = lots.map((lot) => lot.lotId);
   // 의뢰 순서 → 순번 — 의뢰가 둘이어도 «마지막»이 하나로 정해진다.
   const ordered = [...group.results].sort((a, b) => (a.requestId === b.requestId ? a.seqNo - b.seqNo : a.requestId < b.requestId ? -1 : 1));
@@ -54,15 +78,20 @@ export function oqcLotStatuses(
     seqNo: index + 1,
     judgmentCode: result.judgmentCode,
     lotIds: result.lotIds.length === 0 && result.statusCode === CONFIRMED ? live : result.lotIds,
+    source: result,
   }));
   const byLot = iqcLotJudgments(judged);
-  const statuses = new Map<bigint, OqcLotStatus>();
+  const decisions = new Map<bigint, OqcLotDecision>();
   for (const lot of lots) {
-    if (!lot.inspectionRequired) statuses.set(lot.lotId, 'NOT_REQUIRED');
-    else if (group.skipped) statuses.set(lot.lotId, 'SKIPPED');
-    else statuses.set(lot.lotId, (byLot.get(lot.lotId)?.used.judgmentCode as OqcLotStatus | null) ?? 'NOT_INSPECTED');
+    if (!lot.inspectionRequired) decisions.set(lot.lotId, { status: 'NOT_REQUIRED', result: null });
+    else if (group.skipped) decisions.set(lot.lotId, { status: 'SKIPPED', result: null });
+    else {
+      const used = byLot.get(lot.lotId)?.used;
+      const status = (used?.judgmentCode as OqcLotStatus | null | undefined) ?? 'NOT_INSPECTED';
+      decisions.set(lot.lotId, { status, result: status === 'NOT_INSPECTED' ? null : used?.source.result ?? null });
+    }
   }
-  return statuses;
+  return decisions;
 }
 
 /** 지시서의 OQC 묶음 열쇠 — (지시서, 품목). */
@@ -73,6 +102,11 @@ const groupKey = (shipmentRequestId: bigint, itemId: bigint): string => `${Strin
  * ⭐ 다른 지시서의 결과는 보지 않는다(FR-011) — 의뢰가 지시서·품목 단위라 모집단에 없다.
  */
 export async function oqcLotStatusesOf(db: Db, shipmentRequestIds: readonly bigint[]): Promise<Map<bigint, OqcLotStatus>> {
+  return new Map([...(await oqcLotDecisionsOf(db, shipmentRequestIds))].map(([id, decision]) => [id, decision.status]));
+}
+
+/** `oqcLotStatusesOf` 와 같은 판정 + 근거 결과 — 피킹 LOT 행 id → 판정·근거. 지시서 조회(PDA 「OQC 결과 n」)가 쓴다. */
+export async function oqcLotDecisionsOf(db: Db, shipmentRequestIds: readonly bigint[]): Promise<Map<bigint, OqcLotDecision>> {
   if (shipmentRequestIds.length === 0) return new Map();
   const [lots, requests] = await Promise.all([
     db.shipment_request_lot.findMany({
@@ -90,7 +124,10 @@ export async function oqcLotStatusesOf(db: Db, shipmentRequestIds: readonly bigi
       select: {
         inspection_request_id: true, target_id: true, item_id: true, status_code: true,
         inspection_result: {
-          select: { inspection_round: true, overall_judgment_code: true, status_code: true, inspection_result_lot: { select: { lot_id: true } } },
+          select: {
+            inspection_result_id: true, inspection_result_no: true, inspected_at: true,
+            inspection_round: true, overall_judgment_code: true, status_code: true, inspection_result_lot: { select: { lot_id: true } },
+          },
         },
       },
     }),
@@ -103,6 +140,10 @@ export async function oqcLotStatusesOf(db: Db, shipmentRequestIds: readonly bigi
     group.results.push(...request.inspection_result.map((result) => ({
       requestId: request.inspection_request_id, seqNo: result.inspection_round, judgmentCode: result.overall_judgment_code,
       statusCode: result.status_code, lotIds: result.inspection_result_lot.map((match) => match.lot_id),
+      result: {
+        inspectionResultId: result.inspection_result_id, resultNo: result.inspection_result_no,
+        round: result.inspection_round, inspectedAt: result.inspected_at,
+      },
     })));
     groups.set(key, group);
   }
@@ -111,15 +152,15 @@ export async function oqcLotStatusesOf(db: Db, shipmentRequestIds: readonly bigi
     const key = groupKey(lot.shipment_request_line.shipment_request_id, lot.shipment_request_line.item_id);
     byGroup.set(key, [...(byGroup.get(key) ?? []), lot]);
   }
-  const statuses = new Map<bigint, OqcLotStatus>();
+  const decisions = new Map<bigint, OqcLotDecision>();
   for (const [key, members] of byGroup) {
-    const judged = oqcLotStatuses(
+    const judged = oqcLotDecisions(
       members.map((lot) => ({ lotId: lot.lot_id, inspectionRequired: lot.shipment_request_line.shipping_inspection_required })),
       groups.get(key) ?? { skipped: false, results: [] },
     );
-    for (const lot of members) statuses.set(lot.shipment_request_lot_id, judged.get(lot.lot_id) ?? 'NOT_INSPECTED');
+    for (const lot of members) decisions.set(lot.shipment_request_lot_id, judged.get(lot.lot_id) ?? { status: 'NOT_INSPECTED', result: null });
   }
-  return statuses;
+  return decisions;
 }
 
 /**

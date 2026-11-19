@@ -53,6 +53,8 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   // POP 출하 완료 찾기(P-04-07 · 피처 010)도 같은 목록을 쓴다 — 공장은 컨트롤러가 단말 공장으로 건다.
   'GET /logistics/shipment-requests': ['MOBILE', 'POP'],
   'GET /logistics/shipment-requests:lookup': ['POP', 'MOBILE'],
+  // POP OQC 판정(P-04-06)의 머리·피킹 LOT 몫 — 단말 공장 지시서만(피처 010 검증 1회차).
+  'GET /logistics/shipment-requests/{shipmentRequestId}': ['POP'],
   'POST /logistics/shipment-requests/{shipmentRequestId}:complete': ['POP'],
   'GET /logistics/shipments': ['POP'],
   // ⭐ 출하 단위(P-04-05) — POP 전용이다. 모바일은 이 화면을 갖지 않는다.
@@ -246,6 +248,7 @@ export async function assertTerminalLogisticsScope(
       await shipmentRequest(p.shipmentRequestId);
       await check(await prisma.shipment_request_line.findFirst({ where: { shipment_request_line_id: id(p.shipmentRequestLineId), shipment_request_id: id(p.shipmentRequestId) }, select: { shipment_request_line_id: true } }));
       await optional(lot, b.lotId); break;
+    case 'GET /logistics/shipment-requests/{shipmentRequestId}':
     case 'POST /logistics/shipment-requests/{shipmentRequestId}:complete':
       await shipmentRequest(p.shipmentRequestId); break;
     // 피킹 LOT 행 → 지시서 이행 공장 = 단말 공장(피처 010).

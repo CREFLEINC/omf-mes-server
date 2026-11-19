@@ -108,7 +108,22 @@ export async function postCompletionIssues(
 }
 
 /**
- * 출하 라인(지시 라인마다 하나) · LOT 배분(몫마다 하나) · 지시 라인·수주 라인 출하 수량. 라인 순서는 지시 라인 번호다.
+ * 한 출하 라인의 몫들을 LOT 마다 하나로 합친다(처음 나온 순서). 배분 행은 `uq_shipment_lot_allocation`
+ * (출하 라인·LOT·HU) 에 걸리므로 LOT 하나에 한 행이다 — 창고·위치별 차감은 출고 전표 라인(몫마다)이 맡는다.
+ * 취소의 예약 되돌림(`releaseShipmentReservations`)도 (지시 라인, LOT) 로 찾아 합계를 예약 행마다 나눠 푼다.
+ */
+export function allocationsOf(portions: readonly CompletionPortion[]): { lotId: bigint; qty: Prisma.Decimal; uomId: bigint }[] {
+  const byLot = new Map<string, { lotId: bigint; qty: Prisma.Decimal; uomId: bigint }>();
+  for (const portion of portions) {
+    const found = byLot.get(String(portion.lotId));
+    if (found === undefined) byLot.set(String(portion.lotId), { lotId: portion.lotId, qty: new Prisma.Decimal(portion.qty), uomId: portion.uomId });
+    else found.qty = found.qty.plus(portion.qty);
+  }
+  return [...byLot.values()];
+}
+
+/**
+ * 출하 라인(지시 라인마다 하나) · LOT 배분(LOT 마다 하나 — 몫을 합친다) · 지시 라인·수주 라인 출하 수량. 라인 순서는 지시 라인 번호다.
  * 수주 라인은 한도 없이 더한다(D-16).
  */
 export async function writeCompletionLines(
@@ -131,8 +146,8 @@ export async function writeCompletionLines(
       },
     });
     await tx.shipment_lot_allocation.createMany({
-      data: mine.map(({ portion }) => ({
-        shipment_line_id: created.shipment_line_id, lot_id: portion.lotId, allocated_qty: portion.qty, uom_id: portion.uomId,
+      data: allocationsOf(mine.map(({ portion }) => portion)).map((allocation) => ({
+        shipment_line_id: created.shipment_line_id, lot_id: allocation.lotId, allocated_qty: allocation.qty, uom_id: allocation.uomId,
       })),
     });
     await tx.shipment_request_line.update({

@@ -14,7 +14,6 @@ import { prepareDraftDefects, prepareRejectionDefects, replaceDraftDefectsWithin
 import { allocateIqcNonconformanceNo } from './iqc-nonconformance';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import {
-  InspectionMeasurementInput,
   InspectionResultCreate,
   InspectionResultUpdate,
   InspectionResultWriteContext,
@@ -37,6 +36,7 @@ import {
   assertQuantityBounds,
   remarksWithJudgmentChange,
 } from './inspection-rules';
+import { writeMeasurementsWithin } from './inspection-measurement-write';
 import { reopenInspectionRequestWithin, startInspectionRequestWithin } from './inspection-request-reopen';
 import { recordInspectionRequestEvent } from './inspection-request-event';
 import {
@@ -164,7 +164,7 @@ export class InspectionResultWriteService {
           },
           select: { inspection_result_id: true },
         });
-        await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
+        await writeMeasurementsWithin(tx, created.inspection_result_id, body.measurements, context.appUserId);
         if (inbound !== null) await replaceMatchedLotsWithin(tx, created.inspection_result_id, inbound.matchedLotIds ?? []);
         // 작성중 회차를 쓰면 대기 의뢰가 «진행»이고(계약 · #164), 재검사 회차면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-43).
         // 확정으로 태어나면 아래가 닫는다.
@@ -306,7 +306,7 @@ export class InspectionResultWriteService {
       //    (빈 배열과 다르다 · §1-3). 부분 병합이 아니다 — 계약이 「부분」을 적지 않았다.
       if (body.measurements !== undefined) {
         await tx.inspection_measurement.deleteMany({ where: { inspection_result_id: BigInt(inspectionResultId) } });
-        await this.writeMeasurements(tx, BigInt(inspectionResultId), body.measurements, context.appUserId);
+        await writeMeasurementsWithin(tx, BigInt(inspectionResultId), body.measurements, context.appUserId);
       }
       if (draftDefects !== undefined) {
         await replaceDraftDefectsWithin(tx, this.defects, {
@@ -387,28 +387,7 @@ export class InspectionResultWriteService {
     return { inspection_result_id: inspectionResultId };
   }
 
-  private async writeMeasurements(
-    tx: Prisma.TransactionClient,
-    inspectionResultId: bigint,
-    measurements: readonly InspectionMeasurementInput[] | undefined,
-    appUserId: number | undefined,
-  ): Promise<void> {
-    if (measurements === undefined || measurements.length === 0) return;
-    await tx.inspection_measurement.createMany({
-      data: measurements.map((measurement) => ({
-        inspection_result_id: inspectionResultId,
-        inspection_item_spec_id: BigInt(measurement.inspectionItemSpecId),
-        sample_no: measurement.sampleNo,
-        ...optional('numeric_value', measurement.numericValue),
-        ...optional('text_value', measurement.textValue),
-        ...optional('boolean_value', measurement.booleanValue),
-        judgment_code: measurement.judgmentCode,
-        measured_at: new Date(measurement.measuredAt),
-        ...optional('inspection_equipment_id', measurement.inspectionEquipmentId === undefined ? undefined : BigInt(measurement.inspectionEquipmentId)),
-        created_by: appUserId ?? null,
-      })),
-    });
-  }
+
 
   /** 응답은 조회(PR ②b)와 **같은 매퍼**를 탄다 — 저장 직후 화면이 목록과 다른 모양을 보면 안 된다. */
   private async reread(tx: Prisma.TransactionClient, inspectionResultId: bigint): Promise<InspectionResultView> {
