@@ -14,7 +14,12 @@ import {
   orderBySql,
   whereSql,
 } from './shipment-request-query.sql';
-import { ShipmentPicksByLine, ShipmentRequestView, shipmentRequestView } from './shipment-request-view';
+import {
+  ShipmentLotsByLine,
+  ShipmentPicksByLine,
+  ShipmentRequestView,
+  shipmentRequestView,
+} from './shipment-request-view';
 
 /** 03 품질에서 이 축이 세는 것 — 출하검사뿐이다(§1-5). 좁히기용이고 판정은 ③a 가 다시 한다. */
 const OQC = 'OQC';
@@ -153,12 +158,31 @@ export class ShipmentRequestQueryService {
       .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     const inspections = await this.oqcResults(ids, lotIds);
+    const lots = await this.lotsByLine(lines.map((line) => line.shipment_request_line_id));
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots)];
     });
+  }
+
+  /** 피킹 LOT 행(피처 010) — 라인 id 를 모아 한 방으로 읽는다. 교체된 행도 이력으로 싣는다. */
+  private async lotsByLine(lineIds: bigint[]): Promise<ShipmentLotsByLine> {
+    const rows = await this.prisma.shipment_request_lot.findMany({
+      where: { shipment_request_line_id: { in: lineIds } },
+      include: {
+        lot: { select: { lot_no: true, item_id: true } },
+        picked_worker: { select: { worker_no: true, worker_name: true } },
+      },
+      orderBy: { shipment_request_lot_id: 'asc' },
+    });
+    const grouped: ShipmentLotsByLine = new Map();
+    for (const row of rows) {
+      const key = String(row.shipment_request_line_id);
+      grouped.set(key, [...(grouped.get(key) ?? []), row]);
+    }
+    return grouped;
   }
 
   /**
@@ -178,7 +202,11 @@ export class ShipmentRequestQueryService {
         source_document_type_code: SHIPMENT_REQUEST_LINE,
         source_document_id: { in: lineIds },
       },
-      include: { lot: { select: { lot_no: true } } },
+      include: {
+        lot: { select: { lot_no: true } },
+        warehouse: { select: { warehouse_code: true, warehouse_name: true } },
+        location: { select: { location_code: true } },
+      },
       orderBy: { inventory_reservation_id: 'asc' },
     });
     const grouped: ShipmentPicksByLine = new Map();
