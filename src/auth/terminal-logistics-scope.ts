@@ -49,6 +49,8 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/putaway-pending-lots/{lotId}/location-check': ['MOBILE'],
   'POST /logistics/putaway-pending-lots/{lotId}:putaway': ['MOBILE'],
   'POST /logistics/putaway-pending-lots/{lotId}:putaway-temporary': ['MOBILE'],
+  // 적치 기록(피처 011 · M-01-14) — 결과는 서비스가 단말 공장·단말·사번 작업자로 좁힌다. 질의에 id 가 없다.
+  'GET /logistics/putaway-records': ['MOBILE'],
   'GET /logistics/shipment-lot-allocations': ['POP', 'MOBILE'],
   'GET /logistics/shipment-requests': ['MOBILE'],
   'GET /logistics/shipments': ['POP'],
@@ -153,6 +155,7 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/putaway-pending-lots':
     case 'GET /logistics/putaway-pending-lots:lookup':
     case 'GET /logistics/putaway-pending-lots/{lotId}/location-check':
+    case 'GET /logistics/putaway-records':
     case 'GET /logistics/shipment-lot-allocations':
     case 'GET /logistics/shipment-requests':
     case 'GET /logistics/shipping-units':

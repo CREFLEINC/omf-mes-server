@@ -33,7 +33,8 @@ describe('terminal logistics scope', () => {
     // 입하 LOT 조회 2·받기·해제·공급사 LOT(피처 005)을 더했다: 42 → 47.
     // 입하 마감·마감 취소(피처 005 S5)를 더했다: 47 → 49.
     // 적치 대기 LOT 목록·확인·위치 판정(피처 009 S3)을 더했다: 49 → 52. 적치·임시 적치(S4): 52 → 54.
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(54);
+    // PDA 적치 기록(피처 011 · omf-all-around#325)을 더했다: 54 → 55.
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(55);
     // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
     //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
     expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(
