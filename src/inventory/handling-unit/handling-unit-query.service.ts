@@ -19,6 +19,8 @@ export interface HandlingUnitQuery {
   handlingUnitTypeCode?: string;
   statusCode?: string;
   q?: string;
+  /** 포장 라벨(`PACKING_LABEL`) 발행 기록 유무 — 계약 검증이 boolean 으로 바꿔 넘긴다. */
+  labelIssued?: boolean;
   page?: unknown;
   size?: unknown;
 }
@@ -47,6 +49,7 @@ export class HandlingUnitQueryService {
         : { handling_unit_type_code: query.handlingUnitTypeCode }),
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...(query.q === undefined ? {} : { handling_unit_no: { contains: query.q } }),
+      ...(query.labelIssued === undefined ? {} : await this.labelIssuedWhere(query.labelIssued)),
     };
     const where: Prisma.handling_unitWhereInput = terminalPlantId === undefined
       ? base
@@ -79,6 +82,20 @@ export class HandlingUnitQueryService {
     });
     const ids = await createdByPlantTerminal(this.prisma, candidates.map((row) => row.handling_unit_id), plantId);
     return ids.length === 0 ? [] : [{ handling_unit_id: { in: ids } }];
+  }
+
+  /**
+   * P-04-04 「발행 대기 · 재발행」 축(omf-all-around#327). 발행 기록은 대상 유형·번호로만 걸려
+   * 관계가 없어 id 집합으로 거른다. 인쇄 결과는 보지 않는다 — 기록이 서면 «발행된» 포장이다.
+   */
+  private async labelIssuedWhere(issued: boolean): Promise<Prisma.handling_unitWhereInput> {
+    const logs = await this.prisma.document_issue_log.findMany({
+      where: { document_type_code: 'PACKING_LABEL', target_type_code: 'HANDLING_UNIT' },
+      select: { target_id: true },
+      distinct: ['target_id'],
+    });
+    const ids = logs.map((log) => log.target_id);
+    return { handling_unit_id: issued ? { in: ids } : { notIn: ids } };
   }
 
   /** 계약 선언 — 없으면 404 다. */

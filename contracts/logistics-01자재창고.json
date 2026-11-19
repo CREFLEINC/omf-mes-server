@@ -1474,6 +1474,14 @@
       "description": "취급 단위 번호 검색"
      },
      {
+      "name": "labelIssued",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "포장 라벨(PACKING_LABEL) 발행 기록이 있는 포장만(true) · 없는 포장만(false). 인쇄 결과와 무관하게 발행 기록이 한 건이라도 있으면 발행된 것이다. 생략하면 거르지 않는다. 근거: P-04-04 발행 대기 · 재발행 (omf-all-around#327)"
+     },
+     {
       "name": "page",
       "in": "query",
       "schema": {
