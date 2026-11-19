@@ -35,19 +35,31 @@ export interface BuiltQuery {
   params: unknown[];
 }
 
-/** 모집단 — RETURN ∪ PRODUCT `lot_id`. `UNION`(ALL 아님)이 두 원천 겹침을 한 행으로 접는다. */
+/**
+ * 모집단 — RETURN ∪ PRODUCT `lot_id`. 같은 LOT 이 여러 원천이면 한 행으로 접는다(`GROUP BY`).
+ * ⭐ 피처 010 — 출하 OQC 불합격 LOT 교체가 만든 부적합의 LOT 도 PRODUCT 갈래다. 그 LOT 은 불량창고로 옮기지 않고 제품창고에
+ *    남으므로 `any_warehouse` 로 창고 축(불량창고만)을 풀어 준다.
+ */
 const CAND_CTE = `
   WITH cand AS (
-    SELECT gl.lot_id
-      FROM logistics.goods_receipt_line gl
-      JOIN logistics.goods_receipt g ON g.goods_receipt_id = gl.goods_receipt_id
-     WHERE g.receipt_type_code = '${RETURN}'
-    UNION
-    SELECT req.lot_id
-      FROM quality.inspection_result r
-      JOIN quality.inspection_request req ON req.inspection_request_id = r.inspection_request_id
-     WHERE r.status_code = '${CONFIRMED}' AND req.inspection_type_code = '${OQC}'
-       AND r.overall_judgment_code = '${REJECTED}' AND req.lot_id IS NOT NULL
+    SELECT src.lot_id, bool_or(src.any_warehouse) AS any_warehouse
+      FROM (
+        SELECT gl.lot_id, false AS any_warehouse
+          FROM logistics.goods_receipt_line gl
+          JOIN logistics.goods_receipt g ON g.goods_receipt_id = gl.goods_receipt_id
+         WHERE g.receipt_type_code = '${RETURN}'
+        UNION ALL
+        SELECT req.lot_id, false
+          FROM quality.inspection_result r
+          JOIN quality.inspection_request req ON req.inspection_request_id = r.inspection_request_id
+         WHERE r.status_code = '${CONFIRMED}' AND req.inspection_type_code = '${OQC}'
+           AND r.overall_judgment_code = '${REJECTED}' AND req.lot_id IS NOT NULL
+        UNION ALL
+        SELECT x.lot_id, true
+          FROM logistics.shipment_request_lot x
+         WHERE x.status_code = 'REPLACED' AND x.replace_nonconformance_id IS NOT NULL
+      ) src
+     GROUP BY src.lot_id
   )`;
 
 /** ⭐ `is_defect` 축의 불량창고 잔액만(내부 조인 — 0행이면 빠진다). `$1`=`warehouseId`(null 이면
@@ -58,7 +70,7 @@ const BAL_LATERAL = `
              sum(b.on_hand_qty)         AS qty,
              max(b.last_transaction_at) AS received_at        -- ⭐ R-18 · 두 갈래 공통(§4-1)
         FROM inventory.inventory_balance b
-        JOIN mdm.warehouse dw ON dw.warehouse_id = b.warehouse_id AND dw.is_defect = true
+        JOIN mdm.warehouse dw ON dw.warehouse_id = b.warehouse_id AND (dw.is_defect = true OR c.any_warehouse)
        WHERE b.lot_id = c.lot_id AND b.on_hand_qty <> 0        -- ⭐ I-20 R-22
          AND ($1::bigint IS NULL OR b.warehouse_id = $1::bigint)
        GROUP BY b.warehouse_id, b.uom_id
@@ -106,7 +118,7 @@ const OQC_LATERAL = `
 /** 이 LOT 에 «이미 만들어진» 부적합 — 여럿이면 가장 최근 것 하나(단수 · §1-4-1). */
 const NC_LATERAL = `
     LEFT JOIN LATERAL (
-      SELECT nc.nonconformance_id, nc.nonconformance_no, nc.status_code
+      SELECT nc.nonconformance_id, nc.nonconformance_no, nc.status_code, nc.inspection_result_id
         FROM quality.nonconformance_lot nl
         JOIN quality.nonconformance nc ON nc.nonconformance_id = nl.nonconformance_id
        WHERE nl.lot_id = c.lot_id
@@ -121,7 +133,7 @@ const SELECT_COLUMNS = `
       bal.qty, bal.uom_id, bal.warehouse_id, w.warehouse_name, bal.received_at,
       CASE WHEN rt.goods_receipt_id IS NOT NULL THEN '${RETURN}' ELSE 'PRODUCT' END AS source_code,
       rt.goods_receipt_id, rt.goods_receipt_no, rt.partner_name,
-      CASE WHEN rt.goods_receipt_id IS NULL THEN oqc.inspection_result_id END AS inspection_result_id,
+      CASE WHEN rt.goods_receipt_id IS NULL THEN COALESCE(oqc.inspection_result_id, nc.inspection_result_id) END AS inspection_result_id,
       nc.nonconformance_id, nc.nonconformance_no, nc.status_code AS nonconformance_status_code`;
 
 /** `sourceCode` 는 `rt` 유무로 건다(응답 CASE 와 같은 축). `withoutNonconformanceOnly` 는

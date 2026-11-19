@@ -28,6 +28,8 @@ export interface ShipmentRequestFilters {
   shipDateTo?: string;
   pickingCompleteOnly?: boolean;
   shippableRemainderOnly?: boolean;
+  /** OQC 불합격으로 교체한 LOT 이 있는 지시서만(피처 010 FR-015). */
+  hasReplacement?: boolean;
 }
 
 export interface ShipmentRequestQuery extends ShipmentRequestFilters {
@@ -75,6 +77,11 @@ export const SHIPPABLE_REMAINDER_SQL = `EXISTS (SELECT 1 FROM logistics.shipment
 export const INSPECTION_REQUIRED_SQL = `EXISTS (SELECT 1 FROM logistics.shipment_request_line l
                     WHERE l.shipment_request_id = sr.shipment_request_id
                       AND l.shipping_inspection_required)`;
+
+/** `hasReplacement` — 교체된 피킹 LOT 이 «하나라도»(피처 010). */
+export const HAS_REPLACEMENT_SQL = `EXISTS (SELECT 1 FROM logistics.shipment_request_lot x
+                    JOIN logistics.shipment_request_line l ON l.shipment_request_line_id = x.shipment_request_line_id
+                   WHERE l.shipment_request_id = sr.shipment_request_id AND x.status_code = 'REPLACED')`;
 
 /** 계약이 「출하일·고객·작업지시번호 셋만」이라 못박았다 — 그 밖은 400 `INVALID`(e2e L-39). */
 const SORT_COLUMNS: Record<string, string> = {
@@ -124,6 +131,7 @@ export function whereSql(query: ShipmentRequestFilters): BuiltWhere {
   // 계약이 한 방향만 적었다 — `false` 는 필터를 «안 건다»(선례 `unassignedOnly`).
   if (query.pickingCompleteOnly === true) and.push(PICKING_COMPLETE_SQL);
   if (query.shippableRemainderOnly === true) and.push(SHIPPABLE_REMAINDER_SQL);
+  if (query.hasReplacement === true) and.push(HAS_REPLACEMENT_SQL);
   return { sql: and.join('\n      AND '), params };
 }
 

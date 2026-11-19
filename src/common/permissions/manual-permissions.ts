@@ -171,6 +171,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03', 'W-03-09'],
   // LOT 통째 피킹 — 옛 `:pick` 과 같은 화면(M-04-01 제품 LOT 피킹)이다(피처 010 · omf-all-around#305).
   'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot': ['M-04-01'],
+  // OQC 불합격 LOT 교체·출하 관리 코드 — 같은 PDA 피킹 화면의 조작이다(피처 010).
+  'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace': ['M-04-01'],
+  'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code': ['M-04-01'],
   // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
   'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
   'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],

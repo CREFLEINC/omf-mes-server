@@ -1099,6 +1099,15 @@
        "example": 1
       },
       "description": "기본 50"
+     },
+     {
+      "name": "hasReplacement",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "OQC 불합격으로 교체한 LOT 이 있는 지시서만(피처 010 FR-015). false 는 거르지 않는다"
      }
     ],
     "security": [
@@ -3727,6 +3736,196 @@
     },
     "x-internal-note": "단말은 PDA(MOBILE)만 부른다 — 소유 검사는 지시서 fulfillment_plant_id = 단말 공장. 세션은 M-04-01 권한."
    }
+  },
+  "/logistics/shipment-request-lots/{shipmentRequestLotId}:replace": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "OQC 불합격 피킹 LOT 교체",
+    "description": "PDA [교체] — 한 트랜잭션에서 그 LOT 의 예약을 모두 풀고(잔액 피킹분 → 가용, 예약 released), 피킹 LOT 행을 REPLACED(근거 결과·부적합·작업자·시각)로, LOT 을 불량(C6)으로 옮기고 부적합 1건(PENDING_DECISION · 의뢰 = OQC 의뢰)을 만든다. 지시서는 바뀌지 않고 라인이 다시 피킹을 받는다. 본문 없음. 근거: 피처 010 FR-013·014",
+    "parameters": [
+     {
+      "name": "shipmentRequestLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "교체됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentLotReplaceResult"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "피킹 LOT 이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — LOT_NOT_REJECTED(판정이 불합격이 아님 · PICKED 아님 · 출하 완료 뒤)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "단말은 PDA(MOBILE)만 — 소유는 지시서 이행 공장 = 단말 공장. 세션은 M-04-01."
+   }
+  },
+  "/logistics/shipment-request-lots/{shipmentRequestLotId}/management-code": {
+   "put": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 관리 코드 저장",
+    "description": "PDA 가 코드 칸에서 스캔하거나 직접 넣은 값을 그 피킹 LOT 에 저장한다(FR-020·021). PICKED 일 때만 — 출하 완료(SHIPPED)·교체(REPLACED) 뒤는 409. 출하 완료 때 출하 내역의 LOT 배분 줄에 그대로 보인다.",
+    "parameters": [
+     {
+      "name": "shipmentRequestLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShipmentLotManagementCode"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "저장됨 — 피킹 LOT 행",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentRequestLot"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "100자 초과(RANGE)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "피킹 LOT 이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — INVALID_STATE(출하 완료·교체 뒤)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "단말은 PDA(MOBILE)만 — 소유는 지시서 이행 공장 = 단말 공장. 세션은 M-04-01."
+   }
   }
  },
  "components": {
@@ -5180,6 +5379,11 @@
        "$ref": "#/components/schemas/ShipmentPickingWarehouse"
       },
       "description": "살아 있는 피킹 LOT 의 몫이 있는 창고들 — 지시서는 창고를 정하지 않는다(공장 단위)."
+     },
+     "replacementCount": {
+      "type": "integer",
+      "description": "OQC 불합격으로 교체한 LOT 수(FR-015 · 「LOT 교체 n」)",
+      "example": 1
      }
     },
     "required": [
@@ -5192,7 +5396,8 @@
      "shippingInspectionStatusCode",
      "shipmentProgressCode",
      "code",
-     "pickingWarehouses"
+     "pickingWarehouses",
+     "replacementCount"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },
@@ -5511,9 +5716,10 @@
        "LOT_TARGET_REACHED",
        "LOT_ALREADY_RESERVED",
        "LOT_ALREADY_PICKED",
-       "NO_LINE_FOR_ITEM"
+       "NO_LINE_FOR_ITEM",
+       "LOT_NOT_REJECTED"
       ],
-      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다.",
+      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다.",
       "example": "VERSION_CONFLICT"
      },
      "message": {
@@ -6342,6 +6548,17 @@
       ],
       "description": "LOT OQC 판정 6종(FR-007) — 위에서부터 처음 맞는 값: 검사 불필요 NOT_REQUIRED · 의뢰 생략 SKIPPED · 이 지시서에서 그 LOT 을 매칭한 마지막 결과의 판정 · 없으면 NOT_INSPECTED(다른 지시서의 합격은 잇지 않는다). 교체된 행은 null.",
       "example": "NOT_INSPECTED"
+     },
+     "replacement": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentLotReplacement"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "교체된 행(REPLACED)만 — 그 밖은 null"
      }
     },
     "required": [
@@ -6357,7 +6574,8 @@
      "pickedWorker",
      "shipmentId",
      "portions",
-     "oqcLotStatus"
+     "oqcLotStatus",
+     "replacement"
     ]
    },
    "ShipmentPickingWarehouse": {
@@ -6397,6 +6615,129 @@
     "required": [
      "pickedLot",
      "line"
+    ]
+   },
+   "ShipmentLotReplacement": {
+    "type": "object",
+    "description": "교체 근거(FR-015) — 불합격 결과·교체가 만든 부적합·작업자·시각.",
+    "properties": {
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "resultNo": {
+      "type": "string",
+      "example": "IRS-20261118-0001"
+     },
+     "resultAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T03:00:00Z"
+     },
+     "judgment": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "REJECTED"
+     },
+     "nonconformanceId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "nonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "NC-20261118-0001"
+     },
+     "replacedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T04:00:00Z"
+     },
+     "worker": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "workerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "workerNo": {
+        "type": "string",
+        "example": "W-001"
+       },
+       "workerName": {
+        "type": "string",
+        "example": "작업자"
+       }
+      },
+      "required": [
+       "workerId",
+       "workerNo",
+       "workerName"
+      ]
+     }
+    },
+    "required": [
+     "inspectionResultId",
+     "resultNo",
+     "resultAt",
+     "judgment",
+     "nonconformanceId",
+     "nonconformanceNo",
+     "replacedAt",
+     "worker"
+    ]
+   },
+   "ShipmentLotReplaceResult": {
+    "type": "object",
+    "description": "교체 결과 — 교체된 피킹 LOT 행(이력), 교체가 만든 부적합 번호(그 LOT 에 열린 부적합이 이미 있으면 null), 다시 피킹을 받는 라인.",
+    "properties": {
+     "replacedLot": {
+      "$ref": "#/components/schemas/ShipmentRequestLot"
+     },
+     "nonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "NC-20261118-0001"
+     },
+     "line": {
+      "$ref": "#/components/schemas/ShipmentRequestLine"
+     }
+    },
+    "required": [
+     "replacedLot",
+     "nonconformanceNo",
+     "line"
+    ]
+   },
+   "ShipmentLotManagementCode": {
+    "type": "object",
+    "description": "출하 관리 코드(FR-020) — 최대 100자, 중복·형식 검사 없음. null·빈 글자는 지운다.",
+    "properties": {
+     "managementCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "BOX-0001"
+     }
+    },
+    "required": [
+     "managementCode"
     ]
    }
   },

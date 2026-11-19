@@ -178,6 +178,9 @@ export class ShipmentRequestQueryService {
       include: {
         lot: { select: { lot_no: true, item_id: true } },
         picked_worker: { select: { worker_no: true, worker_name: true } },
+        replaced_worker: { select: { worker_no: true, worker_name: true } },
+        replace_inspection_result: { select: { inspection_result_no: true, inspected_at: true, overall_judgment_code: true } },
+        replace_nonconformance: { select: { nonconformance_no: true } },
       },
       orderBy: { shipment_request_lot_id: 'asc' },
     });
