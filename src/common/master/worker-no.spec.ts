@@ -167,6 +167,9 @@ const WORKER_TABLE_READERS = [
   'inventory/count/inventory-count-update.service.ts',
   // 인계 알림의 처리자 이름 — 이미 판정된 작업자 id 로 이름만 읽는다(omf-all-around#190). 사번 판정이 아니다.
   'logistics/logistics-handover.ts',
+  // PDA 적치 기록 「내 기록」(피처 011) — 읽기라 단말 범위가 사번을 심지 않는다. 이 공장 재직 작업자만 받고 없으면 계약대로
+  // 400 INVALID(부재 포함 — 공용 함수는 부재를 REQUIRED 로 내고 공장을 보지 않는다).
+  'logistics/putaway-record/putaway-record.service.ts',
   // 첨부는 같은 트랜잭션에서 작업자를 재확인하고, LOT 완료는 감사 기록이 재확인한다.
   'maintenance/breakdown/breakdown-attachment.service.ts',
   'maintenance/breakdown/breakdown-create.service.ts',

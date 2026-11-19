@@ -120,7 +120,8 @@ describe('계약 커버리지', () => {
     // LOT 통째 피킹 1 오퍼레이션(피처 010 S2): 638 → 639.
     // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 639 → 641.
     // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 641 → 643.
-    expect(registry.size).toBe(643);
+    // PDA 적치 기록 1 오퍼레이션(피처 011 · omf-all-around#325): 643 → 644.
+    expect(registry.size).toBe(644);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

@@ -92,6 +92,8 @@ import { PutawayCompleteService } from './putaway/putaway-complete.service';
 import { PutawayDirectController } from './putaway-direct/putaway-direct.controller';
 import { PutawayDirectQueryService } from './putaway-direct/putaway-direct.query.service';
 import { PutawayDirectService } from './putaway-direct/putaway-direct.service';
+import { PutawayRecordController } from './putaway-record/putaway-record.controller';
+import { PutawayRecordService } from './putaway-record/putaway-record.service';
 import { PutawayTaskController } from './putaway/putaway-task.controller';
 import { PutawayTaskService } from './putaway/putaway-task.service';
 import { InboundProgressService } from './purchase-order/inbound-progress.service';
@@ -178,6 +180,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PickingController,
     PutawayTaskController,
     PutawayDirectController,
+    PutawayRecordController,
     PurchaseOrderController,
     PurchaseOrderLineListController,
     InboundStageCountController,
@@ -287,6 +290,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PutawayTaskService,
     PutawayDirectQueryService,
     PutawayDirectService,
+    PutawayRecordService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
     PurchaseOrderLineListService,

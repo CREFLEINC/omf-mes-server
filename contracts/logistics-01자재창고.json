@@ -8182,7 +8182,7 @@
      "logistics"
     ],
     "summary": "적치 완료",
-    "description": "`allowedLocations` 는 안내다 — 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있고(목록 밖이라고 막지 않는다), 실제 위치는 반드시 남는다. 막는 것은 「지정 품목만 받기」를 켠 위치의 지정 밖 품목(400 LOCATION_ITEM_RESTRICTED)과 맨 아래 위치·창고 일치 검사다. 근거: 피처 009 T054 · 사용자 결정 2026-11-18 · omf-all-around#294. 근거: M-01-05 §5-2-1 · 사용자 결정 2026-10-29(적치 규칙 제거) 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "description": "`allowedLocations` 는 안내다 — 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있고(목록 밖이라고 막지 않는다), 실제 위치는 반드시 남는다. 막는 것은 「지정 품목만 받기」를 켠 위치의 지정 밖 품목(400 LOCATION_ITEM_RESTRICTED)과 맨 아래 위치·창고 일치 검사다. 근거: 피처 009 T054 · 사용자 결정 2026-11-18 · omf-all-around#294. 근거: M-01-05 §5-2-1 · 사용자 결정 2026-10-29(적치 규칙 제거) 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 단말 요청이면 지시에 완료 작업자·단말(completed_worker_id·completed_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 완료는 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -8281,7 +8281,7 @@
      "logistics"
     ],
     "summary": "임시 위치 적재",
-    "description": "정상 적치와 상태가 구분된다. 사유 코드와 비고 중 적어도 하나는 있어야 한다. 근거: M-01-07 §5-5 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "description": "정상 적치와 상태가 구분된다. 사유 코드와 비고 중 적어도 하나는 있어야 한다. 근거: M-01-07 §5-5 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 단말 요청이면 지시에 완료 작업자·단말(completed_worker_id·completed_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 완료는 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -16078,7 +16078,7 @@
      "logistics"
     ],
     "summary": "적치(입고)",
-    "description": "LOT 을 잠근 뒤 적치 대기 조건과 위치 판정을 다시 하고, 입고 1건(라인 1줄 · 수량 = 입고 가능 수량)을 적치 지시 없이 전기한다. 재고는 적치 대기 자리를 거치지 않고 그 위치로 바로 들어간다. DESIGNATED → 모드 DESIGNATED. UNDESIGNATED 는 confirmUndesignated=true 일 때만 모드 UNDESIGNATED 로 기록하고, 같은 트랜잭션에서 그 위치의 보관 품목에 이 품목을 더한다(이미 있으면 그대로 · 시스템 자리 제외 · FR-017a). 그 밖 판정은 400. 코어가 「지정 품목만 받기」로 거절하면(잠금 사이에 옵션이 켜짐) RESTRICTED_LOCATION 으로 돌려준다. 입고 상태: 정상 LOT NORMAL/AVAILABLE, 불량 LOT DEFECTIVE/ON_HOLD. ERP 구매입고 적재 규칙은 웹 입고와 같다(새 흐름 입하 LOT 은 최종 마감 때). 처리자는 단말 작업자 감사(대상 GOODS_RECEIPT·LOCATION_ITEM)로 남는다. 근거: M-01-05 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "description": "LOT 을 잠근 뒤 적치 대기 조건과 위치 판정을 다시 하고, 입고 1건(라인 1줄 · 수량 = 입고 가능 수량)을 적치 지시 없이 전기한다. 재고는 적치 대기 자리를 거치지 않고 그 위치로 바로 들어간다. DESIGNATED → 모드 DESIGNATED. UNDESIGNATED 는 confirmUndesignated=true 일 때만 모드 UNDESIGNATED 로 기록하고, 같은 트랜잭션에서 그 위치의 보관 품목에 이 품목을 더한다(이미 있으면 그대로 · 시스템 자리 제외 · FR-017a). 그 밖 판정은 400. 코어가 「지정 품목만 받기」로 거절하면(잠금 사이에 옵션이 켜짐) RESTRICTED_LOCATION 으로 돌려준다. 입고 상태: 정상 LOT NORMAL/AVAILABLE, 불량 LOT DEFECTIVE/ON_HOLD. ERP 구매입고 적재 규칙은 웹 입고와 같다(새 흐름 입하 LOT 은 최종 마감 때). 처리자는 단말 작업자 감사(대상 GOODS_RECEIPT·LOCATION_ITEM)로 남는다. 근거: M-01-05 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294 만든 입고 전표에 단말 작업자·단말(putaway_worker_id·putaway_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 호출은 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -16184,7 +16184,7 @@
      "logistics"
     ],
     "summary": "임시 적치(창고만)",
-    "description": "창고만 골라 그 창고의 「창고 전체」 자리로 입고한다(모드 TEMPORARY · 사유 없음 · 보관 품목 지정은 더하지 않는다). 창고 판정: 없음(NOT_FOUND)·꺼짐(INACTIVE)·다른 공장(OTHER_PLANT)·불량 규칙(DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE·NORMAL_LOT_IN_DEFECT_WAREHOUSE)이면 400. 같은 창고 안 정위치 이동 화면은 별도(omf-all-around#304). 근거: M-01-07 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "description": "창고만 골라 그 창고의 「창고 전체」 자리로 입고한다(모드 TEMPORARY · 사유 없음 · 보관 품목 지정은 더하지 않는다). 창고 판정: 없음(NOT_FOUND)·꺼짐(INACTIVE)·다른 공장(OTHER_PLANT)·불량 규칙(DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE·NORMAL_LOT_IN_DEFECT_WAREHOUSE)이면 400. 같은 창고 안 정위치 이동 화면은 별도(omf-all-around#304). 근거: M-01-07 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294 만든 입고 전표에 단말 작업자·단말(putaway_worker_id·putaway_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 호출은 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -16271,6 +16271,124 @@
      }
     },
     "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수다."
+   }
+  },
+  "/logistics/putaway-records": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 기록",
+    "description": "PDA 가 「내 기록」(scope=WORKER — X-Worker-No 의 작업자가 한 적치, 단말 무관) 또는 「이 단말」(scope=TERMINAL — 이 단말로 한 적치, 작업자 무관)의 적치를 공장 영업일 하루 단위로 본다. 지시 없는 적치(DIRECT — PDA :putaway·:putaway-temporary 로 만든 입고 라인)와 지시 적치(TASK — 단말이 :complete·:complete-temporary 한 적치 지시)를 합친다. MOBILE 단말 토큰 전용 — 계정 세션은 401(화면 권한이 없으면 403), POP 은 401. 결과는 언제나 단말 공장 안이다. businessDate 는 공장 오늘 ~ 6일 전, 벗어나면 400 RANGE. scope=WORKER 인데 X-Worker-No 가 없거나 이 공장 재직 작업자가 아니면 400 INVALID(필드 X-Worker-No). 정렬: recordedAt 내림차순, 같은 시각은 TASK 먼저·id 내림차순. 관리웹 입고·세션 완료(작업자·단말 없음)는 나오지 않는다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
+    "parameters": [
+     {
+      "name": "scope",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "WORKER",
+        "TERMINAL"
+       ]
+      },
+      "description": "WORKER — 요청 머리 X-Worker-No 의 작업자 · TERMINAL — 토큰의 단말"
+     },
+     {
+      "name": "businessDate",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "공장 영업일(YYYY-MM-DD) — 공장 시간대로 그날의 적치를 거른다. 공장 오늘 ~ 6일 전"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 200,
+       "default": 50
+      }
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/PutawayRecord"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — INVALID(scope·businessDate 형식, 작업자 없음) · RANGE(기간 밖 날짜)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "MOBILE 단말 토큰이 아니다(토큰 없음·계정 세션·POP) 또는 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음(계정 세션)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
    }
   }
  },
@@ -30463,6 +30581,194 @@
      "itemDesignationAdded": {
       "type": "boolean",
       "description": "미지정 위치 적치로 그 위치의 보관 품목에 이 품목을 더했는가(이미 있었거나 시스템 자리·임시 적치면 false)"
+     }
+    }
+   },
+   "PutawayRecord": {
+    "type": "object",
+    "description": "적치 기록 한 줄(저장하지 않는 조회 결과). 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
+    "required": [
+     "recordType",
+     "recordId",
+     "putawayModeCode",
+     "sourceCode",
+     "recordedAt",
+     "documentNo",
+     "lot",
+     "item",
+     "qty",
+     "uomCode",
+     "qualityStatusCode",
+     "warehouse",
+     "location",
+     "worker",
+     "terminalCode",
+     "receiptStatusCode"
+    ],
+    "properties": {
+     "recordType": {
+      "type": "string",
+      "enum": [
+       "DIRECT",
+       "TASK"
+      ],
+      "description": "DIRECT 지시 없는 적치(입고 라인) · TASK 지시 적치(적치 지시)"
+     },
+     "recordId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "DIRECT 는 입고 라인 id, TASK 는 적치 지시 id"
+     },
+     "putawayModeCode": {
+      "type": "string",
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       "TASK",
+       "TASK_TEMPORARY"
+      ],
+      "description": "DIRECT 는 입고 라인 적치 방식, TASK 는 완료(TASK)·임시 완료(TASK_TEMPORARY)"
+     },
+     "sourceCode": {
+      "type": "string",
+      "enum": [
+       "PURCHASE",
+       "PRODUCT",
+       "REPLENISHMENT"
+      ],
+      "description": "입고 종류 — 제품 입고 지시는 PRODUCT, 생산 창고 보충 수령 지시(피처 004)는 REPLENISHMENT, 그 밖은 PURCHASE"
+     },
+     "recordedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "DIRECT 는 입고 일시, TASK 는 완료 시각(단말이 보낸 occurredAt)"
+     },
+     "documentNo": {
+      "type": "string",
+      "description": "DIRECT 는 입고 전표 번호, TASK 는 적치 지시 번호"
+     },
+     "lot": {
+      "type": "object",
+      "required": [
+       "lotId",
+       "lotNo"
+      ],
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lotNo": {
+        "type": "string"
+       }
+      }
+     },
+     "item": {
+      "type": "object",
+      "required": [
+       "itemId",
+       "itemCode",
+       "itemName"
+      ],
+      "properties": {
+       "itemId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "itemCode": {
+        "type": "string"
+       },
+       "itemName": {
+        "type": "string"
+       }
+      }
+     },
+     "qty": {
+      "type": "string",
+      "description": "적치한 수량(소수 꼬리 없는 10진 문자열). TASK 는 원장에 옮긴 양 — 보충 수령 지시는 남은 만큼만 옮긴다"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "qualityStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "품질 상태 — DEFECTIVE 면 「불량」. DIRECT 는 입고 라인, TASK 는 이어진 원장 줄의 도착 품질"
+     },
+     "warehouse": {
+      "type": "object",
+      "required": [
+       "warehouseId",
+       "warehouseCode",
+       "warehouseName"
+      ],
+      "properties": {
+       "warehouseId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "warehouseCode": {
+        "type": "string"
+       },
+       "warehouseName": {
+        "type": "string"
+       }
+      }
+     },
+     "location": {
+      "type": "object",
+      "required": [
+       "locationId",
+       "locationCode",
+       "path"
+      ],
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "locationCode": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string",
+        "description": "창고 › 상위 위치 › 위치 이름"
+       }
+      }
+     },
+     "worker": {
+      "type": "object",
+      "required": [
+       "workerNo",
+       "workerName"
+      ],
+      "properties": {
+       "workerNo": {
+        "type": "string"
+       },
+       "workerName": {
+        "type": "string"
+       }
+      }
+     },
+     "terminalCode": {
+      "type": "string"
+     },
+     "receiptStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "POSTED",
+       "CANCEL_REQUESTED",
+       "CANCELLED",
+       null
+      ],
+      "description": "이어진 입고 전표 상태 — CANCELLED 「입고 취소됨」(목록에 남는다) · CANCEL_REQUESTED 「취소 요청 중」. 보충 수령 지시처럼 입고 전표가 없으면 null"
      }
     }
    }

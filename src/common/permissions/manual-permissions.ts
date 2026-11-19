@@ -367,6 +367,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 적치(지정·미지정 위치 — 미지정이면 보관 품목 자동 추가 포함)는 M-01-05, 창고만 고르는 임시 적치는 M-01-07.
   'POST /logistics/putaway-pending-lots/{lotId}:putaway': ['M-01-05'],
   'POST /logistics/putaway-pending-lots/{lotId}:putaway-temporary': ['M-01-07'],
+  // PDA 적치 기록(M-01-14 · 피처 011 · omf-all-around#325) — 새 화면 권한을 만들지 않고 적치(M-01-05)·임시 적치(M-01-07)
+  // 화면을 쓰는 사람이 본다(plan 「설계에서 정한 세부」). 단말 전용이라 계정 세션은 서비스가 401 로 막는다.
+  'GET /logistics/putaway-records': ['M-01-05', 'M-01-07'],
 
   // `W-06-09` ERP-MES I/F 연계정의 관리 — §3 이 「정의 추가」만 적어 수정·활성 전이·연결
   // 시험이 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
