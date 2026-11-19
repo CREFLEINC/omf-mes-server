@@ -479,6 +479,19 @@ describe('피처 009 — 적치 지시 없는 구매 입고 적치 (e2e)', () =>
     expect(receipt.created_by).toBe(ids.user);
   });
 
+  it('D-2 H5 :putaway·:putaway-temporary 는 전표에 작업자·단말을 쓰고, 세션 적치·지시 입고 전표는 NULL', async () => {
+    const worker = await prisma.worker.findFirstOrThrow({ where: { worker_no: WORKER_NO, plant_id: ids.p1 } });
+    const terminalId = BigInt((jwt.decode(mobile) as { sub: number }).sub);
+    const receiptOf = (lot: { lotId: number }) => prisma.goods_receipt.findFirstOrThrow({ where: { goods_receipt_line: { some: { lot_id: BigInt(lot.lotId) } } } });
+    for (const lot of [il1[0], il1[8]]) {
+      expect(await receiptOf(lot)).toMatchObject({ putaway_worker_id: worker.worker_id, putaway_terminal_id: terminalId });
+    }
+    // 세션 적치(il1[7])와 배포 전 지시 입고(il1[10])는 채우지 않는다.
+    for (const lot of [il1[7], il1[10]]) {
+      expect(await receiptOf(lot)).toMatchObject({ putaway_worker_id: null, putaway_terminal_id: null });
+    }
+  });
+
   // ── 관리웹 단계·입고 조회·배지(S5) ─────────────────────────────
 
   it('US1-5 US1-6 US4-2 Q4 Q11 D-7 D-8 W-01-09 LOT 단계 — 적치한 LOT 「완료」+ 적치 방식·자리, 임시 적치 「임시 적치」, 남은 LOT 「적치 대기」', async () => {

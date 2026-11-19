@@ -547,6 +547,30 @@ describe('적치 지시 조회 (e2e)', () => {
       expect(row).toMatchObject({ reason_code: 'NO_SPACE', remarks: '선반이 찼다' });
     });
 
+    it('D-3 H5 단말 :complete·:complete-temporary 는 지시에 작업자·단말을 쓰고, 세션 완료는 NULL', async () => {
+      const token = await mobileToken('PDA-011');
+      const terminalId = BigInt((app.get(JwtService).decode(token) as { sub: number }).sub);
+      const byTerminal = (taskId: number, path: string, body: Record<string, unknown>): request.Test =>
+        request(app.getHttpServer()).post(`/api/logistics/putaway-tasks/${taskId}:${path}`)
+          .set('Authorization', `Bearer ${token}`).set('X-Worker-No', `${PREFIX}-W1`).set('Idempotency-Key', randomUUID())
+          .send({ businessDate: DAY, occurredAt: AT, ...body });
+      const complete = await freshTask(ruledItemId, 10);
+      await byTerminal(complete.taskId, 'complete', { actualLocationId: rackId }).expect(200);
+      const temporary = await freshTask(plainItemId, 10);
+      await byTerminal(temporary.taskId, 'complete-temporary', { actualLocationId: freeId, reasonCode: 'NO_SPACE' }).expect(200);
+      const session = await freshTask(ruledItemId, 10);
+      await callComplete(session.taskId, { actualLocationId: rackId }).expect(200);
+
+      const rows = await prisma.putaway_task.findMany({
+        where: { putaway_task_id: { in: [complete, temporary, session].map((task) => BigInt(task.taskId)) } },
+      });
+      const of = (task: { taskId: number }) => rows.find((row) => row.putaway_task_id === BigInt(task.taskId));
+      for (const task of [complete, temporary]) {
+        expect(of(task)).toMatchObject({ completed_worker_id: BigInt(worker1Id), completed_terminal_id: terminalId });
+      }
+      expect(of(session)).toMatchObject({ completed_worker_id: null, completed_terminal_id: null });
+    });
+
     it('임시 적재도 원장 한 줄을 쌓는다', async () => {
       const task = await freshTask(plainItemId, 10);
 
@@ -728,10 +752,10 @@ describe('적치 지시 조회 (e2e)', () => {
     return (response.body as TaskBody).allowedLocations.map((location) => location.locationId);
   }
 
-  async function mobileToken(): Promise<string> {
+  async function mobileToken(code = 'PDA'): Promise<string> {
     const terminal = await prisma.terminal.create({
       data: {
-        terminal_code: `${PREFIX}-PDA`,
+        terminal_code: `${PREFIX}-${code}`,
         plant_id: BigInt(plantId),
         terminal_type_code: 'MOBILE',
         status_code: 'RUNNING',
@@ -1058,6 +1082,9 @@ describe('적치 지시 조회 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM audit.audit_event
+       WHERE terminal_id IN (SELECT terminal_id FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);

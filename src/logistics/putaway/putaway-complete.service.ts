@@ -126,6 +126,10 @@ export class PutawayCompleteService {
         ...(mode === 'TEMPORARY'
           ? { reason_code: body.reasonCode ?? null, remarks: body.remarks ?? null }
           : {}),
+        // 단말 완료만 작업자·단말을 남긴다(피처 011 적치 기록) — 세션 완료는 NULL 그대로.
+        ...(context.actor?.terminalAudit === undefined ? {} : {
+          completed_worker_id: context.actor.workerId, completed_terminal_id: context.actor.terminalAudit.terminalId,
+        }),
         updated_by: context.actor?.appUserId == null && context.appUserId == null
           ? null : BigInt(context.actor?.appUserId ?? context.appUserId as number),
         version_no: { increment: 1 },
