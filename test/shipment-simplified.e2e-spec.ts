@@ -754,6 +754,94 @@ describe('출하 공정 단순화 (e2e)', () => {
       await f.complete(made).expect(200);
     });
 
+    /** 완료한 출하의 PGI 메시지를 송신 오류로 둔다 — 러너가 보내다 실패한 모양(재시도 1회, 오류 문구). */
+    const failSend = async (shipmentId: number, rowStatus?: string): Promise<bigint> => {
+      const message = await prisma.integration_message.findFirstOrThrow({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) } });
+      await prisma.integration_message.update({
+        where: { integration_message_id: message.integration_message_id },
+        data: { status_code: 'FAILED', retry_count: 1, last_error_message: '중계 DB 거절' },
+      });
+      if (rowStatus !== undefined) {
+        await prisma.erp_outbound_row.create({ data: {
+          integration_message_id: message.integration_message_id, relay_table_name: 'RCV_DN', document_no: `DN-${shipmentId}`,
+          relay_key: `K-${shipmentId}-${randomUUID().slice(0, 6)}`, create_type_code: 'A', row_values: {}, status_code: rowStatus,
+        } });
+      }
+      return message.integration_message_id;
+    };
+
+    it('FR-023·Q14 송신 오류(FAILED, ERP 반영 행 없음) 출하도 취소를 상신·실행한다 — 메시지는 CANCELLED 라 다시 보내지 않는다', async () => {
+      const { made } = await readyRequest();
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      const messageId = await failSend(shipmentId, 'REJECTED');
+      expect((await f.shipment(shipmentId)).body).toMatchObject({ erpSendStatus: 'SEND_ERROR' });
+
+      expect((await f.requestCancel(shipmentId)).status).toBe(200);
+      const cancelled = await f.cancelApproved(shipmentId);
+
+      expect(cancelled.status).toBe(200);
+      expect(cancelled.body).toMatchObject({ statusCode: 'CANCELLED', erpSendStatus: 'CANCELLED' });
+      // CANCELLED 는 러너가 잡지 않고(PENDING 만) 재처리도 받지 않는다(FAILED 만) — 다시 시도되지 않는다.
+      expect((await prisma.integration_message.findUniqueOrThrow({ where: { integration_message_id: messageId } })).status_code).toBe('CANCELLED');
+    });
+
+    it('FR-023·Q14 송신 오류라도 ERP 에 들어간 행(INSERTED·APPLIED)이 있으면 보낸 것으로 보고 409 ERP_ALREADY_SENT', async () => {
+      for (const rowStatus of ['INSERTED', 'APPLIED']) {
+        const { made } = await readyRequest();
+        const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+        await failSend(shipmentId, rowStatus);
+
+        const response = await f.requestCancel(shipmentId);
+
+        expect([rowStatus, response.status, response.body.code]).toEqual([rowStatus, 409, 'ERP_ALREADY_SENT']);
+      }
+    });
+
+    it('Q14 ERP 반영이 끝난(DONE) 출하도 409 ERP_ALREADY_SENT 다', async () => {
+      const { made } = await readyRequest();
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      await prisma.integration_message.updateMany({
+        where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId) },
+        data: { status_code: 'DONE', sent_at: new Date(), completed_at: new Date() },
+      });
+
+      const response = await f.requestCancel(shipmentId);
+
+      expect([response.status, response.body.code]).toEqual([409, 'ERP_ALREADY_SENT']);
+    });
+
+    it('US6-1·FR-023 취소 실행이 출하 OQC 의뢰를 진행으로 다시 연다 — 새로 피킹한 LOT 에 결과를 넣고 다시 완료한다', async () => {
+      const { made, lotIds } = await readyRequest();
+      const shipmentId = (await f.complete(made).expect(200)).body.shipmentId as number;
+      expect((await f.requestCancel(shipmentId)).status).toBe(200);
+      expect((await f.cancelApproved(shipmentId)).status).toBe(200);
+
+      const reopened = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, include: { inspection_result: true } });
+      expect([reopened.status_code, reopened.overall_judgment_code, reopened.confirmed_at]).toEqual(['IN_PROGRESS', null, null]);
+      // 확정됐던 결과는 확정 그대로 남는다(판정 근거) — 새 결과는 작성중으로 쌓인다.
+      expect(reopened.inspection_result.map((row) => row.status_code)).toEqual(['CONFIRMED']);
+
+      // 다시 열린 의뢰에 결과를 더한다 — LOT 3 을 재검 불합격으로 덮고 PDA 에서 교체한 뒤, 새 LOT 을 피킹해 판정한다.
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [lotIds[2]], overallJudgmentCode: 'REJECTED', reinspectionReasonCode: 'RETEST' }).expect(201);
+      const third = (await f.lotsOf(made)).find((lot) => lot.lotId === lotIds[2]);
+      await f.replaceLot(third?.shipmentRequestLotId as number).expect(200);
+      const extra = await f.lot({ balances: [{ warehouse: 'wh2', qty: 25 }] });
+      await f.pickLot(made, 0, { lotId: extra.lotId }).expect(200);
+      expect((await f.lookup(`SHPREQ:${made.requestNo}`).expect(200)).body.blockers).toEqual([{ code: 'NOT_INSPECTED', lotNo: extra.lotNo }]);
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [extra.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+
+      const again = await f.complete(made).expect(200);
+
+      expect(again.body.shipmentId).not.toBe(shipmentId);
+      const closed = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, include: { inspection_result: { orderBy: { inspection_round: 'asc' } } } });
+      expect([closed.status_code, closed.overall_judgment_code, closed.inspection_result.map((row) => row.status_code)])
+        .toEqual(['COMPLETED', 'ACCEPTED', ['CONFIRMED', 'CONFIRMED', 'CONFIRMED']]);
+      const shipped = await prisma.shipment_request_lot.findMany({
+        where: { lot_id: { in: [lotIds[0], lotIds[1], extra.lotId].map(BigInt) }, shipment_id: BigInt(again.body.shipmentId) },
+      });
+      expect(shipped).toHaveLength(3);
+    });
+
     it('US6-2·Q14 ERP 로 이미 보낸 출하는 취소 상신이 409 ERP_ALREADY_SENT 다', async () => {
       const { made } = await readyRequest();
       const done = await f.complete(made).expect(200);

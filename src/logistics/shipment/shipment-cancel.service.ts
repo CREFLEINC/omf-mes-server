@@ -8,6 +8,7 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 import { releaseReservation } from '../../core/inventory-posting/reservation-qty';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { reopenShipmentOqcWithin } from '../../quality/inspection/oqc-completion';
 import { SHIPMENT_REQUEST_LINE } from '../shipment-request/shipment-progress';
 import {
   CANCELLED,
@@ -199,7 +200,8 @@ export class ShipmentCancelService {
   /**
    * POP 완료 출하의 송신 전 취소 실행(피처 010 R-10) — 창고마다의 내부 재고 차감 기록 «전부»를 역전기·취소하고, 출하 수량을 내리고,
    * 메시지를 CANCELLED 로, 피킹 LOT 을 PICKED 로 되돌려 같은 잔액 행에 예약을 다시 건다(다시 잡을 수 없는 LOT 은 풀린 채).
-   * 지시서는 「출하 완료 전」이 된다. OQC 결과는 그대로 둔다.
+   * 지시서는 「출하 완료 전」이 된다. 출하 OQC 의뢰는 진행으로 다시 열고(확정 결과는 그대로 — 판정 근거), 새로 피킹한 LOT 도 판정할 수 있다
+   * (2026-11-19 사용자 결정). 송신 오류(FAILED) 메시지도 CANCELLED 로 둬 다시 시도하지 않는다.
    */
   private async cancelUnsent(
     tx: Tx,
@@ -229,6 +231,7 @@ export class ShipmentCancelService {
       shipmentId: locked.shipment_id, portions, reservationNo: at.reservationNo, appUserId: at.appUserId,
     });
     await rollBackShippedQty(tx, locked.shipment_id);
+    await reopenShipmentOqcWithin(tx, { shipmentRequestId: locked.shipment_request_id, actor: { changedBy: BigInt(at.appUserId) } });
     if (messageId !== null) {
       await tx.integration_message.update({
         where: { integration_message_id: messageId },

@@ -62,3 +62,28 @@ export async function completeShipmentOqcWithin(
     });
   }
 }
+
+/**
+ * 송신 전 출하 취소 실행 때 그 지시서의 출하 OQC 를 다시 연다(2026-11-19 사용자 결정 · FR-023). 취소 트랜잭션 안에서 부른다.
+ * - 완료(COMPLETED)된 새 흐름 의뢰 → 진행(IN_PROGRESS). 종합 판정·확정 시각·확정자를 비운다 — 다시 출하 완료할 때 채운다.
+ * - 확정(CONFIRMED)된 결과는 그대로 둔다 — 그 LOT 의 판정 근거다(LOT 판정 = 순번 최대 매칭 결과, 상태와 무관 · data-model).
+ *   다시 피킹한 새 LOT 의 결과는 작성중(DRAFT)으로 쌓이고, 다시 완료하면 확정된다(`completeShipmentOqcWithin`).
+ * - 생략(SKIPPED) 의뢰는 그대로 — 생략은 결재로 정한 것이라 취소로 풀지 않는다.
+ * - LOT 이력(C4·C27)은 되돌리지 않는다 — 정상 → 정상 기록이라 품질 상태가 바뀌지 않았다.
+ */
+export async function reopenShipmentOqcWithin(
+  tx: Prisma.TransactionClient,
+  input: { shipmentRequestId: bigint; actor: { changedBy: bigint } },
+): Promise<number> {
+  const reopened = await tx.inspection_request.updateMany({
+    where: {
+      inspection_type_code: OQC, target_type_code: SHIPMENT_REQUEST_TARGET, lot_id: null,
+      target_id: input.shipmentRequestId, status_code: 'COMPLETED',
+    },
+    data: {
+      status_code: 'IN_PROGRESS', overall_judgment_code: null, confirmed_at: null, confirmed_by: null,
+      updated_by: input.actor.changedBy, version_no: { increment: 1 },
+    },
+  });
+  return reopened.count;
+}
