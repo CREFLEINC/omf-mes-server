@@ -9,12 +9,20 @@ import { SHIPMENT_REQUEST_LINE } from '../shipment-request/shipment-progress';
 
 /**
  * POP 완료 출하의 ERP 송신 전 취소(피처 010 R-10 · FR-023·024).
- * ⭐ 「아직 안 보냄」 = 그 출하의 PGI 메시지를 `FOR UPDATE NOWAIT` 로 잡을 수 있고 `PENDING ∧ sent_at 없음 ∧ 잡은 이 없음 ∧ 바깥 행 0`.
+ * ⭐ 「아직 안 보냄」 = 그 출하의 PGI 메시지를 `FOR UPDATE NOWAIT` 로 잡을 수 있고 잡은 이가 없으며
+ *    - `PENDING ∧ sent_at 없음 ∧ 바깥 행 0`(아직 보내지 않음), 또는
+ *    - 송신 오류(2026-11-19 사용자 결정 · FR-023): `FAILED` 이거나 재처리로 다시 `PENDING` 이 됐고, 바깥 행이 모두 ERP 가 거절한 행(REJECTED)
+ *      뿐이다 — ERP 에 들어갔거나(INSERTED) 반영됐거나(APPLIED) 들어갔는지 모르는(RESERVED) 행이 하나라도 있으면 보낸 것으로 본다.
  *    메시지가 없으면(수주 없는 출하 — 보낼 것이 없다) 보내기 전이다. 깨지면 409 `ERP_ALREADY_SENT`.
  */
 export const ERP_ALREADY_SENT = 'ERP_ALREADY_SENT';
 
 type Tx = Prisma.TransactionClient;
+
+/** 송신 전으로 볼 수 있는 메시지 상태 — 대기와 송신 오류(재처리로 다시 대기가 된 것 포함). */
+const UNSENT_STATUSES = ['PENDING', 'FAILED'];
+/** ERP 가 거절한 바깥 행 — ERP 에 반영되지 않았다(`outbound-rows.ts` OUTBOUND_ROW_STATUS.REJECTED). */
+const REJECTED_ROW = 'REJECTED';
 
 export function alreadySent(): ConflictException {
   return new ConflictException('user', 'ERP 로 이미 보냈습니다. ERP 에서 처리하세요.', { code: ERP_ALREADY_SENT });
@@ -38,10 +46,16 @@ export async function assertNotSentWithin(tx: Tx, shipmentId: bigint): Promise<b
   }
   const message = rows[0];
   if (message === undefined) return null;
-  if (message.status_code !== 'PENDING' || message.sent_at !== null || message.locked_by !== null) throw alreadySent();
-  const outbound = await tx.erp_outbound_row.count({ where: { integration_message_id: message.integration_message_id } });
-  if (outbound > 0) throw alreadySent();
-  return message.integration_message_id;
+  if (message.locked_by !== null || !UNSENT_STATUSES.includes(message.status_code)) throw alreadySent();
+  const rowsOf = await tx.erp_outbound_row.groupBy({
+    by: ['status_code'], where: { integration_message_id: message.integration_message_id }, _count: { _all: true },
+  });
+  const outbound = rowsOf.reduce((sum, row) => sum + row._count._all, 0);
+  // 처음 보내기 전(PENDING): 바깥 행이 없어야 한다. 송신 오류(FAILED · 재처리로 PENDING): 거절된 행만 있어야 한다.
+  if (message.status_code === 'PENDING' && message.sent_at === null && outbound === 0) return message.integration_message_id;
+  const failedBefore = message.status_code === 'FAILED' || message.sent_at !== null;
+  if (failedBefore && rowsOf.every((row) => row.status_code === REJECTED_ROW)) return message.integration_message_id;
+  throw alreadySent();
 }
 
 /** 예약을 다시 걸 몫 — 취소가 풀어 준 예약 하나(라인·LOT·창고·위치·수량). */
