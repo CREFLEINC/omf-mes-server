@@ -616,13 +616,31 @@ describe('출하작업지시 편성 (e2e)', () => {
 
     // ⭐ ajv 는 «타입»만 본다 — 열두 칸을 뒤바꿔도 통과한다(§6-3 ⑴). 값으로 못 박는다.
     //   고객·배송처가 «다른» 파트너이고 진행·검사가 «다른» 문자열이라 뒤바꿈이 드러난다.
+    const partnerOf = async (partnerId: number) => {
+      const row = await prisma.partner.findUniqueOrThrow({ where: { partner_id: BigInt(partnerId) } });
+      return { partnerId, partnerCode: row.partner_code, partnerName: row.partner_name };
+    };
     expect(body).toEqual({
       shipmentRequestId: Number(stored.shipment_request_id),
       shipmentRequestNo: stored.shipment_request_no,
+      // 피처 010 — 지시서 QR 값과 피킹 창고(편성 직후라 없다)가 더해졌다.
+      code: `SHPREQ:${stored.shipment_request_no}`,
+      pickingWarehouses: [],
+      replacementCount: 0,
+      // 출하 완료 관문(피처 010 S5) — 편성 직후라 피킹 부족이고 완료 출하가 없다.
+      completionBlockers: [{ code: 'PICKING_SHORT', lineNo: 1 }, { code: 'PICKING_SHORT', lineNo: 2 }],
+      blockerSummary: { PICKING_SHORT: 2 },
+      lotJudgmentSummary: { notInspected: 0, accepted: 0, rejected: 0, held: 0 },
+      completedShipment: null,
       salesOrderId: ids.salesOrder,
+      // 피처 010 시안 차이 보완 — 수주 번호를 함께 싣는다(PDA 피킹 머리·W-04-02 상세).
+      salesOrderNo: (await prisma.sales_order.findUniqueOrThrow({ where: { sales_order_id: BigInt(ids.salesOrder) } })).sales_order_no,
       fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
+      // 피처 010 검증 1회차 — 고객·납품처 이름을 함께 싣는다(PDA 카드·POP 찾기·P-04-06 머리).
+      customer: await partnerOf(ids.customer),
+      shipTo: await partnerOf(ids.shipTo),
       requestedShipDate: SHIP_DATE,
       statusCode: 'REGISTERED',
       timeSlotCode: 'AFTERNOON',

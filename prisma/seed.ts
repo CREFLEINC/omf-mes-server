@@ -1119,6 +1119,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PROCESSING', codeName: '처리중', order: 20 },
       { code: 'DONE', codeName: '완료', order: 30 },
       { code: 'FAILED', codeName: '실패', order: 40 },
+      // 송신 전 취소된 출하 메시지(omf-all-around#305) — 러너는 PENDING 만 집는다.
+      { code: 'CANCELLED', codeName: '취소', order: 50 },
     ],
   },
   {
@@ -1439,6 +1441,18 @@ const SEED: CodeGroupSeed[] = [
       { code: 'UNCONFIRMED', codeName: '미확정', order: 10 },
       { code: 'CONFIRMED', codeName: '확정', order: 20 },
       { code: 'CANCELLED', codeName: '취소', order: 30 },
+    ],
+  },
+  {
+    // logistics.shipment_request_lot.status_code — PDA LOT 통째 피킹(omf-all-around#305). 마이그 `20261118120000_shipment_request_lot` 에도
+    // 같은 값(베트남어 이름 포함)이 있다.
+    groupCode: 'SHIPMENT_REQUEST_LOT_STATUS',
+    groupName: '출하 지시 피킹 LOT 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'PICKED', codeName: '피킹', order: 10 },
+      { code: 'REPLACED', codeName: '교체됨', order: 20 },
+      { code: 'SHIPPED', codeName: '출하됨', order: 30 },
     ],
   },
   {

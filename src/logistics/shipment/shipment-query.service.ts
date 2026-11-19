@@ -10,6 +10,7 @@ import {
 } from '../shipment-allocation/shipment-allocation-view';
 import { oqcPassedByLine } from '../shipment-request/shipment-oqc';
 import { BuiltWhere, FROM_SQL, ShipmentQuery, orderBySql, whereSql } from './shipment-query.sql';
+import { ERP_SEND_STATUS_SQL, shipmentHistoryFacts } from './shipment-history';
 import {
   ShipmentDetailView,
   ShipmentView,
@@ -25,7 +26,15 @@ import {
 const ALLOCATION_SQL = `SELECT a.shipment_lot_allocation_id, a.shipment_line_id, a.lot_id,
               a.handling_unit_id, a.allocated_qty, a.uom_id,
               sl.shipment_id, sl.item_id, sl.shipment_request_line_id,
-              s.warehouse_id, i.item_code, lt.lot_no
+              COALESCE(s.warehouse_id, (SELECT gi.source_warehouse_id
+                                          FROM logistics.goods_issue_line gil
+                                          JOIN logistics.goods_issue gi ON gi.goods_issue_id = gil.goods_issue_id
+                                         WHERE gi.source_document_type_code = 'SHIPMENT' AND gi.source_document_id = s.shipment_id
+                                           AND gil.lot_id = a.lot_id AND gil.issue_qty = a.allocated_qty
+                                         ORDER BY gil.goods_issue_line_id LIMIT 1)) AS warehouse_id,
+              i.item_code, lt.lot_no,
+              (SELECT x.management_code FROM logistics.shipment_request_lot x
+                WHERE x.shipment_id = s.shipment_id AND x.lot_id = a.lot_id LIMIT 1) AS management_code
          FROM logistics.shipment_lot_allocation a
          JOIN logistics.shipment_line sl ON sl.shipment_line_id = a.shipment_line_id
          JOIN logistics.shipment s ON s.shipment_id = sl.shipment_id
@@ -66,7 +75,7 @@ export class ShipmentQueryService {
    * ⛔ **`lines` 를 싣지 않는다**(§4-3) — `Shipment.required` 에 없고 목록 화면 어느 열도 라인을
    * 읽지 않는다. 상세(PR ②b)가 싣는다.
    */
-  async list(query: ShipmentQuery, terminal?: TerminalListScope): Promise<PagedResponse<ShipmentView>> {
+  async list(query: ShipmentQuery, terminal?: TerminalListScope): Promise<PagedResponse<ShipmentView> & { erpSendStatusCounts: Record<string, number> }> {
     const page = pageRequest(query);
     const where = shipmentWhereSql(query, terminal);
     const order = orderBySql(query.sort);
@@ -74,7 +83,9 @@ export class ShipmentQueryService {
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다. `total` 은 쪽이 아니라 필터
     //    «전체» 기준이다(선례 넷 — `shipment-request-query.service.ts:75` 와 같은 모양).
     // `LIMIT`·`OFFSET` 은 `pageRequest` 가 이미 정수로 자른 값이라 그대로 편다(주입 자리 없음).
-    const [ids, counted] = await Promise.all([
+    // ERP 송신 거르기 칩의 건수(W-04-12 · 피처 010) — 송신 상태 조건만 빼고 같은 조건으로 센다.
+    const facetWhere = shipmentWhereSql({ ...query, erpSendStatus: undefined }, terminal);
+    const [ids, counted, facets] = await Promise.all([
       this.prisma.$queryRawUnsafe<{ shipment_id: bigint }[]>(
         `SELECT s.shipment_id
            FROM ${FROM_SQL}
@@ -87,8 +98,15 @@ export class ShipmentQueryService {
         `SELECT count(*)::int AS total FROM ${FROM_SQL} WHERE ${where.sql}`,
         ...where.params,
       ),
+      this.prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
+        `SELECT ${ERP_SEND_STATUS_SQL} AS status, count(*)::int AS count FROM ${FROM_SQL} WHERE ${facetWhere.sql} GROUP BY 1`,
+        ...facetWhere.params,
+      ),
     ]);
-    return pagedResponse(await this.views(ids.map((row) => row.shipment_id)), counted[0].total, page);
+    return {
+      ...pagedResponse(await this.views(ids.map((row) => row.shipment_id)), counted[0].total, page),
+      erpSendStatusCounts: Object.fromEntries(facets.map((row) => [row.status, row.count])),
+    };
   }
 
   /**
@@ -127,7 +145,8 @@ export class ShipmentQueryService {
         ),
       ),
     );
-    return { view: shipmentDetailView(row, views), versionNo: row.version_no };
+    const facts = (await shipmentHistoryFacts(this.prisma, [row.shipment_id])).get(String(row.shipment_id));
+    return { view: shipmentDetailView(row, views, facts), versionNo: row.version_no };
   }
 
   /**
@@ -137,14 +156,15 @@ export class ShipmentQueryService {
    */
   private async views(ids: bigint[]): Promise<ShipmentView[]> {
     if (ids.length === 0) return [];
-    const [rows, unassigned] = await Promise.all([
+    const [rows, unassigned, facts] = await Promise.all([
       this.prisma.shipment.findMany({ where: { shipment_id: { in: ids } } }),
       this.unassignedPackedBoxCounts(ids),
+      shipmentHistoryFacts(this.prisma, ids),
     ]);
     const byId = new Map(rows.map((row) => [row.shipment_id.toString(), row]));
     return ids.flatMap((id) => {
       const row = byId.get(id.toString());
-      return row === undefined ? [] : [shipmentView(row, unassigned.get(id.toString()) ?? 0)];
+      return row === undefined ? [] : [shipmentView(row, unassigned.get(id.toString()) ?? 0, facts.get(id.toString()))];
     });
   }
 
@@ -176,7 +196,10 @@ export class ShipmentQueryService {
 export function shipmentWhereSql(query: ShipmentQuery, terminal?: TerminalListScope): BuiltWhere {
   const where = whereSql(query);
   if (terminal !== undefined) {
-    where.sql = `(${where.sql}) AND EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)`;
+    // POP 완료 출하(피처 010)는 창고가 없다 — 지시서 이행 공장으로 본다.
+    where.sql = `(${where.sql}) AND (EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)
+       OR (s.warehouse_id IS NULL AND EXISTS (SELECT 1 FROM logistics.shipment_request tr
+                                               WHERE tr.shipment_request_id = s.shipment_request_id AND tr.fulfillment_plant_id = $${where.params.length + 1}::bigint)))`;
     where.params.push(terminal.plantId);
   }
   if (terminal?.warehouseId != null) {

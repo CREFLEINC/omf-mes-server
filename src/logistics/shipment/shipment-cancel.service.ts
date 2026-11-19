@@ -8,6 +8,7 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 import { releaseReservation } from '../../core/inventory-posting/reservation-qty';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { reopenShipmentOqcWithin } from '../../quality/inspection/oqc-completion';
 import { SHIPMENT_REQUEST_LINE } from '../shipment-request/shipment-progress';
 import {
   CANCELLED,
@@ -23,6 +24,11 @@ import {
   lockShipment,
 } from './shipment-guards';
 import { ShipmentQueryService } from './shipment-query.service';
+import {
+  assertNotSentWithin,
+  releaseCompletionReservations,
+  restorePicksWithin,
+} from './shipment-cancel-unsent';
 import { ShipmentDetailView } from './shipment-view';
 
 /**
@@ -37,6 +43,8 @@ import { ShipmentDetailView } from './shipment-view';
 type CancelableDocument = 'GOODS_ISSUE' | 'GOODS_RECEIPT';
 
 const CANCEL_ACTION = 'shipment-cancel';
+/** POP 완료 출하의 송신 전 취소(피처 010) — CONFIRMED → CANCELLED. 송신 전 판정은 이 서비스가 한다. */
+const CANCEL_UNSENT_ACTION = 'shipment-cancel-unsent';
 const APPROVAL_DOCUMENT_TYPE = 'APPROVAL_REQUEST';
 const DOCUMENT_CANCELLED = 'CANCELLED';
 const RELEASE_FIELD = 'shipmentId';
@@ -84,6 +92,8 @@ export class ShipmentCancelService {
       const locked = await lockShipment(tx, shipmentId);
       if (locked === undefined) throw new NotFoundException('없는 출하입니다.');
       assertUnsettled(locked, '취소를 요청할 수 없습니다');
+      // POP 완료 출하는 ERP 로 보내기 전에만 취소를 상신한다(피처 010 FR-023 · 보낸 뒤는 409 ERP_ALREADY_SENT).
+      if (isUnsentCancelable(locked)) await assertNotSentWithin(tx, locked.shipment_id);
       // ⭐ 재상신을 코어보다 «먼저» 막는다 — 코어 `assertNoOpenRequest` 는 400 `APPROVAL_IN_PROGRESS` 를
       //    내지만 이 오퍼레이션의 계약은 409 계열 `CANCEL_IN_PROGRESS` 다(통보 220 ⓓ · 확정과 같은 코드).
       if (await hasOpenCancel(tx, locked.shipment_id)) {
@@ -123,6 +133,8 @@ export class ShipmentCancelService {
     appUserId: number,
   ): Promise<{ versionNo: number; shipment: ShipmentDetailView }> {
     const occurredAt = new Date(body.occurredAt);
+    // ⛔ 채번은 트랜잭션 «밖»이다 — POP 완료 출하를 되살릴 때 다시 거는 예약 번호(몫이 여럿이면 뒤에 순번).
+    const reservationNo = await this.numbering.next('INVENTORY_RESERVATION', null, body.businessDate);
     await this.prisma.$transaction(async (tx) => {
       const locked = await lockShipment(tx, shipmentId);
       if (locked === undefined) throw new NotFoundException('없는 출하입니다.');
@@ -130,6 +142,10 @@ export class ShipmentCancelService {
       assertUnsettled(locked, '취소할 수 없습니다');
       assertVersion(locked, version);
       await assertCancelApproved(tx, locked.shipment_id);
+      if (isUnsentCancelable(locked)) {
+        await this.cancelUnsent(tx, locked, { occurredAt, appUserId, reservationNo });
+        return;
+      }
       const transition = this.documentState.assertTransition(STATUS_COLUMN, CANCEL_ACTION, locked.status_code);
 
       // ⭐⭐ **역전기 순서가 거꾸로다**(§3-6 ⓕ) — 출고 역(+q)이 먼저, 입고 역(−q)이 나중이다.
@@ -182,6 +198,56 @@ export class ShipmentCancelService {
   }
 
   /**
+   * POP 완료 출하의 송신 전 취소 실행(피처 010 R-10) — 창고마다의 내부 재고 차감 기록 «전부»를 역전기·취소하고, 출하 수량을 내리고,
+   * 메시지를 CANCELLED 로, 피킹 LOT 을 PICKED 로 되돌려 같은 잔액 행에 예약을 다시 건다(다시 잡을 수 없는 LOT 은 풀린 채).
+   * 지시서는 「출하 완료 전」이 된다. 출하 OQC 의뢰는 진행으로 다시 열고(확정 결과는 그대로 — 판정 근거), 새로 피킹한 LOT 도 판정할 수 있다
+   * (2026-11-19 사용자 결정). 송신 오류(FAILED) 메시지도 CANCELLED 로 둬 다시 시도하지 않는다.
+   */
+  private async cancelUnsent(
+    tx: Tx,
+    locked: LockedShipment,
+    at: { occurredAt: Date; appUserId: number; reservationNo: string },
+  ): Promise<void> {
+    const messageId = await assertNotSentWithin(tx, locked.shipment_id);
+    const transition = this.documentState.assertTransition(STATUS_COLUMN, CANCEL_UNSENT_ACTION, locked.status_code);
+    const issues = await tx.goods_issue.findMany({
+      where: { source_document_type_code: SHIPMENT_TARGET, source_document_id: locked.shipment_id },
+      select: { goods_issue_id: true },
+      orderBy: { goods_issue_id: 'asc' },
+    });
+    for (const issue of issues) {
+      await this.reverseOne(tx, 'GOODS_ISSUE', issue.goods_issue_id, at.occurredAt, at.appUserId);
+      await tx.goods_issue.update({
+        where: { goods_issue_id: issue.goods_issue_id },
+        data: { status_code: DOCUMENT_CANCELLED, version_no: { increment: 1 } },
+      });
+    }
+    const portions = await releaseCompletionReservations(
+      tx,
+      (reservationId, itemId, qty) => releaseReservation(tx, reservationId, itemId, qty, RELEASE_FIELD),
+      locked.shipment_id,
+    );
+    await restorePicksWithin(tx, this.posting, {
+      shipmentId: locked.shipment_id, portions, reservationNo: at.reservationNo, appUserId: at.appUserId,
+    });
+    await rollBackShippedQty(tx, locked.shipment_id);
+    await reopenShipmentOqcWithin(tx, { shipmentRequestId: locked.shipment_request_id, actor: { changedBy: BigInt(at.appUserId) } });
+    if (messageId !== null) {
+      await tx.integration_message.update({
+        where: { integration_message_id: messageId },
+        data: { status_code: 'CANCELLED', completed_at: at.occurredAt, last_error_message: '송신 전 출하 취소' },
+      });
+    }
+    await tx.shipment.update({
+      where: { shipment_id: locked.shipment_id },
+      data: {
+        status_code: transition.to, cancelled_at: at.occurredAt, cancelled_by: BigInt(at.appUserId),
+        updated_by: BigInt(at.appUserId), version_no: { increment: 1 },
+      },
+    });
+  }
+
+  /**
    * 원 원장 «한 건»을 되돌린다. ⛔ 0행·2행+ 는 조용히 넘기지 않고 500 이다 — 출하 등록은 전표마다
    * 원장을 정확히 하나 세운다. ⛔ `alreadyReversed` 도 던진다 — 취소된 출하는 상태 검사가 막으므로
    * 여기서 이미 되돌려져 있으면 상태 잠금이 뚫린 것이다.
@@ -212,11 +278,18 @@ export class ShipmentCancelService {
   }
 }
 
+/** POP 완료 출하(확정 상태) — 송신 전 취소 대상. 옛 흐름 확정 출하는 지금처럼 취소 경로가 없다. */
+function isUnsentCancelable(locked: LockedShipment): boolean {
+  return locked.status_code === CONFIRMED && locked.completed_terminal_id !== null;
+}
+
 /** 확정·취소된 출하는 어떤 취소도 받지 않는다 — 계약 「미확정 구간에서만 된다」 · J-8. */
 function assertUnsettled(locked: LockedShipment, action: string): void {
   if (locked.status_code === CANCELLED) {
     throw new ConflictException('user', `이미 취소된 출하라 ${action}.`, { code: CONFLICT_CODE.INVALID_STATE });
   }
+  // POP 완료 출하는 확정으로 태어난다 — ERP 로 보내기 전이면 취소를 받는다(피처 010 FR-023 · 판정은 부르는 쪽).
+  if (isUnsentCancelable(locked)) return;
   if (locked.status_code === CONFIRMED) {
     throw new ConflictException('user', `확정된 출하라 ${action} — 확정 취소 경로가 없습니다.`, {
       code: CONFLICT_CODE.ALREADY_CONFIRMED,

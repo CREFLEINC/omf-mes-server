@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { RowTable, Tx } from '../inbound-cycle';
+import { ApplyWarning, RowTable, Tx } from '../inbound-cycle';
 import { RelayRow, SALES_ORDER, isCancel, requiredText, text } from '../relay-tables';
 import { dateOf, itemIdsByCode, partnerIdByCode, uomIdsByCode } from './lookup';
 
@@ -17,7 +17,7 @@ const CANCELLED = 'CANCELLED';
  */
 export const salesOrderTable: RowTable = {
   source: SALES_ORDER,
-  async apply(tx: Tx, row: RelayRow): Promise<void> {
+  async apply(tx: Tx, row: RelayRow): Promise<void | ApplyWarning> {
     const partnerId = await partnerIdByCode(tx, requiredText(row, 'BP_CD'));
     const header = {
       customer_id: partnerId,
@@ -28,8 +28,9 @@ export const salesOrderTable: RowTable = {
       erp_sales_group_code: text(row, 'SALES_GRP_CD') || null,
     };
     const salesOrderId = await upsertHeader(tx, requiredText(row, 'SO_NO'), header);
-    await upsertLine(tx, salesOrderId, row);
+    const warning = await upsertLine(tx, salesOrderId, row);
     await syncStatus(tx, salesOrderId);
+    return warning === null ? undefined : { warning };
   },
 };
 
@@ -59,7 +60,8 @@ async function upsertHeader(tx: Tx, soNo: string, header: Header): Promise<bigin
   return current.sales_order_id;
 }
 
-async function upsertLine(tx: Tx, salesOrderId: bigint, row: RelayRow): Promise<void> {
+/** 반영하되 남길 경고 — 수주 수량이 출하 수량보다 작아졌을 때(피처 010 D-16). 없으면 `null`. */
+async function upsertLine(tx: Tx, salesOrderId: bigint, row: RelayRow): Promise<string | null> {
   const lineNo = Number(row.SO_SEQ_NO);
   const itemCode = requiredText(row, 'ITEM_CD');
   const unit = requiredText(row, 'BASE_UNIT');
@@ -84,7 +86,7 @@ async function upsertLine(tx: Tx, salesOrderId: bigint, row: RelayRow): Promise<
         cancelled_at: cancel ? new Date() : null,
       },
     });
-    return;
+    return null;
   }
   const line = await tx.sales_order_line.findUniqueOrThrow({
     where: { sales_order_line_id: locked.sales_order_line_id },
@@ -98,17 +100,16 @@ async function upsertLine(tx: Tx, salesOrderId: bigint, row: RelayRow): Promise<
         data: { cancelled_at: new Date(), updated_by: null, version_no: { increment: 1 } },
       });
     }
-    return;
+    return null;
   }
   const shipped = !line.shipped_qty.isZero();
   if (shipped && (line.item_id !== values.item_id || line.uom_id !== values.uom_id)) {
     throw new Error(`수주 라인 ${lineNo} 은 출하가 있어 품목·단위를 바꿀 수 없다`);
   }
-  if (values.ordered_qty.lt(line.shipped_qty)) {
-    throw new Error(
-      `수주 라인 ${lineNo} 의 수량 ${values.ordered_qty.toString()} 이 출하 수량 ${line.shipped_qty.toString()} 보다 작다`,
-    );
-  }
+  // ⭐ ERP 는 수주 초과 출고를 받는다(2026-11-18 확인 · 피처 010 D-16) — 막지 않고 반영한 뒤 경고로 남긴다.
+  const warning = values.ordered_qty.lt(line.shipped_qty)
+    ? `수주 ${String(row.SO_NO)} 라인 ${lineNo} 의 수량 ${values.ordered_qty.toString()} 이 출하 수량 ${line.shipped_qty.toString()} 보다 작다 — 반영함`
+    : null;
   const changed =
     line.item_id !== values.item_id ||
     !line.ordered_qty.equals(values.ordered_qty) ||
@@ -121,6 +122,7 @@ async function upsertLine(tx: Tx, salesOrderId: bigint, row: RelayRow): Promise<
       data: { ...values, cancelled_at: null, updated_by: null, version_no: { increment: 1 } },
     });
   }
+  return warning;
 }
 
 /** 라인이 모두 취소면 수주도 취소, 하나라도 살아 있으면 접수. */

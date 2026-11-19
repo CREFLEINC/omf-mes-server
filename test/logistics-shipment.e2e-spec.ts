@@ -222,9 +222,10 @@ describe('출하 목록 (e2e)', () => {
     expect(rows.map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
   });
 
-  it('L-9 ⛔ q 는 shipment_no «만» 본다 — 고객명·LOT 번호로는 0건', async () => {
+  it('L-9·US7-3 q 는 출하번호·지시서 번호·고객을 본다(피처 010 W-04-12 시안) — LOT 번호로는 0건', async () => {
     expect((await ours({ q: `${PREFIX}-A` })).map((i) => i.shipmentNo)).toEqual([`${PREFIX}-A`]);
-    expect(await ours({ q: '출하검사파트너' })).toEqual([]);
+    expect((await ours({ q: '출하검사파트너C2' })).map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
+    expect((await ours({ q: `${PREFIX}-R2` })).map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
     expect(await ours({ q: `${PREFIX}-LOT` })).toEqual([]);
   });
 
@@ -637,9 +638,9 @@ describe('출하 목록 (e2e)', () => {
     expect(await over(9999)).toContain('배정');
   });
 
-  it('P-7b ⛔ 수주 수량 한도는 «따로» 걸린다 — 배정은 넉넉한데 수주가 모자란 자리', async () => {
-    // 배정 500 · 수주 30 인 지시를 따로 세웠다 — 배정 가드를 지워도 이쪽은 남는다.
-    const failed = await post(
+  it('P-7b·Q3·D-16 수주 수량을 넘겨도 출하가 등록된다 — ERP 가 수주 초과 출고를 받는다(피처 010)', async () => {
+    // 배정 500 · 수주 30 인 지시를 따로 세웠다. 피처 010 전에는 「수주 수량보다 많이 낼 수 없습니다」 400 이었다.
+    await post(
       body({
         shipmentRequestId: made.tightRequest,
         lines: [
@@ -651,11 +652,13 @@ describe('출하 목록 (e2e)', () => {
           },
         ],
       }),
-      400,
     );
-    const [first] = failed.errors as { field: string; code: string; message: string }[];
-    expect(first).toMatchObject({ field: 'lines[0].shippedQty', code: 'RANGE' });
-    expect(first.message).toContain('수주');
+    const line = await prisma.shipment_request_line.findUniqueOrThrow({
+      where: { shipment_request_line_id: BigInt(made.tightRequestLine) },
+      select: { sales_order_line: { select: { ordered_qty: true, shipped_qty: true } } },
+    });
+    // 수주 출하 수량이 수주 수량을 넘는다 — `ck_sales_shipped_qty` 를 지웠다(S1).
+    expect([Number(line.sales_order_line?.ordered_qty), Number(line.sales_order_line?.shipped_qty)]).toEqual([30, 40]);
   });
 
   it('P-7d ⛔ 지시 뒤 ERP 가 그 수주 라인을 취소했으면 400 INVALID 이고 수주 라인이 그대로다(장부 P-73)', async () => {
@@ -817,14 +820,14 @@ describe('출하 목록 (e2e)', () => {
     ]);
   });
 
-  it('F-3 모바일 출하 — 피킹(M-04-01)한 수량만큼 출하하면 201 이고 피킹분이 소진된다', async () => {
+  it('F-3 모바일 출하 — LOT 통째 피킹(:pick-lot)한 수량만큼 출하하면 201 이고 피킹분이 소진된다', async () => {
     // 전용 지시 라인 — 공용 라인의 배정·출하 누계가 앞 시험 순서에 따라 달라지지 않게 한다.
+    // 옛 수량 피킹(`:pick`)은 409 `USE_PICK_LOT` 이다(피처 010) — 옛 출하 처리 경로는 통째 피킹분으로 돈다.
     await request(app.getHttpServer())
-      .post(`/api/logistics/shipment-requests/${made.pickRequest}/lines/${made.pickRequestLine}:pick`)
+      .post(`/api/logistics/shipment-requests/${made.pickRequest}/lines/${made.pickRequestLine}:pick-lot`)
       .set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID())
-      .set('X-Worker-No', `${PREFIX}-W1`)
-      .send({ lotId: Number(ids.lotPick), pickedQty: 5, uomId: Number(ids.uom) })
+      .send({ lotId: Number(ids.lotPick) })
       .expect(200);
 
     await post(allocate(ids.lotPick, 5, made.pickRequest, made.pickRequestLine));
@@ -1596,6 +1599,8 @@ describe('출하 목록 (e2e)', () => {
     for (const [lotId, pickedQty] of [
       [ids.lotPost, 2000], [ids.lotDefect, 2000], [ids.lotNoPick, 0], [ids.lotPartial, 3], [ids.lotPick, 0],
     ] as const) {
+      // F-3 의 LOT 은 통째 피킹(`:pick-lot`)이라 보유가 곧 피킹 수량이다(피처 010).
+      const onHand = lotId === ids.lotPick ? 5 : 5000;
       await prisma.inventory_balance.create({
         data: {
           legal_entity_id: warehouse.plant.legal_entity_id,
@@ -1611,7 +1616,7 @@ describe('출하 목록 (e2e)', () => {
           uom_id: ids.uom,
           // ⭐ 넉넉히 둔다 — 이 스위트가 등록을 여러 번 부르고 그때마다 4 씩 깎는다.
           //   빠듯하면 뒤 시험이 「배정 초과」로 먼저 죽어 «다른» 판정을 재게 된다(실제로 그랬다).
-          on_hand_qty: 5000,
+          on_hand_qty: onHand,
           picked_qty: pickedQty,
         },
       });
@@ -2034,6 +2039,9 @@ describe('출하 목록 (e2e)', () => {
           WHERE source_document_type_code = 'SHIPMENT' AND source_document_id IN (${OUR_SHIPMENTS}))`,
       `DELETE FROM logistics.goods_receipt
         WHERE source_document_type_code = 'SHIPMENT' AND source_document_id IN (${OUR_SHIPMENTS})`,
+      // 통째 피킹(F-3)의 피킹 LOT 행 — 출하·지시 라인보다 먼저 지운다(피처 010).
+      `DELETE FROM logistics.shipment_request_lot WHERE shipment_request_line_id IN (
+         SELECT shipment_request_line_id FROM logistics.shipment_request_line WHERE shipment_request_id IN (${OUR_REQUESTS}))`,
       `DELETE FROM logistics.shipment WHERE shipment_id IN (${OUR_SHIPMENTS})`,
       `DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}%'`,
       // 모바일 피킹(F-3)이 채번한 예약 — 번호에 접두어가 없어 지시 라인으로 좁힌다.

@@ -9,7 +9,7 @@ import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
  *
  * ⭐ OQC 의뢰는 편성 때 품목별 «헤더 대상»(`lot_id` 없음)으로 선다 — LOT 은 피킹 때 처음 정해진다. 그래서 판정·생략의 LOT 이력은
  *    확정·실행 «시점»에 그 라인들의 예약에서 LOT 을 읽어 남긴다. 피킹이 덜 끝났으면 남길 LOT 이 모자라므로 400 이다(D6-b).
- * ⭐ 피킹 완료 = 라인의 `P = A` 이고 `A > 0` — 목록의 `pickingCompleteOnly` 와 같은 경계다(`shipment-progress.ts`).
+ * ⭐ 피킹 완료 = 라인의 `P ≥ A` 이고 `A > 0`(LOT 통째 피킹은 초과할 수 있다 · 피처 010) — 목록의 `pickingCompleteOnly` 와 같은 경계다(`shipment-progress.ts`).
  *    `P` 는 Σ(reserved − released)다(R-14).
  */
 
@@ -59,7 +59,7 @@ export async function oqcPickedLots(
     .filter((line) => {
       const allocated = new Prisma.Decimal(line.allocated_qty);
       const picked = pickedByLine.get(String(line.shipment_request_line_id)) ?? new Prisma.Decimal(0);
-      return !(allocated.greaterThan(0) && picked.equals(allocated));
+      return !(allocated.greaterThan(0) && picked.greaterThanOrEqualTo(allocated));
     })
     .map((line) => line.line_no);
 

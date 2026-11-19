@@ -10,6 +10,7 @@ import { InspectionAqlPlanView, inspectionAqlPlan } from './inspection-aql-plan'
 import { InspectionGuideView, inspectionGuides } from './inspection-guide';
 import { FOUR_M_CHANGE_INCLUDE, InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 import { InboundLotRequestDetailView, inboundLotRequestDetail, inboundLotSummaries } from './iqc-request-detail';
+import { OqcRequestDetailView, OqcRequestSummary, oqcListSummaries, oqcRequestDetail } from './oqc-request-detail';
 
 /** 조회 2건(I-19 PR ②). */
 export interface InspectionRequestListQuery {
@@ -49,13 +50,16 @@ const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
 export type InspectionRequestDetailView = InspectionRequestView & {
   inspectionGuides?: InspectionGuideView[];
   aqlPlan?: InspectionAqlPlanView;
-} & Partial<InboundLotRequestDetailView>;
+} & Partial<InboundLotRequestDetailView> & Partial<Omit<OqcRequestDetailView, 'lots'>> & { lots?: unknown[] };
+
+/** 목록 행 — 출하 OQC 새 흐름 의뢰는 지시서 번호·피킹 LOT 수·LOT 판정 수를 더한다(피처 010). */
+export type InspectionRequestListRow = InspectionRequestView & Partial<OqcRequestSummary>;
 
 @Injectable()
 export class InspectionRequestService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: InspectionRequestListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<InspectionRequestView>> {
+  async list(query: InspectionRequestListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<InspectionRequestListRow>> {
     const page = pageRequest(query);
     const where = await inspectionRequestListWhere(this.prisma, query, scope);
     const [rows, total] = await Promise.all([
@@ -64,8 +68,10 @@ export class InspectionRequestService {
       }),
       this.prisma.inspection_request.count({ where }),
     ]);
-    const [levels, inboundLots] = await Promise.all([iqcInspectionLevels(this.prisma, rows), inboundLotSummaries(this.prisma, rows)]);
-    return pagedResponse(rows.map((row, index) => inspectionRequestView(row, levels[index], inboundLots[index])), total, page);
+    const [levels, inboundLots, oqc] = await Promise.all([
+      iqcInspectionLevels(this.prisma, rows), inboundLotSummaries(this.prisma, rows), oqcListSummaries(this.prisma, rows),
+    ]);
+    return pagedResponse(rows.map((row, index) => ({ ...inspectionRequestView(row, levels[index], inboundLots[index]), ...oqc[index] })), total, page);
   }
 
   async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestDetailView> {
@@ -75,8 +81,9 @@ export class InspectionRequestService {
       include: FOUR_M_CHANGE_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
-    const [[level], [inboundLot], inbound] = await Promise.all([
+    const [[level], [inboundLot], inbound, oqc] = await Promise.all([
       iqcInspectionLevels(this.prisma, [row]), inboundLotSummaries(this.prisma, [row]), inboundLotRequestDetail(this.prisma, row),
+      oqcRequestDetail(this.prisma, row),
     ]);
     // 안내 문구는 상세에만 싣는다 — 목록 줄마다 기준을 읽지 않는다(omf-all-around#252).
     const [guides, aqlPlan] = await Promise.all([
@@ -88,6 +95,7 @@ export class InspectionRequestService {
       ...(guides.length === 0 ? {} : { inspectionGuides: guides }),
       ...(aqlPlan === null ? {} : { aqlPlan }),
       ...inbound,
+      ...oqc,
     };
   }
 }

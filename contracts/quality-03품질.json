@@ -1279,7 +1279,7 @@
      "quality"
     ],
     "summary": "IQC 판정 확정(검사 단위)",
-    "description": "입하 LOT 검사(새 흐름 — targetTypeCode=INBOUND_LOT)의 결과 전부로 판정을 한 번에 확정한다(R-12). 판정 규칙(2026-11-12): 자재 관리 LOT 마다 그 LOT 를 매칭한 결과 중 순번이 가장 큰 결과의 판정이 LOT 판정이고(확정 차수·결과 상태와 상관없다 — 재작업 처분이 다시 연 요청(이력 REOPENED_BY_REWORK)의 앞 확정 결과(CONFIRMED)도 다시 매칭되지 않은 LOT 의 판정으로 쓰인다), 종합 판정 = LOT별 판정 중 가장 나쁜 것(불합격 > 보류 > 합격), 매칭된 결과가 없는 LOT 는 계산에서 빠진다 — 상세 previewJudgmentCode·lotJudgments 와 같은 계산이다. 기록 중(DRAFT)인 결과가 1건 이상이고 모든 기록 중 결과에 판정이 있고 각 결과의 합격·불합격·보류 수량 합이 검사 수량과 같아야 한다(아니면 400 — field 는 results 또는 results[n].overallJudgmentCode·results[n].inspectedQty, n 은 순번 · 재열기 뒤 재검사 결과가 없으면 400 results). 자재 관리 LOT 를 매칭한 결과가 하나도 없으면 400 results(REQUIRED). 한 트랜잭션: 기록 중 결과 전부 CONFIRMED, 요청 COMPLETED·overallJudgmentCode·confirmedAt·confirmedBy, 검사 수준 기록 1회, 자재 관리 LOT 전부 이동(합격 — 검사 대기 보류를 닫고 C4, 다른 열린 보류가 남은 LOT 은 이동 안 함 / 보류 — C5 / 불합격 — C6, LOT 상태 이력 원천 INSPECTION_REQUEST), 불합격이면 부적합 1건(PENDING_DECISION · LOT 전부를 대상 LOT 으로 · 수량은 각 LOT 초기 수량 · 결과 연결은 LOT 판정에 쓰인 불합격 결과 중 순번이 가장 작은 것 · 이미 열린 부적합이 있는 LOT 은 뺀다)과 불합격 인계 알림(입하 LOT 당 1회), 변경 이력 CONFIRMED. 4M 변경품은 결과 저장 때 이미 LOT 전부에 적혀 있다. 대기·진행 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청(대상 LOT)·PQC·OQC 는 409 INVALID_STATE 「이전 데이터 검사는 결과 단위로 확정합니다」(결과 단위 :confirm 을 쓴다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-12",
+    "description": "입하 LOT 검사(새 흐름 — targetTypeCode=INBOUND_LOT)의 결과 전부로 판정을 한 번에 확정한다(R-12). 판정 규칙(2026-11-12): 자재 관리 LOT 마다 그 LOT 를 매칭한 결과 중 순번이 가장 큰 결과의 판정이 LOT 판정이고(확정 차수·결과 상태와 상관없다 — 재작업 처분이 다시 연 요청(이력 REOPENED_BY_REWORK)의 앞 확정 결과(CONFIRMED)도 다시 매칭되지 않은 LOT 의 판정으로 쓰인다), 종합 판정 = LOT별 판정 중 가장 나쁜 것(불합격 > 보류 > 합격), 매칭된 결과가 없는 LOT 는 계산에서 빠진다 — 상세 previewJudgmentCode·lotJudgments 와 같은 계산이다. 기록 중(DRAFT)인 결과가 1건 이상이고 모든 기록 중 결과에 판정이 있고 각 결과의 합격·불합격·보류 수량 합이 검사 수량과 같아야 한다(아니면 400 — field 는 results 또는 results[n].overallJudgmentCode·results[n].inspectedQty, n 은 순번 · 재열기 뒤 재검사 결과가 없으면 400 results). 자재 관리 LOT 를 매칭한 결과가 하나도 없으면 400 results(REQUIRED). 한 트랜잭션: 기록 중 결과 전부 CONFIRMED, 요청 COMPLETED·overallJudgmentCode·confirmedAt·confirmedBy, 검사 수준 기록 1회, 자재 관리 LOT 전부 이동(합격 — 검사 대기 보류를 닫고 C4, 다른 열린 보류가 남은 LOT 은 이동 안 함 / 보류 — C5 / 불합격 — C6, LOT 상태 이력 원천 INSPECTION_REQUEST), 불합격이면 부적합 1건(PENDING_DECISION · LOT 전부를 대상 LOT 으로 · 수량은 각 LOT 초기 수량 · 결과 연결은 LOT 판정에 쓰인 불합격 결과 중 순번이 가장 작은 것 · 이미 열린 부적합이 있는 LOT 은 뺀다)과 불합격 인계 알림(입하 LOT 당 1회), 변경 이력 CONFIRMED. 4M 변경품은 결과 저장 때 이미 LOT 전부에 적혀 있다. 대기·진행 요청만 — 그 밖은 409 INVALID_STATE, 이전된 옛 요청(대상 LOT)·PQC·OQC 는 409 INVALID_STATE 「이전 데이터 검사는 결과 단위로 확정합니다」(결과 단위 :confirm 을 쓴다). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-12 ⛔ 출하 OQC 새 흐름 의뢰·결과면 409 CONFIRMED_BY_SHIPMENT_COMPLETION — 확정은 출하 완료가 한다(피처 010).",
     "parameters": [
      {
       "name": "inspectionRequestId",
@@ -1362,7 +1362,7 @@
       }
      },
      "409": {
-      "description": "버전 충돌 VERSION_CONFLICT(versionNo 가 의뢰의 versionNo 와 다름) · INVALID_STATE(대기·진행이 아님 · 이전된 옛 요청·PQC·OQC)",
+      "description": "버전 충돌 VERSION_CONFLICT(versionNo 가 의뢰의 versionNo 와 다름) · INVALID_STATE(대기·진행이 아님 · 이전된 옛 요청·PQC·OQC) · CONFIRMED_BY_SHIPMENT_COMPLETION(출하 OQC 새 흐름)",
       "content": {
        "application/json": {
         "schema": {
@@ -1754,7 +1754,7 @@
       }
      },
      "409": {
-      "description": "충돌",
+      "description": "충돌 · CONFIRMED_BY_SHIPMENT_COMPLETION(출하 OQC 새 흐름에 statusCode=CONFIRMED)",
       "content": {
        "application/json": {
         "schema": {
@@ -2390,7 +2390,7 @@
      "quality"
     ],
     "summary": "검사 판정 확정",
-    "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 합격이면 정상, 불합격이면 불량, 보류면 검사 대기다. 독립된 상태 전이 경로를 두지 않는다(결정 10 「상태 이중 보유 없음」 · 공유계약 B-8). ⛔ accepted + rejected + held = inspected 가 아니면 400 이다(A-3). 근거: W-01-01 §5-2 · P-02-13 §5-3 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다. ⭐ 입하 LOT 검사(새 흐름 — 의뢰 targetTypeCode=INBOUND_LOT)의 결과는 409 INVALID_STATE 「검사 단위로 확정하세요」 — POST /quality/inspection-requests/{inspectionRequestId}:confirm 이 결과 전부를 한 번에 확정한다. PQC·OQC·이전된 옛 IQC 요청(대상 LOT)은 그대로 이 경로로 확정하고, 입하 LOT 를 가진 옛 요청은 의뢰의 종합 판정·확정 시각·사람도 함께 채운다. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · D-11",
+    "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 합격이면 정상, 불합격이면 불량, 보류면 검사 대기다. 독립된 상태 전이 경로를 두지 않는다(결정 10 「상태 이중 보유 없음」 · 공유계약 B-8). ⛔ accepted + rejected + held = inspected 가 아니면 400 이다(A-3). 근거: W-01-01 §5-2 · P-02-13 §5-3 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다. ⭐ 입하 LOT 검사(새 흐름 — 의뢰 targetTypeCode=INBOUND_LOT)의 결과는 409 INVALID_STATE 「검사 단위로 확정하세요」 — POST /quality/inspection-requests/{inspectionRequestId}:confirm 이 결과 전부를 한 번에 확정한다. PQC·OQC·이전된 옛 IQC 요청(대상 LOT)은 그대로 이 경로로 확정하고, 입하 LOT 를 가진 옛 요청은 의뢰의 종합 판정·확정 시각·사람도 함께 채운다. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · D-11 ⛔ 출하 OQC 새 흐름 의뢰·결과면 409 CONFIRMED_BY_SHIPMENT_COMPLETION — 확정은 출하 완료가 한다(피처 010).",
     "parameters": [
      {
       "name": "inspectionResultId",
@@ -2476,7 +2476,7 @@
       }
      },
      "409": {
-      "description": "충돌 — VERSION_CONFLICT · INVALID_STATE(입하 LOT 검사 결과 — 검사 단위로 확정하세요)",
+      "description": "충돌 — VERSION_CONFLICT · INVALID_STATE(입하 LOT 검사 결과 — 검사 단위로 확정하세요) · CONFIRMED_BY_SHIPMENT_COMPLETION(출하 OQC 새 흐름)",
       "content": {
        "application/json": {
         "schema": {
@@ -6843,7 +6843,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionRequestLot"
       },
-      "description": "상세 조회·새 흐름 요청(targetTypeCode=INBOUND_LOT)만 — 입하 LOT 의 자재 관리 LOT 전부(LOT 번호 순)"
+      "description": "상세 조회·새 흐름 요청(targetTypeCode=INBOUND_LOT)만 — 입하 LOT 의 자재 관리 LOT 전부(LOT 번호 순) ⭐ 출하 OQC 새 흐름 상세에도 싣는다(피처 010)."
      },
      "poAllocations": {
       "type": "array",
@@ -6861,14 +6861,14 @@
       "items": {
        "$ref": "#/components/schemas/InspectionRequestResultSummary"
       },
-      "description": "상세 조회·새 흐름 요청만 — 결과 목록(순번 순). 결과마다 매칭한 자재 관리 LOT"
+      "description": "상세 조회·새 흐름 요청만 — 결과 목록(순번 순). 결과마다 매칭한 자재 관리 LOT ⭐ 출하 OQC 새 흐름 상세에도 싣는다(피처 010)."
      },
      "lotJudgments": {
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/InspectionRequestLotJudgment"
       },
-      "description": "상세 조회·새 흐름 요청만 — 입하 LOT 의 자재 관리 LOT 전부(LOT 번호 순)의 판정 근거(2026-11-12). previewJudgmentCode·:confirm 과 같은 계산"
+      "description": "상세 조회·새 흐름 요청만 — 입하 LOT 의 자재 관리 LOT 전부(LOT 번호 순)의 판정 근거(2026-11-12). previewJudgmentCode·:confirm 과 같은 계산 ⭐ 출하 OQC 새 흐름 상세에도 싣는다(피처 010)."
      },
      "previewJudgmentCode": {
       "type": [
@@ -6915,7 +6915,7 @@
      },
      "nextResultSeqNo": {
       "type": "integer",
-      "description": "상세·새 흐름 요청만 — 다음 결과가 받을 순번(남은 결과·지운 결과 중 최대 + 1 · 지운 번호는 다시 쓰지 않는다)"
+      "description": "상세·새 흐름 요청만 — 다음 결과가 받을 순번(남은 결과·지운 결과 중 최대 + 1 · 지운 번호는 다시 쓰지 않는다) ⭐ 출하 OQC 새 흐름 상세에도 싣는다(피처 010)."
      },
      "confirmedByName": {
       "type": [
@@ -6941,6 +6941,64 @@
      },
      "aqlPlan": {
       "$ref": "#/components/schemas/InspectionAqlPlan"
+     },
+     "shipmentRequestNo": {
+      "type": "string",
+      "description": "출하 OQC 새 흐름 — 지시서 번호(목록·상세)",
+      "example": "SR-20261118-0001"
+     },
+     "pickedLotCount": {
+      "type": "integer",
+      "description": "출하 OQC 새 흐름 — 살아 있는 피킹 LOT 수(목록)",
+      "example": 3
+     },
+     "lotJudgmentSummary": {
+      "type": "object",
+      "description": "출하 OQC 새 흐름 — 피킹 LOT 판정 수(목록). POP 「판정 대기/판정 완료」 탭은 notInspected > 0 으로 가른다(2026-11-18 결정).",
+      "properties": {
+       "notInspected": {
+        "type": "integer",
+        "example": 3
+       },
+       "accepted": {
+        "type": "integer",
+        "example": 3
+       },
+       "rejected": {
+        "type": "integer",
+        "example": 3
+       },
+       "held": {
+        "type": "integer",
+        "example": 3
+       }
+      },
+      "required": [
+       "notInspected",
+       "accepted",
+       "rejected",
+       "held"
+      ]
+     },
+     "itemCode": {
+      "type": "string",
+      "description": "출하 OQC 새 흐름 — 품목 코드(P-04-06 목록·머리 · 피처 010)",
+      "example": "FG-A100"
+     },
+     "itemName": {
+      "type": "string",
+      "description": "출하 OQC 새 흐름 — 품목 이름",
+      "example": "센서 모듈 A"
+     },
+     "pickedQty": {
+      "type": "number",
+      "description": "출하 OQC 새 흐름 — 살아 있는 피킹 LOT 수량 합(목록)",
+      "example": 110
+     },
+     "uomCode": {
+      "type": "string",
+      "description": "출하 OQC 새 흐름 — 단위 코드",
+      "example": "EA"
      }
     },
     "required": [
@@ -7322,7 +7380,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "입하 LOT 검사(targetTypeCode=INBOUND_LOT)의 결과만 — 이 결과가 본 자재 관리 LOT. 그 입하 LOT 소속만(아니면 400 INVALID), 한 결과에 같은 LOT 두 번은 400, 다른 결과와 겹치는 것은 된다. 1개 이상 필수 — 빼거나 빈 배열이면 400 MATCHED_LOT_REQUIRED(2026-11-12). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10"
+      "description": "입하 LOT 검사(targetTypeCode=INBOUND_LOT)의 결과만 — 이 결과가 본 자재 관리 LOT. 그 입하 LOT 소속만(아니면 400 INVALID), 한 결과에 같은 LOT 두 번은 400, 다른 결과와 겹치는 것은 된다. 1개 이상 필수 — 빼거나 빈 배열이면 400 MATCHED_LOT_REQUIRED(2026-11-12). 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 · R-10 ⭐ 출하 OQC 새 흐름도 받는다 — 그 지시서·품목의 PICKED 피킹 LOT(피처 010)."
      }
     },
     "required": [
@@ -7335,7 +7393,7 @@
      "inspectedAt",
      "statusCode"
     ],
-    "description": "⛔ statusCode=확정 이면 acceptedQty + rejectedQty + heldQty = inspectedQty 를 강제한다 (ck_inspection_result_qty · 공유계약 A-3). 작성중은 통과시킨다. ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",
+    "description": "⛔ statusCode=확정 이면 acceptedQty + rejectedQty + heldQty = inspectedQty 를 강제한다 (ck_inspection_result_qty · 공유계약 A-3). 작성중은 통과시킨다. ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더). ⭐ 출하 OQC 새 흐름(피처 010 · omf-all-around#305 — OQC · 대상 SHIPMENT_REQUEST · lotId 없음): matchedLotIds 1개 이상 필수(그 지시서·품목의 PICKED 피킹 LOT 만 — 아니면 400 INVALID), overallJudgmentCode(ACCEPTED·REJECTED·HELD)만 받고 수량 칸은 무시한다 — 서버가 검사 수량 = 매칭 LOT 피킹 합, 판정 칸 하나에 같은 값으로 채운다. statusCode 는 DRAFT 만(CONFIRMED 면 409 CONFIRMED_BY_SHIPMENT_COMPLETION), 순번 = 최대 + 1, 불합격·보류를 가볍게 덮으면 reinspectionReasonCode 필수(400 REINSPECTION_REASON_REQUIRED), 시리얼 판정은 작성중 저장에서도 받는다. 검사 항목 측정치(measurements)는 지금처럼 받아 저장한다(FR-009 · T052 — 「판정만」은 수량을 받지 않는다는 뜻). 불량·4M 은 받지 않는다. 첫 결과가 의뢰를 IN_PROGRESS 로 옮긴다.",
     "x-internal-note": "⧉ 공개 설명에서 걷은 근거 표기(client#173 · 2026-08-21): 공유계약 D-5(귀속은 세션이 아니다)·F-2(축은 셋이다) · mdm.worker.worker_id 와 app.app_user.app_user_id 는 다른 채번"
    },
    "InspectionResultUpdate": {
@@ -7420,7 +7478,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "입하 LOT 검사 결과만 — 실으면 매칭을 통째로 갈아 끼운다(빈 배열은 400 MATCHED_LOT_REQUIRED · 2026-11-12), 빼면 그대로. 규칙은 POST 와 같다. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254"
+      "description": "입하 LOT 검사 결과만 — 실으면 매칭을 통째로 갈아 끼운다(빈 배열은 400 MATCHED_LOT_REQUIRED · 2026-11-12), 빼면 그대로. 규칙은 POST 와 같다. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 ⭐ 출하 OQC 새 흐름도 받는다(피처 010)."
      },
      "reinspectionReasonCode": {
       "type": "string",
@@ -7429,7 +7487,7 @@
       "description": "입하 LOT 검사 결과만 — 재검 사유(공통코드 REINSPECTION_REASON · 열린 그룹이라 값은 대조하지 않는다). 빼면 저장값 그대로. 고친 뒤의 판정·매칭이 그 LOT 의 바로 앞 결과(이 결과보다 순번이 작은 것 중 가장 큰 것) 판정을 불합격 → 보류·합격, 보류 → 합격으로 바꾸면 필수(본문·저장값 모두 없으면 400 REINSPECTION_REASON_REQUIRED). 입하 LOT 검사가 아닌 결과에 실으면 400 INVALID. 근거: 피처 005 §8 판정 규칙 변경(2026-11-12)"
      }
     },
-    "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",
+    "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더). ⭐ 출하 OQC 새 흐름(피처 010): 작성중만 고친다 — matchedLotIds·overallJudgmentCode·reinspectionReasonCode·measurements(실으면 통째로 바꾼다), 수량은 매칭으로 다시 채운다.",
     "x-internal-note": "⧉ 공개 설명에서 걷은 근거 표기(client#173 · 2026-08-21): 공유계약 D-5(귀속은 세션이 아니다)·F-2(축은 셋이다) · mdm.worker.worker_id 와 app.app_user.app_user_id 는 다른 채번"
    },
    "InspectionSummary": {
@@ -8145,9 +8203,10 @@
        "INVALID_STATE",
        "DUPLICATE_HOLD",
        "HOLD_QTY_EXCEEDED",
-       "DISPOSITION_QTY_EXCEEDED"
+       "DISPOSITION_QTY_EXCEEDED",
+       "CONFIRMED_BY_SHIPMENT_COMPLETION"
       ],
-      "description": "DUPLICATE_HOLD 는 해제되지 않은 전량 보류가 이미 있다는 뜻이다. HOLD_QTY_EXCEEDED 는 부분 보류 합계가 보유 수량을 넘는다는 뜻이다. 둘 다 서버가 판정한다 — 화면이 계산하지 않는다. DISPOSITION_QTY_EXCEEDED 는 처분 결정 수량 합이 대상 수량을 넘는다는 뜻이고 remainingQty 를 함께 내린다 — 같은 형태다. INVALID_STATE 는 이미 종결된 부적합에 판정을 저장하려 할 때도 쓴다. 근거: W-03-03 §5-5 · W-03-10 §6 · 공유계약 A-9 ⓑ · omf-mes#253",
+      "description": "DUPLICATE_HOLD 는 해제되지 않은 전량 보류가 이미 있다는 뜻이다. HOLD_QTY_EXCEEDED 는 부분 보류 합계가 보유 수량을 넘는다는 뜻이다. 둘 다 서버가 판정한다 — 화면이 계산하지 않는다. DISPOSITION_QTY_EXCEEDED 는 처분 결정 수량 합이 대상 수량을 넘는다는 뜻이고 remainingQty 를 함께 내린다 — 같은 형태다. INVALID_STATE 는 이미 종결된 부적합에 판정을 저장하려 할 때도 쓴다. 근거: W-03-03 §5-5 · W-03-10 §6 · 공유계약 A-9 ⓑ · omf-mes#253 CONFIRMED_BY_SHIPMENT_COMPLETION — 출하 OQC 새 흐름(OQC · 대상 SHIPMENT_REQUEST · lotId 없음) 의 결과는 출하 완료 때 함께 확정된다 — :confirm 이나 statusCode=CONFIRMED 저장을 받지 않는다(피처 010 · omf-all-around#305).",
       "example": "VERSION_CONFLICT"
      },
      "message": {
@@ -9310,7 +9369,8 @@
       "type": [
        "string",
        "null"
-      ]
+      ],
+      "description": "작성 작업자 이름. 관리웹 계정으로 만든 검사표는 작업자가 없어 만든 계정 이름(omf-all-around#316)"
      },
      "createdAt": {
       "type": "string",
@@ -9508,7 +9568,8 @@
         "type": [
          "string",
          "null"
-        ]
+        ],
+        "description": "검사 작업자 이름. 관리웹 계정으로 적은 단계는 작업자가 없어 마지막으로 쓴 계정 이름(omf-all-around#316)"
        },
        "inspectedAt": {
         "type": "string",
@@ -10097,7 +10158,8 @@
       "type": [
        "string",
        "null"
-      ]
+      ],
+      "description": "작성 작업자 이름. 관리웹 계정으로 만든 검사표는 작업자가 없어 만든 계정 이름(omf-all-around#316)"
      },
      "approvedByName": {
       "type": [
@@ -10127,7 +10189,7 @@
      "statusCode",
      "goodsReceived"
     ],
-    "description": "입하 LOT 검사의 자재 관리 LOT 한 개. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254",
+    "description": "입하 LOT 검사의 자재 관리 LOT 한 개. 근거: 피처 005 자재 LOT 운영 구조 변경 §8 · omf-all-around#254 ⭐ 출하 OQC 새 흐름(피처 010)이면 그 지시서·품목의 피킹 LOT 이다 — lotQty 는 피킹 수량, package 는 null, goodsReceived 는 false, 교체된 LOT 도 pickStatusCode=REPLACED 이력으로 싣는다(매칭 대상 아님).",
     "properties": {
      "lotId": {
       "type": "integer",
@@ -10159,6 +10221,31 @@
      "goodsReceived": {
       "type": "boolean",
       "description": "취소되지 않은 입고가 있는가. 칸 이름은 클라이언트 C3 이 정함(피처 005 §8)."
+     },
+     "shipmentRequestLotId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "출하 OQC — 피킹 LOT 행 id",
+      "example": 1001
+     },
+     "pickStatusCode": {
+      "type": "string",
+      "enum": [
+       "PICKED",
+       "REPLACED",
+       "SHIPPED"
+      ],
+      "x-code-key": "SHIPMENT_REQUEST_LOT_STATUS",
+      "description": "출하 OQC — 피킹 LOT 상태",
+      "example": "PICKED"
+     },
+     "managementCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "출하 OQC — 출하 관리 코드",
+      "example": "값"
      }
     }
    },

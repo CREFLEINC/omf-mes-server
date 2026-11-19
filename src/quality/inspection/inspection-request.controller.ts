@@ -12,6 +12,8 @@ import { InspectionRequestDetailView, InspectionRequestListQuery, InspectionRequ
 import { InspectionRequestView } from './inspection-request-view';
 import { InspectionRequestCancelConfirm, InspectionRequestConfirm, IqcRequestConfirmService } from './iqc-request-confirm.service';
 import { OqcSerialQueryService } from './oqc-serial-query.service';
+import { assertNotShipmentOqcConfirm } from './oqc-flow-guard';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * 검사 의뢰 조회(I-19 PR ②)와 입하 LOT 검사의 판정 확정·확정 취소(피처 005 §8). 등록 경로는 두지 않는다 — 서버가 입고·실적에서 만든다(계약).
@@ -25,6 +27,7 @@ export class InspectionRequestController {
     private readonly oqcSerials: OqcSerialQueryService,
     private readonly confirms: IqcRequestConfirmService,
     private readonly idempotency: IdempotencyService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -63,6 +66,8 @@ export class InspectionRequestController {
     @Body() body: InspectionRequestConfirm,
   ): Promise<InspectionRequestDetailView> {
     const context = idempotencyContextOf(request, HttpStatus.OK, FAMILY_CONFLICT_CODE);
+    // 출하 OQC 새 흐름은 확정 버튼이 없다 — 출하 완료가 확정한다(피처 010 · 409).
+    await assertNotShipmentOqcConfirm(this.prisma, { inspectionRequestId });
     await this.confirms.confirm(context, inspectionRequestId, body, userOf(request));
     return this.requests.detail(inspectionRequestId);
   }

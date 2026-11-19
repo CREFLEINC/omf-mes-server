@@ -17,7 +17,6 @@ import {
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
-import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
@@ -28,8 +27,9 @@ import {
   ShipmentRequestSummaryView,
 } from './shipment-request-query.service';
 import { ShipmentRequestFilters, ShipmentRequestQuery } from './shipment-request-query.sql';
-import { ShipmentRequestLineView, ShipmentRequestView } from './shipment-request-view';
-import { ShipmentLinePick, ShipmentPickService } from './shipment-pick.service';
+import { ShipmentRequestView } from './shipment-request-view';
+import { ConflictException } from '../../common/errors';
+import { PICK_CONFLICT } from './shipment-lot-pick.service';
 import { ShipmentOqcSkipService } from './shipment-oqc-skip.service';
 import {
   ShipmentRequestCreate,
@@ -51,7 +51,6 @@ export class ShipmentRequestController {
   constructor(
     private readonly queries: ShipmentRequestQueryService,
     private readonly requests: ShipmentRequestService,
-    private readonly picks: ShipmentPickService,
     private readonly oqcSkips: ShipmentOqcSkipService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -137,39 +136,18 @@ export class ShipmentRequestController {
   }
 
   /**
-   * ⭐⭐ 제품 LOT 피킹 확정(`M-04-01`) — 응답은 헤더가 아니라 **갱신된 라인**이다.
-   * ⛔ `If-Match`·ETag 가 계약에 0건이라 `runVersioned`·`setEtag` 를 부르지 않는다(§1-1).
-   * ⛔ 헤더는 계약 검증 가드가 «안 본다» — `X-Worker-No` 필수 판정은 서비스 몫이다.
-   * ⛔ 409 봉투가 계열이라 `FAMILY_CONFLICT_CODE` 를 넘긴다 — 안 넘기면 멱등 충돌 409 에서
-   *   required `code` 가 빠지고, 그 자리는 e2e 로 반증되지 않아 `family-conflict-code.spec.ts`
-   *   가 유일한 그물이다.
+   * 옛 수량 피킹(`M-04-01` 옛 화면) — 피처 010 부터 LOT 통째 피킹(`:pick-lot`)만 받는다. 경로는 남겨 옛 PDA 가
+   * 「업데이트하세요」를 알 수 있게 409 `USE_PICK_LOT` 로 답한다(배포 전 예약만 있는 옛 피킹은 출하 처리 경로로 끝낸다).
    */
   @Post(':shipmentRequestId/lines/:shipmentRequestLineId\\:pick')
   @Contract('POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick')
-  // 계약 응답이 200 이다 — Nest 의 `@Post` 기본값 201 을 되돌린다.
   @HttpCode(HttpStatus.OK)
-  pick(
-    @Req() request: Request,
-    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
-    @Param('shipmentRequestLineId', ParseIntPipe) shipmentRequestLineId: number,
-    @Body() body: ShipmentLinePick,
-  ): Promise<ShipmentRequestLineView> {
-    const workerNo = request.headers['x-worker-no'];
-
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.OK,
-      () =>
-        this.picks.pick(shipmentRequestId, shipmentRequestLineId, body, {
-          workerNo: typeof workerNo === 'string' ? workerNo : undefined,
-          ...logisticsWriteActorOf(
-            request,
-            'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick',
-          ),
-        }),
-      FAMILY_CONFLICT_CODE,
-    );
+  pick(@Req() request: Request): Promise<never> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => {
+      throw new ConflictException('user', '수량 피킹은 더 쓰지 않습니다. LOT 을 스캔해 통째로 피킹하세요(앱을 업데이트하세요).', {
+        code: PICK_CONFLICT.USE_PICK_LOT,
+      });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   /**

@@ -49,7 +49,6 @@ const SHARED = 'common/master/worker-no.ts';
 const PRESENCE_ONLY = [
   'logistics/picking/picking-pick.service.ts',
   'logistics/shipment-allocation/allocation-packing.service.ts',
-  'logistics/shipment-request/shipment-pick.service.ts',
   'logistics/shopfloor-receipt/shopfloor-receipt.service.ts',
   'production/material-return/material-return.service.ts',
   'trace/lot/lot-complete.service.ts',
@@ -311,7 +310,8 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     // 판정은 `logisticsWriteActorOf` 가 한다 — 위 표들이 그 자리를 이미 덮는다.
     // 줄마다 입하 한 건(장부 P-117) — 입하 등록과 같은 판정(`logisticsWriteActorOf`): 40 → 41.
     // 줄마다 입하(장부 P-117)를 WorkerNoOptional 로 — 관리웹도 부른다(입고·출고와 같은 갈래): 41 → 40.
-    expect(required).toBe(40);
+    // 출하 완료 `:complete`(피처 010 · POP 전용) — 판정은 `logisticsWriteActorOf`(단말 물류 범위가 사번을 푼다): 40 → 41.
+    expect(required).toBe(41);
   });
 });
 

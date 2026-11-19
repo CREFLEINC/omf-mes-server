@@ -169,6 +169,13 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip': ['W-04-03'],
   // 실행은 결재 화면 W-03-09 에서도 한다 — IQC 생략(위 `:skip-iqc` 가 결재 화면 W-01-02)과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
   'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03', 'W-03-09'],
+  // LOT 통째 피킹 — 옛 `:pick` 과 같은 화면(M-04-01 제품 LOT 피킹)이다(피처 010 · omf-all-around#305).
+  'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot': ['M-04-01'],
+  // OQC 불합격 LOT 교체·출하 관리 코드 — 같은 PDA 피킹 화면의 조작이다(피처 010).
+  'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace': ['M-04-01'],
+  'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code': ['M-04-01'],
+  // 출하 완료 — POP P-04-07 전용 화면이다. 계정 세션은 서비스가 403 으로 막는다(단말만 완료한다).
+  'POST /logistics/shipment-requests/{shipmentRequestId}:complete': ['P-04-07'],
   // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
   'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
   'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],
@@ -521,6 +528,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-results': ['W-03-11'],
   // 입하 LOT 검사의 작성중 결과 삭제(피처 005 §8 · omf-all-around#254) — IQC 판정 화면(W-01-01)이 결과 목록에서 지운다.
   'DELETE /quality/inspection-results/{inspectionResultId}': ['W-01-01'],
+  // 출하 OQC 새 흐름(피처 010)의 작성중 결과 고치기 — 출하검사 판정(W-04-03) 결과 목록에서 고친다. 도출표의 W-01-01 과 합집합이다.
+  'PUT /quality/inspection-results/{inspectionResultId}': ['W-04-03'],
   // 입하 LOT 검사의 판정 확정·확정 취소(피처 005 §8 · R-12·R-13) — 화면이 아니라 W-01-01 안의 동작 권한 W-01-15 만.
   // 결과 기록(W-01-01)만 가진 검사자는 확정·취소를 못 한다(US4-7).
   'POST /quality/inspection-requests/{inspectionRequestId}:confirm': ['W-01-15'],
@@ -533,6 +542,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],
+  // 검사 의뢰 첨부를 나중에 자재 관리 LOT 에 연결(omf-all-around#296) — 올리기와 같은 IQC·OQC 판정 화면.
+  'POST /app/attachments/{attachmentId}:link-lots': ['W-01-01', 'W-04-03'],
   // 웹 입고 관리(W-01-09)의 「라인 표에서 바로 입하」가 `:per-line` 을 부르고 단추는 웹 입하 등록 W-01-03 으로 선다 — `:per-line` 은
   // 입하 등록과 같은 권한이다(장부 P-117). W-01-03 은 이미 `:split` 으로 보통 입하를 만들 수 있어 새로 생기는
   // 힘은 없다(사용자 결정 2026-10-27).
