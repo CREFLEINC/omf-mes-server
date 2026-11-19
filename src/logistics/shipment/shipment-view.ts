@@ -42,6 +42,8 @@ export interface ShipmentView {
    * ⭐ `P-04-05` 가 「구성할 것이 남았나」를 이 수로 본다. 목록에서만 채운다 — 상세는 안 센다.
    */
   unassignedPackedBoxCount?: number;
+  /** 아직 포장하지 않은 LOT 배분 수(omf-all-around#329). 목록에서만 채운다 — 상세는 안 센다. */
+  unpackedLotCount?: number;
   expediteReason: string | null;
   versionNo?: number;
   /** 출하 내역(피처 010 US7) — ERP 송신 상태 6값·취소 상신 중·완료 단말·작업자·재고가 빠진 창고들. */
@@ -104,10 +106,16 @@ export function shipmentDetailView(
 /** `null` 을 «키 없음»으로 접는다 — 위 널 정책의 뒤쪽 갈래에 쓴다. */
 const skip = <T>(value: T | null): T | undefined => value ?? undefined;
 
-export function shipmentView(row: ShipmentRow, unassignedPackedBoxCount?: number, facts?: ShipmentHistoryFacts): ShipmentView {
+export function shipmentView(
+  row: ShipmentRow,
+  unassignedPackedBoxCount?: number,
+  facts?: ShipmentHistoryFacts,
+  unpackedLotCount?: number,
+): ShipmentView {
   return omitEmpty({
     ...(facts ?? {}),
     ...(unassignedPackedBoxCount === undefined ? {} : { unassignedPackedBoxCount }),
+    ...(unpackedLotCount === undefined ? {} : { unpackedLotCount }),
     shipmentId: Number(row.shipment_id),
     shipmentNo: row.shipment_no,
     shipmentRequestId: Number(row.shipment_request_id),
