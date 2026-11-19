@@ -23,6 +23,12 @@ export class LocationStructureService {
 
   /** 구역 밑에 랙 1개와 층·셀을 한 번에 만든다. 랙이 새것이라 층·셀 코드는 번호를 차례로 붙인다. */
   async createRack(input: RackCreate): Promise<LocationResult['location']> {
+    // 층이 없으면 셀을 달 곳이 없다 — 셀 수를 버리지 않고 거절한다.
+    if (input.levelCount === 0 && input.cellCountPerLevel > 0) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'field', field: 'cellCountPerLevel', code: ERROR_CODE.INVALID, message: '층이 없는 랙은 셀 수가 0 입니다.' },
+      ]);
+    }
     const zone = await this.prisma.location.findUnique({
       where: { location_id: input.parentLocationId },
       select: { warehouse_id: true, location_code: true, location_level_code: true, system_role_code: true, is_active: true },

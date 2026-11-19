@@ -746,7 +746,7 @@
      "mdm"
     ],
     "summary": "랙 하나 만들기 — 랙과 그 밑 층·셀",
-    "description": "구역 밑에 랙 1개와 층 levelCount 개, 층마다 셀 cellCountPerLevel 개를 한 번에 만든다. 응답은 만든 랙이다 — 층·셀은 GET /mdm/locations?parentLocationId= 로 받는다. 400: 구역이 아니거나(사람이 만든 켜진 구역만) 구역에 재고가 있을 때(parentLocationId)",
+    "description": "구역 밑에 랙 1개와 층 levelCount 개, 층마다 셀 cellCountPerLevel 개를 한 번에 만든다. 응답은 만든 랙이다 — 층·셀은 GET /mdm/locations?parentLocationId= 로 받는다. 400: 구역이 아니거나(사람이 만든 켜진 구역만) 구역에 재고가 있을 때(parentLocationId) · 층 수가 0 인데 셀 수가 0 이 아닐 때(cellCountPerLevel)",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -30054,17 +30054,17 @@
      },
      "levelCount": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 99,
       "example": 5,
-      "description": "층 수"
+      "description": "층 수 — 0 이면 랙이 맨 아래 위치다(사용자 결정 2026-11-19)"
      },
      "cellCountPerLevel": {
       "type": "integer",
       "minimum": 0,
       "maximum": 99,
       "example": 10,
-      "description": "층마다 셀 수 — 0 이면 층이 맨 아래 위치다"
+      "description": "층마다 셀 수 — 0 이면 층이 맨 아래 위치다. 층 수가 0 이면 0 이어야 한다"
      }
     }
    },
