@@ -12,6 +12,7 @@ export const SHEET_DETAIL_INCLUDE = {
   lot: { select: { lot_no: true } },
   work_order: { select: { work_order_no: true } },
   written_worker: WORKER,
+  app_user_inspection_sheet_created_byToapp_user: USER,
   app_user_inspection_sheet_approved_byToapp_user: USER,
   app_user_inspection_sheet_checked_byToapp_user: USER,
   template: {
@@ -23,7 +24,11 @@ export const SHEET_DETAIL_INCLUDE = {
     },
   },
   step_results: {
-    include: { inspected_worker: WORKER, app_user_inspection_sheet_step_result_signed_byToapp_user: USER },
+    include: {
+      inspected_worker: WORKER,
+      app_user_inspection_sheet_step_result_signed_byToapp_user: USER,
+      app_user_inspection_sheet_step_result_updated_byToapp_user: USER,
+    },
   },
   item_results: { select: { inspection_sheet_template_item_id: true, judgment_code: true } },
   ngs: { orderBy: { sequence_no: 'asc' }, include: { repair_worker: WORKER, recheck_worker: WORKER } },
@@ -63,7 +68,9 @@ function stepResultView(stepCode: string, result: StepResultRow | undefined, oqc
     finalJudgmentCode: result.final_judgment_code,
     sourceCode: result.source_code,
     inspectedWorkerNo: result.inspected_worker?.worker_no ?? null,
-    inspectedWorkerName: result.inspected_worker?.worker_name ?? null,
+    // 관리웹에서 적으면 작업자가 비고 마지막으로 쓴 계정이 남는다 — 그 계정 이름을 싣는다(omf-all-around#316).
+    inspectedWorkerName:
+      result.inspected_worker?.worker_name ?? result.app_user_inspection_sheet_step_result_updated_byToapp_user?.user_name ?? null,
     inspectedAt: result.inspected_at.toISOString(),
     ...signer(result),
   };
@@ -119,7 +126,8 @@ export function sheetDetailView(
     /** 변경품 투입(W/O 단위 · S4). */
     fourMChanges,
     writtenWorkerNo: row.written_worker?.worker_no ?? null,
-    writtenWorkerName: row.written_worker?.worker_name ?? null,
+    // 관리웹에서 만든 검사표는 작업자가 없다 — 만든 계정 이름을 싣는다(omf-all-around#316).
+    writtenWorkerName: row.written_worker?.worker_name ?? row.app_user_inspection_sheet_created_byToapp_user?.user_name ?? null,
     createdAt: row.created_at.toISOString(),
     approvedBy: id(row.approved_by),
     approvedByName: row.app_user_inspection_sheet_approved_byToapp_user?.user_name ?? null,
