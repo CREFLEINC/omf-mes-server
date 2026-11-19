@@ -9,12 +9,12 @@ export interface ReferenceQuery {
 }
 
 /**
- * `q` 는 「코드·명칭 검색」이다(계약). 두 칸을 대소문자 없이 부분 일치로 본다.
+ * `q` 는 「코드·명칭 검색」이다(계약). 두 칸을 대소문자 없이 부분 일치로 본다 — 별칭 칸을 주면 그것도 본다.
  * `includeInactive` 가 없으면 **쓰는 것만** 준다 — 마스터 목록의 기본 뜻이다.
  */
 export function referenceWhere(
   query: ReferenceQuery,
-  columns: { code: string; name: string },
+  columns: { code: string; name: string; alias?: string },
   extra: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const where: Record<string, unknown> = { ...extra };
@@ -23,6 +23,7 @@ export function referenceWhere(
     where.OR = [
       { [columns.code]: { contains: query.q, mode: 'insensitive' } },
       { [columns.name]: { contains: query.q, mode: 'insensitive' } },
+      ...(columns.alias === undefined ? [] : [{ [columns.alias]: { contains: query.q, mode: 'insensitive' } }]),
     ];
   }
   return where;
