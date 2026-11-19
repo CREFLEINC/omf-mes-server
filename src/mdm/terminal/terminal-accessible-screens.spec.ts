@@ -14,7 +14,7 @@ const NONE: TerminalProcessFlags = {
 };
 
 /** 축이 없어 언제나 담기는 화면 — 매핑이 0행이어도 이만큼은 나온다. */
-const ALWAYS = ['P-01-01', 'P-02-12', 'P-05-01', 'P-05-02', 'P-06-01'];
+const ALWAYS = ['P-01-01', 'P-02-12', 'P-04-07', 'P-05-01', 'P-05-02', 'P-06-01'];
 
 const flags = (on: Partial<TerminalProcessFlags>): TerminalProcessFlags => ({ ...NONE, ...on });
 
@@ -66,7 +66,7 @@ describe('POP 화면 이동 후보 (D3)', () => {
     expect(codes).not.toContain('P-02-14');
   });
 
-  it('표가 카탈로그와 같은 18 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
+  it('표가 카탈로그와 같은 19 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
     const codes = POP_SCREEN_REQUIREMENTS.map((row) => row.code);
 
     // SHIP-UNIT-01 이 `P-04-05`(출하 단위 구성)를 더했다: 16 → 17.
@@ -75,8 +75,9 @@ describe('POP 화면 이동 후보 (D3)', () => {
     // 장부 P-80 이 `P-04-06`(OQC 출하검사 판정)을 `P-04-05` 뒤에 더했다: 19 → 20.
     // 장부 P-102 이 `P-02-15`(제품 검사표 입력)를 `P-02-14` 뒤에 더했다: 20 → 21.
     // omf-all-around#293 이 `P-02-08`·`P-02-09`·`P-02-13`(생산 포장·포장 라벨 재출력·PQC 제품 검사)을 뺐다: 21 → 18.
-    expect(codes).toHaveLength(18);
-    expect(new Set(codes).size).toBe(18);
+    // 피처 010(omf-all-around#305)이 `P-04-07`(출하 완료)을 `P-04-06` 뒤에 더했다: 18 → 19.
+    expect(codes).toHaveLength(19);
+    expect(new Set(codes).size).toBe(19);
     for (const retired of ['P-02-08', 'P-02-09', 'P-02-13']) expect(codes).not.toContain(retired);
     expect(codes.at(-1)).toBe('P-06-01');
     expect(codes).not.toContain('P-CO-01');

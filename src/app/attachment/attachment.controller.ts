@@ -1,11 +1,14 @@
 import {
-  Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res, UploadedFile, UseInterceptors,
+  Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req, Res, UploadedFile, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 
 import { ATTACHMENT_UPLOAD_OPTIONS } from '../../common/attachment-storage';
 import { Contract } from '../../common/contract';
+import { runIdempotent } from '../../common/master/master-write';
+import { IdempotencyService } from '../../common/idempotency';
+import { AttachmentLinkService, AttachmentLotLink } from './attachment-link.service';
 import { AttachmentUploadService } from './attachment-upload.service';
 import { AttachmentQuery, AttachmentService } from './attachment.service';
 import { AttachmentView } from './attachment-view';
@@ -25,6 +28,8 @@ export class AttachmentController {
   constructor(
     private readonly attachments: AttachmentService,
     private readonly uploads: AttachmentUploadService,
+    private readonly links: AttachmentLinkService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   @Get()
@@ -43,6 +48,18 @@ export class AttachmentController {
     @UploadedFile() file?: Express.Multer.File,
   ): Promise<AttachmentView> {
     return this.uploads.upload(body, file, request);
+  }
+
+  /** 검사 의뢰 첨부를 자재 관리 LOT 에 나중에 연결(omf-all-around#296). 권한(W-01-01 · W-04-03)은 가드가 본다. */
+  @Post(':attachmentId\\:link-lots')
+  @Contract('POST /app/attachments/{attachmentId}:link-lots')
+  @HttpCode(HttpStatus.OK)
+  async linkLots(
+    @Req() request: Request,
+    @Param('attachmentId', ParseIntPipe) attachmentId: number,
+    @Body() body: AttachmentLotLink,
+  ): Promise<{ items: AttachmentView[] }> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) => this.links.linkLots(tx, attachmentId, body));
   }
 
   /** 헤더를 쓰기 전에 모든 예외를 던진다 — 404 가 전역 필터의 ErrorResponse 로 나간다. */

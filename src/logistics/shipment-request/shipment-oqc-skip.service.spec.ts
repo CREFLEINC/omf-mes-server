@@ -63,7 +63,7 @@ describe('OQC 생략 요청', () => {
     );
   });
 
-  it('생략할 수 있는 의뢰는 «확정 결과가 없는» 열린 의뢰다', async () => {
+  it('FR-012 생략할 수 있는 의뢰는 «결과가 하나도 없는» 열린 의뢰다(작성중 결과도 있으면 안 된다)', async () => {
     const { service, count } = harness();
     await service.requestSkip(21, '사유', 5);
 
@@ -73,7 +73,7 @@ describe('OQC 생략 요청', () => {
         target_type_code: 'SHIPMENT_REQUEST',
         target_id: 21n,
         status_code: { in: ['REQUESTED', 'IN_PROGRESS'] },
-        inspection_result: { none: { status_code: 'CONFIRMED' } },
+        inspection_result: { none: {} },
       }),
     });
   });
@@ -117,9 +117,10 @@ describe('승인된 OQC 생략 실행', () => {
     expect(await messageOf(() => service.execute(21, 5))).toContain('생략을 실행할 수 없습니다');
   });
 
-  it('⛔ 검사 대상 라인의 피킹이 덜 끝났으면 400(D6-b)', async () => {
-    const { service, updateMany } = harness({ picked: false });
-    expect(await messageOf(() => service.execute(21, 5))).toContain('피킹을 마친 뒤 생략을 실행하세요.');
-    expect(updateMany).not.toHaveBeenCalled();
+  it('FR-012·Q16 피킹이 덜 끝나도 생략을 실행한다 — 이미 피킹된 LOT 에만 C27 이 남는다(나머지는 출하 완료 때)', async () => {
+    const { service, updateMany, qualities } = harness({ picked: false });
+    await service.execute(21, 5);
+    expect(updateMany).toHaveBeenCalled();
+    expect(qualities.moveWithin).toHaveBeenCalledWith(expect.anything(), [501n], 'oqc-skipped', expect.anything());
   });
 });

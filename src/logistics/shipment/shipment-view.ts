@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import { ShipmentLotAllocationView } from '../shipment-allocation/shipment-allocation-view';
+import { ErpSendStatus, ShipmentHistoryFacts } from './shipment-history';
 
 /**
  * 계약 `Shipment` 로 옮기는 자리 — 프로퍼티 **19 · required 6**.
@@ -22,7 +23,8 @@ export interface ShipmentView {
   shipmentId: number;
   shipmentNo: string;
   shipmentRequestId: number;
-  warehouseId: number;
+  /** POP 완료 출하(피처 010)는 창고가 여럿이라 null — `warehouses[]` 를 본다. */
+  warehouseId: number | null;
   vehicleNo?: string;
   driverName?: string;
   sealNo?: string;
@@ -42,6 +44,12 @@ export interface ShipmentView {
   unassignedPackedBoxCount?: number;
   expediteReason: string | null;
   versionNo?: number;
+  /** 출하 내역(피처 010 US7) — ERP 송신 상태 6값·취소 상신 중·완료 단말·작업자·재고가 빠진 창고들. */
+  erpSendStatus?: ErpSendStatus;
+  cancelRequestPending?: boolean;
+  completedTerminal?: ShipmentHistoryFacts['completedTerminal'];
+  completedWorker?: ShipmentHistoryFacts['completedWorker'];
+  warehouses?: ShipmentHistoryFacts['warehouses'];
 }
 
 /** 계약 `ShipmentLine` — 프로퍼티 8 · required 6. */
@@ -88,20 +96,22 @@ export function shipmentLineView(
 export function shipmentDetailView(
   row: ShipmentRow,
   lines: ShipmentLineView[],
+  facts?: ShipmentHistoryFacts,
 ): ShipmentDetailView {
-  return { ...shipmentView(row), lines };
+  return { ...shipmentView(row, undefined, facts), lines };
 }
 
 /** `null` 을 «키 없음»으로 접는다 — 위 널 정책의 뒤쪽 갈래에 쓴다. */
 const skip = <T>(value: T | null): T | undefined => value ?? undefined;
 
-export function shipmentView(row: ShipmentRow, unassignedPackedBoxCount?: number): ShipmentView {
+export function shipmentView(row: ShipmentRow, unassignedPackedBoxCount?: number, facts?: ShipmentHistoryFacts): ShipmentView {
   return omitEmpty({
+    ...(facts ?? {}),
     ...(unassignedPackedBoxCount === undefined ? {} : { unassignedPackedBoxCount }),
     shipmentId: Number(row.shipment_id),
     shipmentNo: row.shipment_no,
     shipmentRequestId: Number(row.shipment_request_id),
-    warehouseId: Number(row.warehouse_id),
+    warehouseId: row.warehouse_id === null ? null : Number(row.warehouse_id),
     vehicleNo: skip(row.vehicle_no),
     driverName: skip(row.driver_name),
     sealNo: skip(row.seal_no),

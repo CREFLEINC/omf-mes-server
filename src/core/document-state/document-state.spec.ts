@@ -604,7 +604,8 @@ describe('DocumentStateService', () => {
       // +2 — 입하 마감 취소의 생략 무효 C30 · IQC 요청 취소(피처 005 S5).
       // +3 — 판정 확정 취소의 LOT C29 · IQC 결과 CONFIRMED→DRAFT · 부적합 CANCELLED(피처 005 S9).
       // +1 — 추적 시스템 연동이 세운 계획의 W/O 를 배포 상태에서 마감(flowtrack 연동 결정 17).
-      expect(service.registered()).toHaveLength(74);
+      // +1 — POP 출하 완료 출하의 ERP 송신 전 취소 CONFIRMED→CANCELLED(피처 010 · omf-all-around#305).
+      expect(service.registered()).toHaveLength(75);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {
@@ -618,6 +619,10 @@ describe('DocumentStateService', () => {
       expect(() =>
         service.assertTransition(SHIPMENT_STATUS, 'shipment-cancel', 'CONFIRMED'),
       ).toThrow(ConflictException);
+      // ⭐ US6-1 송신 전 취소는 별도 액션이다 — 확정에서 «송신 전»일 때만 서비스가 부른다(피처 010).
+      expect(
+        service.assertTransition(SHIPMENT_STATUS, 'shipment-cancel-unsent', 'CONFIRMED'),
+      ).toMatchObject({ to: 'CANCELLED', from: ['CONFIRMED'] });
       // ⛔ `:request-cancel` 은 (칸, 액션)이 «없다» — 등록되지 않은 액션은 코어가 던진다.
       expect(() =>
         service.assertTransition(SHIPMENT_STATUS, 'shipment-request-cancel', 'UNCONFIRMED'),

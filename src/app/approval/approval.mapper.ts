@@ -76,6 +76,8 @@ export interface ApprovalTargetView {
   targetId: number;
   displayName: string;
   openable: boolean;
+  /** 대상을 여는 화면 ID — 정한 유형만(출하 취소 → W-04-12). 없으면 키를 싣지 않는다. */
+  screenId?: string;
   /** IQC 생략(대상 입하 LOT)만 — 실행 경로에 쓸 자재 관리 LOT id(피처 005). */
   targetLotId?: number | null;
   /** IQC 생략만 — 입하 마감 취소가 이 승인을 무효로 만들었다(실행할 수 없음, 피처 005 R-5a · G2 L7). */
@@ -144,6 +146,7 @@ export function toApprovalRequest(
     target: {
       ...toApprovalTarget(row.target_type_code, row.target_id, target),
       ...(row.approval_type_code === IQC_SKIP ? { targetVoided: voidedByReopen(row.target_summary) } : {}),
+      ...(OPENABLE_SCREENS[row.approval_type_code] === undefined ? {} : { openable: true, screenId: OPENABLE_SCREENS[row.approval_type_code] }),
     },
     currentStepNo: derived.currentStepNo,
     totalStepNo: row.approval_step.length,
@@ -152,6 +155,13 @@ export function toApprovalRequest(
 }
 
 const IQC_SKIP = 'IQC_SKIP';
+
+/**
+ * 대상을 여는 화면(결재 유형 → 화면 ID). 승인 뒤 실행이 대상 화면에 있는 유형만 둔다.
+ * - `SHIPMENT_CANCEL` → W-04-12 출하 내역: 승인된 취소를 그 화면 상세에서 [취소 실행]한다(피처 010 검증 1회차 F-2 —
+ *   계약 `:cancel` 근거 「W-04-12 §5-8」). 결재함은 승인만 하고 실행하지 않는다.
+ */
+const OPENABLE_SCREENS: Readonly<Record<string, string | undefined>> = { SHIPMENT_CANCEL: 'W-04-12' };
 
 /** 입하 마감 취소가 남긴 무효 표시(`target_summary.voidedAt` — `markIqcSkipVoided`). */
 function voidedByReopen(summary: Prisma.JsonValue): boolean {

@@ -159,7 +159,7 @@ export class ShipmentRequestService {
           code: 'INVALID_STATE',
         });
       }
-      if (request.shipment.some((shipment) => shipment.warehouse.plant_id !== targetPlantId)) {
+      if (request.shipment.some((shipment) => shipment.warehouse !== null && shipment.warehouse.plant_id !== targetPlantId)) {
         throw new ConflictException('user', '기존 출하 창고와 다른 공장을 지정할 수 없습니다.', {
           code: 'INVALID_STATE',
         });

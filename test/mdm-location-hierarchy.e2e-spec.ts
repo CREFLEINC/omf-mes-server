@@ -216,6 +216,19 @@ describe('위치 계층 (e2e)', () => {
     expect(await prisma.location.count({ where: { warehouse_id: warehouseId } })).toBe(before);
   });
 
+  it('⭐ 층 0 · 셀 0 이면 랙 하나만 만들고 그 랙이 맨 아래 위치다 — 층 0 에 셀이 있으면 400 INVALID · 하나도 안 만든다', async () => {
+    const zone = await create();
+
+    const rack = await buildRack(zone.locationId, 0, 0, 201);
+
+    expect(rack).toMatchObject({ locationCode: `${zone.locationCode}-R001`, locationLevelCode: 'RACK', isLeaf: true });
+    expect(await childrenOf(rack.locationId as number)).toEqual([]);
+    const before = await prisma.location.count({ where: { warehouse_id: warehouseId } });
+    const rejected = await buildRack(zone.locationId, 0, 3, 400);
+    expect(rejected.errors).toEqual([expect.objectContaining({ field: 'cellCountPerLevel', code: 'INVALID' })]);
+    expect(await prisma.location.count({ where: { warehouse_id: warehouseId } })).toBe(before);
+  });
+
   it('⭐ 안 쓰인 위치는 밑의 위치까지 함께 지운다 — 지운 번호는 다시 발행된다', async () => {
     const zone = await create();
     const rack = await buildRack(zone.locationId, 2, 3, 201);
