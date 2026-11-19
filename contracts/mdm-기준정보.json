@@ -561,7 +561,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "코드·명칭 검색"
+      "description": "코드·명칭·별칭(aliasName) 검색"
      },
      {
       "name": "locationCode",
