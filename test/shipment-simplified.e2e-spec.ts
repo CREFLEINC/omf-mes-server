@@ -325,6 +325,41 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect((await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(saved.body.inspectionResultId) } })).status_code).toBe('DRAFT');
     });
 
+    it('US3-1·FR-009·T052 새 흐름 결과도 검사 항목 측정을 저장한다 — 측정 조회에 나오고, PUT 으로 고치면 바뀐다', async () => {
+      const { lotIds, oqc } = await pickedThree();
+      const plan = await prisma.inspection_plan.create({ data: {
+        inspection_plan_code: `${f.run}-OQC-PLAN-${randomUUID().slice(0, 6)}`, inspection_plan_name: '출하단순화측정기준', item_id: f.ids.itemA, inspection_type_code: 'OQC',
+      } });
+      const version = await prisma.inspection_plan_version.create({ data: {
+        inspection_plan_id: plan.inspection_plan_id, plan_version: 1, effective_from: new Date('2026-01-01T00:00:00.000Z'),
+        sampling_method_code: 'FULL', inspection_frequency_code: 'EVERY_LOT', status_code: 'DRAFT',
+      } });
+      const spec = await prisma.inspection_item_spec.create({ data: {
+        inspection_plan_version_id: version.inspection_plan_version_id, sequence_no: 1, inspection_item_code: 'LEN', inspection_item_name: '길이',
+        data_type_code: 'NUMERIC', uom_id: f.ids.uom,
+      } });
+      const measured = (value: number, judgmentCode: string) => [{
+        inspectionItemSpecId: Number(spec.inspection_item_spec_id), sampleNo: 1, numericValue: value, judgmentCode, measuredAt: '2026-11-18T03:00:00.000Z',
+      }];
+      const measurementsOf = async (resultId: number) =>
+        ((await f.asSession(f.http().get(`/api/quality/inspection-results/${resultId}/measurements`)).expect(200)).body as
+          { items: { inspectionItemSpecId: number; numericValue: number | null; judgmentCode: string }[] }).items;
+
+      const saved = await f.oqcResult(oqc, { matchedLotIds: [lotIds[0]], overallJudgmentCode: 'ACCEPTED', measurements: measured(1.5, 'ACCEPTED') }, 'session').expect(201);
+
+      expect((await measurementsOf(saved.body.inspectionResultId as number)).map((row) => [row.inspectionItemSpecId, row.numericValue, row.judgmentCode]))
+        .toEqual([[Number(spec.inspection_item_spec_id), 1.5, 'ACCEPTED']]);
+
+      await f.asSession(f.http().put(`/api/quality/inspection-results/${saved.body.inspectionResultId}`)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', '"1"')
+        .send({ measurements: measured(2.5, 'REJECTED') })).expect(200);
+
+      expect((await measurementsOf(saved.body.inspectionResultId as number)).map((row) => [row.numericValue, row.judgmentCode])).toEqual([[2.5, 'REJECTED']]);
+      // 수량은 여전히 서버가 매칭 LOT 피킹 합으로 채운다(R-5 — 판정만은 「수량은 받지 않음」으로 읽는다).
+      const row = await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(saved.body.inspectionResultId) } });
+      expect([Number(row.inspected_qty), Number(row.accepted_qty)]).toEqual([40, 40]);
+    });
+
     it('R-5 작성중 결과를 PUT 으로 고치면 매칭·판정이 바뀌고 수량이 다시 채워진다', async () => {
       const { made, lotIds, oqc } = await pickedThree();
       const saved = await f.oqcResult(oqc, { matchedLotIds: [lotIds[0]], overallJudgmentCode: 'ACCEPTED' }, 'session').expect(201);

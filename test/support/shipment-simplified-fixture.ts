@@ -265,7 +265,7 @@ export class ShipmentSimplifiedFixture {
   /** OQC 결과 저장(기본은 POP) — 새 흐름은 수량 칸을 무시하므로 0 을 싣는다. */
   oqcResult(
     inspectionRequestId: number,
-    body: { matchedLotIds?: number[]; overallJudgmentCode?: string; reinspectionReasonCode?: string; statusCode?: string; serials?: unknown[] },
+    body: { matchedLotIds?: number[]; overallJudgmentCode?: string; reinspectionReasonCode?: string; statusCode?: string; serials?: unknown[]; measurements?: unknown[] },
     session: TerminalSession | 'session' = this.pop,
   ): request.Test {
     const test = this.http().post('/api/quality/inspection-results').set('Idempotency-Key', randomUUID()).send({

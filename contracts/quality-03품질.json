@@ -7393,7 +7393,7 @@
      "inspectedAt",
      "statusCode"
     ],
-    "description": "⛔ statusCode=확정 이면 acceptedQty + rejectedQty + heldQty = inspectedQty 를 강제한다 (ck_inspection_result_qty · 공유계약 A-3). 작성중은 통과시킨다. ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더). ⭐ 출하 OQC 새 흐름(피처 010 · omf-all-around#305 — OQC · 대상 SHIPMENT_REQUEST · lotId 없음): matchedLotIds 1개 이상 필수(그 지시서·품목의 PICKED 피킹 LOT 만 — 아니면 400 INVALID), overallJudgmentCode(ACCEPTED·REJECTED·HELD)만 받고 수량 칸은 무시한다 — 서버가 검사 수량 = 매칭 LOT 피킹 합, 판정 칸 하나에 같은 값으로 채운다. statusCode 는 DRAFT 만(CONFIRMED 면 409 CONFIRMED_BY_SHIPMENT_COMPLETION), 순번 = 최대 + 1, 불합격·보류를 가볍게 덮으면 reinspectionReasonCode 필수(400 REINSPECTION_REASON_REQUIRED), 시리얼 판정은 작성중 저장에서도 받는다. 첫 결과가 의뢰를 IN_PROGRESS 로 옮긴다.",
+    "description": "⛔ statusCode=확정 이면 acceptedQty + rejectedQty + heldQty = inspectedQty 를 강제한다 (ck_inspection_result_qty · 공유계약 A-3). 작성중은 통과시킨다. ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더). ⭐ 출하 OQC 새 흐름(피처 010 · omf-all-around#305 — OQC · 대상 SHIPMENT_REQUEST · lotId 없음): matchedLotIds 1개 이상 필수(그 지시서·품목의 PICKED 피킹 LOT 만 — 아니면 400 INVALID), overallJudgmentCode(ACCEPTED·REJECTED·HELD)만 받고 수량 칸은 무시한다 — 서버가 검사 수량 = 매칭 LOT 피킹 합, 판정 칸 하나에 같은 값으로 채운다. statusCode 는 DRAFT 만(CONFIRMED 면 409 CONFIRMED_BY_SHIPMENT_COMPLETION), 순번 = 최대 + 1, 불합격·보류를 가볍게 덮으면 reinspectionReasonCode 필수(400 REINSPECTION_REASON_REQUIRED), 시리얼 판정은 작성중 저장에서도 받는다. 검사 항목 측정치(measurements)는 지금처럼 받아 저장한다(FR-009 · T052 — 「판정만」은 수량을 받지 않는다는 뜻). 불량·4M 은 받지 않는다. 첫 결과가 의뢰를 IN_PROGRESS 로 옮긴다.",
     "x-internal-note": "⧉ 공개 설명에서 걷은 근거 표기(client#173 · 2026-08-21): 공유계약 D-5(귀속은 세션이 아니다)·F-2(축은 셋이다) · mdm.worker.worker_id 와 app.app_user.app_user_id 는 다른 채번"
    },
    "InspectionResultUpdate": {
@@ -7487,7 +7487,7 @@
       "description": "입하 LOT 검사 결과만 — 재검 사유(공통코드 REINSPECTION_REASON · 열린 그룹이라 값은 대조하지 않는다). 빼면 저장값 그대로. 고친 뒤의 판정·매칭이 그 LOT 의 바로 앞 결과(이 결과보다 순번이 작은 것 중 가장 큰 것) 판정을 불합격 → 보류·합격, 보류 → 합격으로 바꾸면 필수(본문·저장값 모두 없으면 400 REINSPECTION_REASON_REQUIRED). 입하 LOT 검사가 아닌 결과에 실으면 400 INVALID. 근거: 피처 005 §8 판정 규칙 변경(2026-11-12)"
      }
     },
-    "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더). ⭐ 출하 OQC 새 흐름(피처 010): 작성중만 고친다 — matchedLotIds·overallJudgmentCode·reinspectionReasonCode, 수량은 매칭으로 다시 채운다.",
+    "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더). ⭐ 출하 OQC 새 흐름(피처 010): 작성중만 고친다 — matchedLotIds·overallJudgmentCode·reinspectionReasonCode·measurements(실으면 통째로 바꾼다), 수량은 매칭으로 다시 채운다.",
     "x-internal-note": "⧉ 공개 설명에서 걷은 근거 표기(client#173 · 2026-08-21): 공유계약 D-5(귀속은 세션이 아니다)·F-2(축은 셋이다) · mdm.worker.worker_id 와 app.app_user.app_user_id 는 다른 채번"
    },
    "InspectionSummary": {
