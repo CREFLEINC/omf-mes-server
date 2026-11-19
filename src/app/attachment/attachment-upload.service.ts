@@ -109,11 +109,17 @@ export class AttachmentUploadService {
             })
             : targetType === 'INSPECTION_REQUEST'
               ? await this.prisma.inspection_request.findUnique({
-                where: { inspection_request_id: targetId }, select: { inspection_request_id: true },
+                where: { inspection_request_id: targetId }, select: { inspection_request_id: true, confirmed_at: true },
               })
               : await this.prisma.notice.findUnique({ where: { notice_id: targetId }, select: { notice_id: true } });
     if (!exists) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('targetId', ERROR_CODE.INVALID, MISSING_TARGET[targetType])]);
+    }
+    /* 검사 의뢰 첨부는 판정 확정 전(작성 중·대기)에만(omf-all-around#296 · 사용자 지시 2026-11-19). */
+    if ('confirmed_at' in exists && exists.confirmed_at !== null) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('targetId', ERROR_CODE.INVALID, '판정이 확정된 검사 의뢰입니다. 판정 수정 뒤 첨부하세요.'),
+      ]);
     }
   }
 }

@@ -4181,7 +4181,7 @@
      "app"
     ],
     "summary": "첨부 올리기",
-    "description": "파일을 올리고 첨부 식별자를 돌려준다. 다형 참조라 대상 유형과 대상 식별자를 함께 받는다.",
+    "description": "파일을 올리고 첨부 식별자를 돌려준다. 다형 참조라 대상 유형과 대상 식별자를 함께 받는다. 검사 의뢰(INSPECTION_REQUEST) 대상은 판정 확정 전(작성 중·대기)에만 — 확정된 의뢰면 targetId 의 400(omf-all-around#296).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
