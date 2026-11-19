@@ -22,6 +22,8 @@ export interface ShipmentAllocationRow {
   warehouse_id: bigint;
   allocated_qty: Prisma.Decimal;
   uom_id: bigint;
+  /** 출하 내역 상세만 — 그 LOT 의 출하 관리 코드(피처 010). */
+  management_code?: string | null;
 }
 
 export interface ShipmentLotAllocationView {
@@ -38,6 +40,8 @@ export interface ShipmentLotAllocationView {
   uomId: number;
   oqcPassed: boolean;
   packedQty: number;
+  /** 출하 관리 코드(피처 010 FR-020) — 출하 내역 상세만 싣는다. */
+  managementCode?: string | null;
 }
 
 /**
@@ -63,6 +67,7 @@ export function shipmentLotAllocationView(
     uomId: Number(row.uom_id),
     oqcPassed,
     packedQty: row.handling_unit_id === null ? 0 : Number(row.allocated_qty),
+    managementCode: row.management_code,
   });
 }
 
