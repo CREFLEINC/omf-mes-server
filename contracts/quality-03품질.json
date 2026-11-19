@@ -9349,7 +9349,8 @@
       "type": [
        "string",
        "null"
-      ]
+      ],
+      "description": "작성 작업자 이름. 관리웹 계정으로 만든 검사표는 작업자가 없어 만든 계정 이름(omf-all-around#316)"
      },
      "createdAt": {
       "type": "string",
@@ -9547,7 +9548,8 @@
         "type": [
          "string",
          "null"
-        ]
+        ],
+        "description": "검사 작업자 이름. 관리웹 계정으로 적은 단계는 작업자가 없어 마지막으로 쓴 계정 이름(omf-all-around#316)"
        },
        "inspectedAt": {
         "type": "string",
@@ -10136,7 +10138,8 @@
       "type": [
        "string",
        "null"
-      ]
+      ],
+      "description": "작성 작업자 이름. 관리웹 계정으로 만든 검사표는 작업자가 없어 만든 계정 이름(omf-all-around#316)"
      },
      "approvedByName": {
       "type": [
