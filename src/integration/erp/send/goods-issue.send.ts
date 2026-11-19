@@ -28,6 +28,8 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
       shipped_at: true,
       confirmed_at: true,
       warehouse: { select: { plant: { select: { plant_code: true, timezone_code: true } } } },
+      // POP 출하 완료 출하는 창고가 없다(여러 창고) — 공장은 지시서에서 읽는다(omf-all-around#305).
+      shipment_request: { select: { fulfillment_plant: { select: { plant_code: true, timezone_code: true } } } },
       shipment_line: {
         orderBy: { line_no: 'asc' },
         select: {
@@ -68,7 +70,8 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
   if (shipment.shipment_no.length > DN_REQ_NO_LENGTH) {
     throw new Error(`출하번호 ${shipment.shipment_no} 가 출하요청번호 칸(${DN_REQ_NO_LENGTH}자)보다 길다`);
   }
-  const { plant } = shipment.warehouse;
+  const plant = shipment.warehouse?.plant ?? shipment.shipment_request.fulfillment_plant;
+  if (plant === null) throw new Error(`출하 ${shipment.shipment_no} 의 공장을 정할 수 없다(창고·이행 공장 없음)`);
 
   return lines.map(({ line, orderLine }) => {
     const order = orderLine.sales_order;

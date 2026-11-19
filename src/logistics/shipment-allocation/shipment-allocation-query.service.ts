@@ -176,12 +176,12 @@ export class ShipmentAllocationQueryService {
     //   공장을 안 좁히면 다공장에서 동명 LOT 이 임의로 잡혀 사유가 뒤집힌다.
     const shipment = await this.prisma.shipment.findUnique({
       where: { shipment_id: BigInt(shipmentId) },
-      select: { warehouse: { select: { plant_id: true } } },
+      select: { warehouse: { select: { plant_id: true } }, shipment_request: { select: { fulfillment_plant_id: true } } },
     });
     const lot =
       shipment === null
         ? null
-        : await this.prisma.lot.findFirst({ where: { lot_no: lotQ, plant_id: shipment.warehouse.plant_id } });
+        : await this.prisma.lot.findFirst({ where: { lot_no: lotQ, plant_id: shipment.warehouse?.plant_id ?? (shipment.shipment_request.fulfillment_plant_id as bigint) } });
     // ⚠ 스캔값이 어떤 LOT 도 못 찾아도 「배분되지 않았다」가 더 가깝다 — enum 이 품목불일치·
     //   미배정 둘뿐이라 존재 확인 실패를 미배정 쪽으로 접는다.
     if (lot === null) return matchView(false, reason);

@@ -127,18 +127,19 @@ export class LogisticsHandoverNotifier {
         select: {
           shipment_no: true,
           warehouse: { select: { warehouse_name: true, plant_id: true } },
-          shipment_request: { select: { requested_ship_date: true } },
+          shipment_request: { select: { requested_ship_date: true, fulfillment_plant_id: true } },
         },
       });
       await this.emitter.emitHandover(tx, {
         alertTypeCode: 'SHIPMENT_PACKING_REQUESTED',
-        plantId: shipment.warehouse.plant_id,
+        // 출하 처리(W-04-04·긴급 직행)만 부른다 — 창고가 늘 있다. 없으면 지시서 공장이다(omf-all-around#305).
+        plantId: shipment.warehouse?.plant_id ?? (shipment.shipment_request.fulfillment_plant_id as bigint),
         aggregateTypeCode: 'SHIPMENT',
         aggregateId: shipmentId,
         occurredAt: new Date(),
         values: {
           shipment_no: shipment.shipment_no,
-          warehouse: shipment.warehouse.warehouse_name,
+          warehouse: shipment.warehouse?.warehouse_name ?? '',
           ship_date: formatCalendarDate(shipment.shipment_request.requested_ship_date),
           actor: await actorName(tx, { appUserId }),
         },

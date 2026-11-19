@@ -1484,7 +1484,7 @@ model shipment {
   shipment_id                              BigInt           @id @default(autoincrement())
   shipment_no                              String           @unique @db.VarChar(100)
   shipment_request_id                      BigInt
-  warehouse_id                             BigInt
+  warehouse_id                             BigInt?
   vehicle_no                               String?          @db.VarChar(50)
   driver_name                              String?          @db.VarChar(100)
   seal_no                                  String?          @db.VarChar(50)
@@ -1508,12 +1508,17 @@ model shipment {
   cancellation_reason_code                 String?          @db.VarChar(50)
   expedited                                Boolean          @default(false)
   expedite_reason                          String?
+  completed_terminal_id                    BigInt?
+  completed_worker_id                      BigInt?
   app_user_shipment_cancelled_byToapp_user app_user?        @relation("shipment_cancelled_byToapp_user", fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   partner                                  partner?         @relation(fields: [carrier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   app_user_shipment_confirmed_byToapp_user app_user?        @relation("shipment_confirmed_byToapp_user", fields: [confirmed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   worker                                   worker?          @relation(fields: [loading_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_request                         shipment_request @relation(fields: [shipment_request_id], references: [shipment_request_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse                                warehouse        @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse                                warehouse?       @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  completed_terminal                       terminal?        @relation(fields: [completed_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+  completed_worker                         worker?          @relation("shipment_completed_worker", fields: [completed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  shipment_request_lot                     shipment_request_lot[]
   shipment_line                            shipment_line[]
   shipping_unit                            shipping_unit[]
 
@@ -1655,12 +1660,47 @@ model shipment_request_line {
   updated_by                        BigInt?
   version_no                        Int               @default(1)
   shipment_line                     shipment_line[]
+  shipment_request_lot              shipment_request_lot[]
   item                              item              @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   sales_order_line                  sales_order_line? @relation(fields: [sales_order_line_id], references: [sales_order_line_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_request                  shipment_request  @relation(fields: [shipment_request_id], references: [shipment_request_id], onDelete: NoAction, onUpdate: NoAction)
   uom                               uom               @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([shipment_request_id, line_no], map: "uq_shipment_request_line")
+  @@schema("logistics")
+}
+
+model shipment_request_lot {
+  shipment_request_lot_id      BigInt                @id @default(autoincrement())
+  shipment_request_line_id     BigInt
+  lot_id                       BigInt
+  picked_qty                   Decimal               @db.Decimal(20, 6)
+  uom_id                       BigInt
+  status_code                  String                @db.VarChar(20)
+  management_code              String?               @db.VarChar(100)
+  picked_at                    DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  picked_worker_id             BigInt?
+  replaced_at                  DateTime?             @db.Timestamptz(6)
+  replaced_worker_id           BigInt?
+  replace_inspection_result_id BigInt?
+  replace_nonconformance_id    BigInt?
+  shipment_id                  BigInt?
+  created_at                   DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                   BigInt?
+  updated_at                   DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                   BigInt?
+  version_no                   Int                   @default(1)
+  shipment_request_line        shipment_request_line @relation(fields: [shipment_request_line_id], references: [shipment_request_line_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                          lot                   @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                          uom                   @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  picked_worker                worker?               @relation("shipment_request_lot_picked_worker", fields: [picked_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  replaced_worker              worker?               @relation("shipment_request_lot_replaced_worker", fields: [replaced_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  replace_inspection_result    inspection_result?    @relation(fields: [replace_inspection_result_id], references: [inspection_result_id], onDelete: NoAction, onUpdate: NoAction)
+  replace_nonconformance       nonconformance?       @relation(fields: [replace_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction)
+  shipment                     shipment?             @relation(fields: [shipment_id], references: [shipment_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([lot_id], map: "ix_shipment_request_lot_lot")
+  @@index([shipment_id], map: "ix_shipment_request_lot_shipment")
   @@schema("logistics")
 }
 
@@ -2617,6 +2657,7 @@ model terminal {
   work_session_event   work_session_event[]
   inspection_result    inspection_result[]
   terminal_printer     terminal_printer[]
+  shipment_completed shipment[]
 
   @@index([location_id], map: "ix_terminal_location")
   @@index([equipment_id], map: "ix_terminal_equipment")
@@ -2730,6 +2771,7 @@ model uom {
   supplier_item_default supplier_item_default[]
   tracking_transmission_shortage tracking_transmission_shortage[]
   @@schema("mdm")
+  shipment_request_lot shipment_request_lot[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -2846,6 +2888,9 @@ model worker {
   inspection_request_event inspection_request_event[]
   @@index([department_id], map: "ix_worker_department")
   @@schema("mdm")
+  shipment_completed            shipment[]             @relation("shipment_completed_worker")
+  shipment_request_lot_picked   shipment_request_lot[] @relation("shipment_request_lot_picked_worker")
+  shipment_request_lot_replaced shipment_request_lot[] @relation("shipment_request_lot_replaced_worker")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -4281,6 +4326,7 @@ model inspection_result {
   inspection_result_lot inspection_result_lot[]
   @@unique([inspection_request_id, inspection_round], map: "uq_inspection_round")
   @@schema("quality")
+  shipment_request_lot_replaced shipment_request_lot[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -4323,6 +4369,7 @@ model nonconformance {
   @@index([responsible_department_id], map: "ix_nonconformance_responsible_department")
   @@index([inspection_request_id], map: "ix_nonconformance_inspection_request")
   @@schema("quality")
+  shipment_request_lot_replaced shipment_request_lot[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -4482,6 +4529,7 @@ model lot {
   @@index([source_type_code, source_id], map: "ix_lot_source")
   @@index([inbound_lot_id], map: "ix_lot_inbound_lot")
   @@schema("trace")
+  shipment_request_lot shipment_request_lot[]
 }
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
