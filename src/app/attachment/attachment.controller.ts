@@ -59,7 +59,6 @@ export class AttachmentController {
     @Param('attachmentId', ParseIntPipe) attachmentId: number,
     @Body() body: AttachmentLotLink,
   ): Promise<{ items: AttachmentView[] }> {
-    await this.links.assertExists(attachmentId);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) => this.links.linkLots(tx, attachmentId, body));
   }
 

@@ -2,7 +2,6 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
-import { PrismaService } from '../../prisma/prisma.service';
 import { AttachmentView, attachmentView } from './attachment-view';
 
 const REQUEST_TARGET = 'INSPECTION_REQUEST';
@@ -23,22 +22,12 @@ export interface AttachmentLotLink {
  */
 @Injectable()
 export class AttachmentLinkService {
-  constructor(private readonly prisma: PrismaService) {}
-
-  /** 존재 확인은 트랜잭션 밖(404) — 계약이 404 를 선언했다. 옮기기는 멱등 트랜잭션 안에서. */
-  async assertExists(attachmentId: number): Promise<void> {
-    const row = await this.prisma.attachment.findUnique({
-      where: { attachment_id: BigInt(attachmentId) },
-      select: { attachment_id: true },
-    });
-    if (!row) throw new NotFoundException('없는 첨부입니다.');
-  }
-
   async linkLots(
     tx: Prisma.TransactionClient,
     attachmentId: number,
     body: AttachmentLotLink,
   ): Promise<{ items: AttachmentView[] }> {
+    /* 404 도 트랜잭션 «안»에서 — 연결이 끝나면 원래 행이 지워져, 밖에서 먼저 보면 같은 키 재전송이 앞 응답 대신 404 가 된다. */
     const source = await tx.attachment.findUnique({ where: { attachment_id: BigInt(attachmentId) } });
     if (!source) throw new NotFoundException('없는 첨부입니다.');
     if (source.target_type_code !== REQUEST_TARGET) {

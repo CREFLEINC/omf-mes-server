@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { PrismaService } from '../../prisma/prisma.service';
 import { AttachmentLinkService } from './attachment-link.service';
 
 /** 검사 의뢰 첨부를 자재 관리 LOT 에 나중에 연결(omf-all-around#296). 지어낸 값만 쓴다. */
@@ -30,7 +29,7 @@ const txOf = (row: ReturnType<typeof source> | null, owned: number, confirmedAt:
 };
 
 describe('AttachmentLinkService.linkLots', () => {
-  const service = new AttachmentLinkService({} as PrismaService);
+  const service = new AttachmentLinkService();
 
   it('고른 LOT 마다 같은 파일의 LOT 첨부를 만들고 검사 의뢰 첨부는 지운다', async () => {
     const { tx, raw, created } = txOf(source(), 2);
