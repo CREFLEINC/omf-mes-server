@@ -63,7 +63,8 @@ export async function releaseMaterialPreview(
   });
   const itemOf = new Map(items.map((item) => [item.item_id, item]));
   const uomCode = (uomId: bigint) => table.uoms.get(uomId)?.code ?? '';
-  // 라인 없이 배포하는 자동 W/O 는 출고요청을 만들지 않아 배포가 단위 확인을 건너뛴다(`releasePlan` 의 lineless) — 같게 낸다.
+  // 라인 없이 배포하는 자동 W/O 는 확인할 사람이 없어 배포가 단위 확인을 건너뛴다(`releasePlan` 의 lineless) — 같게 낸다.
+  // 그 배포가 출고요청에 담는 것은 이 행이 아니라 BOM 끝 자재다(출발 창고 정책이 있을 때 · `leafRequirements`).
   const confirms = !(plan.created_automatically && row.production_line_id === null);
   return {
     items: stockUomLines(table, required).map(({ line, bomQty, conversion }) => ({

@@ -7,6 +7,7 @@ import { MaterialIssueReleaser } from '../../core/material-issue/release-request
 import { recordRequestAudit } from '../../core/material-issue/request-lifecycle';
 import { chooseSources, resolveCandidates } from '../../core/material-issue/source-warehouse';
 import { MaterialIssueLine } from './material-issue';
+import { autoIssueScope } from './release-auto-source';
 import { WaitingPlan } from './release-plan';
 
 const WAITING = 'WAITING';
@@ -106,18 +107,23 @@ export async function writeWaitingRequests(
 }
 
 /**
- * D 는 트랜잭션 밖에서 읽었다 — 그 사이 부서 생산 창고 연결이 바뀌었으면 옛 D 로 요청을 만들지 않는다.
- * 다시 배포하면 새 연결로 풀린다(저장 충돌과 같은 뜻이라 STALE_VERSION).
+ * D 는 트랜잭션 밖에서 읽었다 — 그 사이 부서 생산 창고 연결(라인 없는 자동 W/O 는 출발·차감 창고 정책)이 바뀌었으면
+ * 옛 D 로 요청을 만들지 않는다. 다시 배포하면 새 값으로 풀린다(저장 충돌과 같은 뜻이라 STALE_VERSION).
  */
 async function assertSameCandidates(tx: Prisma.TransactionClient, waiting: WaitingPlan): Promise<void> {
-  const now = await resolveCandidates(tx, { plantId: waiting.plantId, productionLineId: waiting.productionLineId });
+  const now =
+    waiting.productionLineId === null
+      ? await autoIssueScope(tx, waiting.plantId, waiting.plantToday)
+      : await resolveCandidates(tx, { plantId: waiting.plantId, productionLineId: waiting.productionLineId });
   const same =
+    now !== null &&
     !('errors' in now) &&
     now.destinationLocationId === waiting.destinationLocationId &&
     now.warehouseIds.join() === waiting.warehouseIds.join();
   if (same) return;
+  const changed = waiting.productionLineId === null ? '자재 출발·차감 창고 정책이' : '부서 생산 창고 연결이';
   throw new ContractException(HttpStatus.BAD_REQUEST, [
-    { scope: 'screen', code: ERROR_CODE.STALE_VERSION, message: '배포하는 사이 부서 생산 창고 연결이 바뀌었습니다. 다시 배포하세요.' },
+    { scope: 'screen', code: ERROR_CODE.STALE_VERSION, message: `배포하는 사이 ${changed} 바뀌었습니다. 다시 배포하세요.` },
   ]);
 }
 

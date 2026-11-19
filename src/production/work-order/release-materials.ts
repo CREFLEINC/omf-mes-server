@@ -4,13 +4,11 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { ErrorItem } from '../../common/errors/error-response';
 import {
-  BomComponentRow,
   MaterialIssueLine,
   StockUomTable,
   commonOverridable,
   itemRatio,
   loadStockUomTable,
-  materialRequirements,
   stockQtyOf,
   toStockUom,
 } from '../../core/bom';
@@ -54,15 +52,14 @@ const RATE_SCALE = 8;
 export async function releaseMaterials(
   db: Parameters<typeof loadStockUomTable>[0],
   input: {
-    components: BomComponentRow[];
-    orderQty: Prisma.Decimal;
-    baseQty: Prisma.Decimal;
+    /** BOM 단위의 소요 줄 — 사람이 세운 W/O 는 그 공정의 BOM 행, 라인 없는 자동 W/O 는 BOM 끝 자재다. */
+    required: MaterialIssueLine[];
     plantToday: string;
     confirmations: MaterialUomConfirmation[] | undefined;
     automatic: boolean;
   },
 ): Promise<ReleaseMaterials> {
-  const required = materialRequirements(input.components, input.orderQty, input.baseQty);
+  const { required } = input;
   if (required.length === 0) return { lines: [], entered: [] };
   const table = await loadStockUomTable(db, required.map((line) => line.item_id), input.plantToday);
   const confirmations = new Map((input.confirmations ?? []).map((row) => [row.bomComponentId, row]));

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { BomComponentRow } from '../../core/bom';
+import { BomComponentRow, materialRequirements } from '../../core/bom';
 import { EnteredConversion, MaterialUomConfirmation, releaseMaterials, saveEnteredConversions } from './release-materials';
 
 const KG = 1n;
@@ -51,9 +51,7 @@ function run(
   options: { confirmations?: MaterialUomConfirmation[]; automatic?: boolean; conversions?: { from: bigint; to: bigint; rate: string }[] } = {},
 ) {
   return releaseMaterials(db(options.conversions), {
-    components,
-    orderQty: d(10),
-    baseQty: d(1),
+    required: materialRequirements(components, d(10), d(1)),
     plantToday: '2026-11-18',
     confirmations: options.confirmations,
     automatic: options.automatic ?? false,

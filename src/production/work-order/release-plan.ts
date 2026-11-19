@@ -5,11 +5,13 @@ import { weeklyWorkingDays } from '../../app/policy/working-days';
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { issueWorkDate } from '../../core/calendar/issue-work-date';
 import { slotQtys } from '../../core/lot';
-import { resolveCandidates, usesProductionWarehouses } from '../../core/material-issue/source-warehouse';
+import { leafRequirements } from '../../core/bom';
+import { SourceScope, resolveCandidates, usesProductionWarehouses } from '../../core/material-issue/source-warehouse';
 import { NumberingService } from '../../core/numbering';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BOM_COMPONENT_SELECT, BomComponentRow, skipsMaterialIssue } from './material-issue';
+import { BOM_COMPONENT_SELECT, BomComponentRow, materialRequirements, skipsMaterialIssue } from './material-issue';
+import { autoIssueScope } from './release-auto-source';
 import { MaterialUomConfirmation, ReleaseMaterials, releaseMaterials } from './release-materials';
 
 /** 배포가 읽는 W/O — 공장은 계획을 거쳐 «한 축»으로만 푼다(R-7). */
@@ -58,22 +60,27 @@ export interface ReleasePlan {
   businessDate: string;
   /** 공장 현지 오늘 — 품목 환산의 유효일이자 배포 때 넣은 환산의 시작일. */
   plantToday: string;
-  components: BomComponentRow[];
   /** 재고 단위로 바꾼 자재 줄과 배포 확인에서 넣은 환산. */
   materials: ReleaseMaterials;
   /** 담을 라인이 0건이면 뽑지 않는다 — 그때는 헤더도 만들지 않는다. */
   issueRequestNo: string | null;
-  /** 생산 창고를 쓰는 공장(피처 003)이면 채운다. 비었으면 이 기능 전 경로 그대로다(FR-009a). */
+  /**
+   * 생산 창고를 쓰는 공장(피처 003)이거나 출발 창고 정책이 있는 공장의 라인 없는 자동 W/O 면 채운다.
+   * 비었으면 이 기능 전 경로 그대로다(FR-009a).
+   */
   waiting: WaitingPlan | null;
 }
 
 /** 출발 창고별 대기 요청을 만드는 데 필요한 값 — 채번까지 트랜잭션 밖에서 끝낸다. */
 export interface WaitingPlan {
   plantId: bigint;
-  productionLineId: bigint;
-  /** 부서 생산 창고 D(W/O 공장의 활성 창고). */
+  /** 비었으면 라인 없는 자동 W/O — 출발·도착을 공장 정책으로 풀었다(`autoIssueScope`). */
+  productionLineId: bigint | null;
+  /** 출발·도착을 푼 공장 현지 날 — 트랜잭션 안에서 같은 날로 다시 푼다. */
+  plantToday: string;
+  /** 부서 생산 창고 D(W/O 공장의 활성 창고). 라인 없는 자동 W/O 는 정책의 출발 창고 하나다. */
   warehouseIds: bigint[];
-  /** 라인의 생산 현장. */
+  /** 라인의 생산 현장. 라인 없는 자동 W/O 는 자재 차감 창고의 받는 자리다. */
   destinationLocationId: bigint;
   /** 생산일(공장 현지 `planned_start_at` 날짜)의 직전 근무일. 만들 때 한 번 계산한다(FR-033). */
   issueWorkDate: string;
@@ -130,19 +137,31 @@ export async function releasePlan(
 
   // 채번보다 «앞»이다 — `lotSize ≤ 0` 이면 여기서 400 이 나고 번호를 안 뽑는다.
   const qtys = slotQtys(row.order_qty, new Prisma.Decimal(lotSize));
-  const components = await bomComponents(prisma, row, plan.bom_id);
   const businessDate = today();
   const plantId = plan.production_order.plant_id;
   const plantToday = localDate(new Date(), plan.production_order.plant.timezone_code);
-  // 채번보다 «앞»이다 — 단위 확인이 빠져 400 이 나면 번호를 안 뽑는다. 라인 없이 배포하는 자동 W/O 는 생산 현장이 없어
-  // 출고요청을 만들지 않는다 — 담을 줄이 없으니 환산이 없는 자재로 배포를 막지 않는다.
-  const materials = lineless
-    ? { lines: [], entered: [] }
-    : await releaseMaterials(prisma, { components, orderQty: row.order_qty, baseQty: plan.bom.base_qty, plantToday, ...uom });
+  // 라인 없이 배포하는 자동 W/O 는 생산 현장이 없다 — 공장 정책이 출발·도착을 정할 때만 출고요청을 만들고(사용자 2026-11-19),
+  // 자재 차감과 같은 BOM 끝 자재를 담는다. 정책이 없으면 담을 줄이 없으니 환산이 없는 자재로 배포를 막지 않는다.
+  const autoScope = lineless ? await autoIssueScope(prisma, plantId, plantToday) : null;
+  const required = lineless
+    ? autoScope === null || skipsMaterialIssue(row.work_order_type_code)
+      ? []
+      : await leafRequirements(prisma, { bomId: plan.bom_id, qty: row.order_qty, plantId })
+    : materialRequirements(await bomComponents(prisma, row, plan.bom_id), row.order_qty, plan.bom.base_qty);
+  // 채번보다 «앞»이다 — 단위 확인이 빠져 400 이 나면 번호를 안 뽑는다.
+  const materials = await releaseMaterials(prisma, { required, plantToday, ...uom });
+  const scope =
+    materials.lines.length === 0
+      ? null
+      : lineless
+        ? autoScope
+        : row.production_line_id !== null && (await usesProductionWarehouses(prisma, plantId))
+          ? await lineScope(prisma, plantId, row.production_line_id)
+          : null;
   const waiting =
-    components.length > 0 && row.production_line_id !== null && (await usesProductionWarehouses(prisma, plantId))
-      ? await waitingPlan(prisma, numbering, { row, plantId, productionLineId: row.production_line_id, businessDate })
-      : null;
+    scope === null
+      ? null
+      : await waitingPlan(prisma, numbering, { row, plantId, productionLineId: row.production_line_id, plantToday, scope, businessDate });
 
   return {
     row,
@@ -150,7 +169,6 @@ export async function releasePlan(
     qtys,
     businessDate,
     plantToday,
-    components,
     materials,
     waiting,
     issueRequestNo:
@@ -165,19 +183,30 @@ export async function releasePlan(
 }
 
 /**
- * 생산 창고 공장의 대기 요청 준비(피처 003 · research R-5·R-7). 빠진 기준정보(라인 부서 · 부서 생산 창고 · 라인
- * 생산 현장)는 모아 400 이다(FR-009) — 재고 부족은 배포를 막지 않는다. 창고 고르기는 재고에 기대므로 트랜잭션 안이다.
+ * 생산 창고 공장의 출발·도착(피처 003 · research R-5·R-7). 빠진 기준정보(라인 부서 · 부서 생산 창고 · 라인 생산 현장)는
+ * 모아 400 이다(FR-009) — 재고 부족은 배포를 막지 않는다.
  */
+async function lineScope(prisma: PrismaService, plantId: bigint, productionLineId: bigint): Promise<SourceScope> {
+  const scope = await resolveCandidates(prisma, { plantId, productionLineId });
+  if ('errors' in scope) throw new ContractException(HttpStatus.BAD_REQUEST, scope.errors);
+  return scope;
+}
+
+/** 대기 요청 준비 — 출고 작업일과 채번. 창고 고르기는 재고에 기대므로 트랜잭션 안이다. */
 async function waitingPlan(
   prisma: PrismaService,
   numbering: NumberingService,
-  input: { row: ReleaseRow; plantId: bigint; productionLineId: bigint; businessDate: string },
+  input: {
+    row: ReleaseRow;
+    plantId: bigint;
+    productionLineId: bigint | null;
+    plantToday: string;
+    scope: SourceScope;
+    businessDate: string;
+  },
 ): Promise<WaitingPlan> {
-  const scope = await resolveCandidates(prisma, { plantId: input.plantId, productionLineId: input.productionLineId });
-  if ('errors' in scope) throw new ContractException(HttpStatus.BAD_REQUEST, scope.errors);
-
+  const { scope, plantToday } = input;
   const timezone = input.row.production_plan?.production_order.plant.timezone_code ?? 'UTC';
-  const plantToday = localDate(new Date(), timezone);
   // 계획 시작 시각이 없으면 생산일을 알 수 없다 — 오늘로 보아 바로 배포한다(지금 방식과 같은 결과).
   const productionDate =
     input.row.planned_start_at === null ? plantToday : localDate(input.row.planned_start_at, timezone);
@@ -188,6 +217,7 @@ async function waitingPlan(
     ...scope,
     plantId: input.plantId,
     productionLineId: input.productionLineId,
+    plantToday,
     issueWorkDate: workDate,
     releaseNow,
     issueRequestNos: await numbering.nextMany('MATERIAL_ISSUE_REQUEST', input.plantId, input.businessDate, count),
