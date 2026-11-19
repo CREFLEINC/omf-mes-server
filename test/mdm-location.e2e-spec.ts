@@ -355,6 +355,16 @@ describe('위치 마스터 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'aliasName', code: 'INVALID' });
   });
 
+  it('⭐ q 는 별칭도 찾는다 — 대소문자 없이 부분 일치', async () => {
+    const { id } = await createLocation(`${PREFIX}-ALQ`, { aliasName: 'Inbound Dock East' });
+
+    const found = await request(app.getHttpServer())
+      .get(`/api/mdm/locations?warehouseId=${warehouseId}&q=${encodeURIComponent('dock east')}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(found.body.items.map((l: { locationId: number }) => l.locationId)).toEqual([id]);
+  });
+
   it('⛔ 한 창고에 같은 역할의 자리는 하나뿐이다 — DB 가 막는다', async () => {
     await expect(
       prisma.location.create({
