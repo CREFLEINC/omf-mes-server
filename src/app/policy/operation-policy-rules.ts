@@ -20,6 +20,7 @@ export const POLICY_CODES = [
   'REPLENISHMENT_RUN_TIME',
   'AUTO_ROUTING_PROCESS',
   'BACKFLUSH_WAREHOUSE',
+  'AUTO_ISSUE_SOURCE_WAREHOUSE',
 ] as const;
 export type PolicyCode = (typeof POLICY_CODES)[number];
 
@@ -37,6 +38,7 @@ const VALUE_SLOT: Record<PolicyCode, 'boolean' | 'numeric' | 'text'> = {
   REPLENISHMENT_RUN_TIME: 'text',
   AUTO_ROUTING_PROCESS: 'text',
   BACKFLUSH_WAREHOUSE: 'text',
+  AUTO_ISSUE_SOURCE_WAREHOUSE: 'text',
 };
 
 /** 통제 수준 두 코드가 함께 쓰는 값 — 계약이 셋으로 닫았다. */
@@ -56,6 +58,7 @@ const PLANT_ONLY_CODES: PolicyCode[] = [
   'REPLENISHMENT_RUN_TIME',
   'AUTO_ROUTING_PROCESS',
   'BACKFLUSH_WAREHOUSE',
+  'AUTO_ISSUE_SOURCE_WAREHOUSE',
 ];
 
 /**

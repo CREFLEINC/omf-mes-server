@@ -1,5 +1,5 @@
 /**
- * 추적 시스템(flowtrack) 연동의 운영 정책 — `AUTO_ROUTING_PROCESS`(공정 코드) · `BACKFLUSH_WAREHOUSE`(창고 코드).
+ * 추적 시스템(flowtrack) 연동의 운영 정책 — `AUTO_ROUTING_PROCESS`(공정 코드) · `BACKFLUSH_WAREHOUSE` · `AUTO_ISSUE_SOURCE_WAREHOUSE`(창고 코드).
  *
  * 범위는 공장만, 값은 다른 기준정보의 코드다. 글자라 FK 가 없어 저장할 때 서버가 그 행을 본다.
  * 설정 화면은 없다 — 현장 값은 초기 데이터가 넣는다(사용자 결정 2026-11-16).
@@ -20,6 +20,7 @@ const PATH = '/api/app/operation-policies';
 const TODAY = '2026-11-16';
 const ROUTING = 'AUTO_ROUTING_PROCESS';
 const BACKFLUSH = 'BACKFLUSH_WAREHOUSE';
+const ISSUE_SOURCE = 'AUTO_ISSUE_SOURCE_WAREHOUSE';
 
 describe('추적 시스템 연동 운영 정책 (e2e)', () => {
   let app: INestApplication;
@@ -151,11 +152,14 @@ describe('추적 시스템 연동 운영 정책 (e2e)', () => {
     }
   });
 
-  it('다른 공장 창고 · 없는 창고 · 쓰지 않는 창고면 400', async () => {
-    for (const value of [`${PREFIX}_WH2`, `${PREFIX}_NONE`, `${PREFIX}_OFF`]) {
-      const response = await post({ policyCode: BACKFLUSH, plantId: Number(plantId), valueText: value, effectiveFrom: '2026-11-17' }).expect(400);
-      valueTextRejected(response.body);
+  it('다른 공장 창고 · 없는 창고 · 쓰지 않는 창고면 400 — 자재 출발 창고도 같다', async () => {
+    for (const code of [BACKFLUSH, ISSUE_SOURCE]) {
+      for (const value of [`${PREFIX}_WH2`, `${PREFIX}_NONE`, `${PREFIX}_OFF`]) {
+        const response = await post({ policyCode: code, plantId: Number(plantId), valueText: value, effectiveFrom: '2026-11-17' }).expect(400);
+        valueTextRejected(response.body);
+      }
     }
+    await post({ policyCode: ISSUE_SOURCE, plantId: Number(plantId), valueText: `${PREFIX}_WH`, effectiveFrom: '2026-11-17' }).expect(201);
   });
 
   it('고칠 때도 같은 검사 — 창고는 저장된 정책의 공장으로 본다', async () => {

@@ -305,7 +305,7 @@ async function assertReferenced(
     const row = await prisma.process.findUnique({ where: { process_code: valueText }, select: { is_active: true } });
     if (row?.is_active !== true) throw invalidValueText('사용 중인 공정의 코드여야 합니다.');
   }
-  if (code === 'BACKFLUSH_WAREHOUSE') {
+  if (code === 'BACKFLUSH_WAREHOUSE' || code === 'AUTO_ISSUE_SOURCE_WAREHOUSE') {
     const row = await prisma.warehouse.findUnique({
       where: { plant_id_warehouse_code: { plant_id: plantId, warehouse_code: valueText } },
       select: { is_active: true },
