@@ -14,6 +14,13 @@ describe('work-order-list-where', () => {
       expect(buildWorkOrderWhere({ includeUnplannedEquipment: true })).toEqual({});
     });
 
+    it('where — excludeWorkOrderTypeCode 는 그 유형을 빼고, workOrderTypeCode 와 함께 걸린다(omf-all-around#330)', () => {
+      expect(buildWorkOrderWhere({ excludeWorkOrderTypeCode: 'EMERGENCY' })).toEqual({ AND: [{ work_order_type_code: { not: 'EMERGENCY' } }] });
+      expect(buildWorkOrderWhere({ open: true, excludeWorkOrderTypeCode: 'EMERGENCY' }).AND).toContainEqual({ work_order_type_code: { not: 'EMERGENCY' } });
+      // 미지정은 유형 축을 걸지 않는다.
+      expect(buildWorkOrderWhere({})).toEqual({});
+    });
+
     it('where — statusCode 는 쉼표로 여러 값을 받고, 값 하나면 그대로 일치다', () => {
       expect(buildWorkOrderWhere({ statusCode: 'IN_PROGRESS, COMPLETED' })).toEqual({ AND: [{ status_code: { in: ['IN_PROGRESS', 'COMPLETED'] } }] });
       expect(buildWorkOrderWhere({ statusCode: 'IN_PROGRESS' })).toEqual({ AND: [{ status_code: 'IN_PROGRESS' }] });

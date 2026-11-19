@@ -3859,6 +3859,16 @@
       "description": "작업지시 유형으로 거른다 — NORMAL(양산) · EMERGENCY(긴급) · REWORK(재작업). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_ORDER_TYPE 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서 이 값을 편집하면 안 된다. 계약 자신이 「이 값으로 갈리는 것이 셋」이라 적어 두었다."
      },
      {
+      "name": "excludeWorkOrderTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "EMERGENCY"
+      },
+      "x-code-key": "CD-WORK-ORDER-TYPE",
+      "description": "이 작업지시 유형을 뺀다 — workOrderTypeCode 의 반대쪽이다. POP 작업 시작 화면(P-02-01)의 「전체 작업지시」 탭이 EMERGENCY 를 빼고 묻는다 — 긴급은 「긴급 작업지시」 탭에만 보인다(사용자 지시 2026-11-19). ⛔ 응답을 화면이 거르는 것으로는 성립하지 않는다 — 목록이 쪽 단위다. 근거: omf-all-around#330"
+     },
+     {
       "name": "plannedStartFrom",
       "in": "query",
       "schema": {
