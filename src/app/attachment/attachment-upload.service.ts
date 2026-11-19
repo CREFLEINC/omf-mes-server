@@ -17,8 +17,10 @@ const MISSING_TARGET = {
   // 검사 문서(omf-all-around#58 · 장부 P-57) — 시험성적서·검사 기록. 사람이 볼 수 있는 문서만 받는다.
   LOT: '없는 LOT 입니다.',
   INSPECTION_RESULT: '없는 검사 결과입니다.',
+  // 검사 의뢰(= IQC 입하 LOT 하나) 자체에 붙는 문서 — 자재 관리 LOT 을 고르지 않고 올린 성적서(omf-all-around#296).
+  INSPECTION_REQUEST: '없는 검사 의뢰입니다.',
 } as const;
-const DOCUMENT_TARGETS: readonly string[] = ['LOT', 'INSPECTION_RESULT'];
+const DOCUMENT_TARGETS: readonly string[] = ['LOT', 'INSPECTION_RESULT', 'INSPECTION_REQUEST'];
 type TargetType = keyof typeof MISSING_TARGET;
 
 /**
@@ -30,6 +32,7 @@ const TARGET_PERMISSIONS: Record<TargetType, readonly string[]> = {
   NOTICE: ['W-CO-08'],
   LOT: ['W-01-01', 'W-04-03'],
   INSPECTION_RESULT: ['W-01-01', 'W-04-03'],
+  INSPECTION_REQUEST: ['W-01-01', 'W-04-03'],
 };
 const INT64_MAX = 2n ** 63n - 1n;
 /** 계약 `Attachment.contentType` 이 100자다(물리 칸은 150). */
@@ -104,7 +107,11 @@ export class AttachmentUploadService {
             ? await this.prisma.inspection_result.findUnique({
               where: { inspection_result_id: targetId }, select: { inspection_result_id: true },
             })
-            : await this.prisma.notice.findUnique({ where: { notice_id: targetId }, select: { notice_id: true } });
+            : targetType === 'INSPECTION_REQUEST'
+              ? await this.prisma.inspection_request.findUnique({
+                where: { inspection_request_id: targetId }, select: { inspection_request_id: true },
+              })
+              : await this.prisma.notice.findUnique({ where: { notice_id: targetId }, select: { notice_id: true } });
     if (!exists) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('targetId', ERROR_CODE.INVALID, MISSING_TARGET[targetType])]);
     }
@@ -120,7 +127,7 @@ function parseUpload(body: unknown, file: Express.Multer.File | undefined): Uplo
   const targetType = typeof rawType === 'string' && rawType in MISSING_TARGET ? (rawType as TargetType) : undefined;
   if (rawType === undefined) errors.push(field('targetTypeCode', ERROR_CODE.REQUIRED, '대상 유형이 필요합니다.'));
   else if (!targetType) {
-    errors.push(field('targetTypeCode', ERROR_CODE.INVALID, 'WAREHOUSE·NOTICE·LOT·INSPECTION_RESULT 중 하나여야 합니다.'));
+    errors.push(field('targetTypeCode', ERROR_CODE.INVALID, 'WAREHOUSE·NOTICE·LOT·INSPECTION_RESULT·INSPECTION_REQUEST 중 하나여야 합니다.'));
   }
 
   const rawId = fields.targetId;

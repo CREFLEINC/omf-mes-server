@@ -4207,9 +4207,10 @@
            "WAREHOUSE",
            "NOTICE",
            "LOT",
-           "INSPECTION_RESULT"
+           "INSPECTION_RESULT",
+           "INSPECTION_REQUEST"
           ],
-          "x-server-ahead": "LOT·INSPECTION_RESULT 는 서버 선행(장부 P-57 · omf-all-around#58) — 검사 문서(시험성적서 등). 사람이 볼 수 있는 문서만(PDF·PNG·JPEG·WEBP·엑셀/워드/파워포인트·CSV·TXT) 받고 파일 머리 바이트로 판정한다. 크기 10MB.",
+          "x-server-ahead": "LOT·INSPECTION_RESULT 는 서버 선행(장부 P-57 · omf-all-around#58) — 검사 문서(시험성적서 등). INSPECTION_REQUEST 는 검사 의뢰(IQC 입하 LOT) 자체에 붙는 문서다 — 자재 관리 LOT 을 고르지 않고 올린 성적서(omf-all-around#296). 사람이 볼 수 있는 문서만(PDF·PNG·JPEG·WEBP·엑셀/워드/파워포인트·CSV·TXT) 받고 파일 머리 바이트로 판정한다. 크기 10MB.",
           "example": "WAREHOUSE",
           "x-code-key": "CD-ATTACHMENT-TARGET-TYPE"
          },
@@ -4303,7 +4304,8 @@
         "BREAKDOWN",
         "LOT",
         "INSPECTION_RESULT",
-        "INSPECTION_PLAN_VERSION"
+        "INSPECTION_PLAN_VERSION",
+        "INSPECTION_REQUEST"
        ],
        "example": "WAREHOUSE"
       },
@@ -10889,7 +10891,7 @@
       "type": "string",
       "maxLength": 40,
       "x-no-example": true,
-      "description": "무엇에 붙은 첨부인가 — WAREHOUSE 창고 도면, NOTICE 공지, BREAKDOWN 설비 고장 사진. BREAKDOWN은 전용 업로드 경로에서만 등록한다.",
+      "description": "무엇에 붙은 첨부인가 — WAREHOUSE 창고 도면, NOTICE 공지, BREAKDOWN 설비 고장 사진, INSPECTION_REQUEST 검사 의뢰(IQC 입하 LOT) 문서. BREAKDOWN은 전용 업로드 경로에서만 등록한다.",
       "x-code-key": "CD-ATTACHMENT-TARGET-TYPE",
       "enum": [
        "WAREHOUSE",
@@ -10897,7 +10899,8 @@
        "BREAKDOWN",
        "LOT",
        "INSPECTION_RESULT",
-       "INSPECTION_PLAN_VERSION"
+       "INSPECTION_PLAN_VERSION",
+       "INSPECTION_REQUEST"
       ],
       "example": "WAREHOUSE"
      },
