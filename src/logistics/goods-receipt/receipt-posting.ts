@@ -54,6 +54,8 @@ export interface GoodsReceiptCreate {
   remarks?: string | null;
   businessDate: string;
   lines: GoodsReceiptLineCreate[];
+  /** PDA 지시 없는 적치의 작업자·단말(피처 011). 그 밖의 입고는 싣지 않는다(NULL). */
+  putawayActor?: { workerId: bigint; terminalId: bigint } | null;
 }
 
 /**
@@ -87,6 +89,8 @@ export async function postReceipt(
       source_document_id: input.sourceDocumentId ?? null,
       reason_code: input.reasonCode ?? null,
       remarks: input.remarks ?? null,
+      putaway_worker_id: input.putawayActor?.workerId ?? null,
+      putaway_terminal_id: input.putawayActor?.terminalId ?? null,
       created_by: appUserId == null ? null : BigInt(appUserId),
     },
   });

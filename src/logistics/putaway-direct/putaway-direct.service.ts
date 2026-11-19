@@ -105,7 +105,7 @@ export class PutawayDirectService {
       }
     }
 
-    const input = await this.receiptInput(tx, facts, location, mode, body);
+    const input = await this.receiptInput(tx, facts, location, mode, body, actor);
     await assertInboundLotsWithin(tx, input);
     const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, null);
     if ((await erpLinesOf(tx, input)).length > 0) {
@@ -150,6 +150,7 @@ export class PutawayDirectService {
 
   private async receiptInput(
     tx: Prisma.TransactionClient, facts: PendingLotFacts, location: VerdictLocation, mode: PutawayModeCode, body: { businessDate: string; occurredAt: string },
+    actor: LogisticsWriteActor,
   ): Promise<GoodsReceiptCreate> {
     const inbound = await tx.inbound_receipt_line.findUniqueOrThrow({
       where: { inbound_receipt_line_id: facts.inboundLineId as bigint }, select: { inbound_receipt_id: true },
@@ -159,6 +160,8 @@ export class PutawayDirectService {
       receiptTypeCode: MATERIAL_RECEIPT, plantId: Number(facts.plantId), warehouseId: Number(location.warehouseId),
       receiptDatetime: body.occurredAt, sourceDocumentTypeCode: SOURCE_DOCUMENT, sourceDocumentId: Number(inbound.inbound_receipt_id),
       businessDate: body.businessDate,
+      // 적치 기록(피처 011)이 「내 기록 / 이 단말」로 거른다 — 세션 호출은 비운다.
+      putawayActor: actor.terminalAudit === undefined ? null : { workerId: actor.workerId, terminalId: actor.terminalAudit.terminalId },
       lines: [{
         inboundReceiptLineId: Number(facts.inboundLineId), itemId: Number(facts.itemId), lotId: Number(facts.lotId),
         receiptQty: facts.receivableQty.toNumber(), uomId: Number(facts.uomId),
