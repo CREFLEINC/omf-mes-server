@@ -156,15 +156,19 @@ export class ShipmentQueryService {
    */
   private async views(ids: bigint[]): Promise<ShipmentView[]> {
     if (ids.length === 0) return [];
-    const [rows, unassigned, facts] = await Promise.all([
+    const [rows, unassigned, unpacked, facts] = await Promise.all([
       this.prisma.shipment.findMany({ where: { shipment_id: { in: ids } } }),
       this.unassignedPackedBoxCounts(ids),
+      this.unpackedLotCounts(ids),
       shipmentHistoryFacts(this.prisma, ids),
     ]);
     const byId = new Map(rows.map((row) => [row.shipment_id.toString(), row]));
     return ids.flatMap((id) => {
-      const row = byId.get(id.toString());
-      return row === undefined ? [] : [shipmentView(row, unassigned.get(id.toString()) ?? 0, facts.get(id.toString()))];
+      const key = id.toString();
+      const row = byId.get(key);
+      return row === undefined
+        ? []
+        : [shipmentView(row, unassigned.get(key) ?? 0, facts.get(key), unpacked.get(key) ?? 0)];
     });
   }
 
@@ -186,6 +190,24 @@ export class ShipmentQueryService {
          AND hu.status_code = 'PACKED'
          AND NOT EXISTS (SELECT 1 FROM logistics.shipping_unit_handling_unit link
                           WHERE link.handling_unit_id = hu.handling_unit_id)
+       GROUP BY sl.shipment_id
+    `);
+    return new Map(rows.map((row) => [row.shipment_id.toString(), row.count]));
+  }
+
+  /**
+   * 아직 포장하지 않은 LOT 배분 수(omf-all-around#329) — POP 출하 포장이 0 인 출하를 목록에서 바로
+   * 「확정 불가」로 보인다. ⭐ 배분 목록 `unpackedOnly=true`(`a.handling_unit_id IS NULL`)와 «같은
+   * 기준»이다 — 갈리면 목록은 고를 수 있다는데 눌러 보면 담을 LOT 이 없다.
+   * 0 건인 출하는 행이 없다 — 호출부가 `?? 0` 으로 메운다.
+   */
+  private async unpackedLotCounts(ids: bigint[]): Promise<Map<string, number>> {
+    const rows = await this.prisma.$queryRaw<{ shipment_id: bigint; count: number }[]>(Prisma.sql`
+      SELECT sl.shipment_id, count(*)::int AS count
+        FROM logistics.shipment_line sl
+        JOIN logistics.shipment_lot_allocation a ON a.shipment_line_id = sl.shipment_line_id
+       WHERE sl.shipment_id IN (${Prisma.join(ids)})
+         AND a.handling_unit_id IS NULL
        GROUP BY sl.shipment_id
     `);
     return new Map(rows.map((row) => [row.shipment_id.toString(), row.count]));
