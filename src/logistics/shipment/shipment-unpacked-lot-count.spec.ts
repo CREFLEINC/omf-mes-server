@@ -5,15 +5,18 @@ import { ShipmentQueryService } from './shipment-query.service';
 
 /** 목록 질의를 흉내 내는 최소 스텁 — 미포장 배분 수 질의만 행을 돌려주고 나머지는 비운다. */
 function stub(unpacked: { shipment_id: bigint; count: number }[]) {
-  const rawSql: string[] = [];
+  const rawQueries: Prisma.Sql[] = [];
   const prisma = {
     $queryRawUnsafe: async (sql: string) => {
+      // 쪽 총건수 질의
       if (sql.includes('count(*)::int AS total')) return [{ total: 2 }];
+      // ERP 송신 상태별 묶음 수(facet) 질의
       if (sql.includes('GROUP BY 1')) return [];
+      // 쪽 id 질의
       return [{ shipment_id: 11n }, { shipment_id: 12n }];
     },
     $queryRaw: async (query: Prisma.Sql) => {
-      rawSql.push(query.sql);
+      rawQueries.push(query);
       return query.sql.includes('a.handling_unit_id IS NULL') ? unpacked : [];
     },
     shipment: {
@@ -34,7 +37,7 @@ function stub(unpacked: { shipment_id: bigint; count: number }[]) {
     },
     goods_issue: { findMany: async () => [] },
   };
-  return { service: new ShipmentQueryService(prisma as unknown as PrismaService), rawSql };
+  return { service: new ShipmentQueryService(prisma as unknown as PrismaService), rawQueries };
 }
 
 describe('출하 목록 unpackedLotCount (omf-all-around#329)', () => {
@@ -48,10 +51,11 @@ describe('출하 목록 unpackedLotCount (omf-all-around#329)', () => {
   });
 
   it('⭐ 배분 목록 unpackedOnly 와 같은 기준이고, 출하 전체를 «한 질의»로 센다', async () => {
-    const { service, rawSql } = stub([]);
+    const { service, rawQueries } = stub([]);
     await service.list({ shipDateFrom: '2026-11-19' });
-    const counted = rawSql.filter((sql) => sql.includes('a.handling_unit_id IS NULL'));
+    const counted = rawQueries.filter((query) => query.sql.includes('a.handling_unit_id IS NULL'));
     expect(counted).toHaveLength(1);
-    expect(counted[0]).toContain('GROUP BY sl.shipment_id');
+    expect(counted[0].sql).toContain('GROUP BY sl.shipment_id');
+    expect(counted[0].values).toEqual([11n, 12n]);
   });
 });
