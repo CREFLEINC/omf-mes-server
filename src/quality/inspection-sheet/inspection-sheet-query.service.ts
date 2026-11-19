@@ -43,6 +43,7 @@ const SUMMARY_INCLUDE = {
   lot: { select: { lot_no: true } },
   work_order: { select: { work_order_no: true } },
   written_worker: { select: { worker_name: true } },
+  app_user_inspection_sheet_created_byToapp_user: { select: { user_name: true } },
   app_user_inspection_sheet_approved_byToapp_user: { select: { user_name: true } },
   app_user_inspection_sheet_checked_byToapp_user: { select: { user_name: true } },
   template: { select: { steps: { select: { step_code: true } } } },
@@ -104,7 +105,8 @@ export class InspectionSheetQueryService {
         recordedStepCount: results.length,
         stepCount: row.template.steps.length,
         ngStepCount: results.filter((r) => r.first_judgment_code === 'NG').length,
-        writtenWorkerName: row.written_worker?.worker_name ?? null,
+        // 관리웹에서 만든 검사표는 작업자가 없다 — 만든 계정 이름(omf-all-around#316).
+        writtenWorkerName: row.written_worker?.worker_name ?? row.app_user_inspection_sheet_created_byToapp_user?.user_name ?? null,
         approvedByName: row.app_user_inspection_sheet_approved_byToapp_user?.user_name ?? null,
         checkedByName: row.app_user_inspection_sheet_checked_byToapp_user?.user_name ?? null,
         createdAt: row.created_at.toISOString(),
