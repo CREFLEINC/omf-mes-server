@@ -5,11 +5,12 @@ type Args = Record<string, unknown>;
 
 /** `list()` 가 넘긴 `where` 와 발행 기록 조회 조건을 그대로 잡는 최소 스텁. */
 function stub(issuedTargetIds: bigint[]) {
-  const calls: { where?: Args; issueWhere?: Args } = {};
+  const calls: { where?: Args; issueWhere?: Args; unplacedWhere?: Args } = {};
   const prisma = {
     handling_unit: {
-      findMany: async ({ where }: { where: Args }) => {
-        calls.where = where;
+      findMany: async ({ where, select }: { where: Args; select?: Args }) => {
+        if (select) calls.unplacedWhere = where;
+        else calls.where = where;
         return [];
       },
       count: async () => 0,
@@ -43,5 +44,18 @@ describe('HandlingUnitQueryService.list — labelIssued (omf-all-around#327)', (
     await service.list({});
     expect(calls.issueWhere).toBeUndefined();
     expect(calls.where).not.toHaveProperty('handling_unit_id');
+  });
+
+  it('발행 기록이 하나도 없으면 true 는 0건(in: [])', async () => {
+    const { service, calls } = stub([]);
+    await service.list({ labelIssued: true });
+    expect(calls.where).toMatchObject({ handling_unit_id: { in: [] } });
+  });
+
+  it('단말 요청이면 창고 없는 포장 후보 조회에도 같은 조건이 실린다', async () => {
+    const { service, calls } = stub([5n]);
+    await service.list({ labelIssued: false }, 1n);
+    expect(calls.unplacedWhere).toMatchObject({ handling_unit_id: { notIn: [5n] }, warehouse_id: null, location_id: null });
+    expect(calls.where).toMatchObject({ handling_unit_id: { notIn: [5n] } });
   });
 });

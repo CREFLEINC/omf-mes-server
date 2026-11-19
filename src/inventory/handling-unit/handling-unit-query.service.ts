@@ -87,6 +87,7 @@ export class HandlingUnitQueryService {
   /**
    * P-04-04 「발행 대기 · 재발행」 축(omf-all-around#327). 발행 기록은 대상 유형·번호로만 걸려
    * 관계가 없어 id 집합으로 거른다. 인쇄 결과는 보지 않는다 — 기록이 서면 «발행된» 포장이다.
+   * ⚠ 발행된 포장 번호를 전부 읽어 `in`·`notIn` 으로 넘긴다 — 발행 기록이 쌓이면 이 조회와 SQL 인자가 함께 커진다.
    */
   private async labelIssuedWhere(issued: boolean): Promise<Prisma.handling_unitWhereInput> {
     const logs = await this.prisma.document_issue_log.findMany({
