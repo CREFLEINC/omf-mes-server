@@ -637,9 +637,9 @@ describe('출하 목록 (e2e)', () => {
     expect(await over(9999)).toContain('배정');
   });
 
-  it('P-7b ⛔ 수주 수량 한도는 «따로» 걸린다 — 배정은 넉넉한데 수주가 모자란 자리', async () => {
-    // 배정 500 · 수주 30 인 지시를 따로 세웠다 — 배정 가드를 지워도 이쪽은 남는다.
-    const failed = await post(
+  it('P-7b·Q3·D-16 수주 수량을 넘겨도 출하가 등록된다 — ERP 가 수주 초과 출고를 받는다(피처 010)', async () => {
+    // 배정 500 · 수주 30 인 지시를 따로 세웠다. 피처 010 전에는 「수주 수량보다 많이 낼 수 없습니다」 400 이었다.
+    await post(
       body({
         shipmentRequestId: made.tightRequest,
         lines: [
@@ -651,11 +651,13 @@ describe('출하 목록 (e2e)', () => {
           },
         ],
       }),
-      400,
     );
-    const [first] = failed.errors as { field: string; code: string; message: string }[];
-    expect(first).toMatchObject({ field: 'lines[0].shippedQty', code: 'RANGE' });
-    expect(first.message).toContain('수주');
+    const line = await prisma.shipment_request_line.findUniqueOrThrow({
+      where: { shipment_request_line_id: BigInt(made.tightRequestLine) },
+      select: { sales_order_line: { select: { ordered_qty: true, shipped_qty: true } } },
+    });
+    // 수주 출하 수량이 수주 수량을 넘는다 — `ck_sales_shipped_qty` 를 지웠다(S1).
+    expect([Number(line.sales_order_line?.ordered_qty), Number(line.sales_order_line?.shipped_qty)]).toEqual([30, 40]);
   });
 
   it('P-7d ⛔ 지시 뒤 ERP 가 그 수주 라인을 취소했으면 400 INVALID 이고 수주 라인이 그대로다(장부 P-73)', async () => {
