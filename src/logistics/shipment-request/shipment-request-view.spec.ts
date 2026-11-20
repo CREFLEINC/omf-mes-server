@@ -31,6 +31,7 @@ function line(overrides: Partial<ShipmentRequestRow['shipment_request_line'][num
     customer_lot_requirement: null,
     shipping_inspection_required: false,
     minimum_remaining_shelf_life_days: null,
+    warehouse_id: null,
     created_at: T,
     created_by: null,
     updated_at: T,
@@ -58,6 +59,7 @@ function header(overrides: Partial<ShipmentRequestRow> = {}): ShipmentRequestRow
     ship_time_slot_code: null,
     sales_order_id: null,
     fulfillment_plant_id: null,
+    business_unit_id: null,
     shipment_request_line: [line()],
     ...overrides,
   };
