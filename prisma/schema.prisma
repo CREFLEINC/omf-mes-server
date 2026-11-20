@@ -2367,6 +2367,7 @@ model location {
   production_line_default_fg                                                        production_line[]            @relation("production_line_default_fg_location_idTolocation")
   production_line_default_scrap                                                     production_line[]            @relation("production_line_default_scrap_location_idTolocation")
   lot_status_event                                                                  lot_status_event[]
+  product_lot_split product_lot_split[]
 
   @@unique([location_code], map: "uq_location_code")
   @@index([parent_location_id], map: "ix_location_parent")
@@ -2543,6 +2544,7 @@ model plant {
   material_lot_batch material_lot_batch[]
   supplier_item_default supplier_item_default[]
   tracking_transmission tracking_transmission[]
+  product_lot_split product_lot_split[]
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")
 }
@@ -2679,6 +2681,8 @@ model terminal {
   shipment_completed shipment[]
   completed_putaway_task putaway_task[]       @relation("putaway_task_completed_terminal")
   putaway_goods_receipt goods_receipt[]       @relation("goods_receipt_putaway_terminal")
+  product_lot_split_split     product_lot_split[] @relation("product_lot_split_split_terminal")
+  product_lot_split_confirmed product_lot_split[] @relation("product_lot_split_confirmed_terminal")
 
   @@index([location_id], map: "ix_terminal_location")
   @@index([equipment_id], map: "ix_terminal_equipment")
@@ -2791,6 +2795,7 @@ model uom {
   material_lot_batch material_lot_batch[]
   supplier_item_default supplier_item_default[]
   tracking_transmission_shortage tracking_transmission_shortage[]
+  product_lot_split product_lot_split[]
   @@schema("mdm")
   shipment_request_lot shipment_request_lot[]
 }
@@ -2843,6 +2848,7 @@ model warehouse {
   replenishment_run               replenishment_run[]
   tracking_transmission_shortage  tracking_transmission_shortage[]
   shipment_request_line           shipment_request_line[]
+  product_lot_split product_lot_split[]
 
   @@unique([plant_id, warehouse_code], map: "uq_warehouse")
   @@schema("mdm")
@@ -4554,6 +4560,45 @@ model lot {
   @@index([inbound_lot_id], map: "ix_lot_inbound_lot")
   @@schema("trace")
   shipment_request_lot shipment_request_lot[]
+  product_lot_split_parent product_lot_split[] @relation("product_lot_split_parent_lot")
+  product_lot_split_child  product_lot_split?  @relation("product_lot_split_child_lot")
+}
+
+/// 생산 LOT 수량 분리 기록(피처 013 · omf-all-around#303) — confirmed_at 이 NULL 이면 PDA 확인 대기.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_lot_split {
+  product_lot_split_id  BigInt    @id @default(autoincrement())
+  plant_id              BigInt
+  parent_lot_id         BigInt
+  child_lot_id          BigInt    @unique(map: "uq_product_lot_split_child")
+  warehouse_id          BigInt
+  location_id           BigInt
+  split_qty             Decimal   @db.Decimal(20, 6)
+  uom_id                BigInt
+  split_at              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  split_by              BigInt?
+  split_worker_no       String?   @db.VarChar(50)
+  split_terminal_id     BigInt?
+  confirmed_at          DateTime? @db.Timestamptz(6)
+  confirmed_by          BigInt?
+  confirmed_worker_no   String?   @db.VarChar(50)
+  confirmed_terminal_id BigInt?
+  created_at            DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  updated_at            DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by            BigInt?
+  version_no            Int       @default(1)
+  plant                 plant     @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  parent_lot            lot       @relation("product_lot_split_parent_lot", fields: [parent_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  child_lot             lot       @relation("product_lot_split_child_lot", fields: [child_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse             warehouse @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  location              location  @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                   uom       @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  split_terminal        terminal? @relation("product_lot_split_split_terminal", fields: [split_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+  confirmed_terminal    terminal? @relation("product_lot_split_confirmed_terminal", fields: [confirmed_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([parent_lot_id, split_at(sort: Desc)], map: "ix_product_lot_split_parent")
+  @@schema("trace")
 }
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
