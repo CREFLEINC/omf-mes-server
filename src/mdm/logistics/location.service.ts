@@ -49,6 +49,8 @@ export const LOCATION_REFERRERS: readonly Referrer[] = [
   ['production.work_order', 'default_scrap_location_id'],
   ['production.work_order', 'default_wip_location_id'],
   ['trace.lot_status_event', 'location_id'],
+  // 생산 LOT 분리 기록(피처 013).
+  ['trace.product_lot_split', 'location_id'],
 ];
 
 /** 계약 `Location` 과 동형. */

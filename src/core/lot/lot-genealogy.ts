@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { WORK_ORDER_LOT_SOURCE } from './lot-source';
+import { PRODUCT_LOT_SPLIT_SOURCE, WORK_ORDER_LOT_SOURCE } from './lot-source';
 import type { Tx } from './lot-registry.service';
 
 /**
@@ -96,6 +96,21 @@ export function splitFamilySql(seed: string): string {
       SELECT r.target_lot_id FROM trace.lot_relation r JOIN split_family f ON f.lot_id = r.source_lot_id
        WHERE r.relation_type_code = '${SPLIT_RELATION}'
     ) SELECT lot_id FROM split_family`;
+}
+
+/**
+ * 원시 SQL 부분 질의 — W/O(`workOrderIdSql` 식: 자리표나 바깥 칸)의 LOT 가족 id. 원천 W/O LOT 과 그 제품 분리 자손이다
+ * (피처 013 R-10·R-15). W/O 번호 검색·PQC 판정 이동이 쓴다. `IN (…)` 에 그대로 넣는다.
+ * ⛔ 자손은 원천 `PRODUCT_LOT_SPLIT` 만 — 008 부분 출고 분할은 섞지 않는다. W/O 마감·취소·송신은 이것을 쓰지 않는다.
+ */
+export function workOrderLotFamilySql(workOrderIdSql: string): string {
+  return `WITH RECURSIVE wo_family(lot_id) AS (
+      SELECT wl.lot_id FROM trace.lot wl WHERE wl.source_type_code = '${WORK_ORDER_LOT_SOURCE}' AND wl.source_id = ${workOrderIdSql}
+      UNION
+      SELECT r.target_lot_id FROM trace.lot_relation r JOIN wo_family f ON f.lot_id = r.source_lot_id
+        JOIN trace.lot c ON c.lot_id = r.target_lot_id
+       WHERE r.relation_type_code = '${SPLIT_RELATION}' AND c.source_type_code = '${PRODUCT_LOT_SPLIT_SOURCE}'
+    ) SELECT lot_id FROM wo_family`;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { InputRow, inputWindows, lotsAt, lotsBetween } from './lot-genealogy';
+import { InputRow, inputWindows, lotsAt, lotsBetween, workOrderLotFamilySql } from './lot-genealogy';
 
 const at = (hour: number) => new Date(Date.UTC(2026, 9, 22, hour));
 const input = (id: number, item: number, lot: number, hour: number, corrects: number | null = null): InputRow => ({
@@ -59,5 +59,21 @@ describe('투입 시각 기준 계보 (omf-all-around#166)', () => {
     expect(lots(lotsAt(windows, at(2)))).toEqual([77]);
     expect(lots(lotsAt(windows, at(3)))).toEqual([77, 78]);
     expect(lotsAt(windows, at(0))).toEqual([]);
+  });
+});
+
+/** 피처 013 R-10·R-15 — W/O LOT 가족 = 원천 W/O LOT + 그 제품 분리 자손. */
+describe('workOrderLotFamilySql', () => {
+  const sql = workOrderLotFamilySql('$1::bigint');
+
+  it('Q19 원천 W/O LOT 을 씨앗으로 SPLIT 계보를 끝까지 내려간다', () => {
+    expect(sql).toMatch(/source_type_code = 'WORK_ORDER' AND \w+\.source_id = \$1::bigint/);
+    expect(sql).toContain("relation_type_code = 'SPLIT'");
+    expect(sql).toContain('WITH RECURSIVE');
+  });
+
+  it('Q20 자손은 제품 분리(PRODUCT_LOT_SPLIT) 원천만 — 008 자재 분할은 섞이지 않는다', () => {
+    expect(sql).toContain("source_type_code = 'PRODUCT_LOT_SPLIT'");
+    expect(sql).not.toContain('GOODS_ISSUE_SPLIT');
   });
 });
