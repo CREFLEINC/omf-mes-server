@@ -11947,6 +11947,27 @@
       "description": "사용 여부 — 주면 그 값만 준다(true=사용, false=미사용). includeInactive 의 기본(사용만)보다 앞선다. 근거: omf-all-around#333"
      },
      {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "설치 설비 — 주면 그 설비에 붙은 단말만. 근거: omf-all-around#333"
+     },
+     {
+      "name": "registrationStatusCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "REGISTERED",
+        "UNREGISTERED"
+       ]
+      },
+      "description": "등록 여부 — REGISTERED=기기 등록 완료(지금 세대 토큰으로 확인됨), UNREGISTERED=그 밖. 근거: omf-all-around#333"
+     },
+     {
       "name": "q",
       "in": "query",
       "schema": {
@@ -12215,6 +12236,90 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/terminals/{terminalId}:activate": {
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "단말 다시 사용",
+    "description": "사용 중지한 단말을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다. 근거: omf-all-around#333",
+    "parameters": [
+     {
+      "name": "terminalId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "재사용됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Terminal"
         }
        }
       }

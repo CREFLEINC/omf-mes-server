@@ -51,8 +51,9 @@ describe('ContractRegistry', () => {
   // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 641.
   // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 643.
   // PDA 적치 기록 1건(피처 011 · omf-all-around#325): 644.
-  it('계약 7파일에서 오퍼레이션 644건을 적재한다', () => {
-    expect(registry.size).toBe(644);
+  // 단말 다시 사용 1건(omf-all-around#333): 645.
+  it('계약 7파일에서 오퍼레이션 645건을 적재한다', () => {
+    expect(registry.size).toBe(645);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
