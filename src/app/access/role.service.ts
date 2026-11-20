@@ -42,6 +42,11 @@ interface RoleView {
   isActive: boolean;
 }
 
+/** 역할 목록 질의 — 사용 여부 라벨(omf-all-around#333)이 `isActive` 를 더한다. */
+export interface RoleQuery extends ReferenceQuery {
+  isActive?: boolean;
+}
+
 export interface RoleWrite {
   roleCode: string;
   roleName: string;
@@ -62,9 +67,11 @@ export interface RoleResult {
 export class RoleService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: ReferenceQuery): Promise<PagedResponse<RoleView>> {
+  async list(query: RoleQuery): Promise<PagedResponse<RoleView>> {
     const page = referencePage(query);
     const where = referenceWhere(query, { code: 'role_code', name: 'role_name' });
+    // 사용 여부 라벨(omf-all-around#333) — 주면 그 값만. `includeInactive` 의 기본(쓰는 것만)보다 앞선다.
+    if (query.isActive !== undefined) where.is_active = query.isActive;
     const [rows, total] = await Promise.all([
       this.prisma.role.findMany({
         where,
