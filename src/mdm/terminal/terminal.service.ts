@@ -94,6 +94,14 @@ export interface TerminalUpdate {
 export interface TerminalQuery extends ReferenceQuery {
   plantId?: number;
   terminalTypeCode?: string;
+  /** 사용 여부 라벨(omf-all-around#333) — 주면 그 값만. */
+  isActive?: boolean;
+  /** 설치 설비(omf-all-around#333) — 주면 그 설비에 붙은 단말만. */
+  equipmentId?: number;
+  /** 창고(omf-all-around#333) — 주면 그 창고로 지정된 단말만. */
+  warehouseId?: number;
+  /** 등록 여부(omf-all-around#333) — `view()` 의 등록 판정과 같은 기준. */
+  registrationStatusCode?: 'REGISTERED' | 'UNREGISTERED';
 }
 
 export interface RegistrationToken {
@@ -137,7 +145,24 @@ export class TerminalService {
     const where = referenceWhere(query, { code: 'terminal_code', name: 'terminal_code' }, {
       ...optional('plant_id', query.plantId),
       ...optional('terminal_type_code', query.terminalTypeCode),
+      ...optional('equipment_id', query.equipmentId),
+      ...optional('warehouse_id', query.warehouseId),
     });
+    // 사용 여부 라벨(omf-all-around#333) — 주면 그 값만. `includeInactive` 의 기본(쓰는 것만)보다 앞선다.
+    if (query.isActive !== undefined) where.is_active = query.isActive;
+    // 등록 여부(omf-all-around#333) — 지금 세대 토큰으로 확인된 것만 등록이다(`view()` 와 같은 판정).
+    const sameGeneration = () => ({ equals: this.prisma.terminal.fields.token_version });
+    if (query.registrationStatusCode === 'REGISTERED') {
+      where.AND = [{ registration_confirmed_at: { not: null } }, { registered_token_version: sameGeneration() }];
+    } else if (query.registrationStatusCode === 'UNREGISTERED') {
+      where.AND = [{
+        OR: [
+          { registration_confirmed_at: null },
+          { registered_token_version: null },
+          { registered_token_version: { not: sameGeneration() } },
+        ],
+      }];
+    }
     const [rows, total] = await Promise.all([
       this.prisma.terminal.findMany({
         where,
@@ -205,6 +230,19 @@ export class TerminalService {
         ...(typeChanged ? { token_version: { increment: 1 } } : {}),
         version_no: { increment: 1 },
       },
+    });
+    await this.assertExists(terminalId, updated.count);
+    return this.get(terminalId);
+  }
+
+  /** 사용 중지한 단말을 다시 켠다(omf-all-around#333) — 되돌리는 경로가 이 하나다. */
+  async activate(
+    terminalId: number,
+    version: number,
+  ): Promise<{ terminal: TerminalView; versionNo: number }> {
+    const updated = await this.prisma.terminal.updateMany({
+      where: { terminal_id: terminalId, version_no: version },
+      data: { is_active: true, version_no: { increment: 1 } },
     });
     await this.assertExists(terminalId, updated.count);
     return this.get(terminalId);
