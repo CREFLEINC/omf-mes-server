@@ -154,12 +154,13 @@ export class ProductLotSplitFixture {
     this.pda = await this.terminal('PDA1', 'MOBILE', this.ids.plant, false);
   }
 
-  private async terminal(code: string, type: 'MOBILE' | 'POP', plantId: bigint, printLabel: boolean): Promise<TerminalSession> {
+  /** 단말 하나 — `printLabel` 이면 공정(기본: W/O 공정)에 라벨 출력 매핑을 단다. */
+  async terminal(code: string, type: 'MOBILE' | 'POP', plantId: bigint, printLabel: boolean, processId?: bigint): Promise<TerminalSession> {
     const p = this.prisma;
     const terminal = (await p.terminal.findFirst({ where: { terminal_code: `${PLS_PREFIX}-${code}` } }))
       ?? await p.terminal.create({ data: { terminal_code: `${PLS_PREFIX}-${code}`, plant_id: plantId, terminal_type_code: type, status_code: 'RUNNING' } });
     if (printLabel && (await p.terminal_process.findFirst({ where: { terminal_id: terminal.terminal_id } })) === null) {
-      await p.terminal_process.create({ data: { terminal_id: terminal.terminal_id, process_id: this.ids.process, can_print_label: true } });
+      await p.terminal_process.create({ data: { terminal_id: terminal.terminal_id, process_id: processId ?? this.ids.process, can_print_label: true } });
     }
     const worker = (await p.worker.findFirst({ where: { worker_no: `${PLS_PREFIX}-W-${code}` } }))
       ?? await p.worker.create({ data: {
