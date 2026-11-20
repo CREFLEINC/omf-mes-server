@@ -1263,6 +1263,56 @@ describe('검사 의뢰·결과 (e2e)', () => {
     prisma.lot.findUniqueOrThrow({ where: { lot_id: lotId }, select: { status_code: true, version_no: true } });
   const holdsOf = (lotId: bigint) => prisma.lot_hold.findMany({ where: { lot_id: lotId }, orderBy: { lot_hold_id: 'asc' } });
 
+  /** 피처 013(omf-all-around#303) R-15 — PQC 판정 이동은 그 W/O 의 제품 분리 자식 LOT 도 함께 옮긴다(FR-018). */
+  describe('PQC 판정 — 제품 분리 자식 포함 (피처 013)', () => {
+    /** 분리 API 없이 분리 결과의 모양만 세운다 — 원천 PRODUCT_LOT_SPLIT·부모·SPLIT 계보. */
+    async function splitChild(parentLotId: bigint, statusCode: string): Promise<bigint> {
+      confirmSeq += 1;
+      const child = await prisma.lot.create({
+        data: {
+          lot_no: `${PREFIX}-LOT-CF${confirmSeq}-S1`, item_id: ids.item2, lot_type_code: 'PRODUCTION', plant_id: ids.plant,
+          initial_qty: 30, uom_id: ids.uom, source_type_code: 'PRODUCT_LOT_SPLIT', source_id: confirmSeq, parent_lot_id: parentLotId,
+          status_code: statusCode, lifecycle_status_code: 'ACTIVE',
+        },
+      });
+      await prisma.lot_relation.create({
+        data: {
+          source_lot_id: parentLotId, target_lot_id: child.lot_id, relation_type_code: 'SPLIT', relation_qty: 30, uom_id: ids.uom,
+          source_event_type_code: 'PRODUCT_LOT_SPLIT', source_event_id: confirmSeq, allocation_method_code: 'EXACT',
+          trace_accuracy_code: 'EXACT', occurred_at: new Date(),
+        },
+      });
+      return child.lot_id;
+    }
+
+    it('US2-3·FR-018·Q25 PQC 합격 확정은 검사 대기 원래 LOT 과 그 분리 자식을 함께 정상으로 올린다', async () => {
+      const workOrderId = await newWorkOrder();
+      const slot = await newLot('INSPECTION_PENDING', { workOrderId, seq: 1 });
+      await prisma.lot.update({ where: { lot_id: slot }, data: { lifecycle_status_code: 'ACTIVE' } });
+      const child = await splitChild(slot, 'INSPECTION_PENDING');
+      const inspectionRequestId = await newConfirmRequest({ typeCode: 'PQC', workOrderId });
+      const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 100 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(200);
+
+      expect((await lotOfId(slot)).status_code).toBe('NORMAL');
+      expect((await lotOfId(child)).status_code).toBe('NORMAL');
+    });
+
+    it('FR-018·Q25 PQC 불합격 기준 초과(C14)는 원래 LOT 과 그 분리 자식을 함께 옮긴다', async () => {
+      const workOrderId = await newWorkOrder();
+      const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
+      const child = await splitChild(slot, 'NORMAL');
+      const inspectionRequestId = await newConfirmRequest({ typeCode: 'PQC', workOrderId, planVersionId: ids.c14PlanVersion });
+      const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 80, rejectedQty: 20 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
+
+      expect((await lotOfId(child)).status_code).toBe((await lotOfId(slot)).status_code);
+      expect((await eventsOf(child)).map((event) => event.transition_code)).toEqual(['C14']);
+    });
+  });
+
   describe('확정 (PR ④) — ⭐ 심장', () => {
     it('⭐ 합격이 LOT 을 `NORMAL` 로 옮기고 `C4` 이력 1행을 남기며 수입검사 보류 3칸을 채운다', async () => {
       const { inspectionRequestId, inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
@@ -1868,6 +1918,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
     await prisma.lot_hold.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.production_result.deleteMany({ where: { production_result_no: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
+    // 제품 분리 자식 픽스처(피처 013)의 SPLIT 계보 — LOT 보다 먼저.
+    await prisma.lot_relation.deleteMany({ where: { lot_lot_relation_target_lot_idTolot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.lot.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.inbound_receipt.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.partner.deleteMany({ where: { partner_code: { startsWith: PREFIX } } });

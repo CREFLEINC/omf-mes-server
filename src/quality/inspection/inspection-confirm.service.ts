@@ -17,6 +17,7 @@ import {
   VOIDED_LIFECYCLE,
   Tx,
   WORK_ORDER_LOT_SOURCE,
+  withProductSplitDescendants,
 } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -312,14 +313,18 @@ export class InspectionConfirmService {
     context: LotQualityMoveContext,
   ): Promise<void> {
     if (request.inspection_type_code !== PQC || request.work_order_id === null || judgment !== ACCEPTED) return;
-    const lots = await tx.lot.findMany({
+    const roots = await tx.lot.findMany({
       where: {
         source_type_code: WORK_ORDER_LOT_SOURCE,
         source_id: request.work_order_id,
         work_order_lot_seq: { not: null },
-        status_code: 'INSPECTION_PENDING',
         lifecycle_status_code: { notIn: [PREISSUED_LIFECYCLE, VOIDED_LIFECYCLE] },
       },
+      select: { lot_id: true },
+    });
+    // 제품 분리 자식도 함께 — 생애·회차는 뿌리로 보고, 검사 대기 여부는 LOT 자신으로 본다(피처 013 R-15).
+    const lots = await tx.lot.findMany({
+      where: { lot_id: { in: await withProductSplitDescendants(tx, roots.map((lot) => lot.lot_id)) }, status_code: 'INSPECTION_PENDING' },
       select: { lot_id: true },
     });
     // 다른 열린 보류(의심자재 등)가 있는 LOT 은 올리지 않는다 — IQC 확정과 같은 규율(#105 리뷰).
@@ -481,7 +486,8 @@ export class InspectionConfirmService {
     });
     await this.lots.moveWithin(
       tx,
-      lots.map((lot) => lot.lot_id),
+      // 제품 분리 자식도 함께(피처 013 R-15).
+      await withProductSplitDescendants(tx, lots.map((lot) => lot.lot_id)),
       'pqc-acceptance-exceeded',
       context,
     );
