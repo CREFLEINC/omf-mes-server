@@ -101,3 +101,10 @@ describe('기능 권한 목록', () => {
     expect(validate({})).toBe(false);
   });
 });
+
+describe('피처 012 — 출하 내역(W-04-12) 화면을 없애도 권한 코드는 남는다(R-6 · FR-024)', () => {
+  it('D-11 W-04-12 는 메뉴 없는 「출하 취소(송신 전)」 권한으로 남는다 — 역할 저장값이 그대로 유효하다', () => {
+    expect(PERMISSION_CODES.has('W-04-12')).toBe(true);
+    expect(PERMISSIONS.find((permission) => permission.code === 'W-04-12')).toEqual({ code: 'W-04-12', name: '출하 취소(송신 전)', groupCode: '04' });
+  });
+});

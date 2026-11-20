@@ -984,6 +984,24 @@
       "description": "지시서 사업부(피처 012 FR-007 · W-04-02 조회 조건 셋째 칸)."
      },
      {
+      "name": "erpSendStatus",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NOT_QUEUED",
+        "NOT_SENT_NO_SALES_ORDER",
+        "CANCELLED",
+        "SEND_ERROR",
+        "PENDING",
+        "SENT",
+        "NO_SHIPMENT"
+       ],
+       "example": "PENDING"
+      },
+      "description": "대표 출하의 ERP 송신 상태로 거른다(피처 012 FR-018 · W-04-02 칩). 대표 출하 = 취소 안 된 출하 중 가장 최근, 모두 취소면 가장 최근 출하. 값은 010 출하 목록 `erpSendStatus` 와 같은 판정이고, `NO_SHIPMENT` 는 출하가 아직 없는 지시서다."
+     },
+     {
       "name": "itemId",
       "in": "query",
       "schema": {
@@ -1127,7 +1145,7 @@
        "maxLength": 100,
        "example": "SR-2026"
       },
-      "description": "지시서 번호·고객(코드·이름)·품목(코드·이름) 부분 일치(POP 찾기 · 피처 010)"
+      "description": "지시서 번호·고객(코드·이름)·품목(코드·이름) 부분 일치(POP 찾기 · 피처 010) ⭐ 피처 012: 출하 번호(SH-)로도 찾는다(지시서 번호·고객·품목 그대로)."
      },
      {
       "name": "completionReadyOnly",
@@ -1160,11 +1178,19 @@
           },
           "page": {
            "$ref": "#/components/schemas/PageMeta"
+          },
+          "erpSendStatusCounts": {
+           "type": "object",
+           "additionalProperties": {
+            "type": "integer"
+           },
+           "description": "ERP 송신 상태별 지시서 수(피처 012 W-04-02 칩) — `erpSendStatus` 조건만 빼고 같은 조건으로 센다. 키는 `erpSendStatus` 값(`NO_SHIPMENT` 포함), 0건 상태는 키가 없다."
           }
          },
          "required": [
           "items",
-          "page"
+          "page",
+          "erpSendStatusCounts"
          ]
         }
        }
@@ -1819,7 +1845,7 @@
      "shipment"
     ],
     "summary": "출하 목록",
-    "description": "W-04-02·W-04-04·W-04-12 가 함께 쓴다. 기간 필수(L-3)",
+    "description": "W-04-02·W-04-04·W-04-12 가 함께 쓴다. 기간 필수(L-3) ⭐ 피처 012 D-11: W-04-02 「출하」 칸도 부른다(출하 내역 W-04-12 화면은 없앴다).",
     "parameters": [
      {
       "name": "shipmentRequestId",
@@ -2137,7 +2163,7 @@
      "shipment"
     ],
     "summary": "출하 한 건",
-    "description": "라인과 LOT 배분을 함께 내린다 — genealogy 종결점이다",
+    "description": "라인과 LOT 배분을 함께 내린다 — genealogy 종결점이다 ⭐ 피처 012 D-11: W-04-02 상세 「출하」 칸이 이 상세를 그대로 쓴다.",
     "security": [
      {
       "omfSession": []
@@ -2204,7 +2230,7 @@
      "shipment"
     ],
     "summary": "출하 취소 실행",
-    "description": "승인 완료 후 실행한다. ⭐ 승인만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이 확정됐으면 409 다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 완료 출하는 송신 전이면 실행한다 — 창고마다의 내부 재고 차감 기록 전부를 역전기·취소, 지시·수주 출하 수량을 내리고, 메시지를 CANCELLED 로, 피킹 LOT 을 PICKED 로 되돌려 같은 잔액 행에 예약을 다시 건다(다시 잡을 수 없는 LOT 은 풀린 채 피킹 LOT 행을 지운다). 지시서는 「출하 완료 전」이 된다. OQC 결과는 그대로. 보낸 뒤는 409 ERP_ALREADY_SENT. ⭐ 2026-11-19 사용자 결정: 송신 오류(메시지 FAILED — 재처리로 다시 대기가 된 것 포함)라도 ERP 가 거절한 행만 있으면(ERP 에 들어갔거나 반영된 행이 없으면) 보내기 전으로 본다 — 실행이 그 메시지를 CANCELLED 로 둬 다시 시도하지 않는다. 실행은 그 지시서의 출하 OQC 의뢰(완료)를 진행으로 다시 연다 — 종합 판정·확정 시각을 비우고, 확정된 결과는 판정 근거로 그대로 둔다. 새로 피킹한 LOT 의 결과는 작성중으로 쌓이고 다시 출하 완료할 때 확정된다.",
+    "description": "승인 완료 후 실행한다. ⭐ 승인만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이 확정됐으면 409 다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 완료 출하는 송신 전이면 실행한다 — 창고마다의 내부 재고 차감 기록 전부를 역전기·취소, 지시·수주 출하 수량을 내리고, 메시지를 CANCELLED 로, 피킹 LOT 을 PICKED 로 되돌려 같은 잔액 행에 예약을 다시 건다(다시 잡을 수 없는 LOT 은 풀린 채 피킹 LOT 행을 지운다). 지시서는 「출하 완료 전」이 된다. OQC 결과는 그대로. 보낸 뒤는 409 ERP_ALREADY_SENT. ⭐ 2026-11-19 사용자 결정: 송신 오류(메시지 FAILED — 재처리로 다시 대기가 된 것 포함)라도 ERP 가 거절한 행만 있으면(ERP 에 들어갔거나 반영된 행이 없으면) 보내기 전으로 본다 — 실행이 그 메시지를 CANCELLED 로 둬 다시 시도하지 않는다. 실행은 그 지시서의 출하 OQC 의뢰(완료)를 진행으로 다시 연다 — 종합 판정·확정 시각을 비우고, 확정된 결과는 판정 근거로 그대로 둔다. 새로 피킹한 LOT 의 결과는 작성중으로 쌓이고 다시 출하 완료할 때 확정된다. ⭐ 피처 012 R-6: 권한 `W-04-12` — W-04-02 상세 「출하」 칸에서 부른다(결재함 [열기] 착지도 W-04-02).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2310,7 +2336,7 @@
      "shipment"
     ],
     "summary": "출하 확정",
-    "description": "미확정 → 확정. ⭐ 이 시점에 ERP 송신 적재가 걸린다(2026-08-07 출하 2단 확정) — 재고는 앞 단계(출하 처리)에서 이미 차감됐다. 취소 결재가 진행 중이면 409 CANCEL_IN_PROGRESS 다(공유계약 J-7). ⛔ 확정 취소 경로가 없다 — 되돌릴 수 없다. 근거: W-04-12 §5-3·§5-8",
+    "description": "미확정 → 확정. ⭐ 이 시점에 ERP 송신 적재가 걸린다(2026-08-07 출하 2단 확정) — 재고는 앞 단계(출하 처리)에서 이미 차감됐다. 취소 결재가 진행 중이면 409 CANCEL_IN_PROGRESS 다(공유계약 J-7). ⛔ 확정 취소 경로가 없다 — 되돌릴 수 없다. 근거: W-04-12 §5-3·§5-8 ⭐ 피처 012 R-6: 권한 `W-04-05`·`W-04-12` — 남은 미확정 출하는 W-04-02 상세 「출하」 칸이 `W-04-12` 로 부른다(W-04-05 는 메뉴에서 감춤).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2406,7 +2432,7 @@
      "shipment"
     ],
     "summary": "출하 취소 요청",
-    "description": "미확정 구간에서만 된다. 사유가 필수다. 승인은 공통 계약이 소유한다. 01 자재창고가 쓰는 :request-cancel 과 같은 형태다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 출하 완료로 확정된 출하도 ERP 로 보내기 전(메시지 PENDING · sentAt 없음 · 바깥 행 0 · 수주 없는 출하는 늘)이면 상신한다 — 보낸 뒤는 409 ERP_ALREADY_SENT. 상신 중에는 러너가 그 출하를 보내지 않는다. ⭐ 2026-11-19 사용자 결정: 송신 오류(메시지 FAILED — 재처리로 다시 대기가 된 것 포함)라도 ERP 가 거절한 행만 있으면(ERP 에 들어갔거나 반영된 행이 없으면) 보내기 전으로 본다 — 실행이 그 메시지를 CANCELLED 로 둬 다시 시도하지 않는다.",
+    "description": "미확정 구간에서만 된다. 사유가 필수다. 승인은 공통 계약이 소유한다. 01 자재창고가 쓰는 :request-cancel 과 같은 형태다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 출하 완료로 확정된 출하도 ERP 로 보내기 전(메시지 PENDING · sentAt 없음 · 바깥 행 0 · 수주 없는 출하는 늘)이면 상신한다 — 보낸 뒤는 409 ERP_ALREADY_SENT. 상신 중에는 러너가 그 출하를 보내지 않는다. ⭐ 2026-11-19 사용자 결정: 송신 오류(메시지 FAILED — 재처리로 다시 대기가 된 것 포함)라도 ERP 가 거절한 행만 있으면(ERP 에 들어갔거나 반영된 행이 없으면) 보내기 전으로 본다 — 실행이 그 메시지를 CANCELLED 로 둬 다시 시도하지 않는다. ⭐ 피처 012 R-6: 권한 `W-04-12`(메뉴 없는 「출하 취소(송신 전)」) — W-04-02 상세 「출하」 칸에서 부른다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5692,6 +5718,32 @@
       },
       "description": "줄 출고 창고 요약(피처 012 W-04-02 「출고 창고」) — 줄 순서대로 겹치지 않게. 창고 없는 옛 줄은 담지 않는다."
      },
+     "erpSendStatus": {
+      "oneOf": [
+       {
+        "type": "string",
+        "enum": [
+         "NOT_QUEUED",
+         "NOT_SENT_NO_SALES_ORDER",
+         "CANCELLED",
+         "SEND_ERROR",
+         "PENDING",
+         "SENT"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "대표 출하의 ERP 송신 상태(피처 012 FR-018) — 출하가 없으면 null. ⛔ 완료 전 화면(PDA·POP 완료·인쇄)은 이 칸을 그리지 않는다(FR-025)."
+     },
+     "shipments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestShipment"
+      },
+      "description": "이 지시서의 출하 — 취소된 것 포함, 최신순(피처 012 FR-019)."
+     },
      "shipmentRequestId": {
       "type": "integer",
       "format": "int64",
@@ -5935,7 +5987,9 @@
      "shipTo",
      "businessUnitId",
      "businessUnit",
-     "warehouses"
+     "warehouses",
+     "erpSendStatus",
+     "shipments"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },
@@ -8080,6 +8134,51 @@
      "plantName"
     ],
     "description": "지시서 줄 출고 창고와 그 공장(피처 012) — 화면은 「완제품창고 A · 1공장」으로 그린다."
+   },
+   "ShipmentRequestShipment": {
+    "type": "object",
+    "properties": {
+     "shipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shipmentNo": {
+      "type": "string",
+      "example": "SH-20261120-0001"
+     },
+     "statusCode": {
+      "type": "string",
+      "example": "CONFIRMED",
+      "description": "출하 상태(`Shipment.statusCode` 와 같은 값 — 미확정·확정·취소)"
+     },
+     "erpSendStatus": {
+      "type": "string",
+      "enum": [
+       "NOT_QUEUED",
+       "NOT_SENT_NO_SALES_ORDER",
+       "CANCELLED",
+       "SEND_ERROR",
+       "PENDING",
+       "SENT"
+      ],
+      "example": "PENDING",
+      "description": "010 출하 목록과 같은 판정"
+     },
+     "cancelRequestPending": {
+      "type": "boolean",
+      "example": false,
+      "description": "열린 취소 결재가 있다"
+     }
+    },
+    "required": [
+     "shipmentId",
+     "shipmentNo",
+     "statusCode",
+     "erpSendStatus",
+     "cancelRequestPending"
+    ],
+    "description": "지시서의 출하 한 건(피처 012 W-04-02 상세 「출하」 칸 머리). 내용·취소·확정은 `GET /logistics/shipments/{shipmentId}`·`:request-cancel`·`:cancel`·`:confirm` 을 그대로 쓴다."
    }
   },
   "securitySchemes": {

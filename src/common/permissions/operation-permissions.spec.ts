@@ -325,3 +325,18 @@ describe('오퍼레이션 권한 매핑', () => {
     }
   });
 });
+
+describe('피처 012 — 출하 취소·확정 권한(R-6 · D-11 · FR-024)', () => {
+  it('US5-5·D-11 취소 요청·실행은 W-04-12, 미확정 확정은 W-04-05·W-04-12 그대로 — W-04-02 만으로는 열리지 않는다', () => {
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:request-cancel']).toEqual(['W-04-12']);
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:cancel']).toEqual(['W-04-12']);
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:confirm']).toEqual(expect.arrayContaining(['W-04-05', 'W-04-12']));
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:confirm']).not.toContain('W-04-02');
+  });
+
+  it('D-11·T064 W-04-02 「출하」 칸이 부르는 조회 넷은 W-04-02·W-04-12 근거를 함께 갖는다', () => {
+    for (const key of ['GET /logistics/shipment-requests', 'GET /logistics/shipment-requests/{shipmentRequestId}', 'GET /logistics/shipments', 'GET /logistics/shipments/{shipmentId}']) {
+      expect(DERIVED_PERMISSIONS[key]).toEqual(expect.arrayContaining(['W-04-02', 'W-04-12']));
+    }
+  });
+});

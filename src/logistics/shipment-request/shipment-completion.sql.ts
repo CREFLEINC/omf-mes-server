@@ -51,5 +51,7 @@ export function keywordSql(param: string): string {
                    AND (p.partner_code ILIKE ${param} OR p.partner_name ILIKE ${param}))
       OR EXISTS (SELECT 1 FROM logistics.shipment_request_line l JOIN mdm.item i ON i.item_id = l.item_id
                   WHERE l.shipment_request_id = sr.shipment_request_id
-                    AND (i.item_code ILIKE ${param} OR i.item_name ILIKE ${param})))`;
+                    AND (i.item_code ILIKE ${param} OR i.item_name ILIKE ${param}))
+      OR EXISTS (SELECT 1 FROM logistics.shipment s
+                  WHERE s.shipment_request_id = sr.shipment_request_id AND s.shipment_no ILIKE ${param}))`;
 }

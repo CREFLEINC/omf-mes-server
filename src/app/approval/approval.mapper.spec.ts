@@ -10,10 +10,17 @@ const row = (approvalTypeCode: string, targetTypeCode: string): Row => ({
 }) as unknown as Row;
 
 describe('결재 대상 열기(피처 010 검증 1회차)', () => {
-  it('US6-1·Q13 출하 취소 결재의 대상은 W-04-12 로 연다 — 승인된 취소는 그 화면에서 실행한다', () => {
+  it('US4-4·D-10 출하 취소 결재의 대상은 W-04-02 로 연다 — 승인된 취소는 그 지시서 상세 「출하」 칸에서 실행한다(피처 012)', () => {
     const view = toApprovalRequest(row('SHIPMENT_CANCEL', 'SHIPMENT'), { currentStepNo: null, isMyTurn: false }, { name: '출하 SH-1' });
 
-    expect(view.target).toMatchObject({ targetTypeCode: 'SHIPMENT', targetId: 5, displayName: '출하 SH-1', openable: true, screenId: 'W-04-12' });
+    expect(view.target).toMatchObject({ targetTypeCode: 'SHIPMENT', targetId: 5, displayName: '출하 SH-1', openable: true, screenId: 'W-04-02' });
+  });
+
+  it('E-5 배포 전에 상신한 출하 취소 결재(진행 중이든 끝났든)도 W-04-02 로 연다 — 저장값이 아니라 응답 매핑이다', () => {
+    for (const status of ['PENDING', 'APPROVED', 'REJECTED']) {
+      const view = toApprovalRequest({ ...row('SHIPMENT_CANCEL', 'SHIPMENT'), status_code: status } as Row, { currentStepNo: null, isMyTurn: false });
+      expect(view.target).toMatchObject({ screenId: 'W-04-02' });
+    }
   });
 
   it('다른 결재 유형은 그대로 열 수 없다(screenId 없음)', () => {

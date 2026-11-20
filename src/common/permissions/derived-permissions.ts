@@ -16,6 +16,10 @@
  *
  * ⚠ 2026-10-29 — 적치 규칙 마스터(W-06-14)를 없앴다(사용자 결정) — 그 화면 몫을 손으로 뺐다. 다시 돌리면 되살아난다.
  *
+ * ⚠ 2026-11-20 — 피처 012(omf-all-around#338 · R-6·T064)가 출하 내역(W-04-12) 화면을 없애고 그 일을 W-04-02 로 옮겼다.
+ * 지시서 조회 둘·출하 조회 둘에 `W-04-02`·`W-04-12`(메뉴 없는 「출하 취소」 권한)를 손으로 더했다 — 조회는 계약이 403 을
+ * 선언하지 않아 가드가 보지 않지만, 화면 → 오퍼레이션 근거로 남긴다. 다시 돌리면 빠진다.
+ *
  * ⚠ 2026-11-03 — 통합 대시보드(W-CO-05)를 권한 대상에서 뺐다(사용자 결정 · omf-all-around#229) — 로그인한
  * 사용자는 누구나 본다. 그 화면 몫을 손으로 뺐다. 다시 돌리면 되살아난다.
  *
@@ -72,10 +76,10 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /logistics/sales-orders': ['W-04-01', 'W-06-22'],
   'GET /logistics/sales-orders/{salesOrderId}': ['W-04-01', 'W-06-22'],
   'GET /logistics/shipment-lot-allocations': ['M-04-04', 'P-04-01'],
-  'GET /logistics/shipment-requests': ['M-04-01', 'W-04-02', 'W-04-04', 'W-04-05'],
-  'GET /logistics/shipment-requests/{shipmentRequestId}': ['W-04-04'],
-  'GET /logistics/shipments': ['W-04-06', 'W-04-12'],
-  'GET /logistics/shipments/{shipmentId}': ['W-04-06'],
+  'GET /logistics/shipment-requests': ['M-04-01', 'W-04-02', 'W-04-04', 'W-04-05', 'W-04-12'],
+  'GET /logistics/shipment-requests/{shipmentRequestId}': ['W-04-02', 'W-04-04', 'W-04-12'],
+  'GET /logistics/shipments': ['W-04-02', 'W-04-06', 'W-04-12'],
+  'GET /logistics/shipments/{shipmentId}': ['W-04-02', 'W-04-06', 'W-04-12'],
   'GET /logistics/shopfloor-receipts': ['P-02-03'],
   'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}': ['P-02-03'],
   'GET /logistics/stock-transfers': ['M-01-10'],

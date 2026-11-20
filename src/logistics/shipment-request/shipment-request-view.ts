@@ -99,6 +99,19 @@ export interface ShipmentRequestDisplayFacts {
   businessUnits?: Map<string, ShipmentRequestBusinessUnitView>;
   /** 줄 출고 창고와 그 공장(피처 012 FR-007). */
   warehouses?: Map<string, ShipmentRequestWarehouseView>;
+  /** 지시서마다 출하(취소 포함, 최신순 · 피처 012 FR-019). */
+  shipments?: Map<string, ShipmentRequestShipmentView[]>;
+}
+
+/** 지시서의 출하 한 건 — W-04-02 상세 「출하」 칸의 머리(내용은 `GET /logistics/shipments/{id}`) · 피처 012. */
+export interface ShipmentRequestShipmentView {
+  shipmentId: number;
+  shipmentNo: string;
+  statusCode: string;
+  /** 010 출하 내역과 같은 송신 상태 6값. */
+  erpSendStatus: string;
+  /** 열린 취소 결재가 있다. */
+  cancelRequestPending: boolean;
 }
 
 /** 지시서 사업부 표시 칸(피처 012). */
@@ -245,6 +258,10 @@ export interface ShipmentRequestView {
   businessUnit: ShipmentRequestBusinessUnitView | null;
   /** 줄 출고 창고 요약 — 줄 순서대로 겹치지 않게. 창고 없는 옛 줄은 담지 않는다(피처 012). */
   warehouses: ShipmentRequestWarehouseView[];
+  /** 대표 출하의 ERP 송신 상태 — 출하가 없으면 null(피처 012 FR-018 · 완료 전 화면은 이 칸을 그리지 않는다). */
+  erpSendStatus: string | null;
+  /** 출하(취소 포함, 최신순 · 피처 012 FR-019). */
+  shipments: ShipmentRequestShipmentView[];
   customerId: number;
   shipToPartnerId: number;
   /** 고객·납품처 이름 — 거래처가 없으면 null. */
@@ -328,6 +345,8 @@ export function shipmentRequestView(
     businessUnitId: row.business_unit_id === null ? null : Number(row.business_unit_id),
     businessUnit: row.business_unit_id === null ? null : display.businessUnits?.get(String(row.business_unit_id)) ?? null,
     warehouses: uniqueWarehouses(lineViews),
+    erpSendStatus: representativeShipment(display.shipments?.get(String(row.shipment_request_id)) ?? [])?.erpSendStatus ?? null,
+    shipments: display.shipments?.get(String(row.shipment_request_id)) ?? [],
     customerId: Number(row.customer_id),
     shipToPartnerId: Number(row.ship_to_partner_id),
     customer: display.partners?.get(String(row.customer_id)) ?? null,
@@ -387,6 +406,11 @@ export function shipmentRequestLineView(
     overQty: over.greaterThan(0) ? Number(over) : 0,
     lots: lots.map((lot) => shipmentRequestLotView(lot, picks, oqcStatuses)),
   });
+}
+
+/** 대표 출하 — 취소 안 된 출하 중 가장 최근, 모두 취소면 가장 최근. `REQUEST_ERP_SEND_STATUS_SQL` 과 같은 순서다. */
+function representativeShipment(shipments: ShipmentRequestShipmentView[]): ShipmentRequestShipmentView | undefined {
+  return shipments.find((shipment) => shipment.statusCode !== 'CANCELLED') ?? shipments[0];
 }
 
 function uniqueWarehouses(lines: ShipmentRequestLineView[]): ShipmentRequestWarehouseView[] {
