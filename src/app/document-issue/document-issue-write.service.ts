@@ -39,6 +39,14 @@ interface QualifiedTarget {
   sequence: DocumentIssueSequence;
 }
 
+/** 서버가 스스로 붙이는 재발행 사유(피처 013 R-7) — 고객이 코드를 꺼도 쓴다. 사람 요청은 이 값을 보낼 수 없다. */
+export const SYSTEM_REISSUE_REASONS = ['LOT_SPLIT'] as const;
+export type SystemReissueReason = (typeof SYSTEM_REISSUE_REASONS)[number];
+
+export interface DocumentIssueWriteOptions {
+  systemReissueReason?: SystemReissueReason;
+}
+
 export interface DocumentIssueBatchResponse {
   items: DocumentIssueView[];
   issuedCount: number;
@@ -50,6 +58,7 @@ export class DocumentIssueWriteService {
     tx: Prisma.TransactionClient,
     input: DocumentIssueCreateInput,
     context: DocumentIssueWriteContext,
+    options: DocumentIssueWriteOptions = {},
   ): Promise<DocumentIssueBatchResponse> {
     const targets = prepareDocumentIssueTargets(input);
     const facts = mergeFacts(
@@ -81,7 +90,7 @@ export class DocumentIssueWriteService {
       facts.values(),
     );
     const workerId = await resolveWorker(tx, context.workerNo);
-    const reason = await resolveReason(tx, input, qualified);
+    const reason = await resolveReason(tx, input, qualified, options.systemReissueReason);
     const now = new Date();
     const created = await tx.document_issue_log.createManyAndReturn({
       data: qualified.map(({ target, lotId, sequence }) => ({
@@ -197,10 +206,16 @@ async function resolveReason(
   tx: Prisma.TransactionClient,
   input: DocumentIssueCreateInput,
   qualified: QualifiedTarget[],
+  systemReason: SystemReissueReason | undefined,
 ): Promise<string | null> {
   const raw = input.reissueReasonCode;
   const present = typeof raw === "string" && raw.trim() !== "";
-  const active = present
+  const system = present && (SYSTEM_REISSUE_REASONS as readonly string[]).includes(raw);
+  if (system && raw !== systemReason)
+    throw new ContractException(HttpStatus.UNPROCESSABLE_ENTITY, [
+      field("reissueReasonCode", ERROR_CODE.INVALID, "서버가 붙이는 재발행 사유입니다. 다른 사유를 고르세요."),
+    ]);
+  const active = system ? true : present
     ? (await tx.code_value.findFirst({
         where: {
           code: raw,
