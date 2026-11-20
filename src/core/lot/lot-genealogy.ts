@@ -114,6 +114,24 @@ export function workOrderLotFamilySql(workOrderIdSql: string): string {
 }
 
 /**
+ * LOT 들과 그 제품 분리 자손(원천 `PRODUCT_LOT_SPLIT` 만 · 피처 013 R-15). PQC 판정 이동이 W/O 의 생산 LOT 을 고른 뒤
+ * 자식까지 넓힐 때 쓴다 — 조건(생애·선발행 회차)은 뿌리에서 보고, 자식은 함께 따라간다.
+ */
+export async function withProductSplitDescendants(db: Pick<Tx, '$queryRaw'>, lotIds: readonly bigint[]): Promise<bigint[]> {
+  if (lotIds.length === 0) return [];
+  const rows = await db.$queryRaw<{ lot_id: bigint }[]>`
+    WITH RECURSIVE family(lot_id) AS (
+      SELECT unnest(${[...lotIds]}::bigint[])
+      UNION
+      SELECT r.target_lot_id FROM trace.lot_relation r JOIN family f ON f.lot_id = r.source_lot_id
+        JOIN trace.lot c ON c.lot_id = r.target_lot_id
+       WHERE r.relation_type_code = ${SPLIT_RELATION} AND c.source_type_code = ${PRODUCT_LOT_SPLIT_SOURCE}
+    )
+    SELECT lot_id FROM family`;
+  return rows.map((row) => row.lot_id);
+}
+
+/**
  * 원시 SQL 식 — `lotAlias` LOT 의 입하 LOT id. 부분 출고 분할 LOT 은 입하 LOT 칸이 비어 있어(FR-003) 조상을 따라 올라가
  * 처음 만나는 입하 LOT 이다. 칸이 차 있으면 그대로다.
  */

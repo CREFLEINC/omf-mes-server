@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { CONSUMED_RELATION, lotWithSplitDescendants, splitAncestors, splitDescendants, tracedWorkOrders } from '../../core/lot/lot-genealogy';
-import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
+import { productionRootOf } from '../../core/lot/production-root';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from '../lot/lot-genealogy-query.service';
 import { LIVE_CONSUMPTION, estimateBasis, forwardLinksSql } from './flow-sql';
@@ -64,6 +64,8 @@ export interface InputMaterialNode extends LotHead, MaterialSide, Consumption {
 
 export interface BackwardFlow extends ProductSide {
   lot: LotHead;
+  /** 이 LOT 이 분할 LOT 이면 그 부모(제품 분리 자식이면 원래 LOT · 피처 013). */
+  splitFrom: SplitLink | null;
   goodQty: number;
   /** 투입 자재로 잇지 못하면(원천이 W/O 아님·실적 배분 없음·투입 없음) null. */
   basis: TraceBasis | null;
@@ -137,16 +139,23 @@ export class LotFlowChainService {
   async backward(lotId: number): Promise<BackwardFlow> {
     const id = BigInt(lotId);
     const lot = await this.head(id);
-    const source = await this.prisma.lot.findUniqueOrThrow({ where: { lot_id: id }, select: { source_type_code: true, source_id: true } });
-    const [products, goodQty] = await Promise.all([productSides(this.prisma, [id]), this.goodQty([id])]);
-    const base = { lot, goodQty: goodQty.get(id) ?? 0, ...pick(products, id) };
-    if (source.source_type_code !== WORK_ORDER_LOT_SOURCE) return { ...base, basis: null, workOrder: null, inputMaterials: [] };
+    const [products, goodQty, ancestors, roots] = await Promise.all([
+      productSides(this.prisma, [id]), this.goodQty([id]), splitAncestors(this.prisma, [id]), productionRootOf(this.prisma, [id]),
+    ]);
+    const [parent] = ancestors.get(id) ?? [];
+    const splitFrom = parent === undefined ? null : ((await splitLinks(this.prisma, [parent], 'parent'))[0] ?? null);
+    const base = { lot, splitFrom, goodQty: goodQty.get(id) ?? 0, ...pick(products, id) };
+    // ⭐ 제품 분리 자식은 원천이 W/O 가 아니다 — 분할 뿌리(원천 W/O LOT)의 W/O·투입 자재로 잇는다(피처 013 R-5).
+    const root = roots.get(id) ?? null;
+    if (root === null) return { ...base, basis: null, workOrder: null, inputMaterials: [] };
+    const rootId = root.rootLotId;
+    const rootGood = rootId === id ? goodQty : await this.goodQty([rootId]);
 
-    const workOrderId = source.source_id;
+    const workOrderId = root.workOrderId;
     const traced = (await tracedWorkOrders(this.prisma, [workOrderId])).size > 0;
-    const sources = !goodQty.has(id) ? [] : traced
+    const sources = !rootGood.has(rootId) ? [] : traced
       ? (await this.prisma.lot_relation.findMany({
-          where: { target_lot_id: id, relation_type_code: CONSUMED_RELATION }, distinct: ['source_lot_id'], select: { source_lot_id: true },
+          where: { target_lot_id: rootId, relation_type_code: CONSUMED_RELATION }, distinct: ['source_lot_id'], select: { source_lot_id: true },
         })).map((row) => row.source_lot_id)
       : (await this.prisma.material_consumption.findMany({
           where: { work_order_id: workOrderId }, distinct: ['lot_id'], select: { lot_id: true },
@@ -279,13 +288,15 @@ export class LotFlowChainService {
     }]));
   }
 
-  /** 투입 자재 LOT 중 W/O 가 만든 것(반제품) — 그 W/O. */
+  /** 투입 자재 LOT 중 W/O 가 만든 것(반제품) — 그 W/O. 제품 분리 자식이면 분할 뿌리의 W/O(피처 013). */
   private async producers(lotIds: bigint[]): Promise<Map<bigint, { workOrderId: number; workOrderNo: string }>> {
-    const rows = await this.prisma.$queryRawUnsafe<{ lot_id: bigint; work_order_id: bigint; work_order_no: string }[]>(
-      `SELECT lt.lot_id, wo.work_order_id, wo.work_order_no FROM trace.lot lt
-         JOIN production.work_order wo ON wo.work_order_id = lt.source_id
-        WHERE lt.lot_id = ANY($1::bigint[]) AND lt.source_type_code = '${WORK_ORDER_LOT_SOURCE}'`, lotIds,
-    );
-    return new Map(rows.map((row) => [row.lot_id, { workOrderId: Number(row.work_order_id), workOrderNo: row.work_order_no }]));
+    const roots = await productionRootOf(this.prisma, lotIds);
+    const orders = await this.workOrderHeads([...new Set([...roots.values()].flatMap((root) => (root === null ? [] : [root.workOrderId])))]);
+    const found = new Map<bigint, { workOrderId: number; workOrderNo: string }>();
+    for (const [lotId, root] of roots) {
+      const order = root === null ? undefined : orders.get(root.workOrderId);
+      if (order !== undefined) found.set(lotId, { workOrderId: order.workOrderId, workOrderNo: order.workOrderNo });
+    }
+    return found;
   }
 }

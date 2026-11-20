@@ -298,7 +298,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "줄에 배분된 LOT 의 원천 W/O 번호 정확 일치(장부 P-151)"
+      "description": "줄에 배분된 LOT 의 원천 W/O 번호 정확 일치(장부 P-151) 피처 013(omf-all-around#303): 그 W/O 의 제품 분리 자식 LOT 을 배분한 출하 라인도 찾힌다."
      },
      {
       "name": "statusCode",
