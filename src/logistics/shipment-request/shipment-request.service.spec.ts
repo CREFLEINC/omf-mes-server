@@ -260,3 +260,26 @@ describe('출하작업지시 이행 공장 재지정', () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 });
+
+/** omf-all-around#336 — 데이터 범위 줄이 없으면 제한 없음(모든 공장), 있으면 그 범위만. */
+describe('출하 요청 이행 공장 데이터 범위', () => {
+  const serviceFor = () => {
+    const prisma = {
+      plant: { findFirst: jest.fn().mockResolvedValue({ business_unit_id: 1n }) },
+    };
+    return new ShipmentRequestService(prisma as unknown as PrismaService,
+      {} as NumberingService, {} as ShipmentRequestQueryService, HANDOVER);
+  };
+  const assertPlant = (scopes: { businessUnitId: number; plantId?: number }[]) =>
+    (serviceFor() as unknown as {
+      assertFulfillmentPlant: (plantId: number, actor: { appUserId: number; scopes: typeof scopes }) => Promise<void>;
+    }).assertFulfillmentPlant(4, { appUserId: 3, scopes });
+
+  it('범위 줄이 없으면 어느 공장이든 통과한다', async () => {
+    await expect(assertPlant([])).resolves.toBeUndefined();
+  });
+
+  it('다른 공장만 범위에 있으면 403 이다', async () => {
+    await expect(assertPlant([{ businessUnitId: 1, plantId: 5 }])).rejects.toMatchObject({ status: 403 });
+  });
+});

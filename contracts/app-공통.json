@@ -7341,7 +7341,7 @@
       "items": {
        "$ref": "#/components/schemas/SessionScope"
       },
-      "description": "권한 범위는 사업부·공장 두 축이다. 근거: W-CO-01 §5-3"
+      "description": "권한 범위는 사업부·공장 두 축이다. 줄이 없으면 제한 없음(모든 공장). 공장만 지정한 범위는 그 공장의 사업부를 채워 싣는다(omf-all-around#336). 근거: W-CO-01 §5-3"
      },
      "roles": {
       "type": "array",
