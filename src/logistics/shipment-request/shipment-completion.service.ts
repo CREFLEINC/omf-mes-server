@@ -14,6 +14,7 @@ import { CompletionBlocker } from './shipment-completion-rules';
 import { completionPortions, postCompletionIssues, warehousesOf, writeCompletionLines } from './shipment-completion-posting';
 import { ShipmentRequestCompletionView, completionView } from './shipment-completion-view';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
+import { plantBusinessUnit, requestInBusinessUnitWhere } from './shipment-request-scope';
 import { SHIPMENT_REQUEST_CODE_PREFIX } from './shipment-request-view';
 
 export const COMPLETION_CONFLICT = {
@@ -51,7 +52,7 @@ export class ShipmentCompletionService {
     private readonly queries: ShipmentRequestQueryService,
   ) {}
 
-  /** `SHPREQ:{no}` → 완료 확인 값. 단말이면 그 공장 지시서만 — 남의 공장은 「찾을 수 없다」. ERP 송신 여부는 싣지 않는다. */
+  /** `SHPREQ:{no}` → 완료 확인 값. 단말이면 그 공장 사업부의 지시서만(피처 012 R-2). ERP 송신 여부는 싣지 않는다. */
   async lookup(code: string | undefined, plantId?: bigint): Promise<ShipmentRequestCompletionView> {
     const value = (code ?? '').trim();
     if (!value.startsWith(SHIPMENT_REQUEST_CODE_PREFIX) || value.length === SHIPMENT_REQUEST_CODE_PREFIX.length) {
@@ -62,7 +63,7 @@ export class ShipmentCompletionService {
     const found = await this.prisma.shipment_request.findFirst({
       where: {
         shipment_request_no: value.slice(SHIPMENT_REQUEST_CODE_PREFIX.length),
-        ...(plantId === undefined ? {} : { fulfillment_plant_id: plantId }),
+        ...(plantId === undefined ? {} : requestInBusinessUnitWhere(plantId, await plantBusinessUnit(this.prisma, plantId))),
       },
       select: { shipment_request_id: true },
     });

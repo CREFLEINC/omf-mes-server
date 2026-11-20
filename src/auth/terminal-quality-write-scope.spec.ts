@@ -15,6 +15,8 @@ const prisma = () => ({
   worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 23n }) },
   inspection_request: { findFirst: jest.fn().mockResolvedValue({ inspection_request_id: 11n }) },
   shipment_request: { findMany: jest.fn().mockResolvedValue([{ shipment_request_id: 31n }]) },
+  // 단말 공장의 사업부 — 사업부 없는 공장이면 옛 갈래(이행 공장)만 남는다(피처 012 R-2).
+  plant: { findUnique: jest.fn().mockResolvedValue({ business_unit_id: null }) },
 }) as unknown as PrismaService;
 
 it('permits an active worker and a PQC request of its process or an OQC request of its plant', async () => {
@@ -23,7 +25,7 @@ it('permits an active worker and a PQC request of its process or an OQC request 
   await assertTerminalQualityWriteScope(db, req, 'POST /quality/inspection-results', terminal);
   expect(currentTerminalQualityWorkerId(req)).toBe(23n);
   expect(db.shipment_request.findMany).toHaveBeenCalledWith({
-    where: { fulfillment_plant_id: 3n }, select: { shipment_request_id: true },
+    where: { business_unit_id: null, fulfillment_plant_id: 3n }, select: { shipment_request_id: true },
   });
   expect(db.inspection_request.findFirst).toHaveBeenCalledWith({ where: { AND: [
     { inspection_request_id: 11n },

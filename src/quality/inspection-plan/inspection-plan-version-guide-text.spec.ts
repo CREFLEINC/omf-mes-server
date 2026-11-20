@@ -165,6 +165,7 @@ describe('검사 기준 버전 안내 문구', () => {
     const prisma = {
       inspection_plan_version: { findFirst },
       shipment_request: { findMany: jest.fn(async () => [{ shipment_request_id: 31n }]) },
+      plant: { findUnique: jest.fn(async () => ({ business_unit_id: null })) },
       $queryRawUnsafe: jest.fn(async () => [{ total: 1n }]),
     } as unknown as PrismaService;
     const service = new InspectionPlanVersionService(prisma);

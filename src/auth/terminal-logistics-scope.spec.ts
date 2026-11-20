@@ -143,16 +143,19 @@ describe('terminal logistics scope', () => {
     }));
   });
 
-  it('rejects an unshipped request before product picking because it has no plant owner', async () => {
-    const db = prisma({ shipment_request: { findFirst: jest.fn().mockResolvedValue(null) } });
+  it('US2-2·FR-010 product picking needs the path line in the terminal scope (line warehouse plant, legacy line = request plant)', async () => {
+    const db = prisma({ shipment_request_line: { findFirst: jest.fn().mockResolvedValue(null) } });
     await expect(assertTerminalLogisticsScope(
       db,
       request({ shipmentRequestId: '21', shipmentRequestLineId: '22' }, { lotId: 8 }),
       'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick',
       mobile,
     )).rejects.toBeDefined();
-    expect(db.shipment_request.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { shipment_request_id: 21n, fulfillment_plant_id: 3n },
+    expect(db.shipment_request_line.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { AND: [{ shipment_request_line_id: 22n, shipment_request_id: 21n }, { OR: [
+        { warehouse: { plant_id: 3n } },
+        { warehouse_id: null, shipment_request: { fulfillment_plant_id: 3n } },
+      ] }] },
     }));
   });
 

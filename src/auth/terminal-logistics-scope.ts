@@ -2,6 +2,11 @@ import { HttpStatus } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { ContractException, ERROR_CODE } from '../common/errors';
+import {
+  lineInTerminalScopeWhere,
+  plantBusinessUnit,
+  requestInBusinessUnitWhere,
+} from '../logistics/shipment-request/shipment-request-scope';
 import { PrismaService } from '../prisma/prisma.service';
 import { handlingUnitInPlant } from './handling-unit-plant';
 import { TerminalContext } from './terminal-context';
@@ -124,8 +129,15 @@ export async function assertTerminalLogisticsScope(
     { goods_receipt_line_id: null, location_putaway_task_from_location_idTolocation: { warehouse: { plant_id: plant } } },
   ] }, select: { putaway_task_id: true } }));
   const shipment = async (v: unknown) => check(await prisma.shipment.findFirst({ where: { shipment_id: id(v), warehouse: { plant_id: plant } }, select: { shipment_id: true } }));
-  // 미배정 요청은 터미널에서 피킹할 수 없고, 출하가 생기기 전에도 이행 공장으로 소유를 판정한다.
-  const shipmentRequest = async (v: unknown) => check(await prisma.shipment_request.findFirst({ where: { shipment_request_id: id(v), fulfillment_plant_id: plant }, select: { shipment_request_id: true } }));
+  // 지시서 범위(피처 012 R-2) — 피킹은 줄 범위(줄 창고의 공장·단말 창고, 옛 줄은 이행 공장), POP 은 사업부 범위.
+  const lineScope = lineInTerminalScopeWhere({ plantId: plant, warehouseId: terminal.warehouseId ?? null });
+  const pickableLine = async (requestId: unknown, lineId: unknown) => check(await prisma.shipment_request_line.findFirst({
+    where: { AND: [{ shipment_request_line_id: id(lineId), shipment_request_id: id(requestId) }, lineScope] }, select: { shipment_request_line_id: true },
+  }));
+  const businessUnitRequest = async (v: unknown) => check(await prisma.shipment_request.findFirst({
+    where: { AND: [{ shipment_request_id: id(v) }, requestInBusinessUnitWhere(plant, await plantBusinessUnit(prisma, plant))] },
+    select: { shipment_request_id: true },
+  }));
   const transfer = async (v: unknown) => check(await prisma.stock_transfer.findFirst({ where: { stock_transfer_id: id(v), warehouse_stock_transfer_from_warehouse_idTowarehouse: { plant_id: plant }, warehouse_stock_transfer_to_warehouse_idTowarehouse: { plant_id: plant } }, select: { stock_transfer_id: true } }));
   const workOrder = async (v: unknown) => check(await prisma.work_order.findFirst({ where: { work_order_id: id(v), production_line: { plant_id: plant } }, select: { work_order_id: true } }));
   const handlingUnit = async (v: unknown) => check(await handlingUnitInPlant(prisma, id(v), plant));
@@ -248,17 +260,16 @@ export async function assertTerminalLogisticsScope(
       await warehouse(b.warehouseId); break;
     case 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick':
     case 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot':
-      await shipmentRequest(p.shipmentRequestId);
-      await check(await prisma.shipment_request_line.findFirst({ where: { shipment_request_line_id: id(p.shipmentRequestLineId), shipment_request_id: id(p.shipmentRequestId) }, select: { shipment_request_line_id: true } }));
+      await pickableLine(p.shipmentRequestId, p.shipmentRequestLineId);
       await optional(lot, b.lotId); break;
     case 'GET /logistics/shipment-requests/{shipmentRequestId}':
     case 'POST /logistics/shipment-requests/{shipmentRequestId}:complete':
-      await shipmentRequest(p.shipmentRequestId); break;
-    // 피킹 LOT 행 → 지시서 이행 공장 = 단말 공장(피처 010).
+      await businessUnitRequest(p.shipmentRequestId); break;
+    // 피킹 LOT 행 → 그 줄이 단말 범위 안(피처 012 R-2 · 010 은 지시서 이행 공장).
     case 'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace':
     case 'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code':
       await check(await prisma.shipment_request_lot.findFirst({ where: {
-        shipment_request_lot_id: id(p.shipmentRequestLotId), shipment_request_line: { shipment_request: { fulfillment_plant_id: plant } },
+        shipment_request_lot_id: id(p.shipmentRequestLotId), shipment_request_line: lineScope,
       }, select: { shipment_request_lot_id: true } })); break;
     case 'POST /logistics/shopfloor-receipts':
       // 창고 보충 출고 수령(피처 004)은 W/O 를 보내지 않는다.

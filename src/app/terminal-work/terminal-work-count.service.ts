@@ -58,7 +58,7 @@ export class TerminalWorkCountService {
   }
 
   private async mobile(scope: TerminalListScope, today: string): Promise<MobileWorkCounts> {
-    const request = shipmentRequestWhereSql({ shipDateFrom: today, shipDateTo: today }, scope.plantId);
+    const request = shipmentRequestWhereSql({ shipDateFrom: today, shipDateTo: today }, { ...scope, rule: 'LINE' });
     const [putawayTasks, pendingLots, materialPicking, stockTransferArrival, shipmentPicking] = await Promise.all([
       // M-01-05 적치: statusCode=PENDING
       this.prisma.putaway_task.count({ where: putawayTaskWhere({ statusCode: 'PENDING' }, scope) }),
@@ -106,7 +106,10 @@ export class TerminalWorkCountService {
    * 클라 `SEARCH_LOOKBACK_DAYS`). 검증 1회차: 오늘 하루만 세어 다음 날 출하분이 배지에서 빠졌다.
    */
   private async shipmentCompletion(plantId: bigint, today: string): Promise<number> {
-    const ready = shipmentRequestWhereSql({ shipDateFrom: daysBefore(today, SHIPMENT_COMPLETION_LOOKBACK_DAYS), completionReadyOnly: true }, plantId);
+    const ready = shipmentRequestWhereSql(
+      { shipDateFrom: daysBefore(today, SHIPMENT_COMPLETION_LOOKBACK_DAYS), completionReadyOnly: true },
+      { plantId, warehouseId: null, rule: 'BUSINESS_UNIT' },
+    );
     return this.rawCount(`SELECT count(*)::int AS total FROM ${REQUEST_FROM_SQL} WHERE ${ready.sql}`, ready.params);
   }
 

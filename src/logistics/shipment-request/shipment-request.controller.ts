@@ -58,7 +58,13 @@ export class ShipmentRequestController {
   @Get()
   @Contract('GET /logistics/shipment-requests')
   list(@Req() request: Request, @Query() query: ShipmentRequestQuery): Promise<PagedResponse<ShipmentRequestView>> {
-    return this.queries.list(query, currentTerminal(request)?.plantId);
+    const terminal = currentTerminal(request);
+    return this.queries.list(query, terminal === undefined ? undefined : {
+      plantId: terminal.plantId,
+      warehouseId: terminal.warehouseId ?? null,
+      // PDA 는 피킹할 줄이 있는 지시서, POP(완료 찾기)은 사업부 지시서(피처 012 R-2).
+      rule: terminal.terminalTypeCode === 'MOBILE' ? 'LINE' : 'BUSINESS_UNIT',
+    });
   }
 
   /**

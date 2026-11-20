@@ -19,6 +19,8 @@ const prisma = () => ({
   work_order: { findFirst: jest.fn().mockResolvedValue({ work_order_id: 1n }) },
   lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 1n }) },
   shipment_request: { findMany: jest.fn().mockResolvedValue([{ shipment_request_id: 31n }]) },
+  // 단말 공장의 사업부 — 사업부 없는 공장이면 옛 갈래(이행 공장)만 남는다(피처 012 R-2).
+  plant: { findUnique: jest.fn().mockResolvedValue({ business_unit_id: null }) },
 }) as unknown as PrismaService;
 const mappedWorkOrder = {
   production_line: { plant_id: 3n },
