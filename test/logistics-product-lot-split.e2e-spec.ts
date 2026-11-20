@@ -406,6 +406,64 @@ describe('생산 LOT 수량 분리 (e2e)', () => {
     });
   });
 
+  describe('PDA 분리 확인 — POST :confirm', () => {
+    it.each([['자식 → 원래', true], ['원래 → 자식', false]])('US3-2·US3-3·FR-010·Q15 두 라벨(%s 순서)이면 확인 완료 — 시각·작업자·단말, 그 뒤 재분리가 된다', async (_name, childFirst) => {
+      const lot = await f.lot({ balances: [{ at: 'A', qty: 100 }] });
+      const split = (await f.split({ lotId: lot.lotId, locationId: f.locationOf('A'), qty: 30 }).expect(200)).body;
+      const pair = childFirst ? [split.childLot.lotId, lot.lotId] : [lot.lotId, split.childLot.lotId];
+
+      const response = await f.confirm(split.productLotSplitId, pair).expect(200);
+
+      expect(validator('/logistics/product-lot-splits/{productLotSplitId}:confirm', 'post', '200')(response.body)).toBe(true);
+      expect(response.body).toMatchObject({ productLotSplitId: split.productLotSplitId, status: 'CONFIRMED', confirmedWorkerNo: f.pda.workerNo });
+      const row = await prisma.product_lot_split.findUniqueOrThrow({ where: { product_lot_split_id: BigInt(split.productLotSplitId) } });
+      expect(row.confirmed_at).not.toBeNull();
+      expect(row).toMatchObject({ confirmed_terminal_id: f.pda.terminalId, confirmed_worker_no: f.pda.workerNo });
+      await f.split({ lotId: lot.lotId, locationId: f.locationOf('A'), qty: 10 }).expect(200);
+    });
+
+    it('US3-4·US3-5·FR-012·Q16 짝 아닌 라벨은 400 INVALID, 이미 확인된 분리는 409 ALREADY_CONFIRMED — 아무것도 바뀌지 않는다', async () => {
+      const lot = await f.lot({ balances: [{ at: 'A', qty: 100 }] });
+      const other = await f.lot({ balances: [{ at: 'A', qty: 100 }] });
+      const split = (await f.split({ lotId: lot.lotId, locationId: f.locationOf('A'), qty: 30 }).expect(200)).body;
+
+      const wrong = await f.confirm(split.productLotSplitId, [lot.lotId, other.lotId]).expect(400);
+      const one = await f.confirm(split.productLotSplitId, [lot.lotId]).expect(400);
+      // 한 장만이면 계약 입구(minItems 2)가 먼저 막는다(RANGE).
+      expect([wrong.body.errors[0].code, one.body.errors[0].code]).toEqual(['INVALID', 'RANGE']);
+      expect((await prisma.product_lot_split.findUniqueOrThrow({ where: { product_lot_split_id: BigInt(split.productLotSplitId) } })).confirmed_at).toBeNull();
+
+      const first = await f.confirm(split.productLotSplitId, [lot.lotId, split.childLot.lotId]).expect(200);
+      const again = await f.confirm(split.productLotSplitId, [lot.lotId, split.childLot.lotId]).expect(409);
+
+      expect(again.body.code).toBe('ALREADY_CONFIRMED');
+      const row = await prisma.product_lot_split.findUniqueOrThrow({ where: { product_lot_split_id: BigInt(split.productLotSplitId) } });
+      expect(row.confirmed_at?.toISOString()).toBe(first.body.confirmedAt);
+    });
+
+    it('Edge 확인 전에 보류가 된 LOT 도 확인된다 — 확인은 라벨 부착 확인일 뿐이다', async () => {
+      const lot = await f.lot({ balances: [{ at: 'A', qty: 100 }] });
+      const split = (await f.split({ lotId: lot.lotId, locationId: f.locationOf('A'), qty: 30 }).expect(200)).body;
+      await prisma.lot_hold.create({ data: {
+        lot_id: BigInt(split.childLot.lotId), reason_code: 'QUALITY', status_code: 'HELD', held_at: new Date(), held_by: f.ids.userId,
+      } });
+
+      await f.confirm(split.productLotSplitId, [split.childLot.lotId, lot.lotId]).expect(200);
+    });
+
+    it('권한 — POP 단말·계정 세션·다른 공장 단말은 거절된다', async () => {
+      const lot = await f.lot({ balances: [{ at: 'A', qty: 100 }] });
+      const split = (await f.split({ lotId: lot.lotId, locationId: f.locationOf('A'), qty: 30 }).expect(200)).body;
+      const pair = [lot.lotId, split.childLot.lotId];
+      const foreignPda = await f.terminal('PDA2', 'MOBILE', f.ids.plant2, false);
+
+      expect([401, 403]).toContain((await f.confirm(split.productLotSplitId, pair, f.pop)).status);
+      expect((await f.confirm(split.productLotSplitId, pair, 'session')).status).toBe(403);
+      expect([401, 404]).toContain((await f.confirm(split.productLotSplitId, pair, foreignPda)).status);
+      expect((await prisma.product_lot_split.findUniqueOrThrow({ where: { product_lot_split_id: BigInt(split.productLotSplitId) } })).confirmed_at).toBeNull();
+    });
+  });
+
   describe('목록 — GET', () => {
     it('US1-7·FR-009 확인 대기 목록은 오래된 순·unconfirmedCount·lastPrint·쪽 나눔이고, 확인된 분리는 빠진다', async () => {
       const lots = [];

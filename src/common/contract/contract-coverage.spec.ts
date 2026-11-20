@@ -124,7 +124,8 @@ describe('계약 커버리지', () => {
     // 단말 다시 사용 1 오퍼레이션(omf-all-around#333): 644 → 645.
     // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 645 → 644.
     // 생산 LOT 분리 3 오퍼레이션(피처 013 · omf-all-around#303): 644 → 647.
-    expect(registry.size).toBe(647);
+    // PDA 분리 확인 1(피처 013 S3): 647 → 648.
+    expect(registry.size).toBe(648);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

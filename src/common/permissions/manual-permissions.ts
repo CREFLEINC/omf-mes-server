@@ -184,6 +184,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /logistics/product-lot-splits:lookup': ['P-04-08'],
   'POST /logistics/product-lot-splits': ['P-04-08'],
   'GET /logistics/product-lot-splits': ['P-04-08', 'M-04-05'],
+  'POST /logistics/product-lot-splits/{productLotSplitId}:confirm': ['M-04-05'],
   // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
   'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
   'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],
