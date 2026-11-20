@@ -1,16 +1,18 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { currentTerminalLogisticsWorkerId } from '../../auth/terminal-logistics-scope';
 import { runDocumentIssueWriteWithRetry } from '../../app/document-issue/document-issue-sequence';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
-import { idempotencyContextOf } from '../../common/master';
+import { idempotencyContextOf, runIdempotent } from '../../common/master';
+import { ProductLotSplitConfirmBody, ProductLotSplitConfirmService } from './product-lot-split-confirm.service';
 import { ProductLotSplitListQuery, ProductLotSplitPage, ProductLotSplitQueryService } from './product-lot-split-query.service';
 import { ProductLotSplitBody, ProductLotSplitService, SplitActor } from './product-lot-split.service';
-import { ProductLotSplitLookup, ProductLotSplitResult, requireTerminal } from './product-lot-split-view';
+import { ProductLotSplitLookup, ProductLotSplitResult, ProductLotSplitView, requireTerminal } from './product-lot-split-view';
 
 const SPLIT = 'POST /logistics/product-lot-splits';
+const CONFIRM = 'POST /logistics/product-lot-splits/{productLotSplitId}:confirm';
 
 /**
  * 생산 LOT 수량 분리(피처 013 · omf-all-around#303) — POP P-04-08 스캔 조회·분리·확인 대기 목록.
@@ -21,6 +23,7 @@ export class ProductLotSplitController {
   constructor(
     private readonly splits: ProductLotSplitService,
     private readonly queries: ProductLotSplitQueryService,
+    private readonly confirms: ProductLotSplitConfirmService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -41,6 +44,19 @@ export class ProductLotSplitController {
       const outcome = await this.idempotency.run(context, (tx) => this.splits.splitWithin(tx, body, { ...actor, fingerprint: context.fingerprint }));
       return outcome.body;
     });
+  }
+
+  /** PDA 분리 확인(M-04-05) — 두 라벨이 그 분리의 짝이면 확인한다. */
+  @Post('product-lot-splits/:productLotSplitId\\:confirm')
+  @Contract('POST /logistics/product-lot-splits/{productLotSplitId}:confirm')
+  @HttpCode(HttpStatus.OK)
+  confirm(
+    @Req() request: Request,
+    @Param('productLotSplitId', ParseIntPipe) productLotSplitId: number,
+    @Body() body: ProductLotSplitConfirmBody,
+  ): Promise<ProductLotSplitView> {
+    const actor = splitActorOf(request, CONFIRM);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) => this.confirms.confirmWithin(tx, productLotSplitId, body, actor), FAMILY_CONFLICT_CODE);
   }
 
   @Get('product-lot-splits')

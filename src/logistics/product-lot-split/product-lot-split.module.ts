@@ -5,6 +5,7 @@ import { IdempotencyModule } from '../../common/idempotency';
 import { InventoryPostingModule } from '../../core/inventory-posting';
 import { LotRegistryModule } from '../../core/lot';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { ProductLotSplitConfirmService } from './product-lot-split-confirm.service';
 import { ProductLotSplitQueryService } from './product-lot-split-query.service';
 import { ProductLotSplitController } from './product-lot-split.controller';
 import { ProductLotSplitService } from './product-lot-split.service';
@@ -13,6 +14,6 @@ import { ProductLotSplitService } from './product-lot-split.service';
 @Module({
   imports: [PrismaModule, IdempotencyModule, InventoryPostingModule, LotRegistryModule],
   controllers: [ProductLotSplitController],
-  providers: [ProductLotSplitService, ProductLotSplitQueryService, DocumentIssueWriteService],
+  providers: [ProductLotSplitService, ProductLotSplitQueryService, ProductLotSplitConfirmService, DocumentIssueWriteService],
 })
 export class ProductLotSplitModule {}

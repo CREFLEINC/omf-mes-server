@@ -39,12 +39,13 @@ describe('terminal logistics scope', () => {
     // POP 지시서 상세(P-04-06 머리 · 피처 010 검증 1회차): 59 → 60.
     // PDA 적치 기록(피처 011 · omf-all-around#325)을 더했다: 60 → 61.
     // 생산 LOT 분리 스캔 조회·분리·목록(피처 013 · omf-all-around#303): 61 → 64.
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(64);
+    // PDA 분리 확인(피처 013 S3): 64 → 65.
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(65);
     // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
     //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
     expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(
       (key) => key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE '),
-    )).toHaveLength(30);
+    )).toHaveLength(31);
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/shipments', mobile)).rejects.toBeDefined();
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/goods-issues', pop)).rejects.toBeDefined();
   });

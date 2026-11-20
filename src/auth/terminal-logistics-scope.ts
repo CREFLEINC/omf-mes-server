@@ -102,6 +102,7 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/product-lot-splits:lookup': ['POP'],
   'POST /logistics/product-lot-splits': ['POP'],
   'GET /logistics/product-lot-splits': ['POP', 'MOBILE'],
+  'POST /logistics/product-lot-splits/{productLotSplitId}:confirm': ['MOBILE'],
 };
 
 export async function assertTerminalLogisticsScope(
@@ -192,6 +193,9 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/product-lot-splits':
     case 'POST /logistics/product-lot-splits':
       break;
+    // 분리 기록 → 공장 = 단말 공장(피처 013). 본문 lotIds 는 서비스가 짝인지 본다.
+    case 'POST /logistics/product-lot-splits/{productLotSplitId}:confirm':
+      await check(await prisma.product_lot_split.findFirst({ where: { product_lot_split_id: id(p.productLotSplitId), plant_id: plant }, select: { product_lot_split_id: true } })); break;
     case 'GET /logistics/goods-issues/{goodsIssueId}':
     case 'GET /logistics/goods-issues/{goodsIssueId}/lines': await issue(p.goodsIssueId); break;
     case 'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances':

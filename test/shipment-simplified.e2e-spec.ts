@@ -734,6 +734,59 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(0);
     });
   });
+  /** 피처 013(omf-all-around#303) — 생산 LOT 분리의 확인 전 피킹 차단·확인된 자식 LOT 출하. 분리 기록은 모양만 세운다. */
+  describe('생산 LOT 분리 — 확인 전 피킹 차단 (피처 013)', () => {
+    const splitPair = async (parentQty: number, childQty: number, confirmed: boolean) => {
+      const parent = await f.lot({ balances: [{ warehouse: 'wh1', qty: parentQty }] });
+      const child = await f.lot({ balances: [{ warehouse: 'wh1', qty: childQty }] });
+      await prisma.lot.update({ where: { lot_id: BigInt(child.lotId) }, data: { parent_lot_id: BigInt(parent.lotId), source_type_code: 'PRODUCT_LOT_SPLIT' } });
+      const split = await prisma.product_lot_split.create({ data: {
+        plant_id: f.ids.plant, parent_lot_id: BigInt(parent.lotId), child_lot_id: BigInt(child.lotId), warehouse_id: f.ids.wh1,
+        location_id: f.ids.loc1a, split_qty: childQty, uom_id: f.ids.uom, split_terminal_id: f.pop.terminalId,
+        ...(confirmed ? { confirmed_at: new Date(), confirmed_terminal_id: f.pda.terminalId } : {}),
+      } });
+      return { parent, child, splitId: split.product_lot_split_id };
+    };
+
+    it('US3-1·FR-011·SC-004·Q14 확인 전 분리의 원래·자식 LOT 은 409 LOT_SPLIT_UNCONFIRMED — 확인 뒤에는 같은 LOT 이 피킹된다', async () => {
+      const made = await f.request([{ allocated: 100 }]);
+      const { parent, child, splitId } = await splitPair(70, 30, false);
+
+      const one = await f.pickLot(made, 0, { lotId: parent.lotId }).expect(409);
+      const two = await f.pickLot(made, 0, { lotNo: child.lotNo }).expect(409);
+      expect([one.body.code, two.body.code]).toEqual(['LOT_SPLIT_UNCONFIRMED', 'LOT_SPLIT_UNCONFIRMED']);
+      expect(await prisma.shipment_request_lot.count({ where: { shipment_request_line_id: BigInt(made.lineIds[0]) } })).toBe(0);
+
+      await prisma.product_lot_split.update({
+        where: { product_lot_split_id: splitId }, data: { confirmed_at: new Date(), confirmed_terminal_id: f.pda.terminalId },
+      });
+      await f.pickLot(made, 0, { lotId: child.lotId }).expect(200);
+    });
+
+    it('US3-1·FR-011·Q14 사업부 지시서(줄 출고 창고 · 피처 012 경로)도 확인 전 분리 LOT 을 409 LOT_SPLIT_UNCONFIRMED 로 거절한다', async () => {
+      const made = await f.request([{ allocated: 100 }]);
+      await prisma.shipment_request.update({ where: { shipment_request_id: BigInt(made.requestId) }, data: { business_unit_id: f.ids.unit } });
+      await prisma.shipment_request_line.updateMany({ where: { shipment_request_id: BigInt(made.requestId) }, data: { warehouse_id: f.ids.wh1 } });
+      const { child } = await splitPair(70, 30, false);
+
+      const response = await f.pickLot(made, 0, { lotId: child.lotId }).expect(409);
+
+      expect(response.body.code).toBe('LOT_SPLIT_UNCONFIRMED');
+    });
+
+    it('US4-1·FR-013·SC-001·Q17 확인된 자식 30 을 목표 30 라인에 피킹하면 초과 0 — OQC 합격 뒤 출하 완료된다', async () => {
+      const made = await f.request([{ allocated: 30, salesOrdered: 30 }]);
+      const { child } = await splitPair(70, 30, true);
+
+      const picked = await f.pickLot(made, 0, { lotId: child.lotId }).expect(200);
+      expect(picked.body.line).toMatchObject({ allocatedQty: 30, pickedQty: 30, overQty: 0 });
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [child.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+
+      await f.complete(made).expect(200);
+      expect((await f.lotsOf(made)).map((lot) => lot.statusCode)).toEqual(['SHIPPED']);
+    });
+  });
+
   describe('송신 전 취소(US6)·출하 내역(US7)', () => {
     beforeAll(async () => f.ensureCancelRoute());
 

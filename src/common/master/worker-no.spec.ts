@@ -312,7 +312,8 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     // 줄마다 입하(장부 P-117)를 WorkerNoOptional 로 — 관리웹도 부른다(입고·출고와 같은 갈래): 41 → 40.
     // 출하 완료 `:complete`(피처 010 · POP 전용) — 판정은 `logisticsWriteActorOf`(단말 물류 범위가 사번을 푼다): 40 → 41.
     // 생산 LOT 분리(피처 013 · POP 전용) — 판정은 `splitActorOf`(단말 물류 범위가 사번을 푼다): 41 → 42.
-    expect(required).toBe(42);
+    // PDA 분리 확인 :confirm(피처 013 · MOBILE 전용) — 판정은 `splitActorOf`: 42 → 43.
+    expect(required).toBe(43);
   });
 });
 

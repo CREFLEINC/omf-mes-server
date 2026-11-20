@@ -145,7 +145,8 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 63 → 64.
     // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1): 64 → 63.
     // 생산 LOT 분리 1건(피처 013 · omf-all-around#303): 63 → 64.
-    expect(sites.filter((site) => site.passes)).toHaveLength(64);
+    // PDA 분리 확인 1건(피처 013): 64 → 65.
+    expect(sites.filter((site) => site.passes)).toHaveLength(65);
   });
 
   it('⭐ 두 값이 계열 네 enum «전부»에 있다 — 계약에서 직접 읽는다', () => {
