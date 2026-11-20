@@ -5,11 +5,13 @@ import { workOrderLotFamilySql } from '../../core/lot/lot-genealogy';
 import { localPeriodSql, periodUnlessPinned, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, Named, PagedWithTotals, UomTotalRow, lineTotals, named } from '../line-list';
+import { shipmentFromWarehouseSql } from './shipment-query.sql';
 
 /**
  * 출하 건을 가로지르는 출하 줄 목록 — 제품출고 현황(LOT 추적 화면 · 장부 P-119).
  * 출하 목록(`GET /logistics/shipments`)은 머리글 단위라 품목 필터·수량이 없다. 기간 축은 출하 목록과 같은
  * `shipped_at` 이고 공장(출하 창고의 공장) 현지 날짜다.
+ * ⭐ POP 완료 출하(피처 010)는 출하 창고가 없다 — 줄의 출고 전표 창고로 잇는다(여러 창고면 줄의 첫 출고 라인 창고).
  */
 export interface ShipmentLineListQuery {
   shipDateFrom?: string;
@@ -56,7 +58,9 @@ const CANCELLED = 'CANCELLED';
 const FROM = `
   FROM logistics.shipment_line sl
   JOIN logistics.shipment s ON s.shipment_id = sl.shipment_id
-  JOIN mdm.warehouse w ON w.warehouse_id = s.warehouse_id
+  LEFT JOIN logistics.goods_issue_line sgl ON sgl.goods_issue_line_id = sl.goods_issue_line_id
+  LEFT JOIN logistics.goods_issue sgi ON sgi.goods_issue_id = sgl.goods_issue_id
+  JOIN mdm.warehouse w ON w.warehouse_id = COALESCE(s.warehouse_id, sgi.source_warehouse_id)
   JOIN mdm.plant p ON p.plant_id = w.plant_id
   JOIN logistics.shipment_request sr ON sr.shipment_request_id = s.shipment_request_id`;
 
@@ -71,7 +75,8 @@ export function shipmentLineWhere(query: ShipmentLineListQuery, today: string): 
   const and = [period === undefined ? 's.shipped_at IS NOT NULL' : localPeriodSql('s.shipped_at', 'p.timezone_code', period, bind)];
   and.push(query.statusCode === undefined ? `s.status_code <> ${bind(CANCELLED)}` : `s.status_code = ${bind(query.statusCode)}`);
   if (query.plantId !== undefined) and.push(`w.plant_id = ${bind(query.plantId)}::bigint`);
-  if (query.warehouseId !== undefined) and.push(`s.warehouse_id = ${bind(query.warehouseId)}::bigint`);
+  // POP 완료 출하(창고 없음)는 출고 전표 창고로 — 출하 목록과 같은 규칙(피처 010 · 013 F3).
+  if (query.warehouseId !== undefined) and.push(shipmentFromWarehouseSql('s', bind(query.warehouseId)));
   if (query.itemId !== undefined) and.push(`sl.item_id = ${bind(query.itemId)}::bigint`);
   if (query.customerId !== undefined) and.push(`sr.customer_id = ${bind(query.customerId)}::bigint`);
   if (query.shipmentNo !== undefined) and.push(`s.shipment_no = ${bind(query.shipmentNo)}`);

@@ -17,7 +17,7 @@ import { seedRoute } from '../approval-request.fixture';
 export const SS_PREFIX = 'SSE2E';
 const LOGIN_ID = 'e2e-shipment-simplified';
 const PASSWORD = '출하단순화-비밀번호';
-const PERMISSIONS = ['M-04-01', 'W-04-01', 'W-04-02', 'W-04-03', 'W-04-12', 'W-03-09', 'W-03-10', 'W-04-04', 'W-04-05', 'W-01-01', 'W-01-15'];
+const PERMISSIONS = ['M-04-01', 'W-02-09', 'W-04-01', 'W-04-02', 'W-04-03', 'W-04-12', 'W-03-09', 'W-03-10', 'W-04-04', 'W-04-05', 'W-01-01', 'W-01-15'];
 
 export interface TerminalSession {
   terminalId: bigint;

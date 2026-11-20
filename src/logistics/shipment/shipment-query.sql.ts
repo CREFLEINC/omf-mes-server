@@ -111,6 +111,16 @@ function plantMidnightSql(date: string): string {
                     (SELECT p.timezone_code FROM mdm.terminal t JOIN mdm.plant p ON p.plant_id = t.plant_id WHERE t.terminal_id = s.completed_terminal_id)))`;
 }
 
+/**
+ * 출하가 그 창고에서 나갔나 — 출하 창고이거나, POP 완료 출하(창고 없음)는 그 창고에서 재고가 빠졌으면(내부 차감 기록)
+ * 걸린다(피처 010). 출하 목록과 출하 라인 목록(피처 013 F3)이 같은 규칙을 쓴다. `warehouse` 는 자리표다.
+ */
+export function shipmentFromWarehouseSql(shipment: string, warehouse: string): string {
+  return `(${shipment}.warehouse_id = ${warehouse}::bigint OR EXISTS (SELECT 1 FROM logistics.goods_issue gw
+                 WHERE gw.source_document_type_code = 'SHIPMENT' AND gw.source_document_id = ${shipment}.shipment_id
+                   AND gw.source_warehouse_id = ${warehouse}::bigint))`;
+}
+
 /** `q` — 출하번호 · 출하 지시서 번호 · 고객 코드·이름 부분 일치. */
 export function keywordSql(param: string): string {
   const like = `'%' || ${param} || '%'`;
@@ -156,11 +166,7 @@ export function whereSql(query: ShipmentFilters): BuiltWhere {
   }
   if (query.statusCode !== undefined) and.push(`s.status_code = ${bind(query.statusCode)}`);
   if (query.warehouseId !== undefined) {
-    // POP 완료 출하는 그 창고에서 재고가 빠졌으면(내부 차감 기록) 걸린다(피처 010).
-    const warehouse = bind(query.warehouseId);
-    and.push(`(s.warehouse_id = ${warehouse}::bigint OR EXISTS (SELECT 1 FROM logistics.goods_issue gw
-                 WHERE gw.source_document_type_code = 'SHIPMENT' AND gw.source_document_id = s.shipment_id
-                   AND gw.source_warehouse_id = ${warehouse}::bigint))`);
+    and.push(shipmentFromWarehouseSql('s', bind(query.warehouseId)));
   }
   if (query.erpSendStatus !== undefined) and.push(`${ERP_SEND_STATUS_SQL} = ${bind(query.erpSendStatus)}`);
   // ⭐ `statusCode` 와 **AND** 로 겹친다 — 둘이 오면 교집합이다(`statusCode=CONFIRMED` +

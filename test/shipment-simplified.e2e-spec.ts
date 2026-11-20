@@ -952,4 +952,51 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect(rows.map((row) => [row.values.DN_REQ_SEQ, row.values.GI_QTY, row.values.PLANT_CD])).toEqual([[1, '30', 'SSE2E-P1']]);
     });
   });
+
+  /**
+   * 출하 라인 목록(W-02-09) — POP 완료 출하(피처 010)는 출하 창고가 없어 목록에서 빠지던 결함을 함께 고쳤다(피처 013 F3).
+   * 창고는 출고 전표 창고로 잇는다. W/O 로 찾으면 그 W/O 의 제품 분리 자식 LOT 출하 줄도 나온다(013 US4-5·Q19).
+   */
+  describe('출하 라인 목록 — POP 완료 출하·W/O 분리 자식 (피처 013)', () => {
+    it('US4-5·Q19 POP 완료 출하 줄이 목록에 나오고(창고 = 출고 전표 창고), W/O 번호로 분리 자식 LOT 의 줄이 찾힌다', async () => {
+      const process = (await prisma.process.findFirst({ where: { process_code: 'SSE2E-PR' } }))
+        ?? await prisma.process.create({ data: { process_code: 'SSE2E-PR', process_name: '출하단순화공정', process_type_code: 'ASSEMBLY' } });
+      const routing = (await prisma.routing.findFirst({ where: { routing_code: 'SSE2E-RT' } }))
+        ?? await prisma.routing.create({ data: { item_id: f.ids.itemA, routing_code: 'SSE2E-RT', routing_version: 1, status_code: 'ACTIVE' } });
+      const operation = (await prisma.routing_operation.findFirst({ where: { routing_id: routing.routing_id } }))
+        ?? await prisma.routing_operation.create({ data: { routing_id: routing.routing_id, process_id: process.process_id, operation_seq: 10, operation_name: '출하단순화' } });
+      const workOrder = await prisma.work_order.create({ data: {
+        work_order_no: `SSE2E-${f.run}-WO-${f.next()}`, routing_operation_id: operation.routing_operation_id, item_id: f.ids.itemA,
+        order_qty: 100, uom_id: f.ids.uom, status_code: 'IN_PROGRESS',
+      } });
+      const parent = await f.lot({ balances: [{ warehouse: 'wh1', qty: 70 }] });
+      const child = await f.lot({ balances: [{ warehouse: 'wh1', qty: 30 }] });
+      await prisma.lot.update({ where: { lot_id: BigInt(parent.lotId) }, data: { source_id: workOrder.work_order_id } });
+      await prisma.lot.update({ where: { lot_id: BigInt(child.lotId) }, data: { parent_lot_id: BigInt(parent.lotId), source_type_code: 'PRODUCT_LOT_SPLIT' } });
+      await prisma.lot_relation.create({ data: {
+        source_lot_id: BigInt(parent.lotId), target_lot_id: BigInt(child.lotId), relation_type_code: 'SPLIT', relation_qty: 30, uom_id: f.ids.uom,
+        source_event_type_code: 'PRODUCT_LOT_SPLIT', source_event_id: 1, allocation_method_code: 'EXACT', trace_accuracy_code: 'EXACT', occurred_at: new Date(),
+      } });
+      await prisma.product_lot_split.create({ data: {
+        plant_id: f.ids.plant, parent_lot_id: BigInt(parent.lotId), child_lot_id: BigInt(child.lotId), warehouse_id: f.ids.wh1,
+        location_id: f.ids.loc1a, split_qty: 30, uom_id: f.ids.uom, confirmed_at: new Date(), confirmed_terminal_id: f.pda.terminalId,
+      } });
+      const made = await f.request([{ allocated: 30 }]);
+      await f.pickLot(made, 0, { lotId: child.lotId }).expect(200);
+      await f.oqcResult(made.oqcRequestIds.A, { matchedLotIds: [child.lotId], overallJudgmentCode: 'ACCEPTED' }).expect(201);
+      const done = await f.complete(made).expect(200);
+      const lines = (query: Record<string, string | number>) => f.asSession(f.http().get('/api/logistics/shipment-lines').query(query)).expect(200);
+
+      const byWorkOrder = await lines({ workOrderNo: workOrder.work_order_no });
+      const inWh1 = await lines({ shipmentNo: done.body.shipmentNo, warehouseId: Number(f.ids.wh1) });
+      const inWh2 = await lines({ shipmentNo: done.body.shipmentNo, warehouseId: Number(f.ids.wh2) });
+
+      expect(byWorkOrder.body.items).toHaveLength(1);
+      expect(byWorkOrder.body.items[0]).toMatchObject({
+        shipmentNo: done.body.shipmentNo, warehouse: { id: Number(f.ids.wh1) }, plantId: Number(f.ids.plant), lots: [{ lotId: child.lotId, qty: 30 }],
+      });
+      expect(inWh1.body.items).toHaveLength(1);
+      expect(inWh2.body.items).toHaveLength(0);
+    });
+  });
 });
