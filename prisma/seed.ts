@@ -900,6 +900,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PRINT_FAILURE', codeName: '인쇄 실패', order: 30 },
       { code: 'PACKAGING', codeName: '포장', order: 40 },
       { code: 'QUANTITY_CHANGE', codeName: '재구성으로 수량 변경', order: 50 },
+      // 생산 LOT 분리가 원래 LOT 라벨을 다시 낼 때 서버가 붙이는 사유 — 사람이 고르는 목록에서 뺀다(피처 013 · 마이그 20261120120000).
+      { code: 'LOT_SPLIT', codeName: 'LOT 분리', order: 60 },
     ],
   },
   {
@@ -1179,6 +1181,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'MATERIAL_LOT_BATCH', codeName: '자재 관리 LOT 발행 묶음', order: 50 },
       // 부분 출고가 떼어 낸 분할 LOT — source_id 는 출고 라인이다(피처 008 · 마이그레이션 없음).
       { code: 'GOODS_ISSUE_SPLIT', codeName: '분할 출고', order: 60 },
+      // POP 생산 LOT 분리가 떼어 낸 자식 LOT — source_id 는 분리 기록(trace.product_lot_split)이다(피처 013).
+      { code: 'PRODUCT_LOT_SPLIT', codeName: '생산 LOT 분리', order: 70 },
     ],
   },
   {

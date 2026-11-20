@@ -53,6 +53,8 @@ export const WAREHOUSE_REFERRERS: readonly Referrer[] = [
   ['mdm.terminal', 'warehouse_id'],
   ['mdm.warehouse_layout', 'warehouse_id'],
   ['production.material_return', 'destination_warehouse_id'],
+  // 생산 LOT 분리 기록(피처 013).
+  ['trace.product_lot_split', 'warehouse_id'],
 ];
 
 /** 계약 `Warehouse` 와 동형. */

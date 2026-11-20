@@ -20,3 +20,6 @@ export const MATERIAL_LOT_BATCH_SOURCE = 'MATERIAL_LOT_BATCH';
 
 /** 부분 출고가 떼어 낸 분할 LOT 의 원천 — `source_id` 는 출고 라인이다(피처 008 R-4). 입고 쪽 `LOT_SPLIT` 과 갈라 둔다. */
 export const GOODS_ISSUE_SPLIT_SOURCE = 'GOODS_ISSUE_SPLIT';
+
+/** POP 생산 LOT 분리(P-04-08)가 떼어 낸 자식 LOT 의 원천 — `source_id` 는 분리 기록(`trace.product_lot_split`)이다(피처 013). */
+export const PRODUCT_LOT_SPLIT_SOURCE = 'PRODUCT_LOT_SPLIT';
