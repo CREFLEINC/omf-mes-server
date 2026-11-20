@@ -22275,12 +22275,23 @@
          "locationCode": {
           "type": "string",
           "example": "FG-A-01"
+         },
+         "warehouseCode": {
+          "type": "string",
+          "example": "FG"
+         },
+         "warehouseName": {
+          "type": "string",
+          "example": "제품 창고"
          }
         },
         "required": [
          "locationId",
-         "locationCode"
-        ]
+         "locationCode",
+         "warehouseCode",
+         "warehouseName"
+        ],
+        "description": "분리한 자리 — 위치와 그 창고(W-03-01 「FG · FG-A-01」)"
        },
        "confirmedAt": {
         "type": [

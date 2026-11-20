@@ -74,7 +74,8 @@ describe('생산 LOT 분리 — 추적·상세·검색 (e2e)', () => {
       parentLotNo: lot.lotNo,
       productLotSplit: {
         productLotSplitId: split.productLotSplitId, role: 'CHILD', splitQty: 30, splitWorkerNo: f.pop.workerNo, splitTerminalCode: `${PLS_PREFIX}-POP1`,
-        location: { locationId: f.locationOf('A') }, confirmedAt: null, confirmedWorkerNo: null, workOrderNo,
+        location: { locationId: f.locationOf('A'), locationCode: `${PLS_PREFIX}-A01`, warehouseCode: `${PLS_PREFIX}-FG`, warehouseName: '분리검사FG' },
+        confirmedAt: null, confirmedWorkerNo: null, workOrderNo,
       },
     });
     expect(parent.body.lot.productLotSplit).toMatchObject({ productLotSplitId: split.productLotSplitId, role: 'PARENT', workOrderNo });

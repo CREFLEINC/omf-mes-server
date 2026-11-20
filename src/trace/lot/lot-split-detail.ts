@@ -20,7 +20,7 @@ export interface ProductLotSplitDetail {
   splitAt: string;
   splitWorkerNo: string | null;
   splitTerminalCode: string | null;
-  location: { locationId: number; locationCode: string };
+  location: { locationId: number; locationCode: string; warehouseCode: string; warehouseName: string };
   confirmedAt: string | null;
   confirmedWorkerNo: string | null;
   /** 생산 뿌리(원천 W/O LOT)의 W/O. */
@@ -71,7 +71,7 @@ async function ancestorInbound(prisma: PrismaService, lotId: bigint): Promise<Pi
 async function productLotSplitOf(prisma: PrismaService, lotId: bigint): Promise<ProductLotSplitDetail | null> {
   const select = {
     product_lot_split_id: true, child_lot_id: true, split_qty: true, split_at: true, split_worker_no: true, confirmed_at: true,
-    confirmed_worker_no: true, location_id: true, location: { select: { location_code: true } },
+    confirmed_worker_no: true, location_id: true, location: { select: { location_code: true, warehouse: { select: { warehouse_code: true, warehouse_name: true } } } },
     split_terminal: { select: { terminal_code: true } },
   } as const;
   const row = await prisma.product_lot_split.findUnique({ where: { child_lot_id: lotId }, select })
@@ -87,7 +87,10 @@ async function productLotSplitOf(prisma: PrismaService, lotId: bigint): Promise<
     splitAt: row.split_at.toISOString(),
     splitWorkerNo: row.split_worker_no,
     splitTerminalCode: row.split_terminal?.terminal_code ?? null,
-    location: { locationId: Number(row.location_id), locationCode: row.location.location_code },
+    location: {
+      locationId: Number(row.location_id), locationCode: row.location.location_code,
+      warehouseCode: row.location.warehouse.warehouse_code, warehouseName: row.location.warehouse.warehouse_name,
+    },
     confirmedAt: row.confirmed_at?.toISOString() ?? null,
     confirmedWorkerNo: row.confirmed_worker_no,
     workOrderNo: workOrder?.work_order_no ?? null,
