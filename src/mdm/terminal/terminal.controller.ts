@@ -92,6 +92,19 @@ export class TerminalController {
     );
   }
 
+  @Post(':terminalId\\:activate')
+  @Contract('POST /mdm/terminals/{terminalId}:activate')
+  @HttpCode(HttpStatus.OK)
+  activate(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('terminalId', ParseIntPipe) terminalId: number,
+  ): Promise<unknown> {
+    return runVersioned(this.idempotency, request, response, 'terminal', (version) =>
+      this.terminals.activate(terminalId, version),
+    );
+  }
+
   @Post(':terminalId\\:deactivate')
   @Contract('POST /mdm/terminals/{terminalId}:deactivate')
   @HttpCode(HttpStatus.OK)
