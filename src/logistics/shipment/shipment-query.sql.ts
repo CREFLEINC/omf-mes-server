@@ -102,11 +102,13 @@ function allocationExists(condition: string): string {
  * ⛔ 요청 하나를 시간대 하나로 접지 않는다 — `warehouseId` 가 선택이라 한 목록에 공장이 섞인다 ⇒ 행마다 푼다.
  */
 function plantMidnightSql(date: string): string {
-  // POP 완료 출하(피처 010)는 창고가 없다 — 지시서 이행 공장의 시간대다.
+  // POP 완료 출하(피처 010)는 창고가 없다 — 지시서 이행 공장의 시간대다. 사업부 지시서(피처 012)는 이행 공장도 없어
+  // 완료한 POP 의 공장 시간대로 떨어진다(출하 번호 축과 같은 공장).
   return `((${date})::timestamp AT TIME ZONE COALESCE(
                     (SELECT p.timezone_code FROM mdm.warehouse w JOIN mdm.plant p ON p.plant_id = w.plant_id WHERE w.warehouse_id = s.warehouse_id),
                     (SELECT p.timezone_code FROM logistics.shipment_request r JOIN mdm.plant p ON p.plant_id = r.fulfillment_plant_id
-                      WHERE r.shipment_request_id = s.shipment_request_id)))`;
+                      WHERE r.shipment_request_id = s.shipment_request_id),
+                    (SELECT p.timezone_code FROM mdm.terminal t JOIN mdm.plant p ON p.plant_id = t.plant_id WHERE t.terminal_id = s.completed_terminal_id)))`;
 }
 
 /** `q` — 출하번호 · 출하 지시서 번호 · 고객 코드·이름 부분 일치. */

@@ -6,8 +6,9 @@ import { putawayTaskWhere } from '../../logistics/putaway/putaway-task.service';
 import { pendingLotsOfPlant } from '../../logistics/putaway-direct/pending-lot-query';
 import { FROM_SQL as SHIPMENT_FROM_SQL } from '../../logistics/shipment/shipment-query.sql';
 import { shipmentWhereSql } from '../../logistics/shipment/shipment-query.service';
-import { FROM_SQL as REQUEST_FROM_SQL, PICKING_COMPLETE_SQL } from '../../logistics/shipment-request/shipment-request-query.sql';
+import { FROM_SQL as REQUEST_FROM_SQL } from '../../logistics/shipment-request/shipment-request-query.sql';
 import { shipmentRequestWhereSql } from '../../logistics/shipment-request/shipment-request-query.service';
+import { requestHasOpenLineInScopeSql } from '../../logistics/shipment-request/shipment-request-terminal-view';
 import { stockTransferWhere } from '../../logistics/stock-transfer/stock-transfer-query.service';
 import { TerminalListScope } from '../../logistics/terminal-list-scope';
 import { localDate } from '../../planning/production-plan/plan-window';
@@ -59,6 +60,8 @@ export class TerminalWorkCountService {
 
   private async mobile(scope: TerminalListScope, today: string): Promise<MobileWorkCounts> {
     const request = shipmentRequestWhereSql({ shipDateFrom: today, shipDateTo: today }, { ...scope, rule: 'LINE' });
+    // 이 기기 범위 안 줄의 피킹이 남은 지시서만(피처 012 FR-010) — 다른 공장 창고 줄만 남았으면 세지 않는다.
+    const open = requestHasOpenLineInScopeSql('sr', scope, (value) => `$${request.params.push(value)}`);
     const [putawayTasks, pendingLots, materialPicking, stockTransferArrival, shipmentPicking] = await Promise.all([
       // M-01-05 적치: statusCode=PENDING
       this.prisma.putaway_task.count({ where: putawayTaskWhere({ statusCode: 'PENDING' }, scope) }),
@@ -71,7 +74,7 @@ export class TerminalWorkCountService {
       // M-01-10 재고 이동: inTransitOnly=true(도착 창고 기준)
       this.prisma.stock_transfer.count({ where: stockTransferWhere({ inTransitOnly: true }, scope) }),
       // 제품 출하 피킹: 오늘 출하일 중 피킹이 끝나지 않은 출하지시(확정 항목 5 — 목록은 끝난 것도 보인다)
-      this.rawCount(`SELECT count(*)::int AS total FROM ${REQUEST_FROM_SQL} WHERE (${request.sql}) AND NOT ${PICKING_COMPLETE_SQL}`, request.params),
+      this.rawCount(`SELECT count(*)::int AS total FROM ${REQUEST_FROM_SQL} WHERE (${request.sql}) AND ${open}`, request.params),
     ]);
     return { putaway: putawayTasks + pendingLots, materialPicking, stockTransferArrival, shipmentPicking };
   }

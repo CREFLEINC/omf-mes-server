@@ -214,19 +214,24 @@ export class ShipmentQueryService {
   }
 }
 
-/** 출하 목록의 조건 + 단말 범위 — 단말 작업 수(POP 출하 포장)가 같은 함수로 센다(omf-all-around#190). */
+/**
+ * 출하 목록의 조건 + 단말 범위 — 단말 작업 수(POP 출하 포장)가 같은 함수로 센다(omf-all-around#190).
+ * 범위(피처 012 R-5 · omf-all-around#331): 창고 있는 출하(옛 흐름·긴급 직행)는 출하 창고가 단말 공장(창고 지정 단말은 그 창고),
+ * 창고 없는 POP 완료 출하는 그 출하의 «출고 전표» 창고 중 하나라도 단말 공장(창고 지정 단말은 그 창고)이면 보인다 —
+ * 재고는 출고 전표 창고에서 빠진다. 「출하 창고 = 단말 창고」만 보던 때 창고 지정 단말에서 새 흐름 출하가 빠졌다.
+ */
 export function shipmentWhereSql(query: ShipmentQuery, terminal?: TerminalListScope): BuiltWhere {
   const where = whereSql(query);
   if (terminal !== undefined) {
-    // POP 완료 출하(피처 010)는 창고가 없다 — 지시서 이행 공장으로 본다.
-    where.sql = `(${where.sql}) AND (EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)
-       OR (s.warehouse_id IS NULL AND EXISTS (SELECT 1 FROM logistics.shipment_request tr
-                                               WHERE tr.shipment_request_id = s.shipment_request_id AND tr.fulfillment_plant_id = $${where.params.length + 1}::bigint)))`;
-    where.params.push(terminal.plantId);
-  }
-  if (terminal?.warehouseId != null) {
-    where.sql = `${where.sql} AND s.warehouse_id = $${where.params.length + 1}::bigint`;
-    where.params.push(terminal.warehouseId);
+    const plant = `$${where.params.push(terminal.plantId)}::bigint`;
+    const warehouse = terminal.warehouseId == null ? null : `$${where.params.push(terminal.warehouseId)}::bigint`;
+    const ownWarehouse = warehouse === null ? '' : ` AND s.warehouse_id = ${warehouse}`;
+    const issueWarehouse = warehouse === null ? '' : ` AND tg.source_warehouse_id = ${warehouse}`;
+    where.sql = `(${where.sql}) AND ((s.warehouse_id IS NOT NULL
+         AND EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = ${plant})${ownWarehouse})
+       OR (s.warehouse_id IS NULL AND EXISTS (SELECT 1 FROM logistics.goods_issue tg JOIN mdm.warehouse tw ON tw.warehouse_id = tg.source_warehouse_id
+                                               WHERE tg.source_document_type_code = 'SHIPMENT' AND tg.source_document_id = s.shipment_id
+                                                 AND tw.plant_id = ${plant}${issueWarehouse})))`;
   }
   return where;
 }

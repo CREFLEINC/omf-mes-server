@@ -10,7 +10,18 @@ import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { LogisticsWriteActor } from '../logistics-write-actor';
 import { assertLotsReleased } from '../shipment/shipment-rules';
+import {
+  CandidateLineRow,
+  WAREHOUSE_PICK_CONFLICT,
+  chooseLine,
+  findBusinessUnitLot,
+  inTerminalScope,
+  lockItemLines,
+  lockLotBalances,
+  notInLineWarehouse,
+} from './shipment-lot-pick-warehouse';
 import { SHIPMENT_REQUEST_LINE, pickedQtyOf } from './shipment-progress';
+import { TerminalShipmentScope } from './shipment-request-scope';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { ShipmentRequestLineView, ShipmentRequestLotView } from './shipment-request-view';
 
@@ -22,7 +33,10 @@ export interface ShipmentLotPick {
 
 export interface ShipmentLotPickResult {
   pickedLot: ShipmentRequestLotView;
+  /** 실제로 피킹한 줄 — 경로의 줄과 다를 수 있다(LOT 창고로 고른다 · 피처 012 R-3). */
   line: ShipmentRequestLineView;
+  /** 줄 출고 창고 밖에 남은 그 LOT 수량(피처 012 Edge) — 0 이면 싣지 않는다. */
+  otherWarehouseQty?: number;
 }
 
 /** `ShipmentConflictResponse.code` — 피처 010 이 더한 피킹 사유. */
@@ -32,6 +46,7 @@ export const PICK_CONFLICT = {
   LOT_ALREADY_RESERVED: 'LOT_ALREADY_RESERVED',
   LOT_ALREADY_PICKED: 'LOT_ALREADY_PICKED',
   NO_LINE_FOR_ITEM: 'NO_LINE_FOR_ITEM',
+  ...WAREHOUSE_PICK_CONFLICT,
 } as const;
 
 const INVALID_STATE = 'INVALID_STATE';
@@ -51,6 +66,8 @@ interface LineRow {
   allocated_qty: Prisma.Decimal;
   minimum_remaining_shelf_life_days: number | null;
   fulfillment_plant_id: bigint | null;
+  warehouse_id: bigint | null;
+  business_unit_id: bigint | null;
 }
 
 interface LotRow {
@@ -82,6 +99,7 @@ export class ShipmentLotPickService {
     shipmentRequestLineId: number,
     body: ShipmentLotPick,
     actor: LogisticsWriteActor,
+    scope?: TerminalShipmentScope,
   ): Promise<ShipmentLotPickResult> {
     if (body.lotId === undefined && (body.lotNo === undefined || body.lotNo.trim() === '')) {
       throw one(field('lotId', ERROR_CODE.REQUIRED, 'LOT 을 스캔하거나 고르세요.'));
@@ -90,9 +108,11 @@ export class ShipmentLotPickService {
     const now = new Date();
     const reservationNo = await this.numbering.next(INVENTORY_RESERVATION, null, now.toISOString().slice(0, 10));
 
-    const pickedLotId = await this.prisma.$transaction(async (tx) => {
+    const picked = await this.prisma.$transaction(async (tx) => {
       const line = await lockLine(tx, shipmentRequestId, shipmentRequestLineId);
       if (line === undefined) throw new NotFoundException('없는 출하작업지시 라인입니다.');
+      // 줄 출고 창고가 있는 사업부 지시서(피처 012) — 경로의 줄은 품목 힌트다.
+      if (line.warehouse_id !== null) return this.pickInLineWarehouse(tx, line, body, actor, scope, reservationNo, now);
       if (line.fulfillment_plant_id === null) {
         throw conflict(INVALID_STATE, '이행 공장이 지정되지 않은 출하작업지시는 피킹할 수 없습니다.');
       }
@@ -116,35 +136,66 @@ export class ShipmentLotPickService {
       for (const [index, row] of rows.entries()) {
         await this.reserveAndPick(tx, line, row, index === 0 ? reservationNo : `${reservationNo}-${index + 1}`, actor);
       }
-      const created = await tx.shipment_request_lot.create({
-        data: {
-          shipment_request_line_id: line.shipment_request_line_id,
-          lot_id: lot.lot_id,
-          picked_qty: total,
-          uom_id: line.uom_id,
-          status_code: PICKED,
-          picked_at: now,
-          picked_worker_id: actor.workerId ?? null,
-          created_by: actor.appUserId === undefined ? null : BigInt(actor.appUserId),
-        },
-      });
-      if (actor.terminalAudit !== undefined) {
-        await recordTerminalWorkerAudit(tx, {
-          actor: actor.terminalAudit,
-          targetTypeCode: 'SHIPMENT_REQUEST_LINE',
-          targetId: line.shipment_request_line_id,
-          eventTypeCode: 'PICK',
-        });
-      }
-      return created.shipment_request_lot_id;
+      return { lotRowId: await recordPicked(tx, line, lot.lot_id, total, actor, now), lineId: line.shipment_request_line_id, other: ZERO };
     });
 
     const detail = await this.queries.get(shipmentRequestId);
-    const lineView = (detail.lines ?? []).find((row) => row.shipmentRequestLineId === shipmentRequestLineId);
+    const lineView = (detail.lines ?? []).find((row) => row.shipmentRequestLineId === Number(picked.lineId));
     if (lineView === undefined) throw new Error('피킹한 라인을 다시 읽지 못했다');
-    const pickedLot = lineView.lots.find((row) => row.shipmentRequestLotId === Number(pickedLotId));
+    const pickedLot = lineView.lots.find((row) => row.shipmentRequestLotId === Number(picked.lotRowId));
     if (pickedLot === undefined) throw new Error('피킹 LOT 행을 다시 읽지 못했다');
-    return { pickedLot, line: lineView };
+    return { pickedLot, line: lineView, ...(picked.other.greaterThan(0) ? { otherWarehouseQty: Number(picked.other) } : {}) };
+  }
+
+  /**
+   * 사업부 지시서 피킹(피처 012 R-3) — LOT 의 가용 잔액이 있는 창고로 같은 품목·단말 범위 줄을 고르고(`chooseLine`) 그 창고의
+   * 잔액만 통째로 잡는다. 다른 창고에 남은 몫은 `otherWarehouseQty` 로 알린다(두 창고에 걸친 LOT).
+   */
+  private async pickInLineWarehouse(
+    tx: Prisma.TransactionClient,
+    hint: LineRow,
+    body: ShipmentLotPick,
+    actor: LogisticsWriteActor,
+    scope: TerminalShipmentScope | undefined,
+    reservationNo: string,
+    now: Date,
+  ): Promise<{ lotRowId: bigint; lineId: bigint; other: Prisma.Decimal }> {
+    const lot = await findBusinessUnitLot(tx, body, hint.business_unit_id, scope?.plantId);
+    const itemLines = await lockItemLines(tx, hint.shipment_request_id, lot.item_id);
+    if (itemLines.length === 0) throw conflict(PICK_CONFLICT.NO_LINE_FOR_ITEM, '이 지시서에 그 LOT 품목의 라인이 없습니다.');
+    await assertNotPicked(tx, hint, lot);
+    await assertPickable(tx, lot);
+    assertLotsReleased([{ lotId: lot.lot_id, statusCode: lot.status_code }], () => 'lotId');
+
+    const rows = await lockLotBalances(tx, lot);
+    if (rows.length === 0) throw conflict(INVALID_STATE, '그 LOT 의 재고가 없습니다.');
+    const lines = inTerminalScope(itemLines, scope);
+    const candidates = await Promise.all(lines.map(async (row) => ({
+      lineId: row.shipment_request_line_id, lineNo: row.line_no, warehouseId: row.warehouse_id,
+      allocated: row.allocated_qty, picked: await linePicked(tx, row.shipment_request_line_id),
+    })));
+    const choice = chooseLine(candidates, new Set(rows.map((row) => String(row.warehouseId))));
+    if (choice.kind === 'NOT_IN_LINE_WAREHOUSE') throw await notInLineWarehouse(tx, rows);
+    if (choice.kind === 'TARGET_REACHED') {
+      throw conflict(PICK_CONFLICT.LOT_TARGET_REACHED,
+        `목표 수량을 채웠습니다. (라인 ${choice.line.lineNo} · 목표 ${choice.line.allocated.toString()} · 피킹 ${choice.line.picked.toString()})`);
+    }
+    const chosen = lines.find((row) => row.shipment_request_line_id === choice.line.lineId) as CandidateLineRow;
+    if (!chosen.warehouse_active || chosen.warehouse_business_unit_id !== hint.business_unit_id) {
+      throw conflict(PICK_CONFLICT.LINE_WAREHOUSE_UNAVAILABLE, '출고 창고를 쓸 수 없습니다. (비활성이거나 지시서 사업부의 창고가 아닙니다)');
+    }
+    const line: LineRow = { ...hint, shipment_request_line_id: chosen.shipment_request_line_id, uom_id: chosen.uom_id,
+      allocated_qty: chosen.allocated_qty, minimum_remaining_shelf_life_days: chosen.minimum_remaining_shelf_life_days, warehouse_id: chosen.warehouse_id };
+    assertShelfLife(lot, line, now);
+
+    const mine = rows.filter((row) => row.warehouseId === chosen.warehouse_id);
+    await assertNotBusy(tx, lot, mine);
+    for (const [index, row] of mine.entries()) {
+      await this.reserveAndPick(tx, line, row, index === 0 ? reservationNo : `${reservationNo}-${index + 1}`, actor);
+    }
+    const total = mine.reduce((sum, row) => sum.plus(row.on_hand_qty), ZERO);
+    const other = rows.filter((row) => row.warehouseId !== chosen.warehouse_id).reduce((sum, row) => sum.plus(row.on_hand_qty), ZERO);
+    return { lotRowId: await recordPicked(tx, line, lot.lot_id, total, actor, now), lineId: line.shipment_request_line_id, other };
   }
 
   /** 잔액 행 하나 — 그 행의 가용 전부를 예약하고 곧바로 피킹으로 옮긴다(ⓒ안). 차원 11칸은 잠근 행에서 그대로 옮긴다. */
@@ -191,7 +242,7 @@ export class ShipmentLotPickService {
 async function lockLine(tx: Prisma.TransactionClient, requestId: number, lineId: number): Promise<LineRow | undefined> {
   const [line] = await tx.$queryRaw<LineRow[]>`
     SELECT l.shipment_request_line_id, l.shipment_request_id, l.item_id, l.uom_id, l.allocated_qty,
-           l.minimum_remaining_shelf_life_days, h.fulfillment_plant_id
+           l.minimum_remaining_shelf_life_days, h.fulfillment_plant_id, l.warehouse_id, h.business_unit_id
       FROM logistics.shipment_request_line l
       JOIN logistics.shipment_request h ON h.shipment_request_id = l.shipment_request_id
      WHERE l.shipment_request_line_id = ${lineId}
@@ -284,18 +335,50 @@ async function lockPlantBalances(tx: Prisma.TransactionClient, lot: LotRow, plan
     (row) => row.plantId === plantId && !defect.has(String(row.warehouseId)) && new Prisma.Decimal(row.on_hand_qty).greaterThan(0),
   );
   if (rows.length === 0) throw conflict(INVALID_STATE, '그 LOT 의 재고가 없습니다.');
+  await assertNotBusy(tx, lot, rows);
+  return rows;
+}
+
+/** 잡을 행 가운데 하나라도 예약·피킹·차단이 걸려 있으면 409 — 통째로 잡을 수 없다. 잠근 «뒤»에 읽는다. */
+async function assertNotBusy(tx: Prisma.TransactionClient, lot: LotRow, rows: LockedBalanceRow[]): Promise<void> {
   const busy = await tx.inventory_balance.count({
     where: {
       item_id: lot.item_id,
       lot_id: lot.lot_id,
-      plant_id: plantId,
+      plant_id: { in: [...new Set(rows.map((row) => row.plantId))] },
       warehouse_id: { in: [...new Set(rows.map((row) => row.warehouseId))] },
       on_hand_qty: { gt: 0 },
       OR: [{ reserved_qty: { gt: 0 } }, { picked_qty: { gt: 0 } }, { blocked_qty: { gt: 0 } }],
     },
   });
   if (busy > 0) throw conflict(PICK_CONFLICT.LOT_ALREADY_RESERVED, '다른 작업에 잡힌 LOT 입니다. 통째로 피킹할 수 없습니다.');
-  return rows;
+}
+
+/** 피킹 LOT 행 + 단말 감사 — 옛 줄·창고 줄이 같다. */
+async function recordPicked(
+  tx: Prisma.TransactionClient, line: LineRow, lotId: bigint, total: Prisma.Decimal, actor: LogisticsWriteActor, now: Date,
+): Promise<bigint> {
+  const created = await tx.shipment_request_lot.create({
+    data: {
+      shipment_request_line_id: line.shipment_request_line_id,
+      lot_id: lotId,
+      picked_qty: total,
+      uom_id: line.uom_id,
+      status_code: PICKED,
+      picked_at: now,
+      picked_worker_id: actor.workerId ?? null,
+      created_by: actor.appUserId === undefined ? null : BigInt(actor.appUserId),
+    },
+  });
+  if (actor.terminalAudit !== undefined) {
+    await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit,
+      targetTypeCode: 'SHIPMENT_REQUEST_LINE',
+      targetId: line.shipment_request_line_id,
+      eventTypeCode: 'PICK',
+    });
+  }
+  return created.shipment_request_lot_id;
 }
 
 function conflict(code: string, message: string): ConflictException {

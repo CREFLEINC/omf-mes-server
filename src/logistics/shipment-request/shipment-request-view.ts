@@ -309,6 +309,7 @@ export function shipmentRequestView(
     completed: completedShipment !== null,
     lines: lines.map(({ line }, index) => ({
       lineNo: line.line_no, allocatedQty: Number(line.allocated_qty), pickedQty: lineViews[index].pickedQty,
+      ...(lineViews[index].warehouse == null ? {} : { warehouseName: lineViews[index].warehouse?.warehouseName }),
       salesOrderLineCancelled: line.sales_order_line_id !== null && facts.cancelledSalesOrderLines.has(String(line.sales_order_line_id)),
     })),
     lots: liveLots.map((lot) => ({ lotNo: lot.lotNo, oqcLotStatus: lot.oqcLotStatus })),

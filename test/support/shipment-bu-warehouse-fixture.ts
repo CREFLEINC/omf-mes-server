@@ -3,7 +3,7 @@
  *
  * 사업부 X — 공장 P1(창고 A·C·불량창고 D·쓰지 않는 창고 Z), 공장 P2(창고 B). 사업부 Y — 공장 P3(창고 Y1).
  * 사업부 없는 공장 P0(배포 전 지시서용 · US6-3). 품목 FG(OQC 대상)·G(검사 없음), 고객·납품처.
- * 계정: 범위 사업부 X / X·Y / 공장 P1 만 / 범위 없음. 단말: PDA-P1·PDA-P1A(창고 A)·PDA-P2·PDA-P0·POP-P1·POP-P2·POP-P3·POP-P0.
+ * 계정: 범위 사업부 X / X·Y / 공장 P1 만 / 범위 없음. 단말: PDA-P1·PDA-P1A(창고 A)·PDA-P2·PDA-P0·POP-P1·POP-P1A(창고 A)·POP-P2·POP-P3·POP-P0.
  *
  * ⭐ 마스터는 접두어로 «있으면 쓴다» — 출하 완료가 원장에 행을 남기고 원장은 지울 수 없어 마스터를 지우면 FK 가 막는다.
  *    거래 행(LOT·지시서·수주)은 실행마다 다른 번호(`run`)로 새로 만든다. 010 의 `shipment-simplified-fixture.ts` 와 같은 방식이다.
@@ -23,7 +23,7 @@ const DAY = new Date('2026-11-20T00:00:00.000Z');
 export type WarehouseKey = 'A' | 'B' | 'C' | 'D' | 'Z' | 'Y1' | 'P0W';
 export type PlantKey = 'P1' | 'P2' | 'P3' | 'P0';
 export type AccountKey = 'X' | 'XY' | 'P1' | 'ALL';
-export type TerminalKey = 'PDA_P1' | 'PDA_P1A' | 'PDA_P2' | 'PDA_P0' | 'POP_P1' | 'POP_P2' | 'POP_P3' | 'POP_P0';
+export type TerminalKey = 'PDA_P1' | 'PDA_P1A' | 'PDA_P2' | 'PDA_P0' | 'POP_P1' | 'POP_P1A' | 'POP_P2' | 'POP_P3' | 'POP_P0';
 
 export interface BwTerminal {
   terminalId: bigint;
@@ -139,7 +139,7 @@ export class ShipmentBuWarehouseFixture {
 
     const terminals: [TerminalKey, 'MOBILE' | 'POP', PlantKey, WarehouseKey | null][] = [
       ['PDA_P1', 'MOBILE', 'P1', null], ['PDA_P1A', 'MOBILE', 'P1', 'A'], ['PDA_P2', 'MOBILE', 'P2', null], ['PDA_P0', 'MOBILE', 'P0', null],
-      ['POP_P1', 'POP', 'P1', null], ['POP_P2', 'POP', 'P2', null], ['POP_P3', 'POP', 'P3', null], ['POP_P0', 'POP', 'P0', null],
+      ['POP_P1', 'POP', 'P1', null], ['POP_P1A', 'POP', 'P1', 'A'], ['POP_P2', 'POP', 'P2', null], ['POP_P3', 'POP', 'P3', null], ['POP_P0', 'POP', 'P0', null],
     ];
     for (const [key, type, plantKey, warehouseKey] of terminals) {
       this.terminal[key] = await this.makeTerminal(key, type, this.plant[plantKey], warehouseKey === null ? null : this.warehouse[warehouseKey]);

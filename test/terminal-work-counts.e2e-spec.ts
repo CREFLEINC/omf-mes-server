@@ -150,9 +150,10 @@ describe('단말 작업 수 (e2e)', () => {
     return body.items.filter((p: { sourceDocumentTypeCode: string }) => p.sourceDocumentTypeCode === 'MATERIAL_ISSUE_REQUEST').length;
   }
 
+  /** 피처 012 FR-010 — 이 기기 범위 안 줄(`inTerminalScope`)의 피킹이 남은 지시서만 센다. */
   function isPickingOpen(row: Record<string, unknown>): boolean {
-    const lines = (row.lines ?? []) as { allocatedQty: number; pickedQty: number }[];
-    return lines.length === 0 || lines.some((line) => line.pickedQty < line.allocatedQty);
+    const lines = (row.lines ?? []) as { allocatedQty: number; pickedQty: number; inTerminalScope?: boolean }[];
+    return lines.some((line) => line.inTerminalScope !== false && line.pickedQty < line.allocatedQty);
   }
 
   function contractValidator() {

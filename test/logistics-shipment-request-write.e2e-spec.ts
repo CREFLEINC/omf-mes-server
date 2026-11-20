@@ -631,7 +631,10 @@ describe('출하작업지시 편성 (e2e)', () => {
       pickingWarehouses: [],
       replacementCount: 0,
       // 출하 완료 관문(피처 010 S5) — 편성 직후라 피킹 부족이고 완료 출하가 없다.
-      completionBlockers: [{ code: 'PICKING_SHORT', lineNo: 1 }, { code: 'PICKING_SHORT', lineNo: 2 }],
+      // 피처 012 — 피킹 부족에 줄 출고 창고 이름을 싣는다(「피킹 부족: 라인 n(창고 …)」).
+      completionBlockers: [
+        { code: 'PICKING_SHORT', lineNo: 1, warehouseName: '출하편성창고' }, { code: 'PICKING_SHORT', lineNo: 2, warehouseName: '출하편성창고' },
+      ],
       blockerSummary: { PICKING_SHORT: 2 },
       lotJudgmentSummary: { notInspected: 0, accepted: 0, rejected: 0, held: 0 },
       completedShipment: null,

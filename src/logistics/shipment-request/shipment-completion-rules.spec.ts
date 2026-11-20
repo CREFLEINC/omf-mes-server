@@ -33,6 +33,14 @@ describe('completionBlockers — 출하 완료 관문(FR-016)', () => {
     expect(completionBlockers({ completed: false, lines: [line(1, 0, 0)], lots: [] })).toEqual([{ code: 'PICKING_SHORT' }]);
   });
 
+  it('US3-3·Q10 피킹 부족은 줄 출고 창고 이름을 함께 싣는다(「피킹 부족: 라인 n(창고 …)」) — 창고 없는 옛 줄은 싣지 않는다', () => {
+    expect(completionBlockers({
+      completed: false,
+      lines: [{ ...line(1, 10, 10), warehouseName: '창고A' }, { ...line(2, 5, 0), warehouseName: '창고B' }, line(3, 5, 0)],
+      lots: [{ lotNo: 'L1', oqcLotStatus: 'ACCEPTED' }],
+    })).toEqual([{ code: 'PICKING_SHORT', lineNo: 2, warehouseName: '창고B' }, { code: 'PICKING_SHORT', lineNo: 3 }]);
+  });
+
   it('목록 요약은 이유 코드별 수다', () => {
     expect(blockerSummary([{ code: 'NOT_INSPECTED', lotNo: 'a' }, { code: 'NOT_INSPECTED', lotNo: 'b' }, { code: 'PICKING_SHORT', lineNo: 1 }]))
       .toEqual({ NOT_INSPECTED: 2, PICKING_SHORT: 1 });

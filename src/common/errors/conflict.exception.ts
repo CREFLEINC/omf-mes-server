@@ -52,7 +52,9 @@ export interface ConflictExtra {
   /** `ProductionConflictResponse.currentProposal` — 같은 때 지금 기준으로 다시 계산한 제안(계약 `ProductionPlanProposal`). */
   currentProposal?: object;
   /** `ShipmentConflictResponse.blockers` — `COMPLETION_BLOCKED` 일 때 출하 완료를 막는 이유(피처 010). */
-  blockers?: { code: string; lineNo?: number; lotNo?: string }[];
+  blockers?: { code: string; lineNo?: number; lotNo?: string; warehouseName?: string }[];
+  /** `ShipmentConflictResponse.warehouses` — `LOT_NOT_IN_LINE_WAREHOUSE` 일 때 LOT 이 있는 창고(피처 012). */
+  warehouses?: { warehouseId: number; warehouseCode: string; warehouseName: string; plantId: number; plantName: string }[];
 }
 
 export interface OpenSessionView {

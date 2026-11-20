@@ -13,6 +13,9 @@ const DN_REQ_NO_LENGTH = 18;
  * LOT 은 보내지 않는다 — 라인의 출하수량이 LOT 합이다.
  * - 수불유형·출하처·출고 창고는 라인에 붙은 ERP 수주에서 이어받는다(컬럼 정의서). ERP 수주에 붙지 않은 라인은
  *   보낼 곳이 없어 빼고, 남는 라인이 없으면 보낼 것이 없다(2026-10-22 사용자 결정).
+ * - 공장(PLANT_CD)·출고 일시 시간대는 행마다 그 라인 출고 전표 창고의 공장이다 — 사업부 지시서는 줄마다 창고가 달라 한 출하가
+ *   여러 공장에 걸친다(피처 012 R-4 · 빈 곳 ①). 메시지는 출하당 하나 그대로다. 출고 전표가 없는 옛 흐름 라인은 출하 창고의 공장,
+ *   그것도 없으면 지시서 이행 공장이다.
  * - 출고 일시는 공장 현지 시각이다. 출하전표 라인 순번(DN_SEQ_NO)은 숫자 NOT NULL 칸이라 출하요청 라인 순번과 같은
  *   값을 넣는다(고객 질문 10).
  */
@@ -36,6 +39,7 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
           line_no: true,
           shipped_qty: true,
           uom_id: true,
+          goods_issue_line: { select: { goods_issue: { select: { warehouse: { select: { plant: { select: { plant_code: true, timezone_code: true } } } } } } } },
           item: { select: { item_code: true, base_uom_id: true } },
           uom: { select: { uom_code: true } },
           shipment_request_line: {
@@ -70,12 +74,13 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
   if (shipment.shipment_no.length > DN_REQ_NO_LENGTH) {
     throw new Error(`출하번호 ${shipment.shipment_no} 가 출하요청번호 칸(${DN_REQ_NO_LENGTH}자)보다 길다`);
   }
-  const plant = shipment.warehouse?.plant ?? shipment.shipment_request.fulfillment_plant;
-  if (plant === null) throw new Error(`출하 ${shipment.shipment_no} 의 공장을 정할 수 없다(창고·이행 공장 없음)`);
+  const fallback = shipment.warehouse?.plant ?? shipment.shipment_request.fulfillment_plant;
 
   return lines.map(({ line, orderLine }) => {
     const order = orderLine.sales_order;
     const at = `출하 ${shipment.shipment_no} 라인 ${line.line_no}`;
+    const plant = line.goods_issue_line?.goods_issue.warehouse.plant ?? fallback;
+    if (plant === null) throw new Error(`${at} — 공장을 정할 수 없다(출고 전표·창고·이행 공장 없음)`);
     if (order.erp_movement_type_code === null) {
       throw new Error(`${at} — ERP 수주 ${order.erp_sales_order_no} 에 수불유형(MOV_TYPE)이 없다`);
     }
