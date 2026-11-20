@@ -10,8 +10,11 @@ import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { NumberingService } from '../src/core/numbering';
+import { goodsIssueBuilder } from '../src/integration/erp/send/goods-issue.send';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { ShipmentBuWarehouseFixture } from './support/shipment-bu-warehouse-fixture';
+import { seedRoute } from './approval-request.fixture';
+import { ShipmentBuWarehouseFixture, TerminalKey } from './support/shipment-bu-warehouse-fixture';
 
 interface WarehouseBody { warehouseId: number; warehouseCode: string; warehouseName: string; plantId: number; plantName: string }
 interface RequestBody {
@@ -27,6 +30,8 @@ describe('피처 012 출하 지시서 사업부·줄 출고 창고 (e2e)', () =>
   let app: INestApplication;
   let prisma: PrismaService;
   let f: ShipmentBuWarehouseFixture;
+  /** POP 완료 시험이 만든 출하 — #331 목록·취소 시험이 이어 쓴다. */
+  let completed: { requestId: number; shipmentId: number };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -281,6 +286,275 @@ describe('피처 012 출하 지시서 사업부·줄 출고 창고 (e2e)', () =>
       expect(response.body.errors).toEqual(expect.arrayContaining([
         expect.objectContaining({ field: 'shipmentRequestId', message: '이행 공장이 지정되지 않은 출하작업지시입니다.' }),
       ]));
+    });
+
+    it('US5-1·SC-004 W-04-12 권한으로 미확정 출하(수주 있음)를 :confirm 하면 확정·ERP 송신 대기(PENDING)가 되고 erpSendStatusCounts 「확정 전」이 1 준다', async () => {
+      const order = await f.salesOrder([{ ordered: 10 }]);
+      const made = await f.made([{ allocated: 10, warehouse: 'A', salesOrderLineId: order.lineIds[0] }], { salesOrderId: order.salesOrderId });
+      const unconfirmed = await shipment(made.requestId, 'UNCONFIRMED');
+      await prisma.shipment.update({ where: { shipment_id: BigInt(unconfirmed.shipmentId) }, data: { shipped_at: new Date('2026-11-20T03:00:00.000Z') } });
+      await prisma.shipment_line.create({ data: {
+        shipment_id: BigInt(unconfirmed.shipmentId), line_no: 1, shipment_request_line_id: BigInt(made.lineIds[0]), item_id: f.item.FG, shipped_qty: 10, uom_id: f.uom,
+      } });
+      const scope = { businessUnitId: Number(f.unit.X) };
+      const before = (await listed(scope)).erpSendStatusCounts;
+      expect((await detail(made.requestId, 'ALL').expect(200)).body.erpSendStatus).toBe('NOT_QUEUED');
+
+      const etag = (await f.http().get(`/api/logistics/shipments/${unconfirmed.shipmentId}`).set('Cookie', w0412).expect(200)).headers.etag as string;
+      await f.http().post(`/api/logistics/shipments/${unconfirmed.shipmentId}:confirm`).set('Cookie', w0412)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', etag).send({}).expect(200);
+
+      const stored = await prisma.shipment.findUniqueOrThrow({ where: { shipment_id: BigInt(unconfirmed.shipmentId) } });
+      expect(stored.status_code).toBe('CONFIRMED');
+      expect(await prisma.integration_message.count({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(unconfirmed.shipmentId) } })).toBe(1);
+      const body = (await detail(made.requestId, 'ALL').expect(200)).body as { erpSendStatus: string; shipments: Record<string, unknown>[] };
+      expect(body.erpSendStatus).toBe('PENDING');
+      expect(body.shipments[0]).toMatchObject({ shipmentId: unconfirmed.shipmentId, statusCode: 'CONFIRMED', erpSendStatus: 'PENDING' });
+      const after = (await listed(scope)).erpSendStatusCounts;
+      expect(after.NOT_QUEUED).toBe(before.NOT_QUEUED - 1);
+      expect(after.PENDING ?? 0).toBe((before.PENDING ?? 0) + 1);
+    });
+  });
+
+  describe('피킹(PDA) — 줄 출고 창고 LOT 만, LOT 창고로 줄을 고른다', () => {
+    const pick = (made: { requestId: number; lineIds: number[] }, index: number, lotId: number, terminal: TerminalKey = 'PDA_P1') =>
+      f.asTerminal(f.http().post(`/api/logistics/shipment-requests/${made.requestId}/lines/${made.lineIds[index]}:pick-lot`), terminal)
+        .set('Idempotency-Key', randomUUID()).send({ lotId });
+    const pdaList = async (terminal: TerminalKey) =>
+      (await f.asTerminal(f.http().get('/api/logistics/shipment-requests'), terminal)
+        .query({ shipDateFrom: '2026-11-20', shipDateTo: '2026-11-20', size: 200 }).expect(200)).body as {
+        items: { shipmentRequestId: number; pickableLineCount: number; lines: { inTerminalScope: boolean; outOfScopeReason: string | null }[] }[];
+      };
+    const reservations = (lotId: number) => prisma.inventory_reservation.count({ where: { lot_id: BigInt(lotId) } });
+
+    it('US2-1·US2-2·Q6 PDA-P1 목록에는 P1 창고 줄이 있는 지시서만 — 행 pickableLineCount, 다른 공장 줄은 OTHER_PLANT. P0 PDA 에는 안 보인다', async () => {
+      const made = await f.made([{ allocated: 10, warehouse: 'A' }, { allocated: 5, warehouse: 'B' }]);
+      const onlyB = await f.made([{ allocated: 5, warehouse: 'B' }]);
+      const row = (await pdaList('PDA_P1')).items.find((item) => item.shipmentRequestId === made.requestId);
+      expect(row?.pickableLineCount).toBe(1);
+      expect(row?.lines.map((line) => [line.inTerminalScope, line.outOfScopeReason])).toEqual([[true, null], [false, 'OTHER_PLANT']]);
+      expect((await pdaList('PDA_P1')).items.map((item) => item.shipmentRequestId)).not.toContain(onlyB.requestId);
+      expect((await pdaList('PDA_P2')).items.map((item) => item.shipmentRequestId)).toEqual(expect.arrayContaining([made.requestId, onlyB.requestId]));
+      expect((await pdaList('PDA_P0')).items.map((item) => item.shipmentRequestId)).not.toContain(made.requestId);
+    });
+
+    it('US2-6·Q8·SC-005 창고 A 지정 PDA 는 창고 A 줄이 있는 지시서만, 같은 공장 C 줄은 OTHER_WAREHOUSE', async () => {
+      const ac = await f.made([{ allocated: 10, warehouse: 'A' }, { allocated: 5, warehouse: 'C' }]);
+      const onlyC = await f.made([{ allocated: 5, warehouse: 'C' }]);
+      const list = await pdaList('PDA_P1A');
+      expect(list.items.map((item) => item.shipmentRequestId)).not.toContain(onlyC.requestId);
+      expect(list.items.find((item) => item.shipmentRequestId === ac.requestId)?.lines.map((line) => line.outOfScopeReason)).toEqual([null, 'OTHER_WAREHOUSE']);
+    });
+
+    it('US2-3·Q7 창고 A 의 LOT 은 줄1 에 통째로 피킹된다', async () => {
+      const made = await f.made([{ allocated: 100, warehouse: 'A', item: 'G' }]);
+      const lot = await f.lot([{ warehouse: 'A', qty: 40 }], 'G');
+      const response = await pick(made, 0, lot.lotId).expect(200);
+      expect(response.body.line).toMatchObject({ shipmentRequestLineId: made.lineIds[0], pickedQty: 40 });
+      expect(response.body).not.toHaveProperty('otherWarehouseQty');
+    });
+
+    it('US2-4 같은 품목 줄1(A)·줄2(C) — C 의 LOT 을 줄1 경로로 스캔해도 줄2 로 간다(응답 line 이 실제 줄)', async () => {
+      const made = await f.made([{ allocated: 50, warehouse: 'A', item: 'G' }, { allocated: 50, warehouse: 'C', item: 'G' }]);
+      const lot = await f.lot([{ warehouse: 'C', qty: 20 }], 'G');
+      const response = await pick(made, 0, lot.lotId).expect(200);
+      expect(response.body.line.shipmentRequestLineId).toBe(made.lineIds[1]);
+    });
+
+    it('US2-5·Q7 줄 창고에 없는 B 의 LOT 은 409 LOT_NOT_IN_LINE_WAREHOUSE(LOT 이 있는 창고 실음) — 예약 없음', async () => {
+      const made = await f.made([{ allocated: 50, warehouse: 'A', item: 'G' }, { allocated: 50, warehouse: 'B', item: 'G' }]);
+      const lot = await f.lot([{ warehouse: 'B', qty: 20 }], 'G');
+      const response = await pick(made, 0, lot.lotId).expect(409);
+      expect(response.body).toMatchObject({ code: 'LOT_NOT_IN_LINE_WAREHOUSE' });
+      expect(response.body.warehouses).toEqual([expect.objectContaining({ warehouseId: Number(f.warehouse.B), plantName: 'P2공장' })]);
+      expect(response.body.message).toContain('완제품창고B(P2공장)');
+      expect(await reservations(lot.lotId)).toBe(0);
+      // 그 줄 공장의 PDA 는 같은 LOT 을 피킹한다(Q9).
+      await pick(made, 1, lot.lotId, 'PDA_P2').expect(200);
+    });
+
+    it('Edge-span A·C 에 걸친 LOT 은 A 몫만 잡고 otherWarehouseQty 로 C 몫을 알린다', async () => {
+      const made = await f.made([{ allocated: 100, warehouse: 'A', item: 'G' }]);
+      const lot = await f.lot([{ warehouse: 'A', qty: 30 }, { warehouse: 'C', qty: 20 }], 'G');
+      const response = await pick(made, 0, lot.lotId).expect(200);
+      expect(response.body).toMatchObject({ otherWarehouseQty: 20, line: { pickedQty: 30 } });
+      const balances = await prisma.inventory_balance.findMany({ where: { lot_id: BigInt(lot.lotId) }, orderBy: { warehouse_id: 'asc' } });
+      expect(balances.map((row) => [row.warehouse_id, Number(row.picked_qty)])).toEqual([[f.warehouse.A, 30], [f.warehouse.C, 0]]);
+    });
+
+    it('Edge-order·E-3 창고 맞는 줄이 모두 목표를 채웠으면 LOT_TARGET_REACHED — 다른 창고 줄이 비어 있어도', async () => {
+      const made = await f.made([{ allocated: 10, warehouse: 'A', item: 'G' }, { allocated: 10, warehouse: 'C', item: 'G' }]);
+      await pick(made, 0, (await f.lot([{ warehouse: 'A', qty: 15 }], 'G')).lotId).expect(200);
+      const response = await pick(made, 0, (await f.lot([{ warehouse: 'A', qty: 5 }], 'G')).lotId).expect(409);
+      expect(response.body.code).toBe('LOT_TARGET_REACHED');
+    });
+
+    it('Edge-unavailable·E-2 줄 출고 창고가 비활성이면 409 LINE_WAREHOUSE_UNAVAILABLE 「출고 창고를 쓸 수 없습니다」', async () => {
+      const made = await f.made([{ allocated: 10, warehouse: 'C', item: 'G' }]);
+      const lot = await f.lot([{ warehouse: 'C', qty: 5 }], 'G');
+      await prisma.warehouse.update({ where: { warehouse_id: f.warehouse.C }, data: { is_active: false } });
+      try {
+        const response = await pick(made, 0, lot.lotId).expect(409);
+        expect(response.body).toMatchObject({ code: 'LINE_WAREHOUSE_UNAVAILABLE' });
+        expect(response.body.message).toContain('출고 창고를 쓸 수 없습니다');
+      } finally {
+        await prisma.warehouse.update({ where: { warehouse_id: f.warehouse.C }, data: { is_active: true } });
+      }
+    });
+
+    it('US2-2 범위 밖 줄을 다른 공장 PDA 로 직접 부르면 401(단말 소유 검사)', async () => {
+      const made = await f.made([{ allocated: 10, warehouse: 'A', item: 'G' }]);
+      await pick(made, 0, (await f.lot([{ warehouse: 'A', qty: 5 }], 'G')).lotId, 'PDA_P2').expect(401);
+    });
+
+    it('SC-002 줄 창고가 아닌 창고의 LOT 을 차례로 스캔하면 모두 거절되고 피킹은 0건이다', async () => {
+      const made = await f.made([{ allocated: 100, warehouse: 'A', item: 'G' }]);
+      for (const warehouse of ['B', 'C', 'Y1'] as const) {
+        const lot = await f.lot([{ warehouse, qty: 10 }], 'G');
+        const response = await pick(made, 0, lot.lotId).expect(409);
+        expect(response.body.code).toBe('LOT_NOT_IN_LINE_WAREHOUSE');
+      }
+      expect(await prisma.shipment_request_lot.count({ where: { shipment_request_line_id: BigInt(made.lineIds[0]) } })).toBe(0);
+    });
+
+    it('US6-2·US2-7·FR-027 창고 미지정 옛 줄은 P1 PDA 가 P1 의 불량 외 모든 창고 LOT 을 받고, P2 PDA 는 범위 밖으로 본다', async () => {
+      const old = await f.legacy('P1', [{ item: 'G', allocated: 100 }]);
+      const lot = await f.lot([{ warehouse: 'A', qty: 30 }, { warehouse: 'C', qty: 20 }], 'G');
+      const response = await pick(old, 0, lot.lotId).expect(200);
+      expect(response.body.line.pickedQty).toBe(50);
+      expect(response.body).not.toHaveProperty('otherWarehouseQty');
+      expect((await pdaList('PDA_P2')).items.map((item) => item.shipmentRequestId)).not.toContain(old.requestId);
+      await pick(old, 0, (await f.lot([{ warehouse: 'A', qty: 5 }], 'G')).lotId, 'PDA_P2').expect(401);
+    });
+  });
+
+  describe('POP 완료 — 사업부 안 어느 POP, 창고마다 출고 전표', () => {
+    const pick = (made: { requestId: number; lineIds: number[] }, index: number, lotId: number, terminal: TerminalKey) =>
+      f.asTerminal(f.http().post(`/api/logistics/shipment-requests/${made.requestId}/lines/${made.lineIds[index]}:pick-lot`), terminal)
+        .set('Idempotency-Key', randomUUID()).send({ lotId }).expect(200);
+    const complete = (requestId: number, terminal: TerminalKey) =>
+      f.asTerminal(f.http().post(`/api/logistics/shipment-requests/${requestId}:complete`), terminal)
+        .set('Idempotency-Key', randomUUID()).send({ businessDate: '2026-11-20', occurredAt: '2026-11-20T05:00:00.000Z' });
+    const lookup = (requestNo: string, terminal: TerminalKey) =>
+      f.asTerminal(f.http().get('/api/logistics/shipment-requests:lookup'), terminal).query({ code: `SHPREQ:${requestNo}` });
+
+    it('US3-1·Q9 POP-P1·POP-P2 의 :lookup 이 사업부 X 지시서를 열고, POP-P3 은 403 BUSINESS_UNIT_MISMATCH(내용 없음)', async () => {
+      const made = await f.made([{ allocated: 10, warehouse: 'A', item: 'G' }, { allocated: 5, warehouse: 'B', item: 'G' }]);
+      const opened = (await lookup(made.requestNo, 'POP_P2').expect(200)).body;
+      expect(opened.businessUnit).toMatchObject({ businessUnitCode: 'BWE2E-BUX' });
+      expect(opened.lines.map((line: { warehouse: { plantName: string } }) => line.warehouse.plantName)).toEqual(['P1공장', 'P2공장']);
+      await lookup(made.requestNo, 'POP_P1').expect(200);
+      const denied = await lookup(made.requestNo, 'POP_P3').expect(403);
+      expect(denied.body.errors).toEqual([expect.objectContaining({ code: 'BUSINESS_UNIT_MISMATCH', message: '다른 사업부의 출하 지시서입니다.' })]);
+      expect(JSON.stringify(denied.body)).not.toContain(made.requestNo);
+      expect(JSON.stringify(denied.body)).not.toContain('사업부X');
+      const blocked = await complete(made.requestId, 'POP_P3').expect(403);
+      expect(blocked.body.errors[0].code).toBe('BUSINESS_UNIT_MISMATCH');
+    });
+
+    it('US3-3·Q10 한 공장 줄만 피킹하면 「피킹 부족: 라인 2(창고 B)」로 막히고 부분 완료가 없다', async () => {
+      const made = await f.made([{ allocated: 10, warehouse: 'A', item: 'G' }, { allocated: 5, warehouse: 'B', item: 'G' }]);
+      await pick(made, 0, (await f.lot([{ warehouse: 'A', qty: 10 }], 'G')).lotId, 'PDA_P1');
+      const response = await complete(made.requestId, 'POP_P2').expect(409);
+      expect(response.body).toMatchObject({ code: 'COMPLETION_BLOCKED', blockers: [{ code: 'PICKING_SHORT', lineNo: 2, warehouseName: '완제품창고B' }] });
+      expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(0);
+    });
+
+    it('US3-2·Q11·SC-003·D-5·E-6 POP-P2 완료 — 출하 하나, 창고마다 재고 차감·출고 전표 하나(번호 축 = 창고 공장), 출하 번호 축 = POP 공장, ERP 행 PLANT_CD = 전표 창고 공장', async () => {
+      const order = await f.salesOrder([{ item: 'G', ordered: 10 }, { item: 'G', ordered: 5 }]);
+      const made = await f.made([
+        { allocated: 10, warehouse: 'A', item: 'G', salesOrderLineId: order.lineIds[0] },
+        { allocated: 5, warehouse: 'B', item: 'G', salesOrderLineId: order.lineIds[1] },
+      ], { salesOrderId: order.salesOrderId });
+      const lotA = await f.lot([{ warehouse: 'A', qty: 10 }], 'G');
+      const lotB = await f.lot([{ warehouse: 'B', qty: 5 }], 'G');
+      await pick(made, 0, lotA.lotId, 'PDA_P1');
+      await pick(made, 1, lotB.lotId, 'PDA_P2');
+
+      const numbering = jest.spyOn(app.get(NumberingService), 'next');
+      const done = await complete(made.requestId, 'POP_P2').expect(200);
+      const calls = numbering.mock.calls.map(([type, plant]) => [type, plant]);
+      numbering.mockRestore();
+      expect(calls).toEqual(expect.arrayContaining([['SHIPMENT', f.plant.P2], ['GOODS_ISSUE', f.plant.P1], ['GOODS_ISSUE', f.plant.P2]]));
+
+      expect(done.body.goodsIssues.map((row: { plantName: string; warehouseName: string }) => [row.warehouseName, row.plantName]).sort())
+        .toEqual([['완제품창고A', 'P1공장'], ['완제품창고B', 'P2공장']]);
+      const issues = await prisma.goods_issue.findMany({ where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(done.body.shipmentId) } });
+      expect(issues.map((row) => row.source_warehouse_id).sort()).toEqual([f.warehouse.A, f.warehouse.B].sort());
+      const balances = await prisma.inventory_balance.findMany({ where: { lot_id: { in: [BigInt(lotA.lotId), BigInt(lotB.lotId)] } } });
+      expect(balances.map((row) => Number(row.on_hand_qty))).toEqual([0, 0]);
+      expect(await prisma.shipment.count({ where: { shipment_request_id: BigInt(made.requestId) } })).toBe(1);
+
+      const message = await prisma.integration_message.findFirstOrThrow({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(done.body.shipmentId) } });
+      const rows = await goodsIssueBuilder(prisma).build({
+        id: message.integration_message_id, interfaceCode: message.interface_code, targetTypeCode: 'SHIPMENT', targetId: BigInt(done.body.shipmentId), payload: {},
+      });
+      expect(rows.map((row) => row.values.PLANT_CD)).toEqual(['BWE2E-P1', 'BWE2E-P2']);
+      expect(new Set(rows.map((row) => row.values.DN_REQ_NO)).size).toBe(1);
+
+      await complete(made.requestId, 'POP_P1').expect(409);
+      completed = { requestId: made.requestId, shipmentId: done.body.shipmentId as number };
+    });
+
+    it('FR-017·Q12·SC-005(#331) 창고 A 지정 POP 의 출하 목록에 새 흐름 출하가 보이고, 다른 사업부 POP 에는 없다', async () => {
+      const ids = async (terminal: TerminalKey) => ((await f.asTerminal(f.http().get('/api/logistics/shipments'), terminal)
+        .query({ shipDateFrom: '2026-11-20', shipDateTo: '2026-11-20', size: 200 }).expect(200)).body.items as { shipmentId: number }[])
+        .map((row) => row.shipmentId);
+      expect(await ids('POP_P1A')).toContain(completed.shipmentId);
+      expect(await ids('POP_P2')).toContain(completed.shipmentId);
+      expect(await ids('POP_P3')).not.toContain(completed.shipmentId);
+      // 공장 없는 새 지시서의 출하도 영업일 거르기에서 빠지지 않는다(시간대 = 완료 POP 공장).
+      const listed = await f.asSession(f.http().get('/api/logistics/shipments'), 'ALL').query({ shipDateFrom: '2026-11-20', shipDateTo: '2026-11-20', size: 500 }).expect(200);
+      expect((listed.body.items as { shipmentId: number }[]).map((row) => row.shipmentId)).toContain(completed.shipmentId);
+    });
+
+    it('US3-5 사업부 안 POP 은 OQC 화면에서 지시서(줄 창고·공장)를 열고, 다른 사업부 POP 은 열지도 결과를 넣지도 못한다', async () => {
+      const made = await f.made([{ allocated: 10, warehouse: 'A' }, { allocated: 5, warehouse: 'B' }]);
+      const body = (await f.asTerminal(f.http().get(`/api/logistics/shipment-requests/${made.requestId}`), 'POP_P2').expect(200)).body as RequestBody;
+      expect(body.lines.map((line) => line.warehouse?.plantName)).toEqual(['P1공장', 'P2공장']);
+      await f.asTerminal(f.http().get(`/api/logistics/shipment-requests/${made.requestId}`), 'POP_P3').expect(401);
+      const oqc = await prisma.inspection_request.findFirstOrThrow({ where: { target_type_code: 'SHIPMENT_REQUEST', target_id: BigInt(made.requestId) } });
+      const scoped = await f.asTerminal(f.http().get('/api/quality/inspection-requests'), 'POP_P2').query({ inspectionTypeCode: 'OQC', size: 200 }).expect(200);
+      expect((scoped.body.items as { inspectionRequestId: number }[]).map((row) => row.inspectionRequestId)).toContain(Number(oqc.inspection_request_id));
+      await f.asTerminal(f.http().post('/api/quality/inspection-results'), 'POP_P3').set('Idempotency-Key', randomUUID()).send({
+        inspectionRequestId: Number(oqc.inspection_request_id), inspectedQty: 0, acceptedQty: 0, rejectedQty: 0, heldQty: 0, uomId: Number(f.uom),
+        inspectedAt: '2026-11-20T03:00:00.000Z', statusCode: 'DRAFT',
+      }).expect(401);
+    });
+
+    it('US4-3·US4-5·SC-004 W-04-12 만 가진 계정이 W-04-02 「출하」 칸에서 송신 전 출하를 취소 요청 → 승인 → 실행한다', async () => {
+      const cookie = await f.account('e2e-bw-w0412c', [{ unit: f.unit.X }], ['W-04-12']);
+      if ((await prisma.approval_route.findFirst({ where: { approval_type_code: 'SHIPMENT_CANCEL' } })) === null) {
+        const user = await prisma.app_user.findUniqueOrThrow({ where: { login_id: 'e2e-bw-w0412c' } });
+        await seedRoute(prisma, 'SHIPMENT_CANCEL', [user.app_user_id]);
+      }
+      const etag = async () => (await f.http().get(`/api/logistics/shipments/${completed.shipmentId}`).set('Cookie', cookie).expect(200)).headers.etag as string;
+      await f.http().post(`/api/logistics/shipments/${completed.shipmentId}:request-cancel`).set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', await etag()).send({ reason: '고객 요청' }).expect(200);
+      const pending = (await detail(completed.requestId, 'ALL').expect(200)).body.shipments[0];
+      expect(pending).toMatchObject({ shipmentId: completed.shipmentId, cancelRequestPending: true });
+      await prisma.approval_request.updateMany({
+        where: { target_type_code: 'SHIPMENT', target_id: BigInt(completed.shipmentId), approval_type_code: 'SHIPMENT_CANCEL', status_code: 'PENDING' },
+        data: { status_code: 'APPROVED', decided_at: new Date() },
+      });
+      await f.http().post(`/api/logistics/shipments/${completed.shipmentId}:cancel`).set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', await etag()).send({ businessDate: '2026-11-20', occurredAt: '2026-11-20T06:00:00.000Z' }).expect(200);
+      const after = (await detail(completed.requestId, 'ALL').expect(200)).body;
+      expect(after.shipments[0]).toMatchObject({ statusCode: 'CANCELLED' });
+      expect(after.erpSendStatus).toBe('CANCELLED');
+    });
+
+    it('US6-3·FR-026 사업부 없는 공장 P0 의 옛 지시서는 P0 POP 만 열고, 사업부 X 의 POP 은 403', async () => {
+      const orphan = await f.legacy('P0', [{ item: 'G', allocated: 5 }]);
+      await lookup(orphan.requestNo, 'POP_P0').expect(200);
+      expect((await lookup(orphan.requestNo, 'POP_P1').expect(403)).body.errors[0].code).toBe('BUSINESS_UNIT_MISMATCH');
+    });
+
+    it('SC-006·US6-1 배포 전 옛 지시서(P1, 창고 미지정)를 P1 PDA 로 피킹하고 같은 사업부 POP-P2 가 추가 조치 없이 완료한다 — 전표는 P1 창고', async () => {
+      const old = await f.legacy('P1', [{ item: 'G', allocated: 10 }]);
+      await pick(old, 0, (await f.lot([{ warehouse: 'C', qty: 10 }], 'G')).lotId, 'PDA_P1');
+      const done = await complete(old.requestId, 'POP_P2').expect(200);
+      expect(done.body.goodsIssues).toEqual([expect.objectContaining({ warehouseId: Number(f.warehouse.C), plantName: 'P1공장' })]);
     });
   });
 });

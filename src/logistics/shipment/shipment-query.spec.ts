@@ -4,6 +4,7 @@ import {
   orderBySql,
   whereSql,
 } from './shipment-query.sql';
+import { shipmentWhereSql } from './shipment-query.service';
 
 const FROM = '2026-09-01';
 
@@ -99,5 +100,24 @@ describe('출하 목록 SQL', () => {
     expect(() => orderBySql('createdAt')).toThrow();
     // 프로토타입 키로 통과하지 않는다(`hasOwnProperty` 로 본다).
     expect(() => orderBySql('constructor')).toThrow();
+  });
+});
+
+describe('단말 출하 목록 범위(피처 012 R-5 · omf-all-around#331)', () => {
+  it('SC-005·FR-017 창고 없는 POP 완료 출하는 출고 전표 창고로 본다 — 창고 지정 단말은 그 창고의 전표', () => {
+    const built = shipmentWhereSql({ shipDateFrom: FROM }, { plantId: 3n, warehouseId: 7n });
+    expect(built.sql).toContain("tg.source_document_type_code = 'SHIPMENT' AND tg.source_document_id = s.shipment_id");
+    expect(built.sql).toContain('tw.plant_id = $2::bigint AND tg.source_warehouse_id = $3::bigint');
+    // 옛 흐름 출하(창고 있는 출하)는 출하 창고 조건 그대로다.
+    expect(built.sql).toContain('AND s.warehouse_id = $3::bigint');
+    // ⛔ 「출하 창고 = 단말 창고」를 모든 출하에 거는 절이 남으면 창고 없는 새 흐름 출하가 빠진다(#331).
+    expect(built.sql.trimEnd().endsWith('AND s.warehouse_id = $3::bigint')).toBe(false);
+    expect(built.params).toEqual([FROM, 3n, 7n]);
+  });
+
+  it('FR-017 창고 없는 단말은 공장만 본다 — 출고 전표 창고 조건이 없다', () => {
+    const built = shipmentWhereSql({ shipDateFrom: FROM }, { plantId: 3n, warehouseId: null });
+    expect(built.sql).not.toContain('tg.source_warehouse_id =');
+    expect(built.params).toEqual([FROM, 3n]);
   });
 });

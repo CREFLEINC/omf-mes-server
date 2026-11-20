@@ -691,12 +691,13 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect(blocked.body.blockers).toEqual([{ code: 'SALES_ORDER_LINE_CANCELLED', lineNo: 1 }]);
     });
 
-    it('US4-3·Q10·Q21 지시서 코드가 아니면 400 NOT_SHIPMENT_REQUEST_CODE, 없는 지시서·남의 공장은 404 SHIPMENT_REQUEST_NOT_FOUND', async () => {
+    // 피처 012 FR-013 — 남의 사업부(사업부 없는 공장이면 남의 공장) 지시서는 404 가 아니라 403 BUSINESS_UNIT_MISMATCH 다.
+    it('US4-3·Q10·Q21 지시서 코드가 아니면 400 NOT_SHIPMENT_REQUEST_CODE, 없는 지시서는 404, 남의 공장은 403 BUSINESS_UNIT_MISMATCH', async () => {
       const made = await f.request([{ allocated: 10 }]);
 
       const notCode = await f.lookup('SSE2E-LOT-1').expect(400);
       const missing = await f.lookup('SHPREQ:SR-00000000-9999').expect(404);
-      await f.lookup(`SHPREQ:${made.requestNo}`, f.foreignPda).expect(404);
+      expect((await f.lookup(`SHPREQ:${made.requestNo}`, f.foreignPda).expect(403)).body.errors[0].code).toBe('BUSINESS_UNIT_MISMATCH');
       await f.lookup(`SHPREQ:${made.requestNo}`, f.pda).expect(200);
 
       expect(notCode.body.errors[0]).toMatchObject({ field: 'code', code: 'NOT_SHIPMENT_REQUEST_CODE' });

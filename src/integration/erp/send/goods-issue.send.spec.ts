@@ -120,6 +120,28 @@ describe('goodsIssueBuilder', () => {
     );
   });
 
+  it('E-6·FR-015·D-6 사업부 지시서 출하(창고 없음)는 행마다 그 라인 출고 전표 창고의 공장 — 시간대도 그 공장, 메시지는 하나', async () => {
+    const issued = (plantCode: string, timezone: string) => ({ goods_issue: { warehouse: { plant: { plant_code: plantCode, timezone_code: timezone } } } });
+    const rows = await build({
+      warehouse: null,
+      shipment_request: { fulfillment_plant: null },
+      shipment_line: [
+        line(1, { goods_issue_line: issued('P1', 'Asia/Ho_Chi_Minh') }),
+        line(2, { goods_issue_line: issued('P2', 'Asia/Seoul') }),
+      ],
+    });
+    expect(rows.map((row) => [row.values.DN_REQ_NO, row.values.PLANT_CD, row.values.ACTUAL_GI_DT])).toEqual([
+      ['SH-20261022-0001', 'P1', '2026-10-22 01:30:05'],
+      ['SH-20261022-0001', 'P2', '2026-10-22 03:30:05'],
+    ]);
+  });
+
+  it('D-6 출고 전표도 출하 창고도 이행 공장도 없으면 그 라인에서 실패한다', async () => {
+    await expect(build({ warehouse: null, shipment_request: { fulfillment_plant: null } })).rejects.toThrow(
+      '출하 SH-20261022-0001 라인 1 — 공장을 정할 수 없다(출고 전표·창고·이행 공장 없음)',
+    );
+  });
+
   it('출하번호가 출하요청번호 칸(18자)보다 길면 실패한다', async () => {
     await expect(build({ shipment_no: 'SH-PL11-20261022-0001' })).rejects.toThrow(
       '출하번호 SH-PL11-20261022-0001 가 출하요청번호 칸(18자)보다 길다',

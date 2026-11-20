@@ -13,6 +13,7 @@ import {
   requestInBusinessUnitSql,
   requestPickableByTerminalSql,
 } from './shipment-request-scope';
+import { TerminalScopedRequestView, withTerminalScope } from './shipment-request-terminal-view';
 import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
 import {
   FROM_SQL,
@@ -79,7 +80,7 @@ export class ShipmentRequestQueryService {
     query: ShipmentRequestQuery,
     terminal?: ShipmentRequestTerminalFilter,
     scopes?: readonly AccountScope[],
-  ): Promise<PagedResponse<ShipmentRequestView> & { erpSendStatusCounts: Record<string, number> }> {
+  ): Promise<PagedResponse<ShipmentRequestView | TerminalScopedRequestView> & { erpSendStatusCounts: Record<string, number> }> {
     const page = pageRequest(query);
     const where = shipmentRequestWhereSql(query, terminal, scopes);
     // ERP 송신 칩 건수(W-04-02 · 피처 012 FR-018) — 송신 상태 조건만 빼고 같은 조건으로 센다(010 출하 목록과 같은 방식).
@@ -109,8 +110,10 @@ export class ShipmentRequestQueryService {
       ),
     ]);
     const views = await this.views(rows.map((row) => row.shipment_request_id));
+    // PDA 목록은 줄마다 이 기기 범위·밖인 이유와 피킹할 줄 수를 싣는다(피처 012 FR-011).
+    const scoped = terminal?.rule === 'LINE' ? views.map((view) => withTerminalScope(view, terminal)) : views;
     return {
-      ...pagedResponse(views, counted[0].total, page),
+      ...pagedResponse<ShipmentRequestView | TerminalScopedRequestView>(scoped, counted[0].total, page),
       erpSendStatusCounts: Object.fromEntries(facets.map((row) => [row.status, row.count])),
     };
   }

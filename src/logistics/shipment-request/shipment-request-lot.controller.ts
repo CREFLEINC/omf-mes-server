@@ -12,6 +12,7 @@ import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { ShipmentLotManagementCode, ShipmentLotCodeService } from './shipment-lot-code.service';
 import { ShipmentLotPick, ShipmentLotPickResult, ShipmentLotPickService } from './shipment-lot-pick.service';
 import { ShipmentLotReplaceResult, ShipmentLotReplaceService } from './shipment-lot-replace.service';
+import { TerminalShipmentScope } from './shipment-request-scope';
 import { ShipmentRequestLotView } from './shipment-request-view';
 
 const PICK_LOT = 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot';
@@ -23,6 +24,12 @@ const COMPLETE = 'POST /logistics/shipment-requests/{shipmentRequestId}:complete
  * 출하 지시서 피킹 LOT(피처 010 · omf-all-around#305) — PDA LOT 통째 피킹.
  * ⛔ 409 봉투가 계열(`ShipmentConflictResponse`)이라 `FAMILY_CONFLICT_CODE` 를 넘긴다(`family-conflict-code.spec.ts`).
  */
+/** 단말 범위(공장·창고) — 피킹 줄 고르기가 이 범위 안 줄만 본다(피처 012 R-2). 세션 호출은 없다. */
+function terminalScopeOf(request: Request): TerminalShipmentScope | undefined {
+  const terminal = currentTerminal(request);
+  return terminal === undefined ? undefined : { plantId: terminal.plantId, warehouseId: terminal.warehouseId ?? null };
+}
+
 @Controller('logistics')
 export class ShipmentRequestLotController {
   constructor(
@@ -46,7 +53,7 @@ export class ShipmentRequestLotController {
       this.idempotency,
       request,
       HttpStatus.OK,
-      () => this.picks.pickLot(shipmentRequestId, shipmentRequestLineId, body, logisticsWriteActorOf(request, PICK_LOT)),
+      () => this.picks.pickLot(shipmentRequestId, shipmentRequestLineId, body, logisticsWriteActorOf(request, PICK_LOT), terminalScopeOf(request)),
       FAMILY_CONFLICT_CODE,
     );
   }

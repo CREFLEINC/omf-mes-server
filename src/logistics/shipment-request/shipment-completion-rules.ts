@@ -17,10 +17,13 @@ export interface CompletionBlocker {
   code: CompletionBlockerCode;
   lineNo?: number;
   lotNo?: string;
+  /** 피킹 부족 줄의 출고 창고(피처 012 — 「피킹 부족: 라인 n(창고 …)」). 창고 없는 옛 줄은 없다. */
+  warehouseName?: string;
 }
 
 export interface CompletionLineFacts {
   lineNo: number;
+  warehouseName?: string;
   allocatedQty: number;
   pickedQty: number;
   salesOrderLineCancelled: boolean;
@@ -46,7 +49,9 @@ export function completionBlockers(input: {
   if (input.completed) return [{ code: 'ALREADY_COMPLETED' }];
   const blockers: CompletionBlocker[] = [];
   for (const line of input.lines) {
-    if (line.allocatedQty > 0 && line.pickedQty < line.allocatedQty) blockers.push({ code: 'PICKING_SHORT', lineNo: line.lineNo });
+    if (line.allocatedQty > 0 && line.pickedQty < line.allocatedQty) {
+      blockers.push({ code: 'PICKING_SHORT', lineNo: line.lineNo, ...(line.warehouseName === undefined ? {} : { warehouseName: line.warehouseName }) });
+    }
   }
   // 배정이 없는 지시서라도 낼 LOT 이 하나도 없으면 완료할 것이 없다.
   if (input.lots.length === 0 && blockers.length === 0) blockers.push({ code: 'PICKING_SHORT' });

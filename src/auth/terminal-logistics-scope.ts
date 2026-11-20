@@ -259,12 +259,19 @@ export async function assertTerminalLogisticsScope(
       // 재생재 본문에는 plantId가 없다. 실제 창고/위치 소유 공장으로 검증한다.
       await warehouse(b.warehouseId); break;
     case 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick':
-    case 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot':
+    case 'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot': {
       await pickableLine(p.shipmentRequestId, p.shipmentRequestLineId);
+      // 줄 출고 창고가 있는 사업부 지시서(피처 012)는 다른 공장 LOT 도 받아서 서비스가 409 `LOT_NOT_IN_LINE_WAREHOUSE`(LOT 이 있는
+      // 창고)로 답한다 — 여기서 LOT 공장으로 401 을 내면 PDA 가 「어느 창고에 있는지」를 못 보인다. 옛 줄은 지금처럼 LOT 공장을 본다.
+      const line = await prisma.shipment_request_line.findFirst({ where: { shipment_request_line_id: id(p.shipmentRequestLineId) }, select: { warehouse_id: true } });
+      if (line?.warehouse_id != null) return;
       await optional(lot, b.lotId); break;
+    }
     case 'GET /logistics/shipment-requests/{shipmentRequestId}':
-    case 'POST /logistics/shipment-requests/{shipmentRequestId}:complete':
       await businessUnitRequest(p.shipmentRequestId); break;
+    // 다른 사업부 지시서는 서비스가 403 `BUSINESS_UNIT_MISMATCH` 로 답한다(피처 012 FR-013 — POP 이 「다른 사업부」를 보인다).
+    case 'POST /logistics/shipment-requests/{shipmentRequestId}:complete':
+      await check(await prisma.shipment_request.findFirst({ where: { shipment_request_id: id(p.shipmentRequestId) }, select: { shipment_request_id: true } })); break;
     // 피킹 LOT 행 → 그 줄이 단말 범위 안(피처 012 R-2 · 010 은 지시서 이행 공장).
     case 'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace':
     case 'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code':

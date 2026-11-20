@@ -953,7 +953,7 @@
      "shipment"
     ],
     "summary": "출하작업지시 목록",
-    "description": "W-04-02 출하 예정 목록. 기간이 필수다(공유계약 L-3). 근거: W-04-02 §5 ⭐ 피처 012 D-12: 계정 세션이면 계정 데이터 범위(사업부 줄·공장 줄 모두 그 사업부의 지시서, 사업부 없는 옛 지시서는 공장 줄의 이행 공장)로 좁힌다 — 범위 줄이 없는 계정은 전부. 단말이면 PDA 는 단말 범위 안 줄이 하나라도 있는 지시서, POP 은 단말 공장 사업부의 지시서다(사업부 없는 옛 지시서는 이행 공장).",
+    "description": "W-04-02 출하 예정 목록. 기간이 필수다(공유계약 L-3). 근거: W-04-02 §5 ⭐ 피처 012 D-12: 계정 세션이면 계정 데이터 범위(사업부 줄·공장 줄 모두 그 사업부의 지시서, 사업부 없는 옛 지시서는 공장 줄의 이행 공장)로 좁힌다 — 범위 줄이 없는 계정은 전부. 단말이면 PDA 는 단말 범위 안 줄이 하나라도 있는 지시서, POP 은 단말 공장 사업부의 지시서다(사업부 없는 옛 지시서는 이행 공장). PDA 목록 행에 `pickableLineCount`, 줄에 `inTerminalScope`·`outOfScopeReason` 을 싣는다(범위 밖 줄도 읽기 전용으로 보이도록 싣는다).",
     "parameters": [
      {
       "name": "customerId",
@@ -1845,7 +1845,7 @@
      "shipment"
     ],
     "summary": "출하 목록",
-    "description": "W-04-02·W-04-04·W-04-12 가 함께 쓴다. 기간 필수(L-3) ⭐ 피처 012 D-11: W-04-02 「출하」 칸도 부른다(출하 내역 W-04-12 화면은 없앴다).",
+    "description": "W-04-02·W-04-04·W-04-12 가 함께 쓴다. 기간 필수(L-3) ⭐ 피처 012 D-11: W-04-02 「출하」 칸도 부른다(출하 내역 W-04-12 화면은 없앴다). ⭐ 피처 012 R-5(omf-all-around#331): 단말 범위 — 창고 있는 출하는 출하 창고가 단말 공장(창고 지정 단말은 그 창고), 창고 없는 POP 완료 출하는 «출고 전표» 창고 중 하나라도 단말 공장(창고 지정 단말은 그 창고)이면 보인다.",
     "parameters": [
      {
       "name": "shipmentRequestId",
@@ -3633,7 +3633,7 @@
      "shipment"
     ],
     "summary": "제품 LOT 통째 피킹",
-    "description": "PDA(M-04-01)가 LOT 을 스캔하면 그 LOT 의 공장 안 가용 잔액 전부(불량창고 제외 — 여러 창고·위치·적치 대기 자리 포함)를 이 라인에 피킹한다. 잔액 행마다 예약을 하나씩 걸고 곧바로 푼다(picked += 가용). 라인 피킹 합이 목표(allocatedQty)보다 작을 때만 받으므로 초과는 마지막 LOT 에서만 생긴다. 수량 입력은 없다. 피킹 LOT 행(shipment_request_lot)이 PICKED 로 생긴다. 근거: 피처 010 FR-004·004a·005·006",
+    "description": "PDA(M-04-01)가 LOT 을 스캔하면 그 LOT 의 공장 안 가용 잔액 전부(불량창고 제외 — 여러 창고·위치·적치 대기 자리 포함)를 이 라인에 피킹한다. 잔액 행마다 예약을 하나씩 걸고 곧바로 푼다(picked += 가용). 라인 피킹 합이 목표(allocatedQty)보다 작을 때만 받으므로 초과는 마지막 LOT 에서만 생긴다. 수량 입력은 없다. 피킹 LOT 행(shipment_request_lot)이 PICKED 로 생긴다. 근거: 피처 010 FR-004·004a·005·006 ⭐ 피처 012 R-3: 줄 출고 창고가 있는 지시서는 경로의 줄을 «품목 힌트»로만 쓴다 — 서버가 LOT 의 가용 잔액이 있는 창고로 같은 품목·단말 범위 안 줄(남은 수량이 있는 앞 줄)을 골라 그 «창고의» 잔액만 통째로 잡고, 실제 줄을 응답 `line` 으로 알린다. 다른 창고에 남은 몫은 `otherWarehouseQty`. 창고 없는 옛 줄은 지금 규칙(지시서 공장의 불량 외 모든 창고) 그대로다.",
     "parameters": [
      {
       "name": "shipmentRequestId",
@@ -3938,7 +3938,7 @@
      "shipment"
     ],
     "summary": "지시서 코드 해석 · 출하 완료 확인 값",
-    "description": "POP P-04-07 스캔·PDA 코드 보기 — SHPREQ:{지시서 번호} 를 해석해 완료 확인 값을 낸다. 단말이면 그 공장 지시서만(다른 공장은 404). 근거: 피처 010 FR-018 · R-9",
+    "description": "POP P-04-07 스캔·PDA 코드 보기 — SHPREQ:{지시서 번호} 를 해석해 완료 확인 값을 낸다. 단말이면 그 공장 지시서만(다른 공장은 404). 근거: 피처 010 FR-018 · R-9 ⭐ 피처 012 FR-013: 단말이면 단말 공장 사업부의 지시서만 연다 — 다른 사업부면 403 `BUSINESS_UNIT_MISMATCH` 「다른 사업부의 출하 지시서입니다」(지시서 내용·상대 사업부 이름은 싣지 않는다). 사업부 없는 옛 지시서는 그 이행 공장 단말만.",
     "parameters": [
      {
       "name": "code",
@@ -3987,6 +3987,16 @@
        }
       }
      },
+     "403": {
+      "description": "다른 사업부의 지시서 — BUSINESS_UNIT_MISMATCH(피처 012)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "404": {
       "description": "SHIPMENT_REQUEST_NOT_FOUND — 형식은 맞지만 지시서가 없다",
       "content": {
@@ -4006,7 +4016,7 @@
      "shipment"
     ],
     "summary": "출하 완료(POP)",
-    "description": "POP P-04-07 [출하 완료] 한 번 — 한 트랜잭션에서 관문(FR-016) → 출하 «하나»(CONFIRMED 로 바로 · warehouseId null · 완료 단말·작업자) → 창고마다 내부 재고 차감 기록(goods_issue)·원장 출고 → 출하 라인·LOT 배분(예약 행마다) → 지시·수주 라인 출하 수량 → 피킹 LOT SHIPPED → 출하 OQC 확정(작성중 결과 확정·의뢰 완료·LOT 이력 C4, 생략 의뢰는 남은 LOT 에 C27) → 수주 연결 라인이 있으면 ERP 송신 적재. 같은 지시서는 한 번만 완료된다. 근거: 피처 010 FR-016~019 · R-8",
+    "description": "POP P-04-07 [출하 완료] 한 번 — 한 트랜잭션에서 관문(FR-016) → 출하 «하나»(CONFIRMED 로 바로 · warehouseId null · 완료 단말·작업자) → 창고마다 내부 재고 차감 기록(goods_issue)·원장 출고 → 출하 라인·LOT 배분(예약 행마다) → 지시·수주 라인 출하 수량 → 피킹 LOT SHIPPED → 출하 OQC 확정(작성중 결과 확정·의뢰 완료·LOT 이력 C4, 생략 의뢰는 남은 LOT 에 C27) → 수주 연결 라인이 있으면 ERP 송신 적재. 같은 지시서는 한 번만 완료된다. 근거: 피처 010 FR-016~019 · R-8 ⭐ 피처 012: 사업부 안 어느 POP 에서나 완료한다 — 다른 사업부면 403 `BUSINESS_UNIT_MISMATCH`. 출하 번호는 완료한 POP 의 공장, 출고 전표는 창고마다 하나이고 번호는 그 창고의 공장 체계다(R-4). ERP 송신 행의 PLANT_CD 는 그 행 출고 전표 창고의 공장.",
     "parameters": [
      {
       "name": "shipmentRequestId",
@@ -4075,7 +4085,7 @@
       }
      },
      "403": {
-      "description": "POP 단말이 아니다",
+      "description": "POP 단말이 아니다 · 다른 사업부의 지시서 — BUSINESS_UNIT_MISMATCH(피처 012)",
       "content": {
        "application/json": {
         "schema": {
@@ -5103,7 +5113,7 @@
        "SENT"
       ],
       "example": "PENDING",
-      "description": "ERP 송신 상태(출하 내역 W-04-12 · 피처 010) — 위에서부터 처음 맞는 값: 미확정 NOT_QUEUED(확정 전) · 수주 연결 라인 0 NOT_SENT_NO_SALES_ORDER(송신 안 함) · 메시지 없음 NOT_QUEUED · 메시지 취소 CANCELLED · 송신 실패 SEND_ERROR · 보내기 전(PENDING·sentAt 없음·바깥 행 0) PENDING(대기) · 그 밖 SENT(보냄). 출하 완료 단계 화면에는 표시하지 않는다"
+      "description": "ERP 송신 상태(출하 예정 목록 W-04-02 「출하」 칸 · 피처 010) — 위에서부터 처음 맞는 값: 미확정 NOT_QUEUED(확정 전) · 수주 연결 라인 0 NOT_SENT_NO_SALES_ORDER(송신 안 함) · 메시지 없음 NOT_QUEUED · 메시지 취소 CANCELLED · 송신 실패 SEND_ERROR · 보내기 전(PENDING·sentAt 없음·바깥 행 0) PENDING(대기) · 그 밖 SENT(보냄). 출하 완료 단계 화면에는 표시하지 않는다"
      },
      "cancelRequestPending": {
       "type": "boolean",
@@ -5964,6 +5974,11 @@
         "type": "null"
        }
       ]
+     },
+     "pickableLineCount": {
+      "type": "integer",
+      "example": 1,
+      "description": "PDA(단말 MOBILE) 목록에만 — 이 기기에서 피킹할 줄 수(피처 012 빈 곳 ⑥). 관리웹·POP 응답에는 없다."
      }
     },
     "required": [
@@ -6277,6 +6292,26 @@
        }
       ],
       "description": "출고 창고(피처 012) — 이 줄은 이 창고 잔액에서만 피킹한다. null = 배포 전 줄(「창고 미지정」, 지시서 이행 공장의 불량 외 창고 전부)."
+     },
+     "inTerminalScope": {
+      "type": "boolean",
+      "example": true,
+      "description": "PDA 목록에만 — 이 줄이 이 기기 범위 안인가(줄 창고의 공장 = 단말 공장, 창고 지정 단말은 그 창고 · 옛 줄은 지시서 공장). 밖이면 읽기 전용."
+     },
+     "outOfScopeReason": {
+      "oneOf": [
+       {
+        "type": "string",
+        "enum": [
+         "OTHER_PLANT",
+         "OTHER_WAREHOUSE"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "PDA 목록에만 — 범위 밖인 이유. OTHER_PLANT = 다른 공장 창고, OTHER_WAREHOUSE = 같은 공장의 이 기기 창고 밖(피처 012)."
      }
     },
     "required": [
@@ -6385,9 +6420,11 @@
        "LOT_NOT_REJECTED",
        "COMPLETION_BLOCKED",
        "ALREADY_COMPLETED",
-       "ERP_ALREADY_SENT"
+       "ERP_ALREADY_SENT",
+       "LOT_NOT_IN_LINE_WAREHOUSE",
+       "LINE_WAREHOUSE_UNAVAILABLE"
       ],
-      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다. COMPLETION_BLOCKED 는 출하 완료를 막는 이유가 있다(blockers 에 실린다). ALREADY_COMPLETED 는 이미 POP 에서 출하 완료한 지시서다(다시 스캔·동시 완료). ERP_ALREADY_SENT 는 ERP 로 이미 보낸(또는 보내는 중인) POP 완료 출하라 취소할 수 없다 — ERP 에서 처리한다.",
+      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다. COMPLETION_BLOCKED 는 출하 완료를 막는 이유가 있다(blockers 에 실린다). ALREADY_COMPLETED 는 이미 POP 에서 출하 완료한 지시서다(다시 스캔·동시 완료). ERP_ALREADY_SENT 는 ERP 로 이미 보낸(또는 보내는 중인) POP 완료 출하라 취소할 수 없다 — ERP 에서 처리한다. 피처 012(omf-all-around#338): LOT_NOT_IN_LINE_WAREHOUSE 는 스캔한 LOT 의 가용 잔액이 이 기기 범위 안 같은 품목 줄의 출고 창고 어디에도 없다 — `warehouses` 에 LOT 이 있는 창고(공장)를 싣는다. LINE_WAREHOUSE_UNAVAILABLE 은 고른 줄의 출고 창고가 비활성이거나 지시서 사업부의 창고가 아니다(「출고 창고를 쓸 수 없습니다」). 창고 맞는 줄 찾기가 먼저이고, 맞는 줄이 모두 목표를 채웠을 때만 LOT_TARGET_REACHED 다.",
       "example": "VERSION_CONFLICT"
      },
      "message": {
@@ -6415,6 +6452,13 @@
        "$ref": "#/components/schemas/ShipmentCompletionBlocker"
       },
       "description": "COMPLETION_BLOCKED 일 때만 — 막는 이유 목록"
+     },
+     "warehouses": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+      },
+      "description": "LOT_NOT_IN_LINE_WAREHOUSE 일 때 그 LOT 의 가용 잔액이 있는 창고들(공장 이름 포함 · 피처 012)."
      }
     },
     "required": [
@@ -7329,7 +7373,14 @@
       "$ref": "#/components/schemas/ShipmentRequestLot"
      },
      "line": {
-      "$ref": "#/components/schemas/ShipmentRequestLine"
+      "$ref": "#/components/schemas/ShipmentRequestLine",
+      "description": "실제로 피킹한 줄 — 경로의 줄과 다를 수 있다(피처 012)."
+     },
+     "otherWarehouseQty": {
+      "type": "number",
+      "format": "double",
+      "example": 20,
+      "description": "줄 출고 창고 밖에 남은 그 LOT 의 수량(피처 012 — 두 창고에 걸친 LOT). 0 이면 싣지 않는다."
      }
     },
     "required": [
@@ -7491,6 +7542,11 @@
       "type": "string",
       "example": "LOT-0001",
       "description": "NOT_INSPECTED·REJECTED·HELD 의 LOT"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고 B",
+      "description": "PICKING_SHORT 줄의 출고 창고 이름(피처 012 — 「피킹 부족: 라인 n(창고 …)」). 창고 없는 옛 줄은 없다."
      }
     },
     "required": [
@@ -7716,6 +7772,16 @@
          "type": "number",
          "format": "double",
          "example": 40
+        },
+        "plantId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "plantName": {
+         "type": "string",
+         "example": "1공장",
+         "description": "그 창고의 공장(피처 012 — 출고 전표 공장)"
         }
        },
        "required": [
@@ -7723,7 +7789,9 @@
         "warehouseCode",
         "warehouseName",
         "lotCount",
-        "qty"
+        "qty",
+        "plantId",
+        "plantName"
        ]
       }
      },
@@ -7795,6 +7863,17 @@
         "uomCode": {
          "type": "string",
          "example": "EA"
+        },
+        "warehouse": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "description": "줄 출고 창고(공장) — null 은 옛 줄(창고 미지정 · 피처 012)."
         }
        },
        "required": [
@@ -7810,7 +7889,8 @@
         "shippedQty",
         "lotCount",
         "salesOrderLineId",
-        "uomCode"
+        "uomCode",
+        "warehouse"
        ]
       }
      },
@@ -8009,6 +8089,17 @@
         "replacedAt"
        ]
       }
+     },
+     "businessUnit": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentRequestBusinessUnit"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "지시서 사업부(피처 012 — POP 머리). 사업부 없는 옛 지시서는 null(「사업부 미지정」)."
      }
     },
     "required": [
@@ -8025,7 +8116,8 @@
      "lots",
      "blockers",
      "completedShipment",
-     "replacedLots"
+     "replacedLots",
+     "businessUnit"
     ]
    },
    "ShipmentCompletion": {
@@ -8067,13 +8159,52 @@
      },
      "completion": {
       "$ref": "#/components/schemas/ShipmentRequestCompletion"
+     },
+     "goodsIssues": {
+      "type": "array",
+      "description": "창고마다 출고 전표 하나(피처 012 FR-014) — 번호는 그 창고 공장의 체계다.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "goodsIssueNo": {
+         "type": "string",
+         "example": "GI-20261120-0001"
+        },
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "warehouseName": {
+         "type": "string",
+         "example": "완제품창고 A"
+        },
+        "plantId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "plantName": {
+         "type": "string",
+         "example": "1공장"
+        }
+       },
+       "required": [
+        "goodsIssueNo",
+        "warehouseId",
+        "warehouseName",
+        "plantId",
+        "plantName"
+       ]
+      }
      }
     },
     "required": [
      "shipmentId",
      "shipmentNo",
      "completedAt",
-     "completion"
+     "completion",
+     "goodsIssues"
     ]
    },
    "ShipmentRequestBusinessUnit": {

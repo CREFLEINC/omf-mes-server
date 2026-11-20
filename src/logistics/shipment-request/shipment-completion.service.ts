@@ -17,6 +17,9 @@ import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { plantBusinessUnit, requestInBusinessUnitWhere } from './shipment-request-scope';
 import { SHIPMENT_REQUEST_CODE_PREFIX } from './shipment-request-view';
 
+/** 다른 사업부의 지시서(피처 012 FR-013) — 403. 지시서 내용·상대 사업부 이름은 싣지 않는다. */
+export const BUSINESS_UNIT_MISMATCH = 'BUSINESS_UNIT_MISMATCH';
+
 export const COMPLETION_CONFLICT = {
   COMPLETION_BLOCKED: 'COMPLETION_BLOCKED',
   ALREADY_COMPLETED: 'ALREADY_COMPLETED',
@@ -32,6 +35,8 @@ export interface ShipmentCompletionResult {
   shipmentId: number;
   shipmentNo: string;
   completedAt: string;
+  /** 창고마다 출고 전표 하나(피처 012 FR-014) — 번호는 그 창고 공장의 번호 체계다. */
+  goodsIssues: { goodsIssueNo: string; warehouseId: number; warehouseName: string; plantId: number; plantName: string }[];
   completion: ShipmentRequestCompletionView;
 }
 
@@ -52,7 +57,10 @@ export class ShipmentCompletionService {
     private readonly queries: ShipmentRequestQueryService,
   ) {}
 
-  /** `SHPREQ:{no}` → 완료 확인 값. 단말이면 그 공장 사업부의 지시서만(피처 012 R-2). ERP 송신 여부는 싣지 않는다. */
+  /**
+   * `SHPREQ:{no}` → 완료 확인 값. 단말이면 그 공장 사업부의 지시서만 — 다른 사업부면 403 `BUSINESS_UNIT_MISMATCH`(피처 012 FR-013 ·
+   * 지시서 내용은 싣지 않는다). ERP 송신 여부는 싣지 않는다.
+   */
   async lookup(code: string | undefined, plantId?: bigint): Promise<ShipmentRequestCompletionView> {
     const value = (code ?? '').trim();
     if (!value.startsWith(SHIPMENT_REQUEST_CODE_PREFIX) || value.length === SHIPMENT_REQUEST_CODE_PREFIX.length) {
@@ -61,10 +69,7 @@ export class ShipmentCompletionService {
       ]);
     }
     const found = await this.prisma.shipment_request.findFirst({
-      where: {
-        shipment_request_no: value.slice(SHIPMENT_REQUEST_CODE_PREFIX.length),
-        ...(plantId === undefined ? {} : requestInBusinessUnitWhere(plantId, await plantBusinessUnit(this.prisma, plantId))),
-      },
+      where: { shipment_request_no: value.slice(SHIPMENT_REQUEST_CODE_PREFIX.length) },
       select: { shipment_request_id: true },
     });
     if (found === null) {
@@ -72,7 +77,20 @@ export class ShipmentCompletionService {
         { scope: 'screen', code: 'SHIPMENT_REQUEST_NOT_FOUND', message: '찾을 수 없는 출하 지시서입니다.' },
       ]);
     }
+    if (plantId !== undefined) await this.assertBusinessUnit(found.shipment_request_id, plantId);
     return this.view(found.shipment_request_id);
+  }
+
+  /** 단말 공장 사업부의 지시서인가(사업부 없는 옛 지시서는 이행 공장) — 아니면 403(피처 012 FR-013). */
+  private async assertBusinessUnit(shipmentRequestId: bigint, plantId: bigint): Promise<void> {
+    const inUnit = await this.prisma.shipment_request.count({
+      where: { AND: [{ shipment_request_id: shipmentRequestId }, requestInBusinessUnitWhere(plantId, await plantBusinessUnit(this.prisma, plantId))] },
+    });
+    if (inUnit === 0) {
+      throw new ContractException(HttpStatus.FORBIDDEN, [
+        { scope: 'screen', code: BUSINESS_UNIT_MISMATCH, message: '다른 사업부의 출하 지시서입니다.' },
+      ]);
+    }
   }
 
   async view(shipmentRequestId: bigint): Promise<ShipmentRequestCompletionView> {
@@ -95,13 +113,21 @@ export class ShipmentCompletionService {
     const workerId = actor.workerId;
     const id = BigInt(shipmentRequestId);
     const occurredAt = body.occurredAt === undefined ? new Date() : new Date(body.occurredAt);
-    const header = await this.prisma.shipment_request.findUnique({ where: { shipment_request_id: id }, select: { fulfillment_plant_id: true } });
+    const header = await this.prisma.shipment_request.findUnique({ where: { shipment_request_id: id }, select: { shipment_request_id: true } });
     if (header === null) throw new NotFoundException('없는 출하작업지시입니다.');
+    await this.assertBusinessUnit(id, audit.plantId);
     // ⛔ 채번은 트랜잭션 «밖»이다(P2024). 창고 수는 지금 피킹으로 정하고, 안에서 달라졌으면 다시 시도하게 한다.
+    // 번호 축(피처 012 R-4) — 출하는 완료한 POP 의 공장, 출고 전표는 그 창고의 공장. 사업부 지시서는 「지시서 공장」이 없다.
     const plannedWarehouses = warehousesOf(await completionPortions(this.prisma, id));
+    const warehouses = await this.prisma.warehouse.findMany({
+      where: { warehouse_id: { in: plannedWarehouses } },
+      select: { warehouse_id: true, warehouse_name: true, plant: { select: { plant_id: true, plant_name: true } } },
+    });
+    const warehouseOf = new Map(warehouses.map((row) => [String(row.warehouse_id), row]));
     const [shipmentNo, ...issueNos] = await Promise.all([
-      this.numbering.next('SHIPMENT', header.fulfillment_plant_id, body.businessDate),
-      ...plannedWarehouses.map(() => this.numbering.next('GOODS_ISSUE', header.fulfillment_plant_id, body.businessDate)),
+      this.numbering.next('SHIPMENT', audit.plantId, body.businessDate),
+      ...plannedWarehouses.map((warehouseId) =>
+        this.numbering.next('GOODS_ISSUE', warehouseOf.get(String(warehouseId))?.plant.plant_id ?? audit.plantId, body.businessDate)),
     ]);
     const goodsIssueNos = new Map(plannedWarehouses.map((warehouseId, index) => [String(warehouseId), issueNos[index]]));
 
@@ -156,7 +182,17 @@ export class ShipmentCompletionService {
       throw error;
     });
 
-    return { shipmentId: Number(shipmentId), shipmentNo, completedAt: occurredAt.toISOString(), completion: await this.view(id) };
+    return {
+      shipmentId: Number(shipmentId), shipmentNo, completedAt: occurredAt.toISOString(),
+      goodsIssues: plannedWarehouses.map((warehouseId) => {
+        const row = warehouseOf.get(String(warehouseId));
+        return {
+          goodsIssueNo: goodsIssueNos.get(String(warehouseId)) as string, warehouseId: Number(warehouseId),
+          warehouseName: row?.warehouse_name ?? '', plantId: Number(row?.plant.plant_id ?? 0), plantName: row?.plant.plant_name ?? '',
+        };
+      }),
+      completion: await this.view(id),
+    };
   }
 
   /**
