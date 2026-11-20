@@ -122,7 +122,7 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-04-06', name: 'OQC 출하검사 판정', groupCode: '04' },
   // ⚠ 생성기 산출물이 아니다 — 피처 010 POP 출하 완료 화면(omf-all-around#305).
   { code: 'P-04-07', name: '출하 완료', groupCode: '04' },
-  { code: 'W-04-01', name: '출하지시서 Import·작업지시 생성', groupCode: '04' },
+  { code: 'W-04-01', name: '출하작업지시 생성', groupCode: '04' },
   { code: 'W-04-02', name: '출하 예정 목록', groupCode: '04' },
   { code: 'W-04-03', name: 'OQC 출하검사 판정', groupCode: '04' },
   { code: 'W-04-04', name: '출하 처리(상차·실물 출고)', groupCode: '04' },
