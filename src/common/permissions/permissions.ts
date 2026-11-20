@@ -122,6 +122,9 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-04-06', name: 'OQC 출하검사 판정', groupCode: '04' },
   // ⚠ 생성기 산출물이 아니다 — 피처 010 POP 출하 완료 화면(omf-all-around#305).
   { code: 'P-04-07', name: '출하 완료', groupCode: '04' },
+  // ⚠ 생성기 산출물이 아니다 — 피처 013 POP 생산 LOT 분리·PDA 분리 확인 화면(omf-all-around#303).
+  { code: 'P-04-08', name: '생산 LOT 분리', groupCode: '04' },
+  { code: 'M-04-05', name: 'LOT 분리 확인', groupCode: '04' },
   { code: 'W-04-01', name: '출하작업지시 생성', groupCode: '04' },
   { code: 'W-04-02', name: '출하 예정 목록', groupCode: '04' },
   { code: 'W-04-03', name: 'OQC 출하검사 판정', groupCode: '04' },

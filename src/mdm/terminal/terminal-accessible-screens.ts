@@ -72,6 +72,8 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   // ⭐ 출하 완료(피처 010 · omf-all-around#305) — 공장 축이라 «항상»이다. 서버 `:complete` 는 POP 단말·공장만 보고
   //    공정 플래그를 보지 않는다 — 공정으로 막으면 화면 목록이 API 보다 엄격해진다(P-01-01 과 같은 이유).
   { code: 'P-04-07', flag: null },
+  // ⭐ 생산 LOT 분리(피처 013) — 분리하면 라벨 두 장이 나온다. 서버가 분리 가족 LOT 의 생산 LOT 라벨을 이 플래그로 낸다(D-7).
+  { code: 'P-04-08', flag: 'can_print_label' },
   // 공구·비가동은 공정 매핑과 무관한 설비 축이다.
   { code: 'P-05-01', flag: null },
   { code: 'P-05-02', flag: null },

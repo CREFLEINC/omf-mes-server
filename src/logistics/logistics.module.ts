@@ -37,6 +37,7 @@ import { MaterialLotBatchService } from './material-lot-batch/material-lot-batch
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { DocumentProgressModule } from './document-progress/document-progress.module';
+import { ProductLotSplitModule } from './product-lot-split/product-lot-split.module';
 import { GoodsIssueController } from './goods-issue/goods-issue.controller';
 import { SplitMaterialLotController } from './split-material-lot/split-material-lot.controller';
 import { SplitMaterialLotQueryService } from './split-material-lot/split-material-lot-query.service';
@@ -159,6 +160,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
+    // 생산 LOT 수량 분리(피처 013 · omf-all-around#303).
+    ProductLotSplitModule,
     // 인계 작업 알림(omf-all-around#190) — 입고·이동·출고 요청·출하지시·출하가 같은 tx 에서 알림을 쓴다.
     NotificationCoreModule,
     // 계약 밖 경로(입하 초과분)가 가드 밖이라 세션을 직접 푼다.

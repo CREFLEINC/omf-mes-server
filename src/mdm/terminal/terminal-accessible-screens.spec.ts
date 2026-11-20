@@ -32,7 +32,7 @@ describe('POP 화면 이동 후보 (D3)', () => {
     ['can_input_material', ['P-02-03', 'P-02-11']],
     ['can_input_result', ['P-02-04', 'P-04-03']],
     ['can_input_inspection', ['P-02-14', 'P-02-15', 'P-04-06']],
-    ['can_print_label', ['P-01-02', 'P-04-04', 'P-04-05']],
+    ['can_print_label', ['P-01-02', 'P-04-04', 'P-04-05', 'P-04-08']],
     ['can_complete_work', ['P-04-01']],
   ] as const)('%s 하나만 켜면 그 화면들만 더 나온다', (flag, expected) => {
     const codes = accessibleScreenCodes([flags({ [flag]: true })]);
@@ -66,7 +66,7 @@ describe('POP 화면 이동 후보 (D3)', () => {
     expect(codes).not.toContain('P-02-14');
   });
 
-  it('표가 카탈로그와 같은 19 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
+  it('표가 카탈로그와 같은 20 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
     const codes = POP_SCREEN_REQUIREMENTS.map((row) => row.code);
 
     // SHIP-UNIT-01 이 `P-04-05`(출하 단위 구성)를 더했다: 16 → 17.
@@ -76,8 +76,9 @@ describe('POP 화면 이동 후보 (D3)', () => {
     // 장부 P-102 이 `P-02-15`(제품 검사표 입력)를 `P-02-14` 뒤에 더했다: 20 → 21.
     // omf-all-around#293 이 `P-02-08`·`P-02-09`·`P-02-13`(생산 포장·포장 라벨 재출력·PQC 제품 검사)을 뺐다: 21 → 18.
     // 피처 010(omf-all-around#305)이 `P-04-07`(출하 완료)을 `P-04-06` 뒤에 더했다: 18 → 19.
-    expect(codes).toHaveLength(19);
-    expect(new Set(codes).size).toBe(19);
+    // 피처 013(omf-all-around#303)이 `P-04-08`(생산 LOT 분리)을 `P-04-07` 뒤에 더했다: 19 → 20.
+    expect(codes).toHaveLength(20);
+    expect(new Set(codes).size).toBe(20);
     for (const retired of ['P-02-08', 'P-02-09', 'P-02-13']) expect(codes).not.toContain(retired);
     expect(codes.at(-1)).toBe('P-06-01');
     expect(codes).not.toContain('P-CO-01');
