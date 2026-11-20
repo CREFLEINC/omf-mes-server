@@ -145,11 +145,11 @@ export class TerminalService {
     const where = referenceWhere(query, { code: 'terminal_code', name: 'terminal_code' }, {
       ...optional('plant_id', query.plantId),
       ...optional('terminal_type_code', query.terminalTypeCode),
+      ...optional('equipment_id', query.equipmentId),
+      ...optional('warehouse_id', query.warehouseId),
     });
     // 사용 여부 라벨(omf-all-around#333) — 주면 그 값만. `includeInactive` 의 기본(쓰는 것만)보다 앞선다.
     if (query.isActive !== undefined) where.is_active = query.isActive;
-    if (query.equipmentId !== undefined) where.equipment_id = query.equipmentId;
-    if (query.warehouseId !== undefined) where.warehouse_id = query.warehouseId;
     // 등록 여부(omf-all-around#333) — 지금 세대 토큰으로 확인된 것만 등록이다(`view()` 와 같은 판정).
     const sameGeneration = () => ({ equals: this.prisma.terminal.fields.token_version });
     if (query.registrationStatusCode === 'REGISTERED') {
