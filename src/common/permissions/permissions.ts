@@ -132,7 +132,9 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-04-08', name: '완제품 재고·Lot Status 조회', groupCode: '04' },
   { code: 'W-04-10', name: '제품 폐기 요청', groupCode: '04' },
   { code: 'W-04-11', name: '재고 재등록', groupCode: '04' },
-  { code: 'W-04-12', name: '출하 확정·취소', groupCode: '04' },
+  // 피처 012 R-6 — 출하 내역 화면(W-04-12)을 없앴다. 코드는 메뉴 없는 「출하 취소」 권한으로 남긴다(역할 저장값을 그대로 잇는다 · FR-024).
+  //   W-04-02 상세 「출하」 칸이 이 권한으로 취소 요청·실행과 남은 미확정 출하 확정을 부른다.
+  { code: 'W-04-12', name: '출하 취소(송신 전)', groupCode: '04' },
   // 05 설비·툴
   { code: 'M-05-01', name: '설비 점검 입력', groupCode: '05' },
   { code: 'M-05-02', name: '설비 고장 현장 보고', groupCode: '05' },

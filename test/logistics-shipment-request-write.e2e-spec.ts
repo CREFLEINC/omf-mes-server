@@ -643,6 +643,9 @@ describe('출하작업지시 편성 (e2e)', () => {
       businessUnitId: ids.businessUnit,
       businessUnit: await businessUnitOf(ids.businessUnit),
       warehouses: [await warehouseOf(ids.warehouse)],
+      // 피처 012 FR-018·FR-019 — 출하가 아직 없어 송신 상태 없음·출하 빈 목록.
+      erpSendStatus: null,
+      shipments: [],
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
       // 피처 010 검증 1회차 — 고객·납품처 이름을 함께 싣는다(PDA 카드·POP 찾기·P-04-06 머리).

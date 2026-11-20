@@ -1,4 +1,5 @@
 import { ERROR_CODE, field, one } from '../../common/errors';
+import { ERP_SEND_STATUS_SQL } from '../shipment/shipment-history';
 import { COMPLETION_READY_SQL, keywordSql } from './shipment-completion.sql';
 import {
   SHIPMENT_PROGRESS_CASE_SQL,
@@ -37,6 +38,8 @@ export interface ShipmentRequestFilters {
   completionReadyOnly?: boolean;
   /** 지시서 사업부(W-04-02 · 피처 012 FR-007). */
   businessUnitId?: number;
+  /** 지시서의 대표 출하 ERP 송신 상태(010 6값) 또는 출하 없음 `NO_SHIPMENT`(W-04-02 칩 · 피처 012 FR-018). */
+  erpSendStatus?: string;
 }
 
 export interface ShipmentRequestQuery extends ShipmentRequestFilters {
@@ -90,6 +93,15 @@ export const HAS_REPLACEMENT_SQL = `EXISTS (SELECT 1 FROM logistics.shipment_req
                     JOIN logistics.shipment_request_line l ON l.shipment_request_line_id = x.shipment_request_line_id
                    WHERE l.shipment_request_id = sr.shipment_request_id AND x.status_code = 'REPLACED')`;
 
+/**
+ * 지시서의 ERP 송신 상태(피처 012 R-9) — 대표 출하 하나의 010 송신 상태. 대표 = 취소 안 된 출하 중 가장 최근, 모두 취소면
+ * 가장 최근 취소 출하(「취소됨」 칩). 출하가 없으면 `NO_SHIPMENT`. ⛔ 송신 상태 CASE 는 `shipment-history.ts` 한 벌을 쓴다.
+ * 응답 칸(`erpSendStatus`)은 `shipment-request-view.ts` 의 `representativeShipment` 가 같은 순서로 고른다.
+ */
+export const REQUEST_ERP_SEND_STATUS_SQL = `COALESCE((SELECT ${ERP_SEND_STATUS_SQL}
+         FROM logistics.shipment s WHERE s.shipment_request_id = sr.shipment_request_id
+        ORDER BY (s.status_code = 'CANCELLED'), s.shipment_id DESC LIMIT 1), 'NO_SHIPMENT')`;
+
 /** 계약이 「출하일·고객·작업지시번호 셋만」이라 못박았다 — 그 밖은 400 `INVALID`(e2e L-39). */
 const SORT_COLUMNS: Record<string, string> = {
   requestedShipDate: 'sr.requested_ship_date',
@@ -121,6 +133,7 @@ export function whereSql(query: ShipmentRequestFilters): BuiltWhere {
   }
   if (query.customerId !== undefined) and.push(`sr.customer_id = ${bind(query.customerId)}::bigint`);
   if (query.businessUnitId !== undefined) and.push(`sr.business_unit_id = ${bind(query.businessUnitId)}::bigint`);
+  if (query.erpSendStatus !== undefined) and.push(`${REQUEST_ERP_SEND_STATUS_SQL} = ${bind(query.erpSendStatus)}`);
   if (query.shipToPartnerId !== undefined) {
     and.push(`sr.ship_to_partner_id = ${bind(query.shipToPartnerId)}::bigint`);
   }

@@ -158,10 +158,11 @@ const IQC_SKIP = 'IQC_SKIP';
 
 /**
  * 대상을 여는 화면(결재 유형 → 화면 ID). 승인 뒤 실행이 대상 화면에 있는 유형만 둔다.
- * - `SHIPMENT_CANCEL` → W-04-12 출하 내역: 승인된 취소를 그 화면 상세에서 [취소 실행]한다(피처 010 검증 1회차 F-2 —
- *   계약 `:cancel` 근거 「W-04-12 §5-8」). 결재함은 승인만 하고 실행하지 않는다.
+ * - `SHIPMENT_CANCEL` → W-04-02 출하 예정 목록: 승인된 취소를 그 지시서 상세 「출하」 칸에서 [취소 실행]한다. 결재함은 승인만
+ *   하고 실행하지 않는다. 피처 012 R-7 이 출하 내역(W-04-12) 화면을 없애며 옮겼다 — 저장값이 아니라 응답에 싣는 매핑이라
+ *   배포 전에 상신한 결재도 W-04-02 로 간다.
  */
-const OPENABLE_SCREENS: Readonly<Record<string, string | undefined>> = { SHIPMENT_CANCEL: 'W-04-12' };
+const OPENABLE_SCREENS: Readonly<Record<string, string | undefined>> = { SHIPMENT_CANCEL: 'W-04-02' };
 
 /** 입하 마감 취소가 남긴 무효 표시(`target_summary.voidedAt` — `markIqcSkipVoided`). */
 function voidedByReopen(summary: Prisma.JsonValue): boolean {

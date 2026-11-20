@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CANCEL_REQUEST_PENDING_SQL, ERP_SEND_STATUS_SQL, ErpSendStatus } from '../shipment/shipment-history';
 import { oqcLotDecisionsOf } from '../../quality/inspection/oqc-lot-result';
 import { OqcInspectionRow, skippedOqcRows } from './shipment-inspection';
 import {
@@ -17,6 +18,7 @@ import {
   FROM_SQL,
   INSPECTION_REQUIRED_SQL,
   PICKING_COMPLETE_SQL,
+  REQUEST_ERP_SEND_STATUS_SQL,
   ShipmentRequestFilters,
   ShipmentRequestQuery,
   orderBySql,
@@ -27,6 +29,7 @@ import {
   ShipmentLotsByLine,
   ShipmentPicksByLine,
   ShipmentRequestDisplayFacts,
+  ShipmentRequestShipmentView,
   ShipmentRequestView,
   shipmentRequestView,
 } from './shipment-request-view';
@@ -76,16 +79,18 @@ export class ShipmentRequestQueryService {
     query: ShipmentRequestQuery,
     terminal?: ShipmentRequestTerminalFilter,
     scopes?: readonly AccountScope[],
-  ): Promise<PagedResponse<ShipmentRequestView>> {
+  ): Promise<PagedResponse<ShipmentRequestView> & { erpSendStatusCounts: Record<string, number> }> {
     const page = pageRequest(query);
     const where = shipmentRequestWhereSql(query, terminal, scopes);
+    // ERP 송신 칩 건수(W-04-02 · 피처 012 FR-018) — 송신 상태 조건만 빼고 같은 조건으로 센다(010 출하 목록과 같은 방식).
+    const facetWhere = shipmentRequestWhereSql({ ...query, erpSendStatus: undefined }, terminal, scopes);
     const order = orderBySql(query.sort);
     // ⛔ `count(*) OVER ()` 로 세지 마라 — 범위 «밖» 쪽은 행이 0개라 `total` 이 0 으로 접히고,
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다(리뷰 실측 · e2e L-40b).
     //    `total` 은 쪽이 아니라 필터 «전체» 기준이다 — 선례 3벌이 같은 모양이다
     //    (`concession-query.ts:87`·`disposition-query.ts:120`·`lot-hold-event-query.ts:128`).
     // `LIMIT`·`OFFSET` 은 `pageRequest` 가 이미 정수로 자른 값이라 그대로 편다(주입 자리 없음).
-    const [rows, counted] = await Promise.all([
+    const [rows, counted, facets] = await Promise.all([
       this.prisma.$queryRawUnsafe<{ shipment_request_id: bigint }[]>(
         `SELECT sr.shipment_request_id
            FROM ${FROM_SQL}
@@ -98,9 +103,16 @@ export class ShipmentRequestQueryService {
         `SELECT count(*)::int AS total FROM ${FROM_SQL} WHERE ${where.sql}`,
         ...where.params,
       ),
+      this.prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
+        `SELECT ${REQUEST_ERP_SEND_STATUS_SQL} AS status, count(*)::int AS count FROM ${FROM_SQL} WHERE ${facetWhere.sql} GROUP BY 1`,
+        ...facetWhere.params,
+      ),
     ]);
     const views = await this.views(rows.map((row) => row.shipment_request_id));
-    return pagedResponse(views, counted[0].total, page);
+    return {
+      ...pagedResponse(views, counted[0].total, page),
+      erpSendStatusCounts: Object.fromEntries(facets.map((row) => [row.status, row.count])),
+    };
   }
 
   /**
@@ -196,17 +208,18 @@ export class ShipmentRequestQueryService {
       .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     const inspections = await this.oqcResults(ids, lotIds, db);
-    const [lots, oqcStatuses, facts, display] = await Promise.all([
+    const [lots, oqcStatuses, facts, display, shipments] = await Promise.all([
       this.lotsByLine(lines.map((line) => line.shipment_request_line_id), db),
       oqcLotDecisionsOf(db, ids),
       completionFactsOf(db, ids, lines.flatMap((line) => (line.sales_order_line_id === null ? [] : [line.sales_order_line_id]))),
       displayFactsOf(db, rows),
+      shipmentsOf(db, ids),
     ]);
     const byId = new Map(rows.map((row) => [String(row.shipment_request_id), row]));
     // ⛔ Prisma 의 `in` 은 순서를 보장하지 않는다 — SQL 이 정한 정렬을 여기서 되살린다(L-37·L-38).
     return ids.flatMap((id) => {
       const row = byId.get(String(id));
-      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots, oqcStatuses, facts, display)];
+      return row === undefined ? [] : [shipmentRequestView(row, picks, inspections, lots, oqcStatuses, facts, { ...display, shipments })];
     });
   }
 
@@ -330,6 +343,32 @@ export async function completionFactsOf(
     }])),
     cancelledSalesOrderLines: new Set(cancelled.map((row) => String(row.sales_order_line_id))),
   };
+}
+
+/**
+ * 지시서마다 출하(취소 포함, 최신순) — W-04-02 상세 「출하」 칸·ERP 송신 칩(피처 012 FR-019·R-9). 송신 상태·취소 상신 중은
+ * 010 출하 내역과 같은 SQL 한 벌이다. 쪽 안 지시서 전체를 한 방으로 읽는다.
+ */
+async function shipmentsOf(db: Db, ids: bigint[]): Promise<Map<string, ShipmentRequestShipmentView[]>> {
+  const rows = await db.$queryRawUnsafe<{
+    shipment_request_id: bigint; shipment_id: bigint; shipment_no: string; status_code: string; erp_send_status: ErpSendStatus; cancel_request_pending: boolean;
+  }[]>(
+    `SELECT s.shipment_request_id, s.shipment_id, s.shipment_no, s.status_code,
+            ${ERP_SEND_STATUS_SQL} AS erp_send_status, ${CANCEL_REQUEST_PENDING_SQL} AS cancel_request_pending
+       FROM logistics.shipment s
+      WHERE s.shipment_request_id = ANY($1::bigint[])
+      ORDER BY s.shipment_id DESC`,
+    ids,
+  );
+  const grouped = new Map<string, ShipmentRequestShipmentView[]>();
+  for (const row of rows) {
+    const key = String(row.shipment_request_id);
+    grouped.set(key, [...(grouped.get(key) ?? []), {
+      shipmentId: Number(row.shipment_id), shipmentNo: row.shipment_no, statusCode: row.status_code,
+      erpSendStatus: row.erp_send_status, cancelRequestPending: row.cancel_request_pending,
+    }]);
+  }
+  return grouped;
 }
 
 /**
