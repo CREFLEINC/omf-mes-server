@@ -35,6 +35,8 @@ export interface ShipmentRequestFilters {
   q?: string;
   /** POP 찾기 「완료 대기만」 — 막는 이유가 없는 지시서(`completionBlockers` 가 빈). */
   completionReadyOnly?: boolean;
+  /** 지시서 사업부(W-04-02 · 피처 012 FR-007). */
+  businessUnitId?: number;
 }
 
 export interface ShipmentRequestQuery extends ShipmentRequestFilters {
@@ -118,6 +120,7 @@ export function whereSql(query: ShipmentRequestFilters): BuiltWhere {
     and.push(`sr.requested_ship_date <= ${bind(query.shipDateTo)}::date`);
   }
   if (query.customerId !== undefined) and.push(`sr.customer_id = ${bind(query.customerId)}::bigint`);
+  if (query.businessUnitId !== undefined) and.push(`sr.business_unit_id = ${bind(query.businessUnitId)}::bigint`);
   if (query.shipToPartnerId !== undefined) {
     and.push(`sr.ship_to_partner_id = ${bind(query.shipToPartnerId)}::bigint`);
   }

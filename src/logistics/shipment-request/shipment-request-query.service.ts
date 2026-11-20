@@ -5,7 +5,13 @@ import { PagedResponse, pageRequest, pagedResponse } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import { oqcLotDecisionsOf } from '../../quality/inspection/oqc-lot-result';
 import { OqcInspectionRow, skippedOqcRows } from './shipment-inspection';
-import { TerminalShipmentScope, requestInBusinessUnitSql, requestPickableByTerminalSql } from './shipment-request-scope';
+import {
+  AccountScope,
+  TerminalShipmentScope,
+  requestInAccountScopeSql,
+  requestInBusinessUnitSql,
+  requestPickableByTerminalSql,
+} from './shipment-request-scope';
 import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
 import {
   FROM_SQL,
@@ -66,9 +72,13 @@ export class ShipmentRequestQueryService {
    * ⭐ **`lines` 를 싣는다**(R-9) — `W-04-02` 7열 중 «유일한 수량 열»과 `W-04-05` 의 「배정 500」이
    * 라인 없이는 못 선다. `ShipmentRequest` 에 합계 칸이 0개다.
    */
-  async list(query: ShipmentRequestQuery, terminal?: ShipmentRequestTerminalFilter): Promise<PagedResponse<ShipmentRequestView>> {
+  async list(
+    query: ShipmentRequestQuery,
+    terminal?: ShipmentRequestTerminalFilter,
+    scopes?: readonly AccountScope[],
+  ): Promise<PagedResponse<ShipmentRequestView>> {
     const page = pageRequest(query);
-    const where = shipmentRequestWhereSql(query, terminal);
+    const where = shipmentRequestWhereSql(query, terminal, scopes);
     const order = orderBySql(query.sort);
     // ⛔ `count(*) OVER ()` 로 세지 마라 — 범위 «밖» 쪽은 행이 0개라 `total` 이 0 으로 접히고,
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다(리뷰 실측 · e2e L-40b).
@@ -104,8 +114,8 @@ export class ShipmentRequestQueryService {
    *   `INSPECTION_REQUIRED_SQL` 로 **무손실** 좁히기를 건다(e2e L-48b 가 무손실을 확인한다).
    *   ⛔ 검사 필수 건이 많으면 여전히 선형이다 — 상한은 §11 인계로 남긴다.
    */
-  async summary(query: ShipmentRequestFilters): Promise<ShipmentRequestSummaryView> {
-    const where = whereSql(query);
+  async summary(query: ShipmentRequestFilters, scopes?: readonly AccountScope[]): Promise<ShipmentRequestSummaryView> {
+    const where = shipmentRequestWhereSql(query, undefined, scopes);
     // ⛔ `coalesce` 를 벗기지 마라 — 0건이면 `sum()` 이 NULL 인데 8칸이 전건 required 다(§6-3 ⑷).
     const [totals] = await this.prisma.$queryRawUnsafe<SummaryRow[]>(
       `SELECT count(*)::int AS request_count,
@@ -141,7 +151,11 @@ export class ShipmentRequestQueryService {
     };
   }
 
-  async get(shipmentRequestId: number): Promise<ShipmentRequestView> {
+  /** 단건. 계정 범위를 주면 그 밖의 지시서는 「없다」(404 — 계약이 403 을 선언하지 않았다 · 피처 012 D-12). */
+  async get(shipmentRequestId: number, scopes?: readonly AccountScope[]): Promise<ShipmentRequestView> {
+    if (scopes !== undefined && !(await this.inAccountScope(BigInt(shipmentRequestId), scopes))) {
+      throw new NotFoundException('없는 출하작업지시입니다.');
+    }
     const [view] = await this.views([BigInt(shipmentRequestId)]);
     if (view === undefined) throw new NotFoundException('없는 출하작업지시입니다.');
     return view;
@@ -156,6 +170,16 @@ export class ShipmentRequestQueryService {
     const [view] = await this.views([shipmentRequestId], db);
     if (view === undefined) throw new NotFoundException('없는 출하작업지시입니다.');
     return view;
+  }
+
+  private async inAccountScope(id: bigint, scopes: readonly AccountScope[]): Promise<boolean> {
+    const params: unknown[] = [id];
+    const scope = requestInAccountScopeSql('sr', scopes, (value) => `$${params.push(value)}`);
+    if (scope === null) return true;
+    const rows = await this.prisma.$queryRawUnsafe<unknown[]>(
+      `SELECT 1 FROM logistics.shipment_request sr WHERE sr.shipment_request_id = $1::bigint AND ${scope}`, ...params,
+    );
+    return rows.length > 0;
   }
 
   private async views(ids: bigint[], db: Db = this.prisma): Promise<ShipmentRequestView[]> {
@@ -314,13 +338,27 @@ export async function completionFactsOf(
  */
 async function displayFactsOf(
   db: Db,
-  rows: { sales_order_id: bigint | null; customer_id: bigint; ship_to_partner_id: bigint; shipment_request_line: { sales_order_line_id: bigint | null; item_id: bigint; uom_id: bigint }[] }[],
+  rows: {
+    sales_order_id: bigint | null; customer_id: bigint; ship_to_partner_id: bigint; business_unit_id: bigint | null;
+    shipment_request_line: { sales_order_line_id: bigint | null; item_id: bigint; uom_id: bigint; warehouse_id: bigint | null }[];
+  }[],
 ): Promise<ShipmentRequestDisplayFacts> {
   const lines = rows.flatMap((row) => row.shipment_request_line);
   const unique = (values: bigint[]) => [...new Set(values.map(String))].map(BigInt);
   const orderIds = unique(rows.flatMap((row) => (row.sales_order_id === null ? [] : [row.sales_order_id])));
   const orderLineIds = unique(lines.flatMap((line) => (line.sales_order_line_id === null ? [] : [line.sales_order_line_id])));
   const partnerIds = unique(rows.flatMap((row) => [row.customer_id, row.ship_to_partner_id]));
+  const unitIds = unique(rows.flatMap((row) => (row.business_unit_id === null ? [] : [row.business_unit_id])));
+  const warehouseIds = unique(lines.flatMap((line) => (line.warehouse_id === null ? [] : [line.warehouse_id])));
+  const [units, warehouses] = await Promise.all([
+    unitIds.length === 0 ? [] : db.business_unit.findMany({
+      where: { business_unit_id: { in: unitIds } }, select: { business_unit_id: true, business_unit_code: true, business_unit_name: true },
+    }),
+    warehouseIds.length === 0 ? [] : db.warehouse.findMany({
+      where: { warehouse_id: { in: warehouseIds } },
+      select: { warehouse_id: true, warehouse_code: true, warehouse_name: true, plant: { select: { plant_id: true, plant_name: true } } },
+    }),
+  ]);
   const [orders, orderLines, items, uoms, partners] = await Promise.all([
     orderIds.length === 0 ? [] : db.sales_order.findMany({ where: { sales_order_id: { in: orderIds } }, select: { sales_order_id: true, sales_order_no: true } }),
     orderLineIds.length === 0 ? [] : db.sales_order_line.findMany({
@@ -342,6 +380,13 @@ async function displayFactsOf(
     partners: new Map(partners.map((row) => [String(row.partner_id), {
       partnerId: Number(row.partner_id), partnerCode: row.partner_code, partnerName: row.partner_name,
     }])),
+    businessUnits: new Map(units.map((row) => [String(row.business_unit_id), {
+      businessUnitId: Number(row.business_unit_id), businessUnitCode: row.business_unit_code, businessUnitName: row.business_unit_name,
+    }])),
+    warehouses: new Map(warehouses.map((row) => [String(row.warehouse_id), {
+      warehouseId: Number(row.warehouse_id), warehouseCode: row.warehouse_code, warehouseName: row.warehouse_name,
+      plantId: Number(row.plant.plant_id), plantName: row.plant.plant_name,
+    }])),
   };
 }
 
@@ -354,11 +399,18 @@ export interface ShipmentRequestTerminalFilter extends TerminalShipmentScope {
 }
 
 /** 출하작업지시 목록의 조건 + 단말 범위 — 단말 작업 수(PDA 피킹·POP 완료 대기)가 같은 함수로 센다(omf-all-around#190). */
-export function shipmentRequestWhereSql(query: ShipmentRequestFilters, terminal?: ShipmentRequestTerminalFilter): { sql: string; params: unknown[] } {
+export function shipmentRequestWhereSql(
+  query: ShipmentRequestFilters,
+  terminal?: ShipmentRequestTerminalFilter,
+  scopes?: readonly AccountScope[],
+): { sql: string; params: unknown[] } {
   const where = whereSql(query);
+  const bind = (value: unknown): string => `$${where.params.push(value)}`;
+  // 계정 데이터 범위(W-04-02 · 피처 012 D-12) — 범위 줄이 없는 계정은 전부다.
+  const account = scopes === undefined ? null : requestInAccountScopeSql('sr', scopes, bind);
+  if (account !== null) where.sql = `(${where.sql}) AND ${account}`;
   if (terminal !== undefined) {
     // 이행 공장도 사업부도 없는 이전 요청은 단말에 보이지 않는다(범위 모듈의 옛 갈래).
-    const bind = (value: unknown): string => `$${where.params.push(value)}`;
     const scope = terminal.rule === 'LINE'
       ? requestPickableByTerminalSql('sr', terminal, bind)
       : requestInBusinessUnitSql('sr', terminal.plantId, bind);

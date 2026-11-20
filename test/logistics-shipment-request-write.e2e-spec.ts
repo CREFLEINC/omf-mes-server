@@ -104,6 +104,9 @@ describe('출하작업지시 편성 (e2e)', () => {
     salesOrderLine2: 0,
     otherSalesOrder: 0,
     otherSalesOrderLine: 0,
+    // 피처 012 — 편성은 사업부·줄 출고 창고가 필수다. 이 스위트의 관심 밖이라 있는 창고 하나를 빌려 쓴다.
+    businessUnit: 0,
+    warehouse: 0,
   };
 
   beforeAll(async () => {
@@ -636,6 +639,10 @@ describe('출하작업지시 편성 (e2e)', () => {
       // 피처 010 시안 차이 보완 — 수주 번호를 함께 싣는다(PDA 피킹 머리·W-04-02 상세).
       salesOrderNo: (await prisma.sales_order.findUniqueOrThrow({ where: { sales_order_id: BigInt(ids.salesOrder) } })).sales_order_no,
       fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
+      // 피처 012 — 사업부 지시서는 공장이 없고 사업부·줄 출고 창고 요약을 싣는다.
+      businessUnitId: ids.businessUnit,
+      businessUnit: await businessUnitOf(ids.businessUnit),
+      warehouses: [await warehouseOf(ids.warehouse)],
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
       // 피처 010 검증 1회차 — 고객·납품처 이름을 함께 싣는다(PDA 카드·POP 찾기·P-04-06 머리).
@@ -654,7 +661,18 @@ describe('출하작업지시 편성 (e2e)', () => {
     // `requested_ship_date` 를 `created_at` 에서 길어 오면 오늘 날짜가 나온다.
     expect(body.requestedShipDate).not.toBe(stored.created_at.toISOString().slice(0, 10));
     expect(body.versionNo).toBe(stored.version_no);
+    expect(stored.fulfillment_plant_id).toBeNull();
   });
+
+  async function businessUnitOf(id: number) {
+    const row = await prisma.business_unit.findUniqueOrThrow({ where: { business_unit_id: BigInt(id) } });
+    return { businessUnitId: id, businessUnitCode: row.business_unit_code, businessUnitName: row.business_unit_name };
+  }
+
+  async function warehouseOf(id: number) {
+    const row = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: BigInt(id) }, include: { plant: true } });
+    return { warehouseId: id, warehouseCode: row.warehouse_code, warehouseName: row.warehouse_name, plantId: Number(row.plant_id), plantName: row.plant.plant_name };
+  }
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
   interface LineInput {
@@ -675,6 +693,7 @@ describe('출하작업지시 편성 (e2e)', () => {
       allocatedQty: 60,
       uomId: ids.uom1,
       shippingInspectionRequired: false,
+      warehouseId: ids.warehouse,
       ...overrides,
     };
   }
@@ -684,6 +703,7 @@ describe('출하작업지시 편성 (e2e)', () => {
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
       requestedShipDate: SHIP_DATE,
+      businessUnitId: ids.businessUnit,
       lines: [line()],
       ...overrides,
     };
@@ -718,6 +738,22 @@ describe('출하작업지시 편성 (e2e)', () => {
   }
 
   async function makeMasters(): Promise<void> {
+    // 사업부·창고 마스터는 접두어로 «있으면 쓴다» — 지시서 줄이 창고를 가리켜 지우지 않는다.
+    const entity = (await prisma.legal_entity.findFirst({ where: { legal_entity_code: `${PREFIX}-LE` } }))
+      ?? await prisma.legal_entity.create({ data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: '출하편성법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' } });
+    const unit = (await prisma.business_unit.findFirst({ where: { business_unit_code: `${PREFIX}-BU` } }))
+      ?? await prisma.business_unit.create({ data: { legal_entity_id: entity.legal_entity_id, business_unit_code: `${PREFIX}-BU`, business_unit_name: '출하편성사업부' } });
+    const plant = (await prisma.plant.findFirst({ where: { plant_code: `${PREFIX}-P` } }))
+      ?? await prisma.plant.create({ data: {
+        legal_entity_id: entity.legal_entity_id, business_unit_id: unit.business_unit_id, plant_code: `${PREFIX}-P`, plant_name: '출하편성공장', timezone_code: 'Asia/Ho_Chi_Minh',
+      } });
+    const warehouse = (await prisma.warehouse.findFirst({ where: { warehouse_code: `${PREFIX}-WH` } }))
+      ?? await prisma.warehouse.create({ data: {
+        plant_id: plant.plant_id, business_unit_id: unit.business_unit_id, warehouse_code: `${PREFIX}-WH`, warehouse_name: '출하편성창고',
+        warehouse_type_code: 'PRODUCT', management_level_code: 'WAREHOUSE',
+      } });
+    ids.businessUnit = Number(unit.business_unit_id);
+    ids.warehouse = Number(warehouse.warehouse_id);
     const [uom1, uom2] = await prisma.uom.findMany({ take: 2, orderBy: { uom_id: 'asc' } });
     ids.uom1 = Number(uom1.uom_id);
     ids.uom2 = Number(uom2.uom_id);

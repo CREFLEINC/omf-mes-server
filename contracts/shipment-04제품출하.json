@@ -953,7 +953,7 @@
      "shipment"
     ],
     "summary": "출하작업지시 목록",
-    "description": "W-04-02 출하 예정 목록. 기간이 필수다(공유계약 L-3). 근거: W-04-02 §5",
+    "description": "W-04-02 출하 예정 목록. 기간이 필수다(공유계약 L-3). 근거: W-04-02 §5 ⭐ 피처 012 D-12: 계정 세션이면 계정 데이터 범위(사업부 줄·공장 줄 모두 그 사업부의 지시서, 사업부 없는 옛 지시서는 공장 줄의 이행 공장)로 좁힌다 — 범위 줄이 없는 계정은 전부. 단말이면 PDA 는 단말 범위 안 줄이 하나라도 있는 지시서, POP 은 단말 공장 사업부의 지시서다(사업부 없는 옛 지시서는 이행 공장).",
     "parameters": [
      {
       "name": "customerId",
@@ -972,6 +972,16 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "businessUnitId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "지시서 사업부(피처 012 FR-007 · W-04-02 조회 조건 셋째 칸)."
      },
      {
       "name": "itemId",
@@ -1258,6 +1268,16 @@
         }
        }
       }
+     },
+     "422": {
+      "description": "업무 규칙 위반(피처 012) — 사업부·줄 출고 창고 누락 또는 쓸 수 없는 값, S/O 잔여 초과. `errors[].field` 가 그 칸이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     }
    }
@@ -1287,6 +1307,16 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "businessUnitId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "지시서 사업부(피처 012 FR-007). 목록과 같은 기준."
      },
      {
       "name": "statusCode",
@@ -1441,7 +1471,7 @@
      "shipment"
     ],
     "summary": "출하작업지시 한 건",
-    "description": "라인을 함께 내린다 · POP 단말도 읽는다(P-04-06 머리·피킹 LOT 몫 — 단말 공장 지시서만, 피처 010)",
+    "description": "라인을 함께 내린다 · POP 단말도 읽는다(P-04-06 머리·피킹 LOT 몫 — 단말 공장 지시서만, 피처 010) ⭐ 피처 012 D-12: 계정 데이터 범위 밖 지시서는 404.",
     "security": [
      {
       "omfSession": []
@@ -1488,105 +1518,6 @@
      }
     },
     "x-internal-note": "편성 취소 경로를 두지 않았다 — 화면이 「⛔ 두지 않는다 — 출하작업지시 취소는 범위 밖」이라 적었다(W-04-01 §5-7)."
-   },
-   "put": {
-    "tags": [
-     "shipment"
-    ],
-    "summary": "출하작업지시 이행 공장 지정",
-    "description": "기존 미배정 요청의 이행 공장을 지정한다. 피킹 이력이 있으면 바꾸지 않으며, 이미 연결된 출하가 있으면 모든 출하 창고가 대상 공장에 속해야 한다.",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ShipmentRequestUpdate"
-       }
-      }
-     }
-    },
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "공장 지정됨",
-      "headers": {
-       "ETag": {
-        "schema": {
-         "type": "string"
-        }
-       }
-      },
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ShipmentRequest"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "피킹 또는 최신 판 충돌",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ShipmentConflictResponse"
-        }
-       }
-      }
-     }
-    }
    }
   },
   "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick": {
@@ -5732,7 +5663,34 @@
        "null"
       ],
       "format": "int64",
-      "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+      "description": "옛 지시서(피처 012 배포 전)의 이행 공장 — 창고 미지정 줄의 피킹 범위 근거로만 남는다(FR-026·027). 새 지시서는 null 이다(공장은 줄 출고 창고가 정한다). ⛔ 생성 본문에서 뺐다(보내면 400), 공장 지정 PUT 도 없앴다(D-1)."
+     },
+     "businessUnitId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "지시서 사업부(피처 012). null = 사업부 없는 공장의 옛 지시서(「사업부 미지정」)."
+     },
+     "businessUnit": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentRequestBusinessUnit"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "지시서 사업부 표시 칸 — `businessUnitId` 가 null 이면 null."
+     },
+     "warehouses": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+      },
+      "description": "줄 출고 창고 요약(피처 012 W-04-02 「출고 창고」) — 줄 순서대로 겹치지 않게. 창고 없는 옛 줄은 담지 않는다."
      },
      "shipmentRequestId": {
       "type": "integer",
@@ -5974,7 +5932,10 @@
      "completedShipment",
      "salesOrderNo",
      "customer",
-     "shipTo"
+     "shipTo",
+     "businessUnitId",
+     "businessUnit",
+     "warehouses"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },
@@ -6036,30 +5997,17 @@
     ],
     "description": "W-04-02 요약 구획 — 필터 전체 기준(목록 페이지와 다른 모집단). 근거: W-04-02 §4-B · omf-mes#232"
    },
-   "ShipmentRequestUpdate": {
-    "type": "object",
-    "properties": {
-     "fulfillmentPlantId": {
-      "type": "integer",
-      "format": "int64",
-      "minimum": 1,
-      "description": "기존 미배정 출하작업지시를 활성·권한 공장에 지정한다. null 해제는 이번 경로에 없다. 이미 피킹한 요청은 바꿀 수 없고, 연결된 출하가 있으면 그 모든 출하 창고의 공장과 같아야 한다."
-     }
-    },
-    "required": [
-     "fulfillmentPlantId"
-    ]
-   },
    "ShipmentRequestCreate": {
     "type": "object",
     "properties": {
-     "fulfillmentPlantId": {
+     "businessUnitId": {
       "type": [
        "integer",
        "null"
       ],
       "format": "int64",
-      "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+      "example": 1001,
+      "description": "지시서 사업부(피처 012 D-1 · FR-001). ⭐ 업무 필수 — 비우면 422 `businessUnitId`. 활성이고 계정 데이터 범위 안이어야 한다(밖이면 403). 지시서는 공장이 아니라 사업부 단위이고 공장은 줄 출고 창고가 정한다. ⛔ `fulfillmentPlantId` 는 더 받지 않는다 — 보내면 400."
      },
      "salesOrderId": {
       "type": [
@@ -6108,7 +6056,7 @@
      "requestedShipDate",
      "lines"
     ],
-    "description": "편성. 라인 1건 이상이고 배정 수량이 1 이상이어야 한다(W-04-01 §5-7). ⛔ 편성 취소를 두지 않는다 — 출하작업지시 취소는 범위 밖이다"
+    "description": "편성. 라인 1건 이상이고 배정 수량이 1 이상이어야 한다(W-04-01 §5-7). ⛔ 편성 취소를 두지 않는다 — 출하작업지시 취소는 범위 밖이다 ⭐ 피처 012: 사업부(`businessUnitId`)와 줄마다 출고 창고(`lines[].warehouseId`)가 필수다(422). 같은 S/O 줄(`salesOrderLineId`)을 가리키는 줄을 여럿 둘 수 있다 — 창고별로 나눈 줄의 배정 합은 S/O 잔여(주문 − 누적 출하) 이하여야 하고, 넘으면 그 줄들이 422 `lines[n].allocatedQty`(「S/O 잔여 수량을 넘습니다」)다(D-3)."
    },
    "ShipmentRequestLine": {
     "type": "object",
@@ -6264,6 +6212,17 @@
        "shippedQty",
        "cancelled"
       ]
+     },
+     "warehouse": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "출고 창고(피처 012) — 이 줄은 이 창고 잔액에서만 피킹한다. null = 배포 전 줄(「창고 미지정」, 지시서 이행 공장의 불량 외 창고 전부)."
      }
     },
     "required": [
@@ -6282,12 +6241,22 @@
      "itemCode",
      "itemName",
      "uomCode",
-     "salesOrderLine"
+     "salesOrderLine",
+     "warehouse"
     ]
    },
    "ShipmentRequestLineCreate": {
     "type": "object",
     "properties": {
+     "warehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "출고 창고(피처 012 D-2 · FR-003). ⭐ 업무 필수 — 비우면 422 `lines[n].warehouseId`. 지시서 사업부의 활성 창고이고 불량창고가 아니어야 하며(아니면 422), 계정 공장 범위 안이어야 한다(밖이면 403). 이 줄은 이 창고의 잔액에서만 피킹한다."
+     },
      "salesOrderLineId": {
       "type": [
        "integer",
@@ -8052,6 +8021,65 @@
      "completedAt",
      "completion"
     ]
+   },
+   "ShipmentRequestBusinessUnit": {
+    "type": "object",
+    "properties": {
+     "businessUnitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "businessUnitCode": {
+      "type": "string",
+      "example": "BU01"
+     },
+     "businessUnitName": {
+      "type": "string",
+      "example": "제1사업부"
+     }
+    },
+    "required": [
+     "businessUnitId",
+     "businessUnitCode",
+     "businessUnitName"
+    ],
+    "description": "출하 지시서 사업부 표시 칸(피처 012)."
+   },
+   "ShipmentRequestWarehouse": {
+    "type": "object",
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseCode": {
+      "type": "string",
+      "example": "WH-FG-A"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고 A"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "plantName": {
+      "type": "string",
+      "example": "1공장"
+     }
+    },
+    "required": [
+     "warehouseId",
+     "warehouseCode",
+     "warehouseName",
+     "plantId",
+     "plantName"
+    ],
+    "description": "지시서 줄 출고 창고와 그 공장(피처 012) — 화면은 「완제품창고 A · 1공장」으로 그린다."
    }
   },
   "securitySchemes": {

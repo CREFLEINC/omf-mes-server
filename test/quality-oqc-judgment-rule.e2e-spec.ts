@@ -38,6 +38,7 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
   let customerId: number;
   let plantId: bigint;
   let warehouseId: bigint;
+  let businessUnitId: bigint;
   let userId: bigint;
 
   beforeAll(async () => {
@@ -148,7 +149,8 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
         customerId,
         shipToPartnerId: customerId,
         requestedShipDate: DAY,
-        lines: [{ itemId, requestedQty: 100, allocatedQty: 100, uomId, shippingInspectionRequired: true }],
+        businessUnitId: Number(businessUnitId),
+        lines: [{ itemId, requestedQty: 100, allocatedQty: 100, uomId, shippingInspectionRequired: true, warehouseId: Number(warehouseId) }],
       })
       .expect(201);
     const shipmentRequestId = created.body.shipmentRequestId as number;
@@ -286,6 +288,7 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
       },
     });
     warehouseId = warehouse.warehouse_id;
+    businessUnitId = unit.business_unit_id;
     const uom = await prisma.uom.findFirstOrThrow({ orderBy: { uom_id: 'asc' } });
     uomId = Number(uom.uom_id);
     const itemOf = (code: string) =>
@@ -356,13 +359,14 @@ describe('OQC 판정 변경 사유 (e2e · #126)', () => {
       `DELETE FROM trace.lot_status_event WHERE lot_id IN (${lots})`,
       `DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}-RSV-%'`,
       `DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}-LOT-%'`,
-      `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
       `DELETE FROM quality.nonconformance_lot WHERE nonconformance_id IN (SELECT nonconformance_id FROM quality.nonconformance WHERE item_id IN (${items}))`,
       `DELETE FROM quality.nonconformance WHERE item_id IN (${items})`,
       `DELETE FROM quality.inspection_result WHERE inspection_request_id IN (${oqc})`,
       `DELETE FROM quality.inspection_request WHERE item_id IN (${items})`,
       `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (${requests})`,
       `DELETE FROM logistics.shipment_request WHERE shipment_request_id IN (${requests})`,
+      // 지시서 줄이 출고 창고를 가리킨다(피처 012) — 줄을 지운 뒤에 창고를 지운다.
+      `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
       `DELETE FROM quality.inspection_plan_version WHERE inspection_plan_id IN (SELECT inspection_plan_id FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%')`,
       `DELETE FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`,

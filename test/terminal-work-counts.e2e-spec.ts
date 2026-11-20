@@ -258,8 +258,9 @@ describe('단말 작업 수 (e2e)', () => {
         customerId: Number(ids.customer),
         shipToPartnerId: Number(ids.customer),
         requestedShipDate: TODAY,
-        fulfillmentPlantId: Number(ids.plant),
-        lines: [{ itemId: Number(ids.itemOqc), requestedQty: 5, allocatedQty: 5, uomId: Number(ids.uom), shippingInspectionRequired: true }],
+        // 피처 012 — 사업부 지시서, 줄 출고 창고 A(창고 A 지정 단말 M1 과 창고 없는 M3 가 함께 센다).
+        businessUnitId: Number(ids.businessUnit),
+        lines: [{ itemId: Number(ids.itemOqc), requestedQty: 5, allocatedQty: 5, uomId: Number(ids.uom), shippingInspectionRequired: true, warehouseId: Number(ids.whA) }],
       })
       .expect(201);
 
@@ -349,7 +350,8 @@ describe('단말 작업 수 (e2e)', () => {
     await prisma.lot.deleteMany({ where: { lot_no: `${PREFIX}-PENDING` } });
     const plants = `SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${ROOT}%'`;
     const wh = `SELECT warehouse_id FROM mdm.warehouse WHERE plant_id IN (${plants})`;
-    const requests = `SELECT shipment_request_id FROM logistics.shipment_request WHERE fulfillment_plant_id IN (${plants})`;
+    const requests = `SELECT shipment_request_id FROM logistics.shipment_request WHERE fulfillment_plant_id IN (${plants})
+      OR shipment_request_id IN (SELECT shipment_request_id FROM logistics.shipment_request_line WHERE warehouse_id IN (${wh}))`;
     for (const statement of [
       `DELETE FROM app.handover_alert_setting WHERE plant_id IN (${plants})`,
       `DELETE FROM quality.inspection_request WHERE target_type_code = 'SHIPMENT_REQUEST' AND target_id IN (${requests})`,
