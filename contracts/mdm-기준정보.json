@@ -11956,6 +11956,15 @@
       "description": "설치 설비 — 주면 그 설비에 붙은 단말만. 근거: omf-all-around#333"
      },
      {
+      "name": "warehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "창고 — 주면 그 창고로 지정된 단말만. 근거: omf-all-around#333"
+     },
+     {
       "name": "registrationStatusCode",
       "in": "query",
       "schema": {

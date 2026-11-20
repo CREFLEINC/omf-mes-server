@@ -98,6 +98,8 @@ export interface TerminalQuery extends ReferenceQuery {
   isActive?: boolean;
   /** 설치 설비(omf-all-around#333) — 주면 그 설비에 붙은 단말만. */
   equipmentId?: number;
+  /** 창고(omf-all-around#333) — 주면 그 창고로 지정된 단말만. */
+  warehouseId?: number;
   /** 등록 여부(omf-all-around#333) — `view()` 의 등록 판정과 같은 기준. */
   registrationStatusCode?: 'REGISTERED' | 'UNREGISTERED';
 }
@@ -147,6 +149,7 @@ export class TerminalService {
     // 사용 여부 라벨(omf-all-around#333) — 주면 그 값만. `includeInactive` 의 기본(쓰는 것만)보다 앞선다.
     if (query.isActive !== undefined) where.is_active = query.isActive;
     if (query.equipmentId !== undefined) where.equipment_id = query.equipmentId;
+    if (query.warehouseId !== undefined) where.warehouse_id = query.warehouseId;
     // 등록 여부(omf-all-around#333) — 지금 세대 토큰으로 확인된 것만 등록이다(`view()` 와 같은 판정).
     const sameGeneration = () => ({ equals: this.prisma.terminal.fields.token_version });
     if (query.registrationStatusCode === 'REGISTERED') {

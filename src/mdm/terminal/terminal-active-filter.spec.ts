@@ -59,6 +59,12 @@ describe('단말 목록 — 설치 설비 · 등록 여부 조건 (omf-all-aroun
     expect(whereOf(findMany)).toMatchObject({ equipment_id: 7 });
   });
 
+  it('warehouseId 를 주면 그 창고의 단말만', async () => {
+    const { service, findMany } = withFields();
+    await service.list({ warehouseId: 11 });
+    expect(whereOf(findMany)).toMatchObject({ warehouse_id: 11 });
+  });
+
   it('REGISTERED 면 확인 시각이 있고 지금 세대 토큰으로 확인된 것만', async () => {
     const { service, findMany } = withFields();
     await service.list({ registrationStatusCode: 'REGISTERED' });
