@@ -72,11 +72,16 @@ export function coarseRange(column: Prisma.Sql, from: string, to: string): Prism
 }
 
 /**
- * 출하요청의 공장 — `fulfillment_plant_id`, 비었으면 그 요청을 처음 출하한 창고의 공장. 둘 다 없으면 null(공장 미지정).
- * 출하 대기·다음 출하·납기 경과·OQC 가 이 한 식으로 공장을 가른다(사용자 결정 2026-10-19). `request` = 출하요청 별칭.
+ * 출하요청의 공장 — `fulfillment_plant_id`, 비었으면 첫 줄 출고 창고의 공장(피처 012 사업부 지시서), 그것도 없으면 그 요청을
+ * 처음 출하한 창고의 공장. 모두 없으면 null(공장 미지정). OQC 묶음이 이 한 식으로 공장을 하나 고른다(사용자 결정 2026-10-19).
+ * `request` = 출하요청 별칭.
  */
 export function requestPlant(request: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`COALESCE(${request}.fulfillment_plant_id, (
+    SELECT w.plant_id FROM logistics.shipment_request_line l
+    JOIN mdm.warehouse w ON w.warehouse_id = l.warehouse_id
+    WHERE l.shipment_request_id = ${request}.shipment_request_id
+    ORDER BY l.line_no LIMIT 1), (
     SELECT w.plant_id FROM logistics.shipment s
     JOIN mdm.warehouse w ON w.warehouse_id = s.warehouse_id
     WHERE s.shipment_request_id = ${request}.shipment_request_id
@@ -85,10 +90,13 @@ export function requestPlant(request: Prisma.Sql): Prisma.Sql {
 
 /**
  * 공장 범위의 출하요청 — 공장이 정해진 요청은 그 공장일 때만, 공장 미지정 요청은 어느 공장을 골라도 넣는다
- * (「공장이 지정되지 않은 출하 요청이면 공장에 상관없이 동작이 가능해야 한다」). ⚠ 앞에 `plant_scope` CTE 가 있어야 한다.
+ * (「공장이 지정되지 않은 출하 요청이면 공장에 상관없이 동작이 가능해야 한다」). 사업부 지시서(피처 012)는 줄 출고 창고의
+ * 공장 중 하나라도 범위면 넣는다 — 공장 둘에 걸친 지시서가 어느 공장을 골라도 보인다. ⚠ 앞에 `plant_scope` CTE 가 있어야 한다.
  */
 export function requestInScope(request: Prisma.Sql): Prisma.Sql {
-  return Prisma.sql`(${requestPlant(request)} IS NULL OR ${requestPlant(request)} IN (SELECT plant_id FROM plant_scope))`;
+  return Prisma.sql`(${requestPlant(request)} IS NULL OR ${requestPlant(request)} IN (SELECT plant_id FROM plant_scope)
+    OR EXISTS (SELECT 1 FROM logistics.shipment_request_line l JOIN mdm.warehouse w ON w.warehouse_id = l.warehouse_id
+               WHERE l.shipment_request_id = ${request}.shipment_request_id AND w.plant_id IN (SELECT plant_id FROM plant_scope)))`;
 }
 
 /**

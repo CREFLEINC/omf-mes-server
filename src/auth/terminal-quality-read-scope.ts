@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 
 import { ContractException, ERROR_CODE } from '../common/errors';
+import { plantBusinessUnit, requestInBusinessUnitWhere } from '../logistics/shipment-request/shipment-request-scope';
 import { PrismaService } from '../prisma/prisma.service';
 import { TerminalContext } from './terminal-context';
 
@@ -56,14 +57,14 @@ export function terminalQualityWorkOrderWhere(scope: TerminalQualityReadScope): 
 
 /**
  * ⭐ POP OQC 출하검사 판정(P-04-06 · 장부 P-80) — OQC 의뢰에는 W/O 가 없어 위 공정 축으로 못 가른다.
- * 단말과 같은 공장이면 연다. 출하지시 대상은 다형 참조(`target_id`)라 관계로 못 걸어 지시 id 를
- * 먼저 푼다. ⛔ 출하 공장이 비어 있는 지시의 의뢰는 담지 않는다 — 「모른다」를 허용으로 읽지 않는다.
+ * 출하지시 의뢰는 단말 공장 사업부의 지시서면 연다(피처 012 R-2 — 사업부 없는 옛 지시서는 이행 공장). 출하지시 대상은
+ * 다형 참조(`target_id`)라 관계로 못 걸어 지시 id 를 먼저 푼다. ⛔ 사업부도 공장도 없는 지시의 의뢰는 담지 않는다.
  */
 async function terminalOqcRequestWhere(
   prisma: PrismaService, plantId: bigint,
 ): Promise<Prisma.inspection_requestWhereInput> {
   const shipments = await prisma.shipment_request.findMany({
-    where: { fulfillment_plant_id: plantId }, select: { shipment_request_id: true },
+    where: requestInBusinessUnitWhere(plantId, await plantBusinessUnit(prisma, plantId)), select: { shipment_request_id: true },
   });
   return {
     inspection_type_code: OQC,

@@ -36,6 +36,7 @@ function setup(type: 'POP' | 'MOBILE' = 'MOBILE', options: { active?: boolean; v
     handling_unit: { findFirst: jest.fn().mockResolvedValue({ handling_unit_id: 47n }) },
     inspection_request: { findFirst: jest.fn().mockResolvedValue({ inspection_request_id: 61n }) },
     shipment_request: { findMany: jest.fn().mockResolvedValue([]) },
+    plant: { findUnique: jest.fn().mockResolvedValue({ business_unit_id: null }) },
     nonconformance: { findFirst: jest.fn().mockResolvedValue({ nonconformance_id: 67n }) },
   } as unknown as PrismaService;
   const account = { userId: 1, permissions: ['W-CO-06'] };
