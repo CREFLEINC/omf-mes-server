@@ -9,6 +9,7 @@ import { NumberingService } from '../../core/numbering';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { LogisticsWriteActor } from '../logistics-write-actor';
+import { assertNoUnconfirmedSplit } from '../product-lot-split/product-lot-split-guard';
 import { assertLotsReleased } from '../shipment/shipment-rules';
 import {
   CandidateLineRow,
@@ -47,6 +48,8 @@ export const PICK_CONFLICT = {
   LOT_ALREADY_PICKED: 'LOT_ALREADY_PICKED',
   NO_LINE_FOR_ITEM: 'NO_LINE_FOR_ITEM',
   ...WAREHOUSE_PICK_CONFLICT,
+  /** 피처 013 — 확인 전 분리의 원래·자식 LOT. */
+  LOT_SPLIT_UNCONFIRMED: 'LOT_SPLIT_UNCONFIRMED',
 } as const;
 
 const INVALID_STATE = 'INVALID_STATE';
@@ -128,6 +131,7 @@ export class ShipmentLotPickService {
         );
       }
       await assertPickable(tx, lot);
+      await assertNoUnconfirmedSplit(tx, lot.lot_id);
       assertLotsReleased([{ lotId: lot.lot_id, statusCode: lot.status_code }], () => 'lotId');
       assertShelfLife(lot, line, now);
 
@@ -165,6 +169,7 @@ export class ShipmentLotPickService {
     if (itemLines.length === 0) throw conflict(PICK_CONFLICT.NO_LINE_FOR_ITEM, '이 지시서에 그 LOT 품목의 라인이 없습니다.');
     await assertNotPicked(tx, hint, lot);
     await assertPickable(tx, lot);
+    await assertNoUnconfirmedSplit(tx, lot.lot_id);
     assertLotsReleased([{ lotId: lot.lot_id, statusCode: lot.status_code }], () => 'lotId');
 
     const rows = await lockLotBalances(tx, lot);
