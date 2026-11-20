@@ -287,6 +287,33 @@ describe('피처 012 출하 지시서 사업부·줄 출고 창고 (e2e)', () =>
         expect.objectContaining({ field: 'shipmentRequestId', message: '이행 공장이 지정되지 않은 출하작업지시입니다.' }),
       ]));
     });
+
+    it('US5-1·SC-004 W-04-12 권한으로 미확정 출하(수주 있음)를 :confirm 하면 확정·ERP 송신 대기(PENDING)가 되고 erpSendStatusCounts 「확정 전」이 1 준다', async () => {
+      const order = await f.salesOrder([{ ordered: 10 }]);
+      const made = await f.made([{ allocated: 10, warehouse: 'A', salesOrderLineId: order.lineIds[0] }], { salesOrderId: order.salesOrderId });
+      const unconfirmed = await shipment(made.requestId, 'UNCONFIRMED');
+      await prisma.shipment.update({ where: { shipment_id: BigInt(unconfirmed.shipmentId) }, data: { shipped_at: new Date('2026-11-20T03:00:00.000Z') } });
+      await prisma.shipment_line.create({ data: {
+        shipment_id: BigInt(unconfirmed.shipmentId), line_no: 1, shipment_request_line_id: BigInt(made.lineIds[0]), item_id: f.item.FG, shipped_qty: 10, uom_id: f.uom,
+      } });
+      const scope = { businessUnitId: Number(f.unit.X) };
+      const before = (await listed(scope)).erpSendStatusCounts;
+      expect((await detail(made.requestId, 'ALL').expect(200)).body.erpSendStatus).toBe('NOT_QUEUED');
+
+      const etag = (await f.http().get(`/api/logistics/shipments/${unconfirmed.shipmentId}`).set('Cookie', w0412).expect(200)).headers.etag as string;
+      await f.http().post(`/api/logistics/shipments/${unconfirmed.shipmentId}:confirm`).set('Cookie', w0412)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', etag).send({}).expect(200);
+
+      const stored = await prisma.shipment.findUniqueOrThrow({ where: { shipment_id: BigInt(unconfirmed.shipmentId) } });
+      expect(stored.status_code).toBe('CONFIRMED');
+      expect(await prisma.integration_message.count({ where: { target_type_code: 'SHIPMENT', target_id: BigInt(unconfirmed.shipmentId) } })).toBe(1);
+      const body = (await detail(made.requestId, 'ALL').expect(200)).body as { erpSendStatus: string; shipments: Record<string, unknown>[] };
+      expect(body.erpSendStatus).toBe('PENDING');
+      expect(body.shipments[0]).toMatchObject({ shipmentId: unconfirmed.shipmentId, statusCode: 'CONFIRMED', erpSendStatus: 'PENDING' });
+      const after = (await listed(scope)).erpSendStatusCounts;
+      expect(after.NOT_QUEUED).toBe(before.NOT_QUEUED - 1);
+      expect(after.PENDING ?? 0).toBe((before.PENDING ?? 0) + 1);
+    });
   });
 
   describe('피킹(PDA) — 줄 출고 창고 LOT 만, LOT 창고로 줄을 고른다', () => {
