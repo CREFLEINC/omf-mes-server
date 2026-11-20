@@ -5113,7 +5113,7 @@
        "SENT"
       ],
       "example": "PENDING",
-      "description": "ERP 송신 상태(출하 내역 W-04-12 · 피처 010) — 위에서부터 처음 맞는 값: 미확정 NOT_QUEUED(확정 전) · 수주 연결 라인 0 NOT_SENT_NO_SALES_ORDER(송신 안 함) · 메시지 없음 NOT_QUEUED · 메시지 취소 CANCELLED · 송신 실패 SEND_ERROR · 보내기 전(PENDING·sentAt 없음·바깥 행 0) PENDING(대기) · 그 밖 SENT(보냄). 출하 완료 단계 화면에는 표시하지 않는다"
+      "description": "ERP 송신 상태(출하 예정 목록 W-04-02 「출하」 칸 · 피처 010) — 위에서부터 처음 맞는 값: 미확정 NOT_QUEUED(확정 전) · 수주 연결 라인 0 NOT_SENT_NO_SALES_ORDER(송신 안 함) · 메시지 없음 NOT_QUEUED · 메시지 취소 CANCELLED · 송신 실패 SEND_ERROR · 보내기 전(PENDING·sentAt 없음·바깥 행 0) PENDING(대기) · 그 밖 SENT(보냄). 출하 완료 단계 화면에는 표시하지 않는다"
      },
      "cancelRequestPending": {
       "type": "boolean",
