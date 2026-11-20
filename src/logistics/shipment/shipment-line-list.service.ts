@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { pageRequest, pagedResponse } from '../../common/pagination';
+import { workOrderLotFamilySql } from '../../core/lot/lot-genealogy';
 import { localPeriodSql, periodUnlessPinned, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, Named, PagedWithTotals, UomTotalRow, lineTotals, named } from '../line-list';
@@ -51,7 +52,6 @@ export interface ShipmentLineListItem {
 export const LOTS_SHOWN = 5;
 /** 상태를 고르지 않으면 취소된 출하는 뺀다. */
 const CANCELLED = 'CANCELLED';
-const WORK_ORDER_LOT_SOURCE = 'WORK_ORDER';
 
 const FROM = `
   FROM logistics.shipment_line sl
@@ -78,8 +78,8 @@ export function shipmentLineWhere(query: ShipmentLineListQuery, today: string): 
   const lot: string[] = [];
   if (query.lotNo !== undefined) lot.push(`la.lot_no = ${bind(query.lotNo)}`);
   if (query.workOrderNo !== undefined) {
-    lot.push(`EXISTS (SELECT 1 FROM production.work_order lw
-      WHERE la.source_type_code = '${WORK_ORDER_LOT_SOURCE}' AND lw.work_order_id = la.source_id AND lw.work_order_no = ${bind(query.workOrderNo)})`);
+    // 그 W/O 의 제품 분리 자식 LOT 도 함께(피처 013 R-10).
+    lot.push(`la.lot_id IN (${workOrderLotFamilySql(`(SELECT lw.work_order_id FROM production.work_order lw WHERE lw.work_order_no = ${bind(query.workOrderNo)})`)})`);
   }
   if (lot.length > 0) {
     and.push(`EXISTS (SELECT 1 FROM logistics.shipment_lot_allocation lx JOIN trace.lot la ON la.lot_id = lx.lot_id

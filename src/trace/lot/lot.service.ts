@@ -34,6 +34,7 @@ import {
   loose,
   optional,
   pickCurrentLot,
+  workOrderFamilyWhere,
   workOrderWhere,
 } from './lot-rules';
 import { LotProgressView, lotProgress } from './lot-progress';
@@ -123,6 +124,7 @@ export class LotService {
         field('workOrderId', ERROR_CODE.REQUIRED, '현재 생산 LOT 을 보려면 MES W/O 를 먼저 고르세요.'),
       ]);
     }
+    const workOrderId = assertId('workOrderId', query.workOrderId);
     const base: Prisma.lotWhereInput = {
       ...optional('item_id', assertId('itemId', query.itemId)),
       ...optional('plant_id', assertId('plantId', query.plantId)),
@@ -131,7 +133,8 @@ export class LotService {
       // 「LOT 번호 정확 일치. 스캔 화면이 쓴다」(계약) — 부분 검색으로는 한 건을 못 집는다.
       ...optional('lot_no', query.lotNo),
       ...expiryWhere(query.expiryDateFrom, query.expiryDateTo),
-      ...workOrderWhere(assertId('workOrderId', query.workOrderId)),
+      // 목록은 제품 분리 자식까지(피처 013 R-10). 「현재 생산 LOT」 후보는 선발행 슬롯(원천 W/O)만이다.
+      ...(currentOnly ? workOrderWhere(workOrderId) : await workOrderFamilyWhere(this.prisma, workOrderId)),
       ...completedWhere(bool(query.completed)),
       ...(bool(query.heldOnly) === true ? { lot_hold: { some: { released_at: null } } } : {}),
       ...(query.q === undefined
