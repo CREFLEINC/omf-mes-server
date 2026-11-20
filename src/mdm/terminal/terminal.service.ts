@@ -94,6 +94,8 @@ export interface TerminalUpdate {
 export interface TerminalQuery extends ReferenceQuery {
   plantId?: number;
   terminalTypeCode?: string;
+  /** 사용 여부 라벨(omf-all-around#333) — 주면 그 값만. */
+  isActive?: boolean;
 }
 
 export interface RegistrationToken {
@@ -138,6 +140,8 @@ export class TerminalService {
       ...optional('plant_id', query.plantId),
       ...optional('terminal_type_code', query.terminalTypeCode),
     });
+    // 사용 여부 라벨(omf-all-around#333) — 주면 그 값만. `includeInactive` 의 기본(쓰는 것만)보다 앞선다.
+    if (query.isActive !== undefined) where.is_active = query.isActive;
     const [rows, total] = await Promise.all([
       this.prisma.terminal.findMany({
         where,
