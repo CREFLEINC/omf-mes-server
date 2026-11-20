@@ -55,6 +55,8 @@ export interface ConflictExtra {
   blockers?: { code: string; lineNo?: number; lotNo?: string; warehouseName?: string }[];
   /** `ShipmentConflictResponse.warehouses` — `LOT_NOT_IN_LINE_WAREHOUSE` 일 때 LOT 이 있는 창고(피처 012). */
   warehouses?: { warehouseId: number; warehouseCode: string; warehouseName: string; plantId: number; plantName: string }[];
+  /** `ShipmentConflictResponse.detail` — 생산 LOT 분리 거절의 문구 값(피처 013 · 스캔 조회 `blocked.detail` 과 같다). */
+  detail?: string | null;
 }
 
 export interface OpenSessionView {
