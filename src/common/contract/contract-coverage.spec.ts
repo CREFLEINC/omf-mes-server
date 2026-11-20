@@ -122,7 +122,8 @@ describe('계약 커버리지', () => {
     // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 641 → 643.
     // PDA 적치 기록 1 오퍼레이션(피처 011 · omf-all-around#325): 643 → 644.
     // 단말 다시 사용 1 오퍼레이션(omf-all-around#333): 644 → 645.
-    expect(registry.size).toBe(645);
+    // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 645 → 644.
+    expect(registry.size).toBe(644);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

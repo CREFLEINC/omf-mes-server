@@ -95,6 +95,26 @@ export interface ShipmentRequestDisplayFacts {
   uomCodes: Map<string, string>;
   /** 고객·납품처(거래처) — PDA 카드·POP 찾기·P-04-06 머리(피처 010 검증 1회차). */
   partners?: Map<string, ShipmentRequestPartnerView>;
+  /** 지시서 사업부(피처 012 FR-007). */
+  businessUnits?: Map<string, ShipmentRequestBusinessUnitView>;
+  /** 줄 출고 창고와 그 공장(피처 012 FR-007). */
+  warehouses?: Map<string, ShipmentRequestWarehouseView>;
+}
+
+/** 지시서 사업부 표시 칸(피처 012). */
+export interface ShipmentRequestBusinessUnitView {
+  businessUnitId: number;
+  businessUnitCode: string;
+  businessUnitName: string;
+}
+
+/** 줄 출고 창고 표시 칸 — 공장 이름을 함께 싣는다(「완제품창고 A · 1공장」 · 피처 012). */
+export interface ShipmentRequestWarehouseView {
+  warehouseId: number;
+  warehouseCode: string;
+  warehouseName: string;
+  plantId: number;
+  plantName: string;
 }
 
 /** 거래처 표시 칸 — 출하 내역(`Shipment.customer`)·완료 확인 값과 같은 모양. */
@@ -203,6 +223,8 @@ export interface ShipmentRequestLineView {
   customerLotRequirement: string | null;
   shippingInspectionRequired: boolean;
   minimumRemainingShelfLifeDays: number | null;
+  /** 출고 창고 — null 은 배포 전 줄(「창고 미지정」, 지시서 공장의 불량 외 창고에서 피킹 · 피처 012). */
+  warehouse: ShipmentRequestWarehouseView | null;
   picks: ShipmentLinePickedLotView[];
   /** 초과 = 피킹 − 목표(배정). 목표에 못 미치면 0. */
   overQty: number;
@@ -218,6 +240,11 @@ export interface ShipmentRequestView {
   /** 수주 번호 — 수주 없는 지시서는 null. */
   salesOrderNo: string | null;
   fulfillmentPlantId: number | null;
+  /** 지시서 사업부 — 사업부 없는 공장의 옛 지시서는 null(「사업부 미지정」 · 피처 012). */
+  businessUnitId: number | null;
+  businessUnit: ShipmentRequestBusinessUnitView | null;
+  /** 줄 출고 창고 요약 — 줄 순서대로 겹치지 않게. 창고 없는 옛 줄은 담지 않는다(피처 012). */
+  warehouses: ShipmentRequestWarehouseView[];
   customerId: number;
   shipToPartnerId: number;
   /** 고객·납품처 이름 — 거래처가 없으면 null. */
@@ -298,6 +325,9 @@ export function shipmentRequestView(
     salesOrderNo: row.sales_order_id === null ? null : display.salesOrderNos.get(String(row.sales_order_id)) ?? null,
     fulfillmentPlantId:
       row.fulfillment_plant_id === null ? null : Number(row.fulfillment_plant_id),
+    businessUnitId: row.business_unit_id === null ? null : Number(row.business_unit_id),
+    businessUnit: row.business_unit_id === null ? null : display.businessUnits?.get(String(row.business_unit_id)) ?? null,
+    warehouses: uniqueWarehouses(lineViews),
     customerId: Number(row.customer_id),
     shipToPartnerId: Number(row.ship_to_partner_id),
     customer: display.partners?.get(String(row.customer_id)) ?? null,
@@ -352,10 +382,17 @@ export function shipmentRequestLineView(
     customerLotRequirement: row.customer_lot_requirement,
     shippingInspectionRequired: row.shipping_inspection_required,
     minimumRemainingShelfLifeDays: row.minimum_remaining_shelf_life_days,
+    warehouse: row.warehouse_id === null ? null : display.warehouses?.get(String(row.warehouse_id)) ?? null,
     picks: picks.map(shipmentLinePickedLotView),
     overQty: over.greaterThan(0) ? Number(over) : 0,
     lots: lots.map((lot) => shipmentRequestLotView(lot, picks, oqcStatuses)),
   });
+}
+
+function uniqueWarehouses(lines: ShipmentRequestLineView[]): ShipmentRequestWarehouseView[] {
+  const seen = new Map<number, ShipmentRequestWarehouseView>();
+  for (const line of lines) if (line.warehouse !== null && !seen.has(line.warehouse.warehouseId)) seen.set(line.warehouse.warehouseId, line.warehouse);
+  return [...seen.values()];
 }
 
 /**

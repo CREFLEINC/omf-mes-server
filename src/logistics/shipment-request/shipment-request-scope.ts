@@ -98,3 +98,34 @@ export function requestInBusinessUnitSql(request: string, plantId: bigint, bind:
   return `(${request}.business_unit_id = (SELECT sp.business_unit_id FROM mdm.plant sp WHERE sp.plant_id = ${plant})
         OR (${request}.business_unit_id IS NULL AND ${request}.fulfillment_plant_id = ${plant}))`;
 }
+
+/** 계정 데이터 범위 한 줄 — 세션 `scopes` 와 같은 모양(공장이 없으면 사업부 전체). */
+export interface AccountScope {
+  businessUnitId: number;
+  plantId?: number;
+}
+
+/** 계정이 그 사업부를 다룰 수 있나 — 범위 줄이 없으면 제한 없음(omf-all-around#336). */
+export function accountCoversBusinessUnit(scopes: readonly AccountScope[], businessUnitId: number): boolean {
+  return scopes.length === 0 || scopes.some((scope) => scope.businessUnitId === businessUnitId);
+}
+
+/** 계정이 그 창고(공장)를 다룰 수 있나 — 사업부 줄은 사업부 전체, 공장 줄은 그 공장만. */
+export function accountCoversWarehouse(scopes: readonly AccountScope[], warehouse: { businessUnitId: number; plantId: number }): boolean {
+  return scopes.length === 0 || scopes.some((scope) =>
+    scope.businessUnitId === warehouse.businessUnitId && (scope.plantId === undefined || scope.plantId === warehouse.plantId));
+}
+
+/**
+ * SQL — 지시서 별칭 `request` 가 계정 데이터 범위 안(W-04-02 · 피처 012 D-12). 범위 줄이 없으면 조건을 걸지 않는다(null).
+ * 사업부 줄·공장 줄 모두 그 사업부의 지시서를 본다(공장만 범위인 계정 = 그 공장 사업부). 사업부 없는 옛 지시서는
+ * 공장 줄이 있을 때만 그 이행 공장으로 본다.
+ */
+export function requestInAccountScopeSql(request: string, scopes: readonly AccountScope[], bind: Bind): string | null {
+  if (scopes.length === 0) return null;
+  const units = [...new Set(scopes.map((scope) => scope.businessUnitId))];
+  const plants = [...new Set(scopes.flatMap((scope) => (scope.plantId === undefined ? [] : [scope.plantId])))];
+  const legacy = plants.length === 0 ? '' : `
+        OR (${request}.business_unit_id IS NULL AND ${request}.fulfillment_plant_id = ANY(${bind(plants)}::bigint[]))`;
+  return `(${request}.business_unit_id = ANY(${bind(units)}::bigint[])${legacy})`;
+}
