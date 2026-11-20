@@ -44,7 +44,13 @@ export class SessionService {
       where: { app_user_id: appUserId, is_active: true },
       include: {
         user_credential: { select: { must_change_password: true, password_changed_at: true } },
-        user_data_scope: true,
+        // 공장만 · 법인만 지정한 범위도 싣는다 — 사업부는 그 공장의 것, 법인이면 그 법인의 사업부 전부(omf-all-around#336).
+        user_data_scope: {
+          include: {
+            plant: { select: { business_unit_id: true } },
+            legal_entity: { select: { business_unit: { select: { business_unit_id: true } } } },
+          },
+        },
         user_role: { include: { role: { include: { role_permission: true } } } },
         // 한 계정 = 한 작업자(P-38) — 그래도 순서를 못 박아 둘 이상일 때 답이 흔들리지 않게 한다.
         worker: {
@@ -71,12 +77,22 @@ export class SessionService {
       userName: user.user_name,
       ...(user.department_id === null ? {} : { departmentId: Number(user.department_id) }),
       ...(lastLoginAt === null ? {} : { lastLoginAt: lastLoginAt.toISOString() }),
-      scopes: user.user_data_scope
-        .filter((scope) => scope.business_unit_id !== null)
-        .map((scope) => ({
-          businessUnitId: Number(scope.business_unit_id),
-          ...(scope.plant_id === null ? {} : { plantId: Number(scope.plant_id) }),
-        })),
+      // ⚠ 빈 목록은 「제한 없음」이다 — 공장만 지정한 줄을 버리면 그 계정이 모든 공장을 보게 된다.
+      scopes: user.user_data_scope.flatMap((scope) => {
+        const businessUnitId = scope.business_unit_id ?? scope.plant?.business_unit_id ?? null;
+        if (businessUnitId !== null) {
+          return [
+            {
+              businessUnitId: Number(businessUnitId),
+              ...(scope.plant_id === null ? {} : { plantId: Number(scope.plant_id) }),
+            },
+          ];
+        }
+        const units = scope.legal_entity?.business_unit ?? [];
+        // 풀 사업부가 없는 줄도 「제한 없음」으로 읽히면 안 된다 — 없는 사업부(0)로 아무 공장도 덮지 않게 둔다.
+        if (units.length === 0) return [{ businessUnitId: 0 }];
+        return units.map((unit) => ({ businessUnitId: Number(unit.business_unit_id) }));
+      }),
       // 자격이 없는 계정은 로그인 자체가 안 된다 — 여기 닿는 길은 관리자가 자격을 지운
       // 뒤 세션만 남은 자리뿐이라 「바꿔야 한다」로 몰지 않는다.
       mustChangePassword: user.user_credential?.must_change_password ?? false,

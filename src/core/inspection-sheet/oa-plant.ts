@@ -33,13 +33,13 @@ async function oaPlants(prisma: Pick<Prisma.TransactionClient, 'plant' | 'code_v
   });
 }
 
-/** 계정 범위가 덮는 OA 공장 id 들. 비어 있으면 그 계정은 검사표 화면을 쓸 수 없다. */
+/** 계정 범위가 덮는 OA 공장 id 들. 범위 줄이 없으면 제한 없음 — 모든 OA 공장(omf-all-around#336). */
 export async function oaPlantsInScope(
   prisma: Pick<Prisma.TransactionClient, 'plant' | 'code_value'>,
   scopes: readonly PlantScope[],
 ): Promise<bigint[]> {
-  if (scopes.length === 0) return [];
   const plants = await oaPlants(prisma);
+  if (scopes.length === 0) return plants.map((plant) => plant.plant_id);
   return plants
     .filter((plant) =>
       scopes.some((scope) =>

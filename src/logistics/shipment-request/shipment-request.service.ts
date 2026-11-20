@@ -348,7 +348,8 @@ export class ShipmentRequestService {
         field('fulfillmentPlantId', ERROR_CODE.INVALID, '사용 가능한 공장이 아닙니다.'),
       ]);
     }
-    const authorized = actor.scopes.some(
+    // 범위 줄이 없으면 제한 없음 — 모든 공장(omf-all-around#336).
+    const authorized = actor.scopes.length === 0 || actor.scopes.some(
       (scope) =>
         scope.plantId === plantId ||
         (scope.plantId === undefined && plant.business_unit_id !== null && scope.businessUnitId === Number(plant.business_unit_id)),

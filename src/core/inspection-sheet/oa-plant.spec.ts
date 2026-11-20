@@ -37,7 +37,7 @@ describe('OA 공장 판단', () => {
     await expect(oaPlantsInScope(prisma(), [{ businessUnitId: 1 }])).resolves.toEqual([2n]);
   });
 
-  it('범위가 없으면 OA 공장도 없다', async () => {
-    await expect(oaPlantsInScope(prisma(), [])).resolves.toEqual([]);
+  it('범위 줄이 없으면 제한 없음 — 모든 OA 공장이다(omf-all-around#336)', async () => {
+    await expect(oaPlantsInScope(prisma(), [])).resolves.toEqual([2n]);
   });
 });
