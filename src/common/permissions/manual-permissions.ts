@@ -97,6 +97,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/terminals/{terminalId}:issue-token': ['W-CO-06'],
   // 툴도 같다 — 도출표에 :deactivate·:dispose 만 들어왔다. 재개는 중지의 짝이다.
   'POST /mdm/molds/{moldId}:activate': ['W-05-13'],
+  'POST /mdm/terminals/{terminalId}:activate': ['W-CO-06'],
   'POST /mdm/terminals/{terminalId}:deactivate': ['W-CO-06'],
 
   // `W-06-08` 예비품 마스터 — §5 가 「등록·올리기」만 적어 나머지가 도출표에 안 들어왔다.

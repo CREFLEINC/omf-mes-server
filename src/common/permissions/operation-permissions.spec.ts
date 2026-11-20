@@ -138,9 +138,10 @@ describe('오퍼레이션 권한 매핑', () => {
     // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 386.
     // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 387.
     // PDA 적치 기록 1 — `M-01-05`·`M-01-07`(피처 011 · omf-all-around#325): 388.
-    // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 387.
-    // 지시서 코드 해석 403 BUSINESS_UNIT_MISMATCH(피처 012 FR-013): 388.
-    expect(declares403).toHaveLength(388);
+    // 단말 다시 사용 1 — `W-CO-06`(omf-all-around#333): 389.
+    // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 388.
+    // 지시서 코드 해석 403 BUSINESS_UNIT_MISMATCH(피처 012 FR-013): 389.
+    expect(declares403).toHaveLength(389);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
