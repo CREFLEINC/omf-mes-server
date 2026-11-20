@@ -138,7 +138,8 @@ describe('역할·기능 권한 (e2e)', () => {
     // M-01-03·W-01-14·W-01-15·W-01-16·W-06-25(피처 005 · omf-all-around#254).
     // P-02-08·P-02-09·P-02-13(생산 포장·포장 라벨 재출력·PQC 제품 검사 POP 화면)은 없앴다(omf-all-around#293).
     // P-04-07(출하 완료)(피처 010 · omf-all-around#305).
-    expect(response.body.items).toHaveLength(143);
+    // P-04-08·M-04-05(피처 013 · omf-all-around#303): 143 → 145.
+    expect(response.body.items).toHaveLength(145);
     for (const retired of ['W-CO-05', 'P-02-08', 'P-02-09', 'P-02-13']) {
       expect(response.body.items.map((p: { code: string }) => p.code)).not.toContain(retired);
     }

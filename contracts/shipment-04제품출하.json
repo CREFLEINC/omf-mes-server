@@ -4117,6 +4117,288 @@
     },
     "x-internal-note": "POP 단말 전용 — 소유는 지시서 이행 공장 = 단말 공장. 계정 세션은 403."
    }
+  },
+  "/logistics/product-lot-splits:lookup": {
+   "get": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "생산 LOT 분리 스캔 조회(POP)",
+    "description": "POP P-04-08 — LOT 번호(정확 일치)로 LOT·라벨 수량·W/O 와 이 공장의 보유 위치별 잔액·고를 수 있는지·막힌 이유를 낸다. 분리 요청과 같은 규칙(R-8)이고 분리 때 다시 검사한다. 근거: 피처 013 R-14",
+    "parameters": [
+     {
+      "name": "lotNo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "maxLength": 100,
+       "example": "M00000120261117000012ABCDEFGHJKLMN"
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "스캔 조회",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductLotSplitLookup"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "REQUIRED — lotNo 가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 · POP 단말이 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "계정 세션 — 단말 전용",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "이 공장에 없는 LOT 번호",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "POP 단말 전용 — 공장은 단말 공장. 계정 세션은 403."
+   }
+  },
+  "/logistics/product-lot-splits": {
+   "get": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "생산 LOT 분리 목록·찾기(POP·PDA)",
+    "description": "단말 공장의 분리. status 기본 UNCONFIRMED(분리 시각 오래된 순), CONFIRMED·ALL 은 최신순. lotNo(원래·자식 어느 쪽이든 정확 일치)를 주면 많아야 한 건 — 그 LOT 의 확인 대기 분리, 없으면 가장 최근 확인된 분리(status 무시), 둘 다 없으면 빈 목록(PDA M-04-05 첫 스캔). unconfirmedCount 는 P-04-08 목록 머리 수. 근거: 피처 013 FR-009 · R-3",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "UNCONFIRMED",
+        "CONFIRMED",
+        "ALL"
+       ],
+       "example": "UNCONFIRMED"
+      }
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 100,
+       "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ProductLotSplit"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "unconfirmedCount": {
+           "type": "integer",
+           "description": "단말 공장의 확인 대기 분리 수",
+           "example": 3
+          }
+         },
+         "required": [
+          "items",
+          "page",
+          "unconfirmedCount"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "status 값이 올바르지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 · 단말 유형이 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "계정 세션 — 단말 전용",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "POP·PDA 단말 전용 — 공장은 단말 공장. 계정 세션은 403(관리웹 화면이 없다)."
+   },
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "생산 LOT 분리(POP)",
+    "description": "POP P-04-08 — 한 트랜잭션에서 분리 기록(확인 대기) → 자식 LOT 원번호-S{n}(원천 PRODUCT_LOT_SPLIT · 상태·생애·유효기간·제조일·BOM 복사 · SPLIT 계보) → 원장 LOT_SPLIT 1건(같은 자리 원래 → 자식, 거래번호 PLS-{id}) → 생산 LOT 라벨 발행 기록 2건(원래 = 다음 회차·사유 LOT_SPLIT 자동, 자식 = 1회차). 하나라도 실패하면 아무것도 남지 않는다. 막는 조건은 409 code(검사 순서 R-8), 입력 형식은 400. 근거: 피처 013 FR-001~008 · R-1·R-7·R-8",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductLotSplitCreate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "분리됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductLotSplitResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "REQUIRED · RANGE(0 < qty < 그 위치 보유, 단위 소수 자리 · 그 위치에 재고 없음) · INVALID(businessDate)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 · POP 단말이 아니다 · 다른 공장 LOT·위치",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "계정 세션 · 라벨 출력 권한(can_print_label 공정) 없는 단말",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "NOT_PRODUCTION_LOT · SPLIT_SERIAL_LOT · INVALID_STATE · LOT_SPLIT_UNCONFIRMED · LOT_ALREADY_RESERVED · PUTAWAY_PENDING · NOT_PRODUCT_WAREHOUSE · MIXED_STOCK_STATUS · DUPLICATE_KEY",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "POP 단말 전용 — 공장은 단말 공장. 재발행 사유 LOT_SPLIT 은 서버만 쓰고 고객이 코드를 꺼도 분리는 된다(R-7)."
+   }
   }
  },
  "components": {
@@ -6422,9 +6704,15 @@
        "ALREADY_COMPLETED",
        "ERP_ALREADY_SENT",
        "LOT_NOT_IN_LINE_WAREHOUSE",
-       "LINE_WAREHOUSE_UNAVAILABLE"
+       "LINE_WAREHOUSE_UNAVAILABLE",
+       "NOT_PRODUCTION_LOT",
+       "SPLIT_SERIAL_LOT",
+       "LOT_SPLIT_UNCONFIRMED",
+       "PUTAWAY_PENDING",
+       "NOT_PRODUCT_WAREHOUSE",
+       "MIXED_STOCK_STATUS"
       ],
-      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다. COMPLETION_BLOCKED 는 출하 완료를 막는 이유가 있다(blockers 에 실린다). ALREADY_COMPLETED 는 이미 POP 에서 출하 완료한 지시서다(다시 스캔·동시 완료). ERP_ALREADY_SENT 는 ERP 로 이미 보낸(또는 보내는 중인) POP 완료 출하라 취소할 수 없다 — ERP 에서 처리한다. 피처 012(omf-all-around#338): LOT_NOT_IN_LINE_WAREHOUSE 는 스캔한 LOT 의 가용 잔액이 이 기기 범위 안 같은 품목 줄의 출고 창고 어디에도 없다 — `warehouses` 에 LOT 이 있는 창고(공장)를 싣는다. LINE_WAREHOUSE_UNAVAILABLE 은 고른 줄의 출고 창고가 비활성이거나 지시서 사업부의 창고가 아니다(「출고 창고를 쓸 수 없습니다」). 창고 맞는 줄 찾기가 먼저이고, 맞는 줄이 모두 목표를 채웠을 때만 LOT_TARGET_REACHED 다.",
+      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다. COMPLETION_BLOCKED 는 출하 완료를 막는 이유가 있다(blockers 에 실린다). ALREADY_COMPLETED 는 이미 POP 에서 출하 완료한 지시서다(다시 스캔·동시 완료). ERP_ALREADY_SENT 는 ERP 로 이미 보낸(또는 보내는 중인) POP 완료 출하라 취소할 수 없다 — ERP 에서 처리한다. 피처 012(omf-all-around#338): LOT_NOT_IN_LINE_WAREHOUSE 는 스캔한 LOT 의 가용 잔액이 이 기기 범위 안 같은 품목 줄의 출고 창고 어디에도 없다 — `warehouses` 에 LOT 이 있는 창고(공장)를 싣는다. LINE_WAREHOUSE_UNAVAILABLE 은 고른 줄의 출고 창고가 비활성이거나 지시서 사업부의 창고가 아니다(「출고 창고를 쓸 수 없습니다」). 창고 맞는 줄 찾기가 먼저이고, 맞는 줄이 모두 목표를 채웠을 때만 LOT_TARGET_REACHED 다. 피처 013(omf-all-around#303) 생산 LOT 분리: NOT_PRODUCTION_LOT 는 생산 LOT 이 아니다. SPLIT_SERIAL_LOT 는 시리얼 관리 품목 LOT 이다. LOT_SPLIT_UNCONFIRMED 는 PDA 확인 전인 분리의 원래·자식 LOT 이다(재분리·출하 피킹 거절). PUTAWAY_PENDING 은 적치 대기 자리이거나 그 자리에서 출발하는 열린 적치 지시가 있다. NOT_PRODUCT_WAREHOUSE 는 제품 창고(불량 창고 제외) 위치가 아니다. MIXED_STOCK_STATUS 는 그 위치에 품질·재고 상태가 다른 잔액이 섞여 있다. 분리의 INVALID_STATE 는 보류·불량·폐기·무효, LOT_ALREADY_RESERVED 는 그 LOT 의 어느 잔액에든 예약·피킹·차단이 걸렸다는 뜻이다.",
       "example": "VERSION_CONFLICT"
      },
      "message": {
@@ -6459,6 +6747,14 @@
        "$ref": "#/components/schemas/ShipmentRequestWarehouse"
       },
       "description": "LOT_NOT_IN_LINE_WAREHOUSE 일 때 그 LOT 의 가용 잔액이 있는 창고들(공장 이름 포함 · 피처 012)."
+     },
+     "detail": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "생산 LOT 분리 거절(피처 013)일 때 문구에 쓸 값 — 스캔 조회 blocked.detail 과 같다. INVALID_STATE 는 상태(DEFECTIVE·SCRAPPED·VOIDED·HOLD), LOT_SPLIT_UNCONFIRMED 는 확인 대기 분리 시각(ISO), LOT_ALREADY_RESERVED 는 피킹한 출하 지시서 번호, NOT_PRODUCTION_LOT 는 LOT 유형, SPLIT_SERIAL_LOT 는 시리얼 관리 유형. 위치 단위 사유는 null",
+      "example": "SR-20261118-0001"
      }
     },
     "required": [
@@ -8310,6 +8606,521 @@
      "cancelRequestPending"
     ],
     "description": "지시서의 출하 한 건(피처 012 W-04-02 상세 「출하」 칸 머리). 내용·취소·확정은 `GET /logistics/shipments/{shipmentId}`·`:request-cancel`·`:cancel`·`:confirm` 을 그대로 쓴다."
+   },
+   "ProductLotSplitBlock": {
+    "type": "object",
+    "description": "분리를 막는 이유(피처 013 R-8). code 로 POP 문구를 고른다.",
+    "properties": {
+     "code": {
+      "type": "string",
+      "enum": [
+       "NOT_PRODUCTION_LOT",
+       "SPLIT_SERIAL_LOT",
+       "INVALID_STATE",
+       "LOT_SPLIT_UNCONFIRMED",
+       "LOT_ALREADY_RESERVED",
+       "PUTAWAY_PENDING",
+       "NOT_PRODUCT_WAREHOUSE",
+       "MIXED_STOCK_STATUS"
+      ],
+      "example": "LOT_ALREADY_RESERVED"
+     },
+     "detail": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "문구에 쓸 값 — INVALID_STATE 는 상태(DEFECTIVE·SCRAPPED·VOIDED·HOLD), LOT_SPLIT_UNCONFIRMED 는 확인 대기 분리 시각(ISO), LOT_ALREADY_RESERVED 는 피킹한 출하 지시서 번호(없으면 null)",
+      "example": "SR-20261118-0001"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "ProductLotSplitLookup": {
+    "type": "object",
+    "description": "POP P-04-08 스캔 조회 — LOT 과 이 공장의 보유 위치(불량 창고 제외)·막힌 이유. 분리 요청과 같은 규칙이다(피처 013 R-14).",
+    "properties": {
+     "lot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN"
+       },
+       "itemCode": {
+        "type": "string",
+        "example": "PH-2207-0031"
+       },
+       "itemName": {
+        "type": "string",
+        "example": "제품"
+       },
+       "uomCode": {
+        "type": "string",
+        "example": "EA"
+       },
+       "statusCode": {
+        "type": "string",
+        "example": "NORMAL"
+       },
+       "workOrderNo": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "생산 뿌리(원천 W/O LOT)의 W/O — 분리 자식도 원래 LOT 의 W/O",
+        "example": "WO-261117-0012"
+       },
+       "labelQty": {
+        "type": "number",
+        "format": "double",
+        "example": 180,
+        "description": "LOT 수량 − 제품 분리로 떼어 낸 수량"
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "itemCode",
+       "itemName",
+       "uomCode",
+       "statusCode",
+       "workOrderNo",
+       "labelQty"
+      ]
+     },
+     "blocked": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ProductLotSplitBlock"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "LOT 단위 막힘(NOT_PRODUCTION_LOT·SPLIT_SERIAL_LOT·INVALID_STATE·LOT_SPLIT_UNCONFIRMED·LOT_ALREADY_RESERVED). 없으면 null"
+     },
+     "locations": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "locationId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "locationCode": {
+         "type": "string",
+         "example": "FG-A-01"
+        },
+        "warehouseCode": {
+         "type": "string",
+         "example": "FG"
+        },
+        "onHandQty": {
+         "type": "number",
+         "format": "double",
+         "example": 100
+        },
+        "selectable": {
+         "type": "boolean",
+         "description": "LOT·위치 둘 다 막힘이 없을 때만 true",
+         "example": true
+        },
+        "blocked": {
+         "type": [
+          "object",
+          "null"
+         ],
+         "properties": {
+          "code": {
+           "type": "string",
+           "enum": [
+            "PUTAWAY_PENDING",
+            "NOT_PRODUCT_WAREHOUSE",
+            "MIXED_STOCK_STATUS"
+           ],
+           "example": "PUTAWAY_PENDING"
+          }
+         },
+         "required": [
+          "code"
+         ]
+        },
+        "systemRoleCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "위치 역할 — PUTAWAY_STAGING(적치 대기 자리)·WAREHOUSE_WHOLE 등. 보통 위치는 null",
+         "example": "PUTAWAY_STAGING"
+        }
+       },
+       "required": [
+        "locationId",
+        "locationCode",
+        "warehouseCode",
+        "onHandQty",
+        "selectable",
+        "blocked",
+        "systemRoleCode"
+       ]
+      }
+     }
+    },
+    "required": [
+     "lot",
+     "blocked",
+     "locations"
+    ]
+   },
+   "ProductLotSplitCreate": {
+    "type": "object",
+    "description": "분리 요청 — 그 위치의 LOT 몫에서 qty 를 떼어 자식 LOT 을 만든다. 영업일은 단말이 보낸다(C-8). 시각을 빼면 서버 시각.",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "locationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "qty": {
+      "type": "number",
+      "format": "double",
+      "example": 30,
+      "description": "0 < qty < 그 위치 보유, 단위 소수 자리 안"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-20"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-20T03:00:00Z"
+     }
+    },
+    "required": [
+     "lotId",
+     "locationId",
+     "qty",
+     "businessDate"
+    ]
+   },
+   "ProductLotSplitResult": {
+    "type": "object",
+    "description": "분리 결과 — 두 발행 기록(원래 = 다음 회차·사유 LOT_SPLIT, 자식 = 1회차). POP 은 두 documentIssueLogId 로 렌디션 → 인쇄 → :report-print 한다.",
+    "properties": {
+     "productLotSplitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "parentLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       },
+       "documentIssueLogId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "issueSeq": {
+        "type": "integer",
+        "example": 2
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty",
+       "documentIssueLogId",
+       "issueSeq"
+      ]
+     },
+     "childLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       },
+       "documentIssueLogId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "issueSeq": {
+        "type": "integer",
+        "example": 2
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty",
+       "documentIssueLogId",
+       "issueSeq"
+      ]
+     },
+     "location": {
+      "type": "object",
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "locationCode": {
+        "type": "string",
+        "example": "FG-A-01"
+       },
+       "warehouseCode": {
+        "type": "string",
+        "example": "FG"
+       }
+      },
+      "required": [
+       "locationId",
+       "locationCode",
+       "warehouseCode"
+      ]
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-20T03:00:00Z"
+     }
+    },
+    "required": [
+     "productLotSplitId",
+     "parentLot",
+     "childLot",
+     "location",
+     "splitAt"
+    ]
+   },
+   "ProductLotSplit": {
+    "type": "object",
+    "description": "분리 한 건(trace.product_lot_split). UNCONFIRMED 인 동안 두 LOT 은 출하 피킹·추적 시스템 출고·재분리를 받지 않는다.",
+    "properties": {
+     "productLotSplitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "UNCONFIRMED",
+       "CONFIRMED"
+      ],
+      "example": "UNCONFIRMED"
+     },
+     "parentLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty"
+      ]
+     },
+     "childLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty"
+      ]
+     },
+     "item": {
+      "type": "object",
+      "properties": {
+       "itemId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "itemCode": {
+        "type": "string",
+        "example": "PH-2207-0031"
+       },
+       "itemName": {
+        "type": "string",
+        "example": "제품"
+       },
+       "uomCode": {
+        "type": "string",
+        "example": "EA"
+       }
+      },
+      "required": [
+       "itemId",
+       "itemCode",
+       "itemName",
+       "uomCode"
+      ]
+     },
+     "location": {
+      "type": "object",
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "locationCode": {
+        "type": "string",
+        "example": "FG-A-01"
+       }
+      },
+      "required": [
+       "locationId",
+       "locationCode"
+      ]
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-20T03:00:00Z"
+     },
+     "splitWorkerNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "100027"
+     },
+     "confirmedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-11-20T03:10:00Z"
+     },
+     "confirmedWorkerNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "100031"
+     },
+     "lastPrint": {
+      "type": "object",
+      "description": "LOT 마다 가장 최근 생산 LOT 라벨 발행의 인쇄 결과 — 보고 전은 NONE",
+      "properties": {
+       "parent": {
+        "type": "string",
+        "enum": [
+         "PRINTED",
+         "FAILED",
+         "NONE"
+        ],
+        "example": "PRINTED"
+       },
+       "child": {
+        "type": "string",
+        "enum": [
+         "PRINTED",
+         "FAILED",
+         "NONE"
+        ],
+        "example": "FAILED"
+       }
+      },
+      "required": [
+       "parent",
+       "child"
+      ]
+     }
+    },
+    "required": [
+     "productLotSplitId",
+     "status",
+     "parentLot",
+     "childLot",
+     "item",
+     "location",
+     "splitAt",
+     "splitWorkerNo",
+     "confirmedAt",
+     "confirmedWorkerNo",
+     "lastPrint"
+    ]
    }
   },
   "securitySchemes": {

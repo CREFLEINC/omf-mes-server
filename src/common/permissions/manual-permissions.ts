@@ -180,6 +180,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 지시서 코드 해석 — 피처 012 가 다른 사업부 지시서에 403 `BUSINESS_UNIT_MISMATCH` 를 선언해 가드가 보게 됐다. 단말(POP P-04-07)은
   // 가드가 세지 않고, 계정 세션은 지시서를 다루는 화면(출하 완료·PDA 피킹·출하 예정 목록·출하 취소) 중 하나면 된다.
   'GET /logistics/shipment-requests:lookup': ['P-04-07', 'M-04-01', 'W-04-02', 'W-04-12'],
+  // 생산 LOT 수량 분리(피처 013) — POP P-04-08 스캔·분리, 목록은 PDA M-04-05 첫 스캔도 쓴다. 계정 세션은 서비스가 403.
+  'GET /logistics/product-lot-splits:lookup': ['P-04-08'],
+  'POST /logistics/product-lot-splits': ['P-04-08'],
+  'GET /logistics/product-lot-splits': ['P-04-08', 'M-04-05'],
   // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
   'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
   'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],

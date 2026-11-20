@@ -98,6 +98,10 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'POST /logistics/stock-transfers': ['MOBILE'],
   'POST /logistics/stock-transfers/{stockTransferId}:arrive': ['MOBILE'],
   'PUT /logistics/shipment-lot-allocations/{shipmentLotAllocationId}': ['POP'],
+  // 생산 LOT 수량 분리(피처 013) — 공장은 서비스가 단말 공장으로 건다(다른 공장 LOT 은 404). 본문 lotId·locationId 는 아래 본문 검사.
+  'GET /logistics/product-lot-splits:lookup': ['POP'],
+  'POST /logistics/product-lot-splits': ['POP'],
+  'GET /logistics/product-lot-splits': ['POP', 'MOBILE'],
 };
 
 export async function assertTerminalLogisticsScope(
@@ -184,6 +188,9 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/shipments':
     case 'GET /logistics/shopfloor-receipts':
     case 'GET /logistics/stock-transfers':
+    case 'GET /logistics/product-lot-splits:lookup':
+    case 'GET /logistics/product-lot-splits':
+    case 'POST /logistics/product-lot-splits':
       break;
     case 'GET /logistics/goods-issues/{goodsIssueId}':
     case 'GET /logistics/goods-issues/{goodsIssueId}/lines': await issue(p.goodsIssueId); break;
