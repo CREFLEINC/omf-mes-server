@@ -45,6 +45,7 @@ export const WAREHOUSE_REFERRERS: readonly Referrer[] = [
   ['logistics.replenishment_run', 'warehouse_id'],
   ['logistics.replenishment_warehouse_setting', 'warehouse_id'],
   ['logistics.shipment', 'warehouse_id'],
+  ['logistics.shipment_request_line', 'warehouse_id'],
   ['logistics.stock_transfer', 'from_warehouse_id'],
   ['logistics.stock_transfer', 'to_warehouse_id'],
   ['mdm.department_production_warehouse', 'warehouse_id'],
