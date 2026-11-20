@@ -17,11 +17,11 @@ import type { Request, Response } from 'express';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
-import { ReferenceQuery, runIdempotent, runVersioned } from '../../common/master';
+import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { RolePermissionService } from './role-permission.service';
-import { RoleService, RoleWrite } from './role.service';
+import { RoleQuery, RoleService, RoleWrite } from './role.service';
 
 /** 역할 마스터. 화면은 `W-CO-02`(사용자·역할·권한 관리)가 소유한다. */
 @Controller('app/roles')
@@ -34,7 +34,7 @@ export class RoleController {
 
   @Get()
   @Contract('GET /app/roles')
-  list(@Query() query: ReferenceQuery): Promise<PagedResponse<unknown>> {
+  list(@Query() query: RoleQuery): Promise<PagedResponse<unknown>> {
     return this.roles.list(query);
   }
 
