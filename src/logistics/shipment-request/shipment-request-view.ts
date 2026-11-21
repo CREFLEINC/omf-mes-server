@@ -314,7 +314,10 @@ export function shipmentRequestView(
     })),
     lots: liveLots.map((lot) => ({ lotNo: lot.lotNo, oqcLotStatus: lot.oqcLotStatus })),
   });
-  const judged = (status: OqcLotStatus) => liveLots.filter((lot) => lot.oqcLotStatus === status).length;
+  // 「검사」 칸 요약은 출하한 LOT(`SHIPPED`)도 센다 — 교체된 LOT 만 뺀다(omf-all-around#344).
+  // 막는 이유는 위처럼 피킹 중(`PICKED`)만 본다(출하 완료 뒤에는 막는 이유가 없다).
+  const judgedLots = lineViews.flatMap((line) => line.lots).filter((lot) => lot.statusCode !== 'REPLACED');
+  const judged = (status: OqcLotStatus) => judgedLots.filter((lot) => lot.oqcLotStatus === status).length;
 
   const totals = shipmentProgressTotals(
     lines.map(({ line, picks }) => ({
