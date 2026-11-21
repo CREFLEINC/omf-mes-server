@@ -5,7 +5,7 @@ import { ContractException } from '../../common/errors';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncLease } from '../erp/sync-lease';
-import { AutoWorkOrderService } from './auto-work-order.service';
+import { AutoWorkOrderService, CANCELLABLE } from './auto-work-order.service';
 
 export const AUTO_WORK_ORDER_LEASE = 'auto-work-order';
 /** 5분 주기 — flowtrack 이 MES W/O 목록을 5분마다 읽는다(제안 §2). ERP W/O 는 15분마다 들어온다. */
@@ -23,7 +23,9 @@ class Stopping extends Error {}
 /**
  * OA 자동 W/O 실행기(사용자 결정 2026-11-16) — 오늘 자동 라우팅 공정 정책이 걸린 공장의 ERP W/O 를 한 건씩
  * `AutoWorkOrderService` 로 끌고 간다. 고르는 것은 사람이 세운 계획이 없고 자동 흐름이 할 일이 남은 ERP W/O 다 —
- * 계획 없음 · 작성중 자동 계획 · 배포 전 W/O. 실패는 그 ERP W/O 의 `auto_work_order_*` 에 남기고 10분 뒤 다시 고른다.
+ * 계획 없음 · 작성중 자동 계획 · 배포 전 W/O. 그보다 먼저 ERP 에서 취소된 ERP W/O 의 실적 없는 자동 W/O 를 취소한다(flowtrack 연동 결정 11) —
+ * ERP 받기 쪽이 아니라 여기서 하므로 W/O 를 만드는 도중에 들어온 취소도 다음 회차에 잡힌다. 실패는 그 ERP W/O 의 `auto_work_order_*` 에
+ * 남기고 10분 뒤 다시 고른다.
  * 「한 대만」은 리스가 지킨다. 시각은 `tick(now)` 로만 받는다 — 검사가 시각을 움직인다.
  */
 export class AutoWorkOrderRunner implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -37,7 +39,7 @@ export class AutoWorkOrderRunner implements OnApplicationBootstrap, OnApplicatio
     private readonly enabled: boolean,
     private readonly prisma: PrismaService,
     private readonly lease: Pick<SyncLease, 'acquire' | 'release'>,
-    private readonly auto: Pick<AutoWorkOrderService, 'run'>,
+    private readonly auto: Pick<AutoWorkOrderService, 'run' | 'cancelForErp'>,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -95,17 +97,22 @@ export class AutoWorkOrderRunner implements OnApplicationBootstrap, OnApplicatio
   }
 
   private async runPlant(plantId: bigint, now: Date): Promise<number> {
+    const cancelled = await this.sweep(now, (tried) => this.cancelled(plantId, now, tried), (orderId) => this.auto.cancelForErp(orderId));
+    return cancelled + (await this.sweep(now, (tried) => this.due(plantId, now, tried), (orderId) => this.auto.run(orderId, now)));
+  }
+
+  private async sweep(now: Date, pick: (tried: bigint[]) => Promise<bigint[]>, act: (orderId: bigint) => Promise<void>): Promise<number> {
     let done = 0;
     // 이 회차에 이미 손댄 ERP W/O 는 다시 고르지 않는다 — 실패 기록마저 실패해도 다음 묶음으로 넘어간다.
     const tried: bigint[] = [];
     for (;;) {
-      const due = await this.due(plantId, now, tried);
-      if (due.length === 0) return done;
-      for (const orderId of due) {
+      const picked = await pick(tried);
+      if (picked.length === 0) return done;
+      for (const orderId of picked) {
         if (this.stopping) throw new Stopping();
         await this.keepLease();
         tried.push(orderId);
-        if (await this.runOne(orderId, now)) done += 1;
+        if (await this.runOne(orderId, now, act)) done += 1;
       }
     }
   }
@@ -140,10 +147,30 @@ export class AutoWorkOrderRunner implements OnApplicationBootstrap, OnApplicatio
     return rows.map((row) => row.id);
   }
 
-  private async runOne(orderId: bigint, now: Date): Promise<boolean> {
+  /** ERP 에서 취소된 ERP W/O 중 실적 한 건 없는 자동 W/O 가 남은 것 — 실적이 있으면 사람이 W-02-06 에서 판단하므로 고르지 않는다. */
+  private async cancelled(plantId: bigint, now: Date, tried: bigint[]): Promise<bigint[]> {
+    const retryBefore = new Date(now.getTime() - RETRY_AFTER_MS);
+    const rows = await this.prisma.$queryRaw<{ id: bigint }[]>`
+      SELECT o.production_order_id AS id
+        FROM planning.production_order o
+       WHERE o.plant_id = ${plantId}
+         AND o.status_code = 'CANCELLED'
+         AND EXISTS (SELECT 1 FROM production.work_order w
+                       JOIN planning.production_plan p ON p.production_plan_id = w.production_plan_id
+                      WHERE p.production_order_id = o.production_order_id AND p.created_automatically
+                        AND w.status_code = ANY(${CANCELLABLE}::text[])
+                        AND NOT EXISTS (SELECT 1 FROM production.production_result r WHERE r.work_order_id = w.work_order_id))
+         AND (o.auto_work_order_error_text IS NULL OR o.auto_work_order_attempted_at < ${retryBefore})
+         AND NOT (o.production_order_id = ANY(${tried}::bigint[]))
+       ORDER BY o.production_order_id
+       LIMIT ${BATCH_SIZE}`;
+    return rows.map((row) => row.id);
+  }
+
+  private async runOne(orderId: bigint, now: Date, act: (orderId: bigint) => Promise<void>): Promise<boolean> {
     let error: string | null = null;
     try {
-      await this.auto.run(orderId, now);
+      await act(orderId);
     } catch (thrown) {
       error = messageOf(thrown).slice(0, 1000);
       this.logger.warn(`OA 자동 W/O 실패 — ERP W/O ${orderId}: ${error}`);

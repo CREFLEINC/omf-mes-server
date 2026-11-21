@@ -9,7 +9,9 @@ import { ProductionPlanService } from '../../planning/production-plan/production
 import { createAutoRouting } from '../../planning/routing/auto-routing';
 import { plantToday, usableWhere } from '../../planning/routing/routing.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WorkOrderCancelService } from '../../production/work-order/work-order-cancel.service';
 import { WorkOrderReleaseService } from '../../production/work-order/work-order-release.service';
+import { lockWorkOrder } from '../../production/work-order/work-order-write.service';
 
 const ORDER_SELECT = {
   production_order_id: true,
@@ -28,6 +30,10 @@ type Plan = Prisma.production_planGetPayload<{ select: typeof PLAN_SELECT }>;
 
 /** 자동 흐름이 이어 받는 계획 상태 — 그 밖(사람이 손댄 상태)이면 손대지 않는다. */
 const RESUMABLE = ['DRAFT', 'CONFIRMED'];
+/** W/O 취소 전이가 받는 상태. */
+export const CANCELLABLE = ['PLANNED', 'CONFIRMED', 'RELEASED', 'IN_PROGRESS', 'SUSPENDED'];
+/** ERP W/O 취소는 「생산계획 변경」으로 남긴다(사용자 2026-11-17) — 취소 사유 목록에 ERP 취소가 없다. */
+const ERP_CANCEL_REASON = 'PLAN_CHANGE';
 
 /**
  * OA 자동 W/O(안 B · 사용자 결정 2026-11-05 · 11-16) — ERP W/O 한 건을 계획·확정·배포까지 사람 없이 끌고 간다.
@@ -41,6 +47,7 @@ export class AutoWorkOrderService {
     private readonly plans: ProductionPlanService,
     private readonly confirms: PlanConfirmService,
     private readonly releases: WorkOrderReleaseService,
+    private readonly cancels: WorkOrderCancelService,
   ) {}
 
   /** 취소된 ERP W/O 나 사람이 세운 계획이 있는 ERP W/O 는 그대로 둔다. 못 하면 까닭을 담은 오류를 던진다. */
@@ -61,6 +68,29 @@ export class AutoWorkOrderService {
       if (plan.status_code === 'DRAFT') await this.confirms.confirm(Number(plan.production_plan_id), plan.version_no, undefined);
       await this.releaseAll(plan.production_plan_id);
     }
+  }
+
+  /**
+   * ERP 에서 취소된 ERP W/O 의 자동 W/O 를 취소한다(생산 LOT 폐번) — 실적이 한 건이라도 있는 W/O 는 두고 사람이 W-02-06 에서 판단한다
+   * (flowtrack 연동 결정 11). ERP W/O 를 잠가 다시 확인하고, W/O 마다 잠근 뒤 실적을 다시 본다 — 그 사이 들어온 포장 실적을 놓치지 않는다.
+   */
+  async cancelForErp(productionOrderId: bigint): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const [order] = await tx.$queryRaw<{ status_code: string }[]>`
+        SELECT status_code FROM planning.production_order WHERE production_order_id = ${productionOrderId} FOR UPDATE`;
+      if (order?.status_code !== 'CANCELLED') return;
+      const workOrders = await tx.work_order.findMany({
+        where: { production_plan: { production_order_id: productionOrderId, created_automatically: true }, status_code: { in: CANCELLABLE } },
+        select: { work_order_id: true },
+        orderBy: { work_order_id: 'asc' },
+      });
+      for (const { work_order_id: workOrderId } of workOrders) {
+        const locked = await lockWorkOrder(tx, Number(workOrderId));
+        if (!CANCELLABLE.includes(locked.status_code)) continue;
+        if ((await tx.production_result.count({ where: { work_order_id: workOrderId } })) > 0) continue;
+        await this.cancels.cancelWithin(tx, Number(workOrderId), { reasonCode: ERP_CANCEL_REASON });
+      }
+    });
   }
 
   /** 계획량은 지시수량 전부, 계획일은 계획 제안과 같은 규칙이다. BOM 부터 본다 — 막히면 Routing 을 만들지 않는다. */
