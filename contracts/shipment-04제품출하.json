@@ -7956,7 +7956,7 @@
    },
    "ShipmentLotJudgmentSummary": {
     "type": "object",
-    "description": "살아 있는 피킹 LOT 의 OQC 판정 수",
+    "description": "피킹 LOT 의 OQC 판정 수 — 교체된 LOT 만 빼고 출하한 LOT 도 센다(omf-all-around#344)",
     "properties": {
      "notInspected": {
       "type": "integer",

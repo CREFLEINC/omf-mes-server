@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client';
 
 import {
+  OqcLotStatusByLot,
+  ShipmentLotsByLine,
   ShipmentPickRow,
+  ShipmentRequestLotRow,
   ShipmentRequestRow,
   ShipmentRequestView,
   shipmentRequestView,
@@ -161,5 +164,24 @@ describe('ShipmentRequest 뷰', () => {
     const bare = shipmentRequestView(header(), new Map(), []);
     expect(lineOf(bare).pickedQty).toBe(0);
     expect(lineOf(bare).picks).toEqual([]);
+  });
+  it('#344 「검사」 요약은 출하한 LOT 도 세고 교체된 LOT 만 뺀다', () => {
+    const lotRow = (id: bigint, status: 'PICKED' | 'SHIPPED' | 'REPLACED') => ({
+      shipment_request_lot_id: id, shipment_request_line_id: 501n, lot_id: id, lot: { lot_no: `LOT-${id}`, item_id: 41n },
+      picked_qty: new Prisma.Decimal(10), uom_id: 21n, status_code: status, management_code: null, picked_at: T,
+      picked_worker: null, picked_worker_id: null, shipment_id: status === 'SHIPPED' ? 900n : null,
+      replaced_at: null, replaced_worker: null, replace_inspection_result: null, replace_inspection_result_id: null, replace_nonconformance: null,
+    }) as unknown as ShipmentRequestLotRow;
+    const lots: ShipmentLotsByLine = new Map([['501', [lotRow(1n, 'SHIPPED'), lotRow(2n, 'SHIPPED'), lotRow(3n, 'REPLACED')]]]);
+    const oqc = new Map([
+      [1n, { status: 'ACCEPTED', result: null }],
+      [2n, { status: 'ACCEPTED', result: null }],
+      [3n, { status: 'REJECTED', result: null }],
+    ]) as unknown as OqcLotStatusByLot;
+
+    const view = shipmentRequestView(header(), picksOf(pick()), [], lots, oqc);
+
+    // 출하 완료 뒤(모두 SHIPPED)에도 합격 2 — 예전에는 PICKED 만 세어 0 이었고 목록이 「—」였다.
+    expect(view.lotJudgmentSummary).toEqual({ notInspected: 0, accepted: 2, rejected: 0, held: 0 });
   });
 });
