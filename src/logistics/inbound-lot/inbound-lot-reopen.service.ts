@@ -11,7 +11,7 @@ import { recordInspectionRequestEvent } from '../../quality/inspection/inspectio
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { recordInboundLotEvent } from './inbound-lot-event';
 import { assertInboundLotMutable } from './inbound-lot-finalizable';
-import { ReopenBlockerCode, reopenStatesOf } from './inbound-lot-reopenable';
+import { legacySkip, ReopenBlockerCode, reopenStatesOf } from './inbound-lot-reopenable';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 
 /** 계약 `InboundLotReopenReceipt`. */
@@ -96,7 +96,10 @@ export class InboundLotReopenService {
        WHERE inbound_lot_id = ${inboundLotId} AND inspection_type_code = 'IQC' AND status_code <> ${CANCELLED} FOR UPDATE`;
     if (request === undefined) return null;
     // 진행 중 요청도 결과 0건이면 취소한다(2026-11-13) — 요청을 잠근 뒤 다시 세어 판정 사이에 들어온 결과(DRAFT 포함)를 놓치지 않는다.
-    if (request.status_code !== 'SKIPPED' && (await tx.inspection_result.count({ where: { inspection_request_id: request.inspection_request_id } })) > 0) {
+    const recorded = request.status_code === 'SKIPPED'
+      ? legacySkip(request.skip_basis_code)
+      : (await tx.inspection_result.count({ where: { inspection_request_id: request.inspection_request_id } })) > 0;
+    if (recorded) {
       throw new ContractException(HttpStatus.CONFLICT, [{ scope: 'screen', code: 'IQC_RECORDED', message: BLOCKER_MESSAGE.IQC_RECORDED }], { openInboundLotNo: null });
     }
     const to = this.states.assertTransition(REQUEST_COLUMN, 'inbound-receipt-reopened', request.status_code).to;

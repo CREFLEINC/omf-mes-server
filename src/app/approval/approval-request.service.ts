@@ -31,6 +31,7 @@ export interface ApprovalRequestQuery {
 
 const INCLUDE = {
   app_user: true,
+  requested_worker: true,
   approval_step: { include: { app_user: true }, orderBy: { step_no: 'asc' as const } },
 };
 type RequestRow = Prisma.approval_requestGetPayload<{ include: typeof INCLUDE }>;

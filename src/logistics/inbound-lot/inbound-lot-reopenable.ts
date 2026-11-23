@@ -31,7 +31,7 @@ export async function reopenStatesOf(db: Prisma.TransactionClient, inboundLotIds
       inspection_request: {
         where: { inspection_type_code: 'IQC', status_code: { not: 'CANCELLED' } },
         orderBy: { inspection_request_id: 'desc' },
-        select: { status_code: true, _count: { select: { inspection_result: true } } },
+        select: { status_code: true, skip_basis_code: true, _count: { select: { inspection_result: true } } },
       },
     },
   });
@@ -59,8 +59,9 @@ export async function reopenStatesOf(db: Prisma.TransactionClient, inboundLotIds
     const blockers: ReopenBlockerCode[] = [];
     if (row.status_code === 'FINALIZED') blockers.push('INBOUND_LOT_FINALIZED');
     if (row.erp_send_mode_code !== 'ON_FINALIZE') blockers.push('LEGACY_INBOUND_LOT');
-    const iqcRecorded = request !== undefined && request.status_code !== 'SKIPPED'
-      && (request.status_code === 'COMPLETED' || request._count.inspection_result > 0);
+    const iqcRecorded = request !== undefined && (request.status_code === 'SKIPPED'
+      ? legacySkip(request.skip_basis_code)
+      : request.status_code === 'COMPLETED' || request._count.inspection_result > 0);
     if (iqcRecorded) blockers.push('IQC_RECORDED');
     if (receivedIds.has(row.inbound_lot_id)) blockers.push('GOODS_RECEIVED');
     const openNo = openOf.get(keyOf(row)) ?? null;
@@ -77,4 +78,12 @@ export function onlyOpenReceiptBlocks(blockers: readonly ReopenBlockerCode[]): b
 function reasonOf(request: { status_code: string } | undefined): ReopenReasonCode {
   if (request?.status_code === 'REQUESTED' || request?.status_code === 'IN_PROGRESS') return 'NO_IQC_RESULT';
   return 'INSPECTION_NOT_REQUIRED';
+}
+
+/**
+ * 없앤 건별 생략(결재 · omf-all-around#353)으로 닫힌 옛 의뢰 — 기본 생략(`DEFAULT`)이 아닌 생략은 LOT 을 정상으로 올린 채라,
+ * 마감을 취소하면 다시 선 IQC 요청과 LOT 상태가 어긋난다. 검사를 마친 건처럼 막는다(2차 정리 뒤에는 근거가 비어 있다).
+ */
+export function legacySkip(skipBasisCode: string | null): boolean {
+  return skipBasisCode !== 'DEFAULT';
 }
