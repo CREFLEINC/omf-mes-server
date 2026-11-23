@@ -6754,7 +6754,7 @@
      "statusCode": {
       "type": "string",
       "example": "REQUESTED",
-      "description": "검사 의뢰의 진행 상태 — 확정 5값: REQUESTED(대기) · IN_PROGRESS(진행) · COMPLETED(완료) · SKIPPED(생략) · CANCELLED(취소). ⛔ enum 으로 못박지 않는다 — 값 목록은 공통코드가 갖고 늘 수 있다(공유계약 G-2·G-6). 표시명은 06 계약 GET /mdm/code-values 로 채운다. ⭐ 전이는 전부 «이미 있는 액션의 부수 효과»다 — 새 경로가 없다: 서버가 입하·실적·출하 시점에 REQUESTED 로 만들고 · 첫 임시 저장이 IN_PROGRESS (⛔ 「검사 시작」 액션을 두지 않는다 — 화면에 시작 버튼이 없다) · :confirm 이 COMPLETED · 재검사 회차 추가가 다시 IN_PROGRESS · W-01-02 긴급 IQC 생략 한도승인이 SKIPPED · 입고 취소(FR-IM-076)가 CANCELLED. ⚠ SKIPPED 와 CANCELLED 를 합치지 않는다 — 앞은 검사를 안 하기로 «승인»된 정상 종결이고(LOT 은 Release 로 입고된다) 뒤는 의뢰가 «무효»가 된 것이다. 합치면 「검사를 몇 건 생략했나」를 셀 수 없다. ⚠ LOT 품질 상태(정상·불량·검사 대기·폐기)와 «다른 축»이다 — 같이 움직이지 않는다. 근거: 확정 2026-08-21 · FR-QM-050 · omf-mes#170 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_REQUEST_STATUS 로 받는다(공유계약 G-32 · omf-mes#170 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "검사 의뢰의 진행 상태 — 확정 5값: REQUESTED(대기) · IN_PROGRESS(진행) · COMPLETED(완료) · SKIPPED(생략) · CANCELLED(취소). ⛔ enum 으로 못박지 않는다 — 값 목록은 공통코드가 갖고 늘 수 있다(공유계약 G-2·G-6). 표시명은 06 계약 GET /mdm/code-values 로 채운다. ⭐ 전이는 전부 «이미 있는 액션의 부수 효과»다 — 새 경로가 없다: 서버가 입하·실적·출하 시점에 REQUESTED 로 만들고 · 첫 임시 저장이 IN_PROGRESS (⛔ 「검사 시작」 액션을 두지 않는다 — 화면에 시작 버튼이 없다) · :confirm 이 COMPLETED · 재검사 회차 추가가 다시 IN_PROGRESS · 검사 기준의 기본 생략이 SKIPPED · 입고 취소(FR-IM-076)가 CANCELLED. ⚠ SKIPPED 와 CANCELLED 를 합치지 않는다 — 앞은 검사를 안 하기로 «승인»된 정상 종결이고(LOT 은 Release 로 입고된다) 뒤는 의뢰가 «무효»가 된 것이다. 합치면 「검사를 몇 건 생략했나」를 셀 수 없다. ⚠ LOT 품질 상태(정상·불량·검사 대기·폐기)와 «다른 축»이다 — 같이 움직이지 않는다. 근거: 확정 2026-08-21 · FR-QM-050 · omf-mes#170 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_REQUEST_STATUS 로 받는다(공유계약 G-32 · omf-mes#170 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-internal-note": "확정 전문: uiux/2026-08-21-검사의뢰상태-확정/검사의뢰상태-확정기록.md — 표기 근거(계약 enum 76개 중 한글 1개) · SKIPPED/CANCELLED 분리 이유 · 공통코드 시드 요청문이 그 문서에 있다",
       "x-code-key": "CD-INSPECTION-REQUEST-STATUS"
      },
@@ -6766,10 +6766,9 @@
       ],
       "enum": [
        "DEFAULT",
-       "APPROVAL",
        null
       ],
-      "description": "생략 근거 — statusCode=SKIPPED 일 때만 싣는다. DEFAULT=검사 기준의 기본 생략 · APPROVAL=건별 생략 결재 승인 뒤 실행. 서버 선행 · 장부 P-152 · omf-all-around#212",
+      "description": "생략 근거 — statusCode=SKIPPED 일 때만 싣는다. DEFAULT=검사 기준의 기본 생략. 서버 선행 · 장부 P-152 · omf-all-around#212",
       "example": "DEFAULT"
      },
      "requestedAt": {
@@ -10549,7 +10548,7 @@
      },
      "eventCode": {
       "type": "string",
-      "description": "REQUESTED(요청 생성) 또는 INSPECTION_REQUEST_EVENT_TYPE 값 — RESULT_ADDED·RESULT_UPDATED·RESULT_DELETED·CONFIRMED·CONFIRM_CANCELLED·REOPENED_BY_REWORK·SKIPPED·SKIP_VOIDED·SPLIT_OUT·SPLIT_IN·CANCELLED_BY_REOPEN",
+      "description": "REQUESTED(요청 생성) 또는 INSPECTION_REQUEST_EVENT_TYPE 값 — RESULT_ADDED·RESULT_UPDATED·RESULT_DELETED·CONFIRMED·CONFIRM_CANCELLED·REOPENED_BY_REWORK·SPLIT_OUT·SPLIT_IN·CANCELLED_BY_REOPEN",
       "x-code-key": "CD-INSPECTION-REQUEST-EVENT-TYPE"
      },
      "actorName": {
@@ -10579,7 +10578,7 @@
        "object",
        "null"
       ],
-      "description": "바뀌기 전 요약(결과면 순번 inspectionRound·판정·수량·매칭 LOT) 이벤트별 칸: RESULT_UPDATED·RESULT_DELETED = 결과 요약(아래 summaryAfter 와 같은 모양), CONFIRM_CANCELLED = {statusCode, overallJudgmentCode, confirmedAt, confirmedBy, nonconformanceIds[]}, SKIPPED·CANCELLED_BY_REOPEN·SKIP_VOIDED = {statusCode, skipBasisCode?}."
+      "description": "바뀌기 전 요약(결과면 순번 inspectionRound·판정·수량·매칭 LOT) 이벤트별 칸: RESULT_UPDATED·RESULT_DELETED = 결과 요약(아래 summaryAfter 와 같은 모양), CONFIRM_CANCELLED = {statusCode, overallJudgmentCode, confirmedAt, confirmedBy, nonconformanceIds[]}, CANCELLED_BY_REOPEN = {statusCode, skipBasisCode?}."
      },
      "summaryAfter": {
       "type": [

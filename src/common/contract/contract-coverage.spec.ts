@@ -126,7 +126,8 @@ describe('계약 커버리지', () => {
     // 생산 LOT 분리 3 오퍼레이션(피처 013 · omf-all-around#303): 644 → 647.
     // PDA 분리 확인 1(피처 013 S3): 647 → 648.
     // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 648 → 646.
-    expect(registry.size).toBe(646);
+    // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 646 → 642.
+    expect(registry.size).toBe(642);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

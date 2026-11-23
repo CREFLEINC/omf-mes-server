@@ -279,14 +279,10 @@ export const TRANSITIONS: TransitionRegistry = {
     // (omf-all-around#119 · 장부 P-82). C21(비대상)과 이력 코드로 가른다. ⚠ C25 는 #84(특채)가 쓴다.
     'pqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
       transitionCode: 'C26', sourceOperation: 'POST /production/production-results' },
-    // 승인된 OQC 생략 실행 — 그 출하작업지시가 집은 LOT 에 「검사를 생략하고 출하」를 남긴다(omf-all-around#119 · 장부 P-83).
+    // OQC 기본 생략 — 출하 완료가 생략된 OQC 의뢰의 피킹 LOT 에 「검사를 생략하고 출하」를 남긴다(omf-all-around#119 · 피처 010 FR-012).
     // OQC 는 헤더 대상이라 LOT 은 이미 정상이다 — 상태는 그대로 두고 이력만 쌓는다(C4 의 정상 → 정상과 같은 자리).
     'oqc-skipped': { from: ['NORMAL'], to: 'NORMAL',
-      transitionCode: 'C27', sourceOperation: 'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc' },
-    // 승인된 PQC 생략 실행 — 실행 «전»에 실적이 나 검사 대기로 남은 생산LOT 을 정상으로 올린다(omf-all-around#212 · 장부 P-152).
-    // 기본 생략(C26)과 이력 코드로 가른다 — IQC(C22)·OQC(C27) 결재 생략과 같은 자리다.
-    'pqc-skip-approved': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
-      transitionCode: 'C28', sourceOperation: 'POST /production/work-orders/{workOrderId}:skip-pqc' },
+      transitionCode: 'C27', sourceOperation: 'POST /logistics/shipment-requests/{shipmentRequestId}:complete' },
     // 입하 등록 해제(피처 005 R-3) — 받기 때 검사 불필요·기본 생략으로 정상(C21)이 된 자재 관리 LOT 을 미리 만든 상태
     // (검사 대기)로 되돌린다. 다시 받으면 C21 이 다시 돈다. ⛔ C29(판정 확정 취소)와 섞지 않는다.
     'material-inbound-unregistered-quality-reset': { from: ['NORMAL'], to: 'INSPECTION_PENDING',

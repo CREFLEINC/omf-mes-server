@@ -1,7 +1,7 @@
 /**
  * 결재 도착 알림 — 상신 때 1단계, 중간 승인 뒤 다음 단계 결재자 한 명에게(omf-all-around#160 · 장부 P-94).
  *
- * 상신 경로 둘로 본다: 재고 조정은 API(`:request-approval`)로, OQC 생략은 상신 코어(`ApprovalService.request`)로.
+ * 상신 경로 둘로 본다: 재고 조정은 API(`:request-approval`)로, 특채는 상신 코어(`ApprovalService.request`)로.
  * 알림은 코어 한 곳에 걸려 9 경로가 같은 자리를 지난다(research R-6).
  */
 import { INestApplication } from '@nestjs/common';
@@ -19,7 +19,7 @@ import { seedRequest, seedRoute } from './approval-request.fixture';
 
 const PREFIX = `NAPR${randomUUID().slice(0, 6)}`;
 const ADJUSTMENT = 'INVENTORY_ADJUSTMENT';
-const OQC_SKIP = 'OQC_SKIP';
+const CONCESSION = 'CONCESSION';
 const EVENT = 'APPROVAL_ACTION_REQUIRED';
 
 describe('결재 알림 (e2e)', () => {
@@ -132,20 +132,20 @@ describe('결재 알림 (e2e)', () => {
     ['offApprover', 'EVENT_DISABLED'],
     ['noDept', 'DEPARTMENT_UNRESOLVED'],
     ['gone', 'APPROVER_INACTIVE'],
-  ])('US3-3 SC-003 결재자 %s 이면 알리지 않고 %s 로 남는다 — OQC 생략 상신', async (approver, reason) => {
-    const routeId = await route(OQC_SKIP, [ids[approver]]);
+  ])('US3-3 SC-003 결재자 %s 이면 알리지 않고 %s 로 남는다 — 특채 상신', async (approver, reason) => {
+    const routeId = await route(CONCESSION, [ids[approver]]);
     try {
       const { approvalRequestId } = await seedRequest(prisma, app.get(ApprovalService), {
-        approvalTypeCode: OQC_SKIP,
+        approvalTypeCode: CONCESSION,
         requestedBy: ids.requester,
-        targetTypeCode: 'SHIPMENT_REQUEST',
+        targetTypeCode: 'NONCONFORMANCE',
         targetId: BigInt(Math.floor(Math.random() * 1e9)),
-        reason: `${PREFIX} OQC 생략`,
+        reason: `${PREFIX} 특채`,
       });
       const [event] = await eventsOf(approvalRequestId);
       expect(event).toMatchObject({ dispatch_status_code: 'SKIPPED', skip_reason_code: reason });
       expect(await recipientsOf(event.notification_event_id)).toEqual([]);
-      expect(event.payload).toMatchObject({ approval_type: 'OQC 생략', step: '1/1' });
+      expect(event.payload).toMatchObject({ approval_type: '특채', step: '1/1' });
     } finally {
       await deactivate(routeId);
     }

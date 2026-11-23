@@ -160,7 +160,7 @@ describe('ApprovalService', () => {
     it('활성 결재선이 없으면 400 ROUTE_NOT_FOUND 다', async () => {
       const { tx } = fake({ routes: [] });
 
-      const error = await thrown(() => service.selectRoute(tx, 'IQC_SKIP', null));
+      const error = await thrown(() => service.selectRoute(tx, 'CONCESSION', null));
 
       expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       expect(error.errors[0].code).toBe(ERROR_CODE.ROUTE_NOT_FOUND);
@@ -169,7 +169,7 @@ describe('ApprovalService', () => {
     it('단계가 0개면 ROUTE_NOT_FOUND 다', async () => {
       const { tx } = fake({ routes: [route(1n, null, [])] });
 
-      const error = await thrown(() => service.selectRoute(tx, 'IQC_SKIP', null));
+      const error = await thrown(() => service.selectRoute(tx, 'CONCESSION', null));
 
       expect(error.errors[0].code).toBe(ERROR_CODE.ROUTE_NOT_FOUND);
     });

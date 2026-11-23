@@ -4,7 +4,7 @@ type Row = Parameters<typeof toApprovalRequest>[0];
 
 const row = (approvalTypeCode: string, targetTypeCode: string): Row => ({
   approval_request_id: 7n, approval_request_no: 'AP-1', approval_type_code: approvalTypeCode,
-  requested_by: 1n, requested_worker_id: null, app_user: { user_name: '관리자' }, requested_worker: null,
+  requested_by: 1n, app_user: { user_name: '관리자' },
   requested_at: new Date('2026-11-19T00:00:00.000Z'), status_code: 'APPROVED', reason: '잘못 나감',
   target_type_code: targetTypeCode, target_id: 5n, target_summary: null, approval_step: [],
 }) as unknown as Row;
@@ -24,7 +24,7 @@ describe('결재 대상 열기(피처 010 검증 1회차)', () => {
   });
 
   it('다른 결재 유형은 그대로 열 수 없다(screenId 없음)', () => {
-    const view = toApprovalRequest(row('OQC_SKIP', 'SHIPMENT_REQUEST'), { currentStepNo: null, isMyTurn: false });
+    const view = toApprovalRequest(row('CONCESSION', 'NONCONFORMANCE'), { currentStepNo: null, isMyTurn: false });
 
     expect(view.target.openable).toBe(false);
     expect(view.target).not.toHaveProperty('screenId');

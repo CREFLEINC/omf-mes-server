@@ -159,10 +159,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 「부모의 화면이 곧 이 오퍼레이션의 화면」이라 답했다(`plan-uiux.md:852`). 부모를 소유한
   // 화면 하나만 적는다.
   'PUT /trace/lots/{lotId}/external-identifiers': ['M-01-02'],
-  // OQC 생략 요청·실행 — 출하검사 판정 화면 W-04-03 의 조작이다. 결재는 W-03-09 가 한다(omf-all-around#119 · 장부 P-83).
-  'POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip': ['W-04-03'],
-  // 실행은 결재 화면 W-03-09 에서도 한다(omf-all-around#193 · 장부 P-127).
-  'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03', 'W-03-09'],
   // LOT 통째 피킹 — 옛 `:pick` 과 같은 화면(M-04-01 제품 LOT 피킹)이다(피처 010 · omf-all-around#305).
   'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot': ['M-04-01'],
   // OQC 불합격 LOT 교체·출하 관리 코드 — 같은 PDA 피킹 화면의 조작이다(피처 010).
@@ -178,9 +174,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/product-lot-splits': ['P-04-08'],
   'GET /logistics/product-lot-splits': ['P-04-08', 'M-04-05'],
   'POST /logistics/product-lot-splits/{productLotSplitId}:confirm': ['M-04-05'],
-  // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
-  'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
-  'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],
   // 불량 기록 등록 — IQC 불합격 사유를 남기는 수입검사 판정 화면의 조작이다(omf-all-around#106 · 장부 P-42).
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
@@ -474,11 +467,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 등록을 요구한다(미등록이면 500 · 선례 `PUT /logistics/goods-issues/{id}/lines`). 소유자를
   // 이동 문서의 유일한 화면으로 둔다(결정 — 통보 123).
   'PUT /logistics/stock-transfers/{stockTransferId}/lines': ['M-01-10'],
-
-  // `GET /app/approval-requests` — 도출표(`['W-01-13','W-03-09','W-CO-09']`)에 생략 구획의 호출 셸을 더한다.
-  // `W-04-03` — OQC 생략 구획이 자기 출하작업지시의 결재 상태(`targetTypeCode`·`targetId`)를 읽는다(omf-all-around#119 · 장부 P-83).
-  // `W-03-11` — PQC 생략 구획이 자기 작업지시의 결재 상태를 읽는다(omf-all-around#212 · 장부 P-152).
-  'GET /app/approval-requests': ['W-04-03', 'W-03-11'],
 
   // `W-03-10` 처분 판정 처리 — ⭐ 도출 원천이 화면보다 «낡아» 한 줄도 안 도출된 자리다(그 화면은
   // DR-008 확정 3-A 로 2026-08-13 «신설»됐다). 그 결과 판정 저장이 `P-02-13`(POP · PQC) 하나만

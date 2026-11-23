@@ -143,7 +143,8 @@ describe('오퍼레이션 권한 매핑', () => {
     // 생산 LOT 분리 스캔 조회·분리·목록 3 — `P-04-08`·`M-04-05`(피처 013 · omf-all-around#303): 392.
     // PDA 분리 확인 1 — `M-04-05`(피처 013): 393.
     // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 391.
-    expect(declares403).toHaveLength(391);
+    // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 387.
+    expect(declares403).toHaveLength(387);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
@@ -193,11 +194,10 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(OPERATION_PERMISSIONS['POST /logistics/inbound-receipts:per-line']).toEqual(['M-01-01', 'W-01-03']);
   });
 
-  // 결재 화면(W-03-09)에서 승인한 뒤 실행 · 적용까지 잇는다 — IQC 생략 실행과 같은 짜임(장부 P-127 · omf-all-around#193).
-  it('⛔ OQC 생략 실행 · 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
+  // 결재 화면(W-03-09)에서 승인한 뒤 적용까지 잇는다(장부 P-127 · omf-all-around#193).
+  it('⛔ 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
     // 순서는 도출표와 수동 표를 합친 차례라 뜻이 없다 — 화면 집합으로 본다.
     const screensOf = (operation: string): string[] => [...(OPERATION_PERMISSIONS[operation] ?? [])].sort();
-    expect(screensOf('POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc')).toEqual(['W-03-09', 'W-04-03']);
     expect(screensOf('POST /quality/concessions/{concessionId}:apply')).toEqual(['W-03-09', 'W-03-10']);
   });
 
