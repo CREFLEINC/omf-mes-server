@@ -23,6 +23,8 @@ interface Options {
   batch?: { lot_id: bigint; approved_qty: number }[];
   /** 요청 때 부적합 LOT — 기본은 LOT 10 하나(부적합 수량 30). */
   ncLots?: { lot_id: bigint; affected_qty: number }[];
+  /** 결재 진행 중인 폐기·선별 처분 결재 수(omf-all-around#352). */
+  pendingDispositionApprovals?: number;
 }
 
 const harness = (options: Options = {}) => {
@@ -60,6 +62,7 @@ const harness = (options: Options = {}) => {
     },
     nonconformance: { update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => updates.push({ nc: data })) },
     approval_request: { findUniqueOrThrow: jest.fn().mockResolvedValue({ status_code: options.approvalStatus ?? 'APPROVED' }) },
+    disposition_approval: { count: jest.fn().mockResolvedValue(options.pendingDispositionApprovals ?? 0) },
   };
   const ncLots = (options.ncLots ?? [{ lot_id: 10n, affected_qty: 30 }]).map((row) => ({
     lot_id: row.lot_id, uom_id: 1n, affected_qty: D(row.affected_qty), lot: { lot_no: `L-${String(row.lot_id)}`, lot_type_code: 'MATERIAL', lifecycle_status_code: 'ACTIVE' },
@@ -109,6 +112,16 @@ const body = (extra: Partial<ConcessionCreate> = {}): ConcessionCreate => ({
 });
 
 describe('ConcessionWriteService.request', () => {
+  it('결재 진행 중인 폐기·선별 처분 결재가 있으면 409 INVALID_STATE — 결재·특채 행을 만들지 않는다(omf-all-around#352)', async () => {
+    const h = harness({ pendingDispositionApprovals: 1 });
+    const error = await h.service.request(body(), 9).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ContractException);
+    expect((error as ContractException).getStatus()).toBe(409);
+    expect((error as ContractException).errors[0]).toMatchObject({ code: 'INVALID_STATE' });
+    expect(h.calls).toEqual([]);
+    expect(h.created).toEqual([]);
+  });
+
   it('특채(PENDING)와 결재(CONCESSION · 부적합 대상)를 함께 만든다', async () => {
     const h = harness();
     await expect(h.service.request(body(), 9)).resolves.toEqual({ concessionIds: [7], approvalRequestId: 99 });

@@ -139,7 +139,8 @@ describe('DocumentCancelService', () => {
     // 9값 + 서버 선행 특채 CONCESSION(장부 P-79 · omf-all-around#84).
     // +1 — OQC 생략(OQC_SKIP · omf-all-around#119 · 장부 P-83).
     // +1 — PQC 생략(PQC_SKIP · omf-all-around#212 · 장부 P-152).
-    expect(declared).toHaveLength(12);
+    // +1 — 폐기·선별 처분(DISPOSITION · omf-all-around#352).
+    expect(declared).toHaveLength(13);
 
     for (const typeCode of ['INBOUND_RECEIPT', 'GOODS_RECEIPT', 'GOODS_ISSUE'] as const) {
       const { service, at } = fake({ locked: { status_code: 'POSTED', version_no: VERSION } });

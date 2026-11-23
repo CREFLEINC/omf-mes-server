@@ -11,6 +11,7 @@ import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordInspectionRequestEvent } from '../inspection/inspection-request-event';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
+import { assertNoPendingDispositionApproval } from './disposition-approval-pending';
 import { releaseInspectionHoldsWithin } from './disposition-hold-release';
 import { dispositionByIdQuery } from './disposition-query';
 import { DispositionDecisionRow, DispositionDecisionView, dispositionDecisionView } from './disposition-view';
@@ -83,13 +84,14 @@ export class DispositionSortService {
 
   async create(
     nonconformanceId: number, version: number, body: DispositionSortCreate, appUserId: number,
+    hook?: { afterDecision: (tx: Tx, dispositionDecisionId: bigint) => Promise<void> },
   ): Promise<{ view: DispositionDecisionView & DispositionSortCreated; versionNo: number }> {
     const id = BigInt(nonconformanceId);
     const source = await sortSourceOf(this.prisma, id);
     let numbers = await this.allocate(source, body.lotIds);
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await this.prisma.$transaction((tx) => this.sortWithin(tx, id, version, body, appUserId, source, numbers), TRANSACTION_OPTIONS);
+        return await this.prisma.$transaction((tx) => this.sortWithin(tx, id, version, body, appUserId, source, numbers, hook), TRANSACTION_OPTIONS);
       } catch (error) {
         if (attempt >= 2 || !(error instanceof SortNumbersStale)) throw error;
         numbers = await this.allocate(source, body.lotIds);
@@ -115,9 +117,12 @@ export class DispositionSortService {
 
   private async sortWithin(
     tx: Tx, id: bigint, version: number, body: DispositionSortCreate, appUserId: number, source: SortSource, numbers: SortNumbers,
+    hook?: { afterDecision: (tx: Tx, dispositionDecisionId: bigint) => Promise<void> },
   ): Promise<{ view: DispositionDecisionView & DispositionSortCreated; versionNo: number }> {
     const { at } = numbers;
     const locked = await lockSortable(tx, id);
+    // 결재 반영(hook)이면 바로 그 결재를 반영하는 중이라 건너뛴다(omf-all-around#352).
+    if (hook === undefined) await assertNoPendingDispositionApproval(tx, id);
     const { moved, remaining, scale } = await chooseLots(tx, id, body);
     for (const [name, value] of [['goodQty', body.goodQty], ['defectQty', body.defectQty]] as const) {
       if (value !== undefined) assertQtyPrecision(name, value, scale);
@@ -148,6 +153,7 @@ export class DispositionSortService {
       movedQty: plan.movedQty, remainingQty: plan.remainingQty, numbers, appUserId, decisionId: decision.disposition_decision_id,
     });
     const nonconformance = await createSortedNonconformance(tx, { sourceId: id, moved, requestId: record.requestId, resultId: record.firstResultId, numbers, appUserId });
+    if (hook !== undefined) await hook.afterDecision(tx, decision.disposition_decision_id);
     const built = dispositionByIdQuery(Number(decision.disposition_decision_id));
     const rows = await tx.$queryRawUnsafe<DispositionDecisionRow[]>(built.sql, ...built.params);
     return {
@@ -184,7 +190,7 @@ export class DispositionSortService {
 }
 
 /** 존재(404) → 선별 대상(400) — 반품·OQC·이전 데이터(입하 LOT 검사가 아닌) 부적합에는 선별이 없다. */
-async function sortSourceOf(prisma: PrismaService, id: bigint): Promise<SortSource> {
+export async function sortSourceOf(prisma: PrismaService | Tx, id: bigint): Promise<SortSource> {
   const nc = await prisma.nonconformance.findUnique({
     where: { nonconformance_id: id },
     select: {
@@ -214,7 +220,7 @@ async function sortSourceOf(prisma: PrismaService, id: bigint): Promise<SortSour
 }
 
 /** 부적합 잠금 → 닫힘·판정 있음·특채 진행은 409 — 선별은 첫 판정으로만 한다. */
-async function lockSortable(tx: Tx, id: bigint): Promise<{ status_code: string; version_no: number }> {
+export async function lockSortable(tx: Tx, id: bigint): Promise<{ status_code: string; version_no: number }> {
   const [locked] = await tx.$queryRaw<{ status_code: string; version_no: number }[]>`
     SELECT status_code, version_no FROM quality.nonconformance WHERE nonconformance_id = ${id} FOR UPDATE`;
   if (locked === undefined) throw new NotFoundException('없는 부적합입니다.');
@@ -232,7 +238,7 @@ async function lockSortable(tx: Tx, id: bigint): Promise<{ status_code: string; 
 }
 
 /** 고른 LOT 은 부적합의 LOT 이어야 하고 전부여서는 안 된다(400). 사유는 공백만이면 안 된다. */
-async function chooseLots(tx: Tx, id: bigint, body: DispositionSortCreate): Promise<{ moved: NcLot[]; remaining: NcLot[]; scale: number }> {
+export async function chooseLots(tx: Tx, id: bigint, body: DispositionSortCreate): Promise<{ moved: NcLot[]; remaining: NcLot[]; scale: number }> {
   if (body.reason.trim() === '') throw one(field('reason', ERROR_CODE.REQUIRED, '판정 사유를 공백만으로 채울 수 없습니다.'));
   const rows = await tx.nonconformance_lot.findMany({
     where: { nonconformance_id: id }, orderBy: { lot_id: 'asc' },

@@ -548,6 +548,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/concessions': ['W-03-10'],
   // 적용은 결재 화면 W-03-09 에서도 한다 — IQC·OQC 생략 실행과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
   'POST /quality/concessions/{concessionId}:apply': ['W-03-10', 'W-03-09'],
+  // 폐기·선별 처분 결재 요청·반영(omf-all-around#352) — 특채와 같은 짜임. 요청은 처분 판정 처리(W-03-10), 반영은 결재 화면(W-03-09)에서도 한다.
+  'POST /quality/nonconformances/{nonconformanceId}/disposition-approvals': ['W-03-10'],
+  'POST /quality/disposition-approvals/{dispositionApprovalId}:apply': ['W-03-10', 'W-03-09'],
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],

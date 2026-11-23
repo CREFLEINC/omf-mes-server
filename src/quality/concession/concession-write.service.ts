@@ -7,6 +7,7 @@ import { DocumentStateService } from '../../core/document-state';
 import { LotHoldService, LotQualityStatusService, Tx, assertMaterialLotsUsable } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertNoPendingDispositionApprovalForConcession } from '../disposition/disposition-approval-pending';
 import { releaseInspectionHoldsWithin } from '../disposition/disposition-hold-release';
 import { dispositionProgressCode } from '../disposition/disposition-rollup';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
@@ -108,6 +109,8 @@ export class ConcessionWriteService {
       const ncId = BigInt(body.nonconformanceId);
       const locked = await lockNonconformance(tx, ncId);
       if (locked.status_code === DECIDED) throw screen(ERROR_CODE.STATE_LOCKED, '이미 종결된 부적합입니다.');
+      // 결재 진행 중인 폐기·선별이 있으면 409(omf-all-around#352) — 승인 뒤 반영할 남은 수량이 바뀐다.
+      await assertNoPendingDispositionApprovalForConcession(tx, ncId);
       const remaining = await remainingOf(tx, ncId);
       if (!new Prisma.Decimal(body.approvedQty).equals(remaining)) {
         throw badRequest([field('approvedQty', ERROR_CODE.INVALID, `특채 수량은 남은 수량(${remaining.toString()})과 같아야 합니다 — 일부 특채는 지원하지 않습니다.`)]);

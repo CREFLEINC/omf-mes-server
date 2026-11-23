@@ -21,6 +21,8 @@ import { DefectRecordController } from './defect/defect-record.controller';
 import { DefectRecordService } from './defect/defect-record.service';
 import { DefectRecordWriteService } from './defect/defect-record-write.service';
 import { DispositionController } from './disposition/disposition.controller';
+import { DispositionApprovalController } from './disposition/disposition-approval.controller';
+import { DispositionApprovalService } from './disposition/disposition-approval.service';
 import { DispositionWriteService } from './disposition/disposition-write.service';
 import { DispositionSortService } from './disposition/disposition-sort';
 import { ReworkWorkOrderService } from './disposition/rework-work-order.service';
@@ -112,6 +114,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     // `decisions` 라 아래 컨트롤러와 세그먼트가 달라 순서 함정이 없다 · §7-2).
     NonconformanceController,
     DispositionController, // `disposition-decisions`·`:dispositionDecisionId`(②a″)·`nonconformances/:nonconformanceId/disposition-decisions`(②b) — `PrismaService` 만 쓰고 별도 provider 가 없다.
+    DispositionApprovalController, // `nonconformances/:id/disposition-approvals`·`disposition-approvals/:id:apply`·`approval-requests/:id/nonconformance-summary`(#352) — 형제 파라미터 경로가 없어 순서 함정이 없다.
     InspectionLevelController, // `item-inspection-levels`·`item-inspection-level-histories`(#64 · P-87) — 다른 세그먼트라 순서 함정이 없다.
     ConcessionController, // `concessions`·`concessions/:concessionId`(I-21 PR ⑤) — `PrismaService` 원시 SQL, 다른 세그먼트라 순서 함정이 없다. ⛔ 이 표는 writer 0 — 운영에서 목록이 늘 빈다(통보 089 §2).
   ],
@@ -152,6 +155,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     NonconformanceWriteService,
     DispositionWriteService,
     DispositionSortService,
+    DispositionApprovalService,
     ConcessionWriteService,
     ReworkWorkOrderService,
     InspectionLevelService,

@@ -55,8 +55,9 @@ describe('ContractRegistry', () => {
   // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 644.
   // 생산 LOT 분리 3건(피처 013 · omf-all-around#303): 647.
   // PDA 분리 확인 1건(피처 013 S3): 648.
-  it('계약 7파일에서 오퍼레이션 648건을 적재한다', () => {
-    expect(registry.size).toBe(648);
+  // 폐기·선별 처분 결재 4건(omf-all-around#352): 652.
+  it('계약 7파일에서 오퍼레이션 652건을 적재한다', () => {
+    expect(registry.size).toBe(652);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

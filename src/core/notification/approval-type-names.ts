@@ -1,5 +1,5 @@
 /**
- * 결재 유형 한국어 이름 — 계약 `ApprovalRequest.approvalTypeCode` enum 12값. 서버에 이름 맵이 없어
+ * 결재 유형 한국어 이름 — 계약 `ApprovalRequest.approvalTypeCode` enum 13값. 서버에 이름 맵이 없어
  * 알림 문장·Zalo `approval_type` 용으로 여기 둔다(data-model §6). 모르는 코드는 코드 그대로 쓴다.
  */
 export const APPROVAL_TYPE_NAMES: Readonly<Record<string, string>> = {
@@ -15,6 +15,8 @@ export const APPROVAL_TYPE_NAMES: Readonly<Record<string, string>> = {
   CONCESSION: '특채',
   OQC_SKIP: 'OQC 생략',
   PQC_SKIP: 'PQC 생략',
+  // 폐기·선별 처분 결재(omf-all-around#352).
+  DISPOSITION: '처분',
 };
 
 export function approvalTypeName(code: string): string {
@@ -36,6 +38,7 @@ export const APPROVAL_TYPE_NAMES_EN: Readonly<Record<string, string>> = {
   PRODUCTION_RESULT_CORRECT: 'Production result correction',
   CONCESSION: 'Concession',
   OQC_SKIP: 'OQC skip',
+  DISPOSITION: 'Disposition',
 };
 
 export function approvalTypeNameEn(code: string): string {
