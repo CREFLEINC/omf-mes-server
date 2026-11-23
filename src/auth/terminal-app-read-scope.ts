@@ -6,7 +6,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TerminalContext } from './terminal-context';
 
 export const TERMINAL_APP_READ_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
-  'GET /app/approval-requests': ['MOBILE'],
   'GET /app/document-issues': ['POP'],
   'GET /app/document-issues/summary': ['POP'],
   'GET /app/document-issues/{documentIssueLogId}/rendition': ['POP'],
@@ -29,14 +28,6 @@ const RENDITION_DOCUMENT_TYPES: readonly string[] = [
   'IQC_LABEL',
 ];
 
-export type TerminalApprovalListScope =
-  | { plantId: bigint; inboundLotId: bigint; workerId?: never }
-  | { plantId: bigint; workerId: bigint; inboundLotId?: never };
-const APPROVAL_SCOPE = Symbol('terminalApprovalListScope');
-export function currentTerminalApprovalListScope(request: Request): TerminalApprovalListScope | undefined {
-  return (request as Request & { [APPROVAL_SCOPE]?: TerminalApprovalListScope })[APPROVAL_SCOPE];
-}
-
 export async function assertTerminalAppReadScope(
   prisma: PrismaService,
   request: Request,
@@ -45,35 +36,6 @@ export async function assertTerminalAppReadScope(
 ): Promise<void> {
   const query = request.query as Record<string, unknown>;
   switch (key) {
-    case 'GET /app/approval-requests': {
-      if (terminal.terminalTypeCode !== 'MOBILE') throw denied();
-      const allowed = new Set(['targetTypeCode', 'targetId', 'pendingOnly', 'requestedByMe', 'size', 'page']);
-      if (Object.keys(query).some((name) => !allowed.has(name))) throw denied();
-      const size = query.size === undefined ? 20 : Number(query.size);
-      if (!Number.isInteger(size) || size < 1 || size > 20) throw denied();
-      let scope: TerminalApprovalListScope;
-      if (query.requestedByMe === 'true' || query.requestedByMe === true) {
-        if (query.targetId !== undefined || query.targetTypeCode !== undefined || query.pendingOnly !== undefined) throw denied();
-        const workerNo = request.headers['x-worker-no'];
-        const worker = typeof workerNo === 'string' && workerNo.trim()
-          ? await prisma.worker.findFirst({ where: { worker_no: workerNo, plant_id: terminal.plantId, is_active: true },
-            select: { worker_id: true } }) : null;
-        if (!worker) throw denied();
-        scope = { plantId: terminal.plantId, workerId: worker.worker_id };
-      } else {
-        // 생략 결재의 대상은 입하 LOT 이다(피처 005 FR-032) — `targetId` 는 단말 공장의 입하 LOT id.
-        const inboundLotId = positiveId(query.targetId);
-        if (query.targetTypeCode !== 'INBOUND_LOT' || inboundLotId === null
-          || !(query.pendingOnly === 'true' || query.pendingOnly === true)
-          || query.requestedByMe !== undefined || size > 1) throw denied();
-        const inboundLot = await prisma.inbound_lot.findFirst({ where: { inbound_lot_id: inboundLotId, plant_id: terminal.plantId },
-          select: { inbound_lot_id: true } });
-        if (!inboundLot) throw denied();
-        scope = { plantId: terminal.plantId, inboundLotId };
-      }
-      Object.defineProperty(request, APPROVAL_SCOPE, { value: scope, configurable: true });
-      break;
-    }
     case 'GET /app/document-issues':
       await assertOwnedTarget(prisma, terminal, query.targetTypeCode, query.targetId);
       break;

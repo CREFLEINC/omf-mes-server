@@ -263,40 +263,17 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     expect((await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(closed.inboundLotId) } })).every((lot) => lot.status_code === 'NORMAL')).toBe(true);
   });
 
-  it('US2-12 마감 취소(긴급 생략 실행·입고 전) → LOT NORMAL → INSPECTION_PENDING(C30)·검사 대기 보류 다시·SKIP_VOIDED·결재 무효 표시', async () => {
-    const { inboundLot } = await issueAndReceive(fx, batch(ids.supplierY, ids.itemA, 2, 5));
-    const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
-    const lotIds = await simulateSkipExecuted(closed);
-    const before = await get(`${LOTS}/${String(closed.inboundLotId)}`).expect(200);
-    expect(before.body).toMatchObject({ reopenable: true, reopenReasonCode: 'IQC_SKIPPED' });
-
-    await sessionPost(reopenPath(closed.inboundLotId), closerCookie).send({ versionNo: await versionOf(closed.inboundLotId) }).expect(200);
-    const lots = await prisma.lot.findMany({ where: { lot_id: { in: lotIds } }, include: { lot_hold: true } });
-    for (const lot of lots) {
-      expect(lot.status_code).toBe('INSPECTION_PENDING');
-      expect(lot.lot_hold.filter((hold) => hold.released_at === null).map((hold) => hold.reason_code)).toEqual(['INCOMING_INSPECTION_WAIT']);
-    }
-    const c30 = await prisma.lot_status_event.findMany({ where: { lot_id: { in: lotIds }, transition_code: 'C30' } });
-    expect(c30.map((event) => [event.previous_status_code, event.new_status_code, event.source_document_type_code])).toEqual(
-      lotIds.map(() => ['NORMAL', 'INSPECTION_PENDING', 'INBOUND_LOT']));
-    expect((await requestEvents(BigInt(closed.iqcRequestId as number))).map((event) => event.event_type_code)).toEqual(['SKIP_VOIDED', 'CANCELLED_BY_REOPEN']);
-    const approval = await prisma.approval_request.findFirstOrThrow({ where: { approval_request_no: `${PREFIX}-SKIP-${String(closed.inboundLotId)}` } });
-    expect(approval.target_summary).toMatchObject({ voidedBy: 'RECEIPT_REOPENED' });
-  });
-
-  it('US2-12 막힘 — IQC_RECORDED·GOODS_RECEIVED·SKIP_PENDING·LEGACY_INBOUND_LOT·INBOUND_LOT_FINALIZED 는 409 errors[].code 이고 reopenable 목록에 없다', async () => {
+  it('US2-12 막힘 — IQC_RECORDED·GOODS_RECEIVED·LEGACY_INBOUND_LOT·INBOUND_LOT_FINALIZED 는 409 errors[].code 이고 reopenable 목록에 없다', async () => {
     const recorded = await closedLot(ids.supplierZ, ids.itemA);
     await addDraftResult(recorded);
     const received = await closedLot(ids.supplierZ, ids.itemN);
     await receiveGoods(received.inboundLotId);
-    const pending = await closedLot(ids.supplierZ2, ids.itemA);
-    await makeSkipApproval(pending.inboundLotId, 'PENDING');
     const legacy = await closedLot(ids.supplierZ2, ids.itemN);
     await prisma.inbound_lot.update({ where: { inbound_lot_id: BigInt(legacy.inboundLotId) }, data: { erp_send_mode_code: 'PER_RECEIPT' } });
     const finalized = await closedLot(ids.supplierZ3, ids.itemA);
     await prisma.inbound_lot.update({ where: { inbound_lot_id: BigInt(finalized.inboundLotId) }, data: { status_code: 'FINALIZED', finalized_at: new Date() } });
 
-    for (const [lot, code] of [[recorded, 'IQC_RECORDED'], [received, 'GOODS_RECEIVED'], [pending, 'SKIP_PENDING'],
+    for (const [lot, code] of [[recorded, 'IQC_RECORDED'], [received, 'GOODS_RECEIVED'],
       [legacy, 'LEGACY_INBOUND_LOT'], [finalized, 'INBOUND_LOT_FINALIZED']] as const) {
       const response = await sessionPost(reopenPath(lot.inboundLotId), closerCookie).send({ versionNo: await versionOf(lot.inboundLotId) }).expect(409);
       expectShape(schemaOf('/logistics/inbound-lots/{inboundLotId}:reopen-receipt', 'post', 409), response.body);
@@ -304,7 +281,7 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
     }
     const listed = await sessionGet(`${LOTS}?plantId=${String(ids.plant)}&reopenable=true&size=200`, closerCookie).expect(200);
     const listedIds = (listed.body.items as Row[]).map((row) => row.inboundLotId);
-    for (const lot of [recorded, received, pending, legacy, finalized]) expect(listedIds).not.toContain(lot.inboundLotId);
+    for (const lot of [recorded, received, legacy, finalized]) expect(listedIds).not.toContain(lot.inboundLotId);
     // G1 결정 — 같은 조합 입하 중 하나만 막는 건은 reopenable:false·reopenBlockerCode 로 함께 나온다.
     expect((listed.body.items as Row[]).every((row) => (row.reopenable ? row.reopenReasonCode !== null : row.reopenBlockerCode === 'OPEN_RECEIPT_EXISTS'))).toBe(true);
   });
@@ -562,26 +539,6 @@ describe('피처 005 S5 — 입하 마감·자동 배정·마감 취소 (e2e)', 
       })).purchase_order_line_id);
     }
     return { orderId: order.purchase_order_id, lineIds };
-  }
-
-  /** 긴급 생략 «실행»의 흔적 — 그 뒤 상태(요청 SKIPPED·APPROVAL, LOT 정상·보류 해제, 결재 승인)를 그대로 세운다. */
-  async function simulateSkipExecuted(closed: ClosedInboundLot): Promise<bigint[]> {
-    const lotIds = (await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(closed.inboundLotId) }, select: { lot_id: true } })).map((lot) => lot.lot_id);
-    await prisma.inspection_request.update({ where: { inspection_request_id: BigInt(closed.iqcRequestId as number) }, data: { status_code: 'SKIPPED', skip_basis_code: 'APPROVAL' } });
-    await prisma.lot_hold.updateMany({ where: { lot_id: { in: lotIds }, released_at: null }, data: { released_at: new Date(), released_by: ids.user, release_reason_code: 'INCOMING_INSPECTION_SKIPPED' } });
-    await prisma.lot.updateMany({ where: { lot_id: { in: lotIds } }, data: { status_code: 'NORMAL' } });
-    await makeSkipApproval(closed.inboundLotId, 'APPROVED');
-    return lotIds;
-  }
-
-  /** IQC 생략 결재 — 대상은 입하 LOT 이다(FR-032). */
-  async function makeSkipApproval(inboundLotId: number, status: string): Promise<void> {
-    await prisma.approval_request.create({
-      data: {
-        approval_request_no: `${PREFIX}-SKIP-${String(inboundLotId)}`, approval_type_code: 'IQC_SKIP', target_type_code: 'INBOUND_LOT',
-        target_id: BigInt(inboundLotId), requested_by: ids.user, requested_at: new Date(), status_code: status, reason: '긴급 생산',
-      },
-    });
   }
 
   async function addDraftResult(closed: ClosedInboundLot): Promise<void> {

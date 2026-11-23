@@ -52,7 +52,6 @@ const PRESENCE_ONLY = [
   'logistics/shopfloor-receipt/shopfloor-receipt.service.ts',
   'production/material-return/material-return.service.ts',
   'trace/lot/lot-complete.service.ts',
-  'trace/lot/lot-iqc-skip.service.ts',
 ];
 
 /** **실재까지 본다** — 형식 + `mdm.worker` 조회 한 번. 고르는 근거는 위 주석에 있다. */
@@ -144,7 +143,6 @@ const WORKER_TABLE_READERS = [
   'app/document-issue/document-issue-write.service.ts',
   'audit/terminal-worker-audit.ts',
   // 단말 경계의 사번/ID 판정. 활성·공장 검사는 각각의 정확한 오퍼레이션 범위에 묶인다.
-  'auth/terminal-app-read-scope.ts',
   'auth/terminal-app-write-scope.ts',
   'auth/terminal-inspection-sheet-scope.ts',
   'auth/terminal-inventory-scope.ts',
@@ -313,7 +311,8 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     // 출하 완료 `:complete`(피처 010 · POP 전용) — 판정은 `logisticsWriteActorOf`(단말 물류 범위가 사번을 푼다): 40 → 41.
     // 생산 LOT 분리(피처 013 · POP 전용) — 판정은 `splitActorOf`(단말 물류 범위가 사번을 푼다): 41 → 42.
     // PDA 분리 확인 :confirm(피처 013 · MOBILE 전용) — 판정은 `splitActorOf`: 42 → 43.
-    expect(required).toBe(43);
+    // 긴급 IQC 생략 요청 `:request-iqc-skip` 을 없앴다(omf-all-around#353): 43 → 42.
+    expect(required).toBe(42);
   });
 });
 

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
 import { DocumentStateService } from '../../core/document-state';
-import { LotHoldService, LotQualityStatusService } from '../../core/lot';
+import { LotHoldService } from '../../core/lot';
 import { reopenStatesOf } from './inbound-lot-reopenable';
 import { InboundLotReopenService } from './inbound-lot-reopen.service';
 
@@ -24,7 +24,7 @@ describe('InboundLotReopenService — 동시 받기와 겹친 마감 취소', ()
       inbound_lot: { update: jest.fn().mockRejectedValue(updateError) },
     } as unknown as Prisma.TransactionClient;
     const holds = { lockLotsWithin: jest.fn().mockResolvedValue([]) } as unknown as LotHoldService;
-    const reopener = new InboundLotReopenService({} as LotQualityStatusService, holds, {} as DocumentStateService);
+    const reopener = new InboundLotReopenService(holds, {} as DocumentStateService);
     return { reopener, tx };
   }
 

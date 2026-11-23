@@ -738,7 +738,7 @@
      "app"
     ],
     "summary": "승인 요청 목록",
-    "description": "결재함이 쓰는 목록이다. assignedToMe 는 「approver_id 가 「나」인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — 업무 자원이 승인 요청 식별자를 싣지 않는 경우에는 이것이 유일한 방법이다.\n\n⭐ 부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과 모바일 상신 화면(M-01-13 의 「내가 올린 요청」 구획). 그래서 「나」를 묻는 세 질의(assignedToMe·requestedByMe·myTurnOnly)가 «누구»로 풀리는지가 셸마다 다르다: 관리웹은 계정 토큰에서 서버가 풀고, 현장 단말·모바일은 계정 세션이 없어 X-Worker-No 헤더로 주체를 싣는다(공유계약 D-5·F-2 · 같은 규칙의 선례가 GET /app/notices 의 unacknowledgedByMe 다). ⛔ 단말 토큰으로 풀지 않는다 — 한 단말을 여러 작업자가 «교대로» 쓰므로 남이 올린 요청이 섞인다.\n\n근거: W-CO-09 §3·§5-8 · M-01-13 §4 · omf-mes#335",
+    "description": "결재함이 쓰는 목록이다. assignedToMe 는 「approver_id 가 「나」인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — 업무 자원이 승인 요청 식별자를 싣지 않는 경우에는 이것이 유일한 방법이다.\n\n⭐ 「나」를 묻는 세 질의(assignedToMe·requestedByMe·myTurnOnly)가 «누구»로 풀리는지가 셸마다 다르다: 관리웹은 계정 토큰에서 서버가 풀고, 현장 단말·모바일은 계정 세션이 없어 X-Worker-No 헤더로 주체를 싣는다(공유계약 D-5·F-2 · 같은 규칙의 선례가 GET /app/notices 의 unacknowledgedByMe 다). ⛔ 단말 토큰으로 풀지 않는다 — 한 단말을 여러 작업자가 «교대로» 쓰므로 남이 올린 요청이 섞인다.\n\n근거: W-CO-09 §3·§5-8 · omf-mes#335",
     "parameters": [
      {
       "name": "assignedToMe",
@@ -746,7 +746,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "승인자가 「나」인 요청만 — approver_id 인 단계가 있는 요청이다(공유계약 J-3). ⚠ 승인 화면은 관리웹뿐이라(W-CO-09·W-01-02·W-03-09) 지금은 계정 토큰에서만 풀린다. 현장 셸이 이 질의를 쓰게 되면 requestedByMe 와 같은 규칙으로 X-Worker-No 에 주체를 싣는다"
+      "description": "승인자가 「나」인 요청만 — approver_id 인 단계가 있는 요청이다(공유계약 J-3). ⚠ 승인 화면은 관리웹뿐이라(W-CO-09·W-03-09) 지금은 계정 토큰에서만 풀린다. 현장 셸이 이 질의를 쓰게 되면 requestedByMe 와 같은 규칙으로 X-Worker-No 에 주체를 싣는다"
      },
      {
       "name": "requestedByMe",
@@ -754,7 +754,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "올린 사람이 「나」인 요청만. ⭐ 「나」는 셸마다 다르게 풀린다 — 관리웹은 계정 토큰의 로그인 사용자이고, 현장 단말·모바일은 X-Worker-No 헤더의 «사번»이다(모바일 셸에는 계정 로그인이 없다 · M-CO-01 §2). ⛔ 헤더를 싣지 않으면 서버가 단말로 풀 수밖에 없고, 한 단말을 여러 작업자가 교대로 쓰므로 «남이 올린 요청이 내 목록에 섞인다». 근거: 공유계약 D-5·F-2 · M-01-13 §4 · omf-mes#335"
+      "description": "올린 사람이 「나」인 요청만. ⭐ 「나」는 셸마다 다르게 풀린다 — 관리웹은 계정 토큰의 로그인 사용자이고, 현장 단말·모바일은 X-Worker-No 헤더의 «사번»이다(모바일 셸에는 계정 로그인이 없다 · M-CO-01 §2). ⛔ 헤더를 싣지 않으면 서버가 단말로 풀 수밖에 없고, 한 단말을 여러 작업자가 교대로 쓰므로 «남이 올린 요청이 내 목록에 섞인다». 근거: 공유계약 D-5·F-2 · omf-mes#335"
      },
      {
       "name": "pendingOnly",
@@ -831,7 +831,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "targetTypeCode 의 대상 id. INBOUND_LOT(IQC 생략)은 입하 LOT id 다 — 모바일(M-01-13)의 「진행 중 생략 결재」 확인도 스캔한 LOT 의 입하 LOT id(Lot.inboundLotId)를 싣고, 단말 공장의 입하 LOT 이 아니면 401. 근거: 피처 005 FR-032 · omf-all-around#254"
+      "description": "targetTypeCode 의 대상 id. INBOUND_LOT(IQC 생략)은 입하 LOT id 다. 근거: 피처 005 FR-032 · omf-all-around#254"
      },
      {
       "name": "requestedAtFrom",

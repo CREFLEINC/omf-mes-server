@@ -28,7 +28,7 @@ const HOLD = 'POST /quality/lot-holds';
 const RELEASE = 'POST /quality/lot-holds/{lotHoldId}:release';
 /** 처분 판정 저장 — LOT 축 전이 3 과 부적합 축 전이 1 을 «한 트랜잭션»에서 연다(I-21 · B-8). */
 const DECIDE = 'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions';
-/** 입하 마감 취소 — 생략 무효(C30)와 IQC 요청 취소를 «한 트랜잭션»에서 연다(피처 005). */
+/** 입하 마감 취소 — IQC 요청 취소를 연다(피처 005). */
 const REOPEN_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt';
 /** IQC 판정 확정 취소 — LOT(C29)·결과·부적합 세 축을 «한 트랜잭션»에서 되돌린다(피처 005 R-13). */
 const CANCEL_CONFIRM = 'POST /quality/inspection-requests/{inspectionRequestId}:cancel-confirm';
@@ -275,9 +275,6 @@ export const TRANSITIONS: TransitionRegistry = {
     // PQC 의뢰가 없는 W/O 의 생산LOT 은 실적이 곧 정상이다(검사를 하지 않는다).
     'inspection-not-required': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
       transitionCode: 'C21', sourceOperation: 'POST /production/production-results' },
-    // 승인된 IQC 생략의 실행 — 승인 자체는 LOT 을 옮기지 않는다(공유계약 J-8).
-    'iqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
-      transitionCode: 'C22', sourceOperation: 'POST /trace/lots/{lotId}:skip-iqc' },
     // PQC 기준이 «생략 허용»이라 배포가 PQC 의뢰를 생략(SKIPPED)으로 만든 W/O 의 생산LOT — 실적이 곧 정상이다
     // (omf-all-around#119 · 장부 P-82). C21(비대상)과 이력 코드로 가른다. ⚠ C25 는 #84(특채)가 쓴다.
     'pqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
@@ -294,10 +291,6 @@ export const TRANSITIONS: TransitionRegistry = {
     // (검사 대기)로 되돌린다. 다시 받으면 C21 이 다시 돈다. ⛔ C29(판정 확정 취소)와 섞지 않는다.
     'material-inbound-unregistered-quality-reset': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
       transitionCode: 'C31', sourceOperation: 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots' },
-    // 입하 마감 취소(피처 005 R-5a) — 긴급 생략을 실행한(C22) 입하 LOT 를 입고 전에 다시 열면 생략이 무효가 되어 검사 대기로
-    // 돌아간다. 검사 대기 보류는 호출자가 다시 건다.
-    'iqc-skip-voided': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
-      transitionCode: 'C30', sourceOperation: REOPEN_RECEIPT },
     // 판정 확정 취소(피처 005 R-13) — 합격(C4)·불합격(C6)으로 옮긴 자재 관리 LOT 을 검사 대기로 되돌린다. 보류 확정(C5)은
     // 이미 검사 대기라 옮기지 않는다. 검사 대기 보류는 호출자가 다시 건다.
     'iqc-confirm-cancelled': { from: ['NORMAL', 'DEFECTIVE'], to: 'INSPECTION_PENDING',
