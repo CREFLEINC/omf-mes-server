@@ -53,7 +53,7 @@ export interface ItemUpdate {
   /** 위와 같다 — 옛 이름도 받는다. 둘 다 오면 같아야 한다. */
   defaultLotSize?: unknown;
   defaultProductionLotSize?: number | null;
-  /** 둘은 함께 있거나 함께 비고, LOT 기본크기를 나머지 없이 나눠야 한다(피처 014 FR-018). */
+  /** 둘은 함께 있거나 함께 비고, LOT 기본크기 ÷ 패키징 수량(봉지당 양)이 소수 1자리까지 떨어져야 한다(피처 014 FR-018). */
   defaultPackageUomId?: number | null;
   defaultPackageCount?: number | null;
   nameKo?: string | null;
@@ -328,6 +328,7 @@ const PACKAGE_NOT_DIVISIBLE = '패키징 수량이 부적합 합니다. 자재 L
 /**
  * 패키징 기본값 — 보내지 않은 칸은 저장된 값으로 채워 «저장 뒤 모양»을 본다(기본크기만 바꿔도 나눔을 다시 본다).
  * 기본크기는 보관 단위 값 그대로 나눈다 — 비어 있으면 자동 생성이 어차피 멈추므로(`NO_DEFAULT`) 검사하지 않는다.
+ * 봉지당 양은 소수 1자리까지 허용한다(사용자 결정 2026-11-24) — 「기본크기 × 10 mod 패키징 수량 = 0」(2.5 ÷ 5 = 0.5 통과, 2.5 ÷ 2 = 1.25 막힘).
  */
 async function assertPackageDefault(
   prisma: Prisma.TransactionClient,
@@ -355,7 +356,7 @@ async function assertPackageDefault(
     const uom = await prisma.uom.findUnique({ where: { uom_id: input.defaultPackageUomId }, select: { uom_id: true } });
     if (uom === null) throw reject('defaultPackageUomId', ERROR_CODE.INVALID, '없는 단위입니다.');
   }
-  if (size !== null && !new Prisma.Decimal(size).mod(count).isZero()) {
+  if (size !== null && !new Prisma.Decimal(size).times(10).mod(count).isZero()) {
     throw reject('defaultPackageCount', ERROR_CODE.INVALID, PACKAGE_NOT_DIVISIBLE);
   }
 }

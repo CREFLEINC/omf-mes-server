@@ -1,6 +1,7 @@
 /**
  * 피처 014 S1 — 품목 패키징 기본값(W-06-05 lot 그룹 · omf-all-around#349 · T004).
- * 패키징 단위·LOT 당 패키징 수량은 함께 있거나 함께 비고, 자재 LOT 기본크기를 나머지 없이 나눠야 한다.
+ * 패키징 단위·LOT 당 패키징 수량은 함께 있거나 함께 비고, 자재 LOT 기본크기 ÷ 패키징 수량(봉지당 양)이 소수 1자리까지 떨어져야 한다
+ * (사용자 결정 2026-11-24 · T047).
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -96,13 +97,23 @@ describe('피처 014 S1 — 품목 패키징 기본값 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'defaultPackageCount', code: 'INVALID' });
     await put({ defaultPackageUomId: Number(roll), defaultPackageCount: 0 }, 400);
     await put({ defaultPackageUomId: Number(roll), defaultPackageCount: 2.5 }, 400);
-    // 이미 저장된 패키징 수량이 새 기본크기를 나누지 못해도 막는다.
+    // 이미 저장된 패키징 수량이 새 기본크기를 나누지 못해도 막는다(9 ÷ 4 = 2.25 — 소수 2자리).
     await put({ defaultPackageUomId: Number(roll), defaultPackageCount: 4 }, 200);
-    const resized = await put({ defaultProductionLotSize: 90 }, 400);
+    const resized = await put({ defaultProductionLotSize: 9 }, 400);
     expect(messages(resized)).toEqual([NOT_DIVISIBLE]);
-    // 「나머지 없이 나눈다」는 기본크기 mod 패키징 수량 = 0 이다(data-model §3) — 2.5 를 5 로는 나누지 못한다.
-    await put({ defaultProductionLotSize: 2.5, defaultPackageCount: 5 }, 400);
     await put({ defaultProductionLotSize: 20, defaultPackageCount: 5 }, 200);
+  });
+
+  it('US5-3 Q15 T047 봉지당 양은 소수 1자리까지 — 2.5÷5=0.5·10÷4=2.5 는 200, 2.5÷2=1.25·100÷30 은 400', async () => {
+    const accepted = await put({ defaultProductionLotSize: 2.5, defaultPackageUomId: Number(roll), defaultPackageCount: 5 }, 200);
+    expect(accepted.body).toMatchObject({ defaultProductionLotSize: 2.5, defaultPackageCount: 5 });
+    await put({ defaultProductionLotSize: 10, defaultPackageCount: 4 }, 200);
+    const twoPlaces = await put({ defaultProductionLotSize: 2.5, defaultPackageCount: 2 }, 400);
+    expect(messages(twoPlaces)).toEqual([NOT_DIVISIBLE]);
+    expect(twoPlaces.body.errors[0]).toMatchObject({ field: 'defaultPackageCount', code: 'INVALID' });
+    const repeating = await put({ defaultProductionLotSize: 100, defaultPackageCount: 30 }, 400);
+    expect(messages(repeating)).toEqual([NOT_DIVISIBLE]);
+    expect(await prisma.item.findUniqueOrThrow({ where: { item_id: itemId } })).toMatchObject({ default_package_count: 4 });
   });
 
   it('US5-3 기본크기가 비어 있으면 나눔 검사를 건너뛴다', async () => {
