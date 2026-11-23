@@ -66,6 +66,18 @@ describe('planMaterialLotShares', () => {
       [1, 2.5, 5, 0.5], [1, 2.5, 5, 0.5],
     ]);
   });
+
+  it('US5-3 T047 봉지당 양 소수(0.5) — 나머지 1.3 은 0.5 단위로 올려 1.5·3개, 초과 0.2 는 다음 라인 몫에서 빠진다', () => {
+    expect(shape(planMaterialLotShares([line(1, 6.3), line(2, 2.5)], d(0), { lotQty: d(2.5), packageCount: 5 }))).toEqual([
+      [1, 2.5, 5, 0.5], [1, 2.5, 5, 0.5], [1, 1.5, 3, 0.5], [2, 2.5, 5, 0.5],
+    ]);
+  });
+
+  it('US5-3 T047 기본크기 10·패키징 4(봉지당 2.5) — 남은 13 → 10·4개, 나머지 3 은 5·2개', () => {
+    expect(shape(planMaterialLotShares([line(1, 13)], d(0), { lotQty: d(10), packageCount: 4 }))).toEqual([
+      [1, 10, 4, 2.5], [1, 5, 2, 2.5],
+    ]);
+  });
 });
 
 describe('materialLotDefaultsOf', () => {
