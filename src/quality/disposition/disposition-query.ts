@@ -46,12 +46,13 @@ const FROM_CORE = `
 /**
  * 특채 판정의 LOT(적용된 특채의 LOT)에 불량창고 재고가 남았는가 — 재고 재등록이 할 일이 있는가(omf-all-around#207).
  * 입고 전에 특채된 LOT 은 입고가 바로 정상 창고로 넣으므로 재등록 대상이 아니다. WHERE 와 응답이 같은 식을 쓴다.
+ * 특채는 결재 없이 바로 적용돼(omf-all-around#352) 판정과 특채를 결재가 아니라 부적합으로 잇는다 — 특채는 남은 수량 전부라 부적합마다 한 번이다.
  */
 const CONCESSION_DEFECT_STOCK = `EXISTS (
       SELECT 1 FROM quality.concession c
         JOIN inventory.inventory_balance b ON b.lot_id = c.lot_id AND b.on_hand_qty > 0
         JOIN mdm.warehouse w ON w.warehouse_id = b.warehouse_id AND w.is_defect
-       WHERE c.approval_request_id = d.approval_request_id AND c.status_code = 'APPROVED')`;
+       WHERE c.nonconformance_id = d.nonconformance_id AND c.status_code = 'APPROVED')`;
 
 // `derived` — 선별 판정이면 옮긴 LOT 의 새 부적합(선별은 부적합마다 한 번 · omf-all-around#352 종결 안내의 이동 단추).
 // `lotinfo` — 하나일 때만 값(§1-4-1). 응답 전용(WHERE 가 안 본다) — count 는 `FROM_CORE` 만 쓴다(Nit-3).

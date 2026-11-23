@@ -125,9 +125,8 @@ describe('계약 커버리지', () => {
     // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 645 → 644.
     // 생산 LOT 분리 3 오퍼레이션(피처 013 · omf-all-around#303): 644 → 647.
     // PDA 분리 확인 1(피처 013 S3): 647 → 648.
-    // 폐기·선별 처분 결재 요청·목록·반영·결재함 부적합 요약 4(omf-all-around#352): 648 → 652.
-    // 처분 결재선 확인 1(#352 판정 확인 팝업): 652 → 653.
-    expect(registry.size).toBe(653);
+    // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 648 → 647.
+    expect(registry.size).toBe(647);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

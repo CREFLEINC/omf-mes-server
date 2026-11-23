@@ -2,31 +2,22 @@ import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { ApprovalService } from '../../core/approval';
 import { DocumentStateService } from '../../core/document-state';
 import { LotHoldService, LotQualityStatusService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConcessionCreate, ConcessionWriteService } from './concession-write.service';
 
-/** omf-all-around#84 — 특채 요청·적용(장부 P-79) · 피처 005 — 특채는 남은 수량 전부(FR-038), LOT 이 여럿이면 LOT 마다 행·묶음 적용(D-14). */
+/** omf-all-around#84 — 특채(장부 P-79) · 피처 005 — 특채는 남은 수량 전부(FR-038), LOT 이 여럿이면 LOT 마다 행(D-14) · 결재 없이 바로 적용(omf-all-around#352). */
 
 const D = (value: number) => new Prisma.Decimal(value);
 
 interface Options {
-  approvalStatus?: string;
-  concessionStatus?: string;
   decided?: number;
   affected?: number;
   ncStatus?: string;
-  /** 묶음 행 — 기본은 LOT 10 하나에 30. */
-  batch?: { lot_id: bigint; approved_qty: number }[];
   /** 요청 때 부적합 LOT — 기본은 LOT 10 하나(부적합 수량 30). */
   ncLots?: { lot_id: bigint; affected_qty: number }[];
-  /** 결재 진행 중인 폐기·선별 처분 결재 수(omf-all-around#352). */
-  pendingDispositionApprovals?: number;
-  /** 특채 결재선이 없다 — 요청이 결재 없이 바로 적용된다(omf-all-around#352). */
-  noRoute?: boolean;
 }
 
 const harness = (options: Options = {}) => {
@@ -34,17 +25,8 @@ const harness = (options: Options = {}) => {
   const created: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
   const decisions: Record<string, unknown>[] = [];
-  const batch = (options.batch ?? [{ lot_id: 10n, approved_qty: 30 }]).map((row, index) => ({
-    concession_id: BigInt(7 + index), nonconformance_id: 41n, lot_id: row.lot_id, approved_qty: D(row.approved_qty), uom_id: 1n,
-    approval_request_id: options.noRoute === true ? null : 99n, status_code: options.concessionStatus ?? 'PENDING', remarks: '외관 경미',
-  }));
   const tx = {
-    $queryRaw: jest.fn(async (strings: TemplateStringsArray) => {
-      const sql = strings.join('?');
-      if (sql.includes('quality.concession') && sql.includes('concession_id =')) return [batch[0]];
-      if (sql.includes('quality.concession')) return batch;
-      return [{ status_code: options.ncStatus ?? 'PENDING_DECISION' }];
-    }),
+    $queryRaw: jest.fn(async () => [{ status_code: options.ncStatus ?? 'PENDING_DECISION' }]),
     nonconformance_lot: {
       aggregate: jest.fn().mockResolvedValue({ _sum: { affected_qty: D(options.affected ?? 30) } }),
     },
@@ -60,11 +42,8 @@ const harness = (options: Options = {}) => {
         created.push(data);
         return { concession_id: BigInt(6 + created.length) };
       }),
-      updateMany: jest.fn(async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => updates.push({ concession: data, where })),
     },
     nonconformance: { update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => updates.push({ nc: data })) },
-    approval_request: { findUniqueOrThrow: jest.fn().mockResolvedValue({ status_code: options.approvalStatus ?? 'APPROVED' }) },
-    disposition_approval: { count: jest.fn().mockResolvedValue(options.pendingDispositionApprovals ?? 0) },
   };
   const ncLots = (options.ncLots ?? [{ lot_id: 10n, affected_qty: 30 }]).map((row) => ({
     lot_id: row.lot_id, uom_id: 1n, affected_qty: D(row.affected_qty), lot: { lot_no: `L-${String(row.lot_id)}`, lot_type_code: 'MATERIAL', lifecycle_status_code: 'ACTIVE' },
@@ -78,22 +57,11 @@ const harness = (options: Options = {}) => {
   } as unknown as PrismaService;
   let concessionSeq = 0;
   const numbering = {
-    next: jest.fn(async (type: string) => {
-      if (type !== 'CONCESSION') return 'AP-1';
+    next: jest.fn(async () => {
       concessionSeq += 1;
       return `CNC-${String(concessionSeq)}`;
     }),
   } as unknown as NumberingService;
-  const approvals = {
-    selectRoute: jest.fn(async () => {
-      if (options.noRoute === true) throw new ContractException(400, [{ scope: 'screen', code: 'ROUTE_NOT_FOUND', message: '사용 중인 결재선이 없습니다.' }]);
-      return { approvalRouteId: 1n, steps: [{ stepNo: 1, approverTypeCode: 'USER', approverUserId: 1n }] };
-    }),
-    request: jest.fn(async (_tx: unknown, input: Record<string, unknown>) => {
-      calls.push(`approval:${String(input.approvalTypeCode)}:${String(input.targetTypeCode)}`);
-      return { approvalRequestId: 99n };
-    }),
-  } as unknown as ApprovalService;
   const documentState = { assertTransition: jest.fn().mockReturnValue({ to: 'DECIDED' }) } as unknown as DocumentStateService;
   const lots = {
     moveWithin: jest.fn(async (_tx: unknown, lotIds: bigint[], action: string) => {
@@ -108,7 +76,7 @@ const harness = (options: Options = {}) => {
       return { openAfter: 0 };
     }),
   } as unknown as LotHoldService;
-  const service = new ConcessionWriteService(prisma, numbering, approvals, documentState, lots, holds);
+  const service = new ConcessionWriteService(prisma, numbering, documentState, lots, holds);
   return { service, calls, created, updates, decisions, numbering };
 };
 
@@ -118,46 +86,42 @@ const body = (extra: Partial<ConcessionCreate> = {}): ConcessionCreate => ({
 });
 
 describe('ConcessionWriteService.request', () => {
-  it('결재 진행 중인 폐기·선별 처분 결재가 있으면 409 INVALID_STATE — 결재·특채 행을 만들지 않는다(omf-all-around#352)', async () => {
-    const h = harness({ pendingDispositionApprovals: 1 });
-    const error = await h.service.request(body(), 9).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ContractException);
-    expect((error as ContractException).getStatus()).toBe(409);
-    expect((error as ContractException).errors[0]).toMatchObject({ code: 'INVALID_STATE' });
-    expect(h.calls).toEqual([]);
-    expect(h.created).toEqual([]);
-  });
-
-  it('특채(PENDING)와 결재(CONCESSION · 부적합 대상)를 함께 만든다', async () => {
+  it('결재 없이 바로 적용한다 — 특채 APPROVED · 처분 판정(CONCESSION) · LOT 정상(C25) · 보류 해제 · 부적합 종결(omf-all-around#352)', async () => {
     const h = harness();
-    await expect(h.service.request(body(), 9)).resolves.toEqual({ concessionIds: [7], approvalRequestId: 99, outcome: 'REQUESTED' });
-    expect(h.calls).toEqual(['approval:CONCESSION:NONCONFORMANCE']);
-    expect(h.created[0]).toMatchObject({
-      concession_no: 'CNC-1', nonconformance_id: 41n, lot_id: 10n, status_code: 'PENDING',
-      approval_request_id: 99n, remarks: '외관 경미 — 조건부 사용',
-    });
-  });
-
-  it('특채 결재선이 없으면 결재 요청 없이 바로 적용한다 — 처분 판정 · LOT 정상 · 부적합 종결(omf-all-around#352)', async () => {
-    const h = harness({ noRoute: true });
-    await expect(h.service.request(body(), 9)).resolves.toEqual({ concessionIds: [7], approvalRequestId: null, outcome: 'APPLIED' });
+    await expect(h.service.request(body(), 9)).resolves.toEqual({ concessionIds: [7] });
     expect(h.calls).toEqual(['move:concession-apply:10', 'release:CONCESSION_APPROVED']);
-    expect(h.numbering.next).not.toHaveBeenCalledWith('APPROVAL_REQUEST', null, expect.any(String));
-    expect(h.created[0]).toMatchObject({ approval_request_id: null, status_code: 'PENDING', remarks: '외관 경미 — 조건부 사용' });
-    expect(h.decisions[0]).toMatchObject({ disposition_type_code: 'CONCESSION', approval_request_id: null });
-    expect(h.updates).toEqual(expect.arrayContaining([
-      { nc: expect.objectContaining({ status_code: 'DECIDED' }) },
-      expect.objectContaining({ concession: expect.objectContaining({ status_code: 'APPROVED' }) }),
-    ]));
+    expect(h.numbering.next).toHaveBeenCalledTimes(1);
+    expect(h.created[0]).toMatchObject({
+      concession_no: 'CNC-1', nonconformance_id: 41n, lot_id: 10n, status_code: 'APPROVED',
+      approval_request_id: null, remarks: '외관 경미 — 조건부 사용',
+    });
+    expect(h.decisions[0]).toMatchObject({ disposition_type_code: 'CONCESSION', decision_qty: D(30), approval_request_id: null });
+    expect(h.updates).toEqual([{ nc: expect.objectContaining({ status_code: 'DECIDED' }) }]);
   });
 
-  it('US4-4 lotId 를 비우면 부적합 LOT 마다 특채 행(그 LOT 의 부적합 수량) — 결재는 1건', async () => {
+  it('US4-4 lotId 를 비우면 부적합 LOT 마다 특채 행(그 LOT 의 부적합 수량) — 판정은 1건(합계)', async () => {
     const h = harness({ affected: 30, ncLots: [{ lot_id: 10n, affected_qty: 10 }, { lot_id: 11n, affected_qty: 20 }] });
-    await expect(h.service.request(body({ lotId: undefined }), 9)).resolves.toEqual({ concessionIds: [7, 8], approvalRequestId: 99, outcome: 'REQUESTED' });
-    expect(h.calls).toEqual(['approval:CONCESSION:NONCONFORMANCE']);
-    expect(h.created.map((row) => [row.lot_id, row.approved_qty, row.approval_request_id, row.concession_no])).toEqual([
-      [10n, D(10), 99n, 'CNC-1'], [11n, D(20), 99n, 'CNC-2'],
+    await expect(h.service.request(body({ lotId: undefined }), 9)).resolves.toEqual({ concessionIds: [7, 8] });
+    expect(h.created.map((row) => [row.lot_id, row.approved_qty, row.status_code, row.concession_no])).toEqual([
+      [10n, D(10), 'APPROVED', 'CNC-1'], [11n, D(20), 'APPROVED', 'CNC-2'],
     ]);
+    expect(h.decisions).toHaveLength(1);
+    expect(h.decisions[0]).toMatchObject({ decision_qty: D(30) });
+    expect(h.calls).toEqual(['move:concession-apply:10', 'move:concession-apply:11', 'release:CONCESSION_APPROVED', 'release:CONCESSION_APPROVED']);
+  });
+
+  it('남은 수량이 특채 수량과 같으면(앞선 판정 70 · 남은 30) 적용해 부적합을 닫는다', async () => {
+    const h = harness({ affected: 100, decided: 70 });
+    await h.service.request(body(), 9);
+    expect(h.decisions).toHaveLength(1);
+    expect(h.updates[0]).toEqual({ nc: expect.objectContaining({ status_code: 'DECIDED' }) });
+  });
+
+  it('이미 종결된 부적합이면 400 이고 아무것도 만들지 않는다', async () => {
+    const h = harness({ ncStatus: 'DECIDED' });
+    await expect(h.service.request(body(), 9)).rejects.toBeInstanceOf(ContractException);
+    expect(h.created).toEqual([]);
+    expect(h.decisions).toEqual([]);
   });
 
   it('부적합의 LOT 이 아니거나 남은 수량과 다르거나(R14a-1 일부 특채) 사유가 비면 400 이다', async () => {
@@ -172,77 +136,6 @@ describe('ConcessionWriteService.request', () => {
     const h = harness({ affected: 30, ncLots: [{ lot_id: 10n, affected_qty: 10 }, { lot_id: 11n, affected_qty: 20 }] });
     await expect(h.service.request(body(), 9)).rejects.toBeInstanceOf(ContractException);
     expect(h.calls).toEqual([]);
-  });
-});
-
-describe('ConcessionWriteService.apply', () => {
-  it('승인이면 처분 판정(CONCESSION)·LOT 정상(C25)·보류 해제(CONCESSION_APPROVED)·특채 APPROVED', async () => {
-    const h = harness();
-    await expect(h.service.apply(7, 9)).resolves.toEqual({ concessionIds: [7], approvalRequestId: 99 });
-    expect(h.decisions[0]).toMatchObject({ disposition_type_code: 'CONCESSION', decision_qty: D(30), approval_request_id: 99n });
-    expect(h.calls).toEqual(['move:concession-apply:10', 'release:CONCESSION_APPROVED']);
-    expect(h.updates).toEqual([
-      { nc: expect.objectContaining({ status_code: 'DECIDED' }) },
-      { concession: expect.objectContaining({ status_code: 'APPROVED' }), where: { concession_id: { in: [7n] } } },
-    ]);
-  });
-
-  it('US4-4 묶음의 PENDING 행 전부를 한 번에 — 판정 1건(합계)·LOT 전부 정상·행 전부 APPROVED', async () => {
-    const h = harness({ affected: 30, batch: [{ lot_id: 10n, approved_qty: 10 }, { lot_id: 11n, approved_qty: 20 }] });
-    await h.service.apply(8, 9);
-    expect(h.decisions).toHaveLength(1);
-    expect(h.decisions[0]).toMatchObject({ decision_qty: D(30) });
-    expect(h.calls).toEqual(['move:concession-apply:10', 'move:concession-apply:11', 'release:CONCESSION_APPROVED', 'release:CONCESSION_APPROVED']);
-    expect(h.updates[1]).toEqual({ concession: expect.objectContaining({ status_code: 'APPROVED' }), where: { concession_id: { in: [7n, 8n] } } });
-  });
-
-  it('R14a-2 승인된 옛 일부 수량 특채(승인 < 남은 수량)는 409 이고 아무것도 바꾸지 않는다', async () => {
-    const h = harness({ affected: 100 });
-    const error = await h.service.apply(7, 9).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ContractException);
-    expect((error as ContractException).getStatus()).toBe(409);
-    expect(JSON.stringify((error as ContractException).getResponse())).toContain('일부 특채는 지원하지 않습니다');
-    expect(h.decisions).toEqual([]);
-    expect(h.calls).toEqual([]);
-  });
-
-  it('업무 일자가 날짜가 아니면 400 이다', async () => {
-    const h = harness();
-    await expect(h.service.apply(7, 9, { businessDate: '11/03' })).rejects.toBeInstanceOf(ContractException);
-  });
-
-  it('결재 진행 중이면 400, 반려면 묶음을 REJECTED 로 닫고 LOT 은 그대로다', async () => {
-    await expect(harness({ approvalStatus: 'PENDING' }).service.apply(7, 9)).rejects.toBeInstanceOf(ContractException);
-    const rejected = harness({ approvalStatus: 'REJECTED' });
-    await rejected.service.apply(7, 9);
-    expect(rejected.updates).toEqual([{ concession: expect.objectContaining({ status_code: 'REJECTED' }), where: { concession_id: { in: [7n] } } }]);
-    expect(rejected.calls).toEqual([]);
-  });
-
-  it('적용 시점에 남은 수량(부적합 수량 − 확정 판정 합)이 승인 수량보다 작으면 400 이고 아무것도 바꾸지 않는다', async () => {
-    // (a) 요청 뒤 다른 처분이 100 중 80 을 먼저 썼다 — 남은 20 < 승인 30.
-    const h = harness({ affected: 100, decided: 80 });
-    const error = await h.service.apply(7, 9).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ContractException);
-    expect((error as ContractException).getStatus()).toBe(400);
-    expect(JSON.stringify((error as ContractException).getResponse())).toContain('approvedQty');
-    expect(h.decisions).toEqual([]);
-    expect(h.calls).toEqual([]);
-    expect(h.updates).toEqual([]);
-  });
-
-  it('남은 수량이 승인 수량과 같으면 적용해 부적합을 닫는다', async () => {
-    const h = harness({ affected: 100, decided: 70 });
-    await h.service.apply(7, 9);
-    expect(h.decisions).toHaveLength(1);
-    expect(h.numbering.next).not.toHaveBeenCalled();
-    expect(h.updates[0]).toEqual({ nc: expect.objectContaining({ status_code: 'DECIDED' }) });
-  });
-
-  it('US4-4 이미 적용된 특채(묶음의 두 번째 적용)는 409 다', async () => {
-    const error = await harness({ concessionStatus: 'APPROVED' }).service.apply(7, 9).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ContractException);
-    expect((error as ContractException).getStatus()).toBe(409);
   });
 });
 

@@ -143,8 +143,8 @@ describe('오퍼레이션 권한 매핑', () => {
     // 지시서 코드 해석 403 BUSINESS_UNIT_MISMATCH(피처 012 FR-013): 389.
     // 생산 LOT 분리 스캔 조회·분리·목록 3 — `P-04-08`·`M-04-05`(피처 013 · omf-all-around#303): 392.
     // PDA 분리 확인 1 — `M-04-05`(피처 013): 393.
-    // 폐기·선별 처분 결재 요청·반영 2 — `W-03-10`(반영은 `W-03-09` 도 · omf-all-around#352): 395.
-    expect(declares403).toHaveLength(395);
+    // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 392.
+    expect(declares403).toHaveLength(392);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
@@ -197,11 +197,10 @@ describe('오퍼레이션 권한 매핑', () => {
   });
 
   // 결재 화면(W-03-09)에서 승인한 뒤 실행 · 적용까지 잇는다 — IQC 생략 실행과 같은 짜임(장부 P-127 · omf-all-around#193).
-  it('⛔ OQC 생략 실행 · 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
+  it('⛔ OQC 생략 실행에 결재 화면이 함께 있다 — 장부 P-127', () => {
     // 순서는 도출표와 수동 표를 합친 차례라 뜻이 없다 — 화면 집합으로 본다.
     const screensOf = (operation: string): string[] => [...(OPERATION_PERMISSIONS[operation] ?? [])].sort();
     expect(screensOf('POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc')).toEqual(['W-03-09', 'W-04-03']);
-    expect(screensOf('POST /quality/concessions/{concessionId}:apply')).toEqual(['W-03-09', 'W-03-10']);
   });
 
   // P-06-01(창고 적재 위치 라벨 발행)은 설계 밖 화면이라 도출표가 영영 주지 않는다 — 장부 P-28.

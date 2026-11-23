@@ -8,7 +8,6 @@ import { LotHoldService, LotQualityStatusService, Tx } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { reopenIqcRequestForReworkWithin } from '../inspection/inspection-request-reopen';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
-import { assertNoPendingDispositionApproval } from './disposition-approval-pending';
 import { dispositionByIdQuery } from './disposition-query';
 import { releaseInspectionHoldsWithin } from './disposition-hold-release';
 import { DispositionSortCreated, DispositionSortService } from './disposition-sort';
@@ -24,14 +23,6 @@ export interface DispositionDecisionCreate {
   lotIds?: number[];
   goodQty?: number;
   defectQty?: number;
-}
-
-/**
- * 결재 반영(`:apply` · omf-all-around#352) — 판정을 만든 «같은 트랜잭션»에서 판정 뒤·응답 조회 전에 부른다. 이것을 넘기면
- * 「결재 진행 중인 처분」 거절을 건너뛴다 — 바로 그 결재를 반영하는 중이다.
- */
-export interface DispositionDecisionHook {
-  afterDecision: (tx: Tx, dispositionDecisionId: bigint) => Promise<void>;
 }
 
 /** 수량 판정(정상·폐기·재작업)이 쓰는 모양 — `assertShape` 가 두 칸을 확인한 뒤다. */
@@ -50,7 +41,7 @@ const DECIDED = 'DECIDED';
 const SORT = 'SORT';
 
 /** 잠금 «안»에서 한 번에 읽는 판정의 원천. */
-export interface Target {
+interface Target {
   lotIds: bigint[];
   affectedQtyTotal: Prisma.Decimal;
   decidedQtyTotal: Prisma.Decimal;
@@ -97,14 +88,13 @@ export class DispositionWriteService {
     version: number,
     body: DispositionDecisionCreate,
     appUserId: number,
-    hook?: DispositionDecisionHook,
   ): Promise<{ view: DispositionDecisionView & Partial<DispositionSortCreated>; versionNo: number }> {
     const id = BigInt(nonconformanceId);
     const decidedAt = new Date();
     if (body.dispositionTypeCode === SORT) {
       // 옛 수량 분할 본문(`lotIds` 없음)은 지금처럼 막는다(FR-038).
       if (body.lotIds === undefined) await this.refuseSort(id);
-      return this.sorts.create(nonconformanceId, version, { ...body, lotIds: body.lotIds as number[] }, appUserId, hook);
+      return this.sorts.create(nonconformanceId, version, { ...body, lotIds: body.lotIds as number[] }, appUserId);
     }
     return this.prisma.$transaction(async (tx) => {
       const locked = await lockNonconformance(tx, id);
@@ -119,7 +109,6 @@ export class DispositionWriteService {
       if (locked.status_code === DECIDED) {
         throw new ConflictException('user', '이미 종결된 부적합이라 판정을 저장할 수 없습니다.', { code: INVALID_STATE });
       }
-      if (hook === undefined) await assertNoPendingDispositionApproval(tx, id);
       assertWithinRemaining(qty, target);
 
       // ⛔ `decidedBy`·`decidedAt` 은 서버가 채운다(B-6). `approval_request_id` 는 비운다(결재 0).
@@ -161,7 +150,6 @@ export class DispositionWriteService {
         },
       });
       assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT, currentVersion: String(locked.version_no) });
-      if (hook !== undefined) await hook.afterDecision(tx, decision.disposition_decision_id);
 
       const built = dispositionByIdQuery(Number(decision.disposition_decision_id));
       const rows = await tx.$queryRawUnsafe<DispositionDecisionRow[]>(built.sql, ...built.params);
@@ -246,7 +234,7 @@ async function lockNonconformance(tx: Tx, id: bigint): Promise<{ status_code: st
  * ⛔ `numeric(20,6)` 을 `Number()` 로 접어 더하지 않는다 — `Prisma.Decimal` 로 더한다(`0.1+0.2
  * !== 0.3`). 단위는 «첫» LOT 것이고 0행이면 품목 기준 단위다 — 조회 둘과 **같은 규칙**이다.
  */
-export async function readTarget(tx: Tx, id: bigint): Promise<Target> {
+async function readTarget(tx: Tx, id: bigint): Promise<Target> {
   const nc = await tx.nonconformance.findUniqueOrThrow({
     where: { nonconformance_id: id },
     select: {
@@ -280,7 +268,7 @@ export async function readTarget(tx: Tx, id: bigint): Promise<Target> {
  * ⓒ `reason` 이 **공백만**이면 `REQUIRED` — `minLength:1` 이 통과시킨다(빈 문자열은 가드가
  * `RANGE` 로 막아 **두 갈래의 코드가 다르다** · A-12).
  */
-export function assertShape(body: DispositionDecisionCreate, target: Target): QtyDecision {
+function assertShape(body: DispositionDecisionCreate, target: Target): QtyDecision {
   // 선별 본문이 따로 있어 계약이 두 칸을 필수로 두지 못했다 — 수량 판정은 여기서 필수다.
   for (const name of ['decisionQty', 'uomId'] as const) {
     if (body[name] === undefined) throw one(field(name, ERROR_CODE.REQUIRED, `${name} 칸이 빠졌습니다. 값을 채워 보내세요.`));
@@ -301,7 +289,7 @@ export function assertShape(body: DispositionDecisionCreate, target: Target): Qt
  * 파싱하지 않는다」라 못 박아 구조화 칸으로 내린다(`W-03-10` §6). ⭐ 기준값이
  * `remainingSummary()` 가 낸 «그 값»이라 화면이 보는 수와 거절 기준이 한 자리에서 나온다.
  */
-export function assertWithinRemaining(body: QtyDecision, target: Target): void {
+function assertWithinRemaining(body: QtyDecision, target: Target): void {
   const summary = remainingSummary(target.affectedQtyTotal, target.decidedQtyTotal, target.uomId);
   const qty = new Prisma.Decimal(body.decisionQty);
   // 입하 LOT IQC 부적합은 판정 하나가 LOT 전부를 옮긴다 — 남은 수량 전부가 아니면 LOT 상태와 부적합 상태가 어긋난다(FR-038).
