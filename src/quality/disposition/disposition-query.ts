@@ -53,6 +53,7 @@ const CONCESSION_DEFECT_STOCK = `EXISTS (
         JOIN mdm.warehouse w ON w.warehouse_id = b.warehouse_id AND w.is_defect
        WHERE c.approval_request_id = d.approval_request_id AND c.status_code = 'APPROVED')`;
 
+// `derived` — 선별 판정이면 옮긴 LOT 의 새 부적합(선별은 부적합마다 한 번 · omf-all-around#352 종결 안내의 이동 단추).
 // `lotinfo` — 하나일 때만 값(§1-4-1). 응답 전용(WHERE 가 안 본다) — count 는 `FROM_CORE` 만 쓴다(Nit-3).
 const FROM = `${FROM_CORE}
     LEFT JOIN LATERAL (
@@ -61,13 +62,20 @@ const FROM = `${FROM_CORE}
         FROM quality.nonconformance_lot nl
         JOIN trace.lot l ON l.lot_id = nl.lot_id
        WHERE nl.nonconformance_id = d.nonconformance_id
-    ) lotinfo ON TRUE`;
+    ) lotinfo ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT sn.nonconformance_id AS new_nonconformance_id, sn.nonconformance_no AS new_nonconformance_no
+        FROM quality.nonconformance sn
+       WHERE d.disposition_type_code = 'SORT' AND sn.source_nonconformance_id = d.nonconformance_id
+       ORDER BY sn.nonconformance_id
+       LIMIT 1
+    ) derived ON TRUE`;
 
 const SELECT_COLUMNS = `
       d.disposition_decision_id, d.nonconformance_id, d.disposition_type_code, d.decision_qty,
       d.uom_id, d.reason, d.decided_by, d.decided_at, d.approval_request_id, d.sort_good_qty, d.sort_defect_qty,
       nc.nonconformance_no, nc.item_id, i.item_code, i.item_name, u.user_name AS decided_by_name,
-      lotinfo.lot_id, lotinfo.lot_no, fu.posted_qty,
+      lotinfo.lot_id, lotinfo.lot_no, fu.posted_qty, derived.new_nonconformance_id, derived.new_nonconformance_no,
       ${CONCESSION_DEFECT_STOCK} AS concession_defect_stock`;
 
 /**

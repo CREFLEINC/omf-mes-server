@@ -6765,14 +6765,14 @@
        "null"
       ],
       "format": "int64",
-      "description": "판정 저장 응답의 선별만 — 옮긴 LOT 의 새 부적합(판정 대기 · sortedFromNonconformanceId = 이 부적합). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+      "description": "선별만 — 옮긴 LOT 의 새 부적합(판정 대기 · sortedFromNonconformanceId = 이 부적합). 판정 저장 응답과 판정 목록·이력 조회가 함께 싣는다(목록은 omf-all-around#352 — 종결 안내의 이동 단추). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
      },
      "newNonconformanceNo": {
       "type": [
        "string",
        "null"
       ],
-      "description": "판정 저장 응답의 선별만 — 새 부적합 번호. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+      "description": "선별만 — 새 부적합 번호. 판정 저장 응답과 판정 목록·이력 조회가 함께 싣는다(omf-all-around#352). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
      },
      "newInspectionRequestNo": {
       "type": [
