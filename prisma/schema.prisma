@@ -3694,7 +3694,7 @@ model concession {
   allowed_work_order_id BigInt?
   allowed_process_id    BigInt?
   allowed_customer_id   BigInt?
-  approval_request_id   BigInt
+  approval_request_id   BigInt?
   status_code           String           @db.VarChar(50)
   remarks               String?
   created_at            DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -3708,7 +3708,7 @@ model concession {
   lot                   lot              @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   nonconformance        nonconformance   @relation(fields: [nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction)
   uom                   uom              @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  approval_request      approval_request @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_concession_approval")
+  approval_request      approval_request? @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_concession_approval")
 
   @@index([lot_id, status_code], map: "ix_concession_lot")
   @@schema("quality")
