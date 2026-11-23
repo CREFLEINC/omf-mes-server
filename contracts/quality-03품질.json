@@ -159,7 +159,7 @@
      "quality"
     ],
     "summary": "특채 요청",
-    "description": "부적합의 불합격 LOT 을 조건부로 쓰겠다고 결재를 올린다. 특채(PENDING)와 결재 요청(approvalTypeCode=CONCESSION · 대상 NONCONFORMANCE — 결재는 늘 1건)을 한 번에 만든다 — 승인은 W-03-09(POST /app/approval-requests/{id}:approve), 적용은 :apply 다. 사용 가능 수량은 그 부적합의 남은 수량과 같아야 한다(일부 특채 제거 — FR-038). lotId 를 비우면 부적합 LOT 마다 특채 행(lot_id = 그 LOT · approvedQty = 그 LOT 의 부적합 수량)이 같은 결재로 묶여 선다(D-14). 응답은 첫 행 + concessionIds(묶음 전부)·approvalRequestId. 결재선이 없으면 400 ROUTE_NOT_FOUND. 근거: omf-all-around#84 (서버 선행 · 장부 P-79) · 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254 ⭐ 그 부적합에 결재 진행 중인 폐기·선별 처분 결재가 있으면 409 INVALID_STATE. 근거: omf-all-around#352",
+    "description": "부적합의 불합격 LOT 을 조건부로 쓰겠다고 결재를 올린다. 특채(PENDING)와 결재 요청(approvalTypeCode=CONCESSION · 대상 NONCONFORMANCE — 결재는 늘 1건)을 한 번에 만든다 — 승인은 W-03-09(POST /app/approval-requests/{id}:approve), 적용은 :apply 다. 사용 가능 수량은 그 부적합의 남은 수량과 같아야 한다(일부 특채 제거 — FR-038). lotId 를 비우면 부적합 LOT 마다 특채 행(lot_id = 그 LOT · approvedQty = 그 LOT 의 부적합 수량)이 같은 결재로 묶여 선다(D-14). 응답은 첫 행 + concessionIds(묶음 전부)·approvalRequestId. ⭐ 특채 결재선이 없으면(활성 결재선 0 · 단계 0) 결재 요청 없이 «바로 적용»한다 — :apply 승인과 같은 결과(처분 판정 CONCESSION · LOT 정상 · 부적합 종결)를 한 트랜잭션에서 만들고 outcome=APPLIED · approvalRequestId=null 로 돌려준다(omf-all-around#352). 결재선이 있으면 outcome=REQUESTED. 근거: omf-all-around#84 (서버 선행 · 장부 P-79) · 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254 ⭐ 그 부적합에 결재 진행 중인 폐기·선별 처분 결재가 있으면 409 INVALID_STATE. 근거: omf-all-around#352",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1083,6 +1083,63 @@
      },
      "404": {
       "description": "없는 결재 · 부적합 대상이 아닌 결재 · 없는 부적합",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/quality/disposition-approval-routes": {
+   "get": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "처분 결재선 확인",
+    "description": "W-03-10 판정 확인 팝업 — 처분(DISPOSITION · 폐기·선별)과 특채(CONCESSION) 결재선이 있는지와 결재 단계(순서 · 결재자 이름). hasRoute=false 면 그 처분은 저장 때 결재 없이 바로 반영된다(POST …/disposition-approvals outcome=APPLIED · POST /quality/concessions outcome=APPLIED). 활성 결재선이 둘 이상이면 400 ROUTE_AMBIGUOUS. 로그인만 본다 — 기능 권한을 보지 않는다. 근거: omf-all-around#352",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "처분 · 특채 결재선",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/DispositionApprovalRoute"
+           }
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "요청 오류 — 활성 결재선이 둘 이상(ROUTE_AMBIGUOUS)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
       "content": {
        "application/json": {
         "schema": {
@@ -6195,9 +6252,13 @@
       "description": "⭐ 비어 있는 허용 축의 이름을 서버가 짚어 내려준다 — 「비었다」가 「제한 없음」이므로 화면이 빈칸으로 두면 의도보다 넓게 승인된다. 근거: W-03-09 §5-3"
      },
      "approvalRequestId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "특채 결재 요청. 결재선이 없어 결재 없이 바로 적용한 특채는 null 이다(omf-all-around#352)."
      },
      "statusCode": {
       "type": "string",
@@ -6254,6 +6315,14 @@
        "format": "int64"
       },
       "description": "요청(POST)·적용(:apply) «응답»에만 — 같은 요청으로 태어난 묶음(같은 nonconformanceId + 같은 approvalRequestId)의 특채 id 전부(오름차순). LOT 이 하나인 부적합이면 [concessionId]. 조회 응답에는 없다 — 묶음은 approvalRequestId 로 알아본다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254"
+     },
+     "outcome": {
+      "type": "string",
+      "enum": [
+       "APPLIED",
+       "REQUESTED"
+      ],
+      "description": "요청(POST) «응답»에만 — REQUESTED=결재 요청됨(PENDING · 승인 뒤 :apply) · APPLIED=특채 결재선이 없어 결재 없이 바로 적용됨(APPROVED · 처분 판정 · LOT 정상 · approvalRequestId null). 근거: omf-all-around#352"
      }
     },
     "required": [
@@ -11480,6 +11549,51 @@
       "example": 2
      }
     }
+   },
+   "DispositionApprovalRoute": {
+    "type": "object",
+    "properties": {
+     "approvalTypeCode": {
+      "type": "string",
+      "enum": [
+       "DISPOSITION",
+       "CONCESSION"
+      ],
+      "description": "DISPOSITION=폐기·선별 처분 결재 · CONCESSION=특채 결재"
+     },
+     "hasRoute": {
+      "type": "boolean",
+      "description": "사용 중인 결재선(단계 1개 이상)이 있다. false 면 결재 없이 바로 반영된다"
+     },
+     "steps": {
+      "type": "array",
+      "description": "결재 단계 — 순서대로. hasRoute=false 면 빈 배열",
+      "items": {
+       "type": "object",
+       "properties": {
+        "stepNo": {
+         "type": "integer",
+         "format": "int32",
+         "example": 1
+        },
+        "approverName": {
+         "type": "string",
+         "example": "홍길동"
+        }
+       },
+       "required": [
+        "stepNo",
+        "approverName"
+       ]
+      }
+     }
+    },
+    "required": [
+     "approvalTypeCode",
+     "hasRoute",
+     "steps"
+    ],
+    "description": "근거: omf-all-around#352"
    }
   },
   "securitySchemes": {

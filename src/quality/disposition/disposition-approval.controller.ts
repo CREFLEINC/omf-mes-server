@@ -6,8 +6,16 @@ import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
+import { ApprovalService } from '../../core/approval';
 import { PrismaService } from '../../prisma/prisma.service';
-import { DispositionApprovalApplied, DispositionApprovalOutcome, DispositionApprovalService } from './disposition-approval.service';
+import { CONCESSION_APPROVAL_TYPE } from '../concession/concession-write.service';
+import { ApprovalRouteSummary, approvalRouteSummary } from './approval-route-check';
+import {
+  DISPOSITION_APPROVAL_TYPE,
+  DispositionApprovalApplied,
+  DispositionApprovalOutcome,
+  DispositionApprovalService,
+} from './disposition-approval.service';
 import { ApprovalNonconformanceSummary, DispositionApprovalView, approvalNonconformanceSummary } from './disposition-approval-view';
 import { DispositionDecisionCreate } from './disposition-write.service';
 
@@ -21,7 +29,18 @@ export class DispositionApprovalController {
     private readonly prisma: PrismaService,
     private readonly approvals: DispositionApprovalService,
     private readonly idempotency: IdempotencyService,
+    private readonly routes: ApprovalService,
   ) {}
+
+  /** 판정 확인 팝업 — 처분(폐기·선별)·특채 결재선이 있는지와 결재자. 없으면 저장이 결재 없이 바로 반영된다(#352). */
+  @Get('disposition-approval-routes')
+  @Contract('GET /quality/disposition-approval-routes')
+  async approvalRoutes(): Promise<{ items: ApprovalRouteSummary[] }> {
+    const items = await Promise.all(
+      [DISPOSITION_APPROVAL_TYPE, CONCESSION_APPROVAL_TYPE].map((type) => approvalRouteSummary(this.prisma, this.routes, type)),
+    );
+    return { items };
+  }
 
   @Post('nonconformances/:nonconformanceId/disposition-approvals')
   @Contract('POST /quality/nonconformances/{nonconformanceId}/disposition-approvals')

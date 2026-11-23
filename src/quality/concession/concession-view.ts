@@ -16,7 +16,7 @@ export interface ConcessionRow {
   allowed_work_order_id: bigint | number | null;
   allowed_process_id: bigint | number | null;
   allowed_customer_id: bigint | number | null;
-  approval_request_id: bigint | number;
+  approval_request_id: bigint | number | null;
   status_code: string;
   remarks: string | null;
   nonconformance_no: string;
@@ -43,7 +43,8 @@ export interface ConcessionView {
   allowedProcessId?: number;
   allowedCustomerId?: number;
   unrestrictedAxes: string[];
-  approvalRequestId: number;
+  /** 결재선이 없어 결재 없이 적용한 특채는 null(omf-all-around#352). */
+  approvalRequestId: number | null;
   statusCode: string;
   usable: boolean;
   remarks?: string;
@@ -83,7 +84,7 @@ export function concessionView(row: ConcessionRow, onDate: string): ConcessionVi
     allowedProcessId: row.allowed_process_id === null ? undefined : Number(row.allowed_process_id),
     allowedCustomerId: row.allowed_customer_id === null ? undefined : Number(row.allowed_customer_id),
     unrestrictedAxes: unrestrictedAxesOf(row),
-    approvalRequestId: Number(row.approval_request_id),
+    approvalRequestId: row.approval_request_id === null ? null : Number(row.approval_request_id),
     statusCode: row.status_code,
     usable: usableOf(row.status_code, validFrom, validTo, approvedQty, consumedQty, onDate),
     remarks: row.remarks ?? undefined,

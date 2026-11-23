@@ -332,6 +332,7 @@ async function assertDecision(
       decision_qty: true,
       uom_id: true,
       approval_request_id: true,
+      nonconformance_id: true,
       nonconformance: { select: { nonconformance_lot: { select: { lot_id: true } } } },
     },
   });
@@ -346,7 +347,7 @@ async function assertDecision(
   if (disposition !== NORMAL_DISPOSITION && disposition !== CONCESSION_DISPOSITION) throw notReinstatable();
   const limit = disposition === NORMAL_DISPOSITION
     ? decision.decision_qty
-    : await concessionQtyOf(tx, decision.approval_request_id, locked.lot_id);
+    : await concessionQtyOf(tx, decision.nonconformance_id, decision.approval_request_id, locked.lot_id);
   const [sum] = await tx.$queryRaw<{ reinstated: Prisma.Decimal | null }[]>`
     SELECT sum(l.received_qty) AS reinstated
       FROM logistics.stock_transfer t
@@ -356,14 +357,17 @@ async function assertDecision(
   return disposition;
 }
 
-/** 적용된 특채(이 결재 · 이 LOT)의 승인 수량. 없으면 이 LOT 은 특채로 되돌릴 수 없다. */
-async function concessionQtyOf(tx: Tx, approvalRequestId: bigint | null, lotId: bigint): Promise<Prisma.Decimal> {
-  const concession = approvalRequestId === null
-    ? null
-    : await tx.concession.findFirst({
-        where: { approval_request_id: approvalRequestId, lot_id: lotId, status_code: APPLIED_CONCESSION },
-        select: { approved_qty: true },
-      });
+/**
+ * 적용된 특채(이 부적합 · 이 결재 · 이 LOT)의 승인 수량. 없으면 이 LOT 은 특채로 되돌릴 수 없다.
+ * 결재선이 없어 결재 없이 적용한 특채는 결재가 비어 있다(omf-all-around#352) — 판정과 특채가 같이 비어 있으면 같은 묶음이다.
+ */
+async function concessionQtyOf(
+  tx: Tx, nonconformanceId: bigint, approvalRequestId: bigint | null, lotId: bigint,
+): Promise<Prisma.Decimal> {
+  const concession = await tx.concession.findFirst({
+    where: { nonconformance_id: nonconformanceId, approval_request_id: approvalRequestId, lot_id: lotId, status_code: APPLIED_CONCESSION },
+    select: { approved_qty: true },
+  });
   if (concession === null) throw notReinstatable();
   return concession.approved_qty;
 }

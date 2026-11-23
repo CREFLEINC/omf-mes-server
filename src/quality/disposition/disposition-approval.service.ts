@@ -8,6 +8,7 @@ import { Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
+import { hasApprovalRoute } from './approval-route-check';
 import { hasPendingDispositionApproval } from './disposition-approval-pending';
 import { DispositionApprovalView, dispositionApprovalViews } from './disposition-approval-view';
 import { DispositionSortCreated, chooseLots, lockSortable, sortSourceOf } from './disposition-sort';
@@ -190,15 +191,8 @@ export class DispositionApprovalService {
     return view;
   }
 
-  /** 결재선이 없으면 false — `ROUTE_AMBIGUOUS` 등 다른 거절은 그대로 던진다. */
-  private async hasRoute(): Promise<boolean> {
-    try {
-      await this.approvals.selectRoute(this.prisma, DISPOSITION_APPROVAL_TYPE, null);
-      return true;
-    } catch (error) {
-      if (error instanceof ContractException && error.errors.some((item) => item.code === ERROR_CODE.ROUTE_NOT_FOUND)) return false;
-      throw error;
-    }
+  private hasRoute(): Promise<boolean> {
+    return hasApprovalRoute(this.prisma, this.approvals, DISPOSITION_APPROVAL_TYPE);
   }
 }
 

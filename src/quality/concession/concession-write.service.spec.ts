@@ -25,6 +25,8 @@ interface Options {
   ncLots?: { lot_id: bigint; affected_qty: number }[];
   /** 결재 진행 중인 폐기·선별 처분 결재 수(omf-all-around#352). */
   pendingDispositionApprovals?: number;
+  /** 특채 결재선이 없다 — 요청이 결재 없이 바로 적용된다(omf-all-around#352). */
+  noRoute?: boolean;
 }
 
 const harness = (options: Options = {}) => {
@@ -34,7 +36,7 @@ const harness = (options: Options = {}) => {
   const decisions: Record<string, unknown>[] = [];
   const batch = (options.batch ?? [{ lot_id: 10n, approved_qty: 30 }]).map((row, index) => ({
     concession_id: BigInt(7 + index), nonconformance_id: 41n, lot_id: row.lot_id, approved_qty: D(row.approved_qty), uom_id: 1n,
-    approval_request_id: 99n, status_code: options.concessionStatus ?? 'PENDING', remarks: '외관 경미',
+    approval_request_id: options.noRoute === true ? null : 99n, status_code: options.concessionStatus ?? 'PENDING', remarks: '외관 경미',
   }));
   const tx = {
     $queryRaw: jest.fn(async (strings: TemplateStringsArray) => {
@@ -83,6 +85,10 @@ const harness = (options: Options = {}) => {
     }),
   } as unknown as NumberingService;
   const approvals = {
+    selectRoute: jest.fn(async () => {
+      if (options.noRoute === true) throw new ContractException(400, [{ scope: 'screen', code: 'ROUTE_NOT_FOUND', message: '사용 중인 결재선이 없습니다.' }]);
+      return { approvalRouteId: 1n, steps: [{ stepNo: 1, approverTypeCode: 'USER', approverUserId: 1n }] };
+    }),
     request: jest.fn(async (_tx: unknown, input: Record<string, unknown>) => {
       calls.push(`approval:${String(input.approvalTypeCode)}:${String(input.targetTypeCode)}`);
       return { approvalRequestId: 99n };
@@ -124,7 +130,7 @@ describe('ConcessionWriteService.request', () => {
 
   it('특채(PENDING)와 결재(CONCESSION · 부적합 대상)를 함께 만든다', async () => {
     const h = harness();
-    await expect(h.service.request(body(), 9)).resolves.toEqual({ concessionIds: [7], approvalRequestId: 99 });
+    await expect(h.service.request(body(), 9)).resolves.toEqual({ concessionIds: [7], approvalRequestId: 99, outcome: 'REQUESTED' });
     expect(h.calls).toEqual(['approval:CONCESSION:NONCONFORMANCE']);
     expect(h.created[0]).toMatchObject({
       concession_no: 'CNC-1', nonconformance_id: 41n, lot_id: 10n, status_code: 'PENDING',
@@ -132,9 +138,22 @@ describe('ConcessionWriteService.request', () => {
     });
   });
 
+  it('특채 결재선이 없으면 결재 요청 없이 바로 적용한다 — 처분 판정 · LOT 정상 · 부적합 종결(omf-all-around#352)', async () => {
+    const h = harness({ noRoute: true });
+    await expect(h.service.request(body(), 9)).resolves.toEqual({ concessionIds: [7], approvalRequestId: null, outcome: 'APPLIED' });
+    expect(h.calls).toEqual(['move:concession-apply:10', 'release:CONCESSION_APPROVED']);
+    expect(h.numbering.next).not.toHaveBeenCalledWith('APPROVAL_REQUEST', null, expect.any(String));
+    expect(h.created[0]).toMatchObject({ approval_request_id: null, status_code: 'PENDING', remarks: '외관 경미 — 조건부 사용' });
+    expect(h.decisions[0]).toMatchObject({ disposition_type_code: 'CONCESSION', approval_request_id: null });
+    expect(h.updates).toEqual(expect.arrayContaining([
+      { nc: expect.objectContaining({ status_code: 'DECIDED' }) },
+      expect.objectContaining({ concession: expect.objectContaining({ status_code: 'APPROVED' }) }),
+    ]));
+  });
+
   it('US4-4 lotId 를 비우면 부적합 LOT 마다 특채 행(그 LOT 의 부적합 수량) — 결재는 1건', async () => {
     const h = harness({ affected: 30, ncLots: [{ lot_id: 10n, affected_qty: 10 }, { lot_id: 11n, affected_qty: 20 }] });
-    await expect(h.service.request(body({ lotId: undefined }), 9)).resolves.toEqual({ concessionIds: [7, 8], approvalRequestId: 99 });
+    await expect(h.service.request(body({ lotId: undefined }), 9)).resolves.toEqual({ concessionIds: [7, 8], approvalRequestId: 99, outcome: 'REQUESTED' });
     expect(h.calls).toEqual(['approval:CONCESSION:NONCONFORMANCE']);
     expect(h.created.map((row) => [row.lot_id, row.approved_qty, row.approval_request_id, row.concession_no])).toEqual([
       [10n, D(10), 99n, 'CNC-1'], [11n, D(20), 99n, 'CNC-2'],
