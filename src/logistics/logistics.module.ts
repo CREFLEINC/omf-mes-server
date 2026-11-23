@@ -35,6 +35,7 @@ import { MaterialLotBatchController } from './material-lot-batch/material-lot-ba
 import { MaterialLotBatchQueryService } from './material-lot-batch/material-lot-batch-query.service';
 import { MaterialLotBatchService } from './material-lot-batch/material-lot-batch.service';
 import { MaterialLotPairService } from './material-lot-batch/material-lot-pair.service';
+import { MaterialLotReviseService } from './material-lot-batch/material-lot-revise.service';
 import { MaterialLotTabService } from './material-lot-batch/material-lot-tab.service';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
@@ -215,6 +216,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     MaterialLotBatchQueryService,
     MaterialLotTabService,
     MaterialLotPairService,
+    MaterialLotReviseService,
     InboundLotReceiveService,
     InboundLotLotsService,
     InboundLotQueryService,

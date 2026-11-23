@@ -14450,6 +14450,117 @@
     }
    }
   },
+  "/logistics/material-lots/{lotId}:revise": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "출력 전 자재 관리 LOT 수정",
+    "description": "근거: P-01-01 · W-01-14 (피처 014 FR-016·017). 미출력(대기 · 자재 관리 LOT 라벨 발행 기록 없음) LOT 의 수량·패키징을 고친다 — 자동·수동 모두. 같은 LOT(lotId·P/O 몫 기록 그대로)이고, 수량이 바뀌면 lotNo 를 새 수량 접두사(품목·수량·날짜·공급사)의 다음 일련으로 바꾼다. 같으면 번호 그대로. 줄인 몫은 다음 미출력 조회가 다시 만들고, 늘리면 만들 양이 줄어든다. 바꾼 사실은 감사(audit_event MATERIAL_LOT_REVISED, 옛·새 번호)에 남는다",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "POP 단말에서는 필수(활성 작업자 사번 — 단말 공장). 웹(W-01-14)은 보내지 않는다 — 계정이 행위자다."
+     },
+     {
+      "name": "lotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "자재 관리 LOT"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaterialLotRevise"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "고친 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialLotTabRow"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — qty ≤ 0(RANGE) · qty ≠ count × qtyPerPackage(INVALID) · 없는 패키징 단위(INVALID)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다. 단말은 POP 이고 작업자(X-Worker-No)·멱등 키가 있어야 하며 LOT 이 단말 공장의 것이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "ALREADY_PRINTED(한 번이라도 출력한 LOT) · STATE_LOCKED(대기 아님 — 입하·폐기, 또는 자재 관리 LOT 이 아님) · LOT_NO_CONFLICT(번호 충돌이 거듭됨 — 다시 부르면 풀린다)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/trace/lots:void": {
    "post": {
     "tags": [
@@ -31299,6 +31410,52 @@
      "creatableRemaining": {
       "type": "integer",
       "description": "이번에 만든 뒤에도 P/O 몫으로 더 만들 수 있는 LOT 수"
+     }
+    }
+   },
+   "MaterialLotRevise": {
+    "type": "object",
+    "required": [
+     "qty",
+     "package"
+    ],
+    "description": "출력 전 자재 관리 LOT 수정(피처 014 FR-016·017). 수량이 바뀌면 번호의 수량 자리가 바뀌므로 새 일련을 받는다",
+    "properties": {
+     "qty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "LOT 수량(품목 기본 단위)"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "uomId",
+         "count",
+         "qtyPerPackage"
+        ],
+        "properties": {
+         "uomId": {
+          "type": "integer",
+          "format": "int64",
+          "description": "패키징 단위"
+         },
+         "count": {
+          "type": "integer",
+          "minimum": 1
+         },
+         "qtyPerPackage": {
+          "type": "number",
+          "exclusiveMinimum": 0
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "null = 패키징 없음. 있으면 qty = count × qtyPerPackage 여야 한다"
      }
     }
    }

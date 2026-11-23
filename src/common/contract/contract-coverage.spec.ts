@@ -129,7 +129,8 @@ describe('계약 커버리지', () => {
     // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 646 → 642.
     // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 642 → 641.
     // 자재 관리 LOT 공급사·품목·탭·번호 찾기 3(피처 014 · omf-all-around#349): 641 → 644.
-    expect(registry.size).toBe(644);
+    // 출력 전 자재 관리 LOT 수정 1(피처 014 S4): 644 → 645.
+    expect(registry.size).toBe(645);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

@@ -26,6 +26,7 @@ export const TERMINAL_MATERIAL_LOT_OPERATIONS: Readonly<Record<string, readonly 
   'GET /mdm/items/{itemId}/uom-conversions': ['POP'],
   'POST /logistics/material-lot-batches': ['POP'],
   'POST /trace/lots:void': ['POP'],
+  'POST /logistics/material-lots/{lotId}:revise': ['POP'],
 };
 
 const WORKER = Symbol('terminalMaterialLotWorkerId');
@@ -75,6 +76,9 @@ export async function assertTerminalMaterialLotScope(
   if (!worker) throw denied();
   if (key === 'POST /logistics/material-lot-batches') {
     if (id(body.plantId) !== terminal.plantId) throw denied();
+  } else if (key === 'POST /logistics/material-lots/{lotId}:revise') {
+    const lotId = id(request.params.lotId);
+    if (lotId === -1n || await prisma.lot.count({ where: { lot_id: lotId, plant_id: terminal.plantId } }) === 0) throw denied();
   } else {
     const lotIds = Array.isArray(body.lotIds) ? body.lotIds.map(id) : [];
     if (lotIds.length === 0 || lotIds.includes(-1n)) throw denied();
