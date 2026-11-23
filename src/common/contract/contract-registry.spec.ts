@@ -60,8 +60,9 @@ describe('ContractRegistry', () => {
   // 특채 적용 삭제 1건(omf-all-around#352): 641.
   // 자재 관리 LOT 공급사·품목·탭·번호 찾기 3건(피처 014 · omf-all-around#349): 644.
   // 출력 전 자재 관리 LOT 수정 1건(피처 014 S4): 645.
-  it('계약 7파일에서 오퍼레이션 645건을 적재한다', () => {
-    expect(registry.size).toBe(645);
+  // 자재 관리 LOT 공급사 목록 1건(피처 014 S5 · 세 칸): 646.
+  it('계약 7파일에서 오퍼레이션 646건을 적재한다', () => {
+    expect(registry.size).toBe(646);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

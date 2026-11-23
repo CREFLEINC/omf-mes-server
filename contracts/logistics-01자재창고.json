@@ -14048,6 +14048,118 @@
     }
    }
   },
+  "/logistics/material-lot-suppliers": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 공급사 목록(POP 첫째 칸)",
+    "description": "근거: P-01-01 (피처 014 FR-010·011, 세 칸). 공급사 = GET /logistics/material-lot-pairs 의 조합 셋(같은 q 거르기)을 공급사로 묶은 것 — 조합 하나라도 맞으면 그 공급사가 선다(발행 이력 없는 공급사도). unprintedCount·creatableCount 는 그 공급사 조합들의 합(pairs 와 같은 계산). 정렬: 할 일(미출력 LOT 이 있거나 P/O 남은 양이 받기 전 자동 LOT 보다 많은) 조합이 있는 공급사 먼저, 그다음 공급사 코드. 만들지 않는다",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사·품목 코드·이름(부분 일치) — 품목으로 찾으면 그 품목을 가진 공급사가 선다"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 200
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaterialLotSupplier"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/material-lot-pairs": {
    "get": {
     "tags": [
@@ -14065,6 +14177,15 @@
       },
       "description": "공장",
       "required": true
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사 — POP P-01-01 둘째 칸(품목 표)은 고른 공급사로 거른다(피처 014 세 칸). 비우면 모든 공급사"
      },
      {
       "name": "q",
@@ -31222,6 +31343,33 @@
      }
     }
    },
+   "MaterialLotSupplier": {
+    "type": "object",
+    "description": "POP 첫째 칸 공급사 한 줄(피처 014 FR-010·011 · P-01-01 세 칸)",
+    "required": [
+     "supplier",
+     "pairCount",
+     "unprintedCount",
+     "creatableCount"
+    ],
+    "properties": {
+     "supplier": {
+      "$ref": "#/components/schemas/MaterialLotPairSupplier"
+     },
+     "pairCount": {
+      "type": "integer",
+      "description": "찾기 조건에 맞는 그 공급사 품목 조합 수"
+     },
+     "unprintedCount": {
+      "type": "integer",
+      "description": "그 공급사 조합들의 이미 만든 미출력 LOT 수 합"
+     },
+     "creatableCount": {
+      "type": "integer",
+      "description": "그 공급사 조합들의 P/O 몫으로 아직 만들 수 있는 LOT 수 합 — 계산만 하고 만들지 않는다. 화면 「미출력 N」= unprintedCount + creatableCount"
+     }
+    }
+   },
    "MaterialLotPair": {
     "type": "object",
     "description": "왼쪽 공급사·품목 한 줄(피처 014 FR-010·011 · P-01-01 · W-01-14)",
@@ -31231,7 +31379,10 @@
      "unprintedCount",
      "creatableCount",
      "defaultsStatus",
-     "lotDefaults"
+     "lotDefaults",
+     "printedCount",
+     "inspectionRequired",
+     "lastIssuedAt"
     ],
     "properties": {
      "supplier": {
@@ -31299,6 +31450,22 @@
        }
       ],
       "description": "defaultsStatus = OK 일 때만"
+     },
+     "printedCount": {
+      "type": "integer",
+      "description": "출력됨 LOT 수 — 대기(입하 전) · 자재 관리 LOT 라벨 발행 기록 있음(「출력됨」 탭과 같은 기준)"
+     },
+     "inspectionRequired": {
+      "type": "boolean",
+      "description": "품목 수입검사(IQC) 대상"
+     },
+     "lastIssuedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "그 공급사·품목 자재 관리 LOT 의 마지막 라벨 발행 시각(입하·폐기된 LOT 포함) — 없으면 null"
      }
     }
    },

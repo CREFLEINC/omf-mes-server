@@ -56,7 +56,16 @@ export class MaterialLotBatchController {
   @Get('material-lot-pairs')
   @Contract('GET /logistics/material-lot-pairs')
   pairs(@Req() request: Request, @Query() query: MaterialLotPairQuery) {
-    return this.pairList.pairs({ ...query, plantId: plantOf(request, query.plantId) });
+    return this.pairList.pairs({
+      ...query, plantId: plantOf(request, query.plantId), supplierId: query.supplierId === undefined ? undefined : Number(query.supplierId),
+    });
+  }
+
+  /** POP 첫째 칸 공급사(세 칸 맞춤 — pairs 조합 셋을 공급사로 묶음) — 만들지 않는다. */
+  @Get('material-lot-suppliers')
+  @Contract('GET /logistics/material-lot-suppliers')
+  suppliers(@Req() request: Request, @Query() query: Omit<MaterialLotPairQuery, 'supplierId'>) {
+    return this.pairList.suppliers({ ...query, plantId: plantOf(request, query.plantId) });
   }
 
   /** 오른쪽 탭 — 「미출력」은 그 쪽까지 모자란 P/O 몫을 만든다(같은 요청 반복 = 같은 결과). */

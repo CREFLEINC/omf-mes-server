@@ -18,6 +18,7 @@ export const TERMINAL_MATERIAL_LOT_OPERATIONS: Readonly<Record<string, readonly 
   'GET /logistics/waiting-material-lots': ['POP'],
   // 피처 014 — 조회가 P/O 몫을 만들지만 GET 이라 작업자·멱등 키 없이 부른다(공장 범위만).
   'GET /logistics/material-lot-pairs': ['POP'],
+  'GET /logistics/material-lot-suppliers': ['POP'],
   'GET /logistics/material-lots': ['POP'],
   'GET /logistics/material-lots/lookup': ['POP'],
   // 분할 LOT 라벨 목록(P-01-02 · 피처 008) — 공장 범위는 GET 규칙(질의 plantId = 단말 공장) 그대로다.
