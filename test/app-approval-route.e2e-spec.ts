@@ -218,7 +218,7 @@ describe('결재선 (e2e)', () => {
   });
 
   it('결재선 — 낡은 If-Match 로 PUT 하면 409 다', async () => {
-    const created = await create('IQC_SKIP', null);
+    const created = await create('CONCESSION', null);
     await request(app.getHttpServer())
       .put(`/api/app/approval-routes/${created.id}`)
       .set('Cookie', cookie)

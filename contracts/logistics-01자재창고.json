@@ -12029,7 +12029,6 @@
         "C14",
         "C15",
         "C29",
-        "C30",
         "C31"
        ]
       },
@@ -12180,185 +12179,6 @@
       }
      }
     }
-   }
-  },
-  "/trace/lots/{lotId}:request-iqc-skip": {
-   "parameters": [
-    {
-     "name": "lotId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "trace"
-    ],
-    "summary": "긴급 IQC 생략 요청",
-    "description": "입하돼 수입검사 대기인 LOT 에 대해 현장이 검사 생략을 요청한다 — 대상은 그 LOT 의 «입하 LOT» 이다(결재 targetTypeCode=INBOUND_LOT · targetId = 입하 LOT id, 피처 005 FR-032 · R-16). 입하 마감된(RECEIVED) 입하 LOT 만 — 입하 중·최종 마감이면 409. 입하 LOT 의 자재 관리 LOT 이 모두 입하 원천(아니면 400 INVALID)·수입검사 대기(아니면 400 STATE_LOCKED)여야 한다. 같은 입하 LOT 에 진행 중 요청이 있으면 400 APPROVAL_IN_PROGRESS. 요청을 만들기만 하고 한도는 승인자가 정한다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 응답에 그 입하 LOT 의 번호·자재 관리 LOT 수. 근거: M-01-13 §5-A · 공유계약 J-4 · 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/WorkerNo"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ApprovalRequestCreate"
-       }
-      }
-     }
-    },
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "202": {
-      "description": "요청됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/IqcSkipRequested"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "입하 마감된(RECEIVED) 입하 LOT 이 아니다 — 입하 중이면 먼저 입하 마감한다(errors[].code = INBOUND_LOT_RECEIVING). 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "approval_type_code=IQC_SKIP · target_type_code=INBOUND_LOT · target_id=lot_id 로 서버가 채운다(M-01-13 §5-A · 공유계약 A-16 등재 대상)."
-   }
-  },
-  "/trace/lots/{lotId}:skip-iqc": {
-   "parameters": [
-    {
-     "name": "lotId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "trace"
-    ],
-    "summary": "승인된 IQC 생략 실행",
-    "description": "긴급 IQC 생략 요청이 **승인된** 입하 LOT 의 수입검사를 생략한다 — 경로의 LOT 은 그 «입하 LOT» 을 가리킨다(결재 W-01-02 는 결재 대상의 targetLotId 를 싣는다 · 피처 005 FR-032). 입하 LOT 의 열린 IQC 의뢰(입하 LOT 요청 · 이전된 옛 LOT 요청)를 `SKIPPED` 로 닫고(변경 이력 SKIPPED), 자재 관리 LOT «전부»의 수입검사 대기 보류를 `INCOMING_INSPECTION_SKIPPED` 사유로 해제하고, 다른 열린 보류가 없으면 LOT 전부를 `NORMAL` 로 옮긴다(전이 C22 — 하나라도 다른 보류가 남으면 400 이고 아무것도 바뀌지 않는다). ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 승인된 요청이 없거나(입하 마감 취소가 무효로 만든 승인 포함) LOT 이 수입검사 대기가 아니거나 열린 IQC 의뢰가 없으면 400(code=STATE_LOCKED). 근거: W-01-02 · omf-all-around#105 (서버 선행 · 장부 P-36) · 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     }
-    ],
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "생략 실행됨 — 실행 뒤 LOT 상세 + 입하 LOT 번호·자재 관리 LOT 수",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/IqcSkipExecuted"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없는 LOT",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "승인 조회: approval_type_code=IQC_SKIP · target_type_code=INBOUND_LOT · target_id=lot_id · status_code=APPROVED. 서버 선행(장부 P-36)."
    }
   },
   "/trace/lots/{lotId}:complete": {
@@ -15048,7 +14868,7 @@
      "logistics"
     ],
     "summary": "입하 마감 취소",
-    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(대기·결과 0건 진행 중·생략 — 요청을 잠근 뒤 결과가 생겼으면 409 IQC_RECORDED. 행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 긴급 생략을 실행한 건은 자재 관리 LOT NORMAL → INSPECTION_PENDING(C30)·검사 대기 보류 다시·이벤트 SKIP_VOIDED·생략 결재 기록에 무효 표시, 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 먼저 열면 409 OPEN_RECEIPT_EXISTS(이때 openInboundLotNo 는 null — 다시 읽으면 목록이 번호를 준다). 근거: M-01-03",
+    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(대기·결과 0건 진행 중·생략 — 요청을 잠근 뒤 결과가 생겼으면 409 IQC_RECORDED. 행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 먼저 열면 409 OPEN_RECEIPT_EXISTS(이때 openInboundLotNo 는 null — 다시 읽으면 목록이 번호를 준다). 근거: M-01-03",
     "parameters": [
      {
       "name": "inboundLotId",
@@ -22889,10 +22709,9 @@
        "C19",
        "C20",
        "C29",
-       "C30",
        "C31"
       ],
-      "description": "원본 설계 전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표. 서버 구현 기준 C17·C18·C19·C20을 더해 응답은 13종이다\n\n서버 구현 기준 추가값: C17·C18·C19=처분 전이, C20=재고 재등록 후 정상 전이(통보 089·218). C31=입하 등록 해제로 정상 → 검사 대기(피처 005). C30=입하 마감 취소로 IQC 생략 무효 → 검사 대기(피처 005). C29=IQC 판정 확정 취소로 정상·불량 → 검사 대기(피처 005).",
+      "description": "원본 설계 전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표. 서버 구현 기준 C17·C18·C19·C20을 더해 응답은 13종이다\n\n서버 구현 기준 추가값: C17·C18·C19=처분 전이, C20=재고 재등록 후 정상 전이(통보 089·218). C31=입하 등록 해제로 정상 → 검사 대기(피처 005). C29=IQC 판정 확정 취소로 정상·불량 → 검사 대기(피처 005). ⚠ 건별 검사 생략(C22·C28·C30)은 없앴다(omf-all-around#353) — 옛 이력 정리 마이그레이션이 배포되기 전까지는 옛 행에 남아 실릴 수 있다.",
       "example": "C7",
       "x-code-key": "CD-LOT-STATUS-HISTORY-EVENT-TRANSITION"
      },
@@ -28864,7 +28683,7 @@
      },
      "reopenable": {
       "type": "boolean",
-      "description": "마감 취소 가능(data-model) — RECEIVED·ON_FINALIZE 이고 다음 단계 전(검사 필요: IQC 결과 0건·요청 확정/진행 아님 · 생략 결재 대기 없음 / 검사 불필요·긴급 생략 실행: 자재 관리 LOT 입고 0건)이며 같은 공장·공급사·품목에 입하 중(RECEIVING)이 없을 때 true"
+      "description": "마감 취소 가능(data-model) — RECEIVED·ON_FINALIZE 이고 다음 단계 전(검사 필요: IQC 결과 0건·요청 확정/진행 아님 / 검사 불필요: 자재 관리 LOT 입고 0건)이며 같은 공장·공급사·품목에 입하 중(RECEIVING)이 없을 때 true"
      },
      "reopenReasonCode": {
       "type": [
@@ -28874,10 +28693,9 @@
       "enum": [
        "NO_IQC_RESULT",
        "INSPECTION_NOT_REQUIRED",
-       "IQC_SKIPPED",
        null
       ],
-      "description": "마감 취소 가능 건의 까닭(C2 정함) — NO_IQC_RESULT(검사 필요·결과 0건 — 대기 또는 결과를 지워 0건이 된 진행 중 요청) · INSPECTION_NOT_REQUIRED(검사 불필요·기본 생략, 입고 전) · IQC_SKIPPED(긴급 생략 실행, 입고 전). reopenable 이 false 면 null"
+      "description": "마감 취소 가능 건의 까닭(C2 정함) — NO_IQC_RESULT(검사 필요·결과 0건 — 대기 또는 결과를 지워 0건이 된 진행 중 요청) · INSPECTION_NOT_REQUIRED(검사 불필요·기본 생략, 입고 전). reopenable 이 false 면 null"
      },
      "reopenBlockerCode": {
       "type": [
@@ -29732,7 +29550,7 @@
     "required": [
      "errors"
     ],
-    "description": "마감 취소 막힘(409) — errors[].code 가 막힘 코드다(scope=screen, 여럿이면 모두): IQC_RECORDED(IQC 결과가 1건 이상이거나 판정 확정 — 요청 상태가 아니라 결과 수로 본다: 결과를 모두 지웠거나 확정 취소·분리로 0건이 된 진행 중 요청은 막지 않는다, 2026-11-13) · GOODS_RECEIVED(자재 관리 LOT 입고 있음) · SKIP_PENDING(IQC 생략 결재 대기) · INBOUND_LOT_FINALIZED(최종 마감) · LEGACY_INBOUND_LOT(이전 데이터 PER_RECEIPT) · OPEN_RECEIPT_EXISTS(같은 공장·공급사·품목에 입하 중 — 메시지와 openInboundLotNo 에 그 번호)",
+    "description": "마감 취소 막힘(409) — errors[].code 가 막힘 코드다(scope=screen, 여럿이면 모두): IQC_RECORDED(IQC 결과가 1건 이상이거나 판정 확정 — 요청 상태가 아니라 결과 수로 본다: 결과를 모두 지웠거나 확정 취소·분리로 0건이 된 진행 중 요청은 막지 않는다, 2026-11-13) · GOODS_RECEIVED(자재 관리 LOT 입고 있음) · INBOUND_LOT_FINALIZED(최종 마감) · LEGACY_INBOUND_LOT(이전 데이터 PER_RECEIPT) · OPEN_RECEIPT_EXISTS(같은 공장·공급사·품목에 입하 중 — 메시지와 openInboundLotNo 에 그 번호)",
     "properties": {
      "errors": {
       "type": "array",
@@ -29746,39 +29564,6 @@
        "null"
       ],
       "description": "OPEN_RECEIPT_EXISTS 일 때 같은 조합의 입하 중 입하 LOT 번호(먼저 마감할 것), 그 밖 null. 판정 뒤 동시 받기와 겹친 OPEN_RECEIPT_EXISTS 는 번호를 못 읽어 null"
-     }
-    }
-   },
-   "IqcSkipRequested": {
-    "type": "object",
-    "description": "IQC 생략 요청 접수 — 결재와 그 대상 입하 LOT. 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-    "required": [
-     "approvalRequestId",
-     "inboundLotId",
-     "inboundLotNo",
-     "lotCount"
-    ],
-    "properties": {
-     "approvalRequestId": {
-      "x-source-column": "approval_request_id",
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     },
-     "inboundLotId": {
-      "type": "integer",
-      "format": "int64",
-      "example": 31,
-      "description": "결재 대상 입하 LOT(결재 targetId)"
-     },
-     "inboundLotNo": {
-      "type": "string",
-      "example": "IL-20261112-0001"
-     },
-     "lotCount": {
-      "type": "integer",
-      "example": 3,
-      "description": "생략하면 정상이 될 자재 관리 LOT 수(그 입하 LOT 의 전부)"
      }
     }
    },
@@ -30021,33 +29806,6 @@
       }
      }
     }
-   },
-   "IqcSkipExecuted": {
-    "description": "IQC 생략 실행 응답 — 실행 뒤 LOT 상세 + 생략이 걸린 입하 LOT(피처 005 §11 · FR-032).",
-    "allOf": [
-     {
-      "$ref": "#/components/schemas/LotDetailResponse"
-     },
-     {
-      "type": "object",
-      "required": [
-       "inboundLotNo",
-       "lotCount"
-      ],
-      "properties": {
-       "inboundLotNo": {
-        "type": "string",
-        "description": "생략이 걸린 입하 LOT 번호",
-        "example": "IL-20261112-0001"
-       },
-       "lotCount": {
-        "type": "integer",
-        "description": "그 입하 LOT 의 자재 관리 LOT 수(모두 정상으로 옮겼다)",
-        "example": 3
-       }
-      }
-     }
-    ]
    },
    "LotFlowSplitLink": {
     "type": "object",

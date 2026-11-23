@@ -73,9 +73,8 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     await cleanup();
     await makeMasters();
     cookie = await makeUser('ALL', PERMISSIONS.map((permission) => permission.code), WORKER_NO);
-    approverCookie = await makeUser('APR', ['W-03-09', 'W-01-02'], `${PREFIX}-W2`);
+    approverCookie = await makeUser('APR', ['W-03-09'], `${PREFIX}-W2`);
     await seedRoute(prisma, 'CONCESSION', [ids.approver]);
-    await seedRoute(prisma, 'IQC_SKIP', [ids.approver]);
     const pop = await terminalToken('POP');
     const mobile = await terminalToken('MOBILE');
     fx = { app, issuer: terminalAuth(pop, WORKER_NO), receiver: terminalAuth(mobile, WORKER_NO), businessDate: DAY, keys, inspector: sessionAuth(cookie), prisma };
@@ -309,56 +308,6 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     expect((rows.body.items as { inboundLotNo?: string }[]).map((row) => row.inboundLotNo)).toEqual([await inboundLotNoOf(iqc), await inboundLotNoOf(iqc)]);
   });
 
-  it('R16-1 IQC 생략 — 입하 중 409 · 마감된 입하 LOT 단위 결재(대상 입하 LOT) · 실행하면 LOT 전부 C22·요청 SKIPPED', async () => {
-    const supplier = await newSupplier();
-    const { inboundLot, lots } = await issueAndReceive(fx, { plantId: Number(ids.plant), supplierId: supplier, itemId: Number(ids.item), lotQty: 10, lotCount: 3 });
-    const receiving = await requestSkip(lots[1].lotId).expect(409);
-    expect(receiving.body.errors).toEqual([expect.objectContaining({ code: 'INBOUND_LOT_RECEIVING' })]);
-
-    const closed = await closeInboundLotFixture(fx, inboundLot.inboundLotId);
-    const accepted = await requestSkip(lots[2].lotId).expect(202);
-    expectShape(schemaOf('logistics', '/trace/lots/{lotId}:request-iqc-skip', 'post', 202), accepted.body);
-    expect(accepted.body).toEqual({
-      approvalRequestId: expect.any(Number) as number, inboundLotId: inboundLot.inboundLotId, inboundLotNo: inboundLot.inboundLotNo, lotCount: 3,
-    });
-    const approvalRequestId = accepted.body.approvalRequestId as number;
-    const approval = await prisma.approval_request.findUniqueOrThrow({ where: { approval_request_id: BigInt(approvalRequestId) } });
-    expect(approval).toMatchObject({ approval_type_code: 'IQC_SKIP', target_type_code: 'INBOUND_LOT', target_id: BigInt(inboundLot.inboundLotId) });
-    // 같은 입하 LOT 의 다른 자재 관리 LOT 으로 다시 요청해도 진행 중 결재가 막는다.
-    await requestSkip(lots[0].lotId).expect(400);
-
-    await decideApproval(approvalRequestId, 'approve');
-    const minLotId = Math.min(...lots.map((lot) => lot.lotId));
-    const executed = await request(app.getHttpServer()).post(`/api/trace/lots/${String(minLotId)}:skip-iqc`).set('Cookie', cookie)
-      .set('Idempotency-Key', idempotencyKey(fx)).send({}).expect(200);
-    expectShape(schemaOf('logistics', '/trace/lots/{lotId}:skip-iqc', 'post', 200), executed.body);
-    expect(executed.body).toMatchObject({ inboundLotNo: inboundLot.inboundLotNo, lotCount: 3 });
-
-    const after = await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(inboundLot.inboundLotId) }, include: { lot_hold: { where: { released_at: null } } } });
-    expect(after.map((lot) => [lot.status_code, lot.lot_hold.length])).toEqual([['NORMAL', 0], ['NORMAL', 0], ['NORMAL', 0]]);
-    expect(await prisma.lot_status_event.count({ where: { lot_id: { in: after.map((lot) => lot.lot_id) }, transition_code: 'C22' } })).toBe(3);
-    const iqc = await prisma.inspection_request.findUniqueOrThrow({ where: { inspection_request_id: BigInt(closed.iqcRequestId as number) } });
-    expect(iqc).toMatchObject({ status_code: 'SKIPPED', skip_basis_code: 'APPROVAL' });
-    expect(await prisma.inspection_request_event.count({ where: { inspection_request_id: iqc.inspection_request_id, event_type_code: 'SKIPPED' } })).toBe(1);
-  });
-
-  it('R16-1 W-01-02 결재 목록·상세의 대상에 targetLotId(그 입하 LOT 의 가장 작은 자재 관리 LOT id)·입하 LOT 번호', async () => {
-    const supplier = await newSupplier();
-    const { inboundLot, lots } = await issueAndReceive(fx, { plantId: Number(ids.plant), supplierId: supplier, itemId: Number(ids.item), lotQty: 10, lotCount: 2 });
-    await closeInboundLotFixture(fx, inboundLot.inboundLotId);
-    const accepted = await requestSkip(lots[1].lotId).expect(202);
-    const approvalRequestId = accepted.body.approvalRequestId as number;
-    const target = { targetTypeCode: 'INBOUND_LOT', targetId: inboundLot.inboundLotId, targetLotId: Math.min(...lots.map((lot) => lot.lotId)),
-      displayName: `입하 LOT · ${inboundLot.inboundLotNo}` };
-
-    const detail = await request(app.getHttpServer()).get(`${APPROVALS}/${String(approvalRequestId)}`).set('Cookie', approverCookie).expect(200);
-    expect(detail.body.request.target).toMatchObject(target);
-    const list = await request(app.getHttpServer()).get(APPROVALS).query({ targetTypeCode: 'INBOUND_LOT', targetId: inboundLot.inboundLotId })
-      .set('Cookie', cookie).expect(200);
-    expect((list.body.items as { approvalRequestId: number; target: unknown }[]).find((item) => item.approvalRequestId === approvalRequestId)?.target)
-      .toMatchObject(target);
-  });
-
   it('D18-1 대시보드 「재검 투입」·「재검 OK 복원율」은 확정 주기 2 이상의 결과만 센다', async () => {
     const before = await fullReinspect();
     const nc = await rejectedIqc(2);
@@ -443,11 +392,6 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
   function applyConcession(concessionId: number): request.Test {
     return request(app.getHttpServer()).post(`${CONCESSIONS}/${String(concessionId)}:apply`).set('Cookie', cookie)
       .set('Idempotency-Key', idempotencyKey(fx)).send({});
-  }
-
-  function requestSkip(lotId: number): request.Test {
-    return request(app.getHttpServer()).post(`/api/trace/lots/${String(lotId)}:request-iqc-skip`).set('Cookie', cookie)
-      .set('Idempotency-Key', idempotencyKey(fx)).set('X-Worker-No', WORKER_NO).send({ reason: '긴급 출하분 IQC 생략' });
   }
 
   async function decideApproval(approvalRequestId: number, action: 'approve' | 'reject'): Promise<void> {
@@ -539,7 +483,7 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
       `DELETE FROM app.approval_step WHERE approval_request_id IN (${approvals})`,
       `DELETE FROM app.approval_request WHERE approval_request_id IN (${approvals})`,
       `DELETE FROM app.approval_route_step WHERE approver_user_id IN (${users})`,
-      `DELETE FROM app.approval_route WHERE approval_type_code IN ('CONCESSION', 'IQC_SKIP')
+      `DELETE FROM app.approval_route WHERE approval_type_code IN ('CONCESSION')
          AND NOT EXISTS (SELECT 1 FROM app.approval_route_step s WHERE s.approval_route_id = approval_route.approval_route_id)`,
       `DELETE FROM quality.nonconformance_lot WHERE nonconformance_id IN (${ncs})`,
       `DELETE FROM quality.nonconformance WHERE item_id IN (${items})`,

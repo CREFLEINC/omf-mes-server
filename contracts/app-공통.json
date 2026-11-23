@@ -44,11 +44,8 @@
         "GOODS_RECEIPT_CANCEL",
         "GOODS_ISSUE_CANCEL",
         "SHIPMENT_CANCEL",
-        "IQC_SKIP",
         "PRODUCTION_RESULT_CORRECT",
-        "CONCESSION",
-        "OQC_SKIP",
-        "PQC_SKIP"
+        "CONCESSION"
        ]
       },
       "description": "승인 유형",
@@ -738,7 +735,7 @@
      "app"
     ],
     "summary": "승인 요청 목록",
-    "description": "결재함이 쓰는 목록이다. assignedToMe 는 「approver_id 가 「나」인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — 업무 자원이 승인 요청 식별자를 싣지 않는 경우에는 이것이 유일한 방법이다.\n\n⭐ 부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과 모바일 상신 화면(M-01-13 의 「내가 올린 요청」 구획). 그래서 「나」를 묻는 세 질의(assignedToMe·requestedByMe·myTurnOnly)가 «누구»로 풀리는지가 셸마다 다르다: 관리웹은 계정 토큰에서 서버가 풀고, 현장 단말·모바일은 계정 세션이 없어 X-Worker-No 헤더로 주체를 싣는다(공유계약 D-5·F-2 · 같은 규칙의 선례가 GET /app/notices 의 unacknowledgedByMe 다). ⛔ 단말 토큰으로 풀지 않는다 — 한 단말을 여러 작업자가 «교대로» 쓰므로 남이 올린 요청이 섞인다.\n\n근거: W-CO-09 §3·§5-8 · M-01-13 §4 · omf-mes#335",
+    "description": "결재함이 쓰는 목록이다. assignedToMe 는 「approver_id 가 「나」인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — 업무 자원이 승인 요청 식별자를 싣지 않는 경우에는 이것이 유일한 방법이다.\n\n⭐ 「나」를 묻는 세 질의(assignedToMe·requestedByMe·myTurnOnly)가 «누구»로 풀리는지가 셸마다 다르다: 관리웹은 계정 토큰에서 서버가 풀고, 현장 단말·모바일은 계정 세션이 없어 X-Worker-No 헤더로 주체를 싣는다(공유계약 D-5·F-2 · 같은 규칙의 선례가 GET /app/notices 의 unacknowledgedByMe 다). ⛔ 단말 토큰으로 풀지 않는다 — 한 단말을 여러 작업자가 «교대로» 쓰므로 남이 올린 요청이 섞인다.\n\n근거: W-CO-09 §3·§5-8 · omf-mes#335",
     "parameters": [
      {
       "name": "assignedToMe",
@@ -746,7 +743,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "승인자가 「나」인 요청만 — approver_id 인 단계가 있는 요청이다(공유계약 J-3). ⚠ 승인 화면은 관리웹뿐이라(W-CO-09·W-01-02·W-03-09) 지금은 계정 토큰에서만 풀린다. 현장 셸이 이 질의를 쓰게 되면 requestedByMe 와 같은 규칙으로 X-Worker-No 에 주체를 싣는다"
+      "description": "승인자가 「나」인 요청만 — approver_id 인 단계가 있는 요청이다(공유계약 J-3). ⚠ 승인 화면은 관리웹뿐이라(W-CO-09·W-03-09) 지금은 계정 토큰에서만 풀린다. 현장 셸이 이 질의를 쓰게 되면 requestedByMe 와 같은 규칙으로 X-Worker-No 에 주체를 싣는다"
      },
      {
       "name": "requestedByMe",
@@ -754,7 +751,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "올린 사람이 「나」인 요청만. ⭐ 「나」는 셸마다 다르게 풀린다 — 관리웹은 계정 토큰의 로그인 사용자이고, 현장 단말·모바일은 X-Worker-No 헤더의 «사번»이다(모바일 셸에는 계정 로그인이 없다 · M-CO-01 §2). ⛔ 헤더를 싣지 않으면 서버가 단말로 풀 수밖에 없고, 한 단말을 여러 작업자가 교대로 쓰므로 «남이 올린 요청이 내 목록에 섞인다». 근거: 공유계약 D-5·F-2 · M-01-13 §4 · omf-mes#335"
+      "description": "올린 사람이 「나」인 요청만. ⭐ 「나」는 셸마다 다르게 풀린다 — 관리웹은 계정 토큰의 로그인 사용자이고, 현장 단말·모바일은 X-Worker-No 헤더의 «사번»이다(모바일 셸에는 계정 로그인이 없다 · M-CO-01 §2). ⛔ 헤더를 싣지 않으면 서버가 단말로 풀 수밖에 없고, 한 단말을 여러 작업자가 교대로 쓰므로 «남이 올린 요청이 내 목록에 섞인다». 근거: 공유계약 D-5·F-2 · omf-mes#335"
      },
      {
       "name": "pendingOnly",
@@ -785,11 +782,8 @@
         "GOODS_RECEIPT_CANCEL",
         "GOODS_ISSUE_CANCEL",
         "SHIPMENT_CANCEL",
-        "IQC_SKIP",
         "PRODUCTION_RESULT_CORRECT",
-        "CONCESSION",
-        "OQC_SKIP",
-        "PQC_SKIP"
+        "CONCESSION"
        ]
       },
       "x-code-key": "CD-APPROVAL-TYPE"
@@ -815,10 +809,7 @@
         "INVENTORY_ADJUSTMENT",
         "PURCHASE_ORDER",
         "SHIPMENT",
-        "INBOUND_LOT",
-        "PRODUCTION_RESULT",
-        "SHIPMENT_REQUEST",
-        "WORK_ORDER"
+        "PRODUCTION_RESULT"
        ]
       },
       "description": "업무 화면이 자기 문서의 승인 상태를 찾을 때 targetId 와 함께 쓴다",
@@ -831,7 +822,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "targetTypeCode 의 대상 id. INBOUND_LOT(IQC 생략)은 입하 LOT id 다 — 모바일(M-01-13)의 「진행 중 생략 결재」 확인도 스캔한 LOT 의 입하 LOT id(Lot.inboundLotId)를 싣고, 단말 공장의 입하 LOT 이 아니면 401. 근거: 피처 005 FR-032 · omf-all-around#254"
+      "description": "targetTypeCode 의 대상 id."
      },
      {
       "name": "requestedAtFrom",
@@ -6093,7 +6084,7 @@
      "approvalTypeCode": {
       "x-source-column": "approval_type_code",
       "type": "string",
-      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — **9값이다**(2026-09-04 — 실적 정정 승인이 늘었다). ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 9개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · PRODUCTION_RESULT_CORRECT 작업실적 A급 정정(수불·기간업무시스템 영향 — 2026-08-31 사용자 확정 · 등급은 서버가 판정한다) · IQC_SKIP 긴급 IQC 생략(공유계약 A-16 기확정). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16",
+      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — **9값이다**(2026-09-04 — 실적 정정 승인이 늘었다). ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 9개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · PRODUCTION_RESULT_CORRECT 작업실적 A급 정정(수불·기간업무시스템 영향 — 2026-08-31 사용자 확정 · 등급은 서버가 판정한다). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16",
       "example": "GOODS_ISSUE_DISPOSAL",
       "enum": [
        "GOODS_ISSUE_DISPOSAL",
@@ -6103,11 +6094,8 @@
        "GOODS_RECEIPT_CANCEL",
        "GOODS_ISSUE_CANCEL",
        "SHIPMENT_CANCEL",
-       "IQC_SKIP",
        "PRODUCTION_RESULT_CORRECT",
-       "CONCESSION",
-       "OQC_SKIP",
-       "PQC_SKIP"
+       "CONCESSION"
       ],
       "x-code-key": "CD-APPROVAL-TYPE"
      },
@@ -6177,13 +6165,10 @@
        "GOODS_RECEIPT_CANCEL",
        "GOODS_ISSUE_CANCEL",
        "SHIPMENT_CANCEL",
-       "IQC_SKIP",
        "PRODUCTION_RESULT_CORRECT",
-       "CONCESSION",
-       "OQC_SKIP",
-       "PQC_SKIP"
+       "CONCESSION"
       ],
-      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — **9값이다**(2026-09-04 — 실적 정정 승인이 늘었다). ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 9개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · PRODUCTION_RESULT_CORRECT 작업실적 A급 정정(수불·기간업무시스템 영향 — 2026-08-31 사용자 확정 · 등급은 서버가 판정한다) · IQC_SKIP 긴급 IQC 생략(공유계약 A-16 기확정). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16",
+      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — **9값이다**(2026-09-04 — 실적 정정 승인이 늘었다). ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 9개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · PRODUCTION_RESULT_CORRECT 작업실적 A급 정정(수불·기간업무시스템 영향 — 2026-08-31 사용자 확정 · 등급은 서버가 판정한다). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16",
       "x-code-key": "CD-APPROVAL-TYPE"
      },
      "businessUnitId": {
@@ -6431,7 +6416,7 @@
       "x-source-column": "target_type_code",
       "type": "string",
       "example": "GOODS_ISSUE",
-      "description": "승인 대상 유형. **A-10 다형 참조 판별자**이고 값은 **상신 오퍼레이션이 정한다** — 화면이 고르는 값이 아니라 서버가 채운다(예: `POST /trace/lots/{lotId}:request-iqc-skip` 이 `INBOUND_LOT` 을(targetId = 그 LOT 의 «입하 LOT» id — 피처 005 FR-032), `POST /production/production-results/{productionResultId}:request-approval` 이 `PRODUCTION_RESULT` 를 채운다). 업무 화면이 「이 문서의 승인 상태」를 찾을 때 `GET /app/approval-requests?targetTypeCode=&targetId=` 에 싣는다. ⚠ **`INBOUND_LOT` 이 어느 표를 가리키는지는 아직 정하지 않았다**(`omf-mes-server#74`) — 값은 확정이고 대응 표만 남았다. ⛔ 같은 이름의 다른 자리(`DocumentTarget`·`Attachment`·`AuditEvent`·`MaintenanceOrder`·`InspectionRequest`·`Notification`·`IntegrationMessage`)는 **값 집합이 다르다** — 이 목록을 그쪽에 쓰지 않는다(공유계약 G-32).",
+      "description": "승인 대상 유형. **A-10 다형 참조 판별자**이고 값은 **상신 오퍼레이션이 정한다** — 화면이 고르는 값이 아니라 서버가 채운다(예: `POST /production/production-results/{productionResultId}:request-approval` 이 `PRODUCTION_RESULT` 를 채운다). 업무 화면이 「이 문서의 승인 상태」를 찾을 때 `GET /app/approval-requests?targetTypeCode=&targetId=` 에 싣는다. ⛔ 같은 이름의 다른 자리(`DocumentTarget`·`Attachment`·`AuditEvent`·`MaintenanceOrder`·`InspectionRequest`·`Notification`·`IntegrationMessage`)는 **값 집합이 다르다** — 이 목록을 그쪽에 쓰지 않는다(공유계약 G-32).",
       "enum": [
        "GOODS_ISSUE",
        "GOODS_RECEIPT",
@@ -6439,10 +6424,7 @@
        "INVENTORY_ADJUSTMENT",
        "PURCHASE_ORDER",
        "SHIPMENT",
-       "INBOUND_LOT",
-       "PRODUCTION_RESULT",
-       "SHIPMENT_REQUEST",
-       "WORK_ORDER"
+       "PRODUCTION_RESULT"
       ],
       "x-code-key": "CD-APPROVAL-TARGET-TYPE"
      },
@@ -6461,26 +6443,12 @@
       "type": "string",
       "description": "대상을 여는 화면 ID. 규약이 정해지면 이 값만 바뀐다 — 프런트는 화면 ID → 경로 매핑 하나만 갖는다. ⭐ 첫 확정 규칙 — 특채·한도승인 유형의 요청은 서버가 screenId = \"W-03-09\"(특채·한도승인 승인 처리)를 내린다: 이 유형의 「원문」은 승인 조건 5축이고 그것을 보이는 화면이 W-03-09 다. 근거: omf-mes#194 ⭐ 출하 취소(`SHIPMENT_CANCEL`) 결재는 `W-04-02`(출하 예정 목록 — 그 지시서 상세 「출하」 칸에서 [취소 실행])다. 피처 012 R-7 이 출하 내역(W-04-12) 화면을 없애며 옮겼고, 응답 매핑이라 배포 전 결재도 W-04-02 로 간다.",
       "example": "W-01-06",
-      "x-internal-note": "⚠ description 의 「특채·한도승인 유형의 요청은 서버가 screenId=W-03-09 를 내린다(omf-mes#194)」는 «특채»에서만 근거가 확인된다. 근거로 든 「원문 = 승인 조건 5축」이 한도승인에는 성립하지 않고(W-03-09 §0 — 한도승인은 전용 테이블 없이 approval_request 하나로 성립한다), 한도승인(IQC_SKIP)의 대상은 입하 LOT 이며 전용 승인 화면은 W-01-02 다. 값 목록 확정(omf-mes#145 · W-06-06) 때 함께 가른다."
+      "x-internal-note": "⚠ description 의 「특채·한도승인 유형의 요청은 서버가 screenId=W-03-09 를 내린다(omf-mes#194)」는 «특채»에서만 근거가 확인된다. 근거로 든 「원문 = 승인 조건 5축」이 한도승인에는 성립하지 않고(W-03-09 §0 — 한도승인은 전용 테이블 없이 approval_request 하나로 성립한다). 값 목록 확정(omf-mes#145 · W-06-06) 때 함께 가른다."
      },
      "openable": {
       "type": "boolean",
       "description": "열 화면이 없으면 거짓. 화면은 버튼을 비활성하고 사유를 보인다(공유계약 G-3)",
       "example": true
-     },
-     "targetLotId": {
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "example": 5001,
-      "description": "IQC 생략(approvalTypeCode=IQC_SKIP · targetTypeCode=INBOUND_LOT — targetId 는 입하 LOT id)만 싣는다 — 그 입하 LOT 의 가장 작은 자재 관리 LOT id(서버 계산, 자재 관리 LOT 이 없으면 null). W-01-02 가 실행 경로 POST /trace/lots/{lotId}:skip-iqc 에 이 값을 쓴다 — targetId 를 lotId 로 쓰지 않는다. 다른 유형은 키가 없다. 근거: 피처 005 §11 · omf-all-around#254"
-     },
-     "targetVoided": {
-      "type": "boolean",
-      "description": "IQC 생략(IQC_SKIP) 결재만 — 입하 마감 취소가 이 승인을 무효로 만들었다(실행하면 400 STATE_LOCKED). 다른 결재 유형은 키 없음(피처 005 R-5a · G2 L7)",
-      "example": false
      }
     }
    },
@@ -6575,14 +6543,6 @@
      "isMyTurn"
     ],
     "properties": {
-     "requestedWorkerId": {
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
-     },
      "approvalRequestId": {
       "x-source-column": "approval_request_id",
       "type": "integer",
@@ -6607,13 +6567,10 @@
        "GOODS_RECEIPT_CANCEL",
        "GOODS_ISSUE_CANCEL",
        "SHIPMENT_CANCEL",
-       "IQC_SKIP",
        "PRODUCTION_RESULT_CORRECT",
-       "CONCESSION",
-       "OQC_SKIP",
-       "PQC_SKIP"
+       "CONCESSION"
       ],
-      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — **9값이다**(2026-09-04 — 실적 정정 승인이 늘었다). ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 9개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · PRODUCTION_RESULT_CORRECT 작업실적 A급 정정(수불·기간업무시스템 영향 — 2026-08-31 사용자 확정 · 등급은 서버가 판정한다) · IQC_SKIP 긴급 IQC 생략(공유계약 A-16 기확정). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16",
+      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — **9값이다**(2026-09-04 — 실적 정정 승인이 늘었다). ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 9개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · PRODUCTION_RESULT_CORRECT 작업실적 A급 정정(수불·기간업무시스템 영향 — 2026-08-31 사용자 확정 · 등급은 서버가 판정한다). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16 ⚠ 건별 검사 생략 결재(IQC_SKIP·PQC_SKIP·OQC_SKIP)는 없앴다(omf-all-around#353) — 옛 데이터 정리 마이그레이션이 배포되기 전까지는 옛 결재 행에 남아 실릴 수 있다.",
       "x-code-key": "CD-APPROVAL-TYPE"
      },
      "requestedBy": {
@@ -6624,7 +6581,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."
+      "description": "앱 계정 행위자 ID."
      },
      "requestedByName": {
       "type": "string",

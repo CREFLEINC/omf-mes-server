@@ -605,7 +605,8 @@ describe('DocumentStateService', () => {
       // +3 — 판정 확정 취소의 LOT C29 · IQC 결과 CONFIRMED→DRAFT · 부적합 CANCELLED(피처 005 S9).
       // +1 — 추적 시스템 연동이 세운 계획의 W/O 를 배포 상태에서 마감(flowtrack 연동 결정 17).
       // +1 — POP 출하 완료 출하의 ERP 송신 전 취소 CONFIRMED→CANCELLED(피처 010 · omf-all-around#305).
-      expect(service.registered()).toHaveLength(75);
+      // −3 — 건별 IQC 생략 실행(C22)·생략 무효(C30)·PQC 생략 실행(C28)을 없앴다(omf-all-around#353).
+      expect(service.registered()).toHaveLength(72);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

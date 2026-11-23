@@ -21,8 +21,7 @@ import { InventoryPostingModule, InventoryPostingService } from '../src/core/inv
 import { PostingEndpoint } from '../src/core/inventory-posting/posting.types';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { seedRoute } from './approval-request.fixture';
-import { InboundLotFixture, closeInboundLotFixture, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
+import { InboundLotFixture, issueAndReceive, terminalAuth } from './support/inbound-lot-fixture';
 
 const LOGIN_ID = 'e2e-lot-probe';
 const NOPERM_ID = 'e2e-lot-noperm';
@@ -37,7 +36,7 @@ const PREFIX = 'LOTE2E';
 const ITEM_CODE = '040101-00022S';
 const SUPPLIER_CODE = '100019';
 const ROLE = 'E2E_LOT';
-const PERMISSIONS = ['M-01-02', 'P-01-01', 'M-01-04', 'M-01-13'];
+const PERMISSIONS = ['M-01-02', 'P-01-01', 'M-01-04'];
 const DAY = '2026-05-01';
 const TZ = 'Asia/Ho_Chi_Minh';
 const WORKER_NO = `${PREFIX}-W1`;
@@ -72,9 +71,7 @@ describe('LOT (e2e)', () => {
   let posting: InventoryPostingService;
   let cookie: string[];
   let noPermCookie: string[];
-  // PR ② — 상신 주체와 `IQC_SKIP` 결재선(DB 에 0행이라 픽스처가 세운다 · 시드는 안 고친다).
   let probeUserId: bigint;
-  let iqcRouteId: bigint;
 
   let plantId: number;
   let itemId: number;
@@ -99,7 +96,6 @@ describe('LOT (e2e)', () => {
     await cleanup();
     await makeUsers();
     await makeMasters();
-    iqcRouteId = await seedRoute(prisma, 'IQC_SKIP', [probeUserId]);
     fx = {
       app, issuer: terminalAuth(await terminalToken('POP'), WORKER_NO), receiver: terminalAuth(await terminalToken('MOBILE'), WORKER_NO),
       businessDate: localDate(new Date(), TZ), keys,
@@ -556,89 +552,7 @@ describe('LOT (e2e)', () => {
     });
   });
 
-  it('⭐ IQC 생략 요청은 202 다 — 다형 축 세 칸이 서고 LOT 은 그대로다', async () => {
-    // 대상은 그 LOT 의 입하 LOT 이고 입하 마감된 것만 요청한다(FR-032).
-    const lot = await closedLot();
-    const versionBefore = (await prisma.lot.findUniqueOrThrow({ where: { lot_id: lot.lotId } })).version_no;
-
-    const accepted = await requestIqcSkip(lot.lotId).expect(202);
-    const validate = validator('POST /trace/lots/{lotId}:request-iqc-skip', 202);
-    expect(validate(accepted.body)).toBe(true);
-    expect(validate.errors ?? []).toEqual([]);
-
-    const row = await prisma.approval_request.findUniqueOrThrow({
-      where: { approval_request_id: BigInt(accepted.body.approvalRequestId) },
-    });
-    expect(row).toMatchObject({
-      approval_type_code: 'IQC_SKIP',
-      target_type_code: 'INBOUND_LOT',
-      target_id: BigInt(lot.inboundLotId as number),
-      status_code: 'PENDING',
-      requested_by: probeUserId,
-    });
-    // ⛔ 대상 행에 아무것도 안 쓴다 — 승인 FK 칸이 없고 202 에 ETag 도 없다.
-    const after = await prisma.lot.findUniqueOrThrow({ where: { lot_id: lot.lotId } });
-    expect(after.version_no).toBe(versionBefore);
-    // ⛔ 「진행 중 요청은 하나」 — 코어가 두 번째 상신을 막는다.
-    const twice = await requestIqcSkip(lot.lotId).expect(400);
-    expect(twice.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
-  });
-
-  it('⛔ 사번 헤더가 없으면 400 REQUIRED · 결재선이 없으면 400 ROUTE_NOT_FOUND 다', async () => {
-    const lot = await closedLot();
-
-    const noWorker = await requestIqcSkip(lot.lotId, { workerNo: null }).expect(400);
-    expect(noWorker.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
-
-    // §3-3 7행 — 없는 LOT 은 404 다. 이 갈래를 지우면 자격 검사가 null 을 만나 500 이 샌다.
-    await requestIqcSkip(999999999).expect(404);
-
-    // 결재선을 잠시 내린다 — 오늘 DB 에 `IQC_SKIP` 결재선이 0행이라 이 400 이 기본값이다.
-    // ⚠ 되돌리기는 `finally` 다 — 중간에 깨지면 뒤의 상신 테스트가 통째로 400 이 된다.
-    await setRouteActive(false);
-    try {
-      const noRoute = await requestIqcSkip(lot.lotId).expect(400);
-      expect(noRoute.body.errors[0]).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
-    } finally {
-      await setRouteActive(true);
-    }
-  });
-
-  it('⭐ 자격 두 축은 «서로 다른» 코드로 갈린다 — 원천 INVALID · 상태 STATE_LOCKED', async () => {
-    const notInbound = await newLot();
-    await prisma.lot.update({
-      where: { lot_id: notInbound.lotId },
-      data: { source_type_code: 'WORK_ORDER' },
-    });
-    const notPending = await newLot();
-    await prisma.lot.update({
-      where: { lot_id: notPending.lotId },
-      data: { status_code: 'NORMAL' },
-    });
-
-    // 두 LOT 을 다 세운 «뒤» 채번 카운터를 집는다 — LOT 채번은 여기 셈에서 빠져야 한다.
-    const counters = async () =>
-      (await prisma.numbering_counter.aggregate({ _sum: { last_value: true } }))._sum.last_value ??
-      0n;
-    const before = await counters();
-
-    const bySource = await requestIqcSkip(notInbound.lotId).expect(400);
-    expect(bySource.body.errors[0]).toMatchObject({ field: 'lotId', code: 'INVALID' });
-
-    const byStatus = await requestIqcSkip(notPending.lotId).expect(400);
-    expect(byStatus.body.errors[0]).toMatchObject({ field: 'lotId', code: 'STATE_LOCKED' });
-
-    // ⭐ 결번도 없다 — 채번을 자격 검사 «위»로 옮기면 카운터가 2 올라 여기서 깨진다
-    //    (계획 §3-1 3 · I-24 R-6). 행 개수만 세면 채번 순서를 못 본다.
-    expect(await counters()).toBe(before);
-    expect(
-      await prisma.approval_request.count({
-        where: { target_type_code: 'INBOUND_LOT', target_id: BigInt(notInbound.lotId) },
-      }),
-    ).toBe(0);
-  });
-
-  it('⛔ 권한이 없으면 쓰기 둘 다 403 이다', async () => {
+  it('⛔ 권한이 없으면 외부식별자 치환이 403 이다', async () => {
     const lot = await newLot();
     const etag = await etagOf(lot.lotId);
 
@@ -649,8 +563,6 @@ describe('LOT (e2e)', () => {
       .set('If-Match', etag)
       .send({ items: [] })
       .expect(403);
-
-    await requestIqcSkip(lot.lotId, { as: noPermCookie }).expect(403);
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
@@ -719,16 +631,6 @@ describe('LOT (e2e)', () => {
       await putIdentifiers(lotId, await etagOf(lotId), externalIdentifiers).expect(200);
     }
     return (await detailOf(lotId)).lot;
-  }
-
-  /** 입하 마감된 입하 LOT 의 자재 관리 LOT — IQC 생략은 마감된 입하 LOT 만 요청한다(FR-032). */
-  async function closedLot(): Promise<LotBody> {
-    // 앞 시험의 LOT 들이 붙은 입하 중 입하 LOT 을 먼저 마감한다 — 이 LOT 하나만의 입하 LOT 을 세운다.
-    const open = await prisma.inbound_lot.findFirst({ where: { supplier_id: BigInt(supplierId), item_id: BigInt(itemId), status_code: 'RECEIVING' } });
-    if (open !== null) await closeInboundLotFixture(fx, Number(open.inbound_lot_id));
-    const lot = await newLot();
-    await closeInboundLotFixture(fx, lot.inboundLotId as number);
-    return (await detailOf(lot.lotId)).lot;
   }
 
   async function countsOfPlant(): Promise<number[]> {
@@ -800,26 +702,6 @@ describe('LOT (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     return response.body;
-  }
-
-  async function setRouteActive(isActive: boolean): Promise<void> {
-    await prisma.approval_route.update({
-      where: { approval_route_id: iqcRouteId },
-      data: { is_active: isActive },
-    });
-  }
-
-  /** ⚠ `workerNo: null` 이면 헤더를 아예 안 보낸다 — 그 자리가 400 `REQUIRED` 다. */
-  function requestIqcSkip(
-    lotId: number,
-    opts: { workerNo?: string | null; as?: string[] } = {},
-  ): request.Test {
-    const call = request(app.getHttpServer())
-      .post(`/api/trace/lots/${lotId}:request-iqc-skip`)
-      .set('Cookie', opts.as ?? cookie)
-      .set('Idempotency-Key', key());
-    if (opts.workerNo !== null) call.set('X-Worker-No', opts.workerNo ?? 'W-0001');
-    return call.send({ reason: '긴급 출하분 IQC 생략' });
   }
 
   async function list(query: string): Promise<{ items: LotBody[] }> {

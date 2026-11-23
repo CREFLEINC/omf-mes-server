@@ -1,7 +1,7 @@
 import type { Request } from 'express';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { assertTerminalAppReadScope, currentTerminalApprovalListScope } from './terminal-app-read-scope';
+import { assertTerminalAppReadScope } from './terminal-app-read-scope';
 
 const terminal = { terminalId: 7n, terminalCode: 'POP-7', plantId: 3n,
   terminalTypeCode: 'POP', equipmentId: 5n };
@@ -170,31 +170,5 @@ describe('POP app read scope', () => {
     await expect(assertTerminalAppReadScope(prisma,
       request({ targetTypeCode: 'SHIPMENT_LOT_ALLOCATION', targetId: '71' }),
       'GET /app/document-issues', terminal)).rejects.toMatchObject({ status: 401 });
-  });
-});
-
-describe('MOBILE approval list scope', () => {
-  const mobile = { ...terminal, terminalTypeCode: 'MOBILE' };
-  const prisma = {
-    inbound_lot: { findFirst: jest.fn().mockResolvedValue({ inbound_lot_id: 43n }) },
-    worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 9n }) },
-  } as unknown as PrismaService;
-
-  it('binds the pending query to an inbound LOT in the terminal plant', async () => {
-    const req = request({ targetTypeCode: 'INBOUND_LOT', targetId: '43', pendingOnly: 'true', size: '1' });
-    await assertTerminalAppReadScope(prisma, req, 'GET /app/approval-requests', mobile);
-    expect(currentTerminalApprovalListScope(req)).toEqual({ plantId: 3n, inboundLotId: 43n });
-    (prisma.inbound_lot.findFirst as jest.Mock).mockResolvedValueOnce(null);
-    await expect(assertTerminalAppReadScope(prisma, request({ targetTypeCode: 'INBOUND_LOT', targetId: '44', pendingOnly: 'true', size: '1' }),
-      'GET /app/approval-requests', mobile)).rejects.toMatchObject({ status: 401 });
-  });
-
-  it('requires an active same-plant worker for my requests', async () => {
-    const req = request({ requestedByMe: 'true', size: '20' });
-    req.headers = { 'x-worker-no': 'W-9' };
-    await assertTerminalAppReadScope(prisma, req, 'GET /app/approval-requests', mobile);
-    expect(currentTerminalApprovalListScope(req)).toEqual({ plantId: 3n, workerId: 9n });
-    await expect(assertTerminalAppReadScope(prisma, request({ requestedByMe: 'true' }),
-      'GET /app/approval-requests', mobile)).rejects.toMatchObject({ status: 401 });
   });
 });

@@ -29,10 +29,8 @@ import {
   LotExternalIdentifierUpsert,
 } from './lot-external-identifier.service';
 import { LotHoldListService } from './lot-hold-list.service';
-import { LotIqcSkipExecuteService } from './lot-iqc-skip-execute.service';
 import { InputMaterials, LotGenealogyQueryService, UsedSerials } from './lot-genealogy-query.service';
 import { LotImpactService, type AffectedProductionLots } from './lot-impact.service';
-import { IqcSkipRequested, LotIqcSkipService } from './lot-iqc-skip.service';
 import { bool } from './lot-rules';
 import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
 import { LotCreate, LotQuery, LotService, LotUpdate } from './lot.service';
@@ -47,8 +45,6 @@ export class LotController {
     private readonly idempotency: IdempotencyService,
     private readonly externalIdentifiers: LotExternalIdentifierService,
     private readonly holdList: LotHoldListService,
-    private readonly iqcSkips: LotIqcSkipService,
-    private readonly iqcSkipExecutes: LotIqcSkipExecuteService,
     private readonly impacts: LotImpactService,
     private readonly genealogy: LotGenealogyQueryService,
   ) {}
@@ -185,45 +181,6 @@ export class LotController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
       this.externalIdentifiers.replace(lotId, version, body.items, appUserId),
     );
-  }
-
-  /**
-   * ⭐ 202 다 — 요청을 «접수»할 뿐 결재는 결재함이 한다. 승인 유형·대상은 서버가 낸다(본문 미수신).
-   * ⛔ If-Match 를 안 읽는다(계약에 없다) · ⛔ `setEtag` 를 안 부른다.
-   */
-  @Post(':lotId\\:request-iqc-skip')
-  @Contract('POST /trace/lots/{lotId}:request-iqc-skip')
-  @HttpCode(HttpStatus.ACCEPTED)
-  requestIqcSkip(
-    @Req() request: Request,
-    @Param('lotId', ParseIntPipe) lotId: number,
-    @Body() body: { reason: string },
-  ): Promise<IqcSkipRequested> {
-    // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:96`) — 사번의 필수 판정은 서비스 몫이다.
-    const workerNo = request.headers['x-worker-no'];
-    const actor = lotWriteActorOf(request, 'POST /trace/lots/{lotId}:request-iqc-skip');
-    const context = {
-      workerNo: typeof workerNo === 'string' ? workerNo : undefined,
-      ...actor,
-    };
-    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
-      this.iqcSkips.requestSkip(lotId, body.reason, context),
-    );
-  }
-
-  /**
-   * 승인된 IQC 생략의 실행(omf-all-around#105 · 장부 P-36) — 결재함(W-01-02)의 계정 조작이다.
-   * ⛔ If-Match 를 안 읽는다 — 대상 LOT 을 잠근 뒤 상태로 판정한다(같은 LOT 의 두 번째 실행은 400).
-   */
-  @Post(':lotId\\:skip-iqc')
-  @Contract('POST /trace/lots/{lotId}:skip-iqc')
-  @HttpCode(HttpStatus.OK)
-  skipIqc(@Req() request: Request, @Param('lotId', ParseIntPipe) lotId: number): Promise<unknown> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      const executed = await this.iqcSkipExecutes.execute(lotId, appUserId);
-      return { ...(await this.lots.get(lotId, false)).detail, ...executed };
-    });
   }
 }
 

@@ -67,7 +67,6 @@ describe('오퍼레이션 권한 매핑', () => {
     // 테스트용 ERP W/O 등록 1건(장부 P-30) — `W-02-01` 소유다: 258.
     // 재작업 W/O 발행 1건(장부 P-33) — `W-03-10` 소유다: 259.
     // 계정-작업자 연결 치환 1건(장부 P-38) — `W-CO-02` 소유다: 260.
-    // IQC 생략 실행 1건(장부 P-36) — `W-01-02` 소유다: 261.
     // 불량 기록 등록 1건(장부 P-42) — `W-01-01` 소유다: 262.
     // 품목 설비·금형 매핑 등록·수정 2건(장부 P-61) — `W-06-05` 소유다: 264.
     // ERP W/O 자동 계획 재시도 1건(장부 P-67) — `W-02-01`·`W-02-02` 소유다: 265.
@@ -143,7 +142,9 @@ describe('오퍼레이션 권한 매핑', () => {
     // 지시서 코드 해석 403 BUSINESS_UNIT_MISMATCH(피처 012 FR-013): 389.
     // 생산 LOT 분리 스캔 조회·분리·목록 3 — `P-04-08`·`M-04-05`(피처 013 · omf-all-around#303): 392.
     // PDA 분리 확인 1 — `M-04-05`(피처 013): 393.
-    expect(declares403).toHaveLength(393);
+    // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 391.
+    // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 387.
+    expect(declares403).toHaveLength(387);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
@@ -157,12 +158,10 @@ describe('오퍼레이션 권한 매핑', () => {
    * 요구서 §3 에서 나오므로 계약 description 만 아는 셸은 잡히지 않는다 — 통보 181·189 가
    * 그 사고 둘이다. 수동표에 넣어도 «아무것도 그것을 지키지 않아» 지우면 그대로 사라진다.
    */
-  it('⛔ 결재함 목록에 계약이 이름 적은 호출 셸 넷이 전부 있다 — 통보 189', () => {
-    // `get.description` 「부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과 모바일 상신 화면
-    // (M-01-13 의 「내가 올린 요청」 구획)」 · `assignedToMe` 「승인 화면은 관리웹뿐이라
-    // (W-CO-09·W-01-02·W-03-09)」.
+  it('⛔ 결재함 목록에 계약이 이름 적은 호출 셸이 전부 있다 — 통보 189', () => {
+    // `assignedToMe` 「승인 화면은 관리웹뿐이라(W-CO-09·W-03-09)」.
     expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(
-      expect.arrayContaining(['W-CO-09', 'M-01-13', 'W-01-02', 'W-03-09']),
+      expect.arrayContaining(['W-CO-09', 'W-03-09']),
     );
   });
 
@@ -195,11 +194,10 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(OPERATION_PERMISSIONS['POST /logistics/inbound-receipts:per-line']).toEqual(['M-01-01', 'W-01-03']);
   });
 
-  // 결재 화면(W-03-09)에서 승인한 뒤 실행 · 적용까지 잇는다 — IQC 생략 실행과 같은 짜임(장부 P-127 · omf-all-around#193).
-  it('⛔ OQC 생략 실행 · 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
+  // 결재 화면(W-03-09)에서 승인한 뒤 적용까지 잇는다(장부 P-127 · omf-all-around#193).
+  it('⛔ 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
     // 순서는 도출표와 수동 표를 합친 차례라 뜻이 없다 — 화면 집합으로 본다.
     const screensOf = (operation: string): string[] => [...(OPERATION_PERMISSIONS[operation] ?? [])].sort();
-    expect(screensOf('POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc')).toEqual(['W-03-09', 'W-04-03']);
     expect(screensOf('POST /quality/concessions/{concessionId}:apply')).toEqual(['W-03-09', 'W-03-10']);
   });
 

@@ -459,31 +459,6 @@ describe('피처 005 S12 — W-01-16 배정 수정·최종 마감·불변 (e2e)'
     expect((all.body.page as { totalElements?: number; total?: number }).totalElements ?? all.body.items.length).toBeGreaterThanOrEqual(90);
   });
 
-  it('R-5a·R-16 승인됐지만 실행 전인 IQC 생략 결재도 마감 취소가 무효로 만든다 — 다시 마감한 뒤 :skip-iqc 는 400 STATE_LOCKED, 검사는 그대로', async () => {
-    const { inboundLot, lots } = await issueAndReceive(fx, batch(ids.s14, 2, 5));
-    await closeInboundLotFixture(fx, inboundLot.inboundLotId);
-    const approval = await prisma.approval_request.create({
-      data: {
-        approval_request_no: `${PREFIX}-SKIP-${String(inboundLot.inboundLotId)}`, approval_type_code: 'IQC_SKIP', target_type_code: 'INBOUND_LOT',
-        target_id: BigInt(inboundLot.inboundLotId), requested_by: ids.user, requested_at: new Date(), status_code: 'APPROVED', reason: '긴급 생산',
-      },
-    });
-    await post(`${LOTS}/${String(inboundLot.inboundLotId)}:reopen-receipt`).send({ versionNo: await versionOf(inboundLot.inboundLotId) }).expect(200);
-    const voided = await prisma.approval_request.findUniqueOrThrow({ where: { approval_request_id: approval.approval_request_id } });
-    expect(voided).toMatchObject({ status_code: 'APPROVED', target_summary: expect.objectContaining({ voidedBy: 'RECEIPT_REOPENED' }) });
-    // W-01-02 가 [실행]을 감추도록 결재 상세 대상에 무효 표시(G2 L7).
-    const detail = await get(`/api/app/approval-requests/${String(approval.approval_request_id)}`).expect(200);
-    expect(detail.body.request.target).toMatchObject({ targetTypeCode: 'INBOUND_LOT', targetVoided: true });
-
-    await closeInboundLotFixture(fx, inboundLot.inboundLotId);
-    const skipped = await post(`/api/trace/lots/${String(lots[0].lotId)}:skip-iqc`).send({}).expect(400);
-    expect(skipped.body.errors).toEqual([expect.objectContaining({ code: 'STATE_LOCKED', message: expect.stringContaining('무효') })]);
-    const current = await prisma.inspection_request.findFirstOrThrow({ where: { inbound_lot_id: BigInt(inboundLot.inboundLotId), status_code: { not: 'CANCELLED' } } });
-    expect(current.status_code).toBe('REQUESTED');
-    const statuses = await prisma.lot.findMany({ where: { inbound_lot_id: BigInt(inboundLot.inboundLotId) }, select: { status_code: true } });
-    expect(statuses.map((row) => row.status_code)).toEqual(['INSPECTION_PENDING', 'INSPECTION_PENDING']);
-  });
-
   // ── 도우미 ─────────────────────────────────────────────────────
 
   function batch(supplier: bigint, lotCount: number, lotQty: number): Parameters<typeof issueAndReceive>[1] {
