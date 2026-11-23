@@ -516,11 +516,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 결과 기록(W-01-01)만 가진 검사자는 확정·취소를 못 한다(US4-7).
   'POST /quality/inspection-requests/{inspectionRequestId}:confirm': ['W-01-15'],
   'POST /quality/inspection-requests/{inspectionRequestId}:cancel-confirm': ['W-01-15'],
-  // 특채 요청·적용(omf-all-around#84 · 장부 P-79) — 처분 판정 처리(W-03-10)가 그 부적합에서 만든다.
-  // 승인은 결재 경로(W-03-09)의 몫이라 여기 적지 않는다.
+  // 특채 저장(omf-all-around#84 · 장부 P-79) — 처분 판정 처리(W-03-10)가 그 부적합에서 만들고 바로 적용한다(omf-all-around#352).
   'POST /quality/concessions': ['W-03-10'],
-  // 적용은 결재 화면 W-03-09 에서도 한다 — IQC·OQC 생략 실행과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
-  'POST /quality/concessions/{concessionId}:apply': ['W-03-10', 'W-03-09'],
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],

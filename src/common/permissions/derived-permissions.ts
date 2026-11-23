@@ -25,12 +25,16 @@
  *
  * ⚠ 2026-11-18 — POP 생산 포장(P-02-08)·포장 라벨 재출력(P-02-09)·PQC 제품 검사(P-02-13) 화면을 없앴다
  * (사용자 결정 · omf-all-around#293). 그 화면 몫을 손으로 뺐다. 다시 돌리면 되살아난다.
+ *
+ * ⚠ 2026-11-23 — 품질 승인 처리(W-03-09) 화면을 없앴다(특채 결재 제거 · 사용자 결정 · omf-all-around#352). 그 화면 몫을
+ * 손으로 뺐다. 승인·반려·결재 상세는 그 화면만 적혀 있었다 — 실제로 부르는 결재함(W-CO-09)과 결재 상세를 읽는
+ * 화면들(W-01-06·W-01-12·W-01-13·W-04-02·W-04-10)로 옮겼다. 다시 돌리면 되살아난다.
  */
 export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /app/sessions/current': ['W-CO-01'],
   'DELETE /planning/production-plans/{productionPlanId}': ['W-02-02'],
-  'GET /app/approval-requests': ['W-01-13', 'W-03-09', 'W-CO-09'],
-  'GET /app/approval-requests/{approvalRequestId}': ['W-03-09'],
+  'GET /app/approval-requests': ['W-01-13', 'W-CO-09'],
+  'GET /app/approval-requests/{approvalRequestId}': ['W-01-06', 'W-01-12', 'W-01-13', 'W-04-02', 'W-04-10', 'W-CO-09'],
   'GET /app/approval-routes': ['W-01-06', 'W-04-10'],
   'GET /app/attachments/{attachmentId}/content': ['W-CO-08'],
   'GET /app/document-issues': ['P-04-02', 'P-04-04', 'W-05-13'],
@@ -93,7 +97,7 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /maintenance/orders': ['W-05-03', 'W-05-06'],
   'GET /mdm/business-units': ['W-06-23'],
   'GET /mdm/code-groups': ['W-06-20'],
-  'GET /mdm/code-values': ['M-01-01', 'M-01-04', 'M-01-05', 'M-01-06', 'M-01-07', 'M-01-08', 'M-01-09', 'M-01-10', 'M-01-11', 'M-04-03', 'M-04-04', 'M-05-02', 'M-CO-01', 'P-01-01', 'P-02-01', 'P-02-02', 'P-02-03', 'P-02-04', 'P-02-06', 'P-02-07', 'P-02-10', 'P-02-11', 'P-04-01', 'P-04-04', 'P-05-01', 'P-05-02', 'W-01-01', 'W-01-03', 'W-01-04', 'W-01-05', 'W-01-06', 'W-01-07', 'W-01-10', 'W-01-12', 'W-01-13', 'W-02-01', 'W-02-02', 'W-02-04', 'W-02-05', 'W-02-06', 'W-02-07', 'W-02-08', 'W-02-10', 'W-03-01', 'W-03-02', 'W-03-03', 'W-03-05', 'W-03-09', 'W-04-01', 'W-04-02', 'W-04-03', 'W-04-06', 'W-04-07', 'W-04-08', 'W-04-10', 'W-04-11', 'W-04-12', 'W-05-04', 'W-05-05', 'W-05-06', 'W-05-09', 'W-05-11', 'W-05-12', 'W-05-13', 'W-06-01', 'W-06-02', 'W-06-04', 'W-06-05', 'W-06-06', 'W-06-07', 'W-06-09', 'W-06-10', 'W-06-11', 'W-06-17', 'W-06-18', 'W-06-20', 'W-06-21', 'W-06-22', 'W-06-23', 'W-CO-02', 'W-CO-06', 'W-CO-09'],
+  'GET /mdm/code-values': ['M-01-01', 'M-01-04', 'M-01-05', 'M-01-06', 'M-01-07', 'M-01-08', 'M-01-09', 'M-01-10', 'M-01-11', 'M-04-03', 'M-04-04', 'M-05-02', 'M-CO-01', 'P-01-01', 'P-02-01', 'P-02-02', 'P-02-03', 'P-02-04', 'P-02-06', 'P-02-07', 'P-02-10', 'P-02-11', 'P-04-01', 'P-04-04', 'P-05-01', 'P-05-02', 'W-01-01', 'W-01-03', 'W-01-04', 'W-01-05', 'W-01-06', 'W-01-07', 'W-01-10', 'W-01-12', 'W-01-13', 'W-02-01', 'W-02-02', 'W-02-04', 'W-02-05', 'W-02-06', 'W-02-07', 'W-02-08', 'W-02-10', 'W-03-01', 'W-03-02', 'W-03-03', 'W-03-05', 'W-04-01', 'W-04-02', 'W-04-03', 'W-04-06', 'W-04-07', 'W-04-08', 'W-04-10', 'W-04-11', 'W-04-12', 'W-05-04', 'W-05-05', 'W-05-06', 'W-05-09', 'W-05-11', 'W-05-12', 'W-05-13', 'W-06-01', 'W-06-02', 'W-06-04', 'W-06-05', 'W-06-06', 'W-06-07', 'W-06-09', 'W-06-10', 'W-06-11', 'W-06-17', 'W-06-18', 'W-06-20', 'W-06-21', 'W-06-22', 'W-06-23', 'W-CO-02', 'W-CO-06', 'W-CO-09'],
   'GET /mdm/equipment-inspection-items': ['W-05-12'],
   'GET /mdm/equipments': ['M-05-01', 'M-05-02', 'W-05-10', 'W-05-11'],
   'GET /mdm/equipments/{equipmentId}': ['W-05-12'],
@@ -131,7 +135,7 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /production/work-orders': ['M-02-01', 'M-02-02', 'P-02-01', 'P-02-12', 'P-04-03', 'W-02-02', 'W-02-04', 'W-02-05', 'W-02-06', 'W-02-07', 'W-02-08', 'W-02-10', 'W-CO-04'],
   'GET /production/work-orders/{workOrderId}': ['P-02-04', 'W-02-03', 'W-02-05', 'W-02-06', 'W-02-08'],
   'GET /production/work-orders/{workOrderId}/validation': ['W-02-03'],
-  'GET /quality/concessions': ['W-03-09'],
+  'GET /quality/concessions': ['W-03-10'],
   'GET /quality/defect-codes': ['W-06-03'],
   'GET /quality/defect-records': ['M-02-02'],
   'GET /quality/defect-records/distribution': ['W-03-05'],
@@ -152,13 +156,13 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'GET /quality/lot-status-transitions': ['W-03-02'],
   'GET /quality/lot-statuses': ['W-03-01', 'W-03-02', 'W-03-03', 'W-04-08', 'W-04-11'],
   'GET /quality/nonconformances': ['W-04-07', 'W-04-11'],
-  'GET /quality/nonconformances/{nonconformanceId}': ['W-03-09', 'W-04-07'],
+  'GET /quality/nonconformances/{nonconformanceId}': ['W-04-07'],
   'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['P-04-03'],
   'GET /trace/lots': ['M-01-04', 'M-02-01', 'M-02-02', 'M-04-01', 'P-02-03', 'P-02-04', 'W-01-01', 'W-01-10', 'W-01-13', 'W-02-05', 'W-04-05'],
   'GET /trace/lots/{lotId}': ['M-04-04', 'P-04-04', 'W-03-01', 'W-04-08'],
   'GET /trace/serial-numbers': ['P-02-05', 'P-02-12', 'P-04-04'],
-  'POST /app/approval-requests/{approvalRequestId}:approve': ['W-03-09'],
-  'POST /app/approval-requests/{approvalRequestId}:reject': ['W-03-09'],
+  'POST /app/approval-requests/{approvalRequestId}:approve': ['W-CO-09'],
+  'POST /app/approval-requests/{approvalRequestId}:reject': ['W-CO-09'],
   'POST /app/approval-routes': ['W-06-15'],
   'POST /app/attachments': ['W-CO-08'],
   'POST /app/document-issues': ['P-01-01', 'P-01-02', 'P-02-05', 'P-02-07', 'P-04-02', 'W-05-13', 'W-06-07'],

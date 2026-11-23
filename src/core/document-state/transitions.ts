@@ -319,7 +319,7 @@ export const TRANSITIONS: TransitionRegistry = {
     // ── 특채 적용(omf-all-around#84 · 장부 P-79) — 승인된 특채가 불합격 LOT 을 조건부로 쓰게 연다 ──
     // ⚠ `from` 은 처분 셋과 같다 — IQC 불합격(C6)은 `DEFECTIVE`, 보류 판정은 `INSPECTION_PENDING` 으로 온다.
     'concession-apply': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'NORMAL',
-      transitionCode: 'C25', sourceOperation: 'POST /quality/concessions/{concessionId}:apply' },
+      transitionCode: 'C25', sourceOperation: 'POST /quality/concessions' },
   },
 
   /**

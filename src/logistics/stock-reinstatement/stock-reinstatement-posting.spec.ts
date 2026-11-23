@@ -50,6 +50,7 @@ interface Seed {
   afterStatus?: string;
   /** 특채 결정(#207)의 적용된 특채 승인 수량 — null 이면 적용된 특채가 없다. */
   concessionQty?: number | null;
+  approvalRequestId?: bigint | null;
 }
 
 function build(seed: Seed = {}) {
@@ -59,6 +60,7 @@ function build(seed: Seed = {}) {
   const lineUpdates: Row[] = [];
   const releases: { target: Row; input: Row }[] = [];
   const moves: { action: string; ctx: Row }[] = [];
+  const concessionWheres: Row[] = [];
   const holdQty = seed.hold === undefined ? 10 : seed.hold?.hold_qty;
 
   const tx = {
@@ -69,7 +71,8 @@ function build(seed: Seed = {}) {
           disposition_type_code: seed.disposition ?? 'NORMAL',
           decision_qty: new Prisma.Decimal(seed.decisionQty ?? 10),
           uom_id: BigInt(seed.decisionUom ?? UOM),
-          approval_request_id: 88n,
+          nonconformance_id: 77n,
+          approval_request_id: seed.approvalRequestId === undefined ? 88n : seed.approvalRequestId,
           nonconformance: { nonconformance_lot: seed.inDecision === false ? [{ lot_id: 9999n }] : [{ lot_id: LOT }] },
         });
       },
@@ -95,8 +98,9 @@ function build(seed: Seed = {}) {
       );
     },
     concession: {
-      findFirst: () => {
+      findFirst: (args: { where: Row }) => {
         order.push('concession');
+        concessionWheres.push(args.where);
         return Promise.resolve(seed.concessionQty == null ? null : { approved_qty: new Prisma.Decimal(seed.concessionQty) });
       },
     },
@@ -168,7 +172,7 @@ function build(seed: Seed = {}) {
   } as unknown as InventoryPostingService;
 
   const deps: ReinstatementDeps = { posting, holds, lots };
-  return { tx, deps, order, posted, created, lineUpdates, releases, moves };
+  return { tx, deps, order, posted, created, lineUpdates, releases, moves, concessionWheres };
 }
 
 const body = (over: Partial<StockReinstatementCreate> = {}): StockReinstatementCreate => ({
@@ -319,6 +323,18 @@ describe('postStockReinstatement — 한 트랜잭션', () => {
       expect(order).toEqual(['lockLot', 'decision', 'concession', 'sumReinstated', 'lockBalances', 'transfer.create', 'post', 'line.update']);
       expect(posted[0].lines[0].to).toMatchObject({ qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE' });
       expect(view).toMatchObject({ releasedLotHoldId: null, remainingHeldQty: null, reinstatedQty: 6 });
+    });
+
+    // 결재를 거친 옛 특채는 한 부적합에 여럿일 수 있다(일부 특채) — 판정의 결재로 고른다. 새 특채는 결재가 없다(#352).
+    it('⭐ 특채는 판정과 같은 부적합 · 같은 결재(새 특채는 null)로 고른다', async () => {
+      const legacy = build({ disposition: 'CONCESSION', concessionQty: 6, available: 6 });
+      const direct = build({ disposition: 'CONCESSION', concessionQty: 6, available: 6, approvalRequestId: null });
+
+      await postStockReinstatement(legacy.tx, legacy.deps, write({ ...concession, qty: 6 }));
+      await postStockReinstatement(direct.tx, direct.deps, write({ ...concession, qty: 6 }));
+
+      expect(legacy.concessionWheres[0]).toMatchObject({ nonconformance_id: 77n, approval_request_id: 88n, lot_id: LOT });
+      expect(direct.concessionWheres[0]).toMatchObject({ nonconformance_id: 77n, approval_request_id: null, lot_id: LOT });
     });
 
     it('⛔ 한도는 판정 수량(남은 수량 전체)이 아니라 특채 승인 수량이다', async () => {

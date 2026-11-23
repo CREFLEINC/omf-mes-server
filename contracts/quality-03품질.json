@@ -158,8 +158,8 @@
     "tags": [
      "quality"
     ],
-    "summary": "특채 요청",
-    "description": "부적합의 불합격 LOT 을 조건부로 쓰겠다고 결재를 올린다. 특채(PENDING)와 결재 요청(approvalTypeCode=CONCESSION · 대상 NONCONFORMANCE — 결재는 늘 1건)을 한 번에 만든다 — 승인은 W-03-09(POST /app/approval-requests/{id}:approve), 적용은 :apply 다. 사용 가능 수량은 그 부적합의 남은 수량과 같아야 한다(일부 특채 제거 — FR-038). lotId 를 비우면 부적합 LOT 마다 특채 행(lot_id = 그 LOT · approvedQty = 그 LOT 의 부적합 수량)이 같은 결재로 묶여 선다(D-14). 응답은 첫 행 + concessionIds(묶음 전부)·approvalRequestId. 결재선이 없으면 400 ROUTE_NOT_FOUND. 근거: omf-all-around#84 (서버 선행 · 장부 P-79) · 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
+    "summary": "특채 저장",
+    "description": "부적합의 불합격 LOT 을 조건부로 쓰도록 특채를 저장하고 «바로 적용»한다 — 결재를 거치지 않는다(omf-all-around#352 사용자 결정 2026-11-23 · 결재 요청·승인·:apply 제거). 한 트랜잭션에서 특채(APPROVED)·처분 판정 CONCESSION 1건·LOT 정상(C25)·수입검사 대기 보류 해제·부적합 종결을 만든다. 사용 가능 수량은 그 부적합의 남은 수량과 같아야 한다(일부 특채 제거 — FR-038). lotId 를 비우면 부적합 LOT 마다 특채 행(lot_id = 그 LOT · approvedQty = 그 LOT 의 부적합 수량)이 선다(D-14). 응답은 첫 행 + concessionIds(묶음 전부). 근거: omf-all-around#84 (서버 선행 · 장부 P-79) · 피처 005 §10 · FR-038 · D-14 · omf-all-around#254 · omf-all-around#352",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -233,108 +233,6 @@
      }
     },
     "x-internal-note": "서버 선행 · 장부 P-79. 계약 원문은 생성 경로를 두지 않았다(W-03-09 §8 #4 「특채 요청은 어느 화면이 만드나」 미결) — 처분 판정 화면(W-03-10)이 만든다로 정했다."
-   }
-  },
-  "/quality/concessions/{concessionId}:apply": {
-   "post": {
-    "tags": [
-     "quality"
-    ],
-    "summary": "특채 적용",
-    "description": "승인된 특채를 적용한다 — 묶음(같은 부적합 · 같은 결재) 중 어느 행으로 불러도 묶음의 PENDING 행 «전부»를 한 트랜잭션에서: 행마다 APPROVED · 부적합에 처분 판정(CONCESSION) 1건(수량 = 행 합계 = 남은 수량) · 묶음 LOT 전부 정상(C25 · 원천은 그 LOT 의 특채 행) · 수입검사 대기 보류 해제(CONCESSION_APPROVED) · 부적합 닫힘. 승인 수량 합이 적용 시점의 남은 수량보다 크면(요청 뒤 다른 처분이 먼저 수량을 씀) 400 approvedQty, 작으면(일부 수량으로 요청한 옛 특채) 409 「일부 특채는 지원하지 않습니다」 — 반려한 뒤 남은 수량 전체로 다시 요청한다(R-14a). 나머지를 자식 LOT 으로 떼는 동작은 없어졌다(splitResult 는 늘 null). 결재가 진행 중이면 400 APPROVAL_IN_PROGRESS, 반려면 묶음을 REJECTED 로 닫고 200(statusCode=REJECTED · LOT 은 그대로). 이미 적용·반려된 특채(묶음의 두 번째 적용 포함)는 409. 근거: omf-all-around#84 · #207 (장부 P-79) · 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
-    "parameters": [
-     {
-      "name": "concessionId",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "integer",
-       "format": "int64",
-       "example": 1001
-      }
-     },
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     }
-    ],
-    "requestBody": {
-     "required": false,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ConcessionApply"
-       }
-      }
-     }
-    },
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "적용됨 — 그 행 + concessionIds(적용한 묶음)",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Concession"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패 · 승인 전 · 남은 수량 초과",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없는 특채",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "이미 적용·반려된 특채(STATE_LOCKED) · 일부 수량 특채(옛 요청 — STATE_LOCKED 「일부 특채는 지원하지 않습니다」). 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "서버 선행 · 장부 P-79. 「승인 → 실행」을 나눈 것은 실적 정정과 같은 방식이다 — 결재 코어는 대상 업무를 모른다."
    }
   },
   "/quality/concessions/{concessionId}": {
@@ -5742,18 +5640,6 @@
      }
     }
    },
-   "ConcessionApply": {
-    "type": "object",
-    "description": "특채 적용 본문(선택). businessDate 는 일부 특채가 없어져(FR-038) 쓰지 않는다 — 보내도 형식만 본다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
-    "properties": {
-     "businessDate": {
-      "type": "string",
-      "format": "date",
-      "description": "쓰지 않는다(옛 화면 호환 — 날짜 형식만 본다). 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
-      "example": "2026-11-03"
-     }
-    }
-   },
    "Concession": {
     "type": "object",
     "properties": {
@@ -5836,14 +5722,18 @@
       "description": "⭐ 비어 있는 허용 축의 이름을 서버가 짚어 내려준다 — 「비었다」가 「제한 없음」이므로 화면이 빈칸으로 두면 의도보다 넓게 승인된다. 근거: W-03-09 §5-3"
      },
      "approvalRequestId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "옛 특채 결재 요청. 특채는 결재 없이 바로 적용하므로 새 특채는 늘 null 이다(omf-all-around#352)."
      },
      "statusCode": {
       "type": "string",
       "example": "값",
-      "x-no-code-key": "코드 그룹을 세우지 않는다 — 특채의 승인 상태는 approval_request 가 갖는다(approval_request_id 가 NOT NULL). 값 후보 셋이 APPROVAL_REQUEST_STATUS 와 정확히 겹치고, 이 리소스를 움직이는 오퍼레이션이 0건이다. ⭐ usable 은 「상태 유효 ∧ validTo ∧ 잔여>0」 3항 논리곱이라 만료·소진은 이 축이 아니다."
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — 특채는 저장 때 바로 적용돼 APPROVED 다(omf-all-around#352). ⭐ usable 은 「상태 유효 ∧ validTo ∧ 잔여>0」 3항 논리곱이라 만료·소진은 이 축이 아니다."
      },
      "usable": {
       "type": "boolean",
@@ -5859,42 +5749,13 @@
       "type": "integer",
       "example": 1
      },
-     "splitResult": {
-      "type": [
-       "object",
-       "null"
-      ],
-      "description": "적용(:apply) «응답»에만 — 늘 null 이다(일부 특채·나머지 분리 삭제, FR-038). 옛 화면 호환으로 남긴다. 조회 응답에는 없다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254",
-      "required": [
-       "splitLotId",
-       "splitLotNo",
-       "splitNonconformanceId",
-       "splitNonconformanceNo"
-      ],
-      "properties": {
-       "splitLotId": {
-        "type": "integer",
-        "format": "int64"
-       },
-       "splitLotNo": {
-        "type": "string"
-       },
-       "splitNonconformanceId": {
-        "type": "integer",
-        "format": "int64"
-       },
-       "splitNonconformanceNo": {
-        "type": "string"
-       }
-      }
-     },
      "concessionIds": {
       "type": "array",
       "items": {
        "type": "integer",
        "format": "int64"
       },
-      "description": "요청(POST)·적용(:apply) «응답»에만 — 같은 요청으로 태어난 묶음(같은 nonconformanceId + 같은 approvalRequestId)의 특채 id 전부(오름차순). LOT 이 하나인 부적합이면 [concessionId]. 조회 응답에는 없다 — 묶음은 approvalRequestId 로 알아본다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254"
+      "description": "저장(POST) «응답»에만 — 같은 요청으로 태어난 묶음의 특채 id 전부(오름차순). LOT 이 하나인 부적합이면 [concessionId]. 조회 응답에는 없다. 근거: 피처 005 §10 · FR-038 · D-14 · omf-all-around#254"
      }
     },
     "required": [
@@ -6337,14 +6198,14 @@
        "null"
       ],
       "format": "int64",
-      "description": "판정 저장 응답의 선별만 — 옮긴 LOT 의 새 부적합(판정 대기 · sortedFromNonconformanceId = 이 부적합). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+      "description": "선별만 — 옮긴 LOT 의 새 부적합(판정 대기 · sortedFromNonconformanceId = 이 부적합). 판정 저장 응답과 판정 목록·이력 조회가 함께 싣는다(목록은 omf-all-around#352 — 종결 안내의 이동 단추). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
      },
      "newNonconformanceNo": {
       "type": [
        "string",
        "null"
       ],
-      "description": "판정 저장 응답의 선별만 — 새 부적합 번호. 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
+      "description": "선별만 — 새 부적합 번호. 판정 저장 응답과 판정 목록·이력 조회가 함께 싣는다(omf-all-around#352). 근거: 피처 005 §10 · FR-041 · R-14b · omf-all-around#254"
      },
      "newInspectionRequestNo": {
       "type": [

@@ -34,8 +34,8 @@ interface ApprovalRejectionInput {
 }
 
 /**
- * 결재함 조회 2건 + 결재 2건. 화면은 `W-CO-09`(결재함) · 현장 상신 화면(`W-01-13`·
- * `W-03-09`)이 함께 부른다.
+ * 결재함 조회 2건 + 결재 2건. 화면은 `W-CO-09`(결재함) · 현장 상신 화면(`W-01-13` 등)이 함께 부른다.
+ * 품질 승인 처리(`W-03-09`)는 없앴다(omf-all-around#352).
  */
 @Controller('app/approval-requests')
 export class ApprovalRequestController {

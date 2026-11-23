@@ -18,8 +18,9 @@ interface RolePermissionView {
  * 숨긴 줄은 그 역할을 다음에 저장할 때 `deleteMany` 로 함께 사라진다.
  * W-06-14(적치 규칙 마스터)는 10-29 #907 에서 뺐는데 여기 빠져 실서버 저장이 400 이었다(omf-all-around#328).
  * M-01-13·W-01-02(긴급 IQC 생략 요청·한도승인)는 건별 검사 생략을 없애며 뺐다(omf-all-around#353).
+ * W-03-09(품질 승인 처리)는 특채 결재를 없애며 뺐다(omf-all-around#352).
  */
-const RETIRED_PERMISSION_CODES = ['W-CO-05', 'W-06-14', 'P-02-08', 'P-02-09', 'P-02-13', 'M-01-13', 'W-01-02'];
+const RETIRED_PERMISSION_CODES = ['W-CO-05', 'W-06-14', 'P-02-08', 'P-02-09', 'P-02-13', 'M-01-13', 'W-01-02', 'W-03-09'];
 
 @Injectable()
 export class RolePermissionService {

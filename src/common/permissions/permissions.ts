@@ -97,7 +97,6 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-03-02', name: 'Lot Status 판정·전이 처리', groupCode: '03' },
   { code: 'W-03-03', name: '의심자재 등록', groupCode: '03' },
   { code: 'W-03-05', name: '검사실적·검사결과 조회 (불량률·불량코드 분포 집계 포함)', groupCode: '03' },
-  { code: 'W-03-09', name: '특채·한도승인 승인 처리', groupCode: '03' },
   { code: 'W-03-10', name: '처분 판정 처리(재작업/폐기/정상)', groupCode: '03' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(사용자 결정 · 장부 P-51).
   { code: 'W-03-11', name: 'PQC 검사 등록·조회', groupCode: '03' },

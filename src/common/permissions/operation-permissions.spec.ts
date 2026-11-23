@@ -144,7 +144,8 @@ describe('오퍼레이션 권한 매핑', () => {
     // PDA 분리 확인 1 — `M-04-05`(피처 013): 393.
     // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 391.
     // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 387.
-    expect(declares403).toHaveLength(387);
+    // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 386.
+    expect(declares403).toHaveLength(386);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
@@ -159,10 +160,16 @@ describe('오퍼레이션 권한 매핑', () => {
    * 그 사고 둘이다. 수동표에 넣어도 «아무것도 그것을 지키지 않아» 지우면 그대로 사라진다.
    */
   it('⛔ 결재함 목록에 계약이 이름 적은 호출 셸이 전부 있다 — 통보 189', () => {
-    // `assignedToMe` 「승인 화면은 관리웹뿐이라(W-CO-09·W-03-09)」.
-    expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(
-      expect.arrayContaining(['W-CO-09', 'W-03-09']),
-    );
+    // `assignedToMe` 「승인 화면은 관리웹뿐이라(W-CO-09)」 — 품질 승인 처리(W-03-09)는 없앴다(#352).
+    expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(expect.arrayContaining(['W-CO-09']));
+  });
+
+  // 품질 승인 처리(W-03-09)를 없애며 승인·반려는 결재함(W-CO-09)으로 옮겼다(omf-all-around#352) — 빠지면 아무도 승인하지 못한다.
+  it('⛔ 결재 승인·반려는 결재함 권한으로 한다 — 없앤 W-03-09 가 남지 않는다', () => {
+    for (const action of ['approve', 'reject']) {
+      expect(OPERATION_PERMISSIONS[`POST /app/approval-requests/{approvalRequestId}:${action}`]).toEqual(['W-CO-09']);
+    }
+    expect(Object.values(OPERATION_PERMISSIONS).some((screens) => screens.includes('W-03-09'))).toBe(false);
   });
 
   /**
@@ -192,13 +199,6 @@ describe('오퍼레이션 권한 매핑', () => {
   it('⛔ 입하 등록·줄마다 입하에 PDA 와 웹 입하 등록 화면이 함께 있다 — 장부 P-117', () => {
     expect(OPERATION_PERMISSIONS['POST /logistics/inbound-receipts']).toEqual(['M-01-01', 'W-01-03']);
     expect(OPERATION_PERMISSIONS['POST /logistics/inbound-receipts:per-line']).toEqual(['M-01-01', 'W-01-03']);
-  });
-
-  // 결재 화면(W-03-09)에서 승인한 뒤 적용까지 잇는다(장부 P-127 · omf-all-around#193).
-  it('⛔ 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
-    // 순서는 도출표와 수동 표를 합친 차례라 뜻이 없다 — 화면 집합으로 본다.
-    const screensOf = (operation: string): string[] => [...(OPERATION_PERMISSIONS[operation] ?? [])].sort();
-    expect(screensOf('POST /quality/concessions/{concessionId}:apply')).toEqual(['W-03-09', 'W-03-10']);
   });
 
   // P-06-01(창고 적재 위치 라벨 발행)은 설계 밖 화면이라 도출표가 영영 주지 않는다 — 장부 P-28.

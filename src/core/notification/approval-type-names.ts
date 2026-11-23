@@ -1,5 +1,5 @@
 /**
- * 결재 유형 한국어 이름 — 계약 `ApprovalRequest.approvalTypeCode` enum 9값. 서버에 이름 맵이 없어
+ * 결재 유형 한국어 이름 — 계약 `ApprovalRequest.approvalTypeCode` enum 8값. 서버에 이름 맵이 없어
  * 알림 문장·Zalo `approval_type` 용으로 여기 둔다(data-model §6). 모르는 코드는 코드 그대로 쓴다.
  */
 export const APPROVAL_TYPE_NAMES: Readonly<Record<string, string>> = {
@@ -11,7 +11,6 @@ export const APPROVAL_TYPE_NAMES: Readonly<Record<string, string>> = {
   GOODS_ISSUE_CANCEL: '출고 취소',
   SHIPMENT_CANCEL: '출하 취소',
   PRODUCTION_RESULT_CORRECT: '생산 실적 정정',
-  CONCESSION: '특채',
 };
 
 export function approvalTypeName(code: string): string {
@@ -30,7 +29,6 @@ export const APPROVAL_TYPE_NAMES_EN: Readonly<Record<string, string>> = {
   GOODS_ISSUE_CANCEL: 'Goods issue cancel',
   SHIPMENT_CANCEL: 'Shipment cancel',
   PRODUCTION_RESULT_CORRECT: 'Production result correction',
-  CONCESSION: 'Concession',
 };
 
 export function approvalTypeNameEn(code: string): string {

@@ -19,7 +19,6 @@ import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
 import { PERMISSIONS } from '../src/common/permissions/permissions';
 import { localDate } from '../src/planning/production-plan/plan-window';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { seedRoute } from './approval-request.fixture';
 import {
   IssuedMaterialLot, InboundLotFixture, closeInboundLotFixture, idempotencyKey, issueAndReceive, terminalAuth, sessionAuth,
 } from './support/inbound-lot-fixture';
@@ -31,7 +30,6 @@ const WORKER_NO = `${PREFIX}-W1`;
 const RESULTS = '/api/quality/inspection-results';
 const REQUESTS = '/api/quality/inspection-requests';
 const CONCESSIONS = '/api/quality/concessions';
-const APPROVALS = '/api/app/approval-requests';
 /** 재검 사유(공통코드 `REINSPECTION_REASON` — 열린 그룹이라 마스터에 없어도 받는다). */
 const REASON = `${PREFIX}-RT`;
 
@@ -56,7 +54,6 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
   let prisma: PrismaService;
   let jwt: JwtService;
   let cookie: string;
-  let approverCookie: string;
   let fx: InboundLotFixture;
   const ids: Record<string, bigint> = {};
   const keys = new Set<string>();
@@ -73,8 +70,6 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     await cleanup();
     await makeMasters();
     cookie = await makeUser('ALL', PERMISSIONS.map((permission) => permission.code), WORKER_NO);
-    approverCookie = await makeUser('APR', ['W-03-09'], `${PREFIX}-W2`);
-    await seedRoute(prisma, 'CONCESSION', [ids.approver]);
     const pop = await terminalToken('POP');
     const mobile = await terminalToken('MOBILE');
     fx = { app, issuer: terminalAuth(pop, WORKER_NO), receiver: terminalAuth(mobile, WORKER_NO), businessDate: DAY, keys, inspector: sessionAuth(cookie), prisma };
@@ -94,7 +89,7 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     }
   });
 
-  it('US4-4 전량 특채(lotId 생략) → 결재 1건·LOT 마다 특채 행 → 승인 → 아무 행으로 적용하면 묶음 전부·처분 판정 1건·LOT 전부 정상·부적합 닫힘', async () => {
+  it('US4-4 전량 특채(lotId 생략) → LOT 마다 특채 행 · 결재 없이 바로 적용 — 처분 판정 1건·LOT 전부 정상·부적합 닫힘', async () => {
     const nc = await rejectedIqc(3);
     // T074 — 부적합 조회에 검사 요청·입하 LOT 번호·LOT 별 불합격 결과 수(참고).
     const detail = await request(app.getHttpServer()).get(`/api/quality/nonconformances/${String(nc.nonconformanceId)}`).set('Cookie', cookie).expect(200);
@@ -105,30 +100,23 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     const created = await requestConcession({ nonconformanceId: Number(nc.nonconformanceId), approvedQty: 30 }).expect(201);
     expectShape(schemaOf('quality', '/quality/concessions', 'post', 201), created.body);
     const concessionIds = created.body.concessionIds as number[];
-    const approvalRequestId = created.body.approvalRequestId as number;
     expect(concessionIds).toHaveLength(3);
-    expect(created.body.concessionId).toBe(concessionIds[0]);
+    expect(created.body).toMatchObject({ concessionId: concessionIds[0], statusCode: 'APPROVED', approvalRequestId: null });
+    // 결재 없이 바로 적용한다(omf-all-around#352) — 결재 요청 0 · 묶음 전부 APPROVED · 처분 판정 1건 · LOT 전부 정상 · 부적합 닫힘.
     const rows = await prisma.concession.findMany({ where: { nonconformance_id: nc.nonconformanceId }, orderBy: { concession_id: 'asc' } });
-    expect(rows.map((row) => [Number(row.concession_id), Number(row.lot_id), row.approved_qty.toNumber(), Number(row.approval_request_id), row.status_code]))
-      .toEqual(nc.lots.map((lot, index) => [concessionIds[index], lot.lotId, 10, approvalRequestId, 'PENDING']));
-    expect(await prisma.approval_request.count({ where: { approval_type_code: 'CONCESSION', target_id: nc.nonconformanceId } })).toBe(1);
-
-    await decideApproval(approvalRequestId, 'approve');
-    const applied = await applyConcession(concessionIds[1]).expect(200);
-    expectShape(schemaOf('quality', '/quality/concessions/{concessionId}:apply', 'post', 200), applied.body);
-    expect(applied.body).toMatchObject({ concessionId: concessionIds[1], statusCode: 'APPROVED', concessionIds, splitResult: null });
-    const after = await prisma.concession.findMany({ where: { nonconformance_id: nc.nonconformanceId } });
-    expect(after.map((row) => row.status_code)).toEqual(['APPROVED', 'APPROVED', 'APPROVED']);
+    expect(rows.map((row) => [Number(row.concession_id), Number(row.lot_id), row.approved_qty.toNumber(), row.approval_request_id, row.status_code]))
+      .toEqual(nc.lots.map((lot, index) => [concessionIds[index], lot.lotId, 10, null, 'APPROVED']));
+    expect(await prisma.approval_request.count({ where: { target_type_code: 'NONCONFORMANCE', target_id: nc.nonconformanceId } })).toBe(0);
     const decisions = await prisma.disposition_decision.findMany({ where: { nonconformance_id: nc.nonconformanceId } });
-    expect(decisions.map((row) => [row.disposition_type_code, row.decision_qty.toNumber(), Number(row.approval_request_id)])).toEqual([['CONCESSION', 30, approvalRequestId]]);
+    expect(decisions.map((row) => [row.disposition_type_code, row.decision_qty.toNumber(), row.approval_request_id])).toEqual([['CONCESSION', 30, null]]);
     expect(await lotStatuses(nc)).toEqual(['NORMAL', 'NORMAL', 'NORMAL']);
     expect(await openInspectionHolds(nc)).toBe(0);
     expect((await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: nc.nonconformanceId } })).status_code).toBe('DECIDED');
-    // 한 행만 적용되는 일은 없다 — 묶음의 다른 행으로 다시 불러도 409.
-    await applyConcession(concessionIds[2]).expect(409);
-    // 재고 재등록(특채 수량 = 결재·LOT 으로 찾음)·ERP 구매입고의 특채 LOT 제외(lot_id)가 LOT 마다 행을 찾는다.
+    // 종결된 부적합에 다시 저장하면 400.
+    await requestConcession({ nonconformanceId: Number(nc.nonconformanceId), approvedQty: 30 }).expect(400);
+    // 재고 재등록(특채 수량 = 부적합·LOT 으로 찾음)·ERP 구매입고의 특채 LOT 제외(lot_id)가 LOT 마다 행을 찾는다.
     for (const lot of nc.lots) {
-      const row = await prisma.concession.findFirst({ where: { approval_request_id: BigInt(approvalRequestId), lot_id: BigInt(lot.lotId) } });
+      const row = await prisma.concession.findFirst({ where: { nonconformance_id: nc.nonconformanceId, lot_id: BigInt(lot.lotId) } });
       expect(row?.approved_qty.toNumber()).toBe(10);
     }
   });
@@ -165,23 +153,7 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
     expect(JSON.stringify(refused.body)).toContain('반품·OQC 부적합에는 선별이 없습니다');
   });
 
-  it('R14a-2 결재 대기 중이던 옛 일부 수량 특채를 적용하면 409 「일부 특채는 지원하지 않습니다」 — 옛 선별·일부 특채 기록은 그대로 조회된다', async () => {
-    const nc = await rejectedIqc(1);
-    const approval = await prisma.approval_request.create({
-      data: { approval_request_no: `${PREFIX}-AR${String(++seq)}`, approval_type_code: 'CONCESSION', target_type_code: 'NONCONFORMANCE',
-        target_id: nc.nonconformanceId, requested_by: ids.user, requested_at: new Date(), status_code: 'APPROVED', reason: '옛 일부 특채' },
-    });
-    const legacy = await prisma.concession.create({
-      data: { concession_no: `${PREFIX}-CN${String(seq)}`, nonconformance_id: nc.nonconformanceId, lot_id: BigInt(nc.lots[0].lotId), approved_qty: 6,
-        uom_id: ids.ea, valid_from: new Date(`${DAY}T00:00:00Z`), approval_request_id: approval.approval_request_id, status_code: 'PENDING' },
-    });
-    const refused = await applyConcession(Number(legacy.concession_id)).expect(409);
-    expect(JSON.stringify(refused.body)).toContain('일부 특채는 지원하지 않습니다');
-    expect((await prisma.concession.findUniqueOrThrow({ where: { concession_id: legacy.concession_id } })).status_code).toBe('PENDING');
-    expect(await lotStatuses(nc)).toEqual(['DEFECTIVE']);
-    const read = await request(app.getHttpServer()).get(`${CONCESSIONS}/${String(legacy.concession_id)}`).set('Cookie', cookie).expect(200);
-    expect(read.body).toMatchObject({ approvedQty: 6, statusCode: 'PENDING' });
-
+  it('R14a-2 옛 선별 판정(수량 분할) 기록은 판정 목록에 그대로 조회된다', async () => {
     // 옛 선별 판정(수량 분할)도 판정 목록에 그대로 나온다.
     const sorted = await rejectedIqc(1);
     await prisma.disposition_decision.create({
@@ -387,18 +359,6 @@ describe('피처 005 S10 입하 LOT 단위 처분·특채·재작업 재열기·
   function requestConcession(body: Record<string, unknown>): request.Test {
     return request(app.getHttpServer()).post(CONCESSIONS).set('Cookie', cookie).set('Idempotency-Key', idempotencyKey(fx))
       .send({ uomId: Number(ids.ea), validFrom: DAY, reason: '외관 경미 — 조건부 사용', ...body });
-  }
-
-  function applyConcession(concessionId: number): request.Test {
-    return request(app.getHttpServer()).post(`${CONCESSIONS}/${String(concessionId)}:apply`).set('Cookie', cookie)
-      .set('Idempotency-Key', idempotencyKey(fx)).send({});
-  }
-
-  async function decideApproval(approvalRequestId: number, action: 'approve' | 'reject'): Promise<void> {
-    const detail = await request(app.getHttpServer()).get(`${APPROVALS}/${String(approvalRequestId)}`).set('Cookie', approverCookie).expect(200);
-    await request(app.getHttpServer()).post(`${APPROVALS}/${String(approvalRequestId)}:${action}`).set('Cookie', approverCookie)
-      .set('Idempotency-Key', idempotencyKey(fx)).set('If-Match', String(detail.headers.etag))
-      .send(action === 'reject' ? { comment: 'e2e 반려' } : {}).expect(200);
   }
 
   async function fullReinspect(): Promise<{ inputQty: number; restoredQty: number }> {
