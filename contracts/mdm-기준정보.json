@@ -22031,6 +22031,26 @@
       "description": "MES 확장 — 생산LOT 기본크기. 확정 REQ-PR-0008 · E26 「기본값 + 수정 가능」. 2026-08-30 되살림. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-05 §4-B",
       "example": 500.0
      },
+     "defaultPackageUomId": {
+      "x-source-column": "default_package_uom_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "MES 확장 — 자재 관리 LOT 패키징 단위 기본값(피처 014 · omf-all-around#349). defaultPackageCount 와 함께 있거나 함께 비어야 한다. 조회 때 P/O 몫만큼 자동으로 만드는 자재 관리 LOT 에 복사한다(만든 뒤 바뀌어도 LOT 은 그대로). 근거: W-06-05 lot 그룹",
+      "example": 1001
+     },
+     "defaultPackageCount": {
+      "x-source-column": "default_package_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "description": "MES 확장 — LOT 당 패키징 수량 기본값(LOT 하나에 든 패키징 개수, 정수 ≥ 1). 패키징당 수량 = LOT 수량 ÷ 이 값. defaultProductionLotSize 를 나머지 없이 나눠야 한다(기본크기가 비면 검사하지 않음). 피처 014 FR-018",
+      "example": 10
+     },
      "erpSpec": {
       "type": [
        "string",
@@ -22157,6 +22177,26 @@
       "exclusiveMinimum": 0,
       "description": "MES 확장 — 생산LOT 기본크기. 확정 REQ-PR-0008·E26. 2026-08-30 되살림",
       "example": 500.0
+     },
+     "defaultPackageUomId": {
+      "x-source-column": "default_package_uom_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "MES 확장 — 자재 관리 LOT 패키징 단위 기본값(피처 014 · omf-all-around#349). defaultPackageCount 와 함께 있거나 함께 비어야 한다. 조회 때 P/O 몫만큼 자동으로 만드는 자재 관리 LOT 에 복사한다(만든 뒤 바뀌어도 LOT 은 그대로). 근거: W-06-05 lot 그룹. 칸을 보내지 않으면 지금 값을 둔다",
+      "example": 1001
+     },
+     "defaultPackageCount": {
+      "x-source-column": "default_package_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "description": "MES 확장 — LOT 당 패키징 수량 기본값(LOT 하나에 든 패키징 개수, 정수 ≥ 1). 패키징당 수량 = LOT 수량 ÷ 이 값. defaultProductionLotSize 를 나머지 없이 나눠야 한다(기본크기가 비면 검사하지 않음). 피처 014 FR-018. 하나만 있으면 400 PAIR, 나누지 못하면 400 INVALID 「패키징 수량이 부적합 합니다. 자재 LOT 기본크기를 정확히 나눌 수 있는 값을 입력해주세요.」",
+      "example": 10
      },
      "nameKo": {
       "x-source-column": "name_ko",

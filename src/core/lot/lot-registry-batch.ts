@@ -41,6 +41,9 @@ export type MaterialLotBatchActor =
   | { channel: 'WEB'; appUserId: number }
   | { channel: 'POP'; workerId: bigint; terminalAudit: TerminalWorkerAuditActor };
 
+/** 묶음을 사람이 [만들기]로 만들었나(`MANUAL`), 조회가 P/O 몫만큼 만들었나(`AUTO` · 피처 014). */
+export type MaterialLotCreationMode = 'MANUAL' | 'AUTO';
+
 export interface MaterialLotBatchCreated {
   batchId: bigint;
   lotIds: bigint[];
@@ -86,6 +89,7 @@ export async function issueMaterialLotBatchWithin(
   tx: Tx,
   input: MaterialLotBatchInput,
   actor: MaterialLotBatchActor,
+  creationMode: MaterialLotCreationMode = 'MANUAL',
 ): Promise<MaterialLotBatchCreated> {
   assertMaterialLotBatchShape(input);
   const baseUomId = await assertReferences(tx, input);
@@ -107,6 +111,7 @@ export async function issueMaterialLotBatchWithin(
       created_channel_code: actor.channel,
       created_by: createdBy,
       created_worker_id: actor.channel === 'POP' ? actor.workerId : null,
+      creation_mode_code: creationMode,
     },
     select: { material_lot_batch_id: true },
   });
