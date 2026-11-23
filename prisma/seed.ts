@@ -459,8 +459,6 @@ const SEED: CodeGroupSeed[] = [
       { code: 'RETEST_FAIL', codeName: '재검사 불합격', order: 20 },
       { code: 'INVESTIGATION_CLEARED', codeName: '조사 종결', order: 30 },
       { code: 'MANAGER_OVERRIDE', codeName: '관리자 직권 해제', order: 40 },
-      // 승인된 IQC 생략의 실행(omf-all-around#105) — 마이그 20261016090000 에도 있다.
-      { code: 'INCOMING_INSPECTION_SKIPPED', codeName: '수입검사 생략', order: 50 },
       // 처분 정상·선별 양품(omf-all-around#108 · 장부 P-63) — 마이그 20261020120000 에도 같은 줄이 있다.
       { code: 'DISPOSITION_NORMAL', codeName: '처분 정상(입고 가능)', order: 60 },
       // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
@@ -579,22 +577,19 @@ const SEED: CodeGroupSeed[] = [
       // ⭐ 재등록(I-23)은 «우리가 정했다» — 결정 · 통보 218(근거는 통보 089 `:69-70`).
       //    배포는 시드를 안 돌리므로 마이그레이션에도 같은 한 줄이 있다.
       { code: 'C20', codeName: '재등록 → 정상', order: 130 },
-      // ⭐ 검사 비대상·생략(omf-all-around#105) — 마이그 20261016090000 에도 같은 두 줄이 있다.
+      // ⭐ 검사 비대상(omf-all-around#105) — 마이그 20261016090000 에도 같은 줄이 있다. C22(IQC 생략)는 #353 이 지웠다.
       { code: 'C21', codeName: '검사 비대상 → 정상', order: 140 },
-      { code: 'C22', codeName: 'IQC 생략 → 정상', order: 150 },
-      // 처분 선별(omf-all-around#108) — 마이그 20261020110000 에도 같은 줄이 있다. C21·C22 는 #105 몫이다.
+      // 처분 선별(omf-all-around#108) — 마이그 20261020110000 에도 같은 줄이 있다. C21 은 #105 몫이다.
       { code: 'C23', codeName: '처분 선별 → 정상(양품)', order: 160 },
       { code: 'C24', codeName: '처분 선별 → 불량(불량분 분할)', order: 170 },
       // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
       { code: 'C25', codeName: '특채 승인 → 정상(조건부 사용)', order: 180 },
       // PQC 생략 허용(omf-all-around#119) — 마이그 20261021120000 에도 같은 줄이 있다. C25 는 #84(특채) 몫이다.
       { code: 'C26', codeName: 'PQC 생략 → 정상', order: 190 },
-      // OQC 생략 실행(omf-all-around#119) — 마이그 20261021130000 에도 같은 줄이 있다.
+      // OQC 생략(omf-all-around#119) — 마이그 20261021130000 에도 같은 줄이 있다. C28(PQC 생략 결재)은 #353 이 지웠다.
       { code: 'C27', codeName: 'OQC 생략 → 정상', order: 200 },
-      { code: 'C28', codeName: 'PQC 생략(결재) → 정상', order: 210 },
       // 입하 LOT IQC(피처 005 · omf-all-around#254) — 마이그 20261112090000 에도 같은 줄이 있다.
       { code: 'C29', codeName: 'IQC 확정 취소 → 검사 대기', order: 220 },
-      { code: 'C30', codeName: 'IQC 생략 무효 → 검사 대기', order: 230 },
       { code: 'C31', codeName: '입하 등록 해제 → 검사 대기', order: 240 },
     ],
   },
@@ -1322,8 +1317,6 @@ const SEED: CodeGroupSeed[] = [
       { code: 'CONFIRMED', codeName: '판정 확정', order: 40 },
       { code: 'CONFIRM_CANCELLED', codeName: '확정 취소', order: 50 },
       { code: 'REOPENED_BY_REWORK', codeName: '재작업 재열기', order: 60 },
-      { code: 'SKIPPED', codeName: '생략', order: 70 },
-      { code: 'SKIP_VOIDED', codeName: '생략 무효', order: 80 },
       { code: 'SPLIT_OUT', codeName: '분리로 나감', order: 90 },
       { code: 'SPLIT_IN', codeName: '분리로 들어옴', order: 100 },
       { code: 'CANCELLED_BY_REOPEN', codeName: '마감 취소로 무효', order: 110 },

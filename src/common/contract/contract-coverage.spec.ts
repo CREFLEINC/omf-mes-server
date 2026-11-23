@@ -125,8 +125,10 @@ describe('계약 커버리지', () => {
     // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 645 → 644.
     // 생산 LOT 분리 3 오퍼레이션(피처 013 · omf-all-around#303): 644 → 647.
     // PDA 분리 확인 1(피처 013 S3): 647 → 648.
-    // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 648 → 647.
-    expect(registry.size).toBe(647);
+    // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 648 → 646.
+    // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 646 → 642.
+    // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 642 → 641.
+    expect(registry.size).toBe(641);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

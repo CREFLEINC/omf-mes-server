@@ -10,11 +10,10 @@ const terminal: TerminalContext = {
 const prisma = () => ({
   worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 23n }) },
   inbound_receipt_line: { findFirst: jest.fn().mockResolvedValue({ inbound_receipt_line_id: 11n }) },
-  lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 12n }) },
 }) as unknown as PrismaService;
-const request = (body: object, lotId?: string) => ({
+const request = (body: object) => ({
   headers: { 'x-worker-no': 'W-23', 'idempotency-key': 'lot-1' },
-  body, params: { lotId },
+  body,
 }) as unknown as Request;
 
 it('limits new material LOTs to unassigned receipt lines in the terminal plant', async () => {
@@ -28,15 +27,4 @@ it('limits new material LOTs to unassigned receipt lines in the terminal plant',
   await expect(assertTerminalLotWriteScope(db, request({ plantId: 4,
     sourceTypeCode: 'INBOUND_RECEIPT_LINE', sourceId: 11 }), 'POST /trace/lots', terminal))
     .rejects.toHaveProperty('status', 401);
-});
-
-it('limits IQC skip to an inbound LOT in the terminal plant', async () => {
-  const db = prisma();
-  await assertTerminalLotWriteScope(db, request({}, '12'), 'POST /trace/lots/{lotId}:request-iqc-skip', terminal);
-  expect(db.lot.findFirst).toHaveBeenCalledWith({ where: {
-    lot_id: 12n, plant_id: 3n, source_type_code: 'INBOUND_RECEIPT_LINE',
-  }, select: { lot_id: true } });
-  (db.lot.findFirst as jest.Mock).mockResolvedValueOnce(null);
-  await expect(assertTerminalLotWriteScope(db, request({}, '13'),
-    'POST /trace/lots/{lotId}:request-iqc-skip', terminal)).rejects.toHaveProperty('status', 401);
 });

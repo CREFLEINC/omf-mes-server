@@ -107,7 +107,7 @@ export async function assertReferences(
     },
   });
   if (request === null) throw one(field('inspectionRequestId', ERROR_CODE.INVALID, '없는 검사 의뢰입니다.'));
-  // 생략(SKIPPED)된 의뢰는 검사하지 않는다 — 결과가 서면 생략 이력(C26·C22)과 판정이 엇갈린다(omf-all-around#119 · 장부 P-82).
+  // 생략(SKIPPED)된 의뢰는 검사하지 않는다 — 결과가 서면 생략 이력(C26)과 판정이 엇갈린다(omf-all-around#119 · 장부 P-82).
   if (request.status_code === 'SKIPPED') {
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '검사를 생략한 의뢰입니다. 결과를 저장할 수 없습니다.' },

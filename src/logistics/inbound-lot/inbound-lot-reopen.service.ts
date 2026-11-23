@@ -5,16 +5,13 @@ import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
-import {
-  INBOUND_LOT_DOCUMENT, INBOUND_LOT_RECEIVING, INITIAL_LOT_STATUS, INSPECTION_HOLD_REASON, LotHoldService, LotQualityStatusService,
-} from '../../core/lot';
+import { INBOUND_LOT_RECEIVING, LotHoldService } from '../../core/lot';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { recordInspectionRequestEvent } from '../../quality/inspection/inspection-request-event';
-import { markIqcSkipVoided } from '../../trace/lot/lot-iqc-skip-execute.service';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { recordInboundLotEvent } from './inbound-lot-event';
 import { assertInboundLotMutable } from './inbound-lot-finalizable';
-import { ReopenBlockerCode, reopenStatesOf } from './inbound-lot-reopenable';
+import { legacySkip, ReopenBlockerCode, reopenStatesOf } from './inbound-lot-reopenable';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 
 /** 계약 `InboundLotReopenReceipt`. */
@@ -26,7 +23,6 @@ export interface InboundLotReopenReceipt {
 const BLOCKER_MESSAGE: Record<ReopenBlockerCode, string> = {
   IQC_RECORDED: 'IQC 결과가 기록돼 마감을 취소할 수 없습니다.',
   GOODS_RECEIVED: '입고된 자재 관리 LOT 이 있어 마감을 취소할 수 없습니다.',
-  SKIP_PENDING: 'IQC 생략 결재가 진행 중이라 마감을 취소할 수 없습니다.',
   INBOUND_LOT_FINALIZED: '최종 마감된 입하 LOT 입니다.',
   LEGACY_INBOUND_LOT: '이전 데이터 입하 LOT 은 마감을 취소할 수 없습니다.',
   OPEN_RECEIPT_EXISTS: '같은 공급사·품목에 입하 중인 입하 LOT 이 있습니다 — 먼저 마감하세요',
@@ -36,12 +32,11 @@ const CANCELLED = 'CANCELLED';
 
 /**
  * 입하 마감 취소(`:reopen-receipt` · R-5a) — 다음 단계 전에만. 배정 해제·받은 양 감소(P/O 부모 오름차순 잠금) → `RECEIVING`·
- * `open_since_date` = 공장 현지 오늘 → IQC 요청 취소 → 긴급 생략 실행 건은 생략 무효(C30·보류 다시). 다시 마감하면 배정·요청을 새로 만든다.
+ * `open_since_date` = 공장 현지 오늘 → IQC 요청 취소. 다시 마감하면 배정·요청을 새로 만든다.
  */
 @Injectable()
 export class InboundLotReopenService {
   constructor(
-    private readonly quality: LotQualityStatusService,
     private readonly holds: LotHoldService,
     private readonly states: DocumentStateService,
   ) {}
@@ -51,7 +46,7 @@ export class InboundLotReopenService {
     // 받기·해제와 같은 순서 — LOT 을 먼저(오름차순), 그다음 입하 LOT.
     const lotIds = (await tx.lot.findMany({ where: { inbound_lot_id: id }, select: { lot_id: true }, orderBy: { lot_id: 'asc' } }))
       .map((row) => row.lot_id);
-    const locked = await this.holds.lockLotsWithin(tx, lotIds);
+    await this.holds.lockLotsWithin(tx, lotIds);
     const [inboundLot] = await tx.$queryRaw<{ status_code: string; version_no: number; inbound_receipt_line_id: bigint; plant_id: bigint }[]>`
       SELECT status_code, version_no, inbound_receipt_line_id, plant_id FROM trace.inbound_lot WHERE inbound_lot_id = ${id} FOR UPDATE`;
     if (inboundLot === undefined) throw new NotFoundException('없는 입하 LOT 입니다.');
@@ -79,9 +74,7 @@ export class InboundLotReopenService {
         received_closed_at: null, received_closed_by: null, closed_automatically: false, version_no: { increment: 1 }, updated_by: by,
       },
     }).catch(openReceiptRace);
-    const iqcRequestId = await this.cancelRequest(tx, id, lotIds, locked, actor, at);
-    // 승인됐지만 아직 실행하지 않은 생략 결재도 무효다 — 남기면 다시 마감한 뒤 새 IQC 요청에 옛 승인으로 생략이 실행된다(R-5a·R-16).
-    await markIqcSkipVoided(tx, id, at);
+    const iqcRequestId = await this.cancelRequest(tx, id, actor, at);
     await recordInboundLotEvent(tx, id, 'RECEIPT_REOPENED', actor, {
       releasedAllocations: released, iqcRequestId: iqcRequestId === null ? null : String(iqcRequestId),
     }, at, body.reason?.trim() || null);
@@ -94,35 +87,23 @@ export class InboundLotReopenService {
 
   /**
    * IQC 요청을 `CANCELLED` 로 — 행과 입하 LOT 칸은 남긴다(유일 색인은 취소된 요청을 빼므로 다시 마감하면 새 요청이 선다).
-   * 긴급 생략 실행 건(`SKIPPED`·`APPROVAL`)은 LOT 을 검사 대기로 되돌리고(C30) 검사 대기 보류를 다시 건다.
    */
   private async cancelRequest(
-    tx: Prisma.TransactionClient, inboundLotId: bigint, lotIds: bigint[], locked: Awaited<ReturnType<LotHoldService['lockLotsWithin']>>,
-    actor: LogisticsWriteActor, at: Date,
+    tx: Prisma.TransactionClient, inboundLotId: bigint, actor: LogisticsWriteActor, at: Date,
   ): Promise<bigint | null> {
     const [request] = await tx.$queryRaw<{ inspection_request_id: bigint; status_code: string; skip_basis_code: string | null }[]>`
       SELECT inspection_request_id, status_code, skip_basis_code FROM quality.inspection_request
        WHERE inbound_lot_id = ${inboundLotId} AND inspection_type_code = 'IQC' AND status_code <> ${CANCELLED} FOR UPDATE`;
     if (request === undefined) return null;
     // 진행 중 요청도 결과 0건이면 취소한다(2026-11-13) — 요청을 잠근 뒤 다시 세어 판정 사이에 들어온 결과(DRAFT 포함)를 놓치지 않는다.
-    if (request.status_code !== 'SKIPPED' && (await tx.inspection_result.count({ where: { inspection_request_id: request.inspection_request_id } })) > 0) {
+    const recorded = request.status_code === 'SKIPPED'
+      ? legacySkip(request.skip_basis_code)
+      : (await tx.inspection_result.count({ where: { inspection_request_id: request.inspection_request_id } })) > 0;
+    if (recorded) {
       throw new ContractException(HttpStatus.CONFLICT, [{ scope: 'screen', code: 'IQC_RECORDED', message: BLOCKER_MESSAGE.IQC_RECORDED }], { openInboundLotNo: null });
     }
     const to = this.states.assertTransition(REQUEST_COLUMN, 'inbound-receipt-reopened', request.status_code).to;
     const person = actor.appUserId === undefined ? { workerId: actor.workerId } : { appUserId: actor.appUserId };
-    if (request.status_code === 'SKIPPED' && request.skip_basis_code === 'APPROVAL') {
-      await this.quality.moveWithin(tx, lotIds, 'iqc-skip-voided', {
-        ...(actor.appUserId === undefined ? { changedWorkerId: actor.workerId } : { changedBy: BigInt(actor.appUserId) }), changedAt: at,
-        sourceDocumentTypeCode: INBOUND_LOT_DOCUMENT, sourceDocumentId: inboundLotId,
-      });
-      await this.holds.holdWithin(tx, locked,
-        lotIds.map((lotId) => ({ lotId, reasonCode: INSPECTION_HOLD_REASON, targetLotStatusCode: INITIAL_LOT_STATUS })),
-        actor.appUserId === undefined ? { at, workerId: actor.workerId } : { at, by: BigInt(actor.appUserId) });
-      await recordInspectionRequestEvent(tx, {
-        inspectionRequestId: request.inspection_request_id, eventTypeCode: 'SKIP_VOIDED', actor: person, at,
-        summaryBefore: { statusCode: request.status_code, skipBasisCode: request.skip_basis_code },
-      });
-    }
     await tx.inspection_request.update({
       where: { inspection_request_id: request.inspection_request_id },
       data: {

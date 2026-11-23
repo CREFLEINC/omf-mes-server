@@ -668,9 +668,9 @@ describe('출하 공정 단순화 (e2e)', () => {
       expect((message.payload as { lines: { shippedQty: number }[] }).lines[0].shippedQty).toBe(30);
     });
 
-    it('Q16 OQC 생략된 지시서는 생략 뒤 피킹한 LOT 까지 완료 때 C27 이 남는다', async () => {
+    it('Q16 OQC 기본 생략된 지시서는 피킹한 LOT 에 완료 때 C27 이 남는다', async () => {
       const made = await f.request([{ allocated: 40 }]);
-      await prisma.inspection_request.update({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, data: { status_code: 'SKIPPED', skip_basis_code: 'APPROVAL' } });
+      await prisma.inspection_request.update({ where: { inspection_request_id: BigInt(made.oqcRequestIds.A) }, data: { status_code: 'SKIPPED', skip_basis_code: 'DEFAULT' } });
       const lot = await f.lot({ balances: [{ warehouse: 'wh1', qty: 40 }] });
       await f.pickLot(made, 0, { lotId: lot.lotId }).expect(200);
       expect((await f.lotsOf(made))[0].oqcLotStatus).toBe('SKIPPED');

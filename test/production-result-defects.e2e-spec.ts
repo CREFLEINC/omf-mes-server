@@ -242,7 +242,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       await prisma.approval_request.create({ data: {
         approval_request_no: `${PREFIX}-AR-${String(original.body.productionResultId)}`, approval_type_code: 'PRODUCTION_RESULT_CORRECT',
         target_type_code: 'PRODUCTION_RESULT', target_id: BigInt(original.body.productionResultId),
-        requested_worker_id: ids.worker, requested_at: new Date(OCCURRED_AT), status_code: 'APPROVED', reason: 'e2e',
+        requested_by: (await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } })).app_user_id, requested_at: new Date(OCCURRED_AT), status_code: 'APPROVED', reason: 'e2e',
       } });
 
       const corrected = await correct(original.body.productionResultId, { defectQty: 3 }).expect(201);
