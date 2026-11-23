@@ -31,7 +31,7 @@ export interface ConcessionListQuery extends ConcessionFilters {
 
 /**
  * `GET /quality/concessions` · `…/{concessionId}`(I-21 PR ⑤ — 맨 뒤로 미뤄 낸다 · uiux 수정
- * 2). `W-03-09` ②「조건」 구획이 부른다. ⛔ **이 표는 writer 가 0개다** — 계약이 생성·승인·
+ * 2). 이 목록을 보이던 품질 승인 처리(`W-03-09`)는 없앴다(#352). ⛔ **이 표는 writer 가 0개다** — 계약이 생성·승인·
  * 수정 경로를 두지 않아(§2-4 · 통보 089 §2) 운영에서 목록이 늘 빈다. ⛔ 멱등·If-Match·ETag·
  * 403 게이트 0 — 계약 미선언(§1-1 · `permission.guard.ts:37-41`). `concession-query.ts` 가
  * `usable` 을 원시 SQL 로 다시 걸러 페이지네이션 «전» 필터한다(§4-3 — 다른 도메인 service

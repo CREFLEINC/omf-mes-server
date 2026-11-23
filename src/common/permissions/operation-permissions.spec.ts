@@ -160,10 +160,16 @@ describe('오퍼레이션 권한 매핑', () => {
    * 그 사고 둘이다. 수동표에 넣어도 «아무것도 그것을 지키지 않아» 지우면 그대로 사라진다.
    */
   it('⛔ 결재함 목록에 계약이 이름 적은 호출 셸이 전부 있다 — 통보 189', () => {
-    // `assignedToMe` 「승인 화면은 관리웹뿐이라(W-CO-09·W-03-09)」.
-    expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(
-      expect.arrayContaining(['W-CO-09', 'W-03-09']),
-    );
+    // `assignedToMe` 「승인 화면은 관리웹뿐이라(W-CO-09)」 — 품질 승인 처리(W-03-09)는 없앴다(#352).
+    expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(expect.arrayContaining(['W-CO-09']));
+  });
+
+  // 품질 승인 처리(W-03-09)를 없애며 승인·반려는 결재함(W-CO-09)으로 옮겼다(omf-all-around#352) — 빠지면 아무도 승인하지 못한다.
+  it('⛔ 결재 승인·반려는 결재함 권한으로 한다 — 없앤 W-03-09 가 남지 않는다', () => {
+    for (const action of ['approve', 'reject']) {
+      expect(OPERATION_PERMISSIONS[`POST /app/approval-requests/{approvalRequestId}:${action}`]).toEqual(['W-CO-09']);
+    }
+    expect(Object.values(OPERATION_PERMISSIONS).some((screens) => screens.includes('W-03-09'))).toBe(false);
   });
 
   /**
