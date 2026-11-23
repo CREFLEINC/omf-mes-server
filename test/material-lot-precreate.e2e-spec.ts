@@ -138,6 +138,16 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
     expect(body.items.map((row) => [row.lotQty, row.package?.count])).toEqual([[100, 10], [100, 10], [50, 5], [100, 10]]);
   });
 
+  it('Q1 US5-3 T047 봉지당 양 소수 — 기본크기 2.5·패키징 5 에 남은 6.3 → 2.5(0.5×5)·2.5·1.5(0.5×3)', async () => {
+    await makeOrder(ids.itemQ, '2026-11-01', [6.3]);
+    const body = (await lotsOf(ids.itemQ, 'UNPRINTED', 1, 20).expect(200)).body as LotsBody;
+    expect(body.generation).toMatchObject({ status: 'OK', createdNow: 3 });
+    expect(body.items.map((row) => [row.lotQty, row.package?.count, row.package?.qtyPerPackage])).toEqual([[2.5, 5, 0.5], [2.5, 5, 0.5], [1.5, 3, 0.5]]);
+    expect(body.items.map((row) => row.lotNo)).toEqual([lotNo('Q', 2.5, 1), lotNo('Q', 2.5, 2), lotNo('Q', 1.5, 1)]);
+    const lots = await prisma.lot.findMany({ where: { item_id: ids.itemQ }, orderBy: { lot_id: 'asc' } });
+    expect(lots.map((lot) => [Number(lot.initial_qty), lot.package_count, Number(lot.qty_per_package)])).toEqual([[2.5, 5, 0.5], [2.5, 5, 0.5], [1.5, 3, 0.5]]);
+  });
+
   it('Q2 US1-2 다시 골라도 새로 만들지 않는다 — 같은 LOT·같은 차례', async () => {
     const before = (await lotsOf(ids.itemA, 'UNPRINTED', 1, 20).expect(200)).body as LotsBody;
     const again = (await webLots(ids.itemA, 'UNPRINTED', 1, 20).expect(200)).body as LotsBody;
@@ -429,6 +439,7 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
       ['itemA', 'A', {}], ['itemA2', 'A2', {}], ['itemP', 'P', {}], ['itemN', 'N', {}], ['itemH', 'H', {}], ['itemE', 'E', {}],
       ['itemF', 'F', {}], ['itemI', 'I', {}], ['itemD', 'D', { default_package_uom_id: null, default_package_count: null }],
       ['itemJ', 'J', {}], ['itemK', 'K', { default_package_uom_id: null, default_package_count: null }],
+      ['itemQ', 'Q', { default_production_lot_size: 2.5, default_package_count: 5 }],
       ['itemB', 'B', { default_lot_storage_uom_id: null, default_production_lot_size: null, default_package_uom_id: null, default_package_count: null }],
       ['itemC', 'C', { default_lot_storage_uom_id: ids.box, default_production_lot_size: 1, default_package_uom_id: null, default_package_count: null }],
     ];
