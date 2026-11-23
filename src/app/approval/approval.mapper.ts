@@ -118,7 +118,7 @@ export interface ApprovalRequestDetailView {
 }
 
 type RequestRow = Prisma.approval_requestGetPayload<{
-  include: { app_user: true; requested_worker: true;
+  include: { app_user: true;
     approval_step: { include: { app_user: true } } };
 }>;
 
@@ -132,7 +132,7 @@ export function toApprovalRequest(
     approvalRequestNo: row.approval_request_no,
     approvalTypeCode: row.approval_type_code,
     requestedBy: row.requested_by === null ? null : Number(row.requested_by),
-    requestedByName: actorName(row.app_user?.user_name, row.requested_worker?.worker_name),
+    requestedByName: actorName(row.app_user?.user_name),
     requestedAt: row.requested_at.toISOString(),
     statusCode: row.status_code,
     reason: row.reason,
@@ -154,11 +154,9 @@ export function toApprovalRequest(
  */
 const OPENABLE_SCREENS: Readonly<Record<string, string | undefined>> = { SHIPMENT_CANCEL: 'W-04-02' };
 
-/** 2차 정리(#353 마이그레이션) 전에는 PDA 긴급 생략 상신(작업자만 있는 행)이 남는다 — 작업자 이름으로 대신한다. */
-function actorName(accountName: string | undefined, workerName: string | undefined): string {
-  const name = accountName ?? workerName;
-  if (!name) throw new Error('Approval request actor is missing');
-  return name;
+function actorName(accountName: string | undefined): string {
+  if (!accountName) throw new Error('Approval request actor is missing');
+  return accountName;
 }
 
 /** 계약 `ApprovalStep` 과 동형. */

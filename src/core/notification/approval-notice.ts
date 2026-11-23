@@ -24,14 +24,13 @@ export class ApprovalNotifier {
         approval_type_code: true,
         reason: true,
         app_user: { select: { user_name: true } },
-        requested_worker: { select: { worker_name: true } },
         approval_step: { select: { step_no: true, approver_id: true, decision_code: true }, orderBy: { step_no: 'asc' } },
       },
     });
     const current = request.approval_step.find((step) => step.decision_code === null);
     if (current === undefined) return;
 
-    const requester = request.app_user?.user_name ?? request.requested_worker?.worker_name;
+    const requester = request.app_user?.user_name;
     await this.emitter.emit(tx, {
       eventCode: 'APPROVAL_ACTION_REQUIRED',
       aggregateTypeCode: 'APPROVAL_REQUEST',
