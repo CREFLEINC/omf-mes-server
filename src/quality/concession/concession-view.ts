@@ -43,7 +43,7 @@ export interface ConcessionView {
   allowedProcessId?: number;
   allowedCustomerId?: number;
   unrestrictedAxes: string[];
-  /** 결재선이 없어 결재 없이 적용한 특채는 null(omf-all-around#352). */
+  /** 결재 없이 바로 적용한 특채(omf-all-around#352 이후)는 null. 옛 특채만 결재 요청 id 가 있다. */
   approvalRequestId: number | null;
   statusCode: string;
   usable: boolean;
