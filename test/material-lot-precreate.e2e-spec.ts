@@ -25,6 +25,7 @@ const TZ = 'Asia/Ho_Chi_Minh';
 const WORKER_NO = `${PREFIX}-W1`;
 const LOTS = '/api/logistics/material-lots';
 const PAIRS = '/api/logistics/material-lot-pairs';
+const SUPPLIERS = '/api/logistics/material-lot-suppliers';
 const LOOKUP = '/api/logistics/material-lots/lookup';
 const BATCHES = '/api/logistics/material-lot-batches';
 const ISSUES = '/api/app/document-issues';
@@ -354,6 +355,71 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
     expect(paged.body.items).toHaveLength(2);
   });
 
+  it('Q16b FR-010 세 칸 — 공급사 목록(조합 셋을 공급사로 묶음·발행 이력 없는 공급사도·찾기·할 일 먼저·쪽, 합 = pairs 합, 만들지 않음)·pairs 공급사 거르기·출력됨·IQC·최근 발행', async () => {
+    // 공급사 S0 — P/O 만 있음(할 일 있음, 발행 이력 없음). 공급사 R — 기본 정보만(할 일 없음, 코드가 S 보다 앞).
+    ids.supplier0 = (await prisma.partner.create({ data: { partner_code: `${PREFIX}-S0`, partner_name: `${PREFIX} 둘째공급사` } })).partner_id;
+    ids.supplierR = (await prisma.partner.create({ data: { partner_code: `${PREFIX}-R`, partner_name: `${PREFIX} 한가한공급사` } })).partner_id;
+    await makeOrder(ids.itemJ, '2026-11-02', [120], ids.supplier0);
+    await prisma.supplier_item_default.create({ data: { plant_id: ids.plant, supplier_id: ids.supplierR, item_id: ids.itemN, lot_qty: 100 } });
+    await prisma.item.update({ where: { item_id: ids.itemJ }, data: { inspection_required: true } });
+    const lotsBefore = await prisma.lot.count({ where: { plant_id: ids.plant } });
+
+    type Supplier = { supplier: { supplierId: number; code: string; name: string }; pairCount: number; unprintedCount: number; creatableCount: number };
+    type Pair = { supplier: { supplierId: number }; item: { itemId: number }; unprintedCount: number; creatableCount: number;
+      printedCount: number; inspectionRequired: boolean; lastIssuedAt: string | null };
+    const all = await popGet(SUPPLIERS).query({ plantId: Number(ids.plant) }).expect(200);
+    expectShape('/logistics/material-lot-suppliers', all.body);
+    const suppliers = all.body.items as Supplier[];
+    // 할 일 있는 공급사 먼저(코드 순 S · S0), 그다음 할 일 없는 R — 코드가 앞이어도 뒤에 선다.
+    expect(suppliers.map((row) => row.supplier.code)).toEqual([`${PREFIX}-S`, `${PREFIX}-S0`, `${PREFIX}-R`]);
+    expect(all.body.page).toEqual({ page: 1, size: 50, total: 3 });
+    for (const row of suppliers) {
+      const pairs = await popGet(PAIRS).query({ plantId: Number(ids.plant), supplierId: row.supplier.supplierId, size: 200 }).expect(200);
+      expectShape('/logistics/material-lot-pairs', pairs.body);
+      const items = pairs.body.items as Pair[];
+      expect(items.every((pair) => pair.supplier.supplierId === row.supplier.supplierId)).toBe(true);
+      expect(row.pairCount).toBe(items.length);
+      expect(row.unprintedCount).toBe(items.reduce((sum, pair) => sum + pair.unprintedCount, 0));
+      expect(row.creatableCount).toBe(items.reduce((sum, pair) => sum + pair.creatableCount, 0));
+    }
+    expect(suppliers[1]).toMatchObject({ pairCount: 1, unprintedCount: 0, creatableCount: 2 });
+    expect(suppliers[2]).toMatchObject({ pairCount: 1, unprintedCount: 0, creatableCount: 0 });
+    expect(suppliers[0].unprintedCount + suppliers[0].creatableCount).toBeGreaterThan(0);
+    expect(await prisma.lot.count({ where: { plant_id: ids.plant } })).toBe(lotsBefore);
+
+    // 찾기 — 품목 이름이면 그 품목을 가진 공급사, 공급사 이름·코드면 그 공급사. 찾기는 합도 그 조합만으로 낸다.
+    const codesOf = async (q: string) => ((await popGet(SUPPLIERS).query({ plantId: Number(ids.plant), q }).expect(200)).body.items as Supplier[])
+      .map((row) => row.supplier.code);
+    expect(await codesOf('P/O미리생성자재J')).toEqual([`${PREFIX}-S`, `${PREFIX}-S0`]);
+    // N 은 두 공급사 모두 할 일이 없다 — 공급사 코드 순.
+    expect(await codesOf('P/O미리생성자재N')).toEqual([`${PREFIX}-R`, `${PREFIX}-S`]);
+    expect(await codesOf('한가한')).toEqual([`${PREFIX}-R`]);
+    expect(await codesOf(`${PREFIX}-S0`)).toEqual([`${PREFIX}-S0`]);
+    const foundJ = (await request(app.getHttpServer()).get(SUPPLIERS).set('Cookie', cookie)
+      .query({ plantId: Number(ids.plant), q: 'P/O미리생성자재J' }).expect(200)).body.items as Supplier[];
+    expect(foundJ[0]).toMatchObject({ pairCount: 1, unprintedCount: 0, creatableCount: 3 });
+    const paged = await popGet(SUPPLIERS).query({ plantId: Number(ids.plant), page: 2, size: 1 }).expect(200);
+    expect(paged.body.page).toEqual({ page: 2, size: 1, total: 3 });
+    expect((paged.body.items as Supplier[]).map((row) => row.supplier.code)).toEqual([`${PREFIX}-S0`]);
+    await popGet(SUPPLIERS).query({ plantId: Number(ids.plant), size: 201 }).expect(400);
+
+    // pairs 새 칸 — 출력됨(대기·라벨 있음), IQC, 최근 발행(그 조합 LOT 마지막 라벨 발행, 없으면 null).
+    const rowsOf = async (supplierId: bigint) => (await popGet(PAIRS).query({ plantId: Number(ids.plant), supplierId: Number(supplierId), size: 200 })
+      .expect(200)).body.items as Pair[];
+    const ofS = await rowsOf(ids.supplier);
+    const pairOf = (rows: Pair[], item: bigint) => rows.find((pair) => pair.item.itemId === Number(item));
+    const lastE = await prisma.document_issue_log.aggregate({ _max: { issued_at: true },
+      where: { document_type_code: 'MATERIAL_LOT_LABEL', lot: { item_id: ids.itemE } } });
+    expect(pairOf(ofS, ids.itemE)).toMatchObject({ printedCount: 2, inspectionRequired: false, lastIssuedAt: lastE._max.issued_at?.toISOString() });
+    // F 는 출력한 LOT 이 모두 입하·폐기됐다 — 출력됨 0, 최근 발행은 남는다.
+    expect(pairOf(ofS, ids.itemF)).toMatchObject({ printedCount: 0 });
+    expect(pairOf(ofS, ids.itemF)?.lastIssuedAt).not.toBeNull();
+    expect(pairOf(ofS, ids.itemJ)).toMatchObject({ printedCount: 0, inspectionRequired: true, lastIssuedAt: null });
+    expect((await rowsOf(ids.supplier0)).map((pair) => [pair.item.itemId, pair.inspectionRequired, pair.lastIssuedAt]))
+      .toEqual([[Number(ids.itemJ), true, null]]);
+    expect(await prisma.lot.count({ where: { plant_id: ids.plant } })).toBe(lotsBefore);
+  });
+
   it('FR-001 FR-020 번호 충돌 없이 이어 매긴다 — 같은 접두사 번호가 이미 있으면 다음 일련', async () => {
     await makeOrder(ids.itemK, '2026-11-01', [100]);
     await request(app.getHttpServer()).post(BATCHES).set('Cookie', cookie).set('Idempotency-Key', randomUUID()).send({
@@ -364,15 +430,17 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
     expect(body.items.map((row) => [row.lotNo, row.creationModeCode])).toEqual([[lotNo('K', 100, 1), 'MANUAL'], [lotNo('K', 100, 2), 'AUTO']]);
   });
 
-  it('P-01-01·W-01-14 가 없으면 403, 단말은 자기 공장 POP 만 — 쓰기 아닌 조회라 작업자 번호 없이 부른다', async () => {
+  it('Q16b P-01-01·W-01-14 가 없으면 403, 단말은 자기 공장 POP 만 — 쓰기 아닌 조회라 작업자 번호 없이 부른다', async () => {
     const narrow = (path: string) => request(app.getHttpServer()).get(path).set('Cookie', narrowCookie);
     const combo = { plantId: Number(ids.plant), supplierId: Number(ids.supplier), itemId: Number(ids.itemA), tab: 'UNPRINTED' };
     await narrow(LOTS).query(combo).expect(403);
     await narrow(PAIRS).query({ plantId: Number(ids.plant) }).expect(403);
+    await narrow(SUPPLIERS).query({ plantId: Number(ids.plant) }).expect(403);
     await narrow(LOOKUP).query({ plantId: Number(ids.plant), lotNo: 'X' }).expect(403);
     for (const token of [foreignPopToken, mobileToken]) {
       await request(app.getHttpServer()).get(LOTS).set('Authorization', `Bearer ${token}`).query(combo).expect(401);
       await request(app.getHttpServer()).get(PAIRS).set('Authorization', `Bearer ${token}`).query({ plantId: Number(ids.plant) }).expect(401);
+      await request(app.getHttpServer()).get(SUPPLIERS).set('Authorization', `Bearer ${token}`).query({ plantId: Number(ids.plant) }).expect(401);
     }
     await popGet(LOTS).query({ ...combo, tab: 'OTHER' }).expect(400);
   });
@@ -395,11 +463,11 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
       .send({ documentTypeCode: 'MATERIAL_LOT_LABEL', targets: [{ targetTypeCode: 'LOT', targetId: lotId }] }).expect(201);
   }
 
-  async function makeOrder(item: bigint, orderDate: string, quantities: number[]): Promise<{ orderId: bigint; lineIds: bigint[] }> {
+  async function makeOrder(item: bigint, orderDate: string, quantities: number[], supplier = ids.supplier): Promise<{ orderId: bigint; lineIds: bigint[] }> {
     seq += 1;
     const order = await prisma.purchase_order.create({
       data: {
-        purchase_order_no: `${PREFIX}-PO-${String(seq).padStart(3, '0')}`, supplier_id: ids.supplier, business_unit_id: ids.unit,
+        purchase_order_no: `${PREFIX}-PO-${String(seq).padStart(3, '0')}`, supplier_id: supplier, business_unit_id: ids.unit,
         plant_id: ids.plant, order_date: new Date(`${orderDate}T00:00:00.000Z`), status_code: 'CONFIRMED',
       },
     });
