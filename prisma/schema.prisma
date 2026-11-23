@@ -1348,6 +1348,7 @@ model purchase_order_line {
   asn_line               asn_line[]
   inbound_receipt_line   inbound_receipt_line[]
   inbound_receipt_po_allocation inbound_receipt_po_allocation[]
+  material_lot_po_plan   material_lot_po_plan[]
   item                   item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   purchase_order         purchase_order         @relation(fields: [purchase_order_id], references: [purchase_order_id], onDelete: NoAction, onUpdate: NoAction)
   uom                    uom                    @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2159,6 +2160,8 @@ model item {
   erp_spec                                             String?
   erp_item_group_code                                  String?                              @db.VarChar(10)
   erp_item_group_name                                  String?                              @db.VarChar(200)
+  default_package_uom_id                               BigInt?
+  default_package_count                                Int?
   operation_policy                                     operation_policy[]
   outbound_item_setting                                outbound_item_setting[]
   handling_unit_content                                handling_unit_content[]
@@ -2189,6 +2192,7 @@ model item {
   subcontract_order                                    subcontract_order[]
   uom                                                  uom                                  @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   uom_item_default_lot_storage_uom_idTouom             uom?                                 @relation("item_default_lot_storage_uom_idTouom", fields: [default_lot_storage_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  default_package_uom                                  uom?                                 @relation("item_default_package_uom_idTouom", fields: [default_package_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   item_bu_item_map_item_bu_item_map_from_item_idToitem item_bu_item_map[]                   @relation("item_bu_item_map_from_item_idToitem")
   item_bu_item_map_item_bu_item_map_to_item_idToitem   item_bu_item_map[]                   @relation("item_bu_item_map_to_item_idToitem")
   item_external_code                                   item_external_code[]
@@ -2757,6 +2761,7 @@ model uom {
   equipment_inspection_item                                     equipment_inspection_item[]
   item                                                          item[]
   item_item_default_lot_storage_uom_idTouom                     item[]                               @relation("item_default_lot_storage_uom_idTouom")
+  item_default_package_uom                                      item[]                               @relation("item_default_package_uom_idTouom")
   item_uom_conversion_item_uom_conversion_from_uom_idTouom      item_uom_conversion[]                @relation("item_uom_conversion_from_uom_idTouom")
   item_uom_conversion_item_uom_conversion_to_uom_idTouom        item_uom_conversion[]                @relation("item_uom_conversion_to_uom_idTouom")
   location                                                      location[]
@@ -4559,6 +4564,7 @@ model lot {
   shipment_request_lot shipment_request_lot[]
   product_lot_split_parent product_lot_split[] @relation("product_lot_split_parent_lot")
   product_lot_split_child  product_lot_split?  @relation("product_lot_split_child_lot")
+  material_lot_po_plan     material_lot_po_plan?
 }
 
 /// 생산 LOT 수량 분리 기록(피처 013 · omf-all-around#303) — confirmed_at 이 NULL 이면 PDA 확인 대기.
@@ -4595,6 +4601,18 @@ model product_lot_split {
   confirmed_terminal    terminal? @relation("product_lot_split_confirmed_terminal", fields: [confirmed_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([parent_lot_id, split_at(sort: Desc)], map: "ix_product_lot_split_parent")
+  @@schema("trace")
+}
+
+/// 자동 생성 자재 관리 LOT 의 P/O 라인 몫(피처 014 R-1) — 수량은 lot.initial_qty 를 따른다.
+model material_lot_po_plan {
+  lot_id                 BigInt              @id
+  purchase_order_line_id BigInt
+  created_at             DateTime            @default(now()) @db.Timestamptz(6)
+  lot                    lot                 @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  purchase_order_line    purchase_order_line @relation(fields: [purchase_order_line_id], references: [purchase_order_line_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([purchase_order_line_id], map: "ix_material_lot_po_plan_line")
   @@schema("trace")
 }
 
@@ -6293,6 +6311,7 @@ model material_lot_batch {
   created_at            DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by            BigInt?
   created_worker_id     BigInt?
+  creation_mode_code    String   @default("MANUAL") @db.VarChar(10)
   plant                 plant    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   item                  item     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   supplier              partner  @relation(fields: [supplier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
