@@ -2554,6 +2554,15 @@
       }
      },
      {
+      "name": "withoutInspectionRequestOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "참이면 **검사 건(IQC · OQC)에 묶이지 않은 부적합만** 낸다 — 재작업/폐기 판정 의뢰(W-04-07)로 올린 반품 · 제품 부적합이다. 검사 조회·판정 OQC 탭 「구분: 판정 의뢰」가 쓴다(omf-all-around#354). ⛔ 화면이 응답을 걸러 대신하지 않는다(페이지 단위)."
+     },
+     {
       "name": "severityCode",
       "in": "query",
       "schema": {
