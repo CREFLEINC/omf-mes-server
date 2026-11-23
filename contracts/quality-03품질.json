@@ -6768,7 +6768,7 @@
        "DEFAULT",
        null
       ],
-      "description": "생략 근거 — statusCode=SKIPPED 일 때만 싣는다. DEFAULT=검사 기준의 기본 생략. 서버 선행 · 장부 P-152 · omf-all-around#212. ⚠ 건별 생략 결재(APPROVAL)는 없앴다(omf-all-around#353) — 옛 데이터 정리 마이그레이션이 배포되기 전까지는 옛 의뢰에 APPROVAL 이 남아 실릴 수 있다. 모르는 값은 생략으로만 보인다.",
+      "description": "생략 근거 — statusCode=SKIPPED 일 때만 싣는다. DEFAULT=검사 기준의 기본 생략. 서버 선행 · 장부 P-152 · omf-all-around#212.",
       "example": "DEFAULT"
      },
      "requestedAt": {
