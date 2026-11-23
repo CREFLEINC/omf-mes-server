@@ -28,6 +28,8 @@ model app_user {
   approval_request                                       approval_request[]
   approval_route_step                                    approval_route_step[]
   approval_step                                          approval_step[]
+  disposition_approval_created                           disposition_approval[]             @relation("disposition_approval_created_by")
+  disposition_approval_updated                           disposition_approval[]             @relation("disposition_approval_updated_by")
   attachment                                             attachment[]
   document_cancellation                                  document_cancellation[]
   document_issue_log                                     document_issue_log[]                 @relation("document_issue_log_issued_by")
@@ -140,6 +142,7 @@ model approval_request {
   inbound_variance                               inbound_variance[]
   concession                                     concession[]
   disposition_decision                           disposition_decision[]
+  disposition_approval                           disposition_approval[]
   purchase_order                                 purchase_order[]
 
   @@index([target_type_code, target_id], map: "ix_approval_request_target")
@@ -2796,6 +2799,7 @@ model uom {
   supplier_item_default supplier_item_default[]
   tracking_transmission_shortage tracking_transmission_shortage[]
   product_lot_split product_lot_split[]
+  disposition_approval disposition_approval[]
   @@schema("mdm")
   shipment_request_lot shipment_request_lot[]
 }
@@ -3803,10 +3807,40 @@ model disposition_decision {
   approval_request        approval_request? @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disposition_approval")
   sorting_result          sorting_result[]
   stock_transfer          stock_transfer[]
+  disposition_approval    disposition_approval[]
 
   sort_good_qty   Decimal? @db.Decimal(20, 6)
   sort_defect_qty Decimal? @db.Decimal(20, 6)
   @@index([nonconformance_id], map: "ix_disposition_decision_nonconformance")
+  @@schema("quality")
+}
+
+/// 폐기·선별 처분 결재 요청(omf-all-around#352) — 승인 뒤 `:apply` 가 저장한 본문으로 처분 판정을 만든다.
+model disposition_approval {
+  disposition_approval_id BigInt                @id @default(autoincrement())
+  nonconformance_id       BigInt
+  disposition_type_code   String                @db.VarChar(50)
+  decision_qty            Decimal?              @db.Decimal(20, 6)
+  uom_id                  BigInt?
+  lot_ids                 BigInt[]
+  good_qty                Decimal?              @db.Decimal(20, 6)
+  defect_qty              Decimal?              @db.Decimal(20, 6)
+  reason                  String
+  approval_request_id     BigInt
+  status_code             String                @db.VarChar(20)
+  disposition_decision_id BigInt?
+  created_at              DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by              BigInt
+  updated_at              DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by              BigInt
+  nonconformance          nonconformance        @relation(fields: [nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                     uom?                  @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  approval_request        approval_request      @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disposition_approval_request")
+  disposition_decision    disposition_decision? @relation(fields: [disposition_decision_id], references: [disposition_decision_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disposition_approval_decision")
+  created_by_user         app_user              @relation("disposition_approval_created_by", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disposition_approval_created_by")
+  updated_by_user         app_user              @relation("disposition_approval_updated_by", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disposition_approval_updated_by")
+
+  @@index([nonconformance_id], map: "ix_disposition_approval_nonconformance")
   @@schema("quality")
 }
 
@@ -4384,6 +4418,7 @@ model nonconformance {
   work_order_work_order_rework_source_nonconformance_idTononconformance work_order[]           @relation("work_order_rework_source_nonconformance_idTononconformance")
   concession                                                            concession[]
   disposition_decision                                                  disposition_decision[]
+  disposition_approval                                                  disposition_approval[]
   app_user                                                              app_user?              @relation(fields: [action_owner_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_result                                                     inspection_result?     @relation(fields: [inspection_result_id], references: [inspection_result_id], onDelete: NoAction, onUpdate: NoAction)
   item                                                                  item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
