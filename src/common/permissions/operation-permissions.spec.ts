@@ -72,7 +72,7 @@ describe('오퍼레이션 권한 매핑', () => {
     // ERP W/O 자동 계획 재시도 1건(장부 P-67) — `W-02-01`·`W-02-02` 소유다: 265.
     // 특채 요청·적용 2건(장부 P-79) — `W-03-10` 소유다: 267.
     // OQC 생략 요청·실행 2건(#119 · 장부 P-83) — `W-04-03` 소유다: 269.
-    // 품목 검사 수준 지정·수동 변경 2건(#64 · 장부 P-87) — `W-03-12` 소유다: 271.
+    // 품목 검사 수준 지정·수동 변경 2건(#64 · 장부 P-87) — `W-06-02` 소유다(W-03-12 를 합침 · #357): 271.
     // 부서×이벤트 알림 설정 4건(#160 · 장부 P-92) — `W-CO-11` 소유다: 275.
     // Zalo 연결 2건(#160 · 장부 P-96) — `W-CO-12` 소유다: 277.
     // 발송 이력 2건(#160 · 장부 P-98) — `W-CO-13` 소유다: 279.
@@ -189,6 +189,20 @@ describe('오퍼레이션 권한 매핑', () => {
       'GET /quality/nonconformances/{nonconformanceId}',
     ]) {
       expect(OPERATION_PERMISSIONS[key]).toContain('W-03-10');
+    }
+  });
+
+  // 처분을 IQC·OQC 판정 화면의 처분 상자로 옮겼다(omf-all-around#354) — 두 화면 권한만 가진 검사자도 처분한다.
+  it('⛔ 처분 상자의 조회·판정·특채·재작업 발행을 IQC(W-01-01)·OQC(W-04-03) 권한으로도 한다 — #354', () => {
+    for (const key of [
+      'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances',
+      'GET /quality/nonconformances/{nonconformanceId}',
+      'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order',
+      'POST /quality/concessions',
+    ]) {
+      expect(OPERATION_PERMISSIONS[key]).toEqual(expect.arrayContaining(['W-01-01', 'W-03-10', 'W-04-03']));
     }
   });
 
