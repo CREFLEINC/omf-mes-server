@@ -8,17 +8,19 @@ describe('reviseMaterialLotWithin', () => {
   const LOT_NO = 'A|100|261123|S|0003';
   const tx = (lot: Record<string, unknown> = {}, printed = 0, existing: string[] = []) => {
     const updates: Record<string, unknown>[] = [];
+    const base = { plant_id: 3n, item_id: 7n, lot_type_code: 'MATERIAL', source_type_code: 'MATERIAL_LOT_BATCH', source_id: 90n, ...lot };
     const client = {
       $queryRaw: jest.fn().mockResolvedValue([{
         lot_id: 10n, lot_no: LOT_NO, plant_id: 3n, item_id: 7n, lot_type_code: 'MATERIAL', lifecycle_status_code: 'WAITING',
         source_type_code: 'MATERIAL_LOT_BATCH', source_id: 90n, initial_qty: new Prisma.Decimal(100), ...lot,
       }]),
       document_issue_log: { count: jest.fn().mockResolvedValue(printed) },
-      material_lot_batch: { findUniqueOrThrow: jest.fn().mockResolvedValue({ supplier_id: 5n }) },
+      material_lot_batch: { findUnique: jest.fn().mockResolvedValue({ supplier_id: 5n }) },
       uom: { findUnique: jest.fn(async ({ where }: { where: { uom_id: number } }) => (where.uom_id === 31 ? { uom_id: 31n } : null)) },
       item: { findUnique: jest.fn().mockResolvedValue({ item_code: 'A' }) },
       partner: { findUnique: jest.fn().mockResolvedValue({ partner_code: 'S' }) },
       lot: {
+        findUnique: jest.fn().mockResolvedValue(base),
         findMany: jest.fn().mockResolvedValue(existing.map((lot_no) => ({ lot_no }))),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => updates.push(data)),
       },
@@ -66,5 +68,14 @@ describe('reviseMaterialLotWithin', () => {
     expect(await codeOf(reviseMaterialLotWithin(tx({ lifecycle_status_code: 'ACTIVE' }).client, 10n, revision()))).toEqual([409, ['STATE_LOCKED']]);
     expect(await codeOf(reviseMaterialLotWithin(tx({ lifecycle_status_code: 'VOIDED' }).client, 10n, revision()))).toEqual([409, ['STATE_LOCKED']]);
     expect(await codeOf(reviseMaterialLotWithin(tx({ lot_type_code: 'PRODUCT' }).client, 10n, revision()))).toEqual([409, ['STATE_LOCKED']]);
+  });
+
+  it('T048 SC-002 (공장·공급사·품목) 자물쇠를 LOT 행 잠금보다 먼저 잡는다', async () => {
+    const { client } = tx();
+    await reviseMaterialLotWithin(client, 10n, revision());
+    const sqls = (client.$queryRaw as jest.Mock).mock.calls.map(([strings]: [TemplateStringsArray]) => strings.join('?'));
+    expect(sqls[0]).toContain('pg_advisory_xact_lock');
+    expect((client.$queryRaw as jest.Mock).mock.calls[0]).toContain('material-lot-po-plan:3:5:7');
+    expect(sqls[1]).toContain('FOR UPDATE');
   });
 });
