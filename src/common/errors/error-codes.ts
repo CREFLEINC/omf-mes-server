@@ -22,8 +22,6 @@ export const ERROR_CODE = {
   LAST_ADMIN: 'LAST_ADMIN',
   // 계약이 이름 붙인 값이다 — 「라인이 1건 이상이어야 한다」(Routing Rev 확정).
   LINE_REQUIRED: 'LINE_REQUIRED',
-  // 계약이 이름 붙인 값이다 — 「확정 버전이 1건 이상 있어야 한다」(검사기준 승인).
-  CONFIRMED_VERSION_REQUIRED: 'CONFIRMED_VERSION_REQUIRED',
   // 계약이 이름 붙인 값이다 — 「실패한 메시지만 재처리할 수 있다」(연계 메시지 재처리).
   NOT_RETRYABLE: 'NOT_RETRYABLE',
   NOT_YOUR_TURN: 'NOT_YOUR_TURN',

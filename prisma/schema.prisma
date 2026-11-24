@@ -75,7 +75,6 @@ model app_user {
   equipment_calibration_performer                        equipment_calibration[]           @relation("equipment_calibration_calibrated_by")
   equipment_calibration_recorder                         equipment_calibration[]           @relation("equipment_calibration_recorded_by")
   equipment_calibration_clearer                          equipment_calibration[]           @relation("equipment_calibration_cleared_by")
-  inspection_plan                                        inspection_plan[]
   nonconformance                                         nonconformance[]
   impact_analysis                                        impact_analysis[]
   lot_hold_lot_hold_held_byToapp_user                    lot_hold[]                         @relation("lot_hold_held_byToapp_user")
@@ -3903,8 +3902,6 @@ model inspection_plan {
   process_id              BigInt?
   routing_id              BigInt?
   inspection_type_code    String                    @db.VarChar(50)
-  approved_by             BigInt?
-  approved_at             DateTime?                 @db.Timestamptz(6)
   is_active               Boolean                   @default(true)
   created_at              DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by              BigInt?
@@ -3917,7 +3914,6 @@ model inspection_plan {
   simple_judgment_allowed Boolean                   @default(false)
   name_ko                 String?                   @db.VarChar(200)
   name_vi                 String?                   @db.VarChar(200)
-  app_user                app_user?                 @relation(fields: [approved_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   item                    item?                     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   process                 process?                  @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
   routing                 routing?                  @relation(fields: [routing_id], references: [routing_id], onDelete: NoAction, onUpdate: NoAction)

@@ -7,7 +7,7 @@ function harness() {
   const itemUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
   const tx = {
     inspection_plan: {
-      create: jest.fn().mockResolvedValue({ inspection_plan_id: 1n, item_id: 40n, process_id: null, routing_id: null, approved_by: null, approved_at: null }),
+      create: jest.fn().mockResolvedValue({ inspection_plan_id: 1n, item_id: 40n, process_id: null, routing_id: null }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn().mockResolvedValue({ inspection_type_code: 'IQC', item_id: 40n, default_skip: true }),
     },
@@ -115,7 +115,7 @@ describe('검사 기준 저장 — 품목 「수입검사 대상」 연동 (omf-
 /** 「전 품목 공통」 IQC 기준 — 전용 IQC 기준이 없는 품목의 「수입검사 대상」을 맞춘다(사용자 결정 2026-11-04). */
 describe('검사 기준 저장 — 공통 IQC 기준의 품목 연동', () => {
   const common = (overrides: Record<string, unknown> = {}) => ({
-    inspection_plan_id: 1n, item_id: null, process_id: null, routing_id: null, approved_by: null, approved_at: null,
+    inspection_plan_id: 1n, item_id: null, process_id: null, routing_id: null,
     inspection_type_code: 'IQC', is_active: true, default_skip: false, ...overrides,
   });
   const syncAll = (skip: boolean) => ({

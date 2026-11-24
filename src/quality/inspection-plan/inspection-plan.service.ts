@@ -19,7 +19,6 @@ import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
-import { REVISION_STATUS } from '../../planning/revision-status';
 import { syncItemsToCommonIqcPlan } from './item-iqc-plan-sync';
 import { InspectionLevelCode } from '../inspection-level/inspection-level-rules';
 import { writeItemLevelInTx } from '../inspection-level/item-level-write';
@@ -40,8 +39,6 @@ interface InspectionPlanView {
   processId: number | null;
   routingId: number | null;
   inspectionTypeCode: string;
-  approvedBy: number | null;
-  approvedAt: string | null;
   /** 검사 유형 공통 「기본 생략」(omf-all-around#212 · 장부 P-152). */
   defaultSkip: boolean;
   /** ⚠ 호환용 — `defaultSkip` 과 같은 값이다(#212 전 화면·POP 가 읽는다). */
@@ -252,54 +249,6 @@ export class InspectionPlanService {
     return this.get(inspectionPlanId);
   }
 
-  /**
-   * 「`approvedBy`·`approvedAt` 을 서버가 **동시에** 기록한다(현재 사용자·현재 시각) —
-   * 둘은 짝이어야 하며 서버가 항상 함께 채우는 방식으로 그 짝을 보장한다」(계약 · `A-9`).
-   * DB 에 CHECK 가 없으므로 그 짝은 이 한 줄이 유일한 보증이다.
-   *
-   * 「전제: 이 기준에 **확정 버전이 1건 이상** 있어야 한다 — 없으면 400
-   * (`CONFIRMED_VERSION_REQUIRED`)」. 승인 해제는 제공하지 않는다.
-   */
-  async approve(inspectionPlanId: number, actorId: number): Promise<InspectionPlanResult> {
-    const row = await this.prisma.inspection_plan.findUnique({
-      where: { inspection_plan_id: inspectionPlanId },
-      select: { approved_at: true },
-    });
-    if (!row) throw new NotFoundException('없는 검사기준입니다.');
-    if (row.approved_at !== null) {
-      // ⚠ 계약에 없고 서버가 정했다. 승인 해제가 없는데 다시 승인하면 «승인자 기록이
-      // 덮인다» — 누가 승인했는지가 사라지는 쓰기다. 되돌림 §V-2.
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        {
-          scope: 'screen',
-          code: ERROR_CODE.STATE_LOCKED,
-          message: '이미 승인된 검사기준입니다. 승인 해제는 제공하지 않습니다.',
-        },
-      ]);
-    }
-
-    const confirmed = await this.prisma.inspection_plan_version.count({
-      where: { inspection_plan_id: inspectionPlanId, status_code: REVISION_STATUS.CONFIRMED },
-    });
-    if (confirmed === 0) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        {
-          scope: 'screen',
-          code: ERROR_CODE.CONFIRMED_VERSION_REQUIRED,
-          message: '확정된 검사기준 버전이 없습니다. 버전을 확정한 뒤 승인하세요.',
-        },
-      ]);
-    }
-
-    await this.prisma.inspection_plan.update({
-      where: { inspection_plan_id: inspectionPlanId },
-      // ⛔ 둘을 한 문장에서 함께 채운다 — 나누면 그 사이가 「승인자만 있고 시각은 없는」
-      // 상태가 되고, DB 에 그것을 막는 CHECK 가 없다.
-      data: { approved_by: actorId, approved_at: new Date(), version_no: { increment: 1 } },
-    });
-    return this.get(inspectionPlanId);
-  }
-
   private async assertWritable(
     input: InspectionPlanWrite,
     self: number | null,
@@ -426,8 +375,6 @@ function view(row: PlanRow): InspectionPlanView {
     processId: row.process_id === null ? null : Number(row.process_id),
     routingId: row.routing_id === null ? null : Number(row.routing_id),
     inspectionTypeCode: row.inspection_type_code,
-    approvedBy: row.approved_by === null ? null : Number(row.approved_by),
-    approvedAt: row.approved_at === null ? null : row.approved_at.toISOString(),
     defaultSkip: row.default_skip,
     pqcSkipAllowed: row.default_skip,
     isActive: row.is_active,
