@@ -3859,7 +3859,7 @@
      "quality"
     ],
     "summary": "품목 검사 수준 지정",
-    "description": "없는 품목이면 400 itemId INVALID, 이미 지정된 품목이면 400 UNIQUE_VIOLATION. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "없는 품목이면 400 itemId INVALID, IQC 검사 기준도 IQC 검사 의뢰도 없는 품목이면 400 itemId INVALID(omf-all-around#357), 이미 지정된 품목이면 400 UNIQUE_VIOLATION. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -3941,7 +3941,7 @@
      "quality"
     ],
     "summary": "품목 검사 수준 수동 변경",
-    "description": "사유는 선택이다(장부 P-105 · omf-all-around#133 — 예전에는 수준이 바뀌는데 사유가 없으면 400 reason REQUIRED). 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "사유는 선택이다(장부 P-105 · omf-all-around#133 — 예전에는 수준이 바뀌는데 사유가 없으면 400 reason REQUIRED). 수준을 바꾸는데 IQC 검사 기준도 IQC 검사 의뢰도 없는 품목이면 400 itemId INVALID(omf-all-around#357). 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"

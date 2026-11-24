@@ -130,6 +130,7 @@ export class InspectionLevelService {
     const reason = input.reason?.trim() || null;
     const item = await this.prisma.item.findUnique({ where: { item_id: input.itemId }, select: { item_id: true } });
     if (!item) throw one(field('itemId', ERROR_CODE.INVALID, '없는 품목입니다.'));
+    await this.assertIqcItem(input.itemId);
     const id = await this.prisma
       .$transaction(async (tx) => {
         const created = await tx.item_inspection_level.create({
@@ -169,6 +170,7 @@ export class InspectionLevelService {
     if (!current) throw new NotFoundException('없는 검사 수준입니다.');
     const levelChanged =
       input.inspectionLevelCode !== undefined && input.inspectionLevelCode !== current.inspection_level_code;
+    if (levelChanged) await this.assertIqcItem(current.item_id);
     // 사유는 선택이다(omf-all-around#133) — 비우면 이력에 사유 없이 남는다.
     const reason = levelChanged ? input.reason?.trim() || null : undefined;
 
@@ -198,6 +200,21 @@ export class InspectionLevelService {
       });
     });
     return this.get(id);
+  }
+
+  /**
+   * 검사 수준은 IQC 전용이다(omf-all-around#357). IQC 검사 기준이 있거나(사용 여부 무관) IQC 검사 의뢰가 있는 품목만 받는다 —
+   * 기준 없이 진행한 IQC 검사의 판정 확정 때 지정하는 길(#247)을 막지 않으려고 의뢰도 인정한다.
+   */
+  private async assertIqcItem(itemId: number | bigint): Promise<void> {
+    const where = { item_id: itemId, inspection_type_code: 'IQC' };
+    const [plan, request] = await Promise.all([
+      this.prisma.inspection_plan.findFirst({ where, select: { inspection_plan_id: true } }),
+      this.prisma.inspection_request.findFirst({ where, select: { inspection_request_id: true } }),
+    ]);
+    if (!plan && !request) {
+      throw one(field('itemId', ERROR_CODE.INVALID, 'IQC 검사 대상 품목이 아닙니다. IQC 검사 기준을 먼저 등록하세요.'));
+    }
   }
 
   async histories(query: ItemInspectionLevelHistoryQuery): Promise<PagedResponse<ItemInspectionLevelHistoryView>> {
