@@ -65,8 +65,9 @@ describe('ContractRegistry', () => {
   // LOT 목록 둘 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 647.
   // 번호 풀기 1 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 648.
   // 자재 기준 정방향 계보 1 — `W-02-13`(피처 015 · omf-all-around#355): 649.
-  it('계약 7파일에서 오퍼레이션 649건을 적재한다', () => {
-    expect(registry.size).toBe(649);
+  // 제품 기준 역방향 계보 1 — `W-02-14`(피처 015 · omf-all-around#355): 650.
+  it('계약 7파일에서 오퍼레이션 650건을 적재한다', () => {
+    expect(registry.size).toBe(650);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
