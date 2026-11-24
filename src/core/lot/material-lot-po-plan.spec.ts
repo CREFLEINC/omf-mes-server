@@ -78,6 +78,12 @@ describe('planMaterialLotShares', () => {
       [1, 10, 4, 2.5], [1, 5, 2, 2.5],
     ]);
   });
+
+  it('FR-006 T049 옛 데이터 — 봉지당 양이 6자리 안에서 떨어지지 않으면(100 ÷ 3) 패키징 없이 만든다', () => {
+    expect(shape(planMaterialLotShares([line(1, 250)], d(0), { lotQty: d(100), packageCount: 3 }))).toEqual([
+      [1, 100, null, null], [1, 100, null, null], [1, 50, null, null],
+    ]);
+  });
 });
 
 describe('materialLotDefaultsOf', () => {
@@ -102,7 +108,7 @@ describe('materialLotDefaultsOf', () => {
     expect(materialLotDefaultsOf(item({ default_lot_storage_uom_id: 2n }), table())).toEqual({ status: 'NO_CONVERSION' });
   });
 
-  it('OK — LOT 크기는 기본 단위로 바꾼 값, 패키징 수는 품목 값', () => {
+  it('FR-004 FR-006 OK — LOT 크기는 기본 단위로 바꾼 값, 패키징 수는 품목 값', () => {
     const converted = materialLotDefaultsOf(item({ default_lot_storage_uom_id: 2n, default_production_lot_size: new Prisma.Decimal(2) }), table([
       { item_id: 7n, from_uom_id: 1n, to_uom_id: 2n, conversion_rate: new Prisma.Decimal('0.01'), effective_from: new Date('2026-01-01') },
     ]));

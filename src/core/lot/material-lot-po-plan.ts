@@ -80,7 +80,12 @@ export function planMaterialLotShares(
   return planned;
 }
 
-/** 패키징 크기가 6자리 안에서 딱 떨어지지 않으면(환산 비율 탓) 패키징 없이 만든다 — `ck_lot_package` 가 곱이 같기를 요구한다. */
+/**
+ * 봉지당 양 = 기본 단위로 바꾼 LOT 크기 ÷ 패키징 수(6자리 = `qty_per_package` scale).
+ * ⚠️ 딱 떨어지지 않으면 알림 없이 **패키징 없는 LOT** 으로 만든다(T049) — `ck_lot_package` 가 「수 × 봉지당 양 = 수량」을 요구해서다.
+ * 품목 저장(W-06-05 `assertPackageDefault`)이 환산까지 넣어 이런 기본값을 막으므로, 여기에 오는 것은 그 검사 전에 저장된 옛 데이터이거나
+ * 저장 뒤 환산 비율이 바뀐 경우뿐이다. 그때도 생성을 멈추지 않고 작업자가 출력 전 수정(FR-016)으로 패키징을 붙인다.
+ */
 function packageSizeOf(defaults: MaterialLotDefaults): Prisma.Decimal | null {
   if (defaults.packageCount === null) return null;
   const packSize = defaults.lotQty.dividedBy(defaults.packageCount).toDecimalPlaces(6);
