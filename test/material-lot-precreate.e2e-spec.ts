@@ -354,7 +354,7 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
     expect(paged.body.items).toHaveLength(2);
   });
 
-  it('번호 충돌 없이 이어 매긴다 — 같은 접두사 번호가 이미 있으면 다음 일련', async () => {
+  it('FR-001 FR-020 번호 충돌 없이 이어 매긴다 — 같은 접두사 번호가 이미 있으면 다음 일련', async () => {
     await makeOrder(ids.itemK, '2026-11-01', [100]);
     await request(app.getHttpServer()).post(BATCHES).set('Cookie', cookie).set('Idempotency-Key', randomUUID()).send({
       plantId: Number(ids.plant), supplierId: Number(ids.supplier), itemId: Number(ids.itemK), lotQty: 100, package: null, lotCount: 1,
