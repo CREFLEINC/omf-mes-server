@@ -1,7 +1,10 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { TraceLotPage, TraceLotQuery, TraceLotsService } from './trace-lots.service';
+import { TraceStartMatch, TraceStartQuery, TraceStartsService } from './trace-starts.service';
 
 /**
  * 자재 기준 생산 추적(W-02-13)·제품 기준 역추적(W-02-14) — 피처 015 · omf-all-around#355. 관리웹 세션 전용이다.
@@ -9,7 +12,10 @@ import { TraceLotPage, TraceLotQuery, TraceLotsService } from './trace-lots.serv
  */
 @Controller('trace')
 export class TraceTreeController {
-  constructor(private readonly lots: TraceLotsService) {}
+  constructor(
+    private readonly lots: TraceLotsService,
+    private readonly starts: TraceStartsService,
+  ) {}
 
   @Get('material-trace-lots')
   @Contract('GET /trace/material-trace-lots')
@@ -21,5 +27,11 @@ export class TraceTreeController {
   @Contract('GET /trace/product-trace-lots')
   productLots(@Query() query: TraceLotQuery): Promise<TraceLotPage> {
     return this.lots.products(query);
+  }
+
+  @Get('trace-starts')
+  @Contract('GET /trace/trace-starts')
+  traceStarts(@Query() query: TraceStartQuery, @Req() request: Request): Promise<{ matches: TraceStartMatch[] }> {
+    return this.starts.resolve(query, currentSession(request)?.permissions ?? []);
   }
 }

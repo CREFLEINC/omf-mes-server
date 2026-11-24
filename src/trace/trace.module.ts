@@ -31,6 +31,7 @@ import { SerialNumberQueryService } from './serial-number/serial-number-query.se
 import { SerialNumberCreateService } from './serial-number/serial-number-create.service';
 import { SerialNumberController } from './serial-number/serial-number.controller';
 import { TraceLotsService } from './tree/trace-lots.service';
+import { TraceStartsService } from './tree/trace-starts.service';
 import { TraceTreeController } from './tree/trace-tree.controller';
 
 /**
@@ -59,6 +60,7 @@ import { TraceTreeController } from './tree/trace-tree.controller';
     MaterialInputLineListService,
     PackingLineListService,
     TraceLotsService,
+    TraceStartsService,
   ],
 })
 export class TraceModule {}

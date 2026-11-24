@@ -17096,6 +17096,109 @@
     },
     "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
    }
+  },
+  "/trace/trace-starts": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "번호 하나를 목록 줄 LOT 들로 풀기",
+    "description": "입력·스캔한 번호(앞뒤 공백 무시, 정확 일치)의 종류를 서버가 알아내 목록 줄 모양의 LOT 들로 준다. 같은 글자가 여러 종류에 맞으면 모두 준다. 맞는 것이 없거나 다른 공장 번호면 matches 가 빈 배열(200). 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-5·R-6",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "direction",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "FORWARD",
+        "BACKWARD"
+       ]
+      },
+      "description": "FORWARD = 자재 기준(W-02-13 필요) · BACKWARD = 제품 기준(W-02-14 필요)"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 200
+      },
+      "description": "번호 하나"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "맞은 번호 종류들",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "matches"
+         ],
+         "properties": {
+          "matches": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/TraceStartMatch"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — plantId·direction·q 없음, direction 값이 틀림",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 두 화면 권한 모두 없음, 또는 direction 에 맞는 권한(FORWARD W-02-13 · BACKWARD W-02-14) 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
   }
  },
  "components": {
@@ -32028,6 +32131,58 @@
      },
      "page": {
       "$ref": "#/components/schemas/PageMeta"
+     }
+    }
+   },
+   "TraceStartMatch": {
+    "type": "object",
+    "description": "번호 하나가 맞은 종류 하나와 그 LOT 들",
+    "required": [
+     "matchedBy",
+     "label",
+     "serialNo",
+     "otherDirection",
+     "truncated",
+     "lots"
+    ],
+    "properties": {
+     "matchedBy": {
+      "type": "string",
+      "enum": [
+       "MATERIAL_LOT_NO",
+       "INBOUND_LOT_NO",
+       "SUPPLIER_LOT_NO",
+       "PRODUCT_LOT_NO",
+       "SHIPMENT_NO",
+       "SERIAL_NO"
+      ],
+      "description": "FORWARD 는 MATERIAL_LOT_NO → INBOUND_LOT_NO → SUPPLIER_LOT_NO, BACKWARD 는 PRODUCT_LOT_NO → SHIPMENT_NO → SERIAL_NO 순으로 준다"
+     },
+     "label": {
+      "type": "string",
+      "description": "맞은 번호(화면이 「어느 번호로 들어왔는지」 줄에 보인다)"
+     },
+     "serialNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "SERIAL_NO 일 때만 — 그 줄을 고르면 backward-tree 에 serialNo 로 넘긴다"
+     },
+     "otherDirection": {
+      "type": "boolean",
+      "description": "반대 방향 LOT 번호다(LOT 번호로 맞은 것만) — FORWARD 에 생산으로 만들어지고 다시 투입되지 않은 LOT, BACKWARD 에 생산으로 만들어지지 않은 LOT. 반제품은 두 방향 모두 false. 화면은 목록을 바꾸지 않고 [그 화면으로 열기]를 보인다"
+     },
+     "truncated": {
+      "type": "boolean",
+      "description": "한 번호의 LOT 이 200 을 넘어 앞(lot id 순) 200 개만 실었다"
+     },
+     "lots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceLotRow"
+      },
+      "description": "입하 LOT·공급사 LOT 은 그 묶음의 관리 LOT(분할 자손 빼고), 출하는 출하 완료분의 배분 LOT, 시리얼은 그 생산 LOT 하나"
      }
     }
    }
