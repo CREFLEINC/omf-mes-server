@@ -7,7 +7,7 @@ import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../a
 import { SourceCode, nonconformanceSourceWhere } from './nonconformance-source';
 import { NONCONFORMANCE_INCLUDE, NonconformanceView, assertOpenedPeriodRequired, nonconformanceView, openedAtWhere } from './nonconformance-view';
 
-/** `GET /quality/nonconformances` 질의 10칸(§1-2) — `openedFrom`/`openedTo` 는 «페어」가 아니라 «둘 다 필수」다(§1 2단계 기준 2). */
+/** `GET /quality/nonconformances` 질의 11칸(§1-2 · omf-all-around#354 `withoutInspectionRequestOnly` 추가) — `openedFrom`/`openedTo` 는 «페어」가 아니라 «둘 다 필수」다(§1 2단계 기준 2). */
 export interface NonconformanceFilters {
   statusCode?: string;
   sourceCode?: SourceCode;
@@ -15,6 +15,8 @@ export interface NonconformanceFilters {
   itemId?: number;
   lotId?: number;
   severityCode?: string;
+  /** 검사 건(IQC · OQC)에 묶이지 않은 것만 — 판정 의뢰(W-04-07)로 올린 반품 · 제품(omf-all-around#354). */
+  withoutInspectionRequestOnly?: boolean;
   openedFrom?: string;
   openedTo?: string;
 }
@@ -100,5 +102,6 @@ function whereOf(filters: NonconformanceFilters): Prisma.nonconformanceWhereInpu
     });
   }
   if (filters.sourceCode !== undefined) and.push(nonconformanceSourceWhere(filters.sourceCode));
+  if (filters.withoutInspectionRequestOnly === true) and.push({ inspection_request_id: null });
   return { AND: and };
 }
