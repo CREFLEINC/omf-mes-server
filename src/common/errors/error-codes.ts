@@ -106,6 +106,8 @@ export const ERROR_CODE = {
   MATERIAL_UOM_CONFIRMATION_REQUIRED: 'MATERIAL_UOM_CONFIRMATION_REQUIRED',
   // 출고 작업일을 휴일로 바꾸려면 확인(acknowledgeHoliday)이 필요하다(422).
   HOLIDAY_ACK_REQUIRED: 'HOLIDAY_ACK_REQUIRED',
+  // LOT 추적 내보내기 — 「LOT 계보」 시트가 줄 상한을 넘어 파일을 만들지 않는다(422 · 피처 015 contracts §5).
+  TRACE_EXPORT_TOO_LARGE: 'TRACE_EXPORT_TOO_LARGE',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */

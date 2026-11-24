@@ -17385,6 +17385,182 @@
     },
     "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
    }
+  },
+  "/trace/forward-exports": {
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 기준 생산 추적 엑셀 내보내기",
+    "description": "목록의 LOT 들로 .xlsx 하나를 만든다. 기준 LOT 들을 한 번에 따라가고(깊이 20·겹치지 않는 LOT 5,000 을 함께 센다) 기준 LOT 마다 나눠 적는다. 시트 「최종 LOT」 = 첫 열 기준 LOT + 최종 LOT 줄(정방향은 출하마다 한 줄 — 제품 LOT·품목·생산 수량·행방·고객·출하번호·출하일·출하 수량·창고·위치·재고 수량·W/O·LOT 상태·비고). 시트 「LOT 계보」 = 기준 LOT 마다 계보 줄 전체(묶음·접힘 무관, 깊이 우선, 같은 항목 두 번째부터 비고 「중복 — 위와 같음」, 조상과 같으면 「순환 참조 — 전개 중단」) — 기준 LOT·깊이·단계·번호·품목 코드·품목명·수량·단위·부모 번호·연결 근거(기록/추정)·LOT 상태·비고. 멈춘 단계에서 펼치지 못한 LOT 이 닿는 기준 LOT 은 비고 「일부」. 파일 이름 material-trace-YYYYMMDD-HHmm.xlsx(공장 시간). 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-8",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TraceExportRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": ".xlsx 파일(Content-Disposition: attachment)",
+      "content": {
+       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — lotIds 0개 또는 200 초과, serialNo 가 그 LOT 의 시리얼이 아님",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 자재 기준 생산 추적 화면 권한(W-02-13)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "공장에 없는 LOT·없는 시리얼이 있음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "TRACE_EXPORT_TOO_LARGE — 「LOT 계보」가 100,000줄을 넘어 만들지 않음. 화면 「LOT 이 너무 많습니다 — 조건을 좁히세요」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/backward-exports": {
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "제품 기준 역추적 엑셀 내보내기",
+    "description": "목록의 LOT 들로 .xlsx 하나를 만든다. 기준 LOT 들을 한 번에 따라가고(깊이 20·겹치지 않는 LOT 5,000 을 함께 센다) 기준 LOT 마다 나눠 적는다. 시트 「최종 LOT」 = 첫 열 기준 LOT + 최종 LOT 줄(원자재 LOT × 투입 W/O — 자재 LOT·품목·공급사·공급사 LOT·입하 LOT·입하일·IQC·W/O·생산 LOT·투입량·단위·연결 근거·LOT 상태·비고). 시트 「LOT 계보」 = 기준 LOT 마다 계보 줄 전체(묶음·접힘 무관, 깊이 우선, 같은 항목 두 번째부터 비고 「중복 — 위와 같음」, 조상과 같으면 「순환 참조 — 전개 중단」) — 기준 LOT·깊이·단계·번호·품목 코드·품목명·수량·단위·부모 번호·연결 근거(기록/추정)·LOT 상태·비고. 멈춘 단계에서 펼치지 못한 LOT 이 닿는 기준 LOT 은 비고 「일부」. 파일 이름 product-trace-YYYYMMDD-HHmm.xlsx(공장 시간). 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-8",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TraceExportRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": ".xlsx 파일(Content-Disposition: attachment)",
+      "content": {
+       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — lotIds 0개 또는 200 초과, serialNo 가 그 LOT 의 시리얼이 아님",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 제품 기준 역추적 화면 권한(W-02-14)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "공장에 없는 LOT·없는 시리얼이 있음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "TRACE_EXPORT_TOO_LARGE — 「LOT 계보」가 100,000줄을 넘어 만들지 않음. 화면 「LOT 이 너무 많습니다 — 조건을 좁히세요」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
   }
  },
  "components": {
@@ -33136,6 +33312,40 @@
       }
      }
     ]
+   },
+   "TraceExportRequest": {
+    "type": "object",
+    "description": "내보낼 목록 LOT 들(피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355)",
+    "required": [
+     "plantId",
+     "lotIds"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "지금 목록의 LOT(목록 순서). 기준 LOT 순서가 파일의 순서다"
+     },
+     "serialNos": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 150
+      },
+      "description": "backward 만 — 시리얼로 들어온 줄의 { lotId: serialNo }. 그 LOT 의 계보 줄 맨 위가 시리얼이다"
+     }
+    }
    }
   },
   "securitySchemes": {

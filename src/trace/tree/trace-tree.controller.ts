@@ -1,10 +1,11 @@
-import { Controller, Get, Query, Req } from '@nestjs/common';
-import type { Request } from 'express';
+import { Body, Controller, Get, HttpStatus, Post, Query, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { BackwardEndRow, BackwardSummary } from './backward-end-rows';
 import { ForwardEndRow, ForwardSummary } from './forward-end-rows';
+import { TraceExportBody, TraceExportService } from './trace-export.service';
 import { TraceLotPage, TraceLotQuery, TraceLotsService } from './trace-lots.service';
 import { TraceStartMatch, TraceStartQuery, TraceStartsService } from './trace-starts.service';
 import { RootShipment, TraceGraph, TraceTreeQuery, TraceTreeService } from './trace-tree.service';
@@ -19,6 +20,7 @@ export class TraceTreeController {
     private readonly lots: TraceLotsService,
     private readonly starts: TraceStartsService,
     private readonly trees: TraceTreeService,
+    private readonly exports: TraceExportService,
   ) {}
 
   @Get('material-trace-lots')
@@ -50,4 +52,25 @@ export class TraceTreeController {
   backwardTree(@Query() query: TraceTreeQuery): Promise<TraceGraph & { endRows: BackwardEndRow[]; summary: BackwardSummary; rootShipments: RootShipment[] }> {
     return this.trees.backward(query);
   }
+
+  /** 헤더를 쓰기 전에 모든 예외를 던진다 — 400·404·422 가 전역 필터의 ErrorResponse 로 나간다. */
+  @Post('forward-exports')
+  @Contract('POST /trace/forward-exports')
+  async forwardExports(@Body() body: TraceExportBody, @Res() response: Response): Promise<void> {
+    sendXlsx(response, await this.exports.build('FORWARD', body));
+  }
+
+  @Post('backward-exports')
+  @Contract('POST /trace/backward-exports')
+  async backwardExports(@Body() body: TraceExportBody, @Res() response: Response): Promise<void> {
+    sendXlsx(response, await this.exports.build('BACKWARD', body));
+  }
+}
+
+function sendXlsx(response: Response, file: { fileName: string; bytes: Buffer }): void {
+  response.status(HttpStatus.OK);
+  response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  response.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+  response.setHeader('Cache-Control', 'private, no-store');
+  response.end(file.bytes);
 }
