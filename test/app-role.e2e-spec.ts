@@ -139,8 +139,9 @@ describe('역할·기능 권한 (e2e)', () => {
     // P-02-08·P-02-09·P-02-13(생산 포장·포장 라벨 재출력·PQC 제품 검사 POP 화면)은 없앴다(omf-all-around#293).
     // P-04-07(출하 완료)(피처 010 · omf-all-around#305).
     // P-04-08·M-04-05(피처 013 · omf-all-around#303): 143 → 145.
-    // W-03-12(검사 수준 관리)는 W-06-02 에 합쳤다(omf-all-around#357).
-    expect(response.body.items).toHaveLength(144);
+    // 건별 생략 결재(M-01-13 · W-01-02 · #353) · 품질 승인 처리(W-03-09 · #352)를 걷어 142,
+    // W-03-12(검사 수준 관리)는 W-06-02 에 합쳤다(omf-all-around#357) — 141. 단위 시험 `permissions.spec.ts` 와 같은 수다.
+    expect(response.body.items).toHaveLength(141);
     for (const retired of ['W-CO-05', 'P-02-08', 'P-02-09', 'P-02-13']) {
       expect(response.body.items.map((p: { code: string }) => p.code)).not.toContain(retired);
     }

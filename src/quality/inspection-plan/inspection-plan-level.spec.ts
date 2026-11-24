@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { ConflictException, ContractException } from '../../common/errors';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -100,8 +102,21 @@ describe('검사 기준 수정 — 검사 수준 동시 저장(omf-all-around#35
     const error = await service.update(1, 1, plan({ inspectionLevelCode: 'TIGHTENED', inspectionLevelVersionNo: seen }), 7).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ConflictException);
+    /* 기준 수정 계약의 409(ConflictResponse) 모양 그대로 — 수준 판을 currentVersion 으로 섞지 않는다. */
+    expect((error as ConflictException).getResponse()).toEqual({ conflictCause: 'user', message: expect.any(String) });
     expect(tx.item_inspection_level.updateMany).not.toHaveBeenCalled();
     expect(tx.item_inspection_level.create).not.toHaveBeenCalled();
+    expect(histories).toEqual([]);
+  });
+
+  it('읽은 뒤 다른 요청이 같은 품목 수준을 먼저 만들었으면(품목당 한 행 위반) 400 이 아니라 409', async () => {
+    const { service, tx, histories } = harness();
+    tx.item_inspection_level.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('unique', { code: 'P2002', clientVersion: 'test' }),
+    );
+    const error = await service.update(1, 1, plan({ inspectionLevelCode: 'NORMAL', inspectionLevelVersionNo: null }), 7).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
     expect(histories).toEqual([]);
   });
 
