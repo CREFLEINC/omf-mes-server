@@ -369,7 +369,76 @@ describe('검사기준 헤더 (e2e)', () => {
       .expect(404);
   });
 
+  it('⭐⭐ 기준 수정이 검사 수준을 함께 저장하고, 본 수준 판이 다르면 기본 정보까지 되돌린다(omf-all-around#357)', async () => {
+    const create = await request(app.getHttpServer())
+      .post('/api/quality/inspection-plans')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ inspectionPlanCode: `${PREFIX}-L1`, inspectionPlanName: 'L1', inspectionTypeCode: 'IQC', itemId })
+      .expect(201);
+    const id = Number(create.body.inspectionPlanId);
+    const body = (name: string) => ({ inspectionPlanCode: `${PREFIX}-L1`, inspectionPlanName: name, inspectionTypeCode: 'IQC', itemId });
+
+    await put(id, { ...body('L1-a'), inspectionLevelCode: 'NORMAL', inspectionLevelReason: ' 첫 지정 ', inspectionLevelVersionNo: null }, 200);
+    const level = await prisma.item_inspection_level.findUniqueOrThrow({ where: { item_id: itemId } });
+    expect(level.inspection_level_code).toBe('NORMAL');
+    const histories = await prisma.item_inspection_level_history.findMany({ where: { item_id: itemId } });
+    expect(histories).toEqual([
+      expect.objectContaining({ from_level_code: null, to_level_code: 'NORMAL', change_type_code: 'MANUAL', reason: '첫 지정', changed_by: BigInt(userId) }),
+    ]);
+
+    // 창을 연 뒤 다른 저장이 수준을 바꿨다 — 기준명도 저장되지 않는다(한 트랜잭션).
+    const conflict = await put(id, { ...body('L1-b'), inspectionLevelCode: 'TIGHTENED', inspectionLevelVersionNo: level.version_no + 1 }, 409);
+    expect(conflict.body).toMatchObject({ conflictCause: 'user' });
+    const after = await prisma.inspection_plan.findUniqueOrThrow({ where: { inspection_plan_id: id } });
+    expect(after.inspection_plan_name).toBe('L1-a');
+    expect((await prisma.item_inspection_level.findUniqueOrThrow({ where: { item_id: itemId } })).inspection_level_code).toBe('NORMAL');
+    expect(await prisma.item_inspection_level_history.count({ where: { item_id: itemId } })).toBe(1);
+  });
+
+  it('⛔ IQC 가 아닌 기준에 수준을 실으면 400 inspectionLevelCode, IQC 대상이 아닌 품목의 수준 지정은 400 itemId(omf-all-around#357)', async () => {
+    const id = await create('L2');
+    const rejected = await put(id, { inspectionPlanCode: `${PREFIX}-L2`, inspectionPlanName: 'L2-x', inspectionTypeCode: 'OQC', inspectionLevelCode: 'NORMAL' }, 400);
+    expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'inspectionLevelCode', code: 'INVALID' })]);
+    expect((await prisma.inspection_plan.findUniqueOrThrow({ where: { inspection_plan_id: id } })).inspection_plan_name).toBe('L2');
+
+    const uom = await prisma.uom.findFirstOrThrow({ select: { uom_id: true } });
+    const outsider = await prisma.item.create({
+      data: { item_code: `${PREFIX}-J`, item_name: 'IQC 밖 품목', item_type_code: 'FINISHED', base_uom_id: uom.uom_id, lot_controlled: true },
+    });
+    const level = await request(app.getHttpServer())
+      .post('/api/quality/item-inspection-levels')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ itemId: Number(outsider.item_id), inspectionLevelCode: 'NORMAL' })
+      .expect(400);
+    expect(level.body.errors).toEqual([expect.objectContaining({ field: 'itemId', code: 'INVALID' })]);
+
+    // 검사 수준 쓰기는 검사 기준 관리(W-06-02) 권한이다 — 없으면 403.
+    await request(app.getHttpServer())
+      .post('/api/quality/item-inspection-levels')
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .send({ itemId, inspectionLevelCode: 'NORMAL' })
+      .expect(403);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  /** 기준 수정 — 상세의 ETag 로 잠근다. */
+  async function put(id: number, body: object, status: number): Promise<request.Response> {
+    const detail = await request(app.getHttpServer())
+      .get(`/api/quality/inspection-plans/${id}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return request(app.getHttpServer())
+      .put(`/api/quality/inspection-plans/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', String(detail.headers.etag))
+      .send(body)
+      .expect(status);
+  }
 
   async function create(suffix: string): Promise<number> {
     const response = await request(app.getHttpServer())
@@ -435,6 +504,9 @@ describe('검사기준 헤더 (e2e)', () => {
     await prisma.inspection_plan.deleteMany({
       where: { inspection_plan_code: { startsWith: PREFIX } },
     });
+    const items = { item: { item_code: { startsWith: PREFIX } } };
+    await prisma.item_inspection_level_history.deleteMany({ where: items });
+    await prisma.item_inspection_level.deleteMany({ where: items });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
 
