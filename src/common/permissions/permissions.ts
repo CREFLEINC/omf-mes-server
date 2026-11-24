@@ -92,6 +92,9 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-02-11', name: '출고 요청 현황', groupCode: '02' },
   // 설계 저장소 생성본에 없는 화면 — 피처 004 생산 창고 보충(omf-all-around#230). 시드가 관리자에게 준다.
   { code: 'W-02-12', name: '생산 창고 보충', groupCode: '02' },
+  // 피처 015 — W-02-09 를 정방향·역방향 두 화면으로 나눈다(omf-all-around#355). 마이그 20261125090000 이 W-02-09 보유 역할에 준다.
+  { code: 'W-02-13', name: '자재 기준 생산 추적', groupCode: '02' },
+  { code: 'W-02-14', name: '제품 기준 역추적', groupCode: '02' },
   // 03 품질
   { code: 'W-03-01', name: 'Lot Status 현황·변경이력 조회', groupCode: '03' },
   { code: 'W-03-02', name: 'Lot Status 판정·전이 처리', groupCode: '03' },
