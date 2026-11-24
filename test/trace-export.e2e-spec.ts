@@ -149,18 +149,31 @@ describe('피처 015 엑셀 내보내기 (e2e)', () => {
     expect([p2[col(head, '현황')], p2[col(head, '창고')], p2[col(head, '위치')], p2[col(head, 'LOT 상태')]])
       .toEqual(['재고', `추적창고${PREFIX}-P (${PREFIX}-P-WH)`, `추적위치${PREFIX}-P (${PREFIX}-P-LOC)`, '정상']);
     const [lineHead, ...lines] = lineage;
-    expect(lineHead).toContain('원래 LOT');
+    expect(lineHead).toContain('상위 항목');
+    expect(lineHead).not.toContain('원래 LOT');
     expect(lineHead).not.toContain('부모 번호');
     const stage = (no: string) => lines.find((line) => line[col(lineHead, '번호')] === no)?.[col(lineHead, '단계')];
     expect([stage(fx.no('A')), stage(fx.no('P1')), stage(fx.no('P2')), stage(fx.no('A-S1')), stage(fx.no('P4-S1'))])
       .toEqual(['자재 LOT', '반제품 LOT', '생산 LOT', '분할 LOT', '분리 LOT']);
     const p1 = lines.find((line) => line[col(lineHead, '번호')] === fx.no('P1')) as Row;
-    expect([p1[col(lineHead, '원래 LOT')], p1[col(lineHead, 'LOT 상태')]]).toEqual([fx.no('WO-1'), '정상']);
+    expect([p1[col(lineHead, '상위 항목')], p1[col(lineHead, 'LOT 상태')]]).toEqual([fx.no('WO-1'), '정상']);
     expect(lines.find((line) => line[col(lineHead, '단계')] === '재고')?.[col(lineHead, '번호')])
       .toBe(`추적창고${PREFIX}-P (${PREFIX}-P-WH) / 추적위치${PREFIX}-P (${PREFIX}-P-LOC)`);
     // 숫자 칸은 천 단위 표시 형식이다.
     const sheet = book.getWorksheet('최종 LOT');
     expect(sheet?.getRow(2).getCell(col(head, '생산 수량') + 1).numFmt).toBe('#,##0');
+  });
+
+  it('US4-1 N3 「LOT 계보」의 바로 위 항목 칸은 「상위 항목」 — 분할·분리 모 LOT 을 뜻하는 「원래 LOT」과 다르다', async () => {
+    const response = await post('forward-exports', { lotIds: [Number(chain.a)] }).expect(200);
+    const { end, lineage } = await open(response.body as Buffer);
+    const [lineHead, ...lines] = lineage;
+    const parentOf = (no: string) => lines.find((line) => line[col(lineHead, '번호')] === fx.no(no))?.[col(lineHead, '상위 항목')];
+    expect([parentOf('WO-1'), parentOf('P1'), parentOf('A-S1'), parentOf('P4-S1')]).toEqual([fx.no('A'), fx.no('WO-1'), fx.no('A'), fx.no('P4')]);
+    expect(lines[0][col(lineHead, '상위 항목')]).toBeNull();
+    // 「최종 LOT」 시트에는 이런 칸이 없다.
+    expect(end[0]).not.toContain('원래 LOT');
+    expect(end[0]).not.toContain('상위 항목');
   });
 
   it('US4-1 D9 역방향 계보 단계 — 분리 자식이 가리키면 「분리된 원래 LOT」, 분할 자식이 가리키면 「분할된 원래 LOT」', async () => {
@@ -179,7 +192,7 @@ describe('피처 015 엑셀 내보내기 (e2e)', () => {
       const book = new Workbook();
       await book.xlsx.load(response.body as unknown as ArrayBuffer);
       const [head, ...lines] = sheetRows(book.getWorksheet('Phả hệ LOT'));
-      expect(head).toContain('LOT gốc');
+      expect(head).toContain('Mục cấp trên');
       expect(lines[0]).toEqual(expect.arrayContaining([fx.no('P1'), 'LOT bán thành phẩm', 'Bình thường']));
       expect(book.getWorksheet('LOT cuối')).toBeDefined();
     } finally {

@@ -201,6 +201,15 @@ describe('피처 015 계보 (e2e)', () => {
       expect((plain.nodes as Body[])[0].material).toMatchObject({ inboundLotNo: null, iqcJudgmentCode: null });
     });
 
+    it('US1-1 N3 재고(STOCK) 항목은 창고·위치의 코드와 이름을 함께 준다 — 화면이 「이름 (코드)」로 그린다', async () => {
+      const body = (await tree('forward-tree', ids.u).expect(200)).body as Body;
+      const stock = (body.nodes as Body[]).find((node) => node.kind === 'STOCK');
+      expect(stock).toMatchObject({
+        warehouse: { warehouseId: Number(fx.ids.plantWarehouse), code: `${PREFIX}-P-WH`, name: `추적창고${PREFIX}-P` },
+        location: { locationId: Number(fx.ids.plantLocation), code: `${PREFIX}-P-LOC`, name: `추적위치${PREFIX}-P` }, qty: 100,
+      });
+    });
+
     it('US1-1 다른 공장·없는 LOT 은 404, W-02-13 이 없으면 403', async () => {
       await tree('forward-tree', ids.other).expect(404);
       await tree('forward-tree', 999_999_999n).expect(404);
