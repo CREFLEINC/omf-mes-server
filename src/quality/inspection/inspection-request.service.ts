@@ -207,9 +207,12 @@ function requestedAtWhere(query: InspectionRequestListQuery): Prisma.inspection_
 async function judgmentWhere(prisma: PrismaService, code: string): Promise<Prisma.inspection_requestWhereInput> {
   const lastConfirmed = await prisma.$queryRaw<{ id: bigint }[]>`
     SELECT inspection_request_id AS id FROM (
-      SELECT DISTINCT ON (inspection_request_id) inspection_request_id, overall_judgment_code
-      FROM quality.inspection_result WHERE status_code = 'CONFIRMED'
-      ORDER BY inspection_request_id, inspection_round DESC
+      SELECT DISTINCT ON (res.inspection_request_id) res.inspection_request_id, res.overall_judgment_code
+      FROM quality.inspection_result res
+      JOIN quality.inspection_request req ON req.inspection_request_id = res.inspection_request_id
+       AND req.overall_judgment_code IS NULL AND req.status_code = 'COMPLETED'
+      WHERE res.status_code = 'CONFIRMED'
+      ORDER BY res.inspection_request_id, res.inspection_round DESC
     ) last WHERE overall_judgment_code = ${code}`;
   return {
     OR: [
