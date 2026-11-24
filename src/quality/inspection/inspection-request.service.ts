@@ -130,7 +130,6 @@ async function iqcInspectionLevels(
 function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_requestWhereInput {
   return {
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
-    ...(query.overallJudgmentCode === undefined ? {} : { overall_judgment_code: query.overallJudgmentCode }),
     ...filter('item_id', query.itemId),
     ...filter('work_order_id', query.workOrderId),
     ...filter('inbound_lot_id', query.inboundLotId),
@@ -201,6 +200,25 @@ function requestedAtWhere(query: InspectionRequestListQuery): Prisma.inspection_
   return { requested_at: { ...(from === undefined ? {} : { gte: from }), ...(to === undefined ? {} : { lt: to }) } };
 }
 
+/**
+ * 확정된 종합 판정(omf-all-around#356). 의뢰에 판정이 적히는 것은 입하 LOT IQC · 출하 OQC 새 흐름뿐이고(확정 때 서버가 적는다),
+ * PQC · 옛 OQC 는 결과 단위로 확정해 판정이 결과에만 있다 — 그 의뢰는 완료이면서 마지막(회차가 가장 큰) 확정 결과의 판정으로 본다.
+ */
+async function judgmentWhere(prisma: PrismaService, code: string): Promise<Prisma.inspection_requestWhereInput> {
+  const lastConfirmed = await prisma.$queryRaw<{ id: bigint }[]>`
+    SELECT inspection_request_id AS id FROM (
+      SELECT DISTINCT ON (inspection_request_id) inspection_request_id, overall_judgment_code
+      FROM quality.inspection_result WHERE status_code = 'CONFIRMED'
+      ORDER BY inspection_request_id, inspection_round DESC
+    ) last WHERE overall_judgment_code = ${code}`;
+  return {
+    OR: [
+      { overall_judgment_code: code },
+      { overall_judgment_code: null, status_code: 'COMPLETED', inspection_request_id: { in: lastConfirmed.map((row) => row.id) } },
+    ],
+  };
+}
+
 /** 오프셋이 붙은 시각만 받는다 — 오프셋 없는 글자는 어느 시간대인지 몰라 400 이다. */
 function instantOf(field: string, value: string | undefined): Date | undefined {
   if (value === undefined) return undefined;
@@ -219,7 +237,7 @@ export async function inspectionRequestListWhere(
   query: InspectionRequestListQuery,
   scope?: TerminalQualityReadScope,
 ): Promise<Prisma.inspection_requestWhereInput> {
-  return scope === undefined
-    ? buildWhere(query)
-    : { AND: [buildWhere(query), await terminalInspectionRequestWhere(prisma, scope)] };
+  const where = buildWhere(query);
+  if (query.overallJudgmentCode !== undefined) where.AND = [...(where.AND as Prisma.inspection_requestWhereInput[]), await judgmentWhere(prisma, query.overallJudgmentCode)];
+  return scope === undefined ? where : { AND: [where, await terminalInspectionRequestWhere(prisma, scope)] };
 }
