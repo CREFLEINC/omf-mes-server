@@ -55,9 +55,9 @@ describe('피처 014 S1 — 품목 패키징 기본값 (e2e)', () => {
     negativeStockAllowed: false, isActive: true, defaultLotStorageUomId: Number(ea), defaultProductionLotSize: 100, ...extra,
   });
 
-  async function put(extra: Record<string, unknown>, status: number): Promise<request.Response> {
-    const current = await request(app.getHttpServer()).get(`/api/mdm/items/${String(itemId)}`).set('Cookie', cookie).expect(200);
-    return request(app.getHttpServer()).put(`/api/mdm/items/${String(itemId)}`).set('Cookie', cookie)
+  async function put(extra: Record<string, unknown>, status: number, target: bigint = itemId): Promise<request.Response> {
+    const current = await request(app.getHttpServer()).get(`/api/mdm/items/${String(target)}`).set('Cookie', cookie).expect(200);
+    return request(app.getHttpServer()).put(`/api/mdm/items/${String(target)}`).set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID()).set('If-Match', current.headers.etag as string)
       .send(body(extra)).expect(status);
   }
@@ -121,11 +121,30 @@ describe('피처 014 S1 — 품목 패키징 기본값 (e2e)', () => {
     expect(saved.body).toMatchObject({ defaultProductionLotSize: null, defaultPackageCount: 7 });
   });
 
-  it('없는 단위는 400 이고, If-Match 낡은 버전은 지금처럼 409 다', async () => {
+  it('US5-3 Q15 없는 단위는 400 이고, If-Match 낡은 버전은 지금처럼 409 다', async () => {
     await put({ defaultPackageUomId: 999999999, defaultPackageCount: 10 }, 400);
     await request(app.getHttpServer()).put(`/api/mdm/items/${String(itemId)}`).set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID()).set('If-Match', 'W/"1"')
       .send(body({ defaultPackageUomId: Number(roll), defaultPackageCount: 10 })).expect(409);
+  });
+
+  it('FR-018 T049 보관 단위 ≠ 기본 단위 — 기본 단위로 바꾼 크기 ÷ 패키징 수가 6자리에서 떨어지지 않으면 400, 환산이 없으면 건너뛴다', async () => {
+    // 보관 BOX 3 ÷ 3 = 1 은 소수 1자리 규칙을 통과하지만, 1 EA = 0.75 BOX 이면 3 BOX = 4 EA 이고 4 ÷ 3 은 떨어지지 않는다.
+    const itemB = (await prisma.item.create({
+      data: { item_code: `${PREFIX}-B`, item_name: '패키징기본값자재B', item_type_code: 'RAW_MATERIAL', base_uom_id: ea, lot_controlled: true },
+    })).item_id;
+    const boxLot = { defaultLotStorageUomId: Number(roll), defaultProductionLotSize: 3, defaultPackageUomId: Number(roll) };
+    await put({ ...boxLot, defaultPackageCount: 3 }, 200, itemB); // 환산 없음(NO_CONVERSION) — 추가 검사 없음
+    await prisma.item_uom_conversion.create({
+      data: { item_id: itemB, from_uom_id: ea, to_uom_id: roll, conversion_rate: 0.75, effective_from: new Date('2026-01-01T00:00:00.000Z') },
+    });
+    const rejected = await put({ ...boxLot, defaultPackageCount: 3 }, 400, itemB);
+    expect(messages(rejected)).toEqual([NOT_DIVISIBLE]);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'defaultPackageCount', code: 'INVALID' });
+    // 패키징 수량만 다시 보내지 않아도(기본크기만 저장) 저장된 3 으로 다시 본다.
+    await put({ defaultLotStorageUomId: Number(roll), defaultProductionLotSize: 3 }, 400, itemB);
+    const accepted = await put({ ...boxLot, defaultPackageCount: 2 }, 200, itemB); // 4 EA ÷ 2 = 2
+    expect(accepted.body).toMatchObject({ defaultProductionLotSize: 3, defaultPackageCount: 2 });
   });
 
   async function cleanup(): Promise<void> {
@@ -134,6 +153,7 @@ describe('피처 014 S1 — 품목 패키징 기본값 (e2e)', () => {
     for (const sql of [
       `DELETE FROM quality.inspection_plan_version WHERE inspection_plan_id IN (SELECT inspection_plan_id FROM quality.inspection_plan WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%'))`,
       `DELETE FROM quality.inspection_plan WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`,
+      `DELETE FROM mdm.item_uom_conversion WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`,
       `DELETE FROM app.idempotency_record WHERE app_user_id IN (${users})`,
       `DELETE FROM app.user_role WHERE app_user_id IN (${users})`,
       `DELETE FROM app.role_permission WHERE role_id IN (${roles})`,
