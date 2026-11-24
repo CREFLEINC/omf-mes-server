@@ -133,7 +133,8 @@ describe('계약 커버리지', () => {
     // 자재 관리 LOT 공급사 목록 1(피처 014 S5 · 세 칸): 645 → 646.
     // 검사 기준 승인 1건 삭제: 646 → 645.
     // LOT 목록 둘 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 645 → 647.
-    expect(registry.size).toBe(647);
+    // 번호 풀기 1 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 647 → 648.
+    expect(registry.size).toBe(648);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
