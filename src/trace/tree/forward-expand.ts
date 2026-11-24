@@ -13,11 +13,14 @@ export interface TraceEdge extends StepEdge {
 }
 
 /** LOT 이 아닌 항목(W/O·출하·포장·재고·시리얼·입하 LOT) — LOT 항목은 따라간 뒤 `lotNodes` 가 채운다. */
-export interface TraceOtherNode {
-  key: string;
+export interface TraceNodeBody {
   nodeKey: string;
   kind: string;
   [field: string]: unknown;
+}
+
+export interface TraceOtherNode extends TraceNodeBody {
+  key: string;
 }
 
 const ids = (frontier: string[]): bigint[] => frontier.map((key) => BigInt(key.slice(2)));
