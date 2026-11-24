@@ -27,6 +27,8 @@ export interface MaterialFacts {
   supplier: Named | null;
   supplierLotNo: string | null;
   receivedAt: string | null;
+  /** 입하 LOT 의 IQC 종합 판정 — 취소 제외 최근 확정(data-model §2). 요청이 없거나 확정 전·옛 입하면 null. */
+  iqcJudgmentCode: string | null;
 }
 
 export interface TraceLotNode {
@@ -95,10 +97,10 @@ export async function materialFacts(prisma: PrismaService, lotIds: readonly bigi
   });
   const rows = await prisma.$queryRawUnsafe<{
     lot_id: bigint; inbound_lot_id: bigint | null; inbound_lot_no: string | null; received_at: Date | null;
-    partner_id: bigint | null; partner_code: string | null; partner_name: string | null; supplier_lot_no: string | null;
+    partner_id: bigint | null; partner_code: string | null; partner_name: string | null; supplier_lot_no: string | null; judgment: string | null;
   }[]>(
     `SELECT b.lot_id, il.inbound_lot_id, il.inbound_lot_no, COALESCE(iir.receipt_datetime, leg.receipt_datetime) AS received_at,
-            sp.partner_id, sp.partner_code, sp.partner_name, COALESCE(x.external_identifier, leg.supplier_lot_no) AS supplier_lot_no
+            sp.partner_id, sp.partner_code, sp.partner_name, COALESCE(x.external_identifier, leg.supplier_lot_no) AS supplier_lot_no, q.judgment
        FROM unnest($1::bigint[], $2::bigint[]) AS b(lot_id, root_id)
        JOIN trace.lot rt ON rt.lot_id = b.root_id
        LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = rt.inbound_lot_id
@@ -113,7 +115,12 @@ export async function materialFacts(prisma: PrismaService, lotIds: readonly bigi
          SELECT x.external_identifier FROM trace.lot_external_identifier x
           WHERE x.lot_id = rt.lot_id AND x.identifier_type_code = 'SUPPLIER_LOT' ORDER BY x.lot_external_identifier_id LIMIT 1
        ) x ON true
-       LEFT JOIN mdm.partner sp ON sp.partner_id = COALESCE(il.supplier_id, leg.supplier_id)`,
+       LEFT JOIN mdm.partner sp ON sp.partner_id = COALESCE(il.supplier_id, leg.supplier_id)
+       LEFT JOIN LATERAL (
+         SELECT iq.overall_judgment_code AS judgment FROM quality.inspection_request iq
+          WHERE iq.inbound_lot_id = il.inbound_lot_id AND iq.inspection_type_code = 'IQC' AND iq.status_code <> 'CANCELLED'
+          ORDER BY iq.confirmed_at DESC NULLS LAST, iq.inspection_request_id DESC LIMIT 1
+       ) q ON true`,
     [...lotIds], roots,
   );
   return new Map(rows.map((row) => [row.lot_id, {
@@ -122,5 +129,6 @@ export async function materialFacts(prisma: PrismaService, lotIds: readonly bigi
     supplier: row.partner_id === null ? null : { partnerId: Number(row.partner_id), code: row.partner_code ?? '', name: row.partner_name ?? '' },
     supplierLotNo: row.supplier_lot_no,
     receivedAt: row.received_at?.toISOString() ?? null,
+    iqcJudgmentCode: row.judgment,
   }]));
 }
