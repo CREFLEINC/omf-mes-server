@@ -25,7 +25,7 @@ const KO: Labels = {
   sheets: { end: '최종 LOT', lineage: 'LOT 계보' },
   forwardHead: ['기준 LOT', '제품 LOT', '품목 코드', '품목명', '생산 수량', '단위', '현황', '고객', '출하번호', '출하일', '출하 수량', '창고', '위치', '재고 수량', 'W/O', 'LOT 상태', '비고'],
   backwardHead: ['기준 LOT', '자재 LOT', '품목 코드', '품목명', '공급사', '공급사 LOT', '입하 LOT', '입하일', 'IQC', 'W/O', '생산 LOT', '투입량', '단위', '연결 근거', 'LOT 상태', '비고'],
-  lineageHead: ['기준 LOT', '깊이', '단계', '번호', '품목 코드', '품목명', '수량', '단위', '원래 LOT', '연결 근거', 'LOT 상태', '비고'],
+  lineageHead: ['기준 LOT', '깊이', '단계', '번호', '품목 코드', '품목명', '수량', '단위', '상위 항목', '연결 근거', 'LOT 상태', '비고'],
   stages: {
     MATERIAL_LOT: '자재 LOT', SPLIT_LOT: '분할 LOT', SEPARATED_LOT: '분리 LOT', SPLIT_ORIGIN: '분할된 원래 LOT', SEPARATED_ORIGIN: '분리된 원래 LOT',
     WORK_ORDER: 'W/O', PRODUCTION_LOT: '생산 LOT', SEMI_LOT: '반제품 LOT', PACKAGE: '포장', SHIPMENT: '출하', STOCK: '재고', SERIAL: '시리얼',
@@ -44,7 +44,7 @@ const VI: Labels = {
     'Ngày xuất', 'SL xuất', 'Kho', 'Vị trí', 'SL tồn', 'W/O', 'Trạng thái LOT', 'Ghi chú'],
   backwardHead: ['LOT gốc tra cứu', 'LOT vật tư', 'Mã mặt hàng', 'Tên mặt hàng', 'Nhà cung cấp', 'LOT nhà cung cấp', 'LOT nhập hàng', 'Ngày nhập',
     'IQC', 'W/O', 'LOT sản xuất', 'SL đưa vào', 'Đơn vị', 'Căn cứ liên kết', 'Trạng thái LOT', 'Ghi chú'],
-  lineageHead: ['LOT gốc tra cứu', 'Cấp', 'Công đoạn', 'Số', 'Mã mặt hàng', 'Tên mặt hàng', 'Số lượng', 'Đơn vị', 'LOT gốc', 'Căn cứ liên kết',
+  lineageHead: ['LOT gốc tra cứu', 'Cấp', 'Công đoạn', 'Số', 'Mã mặt hàng', 'Tên mặt hàng', 'Số lượng', 'Đơn vị', 'Mục cấp trên', 'Căn cứ liên kết',
     'Trạng thái LOT', 'Ghi chú'],
   stages: {
     MATERIAL_LOT: 'LOT vật tư', SPLIT_LOT: 'LOT tách', SEPARATED_LOT: 'LOT chia', SPLIT_ORIGIN: 'LOT gốc đã tách', SEPARATED_ORIGIN: 'LOT gốc đã chia',
