@@ -58,8 +58,9 @@ describe('ContractRegistry', () => {
   // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 646.
   // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 642.
   // 특채 적용 삭제 1건(omf-all-around#352): 641.
-  it('계약 7파일에서 오퍼레이션 641건을 적재한다', () => {
-    expect(registry.size).toBe(641);
+  // 자재 관리 LOT 공급사·품목·탭·번호 찾기 3건(피처 014 · omf-all-around#349): 644.
+  it('계약 7파일에서 오퍼레이션 644건을 적재한다', () => {
+    expect(registry.size).toBe(644);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

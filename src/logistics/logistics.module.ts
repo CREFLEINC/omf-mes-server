@@ -34,6 +34,8 @@ import { InboundLotSplitService } from './inbound-lot/inbound-lot-split.service'
 import { MaterialLotBatchController } from './material-lot-batch/material-lot-batch.controller';
 import { MaterialLotBatchQueryService } from './material-lot-batch/material-lot-batch-query.service';
 import { MaterialLotBatchService } from './material-lot-batch/material-lot-batch.service';
+import { MaterialLotPairService } from './material-lot-batch/material-lot-pair.service';
+import { MaterialLotTabService } from './material-lot-batch/material-lot-tab.service';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { DocumentProgressModule } from './document-progress/document-progress.module';
@@ -211,6 +213,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   providers: [
     MaterialLotBatchService,
     MaterialLotBatchQueryService,
+    MaterialLotTabService,
+    MaterialLotPairService,
     InboundLotReceiveService,
     InboundLotLotsService,
     InboundLotQueryService,

@@ -14048,6 +14048,408 @@
     }
    }
   },
+  "/logistics/material-lot-pairs": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 공급사·품목 목록(왼쪽)",
+    "description": "근거: P-01-01 · W-01-14 (피처 014 FR-010·011). 조합 = 발행 묶음 ∪ 공급사·품목 기본 정보 ∪ 그 공장의 미마감 P/O 라인 — 발행 여부와 상관없이 모두. 정렬: 할 일(미출력 LOT 이 있거나 P/O 남은 양이 받기 전 자동 LOT 보다 많은) 조합 먼저, 그다음 공급사 코드·품목 코드. 만들지 않는다",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사·품목 코드·이름(부분 일치)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 200
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "summary"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaterialLotPair"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "summary": {
+           "type": "object",
+           "required": [
+            "unprintedCount"
+           ],
+           "properties": {
+            "unprintedCount": {
+             "type": "integer",
+             "description": "공장 전체 이미 만든 미출력 LOT 수 — POP 「화면 이동」 배지(찾기와 상관없음)"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 탭 목록(오른쪽) — 미출력은 P/O 몫을 만들면서",
+    "description": "근거: P-01-01 · W-01-14 (피처 014 FR-001~004·008·012~014). tab=UNPRINTED 일 때만 만든다 — (공장·공급사·품목) 잠금 안에서 P/O 몫(라인 남은 양 − 받은 양에 아직 들어가지 않은 자동 LOT, 발주일 순)을 계산해 이 쪽까지 모자란 만큼(page×size − 이미 있는 미출력)만 만든다. total(UNPRINTED) = 이미 있는 미출력 + 아직 만들 수 있는 수. 정렬: UNPRINTED 만든 차례(lot_id 오름차순) · PRINTED 마지막 발행 최근 순 · RECEIVED 받은 시각 최근 순 · VOIDED 폐기 시각 최근 순(기간 제한 없음).",
+    "x-internal-note": "조회가 만든다 — 같은 요청을 몇 번 보내도 결과가 같다(이미 만든 것을 다시 계산에 넣는다). GET 이라 POP 단말은 작업자 번호·멱등 키 없이 부른다. 자동 묶음은 creation_mode_code=AUTO, 만든 사람 = 요청 계정(단말이면 비움). 번호 충돌은 트랜잭션을 3번까지 다시 한다",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사",
+      "required": true
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목",
+      "required": true
+     },
+     {
+      "name": "tab",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "UNPRINTED",
+        "PRINTED",
+        "RECEIVED",
+        "VOIDED"
+       ]
+      },
+      "description": "탭 — 미출력 · 출력됨(입하 전) · 입하된 LOT · 폐기 LOT",
+      "required": true
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 200
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "generation"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaterialLotTabRow"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "generation": {
+           "oneOf": [
+            {
+             "$ref": "#/components/schemas/MaterialLotGeneration"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "description": "UNPRINTED 만 — 다른 탭은 null"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "LOT_NO_CONFLICT — 번호 충돌이 거듭됐다. 다시 부르면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-lots/lookup": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 번호 스캔 찾기",
+    "description": "근거: P-01-01 (피처 014 FR-021). 공장 안 자재 관리 LOT 하나를 번호로 찾아 그 공급사·품목과 속한 탭을 알린다. 만들지 않는다. 탭: 입하 LOT 이 있으면 RECEIVED, 폐기 VOIDED, 대기이고 라벨 발행 기록이 있으면 PRINTED, 없으면 UNPRINTED",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 100
+      },
+      "description": "자재 관리 LOT 번호(스캔 값)",
+      "required": true
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "찾음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "lot",
+          "supplier",
+          "item",
+          "tab"
+         ],
+         "properties": {
+          "lot": {
+           "$ref": "#/components/schemas/MaterialLotTabRow"
+          },
+          "supplier": {
+           "$ref": "#/components/schemas/MaterialLotPairSupplier"
+          },
+          "item": {
+           "$ref": "#/components/schemas/MaterialLotPairItem"
+          },
+          "tab": {
+           "type": "string",
+           "enum": [
+            "UNPRINTED",
+            "PRINTED",
+            "RECEIVED",
+            "VOIDED"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NOT_FOUND 「이 공장에 없는 자재 관리 LOT 번호입니다」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/trace/lots:void": {
    "post": {
     "tags": [
@@ -30657,6 +31059,246 @@
        null
       ],
       "description": "이어진 입고 전표 상태 — CANCELLED 「입고 취소됨」(목록에 남는다) · CANCEL_REQUESTED 「취소 요청 중」. 보충 수령 지시처럼 입고 전표가 없으면 null"
+     }
+    }
+   },
+   "MaterialLotPairSupplier": {
+    "type": "object",
+    "required": [
+     "supplierId",
+     "code",
+     "name"
+    ],
+    "description": "공급사(피처 014)",
+    "properties": {
+     "supplierId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string",
+      "example": "100019"
+     },
+     "name": {
+      "type": "string"
+     }
+    }
+   },
+   "MaterialLotPairItem": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "code",
+     "name",
+     "baseUomCode"
+    ],
+    "description": "품목(피처 014)",
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "baseUomCode": {
+      "type": "string",
+      "description": "품목 기본 단위 — LOT 수량 단위",
+      "example": "EA"
+     }
+    }
+   },
+   "MaterialLotPair": {
+    "type": "object",
+    "description": "왼쪽 공급사·품목 한 줄(피처 014 FR-010·011 · P-01-01 · W-01-14)",
+    "required": [
+     "supplier",
+     "item",
+     "unprintedCount",
+     "creatableCount",
+     "defaultsStatus",
+     "lotDefaults"
+    ],
+    "properties": {
+     "supplier": {
+      "$ref": "#/components/schemas/MaterialLotPairSupplier"
+     },
+     "item": {
+      "$ref": "#/components/schemas/MaterialLotPairItem"
+     },
+     "unprintedCount": {
+      "type": "integer",
+      "description": "이미 만든 미출력 LOT 수(대기 · 자재 관리 LOT 라벨 발행 기록 없음 · 수동 포함)"
+     },
+     "creatableCount": {
+      "type": "integer",
+      "description": "P/O 몫으로 아직 만들 수 있는 LOT 수 — 계산만 하고 만들지 않는다(기본값 없음·환산 없음이면 0)"
+     },
+     "defaultsStatus": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NO_DEFAULT",
+       "NO_CONVERSION"
+      ],
+      "description": "품목 LOT 기본값 상태 — NO_DEFAULT 보관 단위·기본크기 없음, NO_CONVERSION 보관 단위 → 기본 단위 환산 없음"
+     },
+     "lotDefaults": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "lotQty",
+         "packageUomId",
+         "packageUomCode",
+         "packageCount"
+        ],
+        "properties": {
+         "lotQty": {
+          "type": "number",
+          "description": "LOT 하나의 수량(품목 기본 단위로 바꾼 값)"
+         },
+         "packageUomId": {
+          "type": [
+           "integer",
+           "null"
+          ],
+          "format": "int64"
+         },
+         "packageUomCode": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "packageCount": {
+          "type": [
+           "integer",
+           "null"
+          ],
+          "description": "LOT 당 패키징 수량"
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "defaultsStatus = OK 일 때만"
+     }
+    }
+   },
+   "MaterialLotTabRow": {
+    "description": "오른쪽 탭의 자재 관리 LOT 한 줄(피처 014) — MaterialLotSummary 에 탭 차례·만든 방식·P/O 라인·받은·폐기 시각을 더한다",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/MaterialLotSummary"
+     },
+     {
+      "type": "object",
+      "required": [
+       "seq",
+       "uomCode",
+       "creationModeCode",
+       "purchaseOrderLine",
+       "receivedAt",
+       "voidedAt"
+      ],
+      "properties": {
+       "seq": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "이 탭에서의 차례(1 부터). 미출력 탭은 만든 차례(lot_id 오름차순 = P/O 발주일 차례) — 일괄 출력 장수가 이 차례의 앞에서부터다"
+       },
+       "uomCode": {
+        "type": "string",
+        "description": "수량 단위(품목 기본 단위)"
+       },
+       "creationModeCode": {
+        "type": "string",
+        "enum": [
+         "AUTO",
+         "MANUAL"
+        ],
+        "description": "AUTO = 조회가 P/O 몫으로 만듦(몫 기록 있음) · MANUAL = [만들기]"
+       },
+       "purchaseOrderLine": {
+        "oneOf": [
+         {
+          "type": "object",
+          "required": [
+           "purchaseOrderLineId",
+           "purchaseOrderNo",
+           "lineNo"
+          ],
+          "properties": {
+           "purchaseOrderLineId": {
+            "type": "integer",
+            "format": "int64"
+           },
+           "purchaseOrderNo": {
+            "type": "string"
+           },
+           "lineNo": {
+            "type": "integer"
+           }
+          }
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "만들 때 채운 P/O 라인(AUTO 만). 입하 마감 배정은 이것과 따로 발주일 순이다"
+       },
+       "receivedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "받은 시각(입하된 LOT 탭)"
+       },
+       "voidedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "폐기 시각(폐기 LOT 탭)"
+       }
+      }
+     }
+    ]
+   },
+   "MaterialLotGeneration": {
+    "type": "object",
+    "required": [
+     "status",
+     "createdNow",
+     "creatableRemaining"
+    ],
+    "description": "미출력 탭 조회가 만든 결과(피처 014). P/O 감량으로 넘쳐도 따로 알리지 않는다(FR-009)",
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NO_DEFAULT",
+       "NO_CONVERSION",
+       "NO_OPEN_PO"
+      ],
+      "description": "NO_DEFAULT 「기본 단위 설정이 안되어있습니다. 직접 생성해 주세요.」 · NO_CONVERSION 「품목 단위 환산이 없어 LOT 을 만들 수 없습니다. 관리자에게 문의하세요」 · NO_OPEN_PO(기본값은 있고 미출력·만들 수 있는 몫이 모두 0) 「입하 예정 계획이 없습니다. 관리자에게 문의하세요」. NO_* 여도 수동으로 만든 미출력 LOT 은 목록에 나온다"
+     },
+     "createdNow": {
+      "type": "integer",
+      "description": "이번 요청이 만든 LOT 수"
+     },
+     "creatableRemaining": {
+      "type": "integer",
+      "description": "이번에 만든 뒤에도 P/O 몫으로 더 만들 수 있는 LOT 수"
      }
     }
    }

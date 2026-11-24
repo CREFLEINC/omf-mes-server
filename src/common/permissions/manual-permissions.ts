@@ -133,6 +133,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/waiting-material-lots': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lot-pairs': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lots': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lots/lookup': ['P-01-01', 'W-01-14'],
   // 분할 LOT 라벨(피처 008 · omf-all-around#289) — POP P-01-02 가 출고 QR 대신 부분 출고 분할 LOT 의 자재 LOT 라벨을 찍는다.
   'GET /logistics/split-material-lots': ['P-01-02'],
   'POST /trace/lots:void': ['P-01-01', 'W-01-14'],

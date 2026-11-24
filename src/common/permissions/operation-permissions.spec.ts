@@ -145,7 +145,8 @@ describe('오퍼레이션 권한 매핑', () => {
     // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 391.
     // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 387.
     // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 386.
-    expect(declares403).toHaveLength(386);
+    // 자재 관리 LOT 공급사·품목·탭·번호 찾기 3 — `P-01-01`·`W-01-14`(피처 014 · omf-all-around#349): 389.
+    expect(declares403).toHaveLength(389);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
