@@ -7,6 +7,7 @@
  * - 상한: 자재 CAP → W/O CAPWO(계보 없음) → 생산 LOT 5,001개.
  * - 응답 시간: 자재 R → W/O RWO → 생산 LOT 199개(항목 약 200).
  * - 투입 안 된 자재 U(재고만), 옛 입하 자재 LEG(공급사 LOT 이 입하 줄에만), 다른 공장 LOT.
+ * - IL-1 IQC 합격(취소된 옛 IQC 는 빠진다).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -188,6 +189,18 @@ describe('피처 015 계보 (e2e)', () => {
       expect(body.summary).toMatchObject({ lotCount: 5002, endLotCount: 5001 });
     });
 
+    it('US1-1 뿌리 자재 LOT 요약에 IQC 결과 — 입하 LOT 의 취소 제외 최근 확정, 분할 LOT 은 원래 LOT 것, 없으면 null', async () => {
+      const body = (await tree('forward-tree', chain.a).expect(200)).body as Body;
+      conformsTo('/trace/forward-tree', 'get', body);
+      const byKey = new Map((body.nodes as Body[]).map((node) => [node.nodeKey, node]));
+      expect(byKey.get(`L:${chain.a}`)?.material.iqcJudgmentCode).toBe('PASS');
+      expect(byKey.get(`L:${chain.aS1}`)?.material.iqcJudgmentCode).toBe('PASS');
+      const legacy = (await tree('forward-tree', ids.leg).expect(200)).body as Body;
+      expect((legacy.nodes as Body[])[0].material.iqcJudgmentCode).toBeNull();
+      const plain = (await tree('forward-tree', ids.x).expect(200)).body as Body;
+      expect((plain.nodes as Body[])[0].material).toMatchObject({ inboundLotNo: null, iqcJudgmentCode: null });
+    });
+
     it('US1-1 다른 공장·없는 LOT 은 404, W-02-13 이 없으면 403', async () => {
       await tree('forward-tree', ids.other).expect(404);
       await tree('forward-tree', 999_999_999n).expect(404);
@@ -233,6 +246,8 @@ describe('피처 015 계보 (e2e)', () => {
     ids.leg = await fx.lot('LEG', fx.ids.mat, { source: 'INBOUND_RECEIPT_LINE' });
     await fx.legacyInbound('LEG', ids.leg, fx.ids.mat, fx.ids.supplierS, t(5), 'SUP-LEG');
     ids.other = await fx.lot('OTHER', fx.ids.mat, { plant: fx.ids.otherPlant });
+    await fx.iqc('IL1-OLD', chain.il1, 'FAIL', t(6), 'CANCELLED');
+    await fx.iqc('IL1', chain.il1, 'PASS', t(7, 10));
   }
 
   /** 실적 하나에 생산 LOT `count` 개를 배분한다. `source` 를 주면 LOT 마다 계보(CONSUMED)를 남긴다. */
