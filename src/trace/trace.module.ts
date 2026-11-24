@@ -33,6 +33,7 @@ import { SerialNumberController } from './serial-number/serial-number.controller
 import { TraceLotsService } from './tree/trace-lots.service';
 import { TraceStartsService } from './tree/trace-starts.service';
 import { TraceTreeController } from './tree/trace-tree.controller';
+import { TraceTreeService } from './tree/trace-tree.service';
 
 /**
  * 계약 최상위 경로 `/trace` — LOT 과 그 계보·이력.
@@ -61,6 +62,7 @@ import { TraceTreeController } from './tree/trace-tree.controller';
     PackingLineListService,
     TraceLotsService,
     TraceStartsService,
+    TraceTreeService,
   ],
 })
 export class TraceModule {}

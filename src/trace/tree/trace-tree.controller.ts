@@ -5,6 +5,7 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { TraceLotPage, TraceLotQuery, TraceLotsService } from './trace-lots.service';
 import { TraceStartMatch, TraceStartQuery, TraceStartsService } from './trace-starts.service';
+import { TraceGraph, TraceTreeQuery, TraceTreeService } from './trace-tree.service';
 
 /**
  * 자재 기준 생산 추적(W-02-13)·제품 기준 역추적(W-02-14) — 피처 015 · omf-all-around#355. 관리웹 세션 전용이다.
@@ -15,6 +16,7 @@ export class TraceTreeController {
   constructor(
     private readonly lots: TraceLotsService,
     private readonly starts: TraceStartsService,
+    private readonly trees: TraceTreeService,
   ) {}
 
   @Get('material-trace-lots')
@@ -33,5 +35,11 @@ export class TraceTreeController {
   @Contract('GET /trace/trace-starts')
   traceStarts(@Query() query: TraceStartQuery, @Req() request: Request): Promise<{ matches: TraceStartMatch[] }> {
     return this.starts.resolve(query, currentSession(request)?.permissions ?? []);
+  }
+
+  @Get('forward-tree')
+  @Contract('GET /trace/forward-tree')
+  forwardTree(@Query() query: TraceTreeQuery): Promise<TraceGraph> {
+    return this.trees.forward(query);
   }
 }
