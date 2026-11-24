@@ -181,9 +181,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
   'POST /quality/defect-records': ['W-01-01', 'W-03-03', 'P-02-14'],
-  // 품목별 IQC 검사 수준 지정·수동 변경 — 검사 수준 관리 화면의 조작이다(omf-all-around#64 · 장부 P-87).
-  'POST /quality/item-inspection-levels': ['W-03-12'],
-  'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-03-12'],
+  // 품목별 IQC 검사 수준 지정·수동 변경(omf-all-around#64 · 장부 P-87) — 검사 수준 관리(W-03-12)를 검사기준 등록에 합쳤다(omf-all-around#357).
+  'POST /quality/item-inspection-levels': ['W-06-02'],
+  'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-06-02'],
   // 시리얼 OQC 스캔·의뢰의 시리얼 판정 — OQC 출하검사 판정 화면(관리웹·POP)의 조회다(omf-all-around#68 · 장부 P-101).
   'GET /quality/oqc-serials/{serialNo}': ['W-04-03', 'P-04-06'],
   'GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials': ['W-04-03', 'P-04-06'],
@@ -477,13 +477,15 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // #293 에서 없앴다 — 지금은 이 줄만 남는다.
   // ⚠ 조회 셋은 계약이 403 을 «선언하지 않아» 오늘은 가드가 안 본다(`permission.guard.ts:40`).
   // // 결정 — 통보 181
-  'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
-  'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
-  'GET /quality/nonconformances': ['W-03-10'],
-  'GET /quality/nonconformances/{nonconformanceId}': ['W-03-10'],
+  // ⭐ 「부적합 처분 관리」 메뉴를 없애고 처분을 IQC(W-01-01)·OQC(W-04-03) 판정 화면 안의 처분 상자로 옮겼다(omf-all-around#354).
+  //   W-03-10 은 이미 그 권한을 받은 역할을 위해 남긴다.
+  'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-01-01', 'W-03-10', 'W-04-03'],
+  'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-01-01', 'W-03-10', 'W-04-03'],
+  'GET /quality/nonconformances': ['W-01-01', 'W-03-10', 'W-04-03'],
+  'GET /quality/nonconformances/{nonconformanceId}': ['W-01-01', 'W-03-10', 'W-04-03'],
   // 재작업 W/O 발행도 같은 화면의 조작이다(omf-all-around#47 · 장부 P-33) — 생산 쪽 발행 경로는
   // `W-02-02`·`W-02-07` 이라 품질 담당이 403 을 받는다.
-  'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order': ['W-03-10'],
+  'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order': ['W-01-01', 'W-03-10', 'W-04-03'],
 
   // `M-01-12` 재생재 등록 — ⭐ 도출표가 `['M-01-01','M-01-02']`(입하 등록·LOT 발번)이라
   // **그 화면 권한만 가진 계정이 403** 을 받는다. 계약 본문·`plan-uiux.md:262` 가 둘 다
@@ -520,7 +522,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-requests/{inspectionRequestId}:confirm': ['W-01-15'],
   'POST /quality/inspection-requests/{inspectionRequestId}:cancel-confirm': ['W-01-15'],
   // 특채 저장(omf-all-around#84 · 장부 P-79) — 처분 판정 처리(W-03-10)가 그 부적합에서 만들고 바로 적용한다(omf-all-around#352).
-  'POST /quality/concessions': ['W-03-10'],
+  'POST /quality/concessions': ['W-01-01', 'W-03-10', 'W-04-03'],
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],

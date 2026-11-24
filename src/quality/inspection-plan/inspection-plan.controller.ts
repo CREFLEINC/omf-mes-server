@@ -73,7 +73,7 @@ export class InspectionPlanController {
     @Body() body: InspectionPlanWrite,
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'inspectionPlan', (version) =>
-      this.plans.update(inspectionPlanId, version, body),
+      this.plans.update(inspectionPlanId, version, body, currentSession(request)?.userId),
     );
   }
 
