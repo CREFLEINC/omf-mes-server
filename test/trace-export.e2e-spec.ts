@@ -101,7 +101,7 @@ describe('피처 015 엑셀 내보내기 (e2e)', () => {
       [fx.no('B'), fx.no('P3')], [fx.no('X'), fx.no('F')],
     ]);
     const p3 = rows[1];
-    expect([p3[col(head, '행방')], p3[col(head, '고객')], p3[col(head, '출하번호')], p3[col(head, '출하 수량')]]).toEqual(['출하', `추적CUS-X`, fx.no('SH-1'), 20]);
+    expect([p3[col(head, '현황')], p3[col(head, '고객')], p3[col(head, '출하번호')], p3[col(head, '출하 수량')]]).toEqual(['출하', `추적CUS-X`, fx.no('SH-1'), 20]);
 
     const [lineHead, ...lines] = lineage;
     expect(lineHead.slice(0, 4)).toEqual(['기준 LOT', '깊이', '단계', '번호']);
@@ -135,6 +135,57 @@ describe('피처 015 엑셀 내보내기 (e2e)', () => {
     const [lineHead, ...lines] = lineage;
     const first = lines.find((line) => line[0] === fx.no('P3'));
     expect([first?.[col(lineHead, '깊이')], first?.[col(lineHead, '단계')], first?.[col(lineHead, '번호')]]).toEqual([0, '시리얼', fx.no('SN-1')]);
+  });
+
+  it('US4-1 D9 엑셀 말이 화면과 같다 — LOT 상태 이름·단계(반제품·분할·분리)·창고 위치 이름·「원래 LOT」·「현황」·천 단위 표시', async () => {
+    const response = await post('forward-exports', { lotIds: [Number(chain.a)] }).expect(200);
+    const book = new Workbook();
+    await book.xlsx.load(response.body as unknown as ArrayBuffer);
+    const { end, lineage } = await open(response.body as Buffer);
+    const [head, ...rows] = end;
+    expect(head).toEqual(expect.arrayContaining(['현황', '창고', '위치', 'LOT 상태']));
+    expect(head).not.toContain('행방');
+    const p2 = rows.find((row) => row[col(head, '제품 LOT')] === fx.no('P2')) as Row;
+    expect([p2[col(head, '현황')], p2[col(head, '창고')], p2[col(head, '위치')], p2[col(head, 'LOT 상태')]])
+      .toEqual(['재고', `추적창고${PREFIX}-P (${PREFIX}-P-WH)`, `추적위치${PREFIX}-P (${PREFIX}-P-LOC)`, '정상']);
+    const [lineHead, ...lines] = lineage;
+    expect(lineHead).toContain('원래 LOT');
+    expect(lineHead).not.toContain('부모 번호');
+    const stage = (no: string) => lines.find((line) => line[col(lineHead, '번호')] === no)?.[col(lineHead, '단계')];
+    expect([stage(fx.no('A')), stage(fx.no('P1')), stage(fx.no('P2')), stage(fx.no('A-S1')), stage(fx.no('P4-S1'))])
+      .toEqual(['자재 LOT', '반제품 LOT', '생산 LOT', '분할 LOT', '분리 LOT']);
+    const p1 = lines.find((line) => line[col(lineHead, '번호')] === fx.no('P1')) as Row;
+    expect([p1[col(lineHead, '원래 LOT')], p1[col(lineHead, 'LOT 상태')]]).toEqual([fx.no('WO-1'), '정상']);
+    expect(lines.find((line) => line[col(lineHead, '단계')] === '재고')?.[col(lineHead, '번호')])
+      .toBe(`추적창고${PREFIX}-P (${PREFIX}-P-WH) / 추적위치${PREFIX}-P (${PREFIX}-P-LOC)`);
+    // 숫자 칸은 천 단위 표시 형식이다.
+    const sheet = book.getWorksheet('최종 LOT');
+    expect(sheet?.getRow(2).getCell(col(head, '생산 수량') + 1).numFmt).toBe('#,##0');
+  });
+
+  it('US4-1 D9 역방향 계보 단계 — 분리 자식이 가리키면 「분리된 원래 LOT」, 분할 자식이 가리키면 「분할된 원래 LOT」', async () => {
+    const response = await post('backward-exports', { lotIds: [Number(chain.p4S1)] }).expect(200);
+    const [lineHead, ...lines] = (await open(response.body as Buffer)).lineage;
+    expect(lines.map((line) => [line[col(lineHead, '번호')], line[col(lineHead, '단계')]])).toEqual(expect.arrayContaining([
+      [fx.no('P4-S1'), '분리 LOT'], [fx.no('P4'), '분리된 원래 LOT'], [fx.no('A-S1'), '분할 LOT'], [fx.no('A'), '분할된 원래 LOT'],
+    ]));
+  });
+
+  it('US4-1 D9 language vi 면 시트·머리·단계가 베트남어, LOT 상태는 공통코드 vi 이름', async () => {
+    await prisma.$executeRawUnsafe(`UPDATE mdm.code_value cv SET name_vi = 'Bình thường' FROM mdm.code_group cg
+      WHERE cg.code_group_id = cv.code_group_id AND cg.group_code = 'LOT_STATUS' AND cv.code = 'NORMAL'`);
+    try {
+      const response = await post('forward-exports', { lotIds: [Number(chain.p1)], language: 'vi' }).expect(200);
+      const book = new Workbook();
+      await book.xlsx.load(response.body as unknown as ArrayBuffer);
+      const [head, ...lines] = sheetRows(book.getWorksheet('Phả hệ LOT'));
+      expect(head).toContain('LOT gốc');
+      expect(lines[0]).toEqual(expect.arrayContaining([fx.no('P1'), 'LOT bán thành phẩm', 'Bình thường']));
+      expect(book.getWorksheet('LOT cuối')).toBeDefined();
+    } finally {
+      await prisma.$executeRawUnsafe(`UPDATE mdm.code_value cv SET name_vi = NULL FROM mdm.code_group cg
+        WHERE cg.code_group_id = cv.code_group_id AND cg.group_code = 'LOT_STATUS' AND cv.code = 'NORMAL'`);
+    }
   });
 
   it('US4-1 한 기준 LOT 이 상한에 걸리면 그 LOT 줄 비고에 「일부」 — 다 따라간 기준 LOT 은 그대로', async () => {
