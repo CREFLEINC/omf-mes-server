@@ -14345,7 +14345,7 @@
         "VOIDED"
        ]
       },
-      "description": "탭 — 미출력 · 출력됨(입하 전) · 입하된 LOT · 폐기 LOT",
+      "description": "탭 — 미출력 · 출력됨(입하 전) · 입하된 LOT(입하 마감 전까지만) · 폐기 LOT",
       "required": true
      },
      {

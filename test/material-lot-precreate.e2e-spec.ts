@@ -237,6 +237,13 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
       expect(after.items.map((row) => row.lotId)).toEqual([made[0].lotId]);
     });
 
+    it('Q9b 입하된 LOT 탭은 입하 마감 전까지만 — 받은 뒤(마감 전)에는 보인다', async () => {
+      const received = (await lotsOf(ids.itemF, 'RECEIVED', 1, 20).expect(200)).body as LotsBody;
+      expect(received.items.map((row) => row.lotId).sort()).toEqual([made[1].lotId, made[2].lotId].sort());
+      expect(received.page.total).toBe(2);
+      expect(received.items.every((row) => row.receivedAt !== null && row.lifecycleStatusCode === 'ACTIVE')).toBe(true);
+    });
+
     it('Q12 FR-020 입하 마감 → 받은 양은 발주일 순 배정 그대로, 다시 골라도 몫 합이 맞다(중복·누락 없음)', async () => {
       const inbound = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(made[1].lotId) } });
       const closed = await closeInboundLotFixture(fx, Number(inbound.inbound_lot_id));
@@ -247,6 +254,11 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
       expect(after.generation).toMatchObject({ createdNow: 0, creatableRemaining: 0 });
       const waiting = await prisma.lot.findMany({ where: { item_id: ids.itemF, lifecycle_status_code: 'WAITING' } });
       expect(waiting.reduce((sum, lot) => sum + Number(lot.initial_qty), 0) + 200).toBe(300);
+
+      // 입하 마감하면 입하된 LOT 탭에서 빠진다(사용자 2026-11-24). 번호 스캔 찾기는 그대로 찾는다(Q19).
+      const receivedAfterClose = (await lotsOf(ids.itemF, 'RECEIVED', 1, 20).expect(200)).body as LotsBody;
+      expect(receivedAfterClose.items).toEqual([]);
+      expect(receivedAfterClose.page.total).toBe(0);
     });
 
     it('Q13 자동 LOT 을 폐기하면 다시 고를 때 새 번호로 그 몫이 생긴다', async () => {
@@ -260,11 +272,10 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
     });
 
     it('Q9 US4-2·3·4 탭 넷 — 출력됨(입하 전)·입하된·폐기, 다른 탭 요청은 만들지 않는다', async () => {
+      // 입하된 LOT 탭 내용은 Q9b(마감 전)·Q12(마감 뒤 빠짐)에서 본다 — 여기는 모양과 만들지 않음만.
       const received = (await lotsOf(ids.itemF, 'RECEIVED', 1, 20).expect(200)).body as LotsBody;
       expectShape('/logistics/material-lots', received);
       expect(received.generation).toBeNull();
-      expect(received.items.map((row) => row.lotId).sort()).toEqual([made[1].lotId, made[2].lotId].sort());
-      expect(received.items.every((row) => row.receivedAt !== null && row.lifecycleStatusCode === 'ACTIVE')).toBe(true);
 
       const voided = (await lotsOf(ids.itemF, 'VOIDED', 1, 20).expect(200)).body as LotsBody;
       expect(voided.items.map((row) => [row.lotId, row.voidedAt !== null])).toEqual([[made[0].lotId, true]]);

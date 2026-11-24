@@ -103,8 +103,9 @@ export class MaterialLotTabService {
   /** 탭 한 쪽의 LOT id 와 그 탭 전체 수. `take = 0` 이면 수만 센다. */
   async tabPage(db: Prisma.TransactionClient, query: MaterialLotTabQuery, skip: number, take: number): Promise<{ rows: TabIdRow[]; total: number }> {
     const combo = query.tab === 'RECEIVED'
+      // 입하된 LOT 탭은 입하 마감 전(RECEIVING)까지만 — 마감하면 빠진다(사용자 2026-11-24). 번호 스캔 찾기는 마감 뒤에도 찾는다.
       ? Prisma.sql`l.inbound_lot_id IN (SELECT inbound_lot_id FROM trace.inbound_lot
-          WHERE plant_id = ${query.plantId} AND supplier_id = ${query.supplierId} AND item_id = ${query.itemId})`
+          WHERE plant_id = ${query.plantId} AND supplier_id = ${query.supplierId} AND item_id = ${query.itemId} AND status_code = 'RECEIVING')`
       : Prisma.sql`l.source_type_code = ${MATERIAL_LOT_BATCH_SOURCE} AND l.source_id IN (SELECT material_lot_batch_id FROM trace.material_lot_batch
           WHERE plant_id = ${query.plantId} AND supplier_id = ${query.supplierId} AND item_id = ${query.itemId})`;
     const tab = {
