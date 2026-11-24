@@ -140,7 +140,7 @@ describe('피처 014 S4 — 출력 전 자재 관리 LOT 수정 (e2e)', () => {
     await webPost(revisePath(999999999)).send({ qty: 50, package: null }).expect(404);
   });
 
-  it('수동으로 만든 LOT 도 출력 전이면 고친다, 같은 멱등 키 재전송은 같은 응답', async () => {
+  it('FR-016 수동으로 만든 LOT 도 출력 전이면 고친다, 같은 멱등 키 재전송은 같은 응답', async () => {
     const manual = (await webPost(BATCHES).send({
       plantId: Number(ids.plant), supplierId: Number(ids.supplier), itemId: Number(ids.item), lotQty: 30, package: null, lotCount: 1,
       businessDate: TODAY, occurredAt: new Date().toISOString(),
@@ -154,7 +154,7 @@ describe('피처 014 S4 — 출력 전 자재 관리 LOT 수정 (e2e)', () => {
     expect(first.body).toMatchObject({ lotQty: 25, creationModeCode: 'MANUAL', lotNo: `${PREFIX}-A|25|${YYMMDD}|${PREFIX}-S|0001` });
   });
 
-  it('권한 — P-01-01·W-01-14 없으면 403, POP 은 작업자 번호가 없거나 다른 공장이면 401', async () => {
+  it('FR-016 T027 권한 — P-01-01·W-01-14 없으면 403, POP 은 작업자 번호가 없거나 다른 공장이면 401', async () => {
     const lotId = lots[0].lotId;
     await request(app.getHttpServer()).post(revisePath(lotId)).set('Cookie', narrowCookie).set('Idempotency-Key', randomUUID())
       .send({ qty: 70, package: null }).expect(403);
