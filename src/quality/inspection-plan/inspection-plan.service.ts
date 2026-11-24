@@ -21,6 +21,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
 import { syncItemsToCommonIqcPlan } from './item-iqc-plan-sync';
+import { InspectionLevelCode } from '../inspection-level/inspection-level-rules';
+import { writeItemLevelInTx } from '../inspection-level/item-level-write';
 
 /** `quality.inspection_plan` 을 FK 로 가리키는 자리 전부. 실측이고 e2e 가 대조한다. */
 export const INSPECTION_PLAN_REFERRERS: readonly Referrer[] = [
@@ -60,6 +62,12 @@ export interface InspectionPlanWrite {
   defaultSkip?: boolean;
   /** 호환용 — `defaultSkip` 이 없을 때만 그 값으로 쓴다. */
   pqcSkipAllowed?: boolean;
+  /** IQC 기준 품목의 검사 수준 — 기본 정보와 한 트랜잭션에서 저장한다(omf-all-around#357). 생략 = 그대로. */
+  inspectionLevelCode?: InspectionLevelCode;
+  /** 검사 수준 변경 사유(선택) — 이력에 남는다. */
+  inspectionLevelReason?: string | null;
+  /** 창을 열 때 본 검사 수준의 판 — 미지정이었으면 `null`. 그 사이 바뀌었으면 409. 생략 = 판을 견주지 않는다. */
+  inspectionLevelVersionNo?: number | null;
 }
 
 /** 등록 · 복사는 기준코드를 비우면(생략 · 공백) 서버가 `QP-{YYYYMMDD}-{SEQ4}` 로 붙인다(omf-all-around#262). */
@@ -166,6 +174,7 @@ export class InspectionPlanService {
     inspectionPlanId: number,
     version: number,
     input: InspectionPlanWrite,
+    appUserId?: number,
   ): Promise<InspectionPlanResult> {
     await this.assertWritable(input, inspectionPlanId);
 
@@ -193,6 +202,9 @@ export class InspectionPlanService {
         const after = await tx.inspection_plan.findUnique({ where: { inspection_plan_id: inspectionPlanId } });
         if (after !== null && isCommonIqc(after) && !(before !== null && isCommonIqc(before) && before.default_skip === after.default_skip)) {
           await syncItemsToCommonIqcPlan(tx, after.default_skip);
+        }
+        if (input.inspectionLevelCode !== undefined) {
+          await writePlanLevel(tx, after, input.inspectionLevelCode, input.inspectionLevelReason, input.inspectionLevelVersionNo, appUserId);
         }
       }
       return result;
@@ -457,4 +469,26 @@ function isCommonIqc(row: Pick<PlanRow, 'inspection_type_code' | 'item_id' | 'is
 function defaultSkipData(input: InspectionPlanWrite): { default_skip?: boolean; pqc_skip_allowed?: boolean } {
   const value = input.defaultSkip ?? input.pqcSkipAllowed;
   return value === undefined ? {} : { default_skip: value, pqc_skip_allowed: value };
+}
+
+/** 검사 수준은 품목이 있는 IQC 기준에서만 받는다 — 저장 뒤 값으로 본다(이번 저장이 IQC·품목을 정할 수도 있다). 실패하면 기본 정보까지 되돌린다. */
+async function writePlanLevel(
+  tx: Prisma.TransactionClient,
+  plan: { inspection_type_code: string; item_id: bigint | null } | null,
+  levelCode: InspectionLevelCode,
+  reason: string | null | undefined,
+  expectedVersionNo: number | null | undefined,
+  appUserId: number | undefined,
+): Promise<void> {
+  if (plan === null || plan.inspection_type_code !== 'IQC' || plan.item_id === null) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'inspectionLevelCode',
+        code: ERROR_CODE.INVALID,
+        message: '검사 수준은 품목이 있는 IQC 검사 기준에서만 정할 수 있습니다.',
+      },
+    ]);
+  }
+  await writeItemLevelInTx(tx, plan.item_id, levelCode, reason, appUserId, expectedVersionNo);
 }

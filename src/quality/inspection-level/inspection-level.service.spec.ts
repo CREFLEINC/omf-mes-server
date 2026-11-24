@@ -19,7 +19,7 @@ const levelRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const harness = (options: { updated?: number; item?: boolean; duplicate?: boolean } = {}) => {
+const harness = (options: { updated?: number; item?: boolean; duplicate?: boolean; iqcPlan?: boolean; iqcRequest?: boolean } = {}) => {
   const histories: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
   const tx = {
@@ -42,6 +42,8 @@ const harness = (options: { updated?: number; item?: boolean; duplicate?: boolea
   const prisma = {
     item: { findUnique: jest.fn().mockResolvedValue(options.item === false ? null : { item_id: 10n }) },
     item_inspection_level: { findUnique: jest.fn().mockResolvedValue(levelRow()) },
+    inspection_plan: { findFirst: jest.fn().mockResolvedValue(options.iqcPlan === false ? null : { inspection_plan_id: 1n }) },
+    inspection_request: { findFirst: jest.fn().mockResolvedValue(options.iqcRequest ? { inspection_request_id: 1n } : null) },
     $transaction: jest.fn(async (run: (client: typeof tx) => Promise<unknown>) => run(tx)),
   };
   const service = new InspectionLevelService(prisma as unknown as PrismaService);
@@ -82,6 +84,24 @@ describe('InspectionLevelService — 지정(POST)', () => {
     });
   });
 
+  it('IQC 기준도 IQC 의뢰도 없는 품목이면 400 itemId INVALID — 저장하지 않는다(omf-all-around#357)', async () => {
+    const { service, prisma, histories } = harness({ iqcPlan: false });
+    await expect(service.create({ itemId: 10, inspectionLevelCode: 'NORMAL' }, 1)).rejects.toMatchObject({
+      response: { errors: [expect.objectContaining({ field: 'itemId', code: 'INVALID' })] },
+    });
+    expect(prisma.inspection_plan.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { item_id: 10, inspection_type_code: 'IQC' } }),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(histories).toEqual([]);
+  });
+
+  it('IQC 기준이 없어도 IQC 의뢰가 있으면 지정한다 — 기준 없이 진행한 IQC 검사의 판정 확정(#247)', async () => {
+    const { service, histories } = harness({ iqcPlan: false, iqcRequest: true });
+    await service.create({ itemId: 10, inspectionLevelCode: 'REDUCED' }, 1);
+    expect(histories).toEqual([expect.objectContaining({ to_level_code: 'REDUCED' })]);
+  });
+
   it('이미 지정된 품목이면 400 UNIQUE_VIOLATION', async () => {
     const { service } = harness({ duplicate: true });
     const error = await service.create({ itemId: 10, inspectionLevelCode: 'NORMAL', reason: '지정' }, 1).catch((e: unknown) => e);
@@ -111,6 +131,14 @@ describe('InspectionLevelService — 수동 변경(PUT)', () => {
     expect(histories).toEqual([
       expect.objectContaining({ from_level_code: 'NORMAL', to_level_code: 'REDUCED', change_type_code: 'MANUAL', reason: null }),
     ]);
+  });
+
+  it('IQC 대상이 아닌 품목의 수준을 바꾸면 400 itemId INVALID — 갱신하지 않는다(omf-all-around#357)', async () => {
+    const { service, updates } = harness({ iqcPlan: false });
+    await expect(service.update(5, 3, { inspectionLevelCode: 'TIGHTENED' }, 1)).rejects.toMatchObject({
+      response: { errors: [expect.objectContaining({ field: 'itemId', code: 'INVALID' })] },
+    });
+    expect(updates).toEqual([]);
   });
 
   it('자동 전환만 끄면 사유 없이 저장하고 이력·연속 수는 그대로다', async () => {
