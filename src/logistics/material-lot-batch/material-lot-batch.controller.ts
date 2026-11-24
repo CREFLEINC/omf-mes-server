@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpStatus, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
@@ -18,6 +18,7 @@ import {
 } from './material-lot-batch-query.service';
 import { MaterialLotBatchCreate, MaterialLotBatchCreated, MaterialLotBatchService } from './material-lot-batch.service';
 import { MaterialLotPairQuery, MaterialLotPairService } from './material-lot-pair.service';
+import { MaterialLotRevise, MaterialLotReviseService } from './material-lot-revise.service';
 import { MaterialLotTabQuery, MaterialLotTabService } from './material-lot-tab.service';
 
 /** 자재 관리 LOT 발행(POP P-01-01 · 웹 W-01-14) — 피처 005 §1. */
@@ -29,6 +30,7 @@ export class MaterialLotBatchController {
     private readonly idempotency: IdempotencyService,
     private readonly tabs: MaterialLotTabService,
     private readonly pairList: MaterialLotPairService,
+    private readonly revisions: MaterialLotReviseService,
   ) {}
 
   @Post('material-lot-batches')
@@ -70,6 +72,15 @@ export class MaterialLotBatchController {
   @Contract('GET /logistics/material-lots/lookup')
   lookup(@Req() request: Request, @Query() query: { plantId: number; lotNo: string }) {
     return this.pairList.lookup(plantOf(request, query.plantId), query.lotNo);
+  }
+
+  /** 출력 전 수정(피처 014 FR-016·017) — 수량이 바뀌면 번호를 다시 받는다. */
+  @Post('material-lots/:lotId\\:revise')
+  @HttpCode(HttpStatus.OK)
+  @Contract('POST /logistics/material-lots/{lotId}:revise')
+  revise(@Req() request: Request, @Param('lotId', ParseIntPipe) lotId: number, @Body() body: MaterialLotRevise) {
+    const actor = materialLotWriteActorOf(request, 'POST /logistics/material-lots/{lotId}:revise');
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.revisions.revise(lotId, body, actor));
   }
 }
 
