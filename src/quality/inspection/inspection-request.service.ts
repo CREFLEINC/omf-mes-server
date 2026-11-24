@@ -16,6 +16,8 @@ import { OqcRequestDetailView, OqcRequestSummary, oqcListSummaries, oqcRequestDe
 export interface InspectionRequestListQuery {
   inspectionTypeCode?: string;
   statusCode?: string;
+  /** 확정된 종합 판정(omf-all-around#356) — 확정 전 의뢰는 판정이 비어 빠진다. */
+  overallJudgmentCode?: string;
   pendingOnly?: boolean;
   itemId?: number;
   supplierId?: number;
@@ -128,6 +130,7 @@ async function iqcInspectionLevels(
 function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_requestWhereInput {
   return {
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
+    ...(query.overallJudgmentCode === undefined ? {} : { overall_judgment_code: query.overallJudgmentCode }),
     ...filter('item_id', query.itemId),
     ...filter('work_order_id', query.workOrderId),
     ...filter('inbound_lot_id', query.inboundLotId),

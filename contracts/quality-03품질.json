@@ -892,6 +892,16 @@
       "x-code-key": "CD-INSPECTION-REQUEST-STATUS"
      },
      {
+      "name": "overallJudgmentCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "REJECTED"
+      },
+      "description": "확정된 종합 판정으로 좁힌다 — 합격(ACCEPTED) · 불합격(REJECTED) · 보류(HELD). 의뢰의 overallJudgmentCode(판정 확정 때 서버가 적는 값)와 같은 값만 — 아직 확정 전인 의뢰는 빠진다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_RESULT_OVERALL_JUDGMENT 로 받는다(공유계약 G-32). 근거: 검사 조회·판정 종합 판정 필터 · omf-all-around#356",
+      "x-code-key": "CD-INSPECTION-OVERALL-JUDGMENT"
+     },
+     {
       "name": "pendingOnly",
       "in": "query",
       "schema": {
