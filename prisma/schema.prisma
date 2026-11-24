@@ -4625,6 +4625,7 @@ model lot_external_identifier {
   lot                        lot      @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   partner                    partner? @relation(fields: [partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([identifier_type_code, external_identifier], map: "ix_lot_external_identifier_value")
   @@schema("trace")
 }
 
