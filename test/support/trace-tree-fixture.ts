@@ -72,7 +72,7 @@ export class TraceTreeFixture {
         warehouse_type_code: 'FINISHED', management_level_code: 'WAREHOUSE',
       } }));
       this.ids[`${key}Warehouse`] = warehouse.warehouse_id;
-      this.ids[`${key}Location`] = (await ensure(() => p.location.findFirst({ where: { warehouse_id: warehouse.warehouse_id } }), () => p.location.create({ data: {
+      this.ids[`${key}Location`] = (await ensure(() => p.location.findFirst({ where: { warehouse_id: warehouse.warehouse_id, location_code: `${code}-LOC` } }), () => p.location.create({ data: {
         warehouse_id: warehouse.warehouse_id, location_code: `${code}-LOC`, location_name: `추적위치${code}`, location_type_code: 'DEFAULT',
       } }))).location_id;
     }
