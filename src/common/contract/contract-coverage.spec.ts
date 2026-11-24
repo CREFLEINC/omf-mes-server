@@ -136,7 +136,8 @@ describe('계약 커버리지', () => {
     // 번호 풀기 1 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 647 → 648.
     // 자재 기준 정방향 계보 1 — `W-02-13`(피처 015 · omf-all-around#355): 648 → 649.
     // 제품 기준 역방향 계보 1 — `W-02-14`(피처 015 · omf-all-around#355): 649 → 650.
-    expect(registry.size).toBe(650);
+    // 엑셀 내보내기 2 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 650 → 652.
+    expect(registry.size).toBe(652);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

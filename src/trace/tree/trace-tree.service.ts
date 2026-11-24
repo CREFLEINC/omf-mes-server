@@ -61,7 +61,7 @@ export class TraceTreeService {
   }
 
   /** 시리얼로 들어온 줄 — 그 LOT 의 시리얼이어야 한다(아니면 400, 없으면 404). */
-  private async rootSerial(lotId: bigint, serialNo: string): Promise<bigint> {
+  async rootSerial(lotId: bigint, serialNo: string): Promise<bigint> {
     const serial = await this.prisma.serial_number.findUnique({ where: { serial_no: serialNo }, select: { serial_number_id: true, lot_id: true } });
     if (serial === null) throw new NotFoundException('없는 시리얼입니다. 시리얼 번호를 확인해 다시 조회하세요.');
     if (serial.lot_id !== lotId) {
@@ -91,8 +91,8 @@ export class TraceTreeService {
     return lot.lot_id;
   }
 
-  /** 그래프 결과를 응답 모양으로 — LOT 항목은 따라간 LOT(depthOf) 전부를 한 번에 읽는다. */
-  async assemble(root: string, graph: TraceGraphResult<TraceOtherNode, TraceEdge>): Promise<TraceGraph> {
+  /** 그래프 결과를 응답 모양으로 — LOT 항목은 따라간 LOT(depthOf) 전부를 한 번에 읽는다. 기준이 여럿이면(내보내기) 모두 앞에 둔다. */
+  async assemble(roots: string | string[], graph: TraceGraphResult<TraceOtherNode, TraceEdge>): Promise<TraceGraph> {
     const lotIds = [...graph.depthOf.keys()].filter((key) => key.startsWith('L:')).map((key) => BigInt(key.slice(2)));
     const lots = await lotNodes(this.prisma, lotIds);
     const nodes: TraceNode[] = [];
@@ -107,12 +107,13 @@ export class TraceTreeService {
       const { key: _drop, ...rest } = other;
       nodes.push(rest);
     };
-    push(root);
+    const starts = typeof roots === 'string' ? [roots] : roots;
+    starts.forEach(push);
     for (const edge of graph.edges) {
       push(edge.from);
       push(edge.to);
     }
     const lotCount = lotIds.length;
-    return { root, nodes, edges: graph.edges, limit: { ...graph.limit, lotCount } };
+    return { root: starts[0], nodes, edges: graph.edges, limit: { ...graph.limit, lotCount } };
   }
 }

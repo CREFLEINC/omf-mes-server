@@ -32,6 +32,7 @@ import { SerialNumberCreateService } from './serial-number/serial-number-create.
 import { SerialNumberController } from './serial-number/serial-number.controller';
 import { TraceLotsService } from './tree/trace-lots.service';
 import { TraceStartsService } from './tree/trace-starts.service';
+import { TraceExportService } from './tree/trace-export.service';
 import { TraceTreeController } from './tree/trace-tree.controller';
 import { TraceTreeService } from './tree/trace-tree.service';
 
@@ -63,6 +64,7 @@ import { TraceTreeService } from './tree/trace-tree.service';
     TraceLotsService,
     TraceStartsService,
     TraceTreeService,
+    TraceExportService,
   ],
 })
 export class TraceModule {}
