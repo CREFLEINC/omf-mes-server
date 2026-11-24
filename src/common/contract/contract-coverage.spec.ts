@@ -131,7 +131,8 @@ describe('계약 커버리지', () => {
     // 자재 관리 LOT 공급사·품목·탭·번호 찾기 3(피처 014 · omf-all-around#349): 641 → 644.
     // 출력 전 자재 관리 LOT 수정 1(피처 014 S4): 644 → 645.
     // 자재 관리 LOT 공급사 목록 1(피처 014 S5 · 세 칸): 645 → 646.
-    expect(registry.size).toBe(646);
+    // 검사 기준 승인 1건 삭제: 646 → 645.
+    expect(registry.size).toBe(645);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

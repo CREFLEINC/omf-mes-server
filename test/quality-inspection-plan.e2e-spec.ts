@@ -1,9 +1,5 @@
 /**
  * 검사기준 헤더.
- *
- * ⭐ 승인은 `approvedBy`·`approvedAt` 을 **한 문장에서 함께** 채운다 — DB 에 짝 CHECK 가
- * 없어 그 한 줄이 유일한 보증이다(A-9).
- * ⭐ 확정 버전이 없으면 승인되지 않는다(400 `CONFIRMED_VERSION_REQUIRED`).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -151,7 +147,9 @@ describe('검사기준 헤더 (e2e)', () => {
     expect(detailValidate(detail.body)).toBe(true);
     expect(detailValidate.errors ?? []).toEqual([]);
     expect(detail.headers.etag).toBe('1');
-    expect(detail.body.inspectionPlan.approvedBy).toBeNull();
+    // 승인 기능은 없앴다 — 승인자·승인 시각을 싣지 않는다.
+    expect(detail.body.inspectionPlan).not.toHaveProperty('approvedBy');
+    expect(detail.body.inspectionPlan).not.toHaveProperty('approvedAt');
   });
 
   it('⭐ 버전이 붙으면 코드가 잠긴다', async () => {
@@ -163,73 +161,6 @@ describe('검사기준 헤더 (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     expect(detail.body.editability).toMatchObject({ reason: 'REFERENCED', referenceCount: 1 });
-  });
-
-  it('⭐⭐ 확정 버전이 없으면 승인되지 않는다 — 400 CONFIRMED_VERSION_REQUIRED', async () => {
-    const id = await create('P3');
-
-    const noVersion = await approveRaw(id);
-    expect(noVersion.status).toBe(400);
-    expect(noVersion.body.errors[0].code).toBe('CONFIRMED_VERSION_REQUIRED');
-
-    // 작성중 버전만 있어도 안 된다.
-    await addVersion(id, REVISION_STATUS.DRAFT);
-    const draftOnly = await approveRaw(id);
-    expect(draftOnly.status).toBe(400);
-    expect(draftOnly.body.errors[0].code).toBe('CONFIRMED_VERSION_REQUIRED');
-  });
-
-  it('⭐⭐ 승인이 승인자와 시각을 «함께» 채운다 — DB 에 짝 CHECK 가 없다', async () => {
-    const id = await create('P4');
-    await addVersion(id, REVISION_STATUS.CONFIRMED);
-
-    const approved = await request(app.getHttpServer())
-      .post(`/api/quality/inspection-plans/${id}:approve`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .expect(200);
-    const validate = validator('POST /quality/inspection-plans/{inspectionPlanId}:approve');
-    expect(validate(approved.body)).toBe(true);
-    expect(validate.errors ?? []).toEqual([]);
-
-    // ⛔ 둘 다 채워져야 한다 — 하나만 있으면 「누가 승인했는지」나 「언제」가 사라진다.
-    expect(approved.body.approvedBy).toBe(userId);
-    expect(approved.body.approvedAt).not.toBeNull();
-
-    const stored = await prisma.inspection_plan.findUniqueOrThrow({
-      where: { inspection_plan_id: id },
-    });
-    expect(stored.approved_by).not.toBeNull();
-    expect(stored.approved_at).not.toBeNull();
-  });
-
-  it('⛔ 이미 승인된 기준은 다시 승인하지 않는다 — 승인자 기록이 덮인다', async () => {
-    const id = await create('P5');
-    await addVersion(id, REVISION_STATUS.CONFIRMED);
-    await request(app.getHttpServer())
-      .post(`/api/quality/inspection-plans/${id}:approve`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .expect(200);
-
-    const again = await approveRaw(id);
-    expect(again.status).toBe(400);
-    expect(again.body.errors[0].code).toBe('STATE_LOCKED');
-  });
-
-  it('⛔ 승인은 본문으로 승인자를 받지 않는다 — 현재 사용자로만 기록된다', async () => {
-    const id = await create('P6');
-    await addVersion(id, REVISION_STATUS.CONFIRMED);
-
-    const approved = await request(app.getHttpServer())
-      .post(`/api/quality/inspection-plans/${id}:approve`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      // 남의 사번을 보내도 무시돼야 한다.
-      .send({ approvedBy: 999999999 })
-      .expect(200);
-
-    expect(approved.body.approvedBy).toBe(userId);
   });
 
   it('⛔ 어휘 밖 검사유형·없는 대상·중복 코드는 400 이다', async () => {
@@ -362,11 +293,6 @@ describe('검사기준 헤더 (e2e)', () => {
       .get('/api/quality/inspection-plans/999999999')
       .set('Cookie', cookie)
       .expect(404);
-    await request(app.getHttpServer())
-      .post('/api/quality/inspection-plans/999999999:approve')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .expect(404);
   });
 
   it('⭐⭐ 기준 수정이 검사 수준을 함께 저장하고, 본 수준 판이 다르면 기본 정보까지 되돌린다(omf-all-around#357)', async () => {
@@ -457,16 +383,6 @@ describe('검사기준 헤더 (e2e)', () => {
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     return response.body.inspectionPlanId;
-  }
-
-  async function approveRaw(
-    id: number,
-  ): Promise<{ status: number; body: { errors: { code: string }[] } }> {
-    const response = await request(app.getHttpServer())
-      .post(`/api/quality/inspection-plans/${id}:approve`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key());
-    return { status: response.status, body: response.body };
   }
 
   /** 버전 API 는 다음 PR 이다 — 참조와 확정 상태를 세우려면 DB 로 넣는다. */
