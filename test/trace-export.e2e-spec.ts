@@ -188,6 +188,26 @@ describe('피처 015 엑셀 내보내기 (e2e)', () => {
     }
   });
 
+  it('US4-1 D9 IQC 칸은 판정 코드가 아니라 공통코드 INSPECTION_RESULT_OVERALL_JUDGMENT 이름(언어별, 비면 기본 이름)', async () => {
+    const ko = await post('backward-exports', { lotIds: [Number(chain.p3)] }).expect(200);
+    const [head, ...rows] = (await open(ko.body as Buffer)).end;
+    const iqcOf = (list: Row[], no: string) => list.find((row) => row[col(head, '자재 LOT')] === fx.no(no))?.[col(head, 'IQC')];
+    expect(iqcOf(rows, 'A')).toBe('합격');
+    expect(iqcOf(rows, 'B')).toBeNull();
+    await prisma.$executeRawUnsafe(`UPDATE mdm.code_value cv SET name_vi = 'Đạt' FROM mdm.code_group cg
+      WHERE cg.code_group_id = cv.code_group_id AND cg.group_code = 'INSPECTION_RESULT_OVERALL_JUDGMENT' AND cv.code = 'ACCEPTED'`);
+    try {
+      const vi = await post('backward-exports', { lotIds: [Number(chain.p3)], language: 'vi' }).expect(200);
+      const book = new Workbook();
+      await book.xlsx.load(vi.body as unknown as ArrayBuffer);
+      const [viHead, ...viRows] = sheetRows(book.getWorksheet('LOT cuối'));
+      expect(viRows.find((row) => row[viHead.indexOf('LOT vật tư')] === fx.no('A'))?.[viHead.indexOf('IQC')]).toBe('Đạt');
+    } finally {
+      await prisma.$executeRawUnsafe(`UPDATE mdm.code_value cv SET name_vi = NULL FROM mdm.code_group cg
+        WHERE cg.code_group_id = cv.code_group_id AND cg.group_code = 'INSPECTION_RESULT_OVERALL_JUDGMENT' AND cv.code = 'ACCEPTED'`);
+    }
+  });
+
   it('US4-1 한 기준 LOT 이 상한에 걸리면 그 LOT 줄 비고에 「일부」 — 다 따라간 기준 LOT 은 그대로', async () => {
     // 기준 LOT 들을 한 번에 따라가고 상한(겹치지 않는 LOT 5,000)도 함께 센다. 멈춘 단계에서 펼치지 못한 LOT 이 닿는 기준만 「일부」다.
     const response = await post('forward-exports', { lotIds: [Number(ids.cap), Number(chain.p3)] }).expect(200);
@@ -233,6 +253,8 @@ describe('피처 015 엑셀 내보내기 (e2e)', () => {
 
   async function extras(): Promise<void> {
     const t = (hour: number) => at(DAY, hour);
+    // IL-1 IQC 합격(ACCEPTED — 실제 판정 코드). IL-B 는 IQC 없음.
+    await fx.iqc('IL1', chain.il1, 'ACCEPTED', t(7));
     ids.x = await fx.lot('X', fx.ids.mat);
     const m1 = await fx.workOrder('M1', fx.ids.semi);
     const m2 = await fx.workOrder('M2', fx.ids.semi);
