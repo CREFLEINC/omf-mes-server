@@ -19,5 +19,6 @@ export {
 export * from './production-root';
 export * from './lot-usable';
 export * from './lot-registry-batch';
+export * from './material-lot-po-plan';
 export * from './lot-split';
 export * from './inbound-lot-register';
