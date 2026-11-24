@@ -67,9 +67,14 @@ export class MaterialLotPairService {
     const page = pageRequest(query);
     const plant = query.plantId;
     const base = this.pairSql(plant, query.q, query.supplierId);
+    // POP 품목 표(공급사로 거름)는 최근 발행이 오래된 품목부터, 발행 이력 없는 품목은 맨 뒤(사용자 2026-11-24 · 시안 6판).
+    // 전체 기준으로 줄 세운 뒤 쪽을 나눈다. W-01-14(공급사 거르기 없음)는 할 일 있는 조합 먼저 그대로.
+    const order = query.supplierId === undefined
+      ? Prisma.sql`busy DESC, partner_code, item_code`
+      : Prisma.sql`last_issued_at ASC NULLS LAST, item_code`;
     const [[counted], rows, [summary]] = await Promise.all([
       this.prisma.$queryRaw<{ total: bigint }[]>`SELECT count(*) AS total FROM (${base}) f`,
-      this.prisma.$queryRaw<PairRow[]>`SELECT * FROM (${base}) f ORDER BY busy DESC, partner_code, item_code LIMIT ${page.take} OFFSET ${page.skip}`,
+      this.prisma.$queryRaw<PairRow[]>`SELECT * FROM (${base}) f ORDER BY ${order} LIMIT ${page.take} OFFSET ${page.skip}`,
       this.prisma.$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM trace.lot l
          WHERE l.plant_id = ${plant} AND l.source_type_code = ${MATERIAL_LOT_BATCH_SOURCE} AND l.lifecycle_status_code = 'WAITING'

@@ -426,6 +426,17 @@ describe('피처 014 S3 — 자재 관리 LOT P/O 미리 생성 (e2e)', () => {
     expect(pairOf(ofS, ids.itemF)).toMatchObject({ printedCount: 0 });
     expect(pairOf(ofS, ids.itemF)?.lastIssuedAt).not.toBeNull();
     expect(pairOf(ofS, ids.itemJ)).toMatchObject({ printedCount: 0, inspectionRequired: true, lastIssuedAt: null });
+    // 공급사로 거른 품목 표는 최근 발행이 오래된 품목부터, 발행 이력 없는 품목은 맨 뒤(사용자 2026-11-24 · 시안 6판).
+    const issuedOrder = ofS.map((pair) => pair.lastIssuedAt);
+    const firstNull = issuedOrder.indexOf(null);
+    const issued = (firstNull < 0 ? issuedOrder : issuedOrder.slice(0, firstNull)) as string[];
+    expect(issued.length).toBeGreaterThan(1);
+    expect(issued).toEqual([...issued].sort());
+    if (firstNull >= 0) expect(issuedOrder.slice(firstNull).every((at) => at === null)).toBe(true);
+    // 쪽을 나눠도 전체 순서 그대로 — 1쪽 끝과 2쪽 처음이 이어진다.
+    const page1 = (await popGet(PAIRS).query({ plantId: Number(ids.plant), supplierId: Number(ids.supplier), page: 1, size: 2 }).expect(200)).body.items as Pair[];
+    const page2 = (await popGet(PAIRS).query({ plantId: Number(ids.plant), supplierId: Number(ids.supplier), page: 2, size: 2 }).expect(200)).body.items as Pair[];
+    expect([...page1, ...page2].map((pair) => pair.item.itemId)).toEqual(ofS.slice(0, 4).map((pair) => pair.item.itemId));
     expect((await rowsOf(ids.supplier0)).map((pair) => [pair.item.itemId, pair.inspectionRequired, pair.lastIssuedAt]))
       .toEqual([[Number(ids.itemJ), true, null]]);
     expect(await prisma.lot.count({ where: { plant_id: ids.plant } })).toBe(lotsBefore);
