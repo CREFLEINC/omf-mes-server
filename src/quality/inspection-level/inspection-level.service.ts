@@ -82,7 +82,7 @@ const HISTORY_INCLUDE = {
 type LevelRow = Prisma.item_inspection_levelGetPayload<{ include: { item: typeof ITEM } }>;
 type HistoryRow = Prisma.item_inspection_level_historyGetPayload<{ include: typeof HISTORY_INCLUDE }>;
 
-/** 품목별 검사 수준 지정·수동 변경·조회와 전환 이력 조회(검사 수준 관리 화면 W-03-12). 자동 전환은 `inspection-level-switch.ts`. */
+/** 품목별 검사 수준 지정·수동 변경·조회와 전환 이력 조회(검사 기준 관리 W-06-02 · omf-all-around#357). 자동 전환은 `inspection-level-switch.ts`. */
 @Injectable()
 export class InspectionLevelService {
   constructor(private readonly prisma: PrismaService) {}

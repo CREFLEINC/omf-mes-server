@@ -3912,7 +3912,7 @@
       }
      },
      "403": {
-      "description": "권한 없음. 근거: W-03-12",
+      "description": "권한 없음. 근거: W-06-02(검사 수준 관리 W-03-12 를 합침 · omf-all-around#357)",
       "content": {
        "application/json": {
         "schema": {
@@ -4005,7 +4005,7 @@
       }
      },
      "403": {
-      "description": "권한 없음. 근거: W-03-12",
+      "description": "권한 없음. 근거: W-06-02(검사 수준 관리 W-03-12 를 합침 · omf-all-around#357)",
       "content": {
        "application/json": {
         "schema": {

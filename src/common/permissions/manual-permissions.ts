@@ -178,9 +178,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
   'POST /quality/defect-records': ['W-01-01', 'W-03-03', 'P-02-14'],
-  // 품목별 IQC 검사 수준 지정·수동 변경 — 검사 수준 관리 화면의 조작이다(omf-all-around#64 · 장부 P-87).
-  'POST /quality/item-inspection-levels': ['W-03-12'],
-  'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-03-12'],
+  // 품목별 IQC 검사 수준 지정·수동 변경(omf-all-around#64 · 장부 P-87) — 검사 수준 관리(W-03-12)를 검사기준 등록에 합쳤다(omf-all-around#357).
+  'POST /quality/item-inspection-levels': ['W-06-02'],
+  'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-06-02'],
   // 시리얼 OQC 스캔·의뢰의 시리얼 판정 — OQC 출하검사 판정 화면(관리웹·POP)의 조회다(omf-all-around#68 · 장부 P-101).
   'GET /quality/oqc-serials/{serialNo}': ['W-04-03', 'P-04-06'],
   'GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials': ['W-04-03', 'P-04-06'],
