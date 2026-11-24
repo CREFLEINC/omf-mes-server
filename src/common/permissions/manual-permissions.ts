@@ -134,6 +134,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/waiting-material-lots': ['P-01-01', 'W-01-14'],
   'GET /logistics/material-lot-pairs': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lot-suppliers': ['P-01-01', 'W-01-14'],
   'GET /logistics/material-lots': ['P-01-01', 'W-01-14'],
   'GET /logistics/material-lots/lookup': ['P-01-01', 'W-01-14'],
   'POST /logistics/material-lots/{lotId}:revise': ['P-01-01', 'W-01-14'],
