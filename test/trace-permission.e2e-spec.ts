@@ -1,5 +1,5 @@
 /**
- * 피처 015 권한 승계(omf-all-around#355 · FR-019) — 마이그레이션 `20261124130000_lot_trace_split` 이 W-02-09(LOT 생산 이력 조회)를
+ * 피처 015 권한 승계(omf-all-around#355 · FR-019) — 마이그레이션 `20261125090000_lot_trace_split` 이 W-02-09(LOT 생산 이력 조회)를
  * 가진 역할에 W-02-13(자재 기준 생산 추적)·W-02-14(제품 기준 역추적)를 준다. 시험 DB 는 이미 그 마이그레이션을 지났으므로
  * 역할을 만든 뒤 같은 INSERT 를 다시 돌려 본다(ON CONFLICT 라 몇 번 돌아도 같다).
  */
@@ -11,7 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import { PERMISSION_CODES } from '../src/common/permissions/permissions';
 
 const PREFIX = 'TPME2E';
-const MIGRATION = join(__dirname, '../prisma/migrations/20261124130000_lot_trace_split/migration.sql');
+const MIGRATION = join(__dirname, '../prisma/migrations/20261125090000_lot_trace_split/migration.sql');
 
 /** 마이그레이션 파일에서 역할 권한 INSERT 문만 꺼낸다 — 인덱스 만들기는 다시 돌릴 수 없다. */
 function grantStatement(): string {
