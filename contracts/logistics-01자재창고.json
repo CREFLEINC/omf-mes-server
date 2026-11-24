@@ -17199,6 +17199,94 @@
     },
     "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
    }
+  },
+  "/trace/forward-tree": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 기준 생산 추적 — LOT 하나의 정방향 계보",
+    "description": "기준 LOT 에서 투입 W/O → 생산 LOT → (반제품이면 다시 W/O → 생산 LOT …) → 포장(옛 기록)·출하·재고까지, 분할(008)·분리(013) 자식을 지나 끝까지 한 번에 준다. 단계마다 그 단계 LOT 전부를 한 번에 질의하고, 깊이 20·겹치지 않는 LOT 5,000 에서 멈춘다. 이음 규칙(계보 추정·W/O 단위 추정)은 지금 그대로다. 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-2·R-3",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "기준 LOT 하나(아무 종류 — 반제품 포함)"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "정방향 계보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TraceGraph"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — plantId·lotId 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 자재 기준 생산 추적 화면 권한(W-02-13)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "공장에 없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
   }
  },
  "components": {
@@ -32183,6 +32271,344 @@
        "$ref": "#/components/schemas/TraceLotRow"
       },
       "description": "입하 LOT·공급사 LOT 은 그 묶음의 관리 LOT(분할 자손 빼고), 출하는 출하 완료분의 배분 LOT, 시리얼은 그 생산 LOT 하나"
+     }
+    }
+   },
+   "TraceGraphNode": {
+    "type": "object",
+    "description": "계보 항목 하나(contracts §3·§4). nodeKey 는 종류 머리글자 + id 로 유일하다(L: LOT · W: W/O · S: 출하 · H: 포장 · K: 재고 위치 · N: 시리얼 · I: 입하 LOT). 같은 LOT·W/O 는 한 항목이다. 종류별 칸만 싣는다. 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355",
+    "required": [
+     "nodeKey",
+     "kind"
+    ],
+    "properties": {
+     "nodeKey": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "MATERIAL_LOT",
+       "SPLIT_LOT",
+       "WORK_ORDER",
+       "PRODUCTION_LOT",
+       "PACKAGE",
+       "SHIPMENT",
+       "STOCK",
+       "SERIAL",
+       "COMPONENT_SERIAL",
+       "INBOUND_LOT"
+      ],
+      "description": "SPLIT_LOT = 008 부분 출고 분할·013 생산 LOT 분리 자식 · PACKAGE = 010 이전 포장 기록만 · STOCK = 그 LOT 의 창고·위치 재고(on_hand > 0)"
+     },
+     "lot": {
+      "$ref": "#/components/schemas/TraceTreeLot"
+     },
+     "item": {
+      "$ref": "#/components/schemas/TraceTreeItem"
+     },
+     "qty": {
+      "type": "number"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "material": {
+      "type": "object",
+      "description": "자재 LOT(분할 자식 포함)만 — 입하·공급사는 분할이면 원래 LOT 것. 공급사 LOT 은 lot_external_identifier 먼저, 없으면 옛 입하 줄(F-6)",
+      "required": [
+       "inboundLotId",
+       "inboundLotNo",
+       "supplier",
+       "supplierLotNo",
+       "receivedAt"
+      ],
+      "properties": {
+       "inboundLotId": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "format": "int64"
+       },
+       "inboundLotNo": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "supplier": {
+        "oneOf": [
+         {
+          "$ref": "#/components/schemas/TraceTreePartner"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "supplierLotNo": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "receivedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "입하 문서 시각"
+       }
+      }
+     },
+     "producedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "PRODUCTION_LOT — 첫 실적 시각"
+     },
+     "split": {
+      "type": "object",
+      "required": [
+       "splitAt",
+       "goodsIssueNo",
+       "lineNo"
+      ],
+      "description": "SPLIT_LOT — 나뉜 시각과 분할을 일으킨 출고(013 분리면 null)",
+      "properties": {
+       "splitAt": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "goodsIssueNo": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "lineNo": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       }
+      }
+     },
+     "workOrder": {
+      "type": "object",
+      "required": [
+       "workOrderId",
+       "workOrderNo",
+       "statusCode"
+      ],
+      "properties": {
+       "workOrderId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "workOrderNo": {
+        "type": "string"
+       },
+       "statusCode": {
+        "type": "string"
+       }
+      }
+     },
+     "shipment": {
+      "type": "object",
+      "required": [
+       "shipmentId",
+       "shipmentNo",
+       "shippedAt",
+       "statusCode",
+       "customer"
+      ],
+      "properties": {
+       "shipmentId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "shipmentNo": {
+        "type": "string"
+       },
+       "shippedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       },
+       "statusCode": {
+        "type": "string"
+       },
+       "customer": {
+        "$ref": "#/components/schemas/TraceTreePartner"
+       }
+      }
+     },
+     "handlingUnitNo": {
+      "type": "string",
+      "description": "PACKAGE"
+     },
+     "warehouse": {
+      "type": "object",
+      "required": [
+       "warehouseId",
+       "code",
+       "name"
+      ],
+      "properties": {
+       "warehouseId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "code": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      }
+     },
+     "location": {
+      "type": "object",
+      "required": [
+       "locationId",
+       "code",
+       "name"
+      ],
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "code": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "TraceGraphEdge": {
+    "type": "object",
+    "description": "계보 줄 — 같은 (from, to, kind) 는 한 줄. 길마다 남긴다(같은 항목에 두 길로 닿으면 줄 둘)",
+    "required": [
+     "from",
+     "to",
+     "kind",
+     "qty",
+     "basis"
+    ],
+    "properties": {
+     "from": {
+      "type": "string"
+     },
+     "to": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "SPLIT",
+       "CONSUMED",
+       "PRODUCED",
+       "PACKED",
+       "SHIPPED",
+       "STOCKED",
+       "PRODUCED_BY",
+       "SPLIT_FROM",
+       "RECEIVED_FROM",
+       "SERIAL_OF",
+       "ASSEMBLED"
+      ],
+      "description": "정방향 SPLIT(LOT → 자식)·CONSUMED(LOT → W/O)·PRODUCED(W/O → 생산 LOT)·PACKED·SHIPPED·STOCKED, 역방향은 뿌리에서 멀어지는 쪽 PRODUCED_BY(생산 LOT → W/O)·CONSUMED(W/O → 투입 LOT)·SPLIT_FROM(자식 → 원래 LOT)·RECEIVED_FROM(자재 LOT → 입하 LOT)·SERIAL_OF·ASSEMBLED"
+     },
+     "qty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "투입량·배분량·분할량·실적 배분 합"
+     },
+     "basis": {
+      "type": "string",
+      "enum": [
+       "RECORDED",
+       "LOT_GENEALOGY_ESTIMATE",
+       "WORK_ORDER_ESTIMATE"
+      ],
+      "description": "연결 근거 — 투입·생산 이음만 추정(지금 규칙 그대로), 나머지는 RECORDED. 화면은 보이지 않고 내보낸 파일 근거 열에만 쓴다"
+     },
+     "firstAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "lastAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "TraceGraphLimit": {
+    "type": "object",
+    "required": [
+     "exceeded",
+     "maxDepthReached",
+     "lotCount",
+     "lotCap"
+    ],
+    "properties": {
+     "exceeded": {
+      "type": "boolean",
+      "description": "겹치지 않는 LOT 이 lotCap 을 넘어 그 단계에서 멈췄다 — 결과는 본 데까지(화면 「일부」)"
+     },
+     "maxDepthReached": {
+      "type": "boolean",
+      "description": "깊이(지나온 LOT 단계) 20 에 닿았는데 더 펼칠 LOT 이 남았다"
+     },
+     "lotCount": {
+      "type": "integer"
+     },
+     "lotCap": {
+      "type": "integer"
+     }
+    }
+   },
+   "TraceGraph": {
+    "type": "object",
+    "description": "LOT 하나의 계보 그래프. 순환(조상으로 되돌아오는 줄)은 그대로 싣는다 — 화면이 조상과 같으면 「순환」으로 멈춘다",
+    "required": [
+     "root",
+     "nodes",
+     "edges",
+     "limit"
+    ],
+    "properties": {
+     "root": {
+      "type": "string",
+      "description": "뿌리 항목 nodeKey"
+     },
+     "nodes": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceGraphNode"
+      }
+     },
+     "edges": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceGraphEdge"
+      }
+     },
+     "limit": {
+      "$ref": "#/components/schemas/TraceGraphLimit"
      }
     }
    }
