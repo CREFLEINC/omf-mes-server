@@ -92,6 +92,30 @@ describe('검사 기준 수정 — 검사 수준 동시 저장(omf-all-around#35
   });
 
   it.each([
+    ['수준 판이 달라졌으면', LEVEL_ROW, 2],
+    ['미지정으로 봤는데 그 사이 지정됐으면', LEVEL_ROW, null],
+    ['지정된 것으로 봤는데 수준 행이 없으면', null, 3],
+  ])('%s 409 — 아무것도 쓰지 않는다', async (_label, level, seen) => {
+    const { service, tx, histories } = harness({ level });
+    const error = await service.update(1, 1, plan({ inspectionLevelCode: 'TIGHTENED', inspectionLevelVersionNo: seen }), 7).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(tx.item_inspection_level.updateMany).not.toHaveBeenCalled();
+    expect(tx.item_inspection_level.create).not.toHaveBeenCalled();
+    expect(histories).toEqual([]);
+  });
+
+  it('본 판과 같으면 저장한다 — 미지정(null)으로 본 품목은 새로 만든다', async () => {
+    const same = harness({ level: LEVEL_ROW });
+    await same.service.update(1, 1, plan({ inspectionLevelCode: 'TIGHTENED', inspectionLevelVersionNo: 3 }), 7);
+    expect(same.tx.item_inspection_level.updateMany).toHaveBeenCalled();
+
+    const fresh = harness();
+    await fresh.service.update(1, 1, plan({ inspectionLevelCode: 'REDUCED', inspectionLevelVersionNo: null }), 7);
+    expect(fresh.tx.item_inspection_level.create).toHaveBeenCalled();
+  });
+
+  it.each([
     ['IQC 가 아닌 기준', { inspection_type_code: 'OQC' }],
     ['품목이 없는 IQC 기준', { item_id: null }],
   ])('%s 이면 400 inspectionLevelCode INVALID — 트랜잭션째 실패한다', async (_label, after) => {

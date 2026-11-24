@@ -66,6 +66,8 @@ export interface InspectionPlanWrite {
   inspectionLevelCode?: InspectionLevelCode;
   /** 검사 수준 변경 사유(선택) — 이력에 남는다. */
   inspectionLevelReason?: string | null;
+  /** 창을 열 때 본 검사 수준의 판 — 미지정이었으면 `null`. 그 사이 바뀌었으면 409. 생략 = 판을 견주지 않는다. */
+  inspectionLevelVersionNo?: number | null;
 }
 
 /** 등록 · 복사는 기준코드를 비우면(생략 · 공백) 서버가 `QP-{YYYYMMDD}-{SEQ4}` 로 붙인다(omf-all-around#262). */
@@ -202,7 +204,7 @@ export class InspectionPlanService {
           await syncItemsToCommonIqcPlan(tx, after.default_skip);
         }
         if (input.inspectionLevelCode !== undefined) {
-          await writePlanLevel(tx, after, input.inspectionLevelCode, input.inspectionLevelReason, appUserId);
+          await writePlanLevel(tx, after, input.inspectionLevelCode, input.inspectionLevelReason, input.inspectionLevelVersionNo, appUserId);
         }
       }
       return result;
@@ -475,6 +477,7 @@ async function writePlanLevel(
   plan: { inspection_type_code: string; item_id: bigint | null } | null,
   levelCode: InspectionLevelCode,
   reason: string | null | undefined,
+  expectedVersionNo: number | null | undefined,
   appUserId: number | undefined,
 ): Promise<void> {
   if (plan === null || plan.inspection_type_code !== 'IQC' || plan.item_id === null) {
@@ -487,5 +490,5 @@ async function writePlanLevel(
       },
     ]);
   }
-  await writeItemLevelInTx(tx, plan.item_id, levelCode, reason, appUserId);
+  await writeItemLevelInTx(tx, plan.item_id, levelCode, reason, appUserId, expectedVersionNo);
 }

@@ -13,9 +13,17 @@ export async function writeItemLevelInTx(
   levelCode: InspectionLevelCode,
   reasonInput: string | null | undefined,
   appUserId: number | undefined,
+  expectedVersionNo?: number | null,
 ): Promise<void> {
   const reason = reasonInput?.trim() || null;
   const current = await tx.item_inspection_level.findUnique({ where: { item_id: itemId } });
+  // 창을 연 뒤 다른 사람이 수준을 바꿨으면(또는 처음 지정했으면) 그 값을 덮지 않는다 — 기본 정보까지 함께 되돌린다.
+  if (expectedVersionNo !== undefined && (current?.version_no ?? null) !== expectedVersionNo) {
+    assertUpdated(0, 'user', {
+      code: 'VERSION_CONFLICT',
+      ...(current === null ? {} : { currentVersion: String(current.version_no) }),
+    });
+  }
   if (current !== null && current.inspection_level_code === levelCode) return;
   if (current === null) {
     await tx.item_inspection_level.create({
