@@ -238,6 +238,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 같은 화면의 기간별 이력 중 투입·포장(장부 P-151).
   'GET /trace/material-input-lines': ['W-02-09'],
   'GET /trace/packing-lines': ['W-02-09'],
+  // 자재 기준 생산 추적(W-02-13)·제품 기준 역추적(W-02-14) — 피처 015 · omf-all-around#355. 설계 밖 화면이라 그 화면만 연다.
+  'GET /trace/material-trace-lots': ['W-02-13'],
+  'GET /trace/product-trace-lots': ['W-02-14'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.
