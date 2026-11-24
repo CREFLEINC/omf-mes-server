@@ -5,6 +5,7 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { BackwardEndRow, BackwardSummary } from './backward-end-rows';
 import { ForwardEndRow, ForwardSummary } from './forward-end-rows';
+import { exportLanguage } from './trace-export-labels';
 import { TraceExportBody, TraceExportService } from './trace-export.service';
 import { TraceLotPage, TraceLotQuery, TraceLotsService } from './trace-lots.service';
 import { TraceStartMatch, TraceStartQuery, TraceStartsService } from './trace-starts.service';
@@ -56,14 +57,14 @@ export class TraceTreeController {
   /** 헤더를 쓰기 전에 모든 예외를 던진다 — 400·404·422 가 전역 필터의 ErrorResponse 로 나간다. */
   @Post('forward-exports')
   @Contract('POST /trace/forward-exports')
-  async forwardExports(@Body() body: TraceExportBody, @Res() response: Response): Promise<void> {
-    sendXlsx(response, await this.exports.build('FORWARD', body));
+  async forwardExports(@Body() body: TraceExportBody, @Req() request: Request, @Res() response: Response): Promise<void> {
+    sendXlsx(response, await this.exports.build('FORWARD', body, exportLanguage(body.language, request.headers['accept-language'])));
   }
 
   @Post('backward-exports')
   @Contract('POST /trace/backward-exports')
-  async backwardExports(@Body() body: TraceExportBody, @Res() response: Response): Promise<void> {
-    sendXlsx(response, await this.exports.build('BACKWARD', body));
+  async backwardExports(@Body() body: TraceExportBody, @Req() request: Request, @Res() response: Response): Promise<void> {
+    sendXlsx(response, await this.exports.build('BACKWARD', body, exportLanguage(body.language, request.headers['accept-language'])));
   }
 }
 
