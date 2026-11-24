@@ -7,7 +7,7 @@
  * - 상한: 자재 CAP → W/O CAPWO(계보 없음) → 생산 LOT 5,001개.
  * - 응답 시간: 자재 R → W/O RWO → 생산 LOT 199개(항목 약 200).
  * - 투입 안 된 자재 U(재고만), 옛 입하 자재 LEG(공급사 LOT 이 입하 줄에만), 다른 공장 LOT.
- * - IL-1 IQC 합격(취소된 옛 IQC 는 빠진다).
+ * - 역방향: IL-1 IQC 합격(취소된 옛 IQC 는 빠진다), SN-1 에 부품 시리얼 CSN-1(P2 의 시리얼) 조립, 투입 없는 생산 LOT E.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -70,7 +70,7 @@ describe('피처 015 계보 (e2e)', () => {
     if (node.shipment) return short(node.shipment.shipmentNo);
     if (node.kind === 'STOCK') return `재고(${short(node.location.code)})`;
     if (node.kind === 'SERIAL' || node.kind === 'COMPONENT_SERIAL') return short(node.serialNo);
-    if (node.kind === 'INBOUND_LOT') return short(node.inboundLot.inboundLotNo);
+    if (node.kind === 'INBOUND_LOT') return short(node.inboundLot.inboundLotNo as string);
     return node.nodeKey;
   };
 
@@ -208,6 +208,70 @@ describe('피처 015 계보 (e2e)', () => {
     });
   });
 
+  describe('역방향 GET /trace/backward-tree', () => {
+    it('US2-1 Q9 P3 → W/O 2 → B·P1, P1 → W/O 1 → A → 입하 LOT(S·IQC) — 최종 LOT 은 A·B(반제품 P1 없음), 요약에 SH-1', async () => {
+      const body = (await tree('backward-tree', chain.p3).expect(200)).body as Body;
+
+      conformsTo('/trace/backward-tree', 'get', body);
+      expect(body.root).toBe(`L:${chain.p3}`);
+      expect(edgeText(body).sort()).toEqual([
+        'A -RECEIVED_FROM-> IL-1', 'B -RECEIVED_FROM-> IL-B', 'P1 -PRODUCED_BY-> WO-1', 'P3 -PRODUCED_BY-> WO-2',
+        'WO-1 -CONSUMED-> A', 'WO-2 -CONSUMED-> B', 'WO-2 -CONSUMED-> P1',
+      ]);
+      const inbound = (body.nodes as Body[]).find((node) => node.nodeKey === `I:${chain.il1}`);
+      expect(inbound).toMatchObject({ kind: 'INBOUND_LOT', inboundLot: { inboundLotNo: fx.no('IL-1'), receivedDate: DAY,
+        supplier: { code: `${PREFIX}-SUP-S` }, iqcJudgmentCode: 'PASS' } });
+      expect((body.edges as Body[]).find((edge) => edge.to === `L:${chain.a}`)).toMatchObject({ kind: 'CONSUMED', qty: 40, basis: 'LOT_GENEALOGY_ESTIMATE' });
+      const rows = body.endRows as Body[];
+      expect(rows.map((row) => [short(row.lot.lotNo), short(row.workOrder.workOrderNo)])).toEqual([['A', 'WO-1'], ['B', 'WO-2']]);
+      expect(rows[0]).toMatchObject({
+        supplier: { code: `${PREFIX}-SUP-S` }, supplierLotNo: fx.no('SUP-A'),
+        inboundLot: { inboundLotNo: fx.no('IL-1'), receivedDate: DAY, iqcJudgmentCode: 'PASS' },
+        productLots: [fx.no('P1')], consumedQty: 40, basis: 'LOT_GENEALOGY_ESTIMATE',
+      });
+      expect(rows[1]).toMatchObject({ supplier: { code: `${PREFIX}-SUP-T` }, inboundLot: { inboundLotNo: fx.no('IL-B'), iqcJudgmentCode: null }, productLots: [fx.no('P3')] });
+      expect(body.summary).toEqual({ rawLotCount: 2, supplierCount: 2, workOrderCount: 2, productLotCount: 2 });
+      expect(body.rootShipments).toEqual([{ shipmentNo: fx.no('SH-1'), customer: expect.objectContaining({ code: `${PREFIX}-CUS-X` }), shippedAt: at(DAY, 12).toISOString(), qty: 20 }]);
+    });
+
+    it('US2-4 Q12 분리 P4-S1 → 원래 P4 → W/O 3 → 분할 A-S1 → 원래 A → 입하 LOT', async () => {
+      const body = (await tree('backward-tree', chain.p4S1).expect(200)).body as Body;
+
+      expect(edgeText(body).sort()).toEqual([
+        'A -RECEIVED_FROM-> IL-1', 'A-S1 -SPLIT_FROM-> A', 'P4 -PRODUCED_BY-> WO-3', 'P4-S1 -SPLIT_FROM-> P4', 'WO-3 -CONSUMED-> A-S1',
+      ]);
+      expect((body.endRows as Body[]).map((row) => [short(row.lot.lotNo), row.supplierLotNo, row.inboundLot.inboundLotNo])).toEqual([['A-S1', fx.no('SUP-A'), fx.no('IL-1')]]);
+      expect(body.rootShipments).toEqual([expect.objectContaining({ shipmentNo: fx.no('SH-2') })]);
+    });
+
+    it('US2-3 Q10 serialNo 를 주면 시리얼이 뿌리 → 생산 LOT, 조립 기록은 부품 시리얼 한 단계 → 그 LOT 으로 이어진다', async () => {
+      const body = (await tree('backward-tree', chain.p3, { serialNo: fx.no('SN-1') }).expect(200)).body as Body;
+
+      conformsTo('/trace/backward-tree', 'get', body);
+      expect(body.root).toBe(`N:${chain.sn1}`);
+      expect((body.nodes as Body[])[0]).toMatchObject({ nodeKey: `N:${chain.sn1}`, kind: 'SERIAL', serialNo: fx.no('SN-1'), producedAt: at(DAY, 11).toISOString() });
+      expect(edgeText(body)).toEqual(expect.arrayContaining(['SN-1 -SERIAL_OF-> P3', 'SN-1 -ASSEMBLED-> CSN-1', 'CSN-1 -SERIAL_OF-> P2', 'P2 -PRODUCED_BY-> WO-1']));
+      expect(body.limit.lotCount).toBe(5);
+    });
+
+    it('US2-3 그 LOT 의 시리얼이 아니면 400, 없는 시리얼은 404', async () => {
+      await tree('backward-tree', chain.p2, { serialNo: fx.no('SN-1') }).expect(400);
+      await tree('backward-tree', chain.p3, { serialNo: fx.no('NO-SERIAL') }).expect(404);
+    });
+
+    it('US2-5 Q16 투입 기록이 없는 생산 LOT 은 LOT·W/O 까지, 최종 LOT 목록은 비어 있다', async () => {
+      const body = (await tree('backward-tree', ids.e).expect(200)).body as Body;
+      expect(edgeText(body)).toEqual(['E -PRODUCED_BY-> WO-EMPTY']);
+      expect(body.endRows).toEqual([]);
+      expect(body.rootShipments).toEqual([]);
+    });
+
+    it('US2-1 다른 공장·없는 LOT 은 404, W-02-14 가 없으면 403', async () => {
+      await tree('backward-tree', ids.other).expect(404);
+      await tree('backward-tree', chain.p3, {}, 'material').expect(403);
+    });
+  });
+
   async function extras(): Promise<void> {
     const t = (hour: number, minute = 0) => at(DAY, hour, minute);
     // 여러 길
@@ -246,8 +310,14 @@ describe('피처 015 계보 (e2e)', () => {
     ids.leg = await fx.lot('LEG', fx.ids.mat, { source: 'INBOUND_RECEIPT_LINE' });
     await fx.legacyInbound('LEG', ids.leg, fx.ids.mat, fx.ids.supplierS, t(5), 'SUP-LEG');
     ids.other = await fx.lot('OTHER', fx.ids.mat, { plant: fx.ids.otherPlant });
+    // 역방향 — IQC(취소된 옛 요청은 빠진다)·조립 기록·투입 없는 생산 LOT.
     await fx.iqc('IL1-OLD', chain.il1, 'FAIL', t(6), 'CANCELLED');
     await fx.iqc('IL1', chain.il1, 'PASS', t(7, 10));
+    const component = await fx.serial('CSN-1', chain.p2, t(10));
+    await fx.assemble(chain.sn1, component, chain.wo2, t(11));
+    const empty = await fx.workOrder('EMPTY', fx.ids.fg);
+    ids.e = await fx.productionLot('E', fx.ids.fg, empty);
+    await fx.produce(empty, ids.e, 5, t(9), []);
   }
 
   /** 실적 하나에 생산 LOT `count` 개를 배분한다. `source` 를 주면 LOT 마다 계보(CONSUMED)를 남긴다. */

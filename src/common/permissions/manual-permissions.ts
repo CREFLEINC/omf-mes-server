@@ -244,6 +244,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /trace/product-trace-lots': ['W-02-14'],
   'GET /trace/trace-starts': ['W-02-13', 'W-02-14'],
   'GET /trace/forward-tree': ['W-02-13'],
+  'GET /trace/backward-tree': ['W-02-14'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.

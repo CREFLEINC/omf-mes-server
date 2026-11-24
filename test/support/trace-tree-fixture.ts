@@ -252,6 +252,13 @@ export class TraceTreeFixture {
     } });
   }
 
+  /** 조립 기록 — 부모 시리얼에 부품 시리얼 하나. */
+  async assemble(parentSerialId: bigint, componentSerialId: bigint, workOrderId: bigint, at: Date): Promise<void> {
+    await this.prisma.serial_component_relation.create({ data: {
+      parent_serial_number_id: parentSerialId, component_serial_number_id: componentSerialId, work_order_id: workOrderId, assembled_at: at,
+    } });
+  }
+
   /** quickstart 「준비」 계보 사슬. `day` 하루 안에 시각 순으로 쌓는다. */
   async chain(day: string): Promise<ChainIds> {
     const t = (hour: number, minute = 0) => TraceTreeFixture.at(day, hour, minute);

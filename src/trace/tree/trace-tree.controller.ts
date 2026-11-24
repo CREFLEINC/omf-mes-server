@@ -3,10 +3,11 @@ import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
+import { BackwardEndRow, BackwardSummary } from './backward-end-rows';
 import { ForwardEndRow, ForwardSummary } from './forward-end-rows';
 import { TraceLotPage, TraceLotQuery, TraceLotsService } from './trace-lots.service';
 import { TraceStartMatch, TraceStartQuery, TraceStartsService } from './trace-starts.service';
-import { TraceGraph, TraceTreeQuery, TraceTreeService } from './trace-tree.service';
+import { RootShipment, TraceGraph, TraceTreeQuery, TraceTreeService } from './trace-tree.service';
 
 /**
  * 자재 기준 생산 추적(W-02-13)·제품 기준 역추적(W-02-14) — 피처 015 · omf-all-around#355. 관리웹 세션 전용이다.
@@ -42,5 +43,11 @@ export class TraceTreeController {
   @Contract('GET /trace/forward-tree')
   forwardTree(@Query() query: TraceTreeQuery): Promise<TraceGraph & { endRows: ForwardEndRow[]; summary: ForwardSummary }> {
     return this.trees.forward(query);
+  }
+
+  @Get('backward-tree')
+  @Contract('GET /trace/backward-tree')
+  backwardTree(@Query() query: TraceTreeQuery): Promise<TraceGraph & { endRows: BackwardEndRow[]; summary: BackwardSummary; rootShipments: RootShipment[] }> {
+    return this.trees.backward(query);
   }
 }
