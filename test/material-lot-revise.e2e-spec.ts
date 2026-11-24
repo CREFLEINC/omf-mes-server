@@ -13,6 +13,7 @@ import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { TOKEN_TYPE } from '../src/auth/session-resolver.service';
 import { PERMISSIONS } from '../src/common/permissions/permissions';
+import { reviseMaterialLotWithin } from '../src/core/lot';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'E14RV';
@@ -163,13 +164,49 @@ describe('피처 014 S4 — 출력 전 자재 관리 LOT 수정 (e2e)', () => {
       .set('Idempotency-Key', randomUUID()).set('X-Worker-No', WORKER_NO).send({ qty: 70, package: null }).expect(401);
   });
 
+  it('SC-002 T048 수량을 늘린 수정이 끝나기 전 같은 조합 미출력 조회는 기다렸다가 늘린 양을 보고 P/O 몫만큼만 만든다', async () => {
+    // 따로 품목 B(기본 100, 패키징 없음)·P/O 400 — 앞 시험의 LOT 과 섞이지 않는다.
+    const itemB = (await prisma.item.create({
+      data: { item_code: `${PREFIX}-B`, item_name: 'LOT수정자재B', item_type_code: 'RAW_MATERIAL', base_uom_id: ids.ea, lot_controlled: true,
+        default_lot_storage_uom_id: ids.ea, default_production_lot_size: 100 },
+    })).item_id;
+    const order = await prisma.purchase_order.create({
+      data: { purchase_order_no: `${PREFIX}-PO-B`, supplier_id: ids.supplier, business_unit_id: ids.unit, plant_id: ids.plant,
+        order_date: new Date('2026-11-01T00:00:00.000Z'), status_code: 'CONFIRMED' },
+    });
+    await prisma.purchase_order_line.create({
+      data: { purchase_order_id: order.purchase_order_id, line_no: 1, item_id: itemB, uom_id: ids.ea, ordered_qty: 400 },
+    });
+    const first = (await lotsOf(1, 2, itemB).expect(200)).body as { items: Row[]; generation: { createdNow: number; creatableRemaining: number } };
+    expect(first.generation).toMatchObject({ createdNow: 2, creatableRemaining: 2 });
+
+    // 수정 트랜잭션을 열어 둔 채(100 → 200, 아직 커밋 전) 미출력 조회를 보낸다. 조회는 같은 자물쇠에서 기다려야 한다 —
+    // 기다리지 않으면 옛 합 200 을 보고 100 짜리 둘을 더 만들어 몫 400 을 넘는다(500).
+    let pending: Promise<request.Response> | undefined;
+    let settledBeforeCommit = false;
+    await prisma.$transaction(async (tx) => {
+      await reviseMaterialLotWithin(tx, BigInt(first.items[0].lotId), { qty: 200, package: null, businessDate: TODAY });
+      pending = lotsOf(1, 20, itemB).then((response) => response);
+      void pending.then(() => { settledBeforeCommit = true; });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }, { timeout: 20_000 });
+    expect(settledBeforeCommit).toBe(false);
+    const second = (await pending) as request.Response;
+    expect(second.status).toBe(200);
+    expect((second.body as { generation: { createdNow: number; creatableRemaining: number } }).generation)
+      .toMatchObject({ createdNow: 1, creatableRemaining: 0 });
+
+    const waiting = await prisma.lot.findMany({ where: { plant_id: ids.plant, item_id: itemB, lifecycle_status_code: 'WAITING' }, select: { initial_qty: true } });
+    expect(waiting.map((lot) => Number(lot.initial_qty)).sort((a, b) => b - a)).toEqual([200, 100, 100]);
+  });
+
   async function unprinted(): Promise<Row[]> {
     return ((await lotsOf(1, 20).expect(200)).body as { items: Row[] }).items;
   }
 
-  function lotsOf(page: number, size: number): request.Test {
+  function lotsOf(page: number, size: number, item: bigint = ids.item): request.Test {
     return request(app.getHttpServer()).get(LOTS).set('Cookie', cookie)
-      .query({ plantId: Number(ids.plant), supplierId: Number(ids.supplier), itemId: Number(ids.item), tab: 'UNPRINTED', page, size });
+      .query({ plantId: Number(ids.plant), supplierId: Number(ids.supplier), itemId: Number(item), tab: 'UNPRINTED', page, size });
   }
 
   function webPost(path: string): request.Test {
