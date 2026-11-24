@@ -7,6 +7,7 @@
  * - 상한: 자재 CAP → W/O CAPWO(계보 없음) → 생산 LOT 5,001개.
  * - 응답 시간: 자재 R → W/O RWO → 생산 LOT 199개(항목 약 200).
  * - 투입 안 된 자재 U(재고만), 옛 입하 자재 LEG(공급사 LOT 이 입하 줄에만), 다른 공장 LOT.
+ * - IL-1 IQC 합격(취소된 옛 IQC 는 빠진다).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -150,6 +151,56 @@ describe('피처 015 계보 (e2e)', () => {
       expect(elapsed).toBeLessThan(3000);
     });
 
+    it('US1-1 Q4 최종 LOT 목록 — 출하(고객)·재고(창고·위치)·남은 재고·분리 자식, 반제품 P1 은 없고 요약 수가 표와 같다', async () => {
+      const body = (await tree('forward-tree', chain.a).expect(200)).body as Body;
+
+      conformsTo('/trace/forward-tree', 'get', body);
+      const rows = body.endRows as Body[];
+      expect(rows.map((row) => [short(row.lot.lotNo), row.fate])).toEqual([['P2', 'IN_STOCK'], ['P3', 'SHIPPED'], ['P4', 'IN_STOCK'], ['P4-S1', 'SHIPPED']]);
+      expect(rows[0]).toMatchObject({ producedQty: 20, shipments: [], viaWorkOrders: [fx.no('WO-1')],
+        stock: [{ warehouse: { code: `${PREFIX}-P-WH` }, location: { code: `${PREFIX}-P-LOC` }, qty: 20 }] });
+      expect(rows[1]).toMatchObject({ viaWorkOrders: [fx.no('WO-2')], stock: [],
+        shipments: [{ shipmentNo: fx.no('SH-1'), customer: { code: `${PREFIX}-CUS-X` }, shippedAt: at(DAY, 12).toISOString(), qty: 20 }] });
+      // 분리 자식은 W/O 를 원래 LOT 에서 잇는다 — 원래 LOT P4 는 남은 재고가 있어 함께 선다.
+      expect(rows[3]).toMatchObject({ viaWorkOrders: [fx.no('WO-3')], shipments: [{ shipmentNo: fx.no('SH-2'), customer: { code: `${PREFIX}-CUS-Y` }, qty: 10 }] });
+      expect(body.summary).toEqual({ lotCount: 7, workOrderCount: 3, endLotCount: 4, shippedLotCount: 2, customerCount: 2, stockLotCount: 2 });
+    });
+
+    it('US1-2 반제품 P1 기준 최종 LOT 은 완제품 P3 하나다', async () => {
+      const body = (await tree('forward-tree', chain.p1).expect(200)).body as Body;
+      expect((body.endRows as Body[]).map((row) => short(row.lot.lotNo))).toEqual(['P3']);
+    });
+
+    it('경계-여러 길 같은 LOT 이 두 길로 와도 최종 LOT 목록·요약은 한 번만 센다', async () => {
+      const body = (await tree('forward-tree', ids.x).expect(200)).body as Body;
+      expect((body.endRows as Body[]).map((row) => short(row.lot.lotNo))).toEqual(['F']);
+      expect(body.summary).toMatchObject({ lotCount: 4, workOrderCount: 3, endLotCount: 1 });
+      expect((body.endRows as Body[])[0]).toMatchObject({ fate: 'CONSUMED_OUT', viaWorkOrders: [fx.no('WO-M3')] });
+    });
+
+    it('US1-4 Q16 투입되지 않은 LOT 은 최종 LOT 목록이 비어 있다', async () => {
+      const body = (await tree('forward-tree', ids.u).expect(200)).body as Body;
+      expect(body.endRows).toEqual([]);
+      expect(body.summary).toMatchObject({ lotCount: 1, endLotCount: 0 });
+    });
+
+    it('Q15 상한에 걸리면 최종 LOT·요약은 본 데까지다', async () => {
+      const body = (await tree('forward-tree', ids.cap).expect(200)).body as Body;
+      expect(body.summary).toMatchObject({ lotCount: 5002, endLotCount: 5001 });
+    });
+
+    it('US1-1 뿌리 자재 LOT 요약에 IQC 결과 — 입하 LOT 의 취소 제외 최근 확정, 분할 LOT 은 원래 LOT 것, 없으면 null', async () => {
+      const body = (await tree('forward-tree', chain.a).expect(200)).body as Body;
+      conformsTo('/trace/forward-tree', 'get', body);
+      const byKey = new Map((body.nodes as Body[]).map((node) => [node.nodeKey, node]));
+      expect(byKey.get(`L:${chain.a}`)?.material.iqcJudgmentCode).toBe('PASS');
+      expect(byKey.get(`L:${chain.aS1}`)?.material.iqcJudgmentCode).toBe('PASS');
+      const legacy = (await tree('forward-tree', ids.leg).expect(200)).body as Body;
+      expect((legacy.nodes as Body[])[0].material.iqcJudgmentCode).toBeNull();
+      const plain = (await tree('forward-tree', ids.x).expect(200)).body as Body;
+      expect((plain.nodes as Body[])[0].material).toMatchObject({ inboundLotNo: null, iqcJudgmentCode: null });
+    });
+
     it('US1-1 다른 공장·없는 LOT 은 404, W-02-13 이 없으면 403', async () => {
       await tree('forward-tree', ids.other).expect(404);
       await tree('forward-tree', 999_999_999n).expect(404);
@@ -195,6 +246,8 @@ describe('피처 015 계보 (e2e)', () => {
     ids.leg = await fx.lot('LEG', fx.ids.mat, { source: 'INBOUND_RECEIPT_LINE' });
     await fx.legacyInbound('LEG', ids.leg, fx.ids.mat, fx.ids.supplierS, t(5), 'SUP-LEG');
     ids.other = await fx.lot('OTHER', fx.ids.mat, { plant: fx.ids.otherPlant });
+    await fx.iqc('IL1-OLD', chain.il1, 'FAIL', t(6), 'CANCELLED');
+    await fx.iqc('IL1', chain.il1, 'PASS', t(7, 10));
   }
 
   /** 실적 하나에 생산 LOT `count` 개를 배분한다. `source` 를 주면 LOT 마다 계보(CONSUMED)를 남긴다. */

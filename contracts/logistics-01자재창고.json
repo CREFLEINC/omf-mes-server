@@ -17239,7 +17239,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/TraceGraph"
+         "$ref": "#/components/schemas/ForwardTree"
         }
        }
       }
@@ -32315,13 +32315,14 @@
      },
      "material": {
       "type": "object",
-      "description": "자재 LOT(분할 자식 포함)만 — 입하·공급사는 분할이면 원래 LOT 것. 공급사 LOT 은 lot_external_identifier 먼저, 없으면 옛 입하 줄(F-6)",
+      "description": "자재 LOT(분할 자식 포함)만 — 입하·공급사는 분할이면 원래 LOT 것. 공급사 LOT 은 lot_external_identifier 먼저, 없으면 옛 입하 줄(F-6). IQC 결과는 화면 요약(입하 LOT·공급사·공급사 LOT 옆)에 보인다",
       "required": [
        "inboundLotId",
        "inboundLotNo",
        "supplier",
        "supplierLotNo",
-       "receivedAt"
+       "receivedAt",
+       "iqcJudgmentCode"
       ],
       "properties": {
        "inboundLotId": {
@@ -32360,6 +32361,13 @@
         ],
         "format": "date-time",
         "description": "입하 문서 시각"
+       },
+       "iqcJudgmentCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "입하 LOT 의 IQC 종합 판정(quality.inspection_request — IQC·그 입하 LOT·취소 제외·최근 확정). 요청이 없거나 확정 전·입하 LOT 이 없으면 null. 분할 LOT 은 원래 LOT 의 입하 LOT 것"
        }
       }
      },
@@ -32611,6 +32619,198 @@
       "$ref": "#/components/schemas/TraceGraphLimit"
      }
     }
+   },
+   "ForwardEndRow": {
+    "type": "object",
+    "description": "정방향 최종 LOT 한 줄 — 마지막 생산 LOT(더 투입되지 않은 생산 LOT, 분리·분할 자식 포함. 자식이 있는 원래 LOT 은 자기 출하·재고가 남았을 때만)과 그 행방. LOT 마다 한 줄이고 같은 LOT 이 여러 길로 와도 한 번이다(R-3). 피처 015 · omf-all-around#355",
+    "required": [
+     "lot",
+     "item",
+     "producedQty",
+     "uomCode",
+     "fate",
+     "shipments",
+     "stock",
+     "viaWorkOrders"
+    ],
+    "properties": {
+     "lot": {
+      "$ref": "#/components/schemas/TraceTreeLot"
+     },
+     "item": {
+      "$ref": "#/components/schemas/TraceTreeItem"
+     },
+     "producedQty": {
+      "type": "number",
+      "description": "실적 배분 합(분리·분할 자식은 그 LOT 수량)"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "fate": {
+      "type": "string",
+      "enum": [
+       "SHIPPED",
+       "IN_STOCK",
+       "PARTIAL",
+       "CONSUMED_OUT",
+       "VOIDED"
+      ],
+      "description": "PARTIAL = 출하 + 재고 · CONSUMED_OUT = 재고 0·출하 없음 · VOIDED = 폐번·폐기"
+     },
+     "shipments": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "shipmentNo",
+        "customer",
+        "shippedAt",
+        "qty"
+       ],
+       "properties": {
+        "shipmentNo": {
+         "type": "string"
+        },
+        "customer": {
+         "$ref": "#/components/schemas/TraceTreePartner"
+        },
+        "shippedAt": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "format": "date-time"
+        },
+        "qty": {
+         "type": "number"
+        }
+       }
+      },
+      "description": "취소 제외 출하 — 화면은 첫 출하 + 「외 n건」, 내보내기는 출하마다 한 줄"
+     },
+     "stock": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouse",
+        "location",
+        "qty"
+       ],
+       "properties": {
+        "warehouse": {
+         "type": "object",
+         "required": [
+          "warehouseId",
+          "code",
+          "name"
+         ],
+         "properties": {
+          "warehouseId": {
+           "type": "integer",
+           "format": "int64"
+          },
+          "code": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          }
+         }
+        },
+        "location": {
+         "type": "object",
+         "required": [
+          "locationId",
+          "code",
+          "name"
+         ],
+         "properties": {
+          "locationId": {
+           "type": "integer",
+           "format": "int64"
+          },
+          "code": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          }
+         }
+        },
+        "qty": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "viaWorkOrders": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "이 LOT 을 만든 W/O 번호(분리·분할 자식은 원래 LOT 의 것)"
+     }
+    }
+   },
+   "ForwardSummary": {
+    "type": "object",
+    "description": "정방향 요약 — 본 데까지(limit.exceeded 면 「일부」), 겹치지 않게 센다",
+    "required": [
+     "lotCount",
+     "workOrderCount",
+     "endLotCount",
+     "shippedLotCount",
+     "customerCount",
+     "stockLotCount"
+    ],
+    "properties": {
+     "lotCount": {
+      "type": "integer"
+     },
+     "workOrderCount": {
+      "type": "integer"
+     },
+     "endLotCount": {
+      "type": "integer"
+     },
+     "shippedLotCount": {
+      "type": "integer"
+     },
+     "customerCount": {
+      "type": "integer"
+     },
+     "stockLotCount": {
+      "type": "integer"
+     }
+    }
+   },
+   "ForwardTree": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/TraceGraph"
+     },
+     {
+      "type": "object",
+      "required": [
+       "endRows",
+       "summary"
+      ],
+      "properties": {
+       "endRows": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/ForwardEndRow"
+        },
+        "description": "LOT 번호 순. 기준 LOT 이 아무 데도 투입되지 않았으면 빈 배열(화면 「아직 생산에 투입되지 않았습니다」)"
+       },
+       "summary": {
+        "$ref": "#/components/schemas/ForwardSummary"
+       }
+      }
+     }
+    ]
    }
   },
   "securitySchemes": {

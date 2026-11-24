@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
+import { ForwardEndRow, ForwardSummary } from './forward-end-rows';
 import { TraceLotPage, TraceLotQuery, TraceLotsService } from './trace-lots.service';
 import { TraceStartMatch, TraceStartQuery, TraceStartsService } from './trace-starts.service';
 import { TraceGraph, TraceTreeQuery, TraceTreeService } from './trace-tree.service';
@@ -39,7 +40,7 @@ export class TraceTreeController {
 
   @Get('forward-tree')
   @Contract('GET /trace/forward-tree')
-  forwardTree(@Query() query: TraceTreeQuery): Promise<TraceGraph> {
+  forwardTree(@Query() query: TraceTreeQuery): Promise<TraceGraph & { endRows: ForwardEndRow[]; summary: ForwardSummary }> {
     return this.trees.forward(query);
   }
 }

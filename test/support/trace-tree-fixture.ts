@@ -242,6 +242,16 @@ export class TraceTreeFixture {
     } })).serial_number_id;
   }
 
+  /** 입하 LOT 의 IQC — 확정(COMPLETED) 판정. */
+  async iqc(suffix: string, inboundLotId: bigint, judgment: string, at: Date, status = 'COMPLETED'): Promise<void> {
+    const inbound = await this.prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: inboundLotId } });
+    await this.prisma.inspection_request.create({ data: {
+      inspection_request_no: this.no(`IQC-${suffix}`), inspection_type_code: 'IQC', target_type_code: 'INBOUND_LOT', target_id: inboundLotId,
+      item_id: inbound.item_id, inbound_lot_id: inboundLotId, target_qty: 100, uom_id: this.ids.uom, status_code: status, requested_at: at,
+      overall_judgment_code: status === 'COMPLETED' ? judgment : null, confirmed_at: status === 'COMPLETED' ? at : null,
+    } });
+  }
+
   /** quickstart 「준비」 계보 사슬. `day` 하루 안에 시각 순으로 쌓는다. */
   async chain(day: string): Promise<ChainIds> {
     const t = (hour: number, minute = 0) => TraceTreeFixture.at(day, hour, minute);

@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { GraphLimit, TraceGraphResult, followGraph } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TraceEdge, TraceOtherNode, forwardExpand } from './forward-expand';
+import { ForwardEndRow, ForwardSummary, forwardEndRows } from './forward-end-rows';
+import { TraceEdge, TraceNodeBody, TraceOtherNode, forwardExpand } from './forward-expand';
 import { TraceLotNode, lotKey, lotNodes } from './trace-node-facts';
 
 export interface TraceTreeQuery {
@@ -10,7 +11,7 @@ export interface TraceTreeQuery {
   lotId: number;
 }
 
-export type TraceNode = TraceLotNode | Omit<TraceOtherNode, 'key'>;
+export type TraceNode = TraceLotNode | TraceNodeBody;
 
 export interface TraceGraph {
   root: string;
@@ -32,10 +33,10 @@ export function lotNotFound(): NotFoundException {
 export class TraceTreeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async forward(query: TraceTreeQuery): Promise<TraceGraph> {
+  async forward(query: TraceTreeQuery): Promise<TraceGraph & { endRows: ForwardEndRow[]; summary: ForwardSummary }> {
     const root = await this.rootLot(query);
-    const graph = await followGraph({ roots: [lotKey(root)], expand: forwardExpand(this.prisma) });
-    return this.assemble(lotKey(root), graph);
+    const graph = await this.assemble(lotKey(root), await followGraph({ roots: [lotKey(root)], expand: forwardExpand(this.prisma) }));
+    return { ...graph, ...forwardEndRows(graph) };
   }
 
   async rootLot(query: TraceTreeQuery): Promise<bigint> {
