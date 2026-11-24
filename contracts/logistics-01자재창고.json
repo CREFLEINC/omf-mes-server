@@ -16864,6 +16864,238 @@
      }
     }
    }
+  },
+  "/trace/material-trace-lots": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 기준 생산 추적 LOT 목록",
+    "description": "조건이 없으면 최근 100개 — 마지막 생산 투입 시각(정정된 원 투입 제외) 내림차순, 같으면 lotId 내림차순. 투입되지 않은 LOT 은 없다(반제품도 투입되면 들어간다). 공급사(partnerId) + 입하일 기간이면 조건 — 입하에 직접 든 관리 LOT(분할 자손 빼고)을 입하일(입하 LOT 입하일, 없으면 첫 자재 입고일) 내림차순으로 100개씩. 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-12",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 — 다른 공장 LOT 은 나오지 않는다"
+     },
+     {
+      "name": "partnerId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사 — dateFrom·dateTo 와 함께 주면 조건 목록"
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 시작(공장 현지 날짜)"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 종료(포함). 최대 366일"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      },
+      "description": "조건 목록만 — 최근 목록은 늘 첫 100개"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100,
+       "default": 100
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "LOT 목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TraceLotPage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 상대·기간 중 일부만 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 자재 기준 생산 추적 화면 권한(W-02-13)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/product-trace-lots": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "제품 기준 역추적 LOT 목록",
+    "description": "조건이 없으면 최근 100개 — LOT 마다 마지막 출하 완료 시각, 없으면 마지막 제품 창고 생산 입고 시각 하나로 섞어 내림차순(결정 2-나). 출하도 입고도 없는 LOT 은 없다. 고객(partnerId) + 출하일 기간이면 조건 — 그 고객 출하 완료분에 배분된 제품 LOT 을 한 줄씩(기간 안 마지막 출하일 내림차순) 100개씩. 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-12",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 — 다른 공장 LOT 은 나오지 않는다"
+     },
+     {
+      "name": "partnerId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "고객 — dateFrom·dateTo 와 함께 주면 조건 목록"
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 시작(공장 현지 날짜)"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 종료(포함). 최대 366일"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      },
+      "description": "조건 목록만 — 최근 목록은 늘 첫 100개"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100,
+       "default": 100
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "LOT 목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TraceLotPage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 상대·기간 중 일부만 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 제품 기준 역추적 화면 권한(W-02-14)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
   }
  },
  "components": {
@@ -31623,6 +31855,179 @@
        }
       ],
       "description": "null = 패키징 없음. 있으면 qty = count × qtyPerPackage 여야 한다"
+     }
+    }
+   },
+   "TraceTreeLot": {
+    "type": "object",
+    "description": "추적 LOT 머리 — 목록 줄·계보 항목이 함께 쓴다(피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355)",
+    "required": [
+     "lotId",
+     "lotNo",
+     "lotTypeCode",
+     "statusCode",
+     "lifecycleStatusCode"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "lotTypeCode": {
+      "type": "string"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "LOT 상태(NORMAL·HOLD·DEFECT·SCRAPPED 등) — 화면 상태 칩"
+     },
+     "lifecycleStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   },
+   "TraceTreeItem": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "code",
+     "name"
+    ],
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    }
+   },
+   "TraceTreePartner": {
+    "type": "object",
+    "description": "공급사 또는 고객",
+    "required": [
+     "partnerId",
+     "code",
+     "name"
+    ],
+    "properties": {
+     "partnerId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    }
+   },
+   "TraceLotRow": {
+    "type": "object",
+    "description": "LOT 목록 한 줄(contracts §1·§2 공통 · FR-025). 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355",
+    "required": [
+     "lot",
+     "item",
+     "qty",
+     "uomCode",
+     "partner",
+     "inboundLotNo",
+     "sortDate",
+     "sortDateKind"
+    ],
+    "properties": {
+     "lot": {
+      "$ref": "#/components/schemas/TraceTreeLot"
+     },
+     "item": {
+      "$ref": "#/components/schemas/TraceTreeItem"
+     },
+     "qty": {
+      "type": "number",
+      "description": "LOT 처음 수량"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "partner": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/TraceTreePartner"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "자재 쪽은 공급사(분할 LOT 이면 원래 LOT 의 입하 공급사, 입하 LOT 이 없으면 옛 입하 줄의 공급사), 제품 쪽은 마지막 출하 완료의 고객(출하 전이면 null)"
+     },
+     "inboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "자재 쪽만 — 입하 LOT 번호(분할 LOT 이면 원래 LOT 것). 없으면 null"
+     },
+     "sortDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "정렬 날짜 — sortDateKind 의 시각. 번호 풀기 줄은 최근 규칙과 같고 없으면 null"
+     },
+     "sortDateKind": {
+      "oneOf": [
+       {
+        "type": "string",
+        "enum": [
+         "CONSUMED",
+         "INBOUND",
+         "SHIPPED",
+         "RECEIVED"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "CONSUMED = 마지막 생산 투입(정정된 원 투입 제외) · INBOUND = 입하일(입하 LOT 의 입하 문서 시각, 옛 입하는 첫 자재 입고) · SHIPPED = 마지막 출하 완료(조건 목록은 기간 안 마지막) · RECEIVED = 제품 창고 생산 입고"
+     }
+    }
+   },
+   "TraceLotPage": {
+    "type": "object",
+    "required": [
+     "mode",
+     "items",
+     "page"
+    ],
+    "properties": {
+     "mode": {
+      "type": "string",
+      "enum": [
+       "RECENT",
+       "CONDITION"
+      ],
+      "description": "RECENT = 조건 없이 최근 100개 · CONDITION = 상대 + 기간 결과(100개씩)"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceLotRow"
+      }
+     },
+     "page": {
+      "$ref": "#/components/schemas/PageMeta"
      }
     }
    }
