@@ -31,6 +31,8 @@ const numberOf = (node: any): string => node.lot?.lotNo ?? node.workOrder?.workO
 interface SheetContext {
   labels: ReturnType<typeof exportLabels>;
   status: (code: string | null | undefined) => string | null;
+  /** IQC 종합 판정 코드(ACCEPTED·REJECTED·HELD) → 공통코드 이름(INSPECTION_RESULT_OVERALL_JUDGMENT). */
+  judgment: (code: string | null | undefined) => string | null;
 }
 
 /**
@@ -67,7 +69,8 @@ export class TraceExportService {
       else list.push(edge);
     }
     const tz = await this.plantZone(body.plantId);
-    const context: SheetContext = { labels: exportLabels(language), status: await this.statusNames(language) };
+    const context: SheetContext = { labels: exportLabels(language), status: await this.codeNames('LOT_STATUS', language),
+      judgment: await this.codeNames('INSPECTION_RESULT_OVERALL_JUDGMENT', language) };
     const { labels } = context;
 
     const lineage: Cell[][] = [];
@@ -94,11 +97,11 @@ export class TraceExportService {
     return { fileName: `${direction === 'FORWARD' ? 'material' : 'product'}-trace-${stamp}.xlsx`, bytes: Buffer.from(await book.xlsx.writeBuffer()) };
   }
 
-  /** LOT 상태 코드 → 공통코드 이름(LOT_STATUS). 언어 이름이 비면 기본 이름, 사전에 없으면 코드 그대로. */
-  private async statusNames(language: ExportLanguage): Promise<(code: string | null | undefined) => string | null> {
+  /** 코드 → 공통코드 이름(그룹 `groupCode`). 언어 이름이 비면 기본 이름, 사전에 없으면 코드 그대로. */
+  private async codeNames(groupCode: string, language: ExportLanguage): Promise<(code: string | null | undefined) => string | null> {
     const rows = await this.prisma.$queryRawUnsafe<{ code: string; name: string }[]>(
       `SELECT cv.code, COALESCE(${language === 'vi' ? 'cv.name_vi' : 'cv.name_ko'}, cv.code_name) AS name
-         FROM mdm.code_value cv JOIN mdm.code_group cg ON cg.code_group_id = cv.code_group_id WHERE cg.group_code = 'LOT_STATUS'`,
+         FROM mdm.code_value cv JOIN mdm.code_group cg ON cg.code_group_id = cv.code_group_id WHERE cg.group_code = $1`, groupCode,
     );
     const names = new Map(rows.map((row) => [row.code, row.name]));
     return (code) => (code === null || code === undefined ? null : (names.get(code) ?? code));
@@ -163,10 +166,10 @@ function forwardSheet(graph: TraceGraph, within: Set<string>, base: string, part
   });
 }
 
-function backwardSheet(graph: TraceGraph, within: Set<string>, base: string, partial: string | null, { labels, status }: SheetContext): Cell[][] {
+function backwardSheet(graph: TraceGraph, within: Set<string>, base: string, partial: string | null, { labels, status, judgment }: SheetContext): Cell[][] {
   return backwardEndRows(graph, within).endRows.map((row) => [
     base, row.lot.lotNo, row.item.code, row.item.name, row.supplier?.name ?? null, row.supplierLotNo, row.inboundLot?.inboundLotNo ?? null,
-    row.inboundLot?.receivedDate ?? null, row.inboundLot?.iqcJudgmentCode ?? null, row.workOrder.workOrderNo, row.productLots.join(', ') || null,
+    row.inboundLot?.receivedDate ?? null, judgment(row.inboundLot?.iqcJudgmentCode), row.workOrder.workOrderNo, row.productLots.join(', ') || null,
     row.consumedQty, row.uomCode, labels.basis[row.basis], status(row.lot.statusCode), partial,
   ]);
 }
