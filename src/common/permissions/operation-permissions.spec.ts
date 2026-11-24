@@ -189,6 +189,20 @@ describe('오퍼레이션 권한 매핑', () => {
     }
   });
 
+  // 처분을 IQC·OQC 판정 화면의 처분 상자로 옮겼다(omf-all-around#354) — 두 화면 권한만 가진 검사자도 처분한다.
+  it('⛔ 처분 상자의 조회·판정·특채·재작업 발행을 IQC(W-01-01)·OQC(W-04-03) 권한으로도 한다 — #354', () => {
+    for (const key of [
+      'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances',
+      'GET /quality/nonconformances/{nonconformanceId}',
+      'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order',
+      'POST /quality/concessions',
+    ]) {
+      expect(OPERATION_PERMISSIONS[key]).toEqual(expect.arrayContaining(['W-01-01', 'W-03-10', 'W-04-03']));
+    }
+  });
+
   it('⛔ 발행 POST에 재구성 라벨과 검사성적서 호출 셸이 모두 있다 — I-27 R11', () => {
     expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toEqual(
       expect.arrayContaining(['P-04-04', 'W-04-03']),
