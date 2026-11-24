@@ -23,3 +23,4 @@ export * from './material-lot-po-plan';
 export * from './material-lot-revise';
 export * from './lot-split';
 export * from './inbound-lot-register';
+export * from './trace-graph';
