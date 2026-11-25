@@ -1,4 +1,4 @@
-import { SPLIT_RELATION, WIP_LOT_TYPE, WORK_ORDER_LOT_SOURCE, inboundLineLotSql, splitAncestors } from '../../core/lot';
+import { SPLIT_RELATION, WIP_LOT_TYPE, WORK_ORDER_LOT_SOURCE, WipQuantity, inboundLineLotSql, splitAncestors, wipQuantities, wipRemaining } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { splitGoodsIssues } from '../flow/split-links';
 
@@ -15,6 +15,8 @@ export interface TraceTreeLot {
   /** 반제품(WIP)의 생산 공정 순번·공정 이름 — 계보 항목만 싣고(반제품이 아니면 null), 목록 줄은 키가 없다(피처 016). */
   operationSeq?: number | null;
   processName?: string | null;
+  /** 반제품(WIP)의 남은 투입 가능 수량(실적 − 정정 뺀 투입) — 계보 항목만, 반제품이 아니면 null. 정방향 최종 줄이 쓴다. */
+  wipRemainingQty?: number | null;
 }
 
 export interface Named {
@@ -73,9 +75,10 @@ export async function lotNodes(prisma: PrismaService, lotIds: readonly bigint[])
                            WHERE lt.lot_type_code = '${WIP_LOT_TYPE}' AND lt.source_type_code = '${WORK_ORDER_LOT_SOURCE}' AND wo.work_order_id = lt.source_id) op ON true
       WHERE lt.lot_id = ANY($1::bigint[])`, [...lotIds],
   );
-  const [materials, issues] = await Promise.all([
+  const [materials, issues, wips] = await Promise.all([
     materialFacts(prisma, heads.filter((row) => row.lot_type_code === 'MATERIAL').map((row) => row.lot_id)),
     splitGoodsIssues(prisma, heads.flatMap((row) => (row.split_event_type === 'GOODS_ISSUE_LINE' && row.split_event_id !== null ? [row.split_event_id] : []))),
+    wipQuantities(prisma, heads.filter((row) => row.lot_type_code === WIP_LOT_TYPE).map((row) => row.lot_id)),
   ]);
   return new Map(heads.map((row) => {
     const kind = row.parent_lot_id !== null ? 'SPLIT_LOT' : row.source_type_code === WORK_ORDER_LOT_SOURCE ? 'PRODUCTION_LOT' : 'MATERIAL_LOT';
@@ -86,6 +89,7 @@ export async function lotNodes(prisma: PrismaService, lotIds: readonly bigint[])
       lot: {
         lotId: Number(row.lot_id), lotNo: row.lot_no, lotTypeCode: row.lot_type_code, statusCode: row.status_code, lifecycleStatusCode: row.lifecycle_status_code,
         operationSeq: row.operation_seq, processName: row.process_name,
+        wipRemainingQty: wips.has(row.lot_id) ? wipRemaining(wips.get(row.lot_id) as WipQuantity).toNumber() : null,
       },
       item: { itemId: Number(row.item_id), code: row.item_code, name: row.item_name },
       qty: Number(row.initial_qty),

@@ -129,9 +129,13 @@ export async function workOrderNodes(prisma: PrismaService, workOrderIds: bigint
   if (workOrderIds.length === 0) return [];
   const rows = await prisma.work_order.findMany({
     where: { work_order_id: { in: workOrderIds } },
-    select: { work_order_id: true, work_order_no: true, status_code: true, item: { select: { item_id: true, item_code: true, item_name: true } } },
+    select: {
+      work_order_id: true, work_order_no: true, status_code: true, item: { select: { item_id: true, item_code: true, item_name: true } },
+      routing_operation: { select: { operation_seq: true } },
+    },
   });
+  // 공정 순번은 모든 W/O 에 싣는다 — 화면 「W/O WO-… · 공정 30」(피처 016).
   return rows.map((row) => ({ key: `W:${row.work_order_id}`, nodeKey: `W:${row.work_order_id}`, kind: 'WORK_ORDER',
-    workOrder: { workOrderId: Number(row.work_order_id), workOrderNo: row.work_order_no, statusCode: row.status_code },
+    workOrder: { workOrderId: Number(row.work_order_id), workOrderNo: row.work_order_no, statusCode: row.status_code, operationSeq: row.routing_operation.operation_seq },
     item: { itemId: Number(row.item.item_id), code: row.item.item_code, name: row.item.item_name } }));
 }

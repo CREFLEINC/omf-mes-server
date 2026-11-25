@@ -9,6 +9,8 @@ export interface ForwardEndRow {
   producedQty: number;
   uomCode: string;
   fate: 'SHIPPED' | 'IN_STOCK' | 'PARTIAL' | 'CONSUMED_OUT' | 'VOIDED' | 'WIP_PENDING';
+  /** WIP_PENDING 줄만 — 다음 공정에 더 넣을 수 있는 양(행선지 「남은 n」). 그 밖은 null(피처 016). */
+  wipRemainingQty: number | null;
   shipments: { shipmentNo: string; customer: Named; shippedAt: string | null; qty: number }[];
   stock: { warehouse: unknown; location: unknown; qty: number }[];
   viaWorkOrders: string[];
@@ -65,13 +67,17 @@ export function forwardEndRows(graph: { nodes: readonly { nodeKey: string; kind:
   const endRows: ForwardEndRow[] = [];
   for (const lot of lots) {
     const leaving = out.get(lot.nodeKey) ?? [];
-    if (!produced(lot) || leaving.some((edge) => edge.kind === 'CONSUMED')) continue;
+    // 반제품은 일부만 다음 공정에 들어갔으면(남은 > 0) 나가는 투입이 있어도 「다음 공정 투입 전」으로 선다 — 다 들어갔으면 서지 않는다(FR-013).
+    const pending = lot.lot.lotTypeCode === WIP_LOT_TYPE && (lot.lot.wipRemainingQty ?? 0) > 0;
+    if (!produced(lot) || (leaving.some((edge) => edge.kind === 'CONSUMED') && !pending)) continue;
     const shipments = shipmentsOf(lot.nodeKey);
     const stock = stockOf(lot.nodeKey);
     if (leaving.some((edge) => edge.kind === 'SPLIT') && shipments.length === 0 && stock.length === 0) continue;
     const producedQty = (into.get(lot.nodeKey) ?? []).filter((edge) => edge.kind === 'PRODUCED').reduce((sum, edge) => sum + (edge.qty ?? 0), 0) || lot.qty;
+    const fate = fateOf(lot.lot, shipments.length > 0, stock.length > 0);
     endRows.push({
-      lot: lot.lot, item: lot.item, producedQty, uomCode: lot.uomCode, fate: fateOf(lot.lot, shipments.length > 0, stock.length > 0),
+      lot: lot.lot, item: lot.item, producedQty, uomCode: lot.uomCode, fate,
+      wipRemainingQty: fate === 'WIP_PENDING' ? (lot.lot.wipRemainingQty ?? null) : null,
       shipments, stock, viaWorkOrders: [...new Set(viaWorkOrders(lot.nodeKey))].sort(),
     });
   }
@@ -91,7 +97,7 @@ export function forwardEndRows(graph: { nodes: readonly { nodeKey: string; kind:
 
 function fateOf(lot: TraceTreeLot, shipped: boolean, stocked: boolean): ForwardEndRow['fate'] {
   if (lot.lifecycleStatusCode === 'VOIDED' || lot.statusCode === 'SCRAPPED') return 'VOIDED';
-  // 아직 다음 공정에 투입되지 않은 반제품 — 계보의 끝이지만 소진이 아니다. 거쳐 간 반제품은 위에서 줄이 서지 않는다(피처 016 FR-013).
+  // 아직 다음 공정에 (다) 투입되지 않은 반제품 — 계보의 끝이지만 소진이 아니다. 다 투입된 반제품은 위에서 줄이 서지 않는다(피처 016 FR-013).
   if (lot.lotTypeCode === WIP_LOT_TYPE) return 'WIP_PENDING';
   if (shipped && stocked) return 'PARTIAL';
   if (shipped) return 'SHIPPED';

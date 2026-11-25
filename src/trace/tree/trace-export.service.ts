@@ -136,7 +136,7 @@ function lineageRows(
   const line = (key: string, depth: number, edge: TraceEdge | null, parent: string | null, stage: LineageStage, note: string | null): Cell[] => {
     const node = nodes.get(key) as any;
     // 반제품은 단계 뒤에 공정을 붙인다 — 「반제품 LOT · 공정 10」(화면과 같은 말).
-    const seq = stage === 'SEMI_LOT' ? (node?.lot?.operationSeq ?? null) : null;
+    const seq = stage === 'SEMI_LOT' ? (node?.lot?.operationSeq ?? null) : stage === 'WORK_ORDER' ? (node?.workOrder?.operationSeq ?? null) : null;
     const stageName = seq === null ? labels.stages[stage] : `${labels.stages[stage]} · ${labels.operation} ${seq}`;
     return [base, depth, stageName, node === undefined ? key : numberOf(node), node?.item?.code ?? null, node?.item?.name ?? null,
       edge === null ? (node?.qty ?? null) : edge.qty, node?.uomCode ?? null, parent, edge === null ? null : labels.basis[edge.basis], status(node?.lot?.statusCode), note];

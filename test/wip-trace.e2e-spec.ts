@@ -18,7 +18,7 @@ describe('반제품 계보 (피처 016, e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let fx: WipLotFixture;
-  const lots: Record<'a' | 's1' | 's2' | 's3' | 'p', { lotId: bigint; lotNo: string }> = {} as never;
+  const lots: Record<'a' | 's1' | 's2' | 's3' | 's4' | 's5' | 'p', { lotId: bigint; lotNo: string }> = {} as never;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -54,6 +54,9 @@ describe('반제품 계보 (피처 016, e2e)', () => {
     lots.p = await step('abc1_30', 100, { lotId: lots.s2.lotId, itemId: fx.ids.itemAbc }, 5);
     // 다음 공정에 아직 넣지 않은 반제품.
     lots.s3 = await step('abc1_10', 50, material, 1);
+    // 실적 100 중 60 만 다음 공정에 넣은 반제품(남은 40) — 시안 ④ 「다음 공정 투입 전 · 남은 40」.
+    lots.s4 = await step('abc1_10', 100, material, 1);
+    lots.s5 = await step('abc1_20', 60, { lotId: lots.s4.lotId, itemId: fx.ids.itemAbc }, 3);
   }
 
   const tree = (path: 'forward-tree' | 'backward-tree', lotId: bigint) =>
@@ -78,11 +81,31 @@ describe('반제품 계보 (피처 016, e2e)', () => {
 
     conformsTo('/trace/forward-tree', 'get', body);
     const rows = new Map((body.endRows as Body[]).map((row) => [row.lot.lotNo, row]));
-    expect([...rows.keys()].sort()).toEqual([lots.p.lotNo, lots.s3.lotNo].sort());
-    expect(rows.get(lots.s3.lotNo)).toMatchObject({ fate: 'WIP_PENDING', producedQty: 50, lot: { operationSeq: 10, processName: '가공' } });
+    // S5(공정 20, 투입 없음)도 투입 전 반제품이다. 다 투입된 S1·S2 는 서지 않는다.
+    expect([...rows.keys()].sort()).toEqual([lots.p.lotNo, lots.s3.lotNo, lots.s4.lotNo, lots.s5.lotNo].sort());
+    expect(rows.get(lots.s3.lotNo)).toMatchObject({ fate: 'WIP_PENDING', producedQty: 50, wipRemainingQty: 50, lot: { operationSeq: 10, processName: '가공' } });
+    expect(rows.get(lots.p.lotNo)).toMatchObject({ wipRemainingQty: null });
     // P 는 입고 전이라 지금 규칙대로 소진(재고 0·출하 없음)이다.
     expect(rows.get(lots.p.lotNo)).toMatchObject({ fate: 'CONSUMED_OUT' });
     expect(node(body, lots.s2.lotId)).toBeDefined();
+  });
+
+  it('Q14·FR-013 — 일부만 다음 공정에 들어간 반제품은 나가는 투입이 있어도 「다음 공정 투입 전 · 남은 40」으로 선다 · 다 들어간 반제품은 안 선다', async () => {
+    const body = (await tree('forward-tree', lots.a.lotId).expect(200)).body as Body;
+
+    const rows = new Map((body.endRows as Body[]).map((row) => [row.lot.lotNo, row]));
+    expect(rows.get(lots.s4.lotNo)).toMatchObject({ fate: 'WIP_PENDING', producedQty: 100, wipRemainingQty: 40, lot: { wipRemainingQty: 40 } });
+    // 계보는 그대로 — S4 → (W/O 20) → S5 로 이어진다.
+    expect(node(body, lots.s5.lotId)).toBeDefined();
+    expect(rows.has(lots.s1.lotNo)).toBe(false);
+    expect(node(body, lots.s1.lotId).lot).toMatchObject({ wipRemainingQty: 0 });
+  });
+
+  it('시안 ④ — 계보의 W/O 항목에 공정 순번이 실린다(반제품 여부 무관)', async () => {
+    const body = (await tree('backward-tree', lots.p.lotId).expect(200)).body as Body;
+
+    const orders = (body.nodes as Body[]).filter((one) => one.kind === 'WORK_ORDER').map((one) => one.workOrder.operationSeq).sort();
+    expect(orders).toEqual([10, 20, 30]);
   });
 
   it('Q14 — 엑셀 「최종 LOT」 현황 열에 「다음 공정 투입 전」, 「LOT 계보」 단계 열에 「반제품 LOT · 공정 n」', async () => {
@@ -111,6 +134,8 @@ describe('반제품 계보 (피처 016, e2e)', () => {
     // 투입 전이어도 유형이 반제품이면 반제품 단계다.
     expect(stageOf(lots.s3.lotNo)).toBe('반제품 LOT · 공정 10');
     expect(stageOf(lots.p.lotNo)).toBe('생산 LOT');
+    expect(lineage.some((row) => row[stage] === 'W/O · 공정 30')).toBe(true);
+    expect(endRows.find((row) => row[lotNo] === lots.s4.lotNo)?.[fate]).toBe('다음 공정 투입 전');
   });
 });
 
