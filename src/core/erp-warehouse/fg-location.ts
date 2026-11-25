@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { arrivalLocationId } from '../material-issue/production-warehouse';
+import { arrivalLocationId, PRODUCTION_WAREHOUSE } from '../material-issue/production-warehouse';
 import { matchErpWarehouse } from './erp-warehouse-match';
 
 /**
@@ -54,17 +54,17 @@ type Db = Pick<Prisma.TransactionClient, 'warehouse' | 'location'>;
 export const fgKey = (target: FgTarget): string => `${target.plantId}:${normalized(target.erpCode) ?? ''}`;
 const normalized = (code: string | null): string | null => (code === null || code.trim() === '' ? null : code.trim());
 
-/** 창고 유형이 자재면 완제품 위치로 두지 않는다 — 라인 기본 위치와 같은 규칙(`equipment-group.service.ts`). */
-const MATERIAL_WAREHOUSE = 'MATERIAL';
+/** 자재를 두는 창고(자재창고·생산창고)는 완제품 위치로 두지 않는다 — 라인 기본 위치와 같은 규칙(`equipment-group.service.ts`). */
+export const MATERIAL_STOCK_TYPES: readonly string[] = ['MATERIAL', PRODUCTION_WAREHOUSE];
 
 type WarehouseFacts = { plant_id: bigint | null; is_active: boolean; warehouse_type_code: string; is_defect: boolean; is_external: boolean };
 
-/** 자재·불량·외부 창고는 완제품 입고 창고로 쓰지 않는다. */
+/** 자재·생산·불량·외부 창고는 완제품 입고 창고로 쓰지 않는다. */
 const fgTypeAllowed = (warehouse: WarehouseFacts): boolean =>
-  warehouse.warehouse_type_code !== MATERIAL_WAREHOUSE && !warehouse.is_defect && !warehouse.is_external;
+  !MATERIAL_STOCK_TYPES.includes(warehouse.warehouse_type_code) && !warehouse.is_defect && !warehouse.is_external;
 
 /**
- * 사람이 고른 완제품 입고 창고가 쓸 수 있는가 — ERP 입고 창고 연결과 같은 기준(이 공장 · 사용 중 · 자재·불량·외부 아님). 쓸 수 있으면 null.
+ * 사람이 고른 완제품 입고 창고가 쓸 수 있는가 — ERP 입고 창고 연결과 같은 기준(이 공장 · 사용 중 · 자재·생산·불량·외부 아님). 쓸 수 있으면 null.
  */
 export function fgWarehouseRejection(plantId: bigint, warehouse: WarehouseFacts | undefined): FgLinkFailure | null {
   if (warehouse === undefined || warehouse.plant_id !== plantId) return 'FG_WAREHOUSE_OTHER_PLANT';
@@ -149,7 +149,7 @@ export function fgLinkMessage(failure: Extract<FgResolution, { kind: 'LINK_FAILE
     case 'FG_WAREHOUSE_OTHER_PLANT':
       return `${head}의 MES 창고가 이 ERP W/O 와 다른 공장에 있습니다.`;
     case 'FG_WAREHOUSE_NOT_ALLOWED':
-      return `${head}의 MES 창고가 자재·불량·외부 창고라 완제품 입고 창고로 쓸 수 없습니다.`;
+      return `${head}의 MES 창고가 자재·생산·불량·외부 창고라 완제품 입고 창고로 쓸 수 없습니다.`;
   }
 }
 
@@ -177,11 +177,11 @@ export function locationFinding(plantId: bigint, location: LocationFact | undefi
   if (
     location === undefined ||
     location.warehouse.plant_id !== plantId ||
-    location.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE ||
+    MATERIAL_STOCK_TYPES.includes(location.warehouse.warehouse_type_code) ||
     !location.is_active ||
     !location.warehouse.is_active
   ) {
-    return { code: 'LOCATION_INVALID', message: '이 공장의, 자재창고가 아닌 사용 중인 위치여야 합니다.' };
+    return { code: 'LOCATION_INVALID', message: '이 공장의, 자재·생산창고가 아닌 사용 중인 위치여야 합니다.' };
   }
   if (fg?.kind === 'MANUAL_WAREHOUSE' && location.warehouse_id !== fg.warehouse.id) {
     return { code: 'FG_LOCATION_OUTSIDE_WAREHOUSE', message: `완제품 위치는 고른 입고 창고(${fg.warehouse.code}, ${fg.warehouse.name}) 안의 위치여야 합니다.` };
