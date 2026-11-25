@@ -17,7 +17,6 @@ import { MaterialReturnQueryService } from './material-return/material-return-qu
 import { MaterialReturnController } from './material-return/material-return.controller';
 import { OperationHandoverQueryService } from './operation-handover/operation-handover-query.service';
 import { OperationHandoverController } from './operation-handover/operation-handover.controller';
-import { OperationHandoverService } from './operation-handover/operation-handover.service';
 import { PrecheckDecisionQueryService } from './precheck-decision/precheck-decision-query.service';
 import { PrecheckDecisionController } from './precheck-decision/precheck-decision.controller';
 import { MaterialReturnService } from './material-return/material-return.service';
@@ -117,7 +116,6 @@ import { WorkSessionService } from './work-session/work-session.service';
     PrecheckDecisionService,
     OperationHandoverQueryService,
     RepairExecutionQueryService,
-    OperationHandoverService,
     RepairExecutionService,
     RepairExecutionReturnService,
   ],
