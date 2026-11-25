@@ -1,3 +1,4 @@
+import { WIP_LOT_TYPE } from '../../core/lot';
 import { TraceEdge } from './forward-expand';
 import { Named, TraceLotNode, TraceTreeLot } from './trace-node-facts';
 
@@ -7,7 +8,7 @@ export interface ForwardEndRow {
   item: TraceLotNode['item'];
   producedQty: number;
   uomCode: string;
-  fate: 'SHIPPED' | 'IN_STOCK' | 'PARTIAL' | 'CONSUMED_OUT' | 'VOIDED';
+  fate: 'SHIPPED' | 'IN_STOCK' | 'PARTIAL' | 'CONSUMED_OUT' | 'VOIDED' | 'WIP_PENDING';
   shipments: { shipmentNo: string; customer: Named; shippedAt: string | null; qty: number }[];
   stock: { warehouse: unknown; location: unknown; qty: number }[];
   viaWorkOrders: string[];
@@ -90,6 +91,8 @@ export function forwardEndRows(graph: { nodes: readonly { nodeKey: string; kind:
 
 function fateOf(lot: TraceTreeLot, shipped: boolean, stocked: boolean): ForwardEndRow['fate'] {
   if (lot.lifecycleStatusCode === 'VOIDED' || lot.statusCode === 'SCRAPPED') return 'VOIDED';
+  // 아직 다음 공정에 투입되지 않은 반제품 — 계보의 끝이지만 소진이 아니다. 거쳐 간 반제품은 위에서 줄이 서지 않는다(피처 016 FR-013).
+  if (lot.lotTypeCode === WIP_LOT_TYPE) return 'WIP_PENDING';
   if (shipped && stocked) return 'PARTIAL';
   if (shipped) return 'SHIPPED';
   return stocked ? 'IN_STOCK' : 'CONSUMED_OUT';

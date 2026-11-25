@@ -1,4 +1,4 @@
-import { SPLIT_RELATION, WORK_ORDER_LOT_SOURCE, inboundLineLotSql, splitAncestors } from '../../core/lot';
+import { SPLIT_RELATION, WIP_LOT_TYPE, WORK_ORDER_LOT_SOURCE, inboundLineLotSql, splitAncestors } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { splitGoodsIssues } from '../flow/split-links';
 
@@ -12,6 +12,9 @@ export interface TraceTreeLot {
   lotTypeCode: string;
   statusCode: string;
   lifecycleStatusCode: string | null;
+  /** 반제품(WIP)의 생산 공정 순번·공정 이름 — 계보 항목만 싣고(반제품이 아니면 null), 목록 줄은 키가 없다(피처 016). */
+  operationSeq?: number | null;
+  processName?: string | null;
 }
 
 export interface Named {
@@ -49,6 +52,7 @@ interface HeadRow {
   lot_id: bigint; lot_no: string; lot_type_code: string; status_code: string; lifecycle_status_code: string | null; initial_qty: unknown;
   uom_code: string; item_id: bigint; item_code: string; item_name: string; parent_lot_id: bigint | null; source_type_code: string;
   produced_at: Date | null; split_at: Date | null; split_event_type: string | null; split_event_id: bigint | null;
+  operation_seq: number | null; process_name: string | null;
 }
 
 export async function lotNodes(prisma: PrismaService, lotIds: readonly bigint[]): Promise<Map<bigint, TraceLotNode>> {
@@ -58,10 +62,15 @@ export async function lotNodes(prisma: PrismaService, lotIds: readonly bigint[])
             i.item_id, i.item_code, i.item_name, lt.parent_lot_id, lt.source_type_code,
             (SELECT MIN(pr.occurred_at) FROM production.production_result_lot_allocation pa
                JOIN production.production_result pr ON pr.production_result_id = pa.production_result_id WHERE pa.lot_id = lt.lot_id) AS produced_at,
-            sr.occurred_at AS split_at, sr.source_event_type_code AS split_event_type, sr.source_event_id AS split_event_id
+            sr.occurred_at AS split_at, sr.source_event_type_code AS split_event_type, sr.source_event_id AS split_event_id,
+            op.operation_seq, op.process_name
        FROM trace.lot lt JOIN mdm.item i ON i.item_id = lt.item_id JOIN mdm.uom u ON u.uom_id = lt.uom_id
        LEFT JOIN LATERAL (SELECT r.occurred_at, r.source_event_type_code, r.source_event_id FROM trace.lot_relation r
                            WHERE r.target_lot_id = lt.lot_id AND r.relation_type_code = '${SPLIT_RELATION}' ORDER BY r.lot_relation_id LIMIT 1) sr ON true
+       LEFT JOIN LATERAL (SELECT ro.operation_seq, p.process_name FROM production.work_order wo
+                            JOIN planning.routing_operation ro ON ro.routing_operation_id = wo.routing_operation_id
+                            JOIN mdm.process p ON p.process_id = ro.process_id
+                           WHERE lt.lot_type_code = '${WIP_LOT_TYPE}' AND lt.source_type_code = '${WORK_ORDER_LOT_SOURCE}' AND wo.work_order_id = lt.source_id) op ON true
       WHERE lt.lot_id = ANY($1::bigint[])`, [...lotIds],
   );
   const [materials, issues] = await Promise.all([
@@ -74,7 +83,10 @@ export async function lotNodes(prisma: PrismaService, lotIds: readonly bigint[])
     const node: TraceLotNode = {
       nodeKey: lotKey(row.lot_id),
       kind,
-      lot: { lotId: Number(row.lot_id), lotNo: row.lot_no, lotTypeCode: row.lot_type_code, statusCode: row.status_code, lifecycleStatusCode: row.lifecycle_status_code },
+      lot: {
+        lotId: Number(row.lot_id), lotNo: row.lot_no, lotTypeCode: row.lot_type_code, statusCode: row.status_code, lifecycleStatusCode: row.lifecycle_status_code,
+        operationSeq: row.operation_seq, processName: row.process_name,
+      },
       item: { itemId: Number(row.item_id), code: row.item_code, name: row.item_name },
       qty: Number(row.initial_qty),
       uomCode: row.uom_code,
