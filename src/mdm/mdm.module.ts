@@ -53,13 +53,15 @@ import { WarehouseService } from './logistics/warehouse.service';
 import { WorkerService } from './organization/worker.service';
 import { ReferenceController } from './reference/reference.controller';
 import { ReferenceService } from './reference/reference.service';
+import { ShiftController } from './shift/shift.controller';
+import { ShiftService } from './shift/shift.service';
 import { SupplierItemDefaultController } from './supplier-item-default/supplier-item-default.controller';
 import { SupplierItemDefaultService } from './supplier-item-default/supplier-item-default.service';
 
 @Module({
   // AuthModule 이 JwtModule 을 내보낸다 — 단말 등록 토큰이 세션과 같은 비밀키로 서명된다.
   imports: [PrismaModule, IdempotencyModule, DocumentStateModule, AuthModule],
-  controllers: [ReferenceController, ProcessController, CodeController, DepartmentController, DepartmentProductionWarehouseController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, LocationRackController, ItemController, ItemDetailController, ItemResourceMapController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController, MoldController, MoldImportController, TerminalController, SparePartController, SparePartImportController, PartnerController, JudgmentTypeControlController, WorkCalendarController, WorkCalendarApplicationController, SupplierItemDefaultController],
-  providers: [ReferenceService, ProcessService, CodeService, DepartmentService, DepartmentProductionWarehouseService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, LocationStructureService, LocationItemService, ItemService, ItemDetailService, ItemResourceMapService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService, MoldService, TerminalService, SparePartService, PartnerService, JudgmentTypeControlService, WorkCalendarService, SupplierItemDefaultService],
+  controllers: [ReferenceController, ProcessController, CodeController, DepartmentController, DepartmentProductionWarehouseController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, LocationRackController, ItemController, ItemDetailController, ItemResourceMapController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController, MoldController, MoldImportController, TerminalController, SparePartController, SparePartImportController, PartnerController, JudgmentTypeControlController, WorkCalendarController, WorkCalendarApplicationController, SupplierItemDefaultController, ShiftController],
+  providers: [ReferenceService, ProcessService, CodeService, DepartmentService, DepartmentProductionWarehouseService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, LocationStructureService, LocationItemService, ItemService, ItemDetailService, ItemResourceMapService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService, MoldService, TerminalService, SparePartService, PartnerService, JudgmentTypeControlService, WorkCalendarService, SupplierItemDefaultService, ShiftService],
 })
 export class MdmModule {}

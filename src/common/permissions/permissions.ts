@@ -185,6 +185,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-06-24', name: '검사표 기준', groupCode: '06' },
   // 피처 005(omf-all-around#254) — 설계 밖 기준정보 화면.
   { code: 'W-06-25', name: '공급사·품목 기본 정보', groupCode: '06' },
+  // omf-all-around#318 — 설계 밖 기준정보 화면(공장별 주간·야간 교대).
+  { code: 'W-06-26', name: '교대 관리', groupCode: '06' },
   // CO 공통
   { code: 'M-CO-01', name: '기기 등록·사번 인증', groupCode: 'CO' },
   { code: 'P-CO-01', name: '사번 경량 인증', groupCode: 'CO' },

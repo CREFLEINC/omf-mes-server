@@ -17668,6 +17668,446 @@
       }
      }
     }
+   },
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 등록",
+    "description": "공장별 교대(주간·야간 등)를 등록한다. 자정 넘김(crossesMidnight)은 서버가 시각으로 정한다(끝 < 시작이면 자정 넘김). 시작과 끝이 같으면 400(endTime INVALID). 근거: omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShiftCreate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "등록됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 유일 위반이면 유일 범위(plantId·shiftCode)를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/shifts/{shiftId}": {
+   "parameters": [
+    {
+     "name": "shiftId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 상세",
+    "description": "교대 관리 화면이 수정·사용 중지 전에 부른다 — 잠금 토큰(ETag)과 코드 수정 가부를 함께 내린다. 근거: omf-all-around#318",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShiftDetailResponse"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 수정",
+    "description": "이름·시작·끝 시각을 고친다. 자정 넘김(crossesMidnight)은 서버가 시각으로 정한다(끝 < 시작이면 자정 넘김). 시작과 끝이 같으면 400(endTime INVALID). 공장은 바꿀 수 없다. 근거: omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShiftUpdate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "수정됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 공백 이름, 시작과 같은 종료 시간이거나, 작업·실적에 쓰인 교대의 코드를 바꾸려 했다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/shifts/{shiftId}:deactivate": {
+   "parameters": [
+    {
+     "name": "shiftId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 사용 중지",
+    "description": "물리 삭제는 제공하지 않는다. 이미 기록된 작업·실적의 교대는 그대로 남고, 이후 교대 판정·선택 목록에서 빠진다. 근거: 공유계약 B-4 · omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "처리됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "업무 규칙 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/shifts/{shiftId}:activate": {
+   "parameters": [
+    {
+     "name": "shiftId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 다시 사용",
+    "description": "사용 중지한 교대를 다시 쓴다. 같은 공장에 같은 코드가 남아 있어 새로 등록할 수 없으므로 되살리는 길을 둔다. 이미 사용 중이어도 200 이고 판 번호(ETag)는 올라간다 — 사용 중지와 같다. 근거: 공유계약 B-4 · omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "처리됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "업무 규칙 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/mdm/item-resource-maps": {
@@ -28996,6 +29436,97 @@
      "isActive": {
       "type": "boolean",
       "example": true
+     }
+    }
+   },
+   "ShiftCreate": {
+    "type": "object",
+    "required": [
+     "plantId",
+     "shiftCode",
+     "shiftName",
+     "startTime",
+     "endTime"
+    ],
+    "description": "교대 등록. 근거: omf-all-around#318",
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "공장",
+      "example": 1
+     },
+     "shiftCode": {
+      "type": "string",
+      "maxLength": 50,
+      "example": "D",
+      "x-no-code-key": "코드 그룹이 아니다 — Shift 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
+     },
+     "shiftName": {
+      "type": "string",
+      "maxLength": 200,
+      "example": "주간"
+     },
+     "startTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "08:00:00"
+     },
+     "endTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "20:00:00"
+     }
+    }
+   },
+   "ShiftUpdate": {
+    "type": "object",
+    "required": [
+     "shiftName",
+     "startTime",
+     "endTime"
+    ],
+    "description": "shiftCode 는 참조가 0일 때만 보낼 수 있다 — 상세 조회의 editability 가 가부와 사유를 함께 내린다. 근거: 공유계약 B-4",
+    "properties": {
+     "shiftCode": {
+      "type": "string",
+      "maxLength": 50,
+      "example": "D",
+      "x-no-code-key": "코드 그룹이 아니다 — Shift 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
+     },
+     "shiftName": {
+      "type": "string",
+      "maxLength": 200,
+      "example": "주간"
+     },
+     "startTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "08:00:00"
+     },
+     "endTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "20:00:00"
+     }
+    }
+   },
+   "ShiftDetailResponse": {
+    "type": "object",
+    "required": [
+     "shift",
+     "editability"
+    ],
+    "properties": {
+     "shift": {
+      "$ref": "#/components/schemas/Shift"
+     },
+     "editability": {
+      "$ref": "#/components/schemas/Editability"
      }
     }
    },
