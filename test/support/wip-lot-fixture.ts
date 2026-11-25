@@ -7,7 +7,11 @@
  *    W/O·LOT 같은 거래 행은 실행마다 다른 번호(`run`)로 새로 만든다(피처 013 픽스처와 같은 방식).
  */
 import { INestApplication } from '@nestjs/common';
+import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import request from 'supertest';
 
 import { hashPassword } from '../../src/auth/password';
@@ -16,6 +20,18 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 const PASSWORD = '반제품LOT-비밀번호';
 const BASE_PERMISSIONS = ['W-02-04', 'W-02-10', 'W-02-03', 'W-02-05', 'P-02-04', 'P-02-03', 'W-03-01'];
 const TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+/** 계약 응답 스키마 검사 — `production-production-result.e2e-spec.ts` 와 같은 방식. */
+export function contractValidator(file: string, operation: string, status = 200): ValidateFunction {
+  const contract = JSON.parse(readFileSync(join(__dirname, `../../contracts/${file}`), 'utf8')) as object;
+  const [method, path] = operation.split(' ');
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  addFormats(ajv);
+  for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
+  ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
+  return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
+}
 
 /** 품목·Routing 의 공정 자리 — `abc1_10` 은 ABC 의 Rev 1 공정 10 이다. */
 export type Operation = 'abc1_10' | 'abc1_20' | 'abc1_30' | 'abc2_10' | 'abc2_20' | 'abc2_30' | 'x_10' | 'oth_10' | 'oth_20';

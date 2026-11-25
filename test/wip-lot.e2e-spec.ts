@@ -8,7 +8,7 @@ import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { WipLotFixture } from './support/wip-lot-fixture';
+import { contractValidator, WipLotFixture } from './support/wip-lot-fixture';
 
 describe('공정 반제품 LOT — 배포 유형 (피처 016, e2e)', () => {
   let app: INestApplication;
@@ -79,6 +79,67 @@ describe('공정 반제품 LOT — 배포 유형 (피처 016, e2e)', () => {
     await fx.releasedWorkOrder('abc1_10', 10, 10);
 
     expect((await prisma.lot.findUniqueOrThrow({ where: { lot_id: legacy.lot_id } })).lot_type_code).toBe('PRODUCTION');
+  });
+
+  it('US1-1·Q3·FR-003 — 공정 10 실적 100 뒤 LOT 조회에 생산 공정·실적·남은 수량이 실린다', async () => {
+    const { workOrderId, lots } = await fx.releasedWorkOrder('abc1_10', 100, 100);
+    await fx.result(workOrderId, lots[0].lot_id, 100, '2026-11-25T01:00:00.000Z').expect(201);
+
+    const detail = await fx.getLot(lots[0].lot_id).expect(200);
+    const listed = await fx.listLots({ lotNo: lots[0].lot_no }).expect(200);
+
+    const expected = {
+      lotTypeCode: 'WIP',
+      statusCode: 'NORMAL',
+      producedOperation: { workOrderId: Number(workOrderId), operationSeq: 10, processCode: `${fx.prefix}-P10`, processName: '가공' },
+      wipProducedQty: 100,
+      wipRemainingQty: 100,
+    };
+    expect(detail.body.lot).toMatchObject(expected);
+    expect(listed.body.items).toEqual([expect.objectContaining(expected)]);
+    expect(contractValidator('logistics-01자재창고.json', 'GET /trace/lots/{lotId}')(detail.body)).toBe(true);
+    expect(contractValidator('logistics-01자재창고.json', 'GET /trace/lots')(listed.body)).toBe(true);
+  });
+
+  it('US1-1·FR-003 — PRODUCTION·MATERIAL LOT 은 반제품 칸 셋이 null 이다', async () => {
+    const { lots } = await fx.releasedWorkOrder('abc1_30', 10, 10);
+    const material = await fx.materialLot();
+
+    for (const lotId of [lots[0].lot_id, material]) {
+      const response = await fx.getLot(lotId).expect(200);
+      expect(response.body.lot).toMatchObject({ producedOperation: null, wipProducedQty: null, wipRemainingQty: null });
+    }
+  });
+
+  it('US1-6·Q6·FR-006 — PQC 기준이 있는 품목은 반제품 공정도 의뢰가 서고 실적 뒤 검사 대기, 합격 뒤 정상이다(품목 규칙 그대로)', async () => {
+    const plan = await prisma.inspection_plan.create({ data: {
+      inspection_plan_code: `${fx.prefix}-${fx.run}-PQC`, inspection_plan_name: '반제품 PQC', inspection_type_code: 'PQC', item_id: fx.ids.itemAbc, is_active: true,
+    } });
+    try {
+      const { workOrderId, lots } = await fx.releasedWorkOrder('abc1_10', 20, 20);
+      const [request] = await prisma.inspection_request.findMany({ where: { work_order_id: workOrderId, inspection_type_code: 'PQC' } });
+      expect(request).toBeDefined();
+
+      await fx.result(workOrderId, lots[0].lot_id, 10, '2026-11-25T01:00:00.000Z').expect(201);
+      expect((await prisma.lot.findUniqueOrThrow({ where: { lot_id: lots[0].lot_id } })).status_code).toBe('INSPECTION_PENDING');
+
+      // 합격 확정이 난 W/O 는 그 판정을 따른다(C4) — 검사 확정 화면 대신 결과 행을 직접 세운다.
+      await prisma.inspection_result.create({ data: {
+        inspection_result_no: `${fx.prefix}-${fx.run}-IR`, inspection_request_id: request.inspection_request_id, inspected_qty: 20, accepted_qty: 20,
+        uom_id: fx.ids.uom, inspector_id: fx.ids.workerId, inspected_at: new Date('2026-11-25T01:30:00.000Z'), status_code: 'CONFIRMED',
+        overall_judgment_code: 'ACCEPTED', idempotency_key: `${fx.prefix}-${fx.run}-IR`,
+      } });
+      await fx.result(workOrderId, lots[0].lot_id, 10, '2026-11-25T02:00:00.000Z').expect(201);
+      expect((await prisma.lot.findUniqueOrThrow({ where: { lot_id: lots[0].lot_id } })).status_code).toBe('NORMAL');
+    } finally {
+      await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { is_active: false } });
+    }
+
+    // 기준이 없으면 실적이 곧 정상이다.
+    const plain = await fx.releasedWorkOrder('abc1_10', 10, 10);
+    await fx.result(plain.workOrderId, plain.lots[0].lot_id, 10, '2026-11-25T01:00:00.000Z').expect(201);
+    expect(await prisma.inspection_request.count({ where: { work_order_id: plain.workOrderId } })).toBe(0);
+    expect((await prisma.lot.findUniqueOrThrow({ where: { lot_id: plain.lots[0].lot_id } })).status_code).toBe('NORMAL');
   });
 
   it('FR-005 — 반제품 LOT 번호도 지금 생산 LOT 형식(M + 공장 6 + 날짜 8 + 순번 6 + 난수 13)이다', async () => {
