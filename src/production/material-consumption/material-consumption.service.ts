@@ -5,11 +5,12 @@ import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { optional, resolveWorkerId } from '../../common/master';
 import { BOM_COMPONENT_SELECT } from '../../core/bom';
-import { recordLateInputGenealogyWithin } from '../../core/lot';
+import { recordLateInputGenealogyWithin, WIP_LOT_TYPE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MaterialConsumptionView, materialConsumptionView } from './material-consumption-view';
 import { CONSUMPTION_STATUS, CONSUMPTION_TYPE_DEFAULT, LOT_NORMAL } from './material-consumption.constants';
+import { assertWipInput, assertWipRemainingWithin } from './wip-input';
 
 /** 채번 문서 유형 — 규칙 미등재라 `DEFAULT_PREFIX` 의 `MC` 로 자동 등재된다(§3-11). */
 const NUMBERING_DOCUMENT = 'MATERIAL_CONSUMPTION';
@@ -50,7 +51,10 @@ export interface MaterialConsumptionContext {
 /** 트랜잭션 «밖»에서 다 푼 값 — 안에서는 INSERT 와 되읽기만 한다. */
 interface Resolved {
   workerId: bigint;
-  bomComponentId: bigint;
+  /** 반제품 투입은 BOM 줄이 없다(피처 016) — 비운다. */
+  bomComponentId: bigint | null;
+  /** 반제품 LOT 투입인가 — 그렇다면 트랜잭션 안에서 남은 수량을 다시 센다. */
+  wip: boolean;
   actualUseProcessId: bigint | null;
   shopfloorReceiptLineId: bigint | null;
   plantId: bigint;
@@ -59,7 +63,8 @@ interface Resolved {
 
 /**
  * 자재 투입 등록 — I-10 의 심장(§3). ⛔ 원장을 지나지 않고(`plan.md` §5 #8) ⛔ 배분
- * (`material_usage_allocation`)을 만들지 않으며 ⛔ `FOR UPDATE`·`lot_lifecycle_history`·ETag 가 없다(§3-13).
+ * (`material_usage_allocation`)을 만들지 않으며 ⛔ `lot_lifecycle_history`·ETag 가 없다(§3-13). 잠금은 반제품 LOT 투입의
+ * 남은 수량 재계산 하나뿐이다(피처 016).
  * 계보(`trace.lot_relation`)는 투입 시점에 생산 LOT 을 모르므로 실적이 남긴다 — 지연 입력만 여기서 더한다
  * (문의 052 결정 변경 · #166 · P-107).
  * ⛔ 다른 전표의 service 를 부르지 않는다 — `resolveWorker` 는 **복제**한다(§3-7).
@@ -88,7 +93,7 @@ export class MaterialConsumptionService {
     return this.prisma.$transaction((tx) => this.write(tx, body, context, resolved, consumptionNo));
   }
 
-  /** ⑧ INSERT → 지연 입력 계보 → ⑨ 같은 tx 되읽기(§3-1). 잠금도 원장도 없다. */
+  /** (반제품이면 LOT 잠금·남은 수량) → ⑧ INSERT → 지연 입력 계보 → ⑨ 같은 tx 되읽기(§3-1). 원장은 없다. */
   private async write(
     tx: Prisma.TransactionClient,
     body: MaterialConsumptionCreate,
@@ -96,6 +101,7 @@ export class MaterialConsumptionService {
     resolved: Resolved,
     consumptionNo: string,
   ): Promise<MaterialConsumptionView> {
+    if (resolved.wip) await assertWipRemainingWithin(tx, BigInt(body.lotId), body.inputQty);
     const created = await tx.material_consumption.create({
       data: {
         consumption_no: consumptionNo,
@@ -147,32 +153,40 @@ export class MaterialConsumptionService {
   /** ③ FK 그물 → ④ 오투입 판정 → ⑤ 수령 라인 귀속 → ⑥ 공장(§3-1). 전부 트랜잭션 «밖»이다. */
   private async resolve(body: MaterialConsumptionCreate, workerId: bigint): Promise<Resolved> {
     const errors: ErrorItem[] = [];
-    const workOrder = await this.assertReferences(body, errors);
+    const { workOrder, lot } = await this.assertReferences(body, errors);
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
     // ⓒ 긴급 W/O 는 오늘 발행되지 않는다 — I-6·문의 040. 계약 ⌜못 찾으면 거절⌝ 에 「길이 없음」도 든다.
     // 계획만 보면 된다 — `bom_id`·`production_order.plant_id` 가 둘 다 NOT NULL 이라 갈래가 하나다.
     const plan = workOrder.production_plan;
     if (plan === null) throw one(field('itemId', ERROR_CODE.INVALID, '자재 명세를 풀 계획이 없습니다(문의 040).'));
-    // 같은 품목이 두 줄이면 `sequence_no` 첫 줄 — 품목 유일 제약이 없다(`uq_bom_component` 는 순번 축).
-    const component = await this.prisma.bom_component.findFirst({
-      where: { bom_id: plan.bom_id, component_item_id: BigInt(body.itemId) },
-      orderBy: { sequence_no: 'asc' },
-      select: BOM_COMPONENT_SELECT,
-    });
-    // ⭐ 오투입 3축에서 «막는 것은 이 하나»다 — 출고 귀속·교차 투입은 기록만 한다(§3-3).
-    // ⛔ `component.uom_id` 와 `uomId` 를 대조하지 않는다 — 계약이 두 칸의 관계를 안 적었다(I-10 R-7).
-    if (component === null) throw one(field('itemId', ERROR_CODE.INVALID, '자재 명세에 없는 품목입니다.'));
-
+    // 반제품은 BOM 이 아니라 같은 품목·바로 앞 공정으로 받는다(피처 016 R-3). 나머지(작업자·상태·멱등·계보)는 자재와 같다.
+    const wip = lot.lot_type_code === WIP_LOT_TYPE;
+    if (wip) await assertWipInput(this.prisma, workOrder, lot);
     return {
       workerId,
-      bomComponentId: component.bom_component_id,
+      bomComponentId: wip ? null : await this.componentOf(plan.bom_id, body.itemId),
+      wip,
       // 계약 ⌜서버가 이 W/O 의 공정으로 채운다⌝ — `routing_operation` 1홉이다(§3-6 ⓒ).
       actualUseProcessId: workOrder.routing_operation.process_id,
       shopfloorReceiptLineId: await this.receiptLineOf(body),
       plantId: plan.production_order.plant_id,
       occurredAt: new Date(body.occurredAt),
     };
+  }
+
+  /** 자재 투입의 BOM 줄 — 오투입 판정이다. */
+  private async componentOf(bomId: bigint, itemId: number): Promise<bigint> {
+    // 같은 품목이 두 줄이면 `sequence_no` 첫 줄 — 품목 유일 제약이 없다(`uq_bom_component` 는 순번 축).
+    const component = await this.prisma.bom_component.findFirst({
+      where: { bom_id: bomId, component_item_id: BigInt(itemId) },
+      orderBy: { sequence_no: 'asc' },
+      select: BOM_COMPONENT_SELECT,
+    });
+    // ⭐ 오투입 3축에서 «막는 것은 이 하나»다 — 출고 귀속·교차 투입은 기록만 한다(§3-3).
+    // ⛔ `component.uom_id` 와 `uomId` 를 대조하지 않는다 — 계약이 두 칸의 관계를 안 적었다(I-10 R-7).
+    if (component === null) throw one(field('itemId', ERROR_CODE.INVALID, '자재 명세에 없는 품목입니다.'));
+    return component.bom_component_id;
   }
 
   /**
@@ -185,13 +199,14 @@ export class MaterialConsumptionService {
       this.prisma.work_order.findUnique({
         where: { work_order_id: BigInt(body.workOrderId) },
         select: {
+          item_id: true,
           production_plan: { select: { bom_id: true, production_order: { select: { plant_id: true } } } },
-          routing_operation: { select: { process_id: true } },
+          routing_operation: { select: { process_id: true, routing_id: true, operation_seq: true } },
         },
       }),
       this.prisma.lot.findUnique({
         where: { lot_id: BigInt(body.lotId) },
-        select: { item_id: true, status_code: true },
+        select: { item_id: true, status_code: true, lot_type_code: true, source_type_code: true, source_id: true },
       }),
       this.prisma.item.count({ where: { item_id: BigInt(body.itemId) } }),
       // ⛔ `uom` 은 **존재만** 본다(I-10 R-7).
@@ -229,7 +244,7 @@ export class MaterialConsumptionService {
     assertBelongs('workSessionId', session, body.workOrderId, errors, '없는 작업 세션입니다.');
     // 러닝체인지는 같은 W/O 안에서 일어난다 — `P-02-11` R42(§3-14). 체인 중복은 안 본다.
     assertBelongs('replacedConsumptionId', replaced, body.workOrderId, errors, '없는 투입입니다.');
-    return workOrder as NonNullable<typeof workOrder>;
+    return { workOrder: workOrder as NonNullable<typeof workOrder>, lot: lot as NonNullable<typeof lot> };
   }
 
   /**
