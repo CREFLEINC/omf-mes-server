@@ -74,6 +74,7 @@ export class ShiftService {
 
   async create(tx: Tx, actorUserId: number | undefined, input: ShiftCreate): Promise<ShiftView> {
     assertTexts(input);
+    assertDistinctTimes(input.startTime, input.endTime);
     const plant = await tx.plant.findUnique({ where: { plant_id: input.plantId }, select: { plant_id: true } });
     if (plant === null) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('plantId', ERROR_CODE.INVALID, '없는 공장입니다.')]);
@@ -96,6 +97,7 @@ export class ShiftService {
    */
   async update(actorUserId: number | undefined, shiftId: number, version: number, input: ShiftUpdate): Promise<ShiftDetail> {
     assertTexts({ shiftCode: input.shiftCode, shiftName: input.shiftName });
+    assertDistinctTimes(input.startTime, input.endTime);
     await this.prisma.$transaction(async (tx) => {
       const current = await this.writable(tx, actorUserId, shiftId);
       if (input.shiftCode !== undefined && input.shiftCode.trim() !== current.shift_code) {
@@ -127,6 +129,19 @@ export class ShiftService {
       const updated = await tx.shift.updateMany({
         where: { shift_id: shiftId, version_no: version },
         data: { is_active: false, ...auditColumns(actorUserId) },
+      });
+      assertUpdated(updated.count);
+    });
+    return this.get(shiftId);
+  }
+
+  /** 사용 중지한 교대를 다시 쓴다 — 같은 공장·코드는 새로 등록할 수 없으므로 되살리는 길이다. 이미 사용 중이면 그대로 둔다. */
+  async activate(actorUserId: number | undefined, shiftId: number, version: number): Promise<ShiftDetail> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.writable(tx, actorUserId, shiftId);
+      const updated = await tx.shift.updateMany({
+        where: { shift_id: shiftId, version_no: version },
+        data: { is_active: true, ...auditColumns(actorUserId) },
       });
       assertUpdated(updated.count);
     });
@@ -165,6 +180,17 @@ function assertTexts(input: { shiftCode?: string; shiftName: string }): void {
     ...(input.shiftCode === undefined ? [] : [['shiftCode', input.shiftCode] as const]),
     ['shiftName', input.shiftName] as const,
   ]);
+}
+
+/**
+ * 시작과 종료가 같은 시각이면 0시간 교대인지 24시간 교대인지 정할 수 없다 — 받지 않는다(화면도 고르지 못하게 막는다).
+ */
+function assertDistinctTimes(startTime: string, endTime: string): void {
+  if (startTime === endTime) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      field('endTime', ERROR_CODE.INVALID, '종료 시간은 시작 시간과 같을 수 없습니다.'),
+    ]);
+  }
 }
 
 /**

@@ -568,5 +568,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/shifts': ['W-06-26'],
   'PUT /mdm/shifts/{shiftId}': ['W-06-26'],
   'POST /mdm/shifts/{shiftId}:deactivate': ['W-06-26'],
+  'POST /mdm/shifts/{shiftId}:activate': ['W-06-26'],
 };
 

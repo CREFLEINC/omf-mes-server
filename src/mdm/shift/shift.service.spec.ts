@@ -105,6 +105,28 @@ describe('ShiftService', () => {
     });
   });
 
+  it('시작과 종료가 같은 시각이면 등록·수정 모두 400 이고 저장하지 않는다', async () => {
+    const { tx, service } = setup();
+    await expect(
+      service.create(tx as never, 1, { plantId: 2, shiftCode: 'E', shiftName: '같음', startTime: '08:00:00', endTime: '08:00:00' }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(service.update(1, 7, 3, { shiftName: '같음', startTime: '20:00:00', endTime: '20:00:00' })).rejects.toMatchObject({ status: 400 });
+    expect(tx.shift.create).not.toHaveBeenCalled();
+    expect(tx.shift.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('다시 사용은 is_active 를 켜고 version_no 를 조건에 건다 · 범위는 교대의 공장으로 본다', async () => {
+    const { tx, service } = setup();
+    await service.activate(1, 7, 3);
+    expect(plantScopeFor).toHaveBeenCalledWith(tx, 1, 2);
+    expect(tx.shift.updateMany).toHaveBeenCalledWith({
+      where: { shift_id: 7, version_no: 3 },
+      data: expect.objectContaining({ is_active: true }),
+    });
+    tx.shift.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(service.activate(1, 7, 2)).rejects.toMatchObject({ status: 409 });
+  });
+
   it('없는 교대는 404 다', async () => {
     const { tx, service } = setup();
     tx.shift.findUnique.mockResolvedValueOnce(null);

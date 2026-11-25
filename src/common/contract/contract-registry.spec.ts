@@ -68,8 +68,9 @@ describe('ContractRegistry', () => {
   // 제품 기준 역방향 계보 1 — `W-02-14`(피처 015 · omf-all-around#355): 650.
   // 엑셀 내보내기 2 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 652.
   // 교대 관리 4 — 등록·상세·수정·중지(omf-all-around#318): 656.
-  it('계약 7파일에서 오퍼레이션 656건을 적재한다', () => {
-    expect(registry.size).toBe(656);
+  // 교대 다시 사용 1(omf-all-around#318): 657.
+  it('계약 7파일에서 오퍼레이션 657건을 적재한다', () => {
+    expect(registry.size).toBe(657);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

@@ -138,7 +138,8 @@ describe('계약 커버리지', () => {
     // 제품 기준 역방향 계보 1 — `W-02-14`(피처 015 · omf-all-around#355): 649 → 650.
     // 엑셀 내보내기 2 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 650 → 652.
     // 교대 관리 4 — 등록·상세·수정·중지(omf-all-around#318): 652 → 656.
-    expect(registry.size).toBe(656);
+    // 교대 다시 사용 1(omf-all-around#318): 657.
+    expect(registry.size).toBe(657);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

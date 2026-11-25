@@ -62,4 +62,17 @@ export class ShiftController {
       this.shifts.deactivate(currentSession(request)?.userId, shiftId, version),
     );
   }
+
+  @Post(':shiftId\\:activate')
+  @Contract('POST /mdm/shifts/{shiftId}:activate')
+  @HttpCode(HttpStatus.OK)
+  activate(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('shiftId', ParseIntPipe) shiftId: number,
+  ): Promise<unknown> {
+    return runVersioned(this.idempotency, request, response, 'shift', (version) =>
+      this.shifts.activate(currentSession(request)?.userId, shiftId, version),
+    );
+  }
 }
