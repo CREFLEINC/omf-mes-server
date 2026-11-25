@@ -960,6 +960,8 @@ const SEED: CodeGroupSeed[] = [
     values: [
       { code: 'MATERIAL', codeName: '자재', order: 10 },
       { code: 'PRODUCTION', codeName: '생산', order: 20 },
+      // 공정 반제품 — Routing 의 마지막이 아닌 공정 W/O 의 LOT(피처 016). 마이그 20261125180000 이 기존 DB 에 넣는다.
+      { code: 'WIP', codeName: '반제품', order: 25 },
       { code: 'PRODUCT', codeName: '제품', order: 30 },
     ],
   },
