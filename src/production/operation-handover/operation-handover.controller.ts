@@ -26,7 +26,8 @@ export const HANDOVER_RETIRED = 'HANDOVER_RETIRED';
 
 /**
  * 공정 인계 조회 2건(I-25 PR ①) + 확정 등록 1건(PR ② · 피처 016 부터 409 로 닫음 — 지난 기록 조회는 그대로). 403 을 선언하는 것은 등록 하나이고
- * 그 권한(`M-02-01`)은 `derived-permissions.ts:230` 에 **이미 있다** — 권한 표를 손대지 않는다.
+ * 그 권한(`M-02-01`)은 `derived-permissions.ts:230` 에 **이미 있다** — 권한 표를 손대지 않는다(피처 016 에서 등록을 닫은 뒤에도
+ * 권한 거절 403 이 409 보다 먼저다). 맞지 않는 단말(POP)의 401 문구는 `terminal-type-denied.ts` 가 바뀐 길(POP 자재 투입)을 알린다.
  * ⛔ 셋 다 계약이 ETag 를 선언하지 않았다 — `setEtag`·`runVersioned` 를 부르지 않는다.
  */
 @Controller('production/operation-handovers')

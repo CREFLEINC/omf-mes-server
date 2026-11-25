@@ -15,6 +15,13 @@ const TYPE_LABEL: Readonly<Record<TerminalType, string>> = {
  */
 const SCREEN_PREFIX: Readonly<Partial<Record<TerminalType, string>>> = { POP: 'P-', MOBILE: 'M-' };
 const NAME_OF = new Map(PERMISSIONS.map((permission) => [permission.code, permission.name]));
+/**
+ * 닫은 경로 — 맞는 단말의 화면이 없어졌으니 그 화면을 안내하지 않고 바뀐 길을 알린다. 공정 인계는 반제품 투입으로 바뀌었다(피처 016 R-7 ·
+ * PDA 「WIP 공정 이동 스캔」 화면 삭제). 맞는 단말로 부르면 409 `HANDOVER_RETIRED` 다.
+ */
+const RETIRED: Readonly<Record<string, { message: string; screen: string }>> = {
+  'POST /production/operation-handovers': { message: '공정 인계는 반제품 투입으로 바뀌었습니다', screen: 'P-02-03' },
+};
 
 function isScreenOf(type: TerminalType, code: string): boolean {
   const prefix = SCREEN_PREFIX[type];
@@ -29,6 +36,13 @@ export function wrongTerminalType(key: string, allowed: readonly TerminalType[],
   const where = allowed.map((type) => TYPE_LABEL[type]).join('·');
   const screen = (OPERATION_PERMISSIONS[key] ?? []).find((code) => allowed.some((type) => isScreenOf(type, code)));
   const actualLabel = TYPE_LABEL[actual as TerminalType] ?? actual;
+  const retired = RETIRED[key];
+  if (retired !== undefined) {
+    return new ContractException(HttpStatus.UNAUTHORIZED, [{
+      scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
+      message: `${retired.message} — ${TYPE_LABEL.POP} ${NAME_OF.get(retired.screen) ?? ''}(${retired.screen})에서 반제품 LOT 을 스캔해 투입하세요.`,
+    }]);
+  }
   const action = screen === undefined
     ? `${where}에서 하세요.`
     : `${TYPE_LABEL[allowed.find((type) => isScreenOf(type, screen)) as TerminalType]} ${NAME_OF.get(screen) ?? ''}(${screen})에서 하세요.`;
