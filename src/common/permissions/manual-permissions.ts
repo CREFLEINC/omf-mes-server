@@ -563,5 +563,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/supplier-item-defaults': ['W-06-25'],
   'PUT /mdm/supplier-item-defaults/{supplierItemDefaultId}': ['W-06-25'],
   'DELETE /mdm/supplier-item-defaults/{supplierItemDefaultId}': ['W-06-25'],
+  // 교대 관리(omf-all-around#318) — 설계 밖 기준정보 화면 W-06-26 이 공장별 교대(주간·야간)를 등록·수정·중지한다.
+  // 목록(`GET /mdm/shifts`)은 4M 자원배정도 읽는 조회라 403 이 없다 — 여기 두지 않는다.
+  'POST /mdm/shifts': ['W-06-26'],
+  'PUT /mdm/shifts/{shiftId}': ['W-06-26'],
+  'POST /mdm/shifts/{shiftId}:deactivate': ['W-06-26'],
 };
 
