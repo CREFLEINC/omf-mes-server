@@ -195,6 +195,20 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
     },
   );
 
+  it("US1-5 — 실적이 반영된 반제품(WIP) LOT 도 생산 LOT 라벨을 낼 수 있다", () => {
+    const target = prepared("LOT");
+    expect(
+      qualifyDocumentIssueTarget("PRODUCTION_LOT_LABEL", target, {
+        targetTypeCode: "LOT",
+        targetId: target.targetId,
+        lotTypeCode: "WIP",
+        statusCode: "NORMAL",
+        lifecycleStatusCode: "ACTIVE",
+        completedAt: null,
+      }),
+    ).toBe(target.targetId);
+  });
+
   it.each([
     ["GOODS_ISSUE_LINE", true, "POSTED", 31n],
     ["HANDLING_UNIT", true, "POSTED", null],

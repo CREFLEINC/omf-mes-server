@@ -8,6 +8,7 @@ import { findInspectionPlanVersion, planDefaultSkip } from '../quality/inspectio
 import { LotHoldService } from './lot-hold.service';
 import { MaterialLotFormatError, materialLotPrefix, materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
+import { PRODUCTION_LOT_TYPE, WIP_LOT_TYPE } from './lot-type';
 
 /**
  * LOT 계보 코어(`server-architecture.md` §1 `lot-genealogy`) — **값이 정해진 LOT 하나를
@@ -30,8 +31,6 @@ export const PREISSUED_LIFECYCLE = 'WAITING';
  * 열린 PQC 의뢰를 생략·합격 처리해도 폐번 LOT 이 정상이 되지 않게 한다(omf-all-around#213).
  */
 export const VOIDED_LIFECYCLE = 'VOIDED';
-/** 선발행 슬롯의 유형(시드 `LOT_TYPE`). */
-export const PRODUCTION_LOT_TYPE = 'PRODUCTION';
 
 export type Tx = Prisma.TransactionClient;
 export type LotRow = Prisma.lotGetPayload<{ include: { lot_hold: true } }>;
@@ -73,6 +72,8 @@ export interface LotPreIssueInput {
   uomId: number;
   bomId: number | null;
   bomVersion: number | null;
+  /** 마지막 공정이면 `PRODUCTION`, 아니면 `WIP`(피처 016) — 판정은 배포가 한다(`isLastOperation`). */
+  lotTypeCode: typeof PRODUCTION_LOT_TYPE | typeof WIP_LOT_TYPE;
   lotNos: string[];
   qtys: Prisma.Decimal[];
 }
@@ -206,7 +207,7 @@ export class LotRegistryService {
         data: {
           lot_no: lotNo,
           item_id: input.itemId,
-          lot_type_code: PRODUCTION_LOT_TYPE,
+          lot_type_code: input.lotTypeCode,
           plant_id: input.plantId,
           initial_qty: input.qtys[index],
           uom_id: input.uomId,

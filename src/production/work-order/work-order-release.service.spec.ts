@@ -40,6 +40,9 @@ function stub(options: {
   pqcVersions?: Row[];
   /** 이미 살아 있는 PQC 의뢰가 있는가 — 있으면 또 만들지 않는다. */
   pqcExists?: boolean;
+  /** 이 W/O 공정의 순번과 그 Routing 의 마지막 순번 — 기본은 마지막 공정이다(피처 016). */
+  operationSeq?: number;
+  lastSeq?: number;
 }) {
   /** 부른 순서 — 채번이 트랜잭션 «밖»인지 이 배열이 가른다. */
   const calls: string[] = [];
@@ -68,6 +71,7 @@ function stub(options: {
       inspection_managed: options.inspectionManaged ?? false,
       process_id: 66n,
       routing_id: 77n,
+      operation_seq: options.operationSeq ?? 10,
     },
     production_plan: {
       bom_id: BOM,
@@ -78,6 +82,9 @@ function stub(options: {
 
   const tx = {
     $queryRaw: () => Promise.resolve([{ status_code: 'PLANNED', released_at: null, version_no: 1 }]),
+    routing_operation: {
+      aggregate: () => Promise.resolve({ _max: { operation_seq: options.lastSeq ?? options.operationSeq ?? 10 } }),
+    },
     work_order: {
       findUniqueOrThrow: () => Promise.resolve({work_order_id: 700n, status_code: 'PLANNED', planned_equipment_id: null, planned_start_at: null, planned_end_at: null, work_order_resource_assignment: []}),
       update: ({ data }: { data: Row }) => {
@@ -358,6 +365,22 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     await release(harness);
 
     expect(harness.inspectionRequests).toEqual([]);
+  });
+
+  it('US1-2·FR-001 — 마지막 공정 W/O 의 선발행 슬롯은 PRODUCTION 이다', async () => {
+    const harness = stub({ operationSeq: 30, lastSeq: 30 });
+
+    await release(harness);
+
+    expect(harness.lots.map((lot) => lot.lot_type_code)).toEqual(['PRODUCTION', 'PRODUCTION']);
+  });
+
+  it('US1-1·FR-001 — 마지막이 아닌 공정 W/O 의 선발행 슬롯은 WIP(반제품)다', async () => {
+    const harness = stub({ operationSeq: 10, lastSeq: 30 });
+
+    await release(harness);
+
+    expect(harness.lots.map((lot) => lot.lot_type_code)).toEqual(['WIP', 'WIP']);
   });
 
   it('배포 — 스크랩 위치가 없어도 배포한다', async () => {

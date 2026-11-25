@@ -1,6 +1,7 @@
 import { HttpStatus } from "@nestjs/common";
 
 import { ContractException, ERROR_CODE, field } from "../../common/errors";
+import { PRODUCED_LOT_TYPES } from "../../core/lot/lot-type";
 import { DocumentTargetType } from "./document-issue-target-lookup";
 import { DocumentIssueView } from "./document-issue-view";
 
@@ -187,7 +188,8 @@ export function qualifyDocumentIssueTarget(
       //  ⛔ 품질 축은 좁게 남긴다 — 불량·폐기 LOT 의 라벨은 계속 막는다.
       if (
         facts.targetTypeCode !== "LOT" ||
-        facts.lotTypeCode !== "PRODUCTION" ||
+        // 공정 반제품(WIP)도 W/O 가 만든 생산 LOT 이다 — P-02-04 가 같은 라벨을 찍는다(피처 016).
+        !PRODUCED_LOT_TYPES.includes(facts.lotTypeCode) ||
         !ISSUABLE_PRODUCTION_LOT_STATUS.includes(facts.statusCode) ||
         (facts.lifecycleStatusCode !== PRODUCTION_LOT_ACTIVE &&
           facts.completedAt === null)

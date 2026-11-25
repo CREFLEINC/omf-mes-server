@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { crossesMidnight, shiftTimeOf } from '../../../core/calendar/shift-crossing';
+import { isLastOperation } from '../../../core/work-order';
 import { IF_WO_CLOSE } from '../../../core/outbox/outbox.service';
 import { localDate } from '../../../planning/production-plan/plan-window';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -99,16 +100,4 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
     },
   });
   return [...(good.isZero() ? [] : [row('G', good)]), ...(bad.isZero() ? [] : [row('B', bad)])];
-}
-
-/** 라우팅의 마지막 공정인가 — 공정 순번이 가장 큰 것. */
-async function isLastOperation(
-  prisma: PrismaService,
-  operation: { routing_id: bigint; operation_seq: number },
-): Promise<boolean> {
-  const last = await prisma.routing_operation.aggregate({
-    where: { routing_id: operation.routing_id },
-    _max: { operation_seq: true },
-  });
-  return last._max.operation_seq === operation.operation_seq;
 }
