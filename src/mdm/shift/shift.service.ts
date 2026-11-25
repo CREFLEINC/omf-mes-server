@@ -135,7 +135,7 @@ export class ShiftService {
     return this.get(shiftId);
   }
 
-  /** 사용 중지한 교대를 다시 쓴다 — 같은 공장·코드는 새로 등록할 수 없으므로 되살리는 길이다. 이미 사용 중이면 그대로 둔다. */
+  /** 사용 중지한 교대를 다시 쓴다 — 같은 공장·코드는 새로 등록할 수 없으므로 되살리는 길이다. 이미 사용 중이어도 판 번호만 올린다(사용 중지와 같다). */
   async activate(actorUserId: number | undefined, shiftId: number, version: number): Promise<ShiftDetail> {
     await this.prisma.$transaction(async (tx) => {
       await this.writable(tx, actorUserId, shiftId);
