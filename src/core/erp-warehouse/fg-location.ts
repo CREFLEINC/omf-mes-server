@@ -49,7 +49,7 @@ export interface FgTarget {
   erpCode: string | null;
 }
 
-type Db = Pick<Prisma.TransactionClient, 'warehouse' | 'location' | 'department_production_warehouse'>;
+type Db = Pick<Prisma.TransactionClient, 'warehouse' | 'location'>;
 
 export const fgKey = (target: FgTarget): string => `${target.plantId}:${normalized(target.erpCode) ?? ''}`;
 const normalized = (code: string | null): string | null => (code === null || code.trim() === '' ? null : code.trim());

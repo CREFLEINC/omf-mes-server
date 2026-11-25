@@ -409,13 +409,13 @@ export class MaterialIssueRequestEditService {
     return new Map((body.lines ?? []).map((line) => [BigInt(line.materialIssueRequestLineId), new Prisma.Decimal(line.requestedQty)]));
   }
 
-  /** 새 출발 창고는 W/O 라인 담당 부서의 이 공장 활성 생산 창고여야 한다(FR-010 「출발 생산 창고」). */
+  /** 새 출발 창고는 이 공장의 활성 생산창고여야 한다(FR-010 「출발 생산 창고」). */
   private async assertWarehouse(tx: Prisma.TransactionClient, request: Locked, warehouseId: bigint, plantId: bigint): Promise<void> {
     // 수정은 W/O 요청만 온다(창고 보충 요청은 update 입구에서 409).
     const workOrder = await tx.work_order.findUniqueOrThrow({ where: { work_order_id: request.work_order_id as bigint }, select: { production_line_id: true } });
     const scope = workOrder.production_line_id === null ? null : await resolveCandidates(tx, { plantId, productionLineId: workOrder.production_line_id });
     if (scope === null || !scope.warehouseIds.includes(warehouseId)) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '라인 담당 부서의 생산 창고가 아닙니다.')]);
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '이 공장의 사용 중인 생산창고가 아닙니다.')]);
     }
   }
 

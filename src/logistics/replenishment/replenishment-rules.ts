@@ -13,7 +13,7 @@ export const MATERIAL_ITEM_TYPES = ['RAW_MATERIAL', 'SUBSIDIARY_MATERIAL'];
 
 const invalid = (errors: ErrorItem[]): ContractException => new ContractException(HttpStatus.BAD_REQUEST, errors);
 
-/** 생산 창고(부서에 연결된 활성 창고)인지 보고 공장을 돌려준다. */
+/** 생산 창고(활성 생산창고)인지 보고 공장을 돌려준다. */
 export async function productionWarehousePlant(
   db: Prisma.TransactionClient,
   warehouseId: bigint,
@@ -21,7 +21,7 @@ export async function productionWarehousePlant(
 ): Promise<bigint> {
   const warehouse = await db.warehouse.findUnique({ where: { warehouse_id: warehouseId }, select: { plant_id: true } });
   if (warehouse === null || !(await isProductionWarehouse(db, warehouseId))) {
-    throw invalid([field(name, ERROR_CODE.INVALID, '생산 창고가 아닙니다 — 부서에 연결된 사용 중인 창고만 고를 수 있습니다.')]);
+    throw invalid([field(name, ERROR_CODE.INVALID, '생산 창고가 아닙니다 — 유형이 생산창고인 사용 중인 창고만 고를 수 있습니다.')]);
   }
   return warehouse.plant_id;
 }

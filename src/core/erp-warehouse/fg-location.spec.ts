@@ -36,7 +36,6 @@ function fakeDb(warehouses: Warehouse[], locations: Location[]) {
       findUniqueOrThrow: jest.fn(async ({ where }: { where: { location_id: bigint } }) =>
         locations.find((row) => row.location_id === where.location_id) as Location),
     },
-    department_production_warehouse: {},
   } as never;
 }
 

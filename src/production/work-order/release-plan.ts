@@ -71,7 +71,7 @@ export interface ReleasePlan {
 export interface WaitingPlan {
   plantId: bigint;
   productionLineId: bigint;
-  /** 부서 생산 창고 D(W/O 공장의 활성 창고). */
+  /** 생산창고 D(W/O 공장의 활성 생산창고). */
   warehouseIds: bigint[];
   /** 라인의 생산 현장. */
   destinationLocationId: bigint;
@@ -165,8 +165,8 @@ export async function releasePlan(
 }
 
 /**
- * 생산 창고 공장의 대기 요청 준비(피처 003 · research R-5·R-7). 빠진 기준정보(라인 부서 · 부서 생산 창고 · 라인
- * 생산 현장)는 모아 400 이다(FR-009) — 재고 부족은 배포를 막지 않는다. 창고 고르기는 재고에 기대므로 트랜잭션 안이다.
+ * 생산 창고 공장의 대기 요청 준비(피처 003 · research R-5·R-7). 빠진 기준정보(공장 생산창고 · 라인 생산 현장)는
+ * 모아 400 이다(FR-009) — 재고 부족은 배포를 막지 않는다. 창고 고르기는 재고에 기대므로 트랜잭션 안이다.
  */
 async function waitingPlan(
   prisma: PrismaService,

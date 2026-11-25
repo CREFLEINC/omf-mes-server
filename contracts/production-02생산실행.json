@@ -5159,7 +5159,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다. 생산 창고를 쓰는 공장(피처 003)은 빠진 기준정보를 errors 에 모아 낸다 — LINE_DEPARTMENT_MISSING(productionLineId · 라인에 담당 부서 없음) · PRODUCTION_WAREHOUSE_MISSING(departmentId · 부서에 이 공장의 활성 생산 창고 없음) · PRODUCTION_FLOOR_LOCATION_MISSING(productionLineId · 라인에 생산 현장 위치 없음). 재고 부족은 배포를 막지 않는다. 근거: omf-all-around#66 · BOM 단위 ≠ 재고 단위 자재: MATERIAL_UOM_CONFIRMATION_REQUIRED(materialUomConfirmations[bomComponentId=…].confirmed — 확인 안 함 · .conversionRate — 환산이 없는데 비율 없음) · INVALID(.conversionRate — 이미 있는 품목 환산과 다른 비율 · 질량 공통 환산과 다른 비율 · 같은 품목·단위에 서로 다른 비율 · 배포하는 사이 다른 환산이 등록됨) · RANGE(.conversionRate — 소수 8자리로 반올림하면 0). 근거: omf-all-around#297",
+      "description": "검증 실패. 고쳐야 풀린다. 생산 창고를 쓰는 공장(피처 003)은 빠진 기준정보를 errors 에 모아 낸다 — PRODUCTION_WAREHOUSE_MISSING(plantId · 이 공장에 활성 생산창고 없음) · PRODUCTION_FLOOR_LOCATION_MISSING(productionLineId · 라인에 생산 현장 위치 없음). 재고 부족은 배포를 막지 않는다. 근거: omf-all-around#66 · BOM 단위 ≠ 재고 단위 자재: MATERIAL_UOM_CONFIRMATION_REQUIRED(materialUomConfirmations[bomComponentId=…].confirmed — 확인 안 함 · .conversionRate — 환산이 없는데 비율 없음) · INVALID(.conversionRate — 이미 있는 품목 환산과 다른 비율 · 질량 공통 환산과 다른 비율 · 같은 품목·단위에 서로 다른 비율 · 배포하는 사이 다른 환산이 등록됨) · RANGE(.conversionRate — 소수 8자리로 반올림하면 0). 근거: omf-all-around#297",
       "content": {
        "application/json": {
         "schema": {
@@ -11923,7 +11923,7 @@
        },
        "unsourcedShortages": {
         "type": "array",
-        "description": "부서 생산 창고 어디에도 가용 재고가 없어 요청에 넣지 못한 자재(FR-007a) — 배포는 성공이다. W-02-11 부족 목록에도 남는다. 생산 창고를 쓰는 공장에서만 싣는다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+        "description": "생산 창고 어디에도 가용 재고가 없어 요청에 넣지 못한 자재(FR-007a) — 배포는 성공이다. W-02-11 부족 목록에도 남는다. 생산 창고를 쓰는 공장에서만 싣는다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
         "items": {
          "type": "object",
          "required": [
@@ -11968,7 +11968,7 @@
      },
      "productionWarehouses": {
       "type": "array",
-      "description": "상세에만 — 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(코드순). 지금 방식 공장이거나 부서·연결이 없으면 빈 배열. productionWarehouseMode 가 참인데 비면 추가 출고 요청은 400 PRODUCTION_WAREHOUSE_MISSING. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+      "description": "상세에만 — 이 공장의 활성 생산창고(코드순). 지금 방식 공장이면 빈 배열. productionWarehouseMode 가 참인데 비면 추가 출고 요청은 400 PRODUCTION_WAREHOUSE_MISSING. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
       "items": {
        "type": "object",
        "required": [

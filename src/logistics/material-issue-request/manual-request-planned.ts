@@ -78,7 +78,7 @@ export class PlannedManualRequestCreator {
     const scope = workOrder.production_line_id === null
       ? { errors: [field('workOrderId', ERROR_CODE.LINE_DEPARTMENT_MISSING, 'W/O 에 생산라인이 없습니다.')], warehouseIds: [] }
       : await resolveCandidates(this.prisma, { plantId, productionLineId: workOrder.production_line_id });
-    // 라인 부서의 생산 창고가 없으면 배포와 같은 사유로 막는다 — 입고지를 직접 고르면 생산 현장 누락은 넘어간다.
+    // 공장의 생산창고가 없으면 배포와 같은 사유로 막는다 — 입고지를 직접 고르면 생산 현장 누락은 넘어간다.
     if ('errors' in scope) {
       const errors = scope.errors.filter((e) => e.code !== ERROR_CODE.PRODUCTION_FLOOR_LOCATION_MISSING || input.destinationLocationId == null);
       if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
@@ -86,9 +86,9 @@ export class PlannedManualRequestCreator {
     const candidates = scope.warehouseIds;
     let warehouseIds = candidates;
     if (input.sourceWarehouseId != null) {
-      // 고를 수 있는 창고는 W/O 상세 productionWarehouses 와 같다 — 라인 부서의 이 공장 활성 생산 창고.
+      // 고를 수 있는 창고는 W/O 상세 productionWarehouses 와 같다 — 이 공장의 활성 생산창고.
       if (!candidates.includes(BigInt(input.sourceWarehouseId))) {
-        throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '라인 담당 부서의 생산 창고가 아닙니다.')]);
+        throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '이 공장의 사용 중인 생산창고가 아닙니다.')]);
       }
       warehouseIds = [BigInt(input.sourceWarehouseId)];
     }

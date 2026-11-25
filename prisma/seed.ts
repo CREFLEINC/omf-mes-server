@@ -246,6 +246,9 @@ const SEED: CodeGroupSeed[] = [
      * 2026-09-03 코드 사전(CD-WAREHOUSE-TYPE)이 MATERIAL·PRODUCT·SPARE_PART·GENERAL 넷으로
      * 닫았다. 잠정으로 쓰던 SEMI_FINISHED·MERCHANDISE·PRODUCTION 은 대응값이 없어 내린다 —
      * 등록부라 고객이 필요하면 W-06-06 에서 다시 세운다. 기존 창고 행의 문자열은 그대로 둔다.
+     *
+     * PRODUCTION(생산창고)은 2026-11-25 다시 세웠다 — 생산 창고 판정이 부서 연결에서 이 유형으로 옮겼다(사용자 결정).
+     * 동작이 이 글자에 걸리므로 마이그레이션 `20261125180000_production_warehouse_type` 도 같은 값을 세운다.
      */
     groupCode: 'WAREHOUSE_TYPE',
     groupName: '창고유형',
@@ -254,8 +257,9 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PRODUCT', codeName: '제품창고', order: 20 },
       { code: 'SPARE_PART', codeName: '예비품창고', order: 30 },
       { code: 'GENERAL', codeName: '일반창고', order: 40 },
+      { code: 'PRODUCTION', codeName: '생산창고', order: 50 },
     ],
-    retired: ['SEMI', 'MDSE', 'DEFECT', 'REWORK', 'SEMI_FINISHED', 'MERCHANDISE', 'PRODUCTION'],
+    retired: ['SEMI', 'MDSE', 'DEFECT', 'REWORK', 'SEMI_FINISHED', 'MERCHANDISE'],
   },
   {
     // BOM·Routing·검사기준은 개정(Rev) 단위로 살아 있다 — 상태축이 곧 개정 수명주기다.

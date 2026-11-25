@@ -45,7 +45,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     await app.close();
   });
 
-  /** 공장에 생산 창고 `codes` 를 만들고 재고를 넣은 뒤 그 창고들을 연결한 부서·라인을 낸다. */
+  /** 공장에 생산 창고 `codes` 를 만들고 재고를 넣은 뒤 그 창고들을 그 공장의 생산창고로 두고 라인을 낸다. */
   async function scenario(
     plantKey: string,
     stocks: Record<string, [ItemKey, number, string?][]>,
@@ -248,20 +248,26 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     ]);
   });
 
-  it('US2-5 기준정보가 빠지면 배포 400 — 라인 부서·생산 현장 위치·부서 생산 창고를 모아 안내', async () => {
-    await scenario('P1', { A: [['X', 10]] });
+  it('US2-5 기준정보가 빠지면 배포 400 — 공장 생산창고·생산 현장 위치를 모아 안내, 라인 담당 부서는 묻지 않는다', async () => {
+    const { warehouses } = await scenario('P1', { A: [['X', 10]] });
     const bare = await fx.line('P1', 'BARE', null, false);
-    const noLine = await fx.release(await fx.workOrder({ plantKey: 'P1', lineId: bare, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) })).expect(400);
-    expect(noLine.body.errors.map((e: { code: string }) => e.code)).toEqual(['LINE_DEPARTMENT_MISSING', 'PRODUCTION_FLOOR_LOCATION_MISSING']);
+    const noFloor = await fx.release(await fx.workOrder({ plantKey: 'P1', lineId: bare, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) })).expect(400);
+    expect(noFloor.body.errors.map((e: { code: string }) => e.code)).toEqual(['PRODUCTION_FLOOR_LOCATION_MISSING']);
 
-    // 다른 공장 창고만 연결한 부서 — 이 공장의 후보가 아니다.
-    const elsewhere = await fx.warehouse(fx.ids.p2, `S${++scenarioSeq}-OTHER`);
-    const department = await fx.department(`S${scenarioSeq}-D`, [elsewhere.warehouseId]);
-    const line = await fx.line('P1', `S${scenarioSeq}-L`, department);
-    const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId: line, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
+    const noDepartment = await fx.line('P1', `S${scenarioSeq}-ND`, null);
+    const released = await fx.workOrder({ plantKey: 'P1', lineId: noDepartment, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
+    await fx.release(released).expect(200);
+    expect((await fx.requests(released)).map((r) => r.source_warehouse_id)).toEqual([warehouses.A]);
+
+    // 이 공장의 생산창고가 모두 꺼졌다 — 다른 공장 생산창고는 후보가 아니다.
+    const elsewhere = await fx.warehouse(fx.ids.p2, `S${scenarioSeq}-OTHER`);
+    await prisma.warehouse.update({ where: { warehouse_id: elsewhere.warehouseId }, data: { warehouse_type_code: 'PRODUCTION' } });
+    await prisma.warehouse.update({ where: { warehouse_id: warehouses.A }, data: { is_active: false } });
+    const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId: noDepartment, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
     const noWarehouse = await fx.release(workOrderId).expect(400);
-    expect(noWarehouse.body.errors).toEqual([expect.objectContaining({ field: 'departmentId', code: 'PRODUCTION_WAREHOUSE_MISSING' })]);
+    expect(noWarehouse.body.errors).toEqual([expect.objectContaining({ field: 'plantId', code: 'PRODUCTION_WAREHOUSE_MISSING' })]);
     expect(await fx.requests(workOrderId)).toEqual([]);
+    await prisma.warehouse.update({ where: { warehouse_id: warehouses.A }, data: { is_active: true } });
   });
 
   it('FR-035 다른 사업부의 W/O 도 같은 규칙이다', async () => {
@@ -273,7 +279,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     expect(row.status_code).toBe('WAITING');
   });
 
-  it('US2-7 US2-8 생산 창고 없는 공장은 지금 방식 — 연결한 뒤 새 W/O 부터 대기, 먼저 나간 요청은 그대로', async () => {
+  it('US2-7 US2-8 생산 창고 없는 공장은 지금 방식 — 생산창고를 둔 뒤 새 W/O 부터 대기, 먼저 나간 요청은 그대로', async () => {
     fx.ids.p3 = await fx.plant('P3', HANOI);
     const material = await fx.warehouse(fx.ids.p3, 'P3-MAT', 'MATERIAL');
     await fx.stock(material, 'X', 100);

@@ -931,7 +931,7 @@ describe('추가 출고 요청 — 생산 창고 공장 (e2e)', () => {
     expect(made.body.materialIssueRequest.destinationLocationId).toBe(Number(line.default_wip_location_id));
   });
 
-  it('W/O 상세의 출발 창고 칸 · 라인 부서에 생산 창고가 없으면 400 PRODUCTION_WAREHOUSE_MISSING · 고른 창고는 그 목록 안', async () => {
+  it('W/O 상세의 출발 창고 칸 · 공장의 생산창고가 모두 꺼지면 400 PRODUCTION_WAREHOUSE_MISSING · 고른 창고는 그 목록 안', async () => {
     const { lineId, warehouses } = await setup({ B: [['X', 10]], A: [['X', 10]] });
     const wo = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
     const detail = await request(app.getHttpServer()).get(`/api/production/work-orders/${wo}`).set('Cookie', fx.cookie).expect(200);
@@ -945,15 +945,21 @@ describe('추가 출고 요청 — 생산 창고 공장 (e2e)', () => {
     const wrong = await post({ workOrderId: Number(wo), reasonCode: 'OTHER', sourceWarehouseId: Number(outside.warehouseId), lines: [lineOf('X', 1)] }).expect(400);
     expect(wrong.body.errors[0]).toMatchObject({ field: 'sourceWarehouseId', code: 'INVALID' });
 
-    const emptyDept = await fx.department(`S${seq}-EMPTY`, []);
-    const bareLine = await fx.line('P1', `S${seq}-BARE`, emptyDept);
-    const bareWo = await fx.workOrder({ plantKey: 'P1', lineId: bareLine, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
-    const bare = await request(app.getHttpServer()).get(`/api/production/work-orders/${bareWo}`).set('Cookie', fx.cookie).expect(200);
+    // 라인 담당 부서가 없어도 공장의 생산창고가 칸이다.
+    const noDepartment = await fx.line('P1', `S${seq}-ND`, null);
+    const noDepartmentWo = await fx.workOrder({ plantKey: 'P1', lineId: noDepartment, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
+    const sameChoices = await request(app.getHttpServer()).get(`/api/production/work-orders/${noDepartmentWo}`).set('Cookie', fx.cookie).expect(200);
+    expect(sameChoices.body.productionWarehouses).toEqual(detail.body.productionWarehouses);
+
+    const ids = Object.values(warehouses);
+    await prisma.warehouse.updateMany({ where: { warehouse_id: { in: ids } }, data: { is_active: false } });
+    const bare = await request(app.getHttpServer()).get(`/api/production/work-orders/${wo}`).set('Cookie', fx.cookie).expect(200);
     expect(bare.body).toMatchObject({ productionWarehouseMode: true, productionWarehouses: [] });
     for (const sourceWarehouseId of [undefined, Number(warehouses.A)]) {
-      const refused = await post({ workOrderId: Number(bareWo), reasonCode: 'OTHER', sourceWarehouseId, lines: [lineOf('X', 1)] }).expect(400);
+      const refused = await post({ workOrderId: Number(wo), reasonCode: 'OTHER', sourceWarehouseId, lines: [lineOf('X', 1)] }).expect(400);
       expect(refused.body.errors.map((e: { code: string }) => e.code)).toContain('PRODUCTION_WAREHOUSE_MISSING');
     }
+    await prisma.warehouse.updateMany({ where: { warehouse_id: { in: ids } }, data: { is_active: true } });
   });
 
   it('발행 응답은 조회와 같은 모양 — 이름·화면 값·versionNo', async () => {
