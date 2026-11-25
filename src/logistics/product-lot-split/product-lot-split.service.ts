@@ -173,6 +173,7 @@ function throwIfBlocked(block: SplitBlock | null): void {
 
 const BLOCK_MESSAGE: Record<string, string> = {
   NOT_PRODUCTION_LOT: '생산 LOT 만 분리할 수 있습니다.',
+  SEMI_FINISHED_LOT: '반제품 LOT 은 분리할 수 없습니다.',
   SPLIT_SERIAL_LOT: '시리얼 관리 품목은 분리할 수 없습니다.',
   INVALID_STATE: '보류·불량·폐기·무효 LOT 은 분리할 수 없습니다.',
   LOT_SPLIT_UNCONFIRMED: '분리 확인 전인 LOT 입니다. PDA 에서 두 라벨을 먼저 확인하세요.',

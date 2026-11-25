@@ -5,6 +5,7 @@ import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어 파일은 import 만 한다(옛 `:pick` 과 같다).
 import { LockedBalanceRow, lockBalancesByItemLot } from '../../core/inventory-posting/balance-lock';
+import { WIP_LOT_TYPE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -50,6 +51,8 @@ export const PICK_CONFLICT = {
   ...WAREHOUSE_PICK_CONFLICT,
   /** 피처 013 — 확인 전 분리의 원래·자식 LOT. */
   LOT_SPLIT_UNCONFIRMED: 'LOT_SPLIT_UNCONFIRMED',
+  /** 피처 016 — 공정 반제품 LOT 은 출하하지 않는다(다음 공정에 투입한다). */
+  SEMI_FINISHED_LOT: 'SEMI_FINISHED_LOT',
 } as const;
 
 const INVALID_STATE = 'INVALID_STATE';
@@ -76,6 +79,7 @@ interface LineRow {
 interface LotRow {
   lot_id: bigint;
   item_id: bigint;
+  lot_type_code: string;
   status_code: string;
   expiry_date: Date | null;
 }
@@ -121,6 +125,7 @@ export class ShipmentLotPickService {
       }
       const plantId = line.fulfillment_plant_id;
       const lot = await findLot(tx, body, plantId);
+      assertNotSemiFinished(lot);
       await assertLineItem(tx, line, lot);
       await assertNotPicked(tx, line, lot);
       const picked = await linePicked(tx, line.shipment_request_line_id);
@@ -165,6 +170,7 @@ export class ShipmentLotPickService {
     now: Date,
   ): Promise<{ lotRowId: bigint; lineId: bigint; other: Prisma.Decimal }> {
     const lot = await findBusinessUnitLot(tx, body, hint.business_unit_id, scope?.plantId);
+    assertNotSemiFinished(lot);
     const itemLines = await lockItemLines(tx, hint.shipment_request_id, lot.item_id);
     if (itemLines.length === 0) throw conflict(PICK_CONFLICT.NO_LINE_FOR_ITEM, '이 지시서에 그 LOT 품목의 라인이 없습니다.');
     await assertNotPicked(tx, hint, lot);
@@ -258,7 +264,7 @@ async function lockLine(tx: Prisma.TransactionClient, requestId: number, lineId:
 
 /** LOT 번호는 공장 안에서만 유일하다 — 지시서 이행 공장으로 좁힌다. 남의 공장 LOT 은 「없는 LOT」이다. */
 async function findLot(tx: Prisma.TransactionClient, body: ShipmentLotPick, plantId: bigint): Promise<LotRow> {
-  const select = { lot_id: true, item_id: true, status_code: true, expiry_date: true };
+  const select = { lot_id: true, item_id: true, lot_type_code: true, status_code: true, expiry_date: true };
   const lot = body.lotId !== undefined
     ? await tx.lot.findFirst({ where: { lot_id: BigInt(body.lotId), plant_id: plantId }, select })
     : await tx.lot.findFirst({ where: { lot_no: (body.lotNo as string).trim(), plant_id: plantId }, select });
@@ -266,6 +272,11 @@ async function findLot(tx: Prisma.TransactionClient, body: ShipmentLotPick, plan
     throw one(field(body.lotId !== undefined ? 'lotId' : 'lotNo', ERROR_CODE.INVALID, '이 공장의 LOT 이 아닙니다.'));
   }
   return lot;
+}
+
+/** 반제품 LOT 은 출하하지 않는다 — 잔액·라인·상태 검사보다 먼저 409(피처 016 FR-004). 제품 품목이라 라인 품목이 맞아 버린다. */
+function assertNotSemiFinished(lot: LotRow): void {
+  if (lot.lot_type_code === WIP_LOT_TYPE) throw conflict(PICK_CONFLICT.SEMI_FINISHED_LOT, '반제품 LOT 은 출하할 수 없습니다.');
 }
 
 /** 그 품목 라인이 지시서에 없으면 409, 있지만 다른 라인이면 400(화면이 라인을 잘못 골랐다). */

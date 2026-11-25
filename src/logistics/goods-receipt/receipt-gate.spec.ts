@@ -30,7 +30,7 @@ const input: GoodsReceiptCreate = {
   lines: [line],
 };
 
-const inboundLot = (status: string) => ({ status_code: status, source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 7n });
+const inboundLot = (status: string) => ({ lot_type_code: 'MATERIAL', status_code: status, source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 7n });
 
 function db(opts: { isDefect?: boolean; inspectionRequired?: boolean; initialQty?: number; receiving?: string } = {}) {
   return {
@@ -89,8 +89,14 @@ describe('receipt-gate — 입고 게이트 꺼내기(피처 009 R-1, 동작 그
 
   it('inboundGate: 입하와 무관한 LOT 은 지나간다', async () => {
     const errors: ErrorItem[] = [];
-    await inboundGate(db(), 1, 'lines[0]', line, { status_code: 'INSPECTION_PENDING', source_type_code: 'WORK_ORDER', source_id: 1n }, d(5), errors);
+    await inboundGate(db(), 1, 'lines[0]', line, { lot_type_code: 'PRODUCTION', status_code: 'INSPECTION_PENDING', source_type_code: 'WORK_ORDER', source_id: 1n }, d(5), errors);
     expect(errors).toEqual([]);
+  });
+
+  it('US1-3·FR-004 — inboundGate: 반제품(WIP) LOT 은 입고하지 않는다(lotId INVALID)', async () => {
+    const errors: ErrorItem[] = [];
+    await inboundGate(db(), 1, 'lines[0]', line, { lot_type_code: 'WIP', status_code: 'NORMAL', source_type_code: 'WORK_ORDER', source_id: 1n }, d(5), errors);
+    expect(errors).toEqual([expect.objectContaining({ field: 'lines[0].lotId', code: 'INVALID', message: '반제품 LOT 은 제품 입고할 수 없습니다.' })]);
   });
 
   it('assertInboundLotsClosed: 입하 중 입하 LOT 이면 409 INBOUND_LOT_RECEIVING, 마감됐으면 통과', async () => {

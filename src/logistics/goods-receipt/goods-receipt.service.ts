@@ -255,7 +255,7 @@ export class GoodsReceiptService {
     const [lot, uom, location] = await Promise.all([
       this.prisma.lot.findUnique({
         where: { lot_id: line.lotId },
-        select: { item_id: true, status_code: true, source_type_code: true, source_id: true },
+        select: { item_id: true, lot_type_code: true, status_code: true, source_type_code: true, source_id: true },
       }),
       this.prisma.uom.findUnique({ where: { uom_id: line.uomId }, select: { uom_id: true } }),
       // ⛔ 목적지는 «그 창고의» 위치여야 한다 — 남의 창고 위치에 전기하면 잔량 차원이
