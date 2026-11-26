@@ -72,19 +72,27 @@ export async function resolveTargets(
     shiftsByPlant.set(shift.plant_id, times);
   }
   return {
-    items: body.targets.map((target, index) => ({
-      plantId: target.plantId,
-      productionLineId: target.productionLineId ?? null,
-      from: target.from,
-      to: target.to,
-      days: days[index].map((day) => target.capacity === undefined ? day : {
-        ...day,
-        capacityQty: cycleTimeCapacity(
-          workingSeconds(day.date, timezones.get(BigInt(target.plantId))!, shiftsByPlant.get(BigInt(target.plantId)) ?? []),
-          target.capacity.cycleTimeSec,
-          target.capacity.decimalScale,
-        ),
-      }),
-    })),
+    items: body.targets.map((target, index) => {
+      const plantId = BigInt(target.plantId);
+      const timezone = timezones.get(plantId);
+      const shiftTimes = shiftsByPlant.get(plantId) ?? [];
+      const capacity = target.capacity;
+      return {
+        plantId: target.plantId,
+        productionLineId: target.productionLineId ?? null,
+        from: target.from,
+        to: target.to,
+        days: capacity === undefined || timezone === undefined
+          ? days[index]
+          : days[index].map((day) => ({
+              ...day,
+              capacityQty: cycleTimeCapacity(
+                workingSeconds(day.date, timezone, shiftTimes),
+                capacity.cycleTimeSec,
+                capacity.decimalScale,
+              ),
+            })),
+      };
+    }),
   };
 }

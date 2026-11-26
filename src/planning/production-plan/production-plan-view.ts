@@ -28,8 +28,8 @@ export async function planViews(client: Prisma.TransactionClient, rows: readonly
   }
   return rows.map((row, index) => {
     const times = byRouting.get(row.routing_id) ?? [];
-    const bottleneck = times.length > 0 && times.every((time) => standardCycleTimeSeconds(time) !== null)
-      ? times.reduce((max, time) => time!.gt(max!) ? time : max)
+    const bottleneck = times.length > 0 && times.every((time): time is Prisma.Decimal => standardCycleTimeSeconds(time) !== null)
+      ? times.reduce((max, time) => time.gt(max) ? time : max)
       : null;
     return productionPlanView(row, days[index], bottleneck);
   });

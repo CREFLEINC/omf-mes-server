@@ -6,7 +6,6 @@ import { isAutoWorkOrderPlant } from '../../app/policy/plant-policy-text';
 import { resolveWorkingDays } from '../../app/policy/working-day-resolver';
 import { toDateString } from '../../common/master';
 import { PLAN_DATE_SEARCH_LIMIT_DAYS, PlanningCalendarDay, addDays } from '../../core/calendar/working-day';
-import { RELEASED_WORK_ORDER_STATUSES } from '../../core/work-order';
 import type { EquipmentFacts, MoldFacts, RivalWindow } from '../../production/work-order/validation';
 import { DefaultBomRow, UsableRoutingRow, chooseRouting, readMastersOf } from '../production-plan/master-choice';
 import { localDate } from '../production-plan/plan-window';
