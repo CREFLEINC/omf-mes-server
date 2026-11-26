@@ -36,12 +36,11 @@ function fakeDb(warehouses: Warehouse[], locations: Location[]) {
       findUniqueOrThrow: jest.fn(async ({ where }: { where: { location_id: bigint } }) =>
         locations.find((row) => row.location_id === where.location_id) as Location),
     },
-    department_production_warehouse: {},
   } as never;
 }
 
 describe('resolveFgLocations — SL_CD → 창고 → 완제품 위치', () => {
-  // 창고 10: 나뉘지 않음(창고 전체만). 창고 11: 나뉨(구역 + 적치 대기). 12: 꺼짐. 13: 다른 공장. 14: 자재. 15: 불량. 16: 외부.
+  // 창고 10: 나뉘지 않음(창고 전체만). 창고 11: 나뉨(구역 + 적치 대기). 12: 꺼짐. 13: 다른 공장. 14: 자재. 15: 불량. 16: 외부. 17: 생산.
   const warehouses = [
     warehouse(10n, 'S10'),
     warehouse(11n, 'S11'),
@@ -50,6 +49,7 @@ describe('resolveFgLocations — SL_CD → 창고 → 완제품 위치', () => {
     warehouse(14n, 'S14', { warehouse_type_code: 'MATERIAL' }),
     warehouse(15n, 'S15', { is_defect: true }),
     warehouse(16n, 'S16', { is_external: true }),
+    warehouse(17n, 'S17', { warehouse_type_code: 'PRODUCTION' }),
   ];
   const locations = [
     location(100n, 10n, WAREHOUSE_WHOLE),
@@ -80,6 +80,7 @@ describe('resolveFgLocations — SL_CD → 창고 → 완제품 위치', () => {
     ['S14', 'FG_WAREHOUSE_NOT_ALLOWED'],
     ['S15', 'FG_WAREHOUSE_NOT_ALLOWED'],
     ['S16', 'FG_WAREHOUSE_NOT_ALLOWED'],
+    ['S17', 'FG_WAREHOUSE_NOT_ALLOWED'],
   ])('SL_CD %s 는 연결 실패 %s — 다른 창고로 대체하지 않는다', async (code, reason) => {
     expect(await resolve(code)).toEqual({ kind: 'LINK_FAILED', erpCode: code, reason });
   });
@@ -127,6 +128,7 @@ describe('locationFinding — 사용자가 넣은 위치', () => {
     expect(locationFinding(1n, fact(10n, { is_external: true }))).toBeNull();
     expect(locationFinding(1n, fact(10n, { plant_id: 2n }))?.code).toBe('LOCATION_INVALID');
     expect(locationFinding(1n, fact(10n, { warehouse_type_code: 'MATERIAL' }))?.code).toBe('LOCATION_INVALID');
+    expect(locationFinding(1n, fact(10n, { warehouse_type_code: 'PRODUCTION' }))?.code).toBe('LOCATION_INVALID');
     expect(locationFinding(1n, fact(10n, {}, false))?.code).toBe('LOCATION_INVALID');
     expect(locationFinding(1n, undefined)?.code).toBe('LOCATION_INVALID');
   });

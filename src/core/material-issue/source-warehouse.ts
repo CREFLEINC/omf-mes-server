@@ -4,11 +4,12 @@ import { ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { LotKey, lotOrder } from '../picking/allocation';
 import { PICKABLE_BALANCE } from '../picking/picking-generation';
 import { lockPairs, pairKey, plannedLines, sumPlanned } from './planned-stock';
+import { PRODUCTION_WAREHOUSE } from './production-warehouse';
 
 /**
  * 출고 요청의 출발 생산 창고(피처 003 · research R-5).
  *
- * ① tx 밖 — 공장 모드·부서 생산 창고 집합 D·입고지(라인 생산 현장)를 정하고, 빠진 기준정보를 모아 400 으로 낸다.
+ * ① tx 밖 — 공장 모드·생산창고 집합 D·입고지(라인 생산 현장)를 정하고, 빠진 기준정보를 모아 400 으로 낸다.
  * ② tx 안 — 예정 재고 자물쇠 뒤에 자재마다 D 가운데 가용 재고가 있는 창고(후보)에서 쓸 수 있는 양이 가장 큰
  *    창고를 고른다. 동점은 그 창고 가용 재고의 가장 이른 선출 키(피킹과 같은 키) → 창고 코드. 후보가 없으면
  *    요청에 넣지 않는다(FR-007a). 한 자재는 한 창고에서만 나간다 — 나눠 출고하지 않는다(SC-007).
@@ -43,45 +44,42 @@ export interface SourceChoice {
 }
 
 /**
- * 공장 모드(FR-009a) — 그 공장 창고가 부서 생산 창고로 한 번이라도 연결돼 있으면 새 규칙이다.
+ * 공장 모드(FR-009a) — 그 공장에 생산창고가 하나라도 있으면(사용 중지 포함) 새 규칙이다.
  * 아니면 이 기능 전 경로를 그대로 탄다(자재 창고에서 즉시 피킹, 대기·예정·분할 없음).
  */
 export async function usesProductionWarehouses(db: Prisma.TransactionClient, plantId: bigint): Promise<boolean> {
-  const row = await db.department_production_warehouse.findFirst({
-    where: { warehouse: { plant_id: plantId } },
+  const row = await db.warehouse.findFirst({
+    where: { plant_id: plantId, warehouse_type_code: PRODUCTION_WAREHOUSE },
     select: { warehouse_id: true },
   });
   return row !== null;
 }
 
-/** 부서 = W/O 생산 라인의 부서. D 는 그 부서에 연결한 «W/O 공장의 활성» 창고뿐이다. */
+/** D 는 «W/O 공장의 활성» 생산창고 전부다 — 라인을 가리지 않는다. 라인은 입고지(생산 현장)만 준다. */
 export async function resolveCandidates(
   db: Prisma.TransactionClient,
   input: { plantId: bigint; productionLineId: bigint },
 ): Promise<SourceScope | { errors: ErrorItem[]; warehouseIds: bigint[] }> {
-  const line = await db.production_line.findUnique({
-    where: { production_line_id: input.productionLineId },
-    select: { department_id: true, default_wip_location_id: true },
-  });
-  const errors: ErrorItem[] = [];
-  let warehouseIds: bigint[] = [];
-  if (line?.department_id == null) {
-    errors.push(field('productionLineId', ERROR_CODE.LINE_DEPARTMENT_MISSING, '생산라인에 담당 부서를 지정해야 합니다.'));
-  } else {
-    const links = await db.department_production_warehouse.findMany({
-      where: { department_id: line.department_id, warehouse: { plant_id: input.plantId } },
-      select: { warehouse_id: true, warehouse: { select: { is_active: true } } },
+  const [line, warehouses] = await Promise.all([
+    db.production_line.findUnique({
+      where: { production_line_id: input.productionLineId },
+      select: { default_wip_location_id: true },
+    }),
+    db.warehouse.findMany({
+      where: { plant_id: input.plantId, warehouse_type_code: PRODUCTION_WAREHOUSE },
+      select: { warehouse_id: true, is_active: true },
       orderBy: { warehouse_id: 'asc' },
-    });
-    warehouseIds = links.filter((link) => link.warehouse.is_active).map((link) => link.warehouse_id);
-    if (warehouseIds.length === 0) {
-      // 연결은 있는데 모두 사용 중지면 고칠 자리가 다르다 — 창고를 다시 쓰거나 다른 창고를 연결한다.
-      const message =
-        links.length === 0
-          ? '라인 담당 부서에 이 공장의 생산 창고를 연결해야 합니다.'
-          : '라인 담당 부서에 연결된 이 공장의 생산 창고가 모두 사용 중지되었습니다. 창고를 다시 쓰거나 다른 생산 창고를 연결해야 합니다.';
-      errors.push(field('departmentId', ERROR_CODE.PRODUCTION_WAREHOUSE_MISSING, message));
-    }
+    }),
+  ]);
+  const errors: ErrorItem[] = [];
+  const warehouseIds = warehouses.filter((row) => row.is_active).map((row) => row.warehouse_id);
+  if (warehouseIds.length === 0) {
+    // 생산창고는 있는데 모두 사용 중지면 고칠 자리가 다르다 — 창고를 다시 쓰거나 다른 창고를 생산창고로 둔다.
+    const message =
+      warehouses.length === 0
+        ? '이 공장에 사용 중인 생산창고가 없습니다. 창고 유형을 생산창고로 둔 창고가 있어야 합니다.'
+        : '이 공장의 생산창고가 모두 사용 중지되었습니다. 창고를 다시 쓰거나 다른 창고를 생산창고로 둬야 합니다.';
+    errors.push(field('plantId', ERROR_CODE.PRODUCTION_WAREHOUSE_MISSING, message));
   }
   if (line?.default_wip_location_id == null) {
     errors.push(
@@ -188,8 +186,8 @@ export async function chooseSources(
 }
 
 /**
- * W-02-10 출발 창고 칸(W/O 상세) — 이 W/O 공장이 새 규칙인가와, 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(코드순).
- * 지금 방식 공장이거나 부서·연결이 없으면 빈 배열이다. 공장 모드는 배포와 같은 판정이다(FR-009a).
+ * W-02-10 출발 창고 칸(W/O 상세) — 이 W/O 공장이 새 규칙인가와, 이 공장의 활성 생산창고(코드순).
+ * 지금 방식 공장이면 빈 배열이다. 공장 모드는 배포와 같은 판정이다(FR-009a).
  */
 export async function productionWarehouseChoices(
   db: Prisma.TransactionClient,
@@ -197,24 +195,20 @@ export async function productionWarehouseChoices(
 ): Promise<{ productionWarehouseMode: boolean; productionWarehouses: { warehouseId: number; warehouseCode: string; warehouseName: string }[] }> {
   const workOrder = await db.work_order.findUnique({
     where: { work_order_id: workOrderId },
-    select: { production_line: { select: { department_id: true } }, production_plan: { select: { production_order: { select: { plant_id: true } } } } },
+    select: { production_plan: { select: { production_order: { select: { plant_id: true } } } } },
   });
   const plantId = workOrder?.production_plan?.production_order.plant_id;
   if (plantId === undefined || !(await usesProductionWarehouses(db, plantId))) {
     return { productionWarehouseMode: false, productionWarehouses: [] };
   }
-  const departmentId = workOrder?.production_line?.department_id;
-  const links =
-    departmentId == null
-      ? []
-      : await db.department_production_warehouse.findMany({
-          where: { department_id: departmentId, warehouse: { plant_id: plantId, is_active: true } },
-          select: { warehouse: { select: { warehouse_id: true, warehouse_code: true, warehouse_name: true } } },
-          orderBy: { warehouse: { warehouse_code: 'asc' } },
-        });
+  const warehouses = await db.warehouse.findMany({
+    where: { plant_id: plantId, warehouse_type_code: PRODUCTION_WAREHOUSE, is_active: true },
+    select: { warehouse_id: true, warehouse_code: true, warehouse_name: true },
+    orderBy: { warehouse_code: 'asc' },
+  });
   return {
     productionWarehouseMode: true,
-    productionWarehouses: links.map(({ warehouse }) => ({
+    productionWarehouses: warehouses.map((warehouse) => ({
       warehouseId: Number(warehouse.warehouse_id),
       warehouseCode: warehouse.warehouse_code,
       warehouseName: warehouse.warehouse_name,

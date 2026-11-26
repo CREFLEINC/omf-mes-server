@@ -34,7 +34,6 @@ describe('생산 완제품 위치는 공용 ERP 창고 매칭 함수를 쓴다',
         inbound_receipt_po_allocation: [{ purchase_order_line: { erp_storage_location_code: 'S13' } }],
       }]),
     },
-    department_production_warehouse: {},
   } as never;
 
   beforeEach(() => matcher.mockClear());

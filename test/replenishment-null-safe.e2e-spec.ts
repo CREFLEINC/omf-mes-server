@@ -276,7 +276,9 @@ describe('창고 보충 요청 W/O null 대응 (e2e)', () => {
 
   it('R2-5 부서 생산 창고 해제 미리보기의 활성 요청 수에 그 창고로 들어오는 활성 보충 요청이 든다(해제는 막지 않는다)', async () => {
     const target = await fx.warehouse(fx.ids.p1, 'PROD2');
-    const department = await fx.department('D2', [target.warehouseId]);
+    // 연결만 만든다 — fx.department 는 이 공장의 생산창고를 이 창고로 바꿔 앞 준비가 깨진다.
+    const department = (await prisma.department.create({ data: { department_code: `${PREFIX}-D2`, department_name: 'D2' } })).department_id;
+    await prisma.department_production_warehouse.create({ data: { department_id: department, warehouse_id: target.warehouseId } });
     await replenishment({ destination: target });
     await replenishment({ destination: target, status: 'CANCELLED' });
     const preview = await request(app.getHttpServer())

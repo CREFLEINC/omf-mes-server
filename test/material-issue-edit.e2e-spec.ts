@@ -278,7 +278,7 @@ describe('출고 요청 수정·취소 (e2e)', () => {
     expect(history.body.items.filter((i: { eventCode: string }) => i.eventCode === 'QTY_CHANGED').map((i: { detail: { itemCode: string } }) => i.detail.itemCode)).toEqual([`${PREFIX}-Y`]);
   });
 
-  it('FR-010 출발 창고는 라인 담당 부서의 생산 창고만 — 공장의 다른 활성 창고는 400', async () => {
+  it('FR-010 출발 창고는 공장의 생산창고만 — 공장의 다른 활성 창고는 400', async () => {
     const { lineId } = await line([['X', 100]]);
     const { row } = await made(lineId, 'X20', fx.nextWeekday('P1', 1));
     const other = await fx.warehouse(fx.ids.p1, `S${seq}-OTHER`);

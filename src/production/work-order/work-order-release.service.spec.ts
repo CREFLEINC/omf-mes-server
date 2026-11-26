@@ -131,8 +131,8 @@ function stub(options: {
     // 환산 기준정보가 비면 단위를 그대로 둔다 — 단위 환산은 `release-materials.spec.ts` 가 본다.
     uom: { findMany: () => Promise.resolve([]) },
     item_uom_conversion: { findMany: () => Promise.resolve([]) },
-    // 생산 창고를 연결한 적 없는 공장 — 이 기능 전 경로(피처 003 FR-009a)를 탄다.
-    department_production_warehouse: { findFirst: () => Promise.resolve(null) },
+    // 생산창고가 없는 공장 — 이 기능 전 경로(피처 003 FR-009a)를 탄다.
+    warehouse: { findFirst: () => Promise.resolve(null) },
     inspection_plan: { count: () => Promise.resolve(options.pqcTarget === true ? 1 : 0) },
     inspection_plan_version: { findMany: () => Promise.resolve(options.pqcVersions ?? []) },
     bom_component: {

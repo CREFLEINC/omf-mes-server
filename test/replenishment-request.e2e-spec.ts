@@ -164,13 +164,13 @@ describe('창고 보충 직접 요청 (e2e)', () => {
     expect(dup.body.errors).toContainEqual(expect.objectContaining({ field: 'lines[1].itemId', code: 'INVALID' }));
   });
 
-  it('US1-8 생산 창고 없는 공장·생산 창고가 아닌 창고는 400 — 부서 연결이 끊긴 창고도 400 이고 이미 나간 요청은 그대로', async () => {
+  it('US1-8 생산 창고 없는 공장·생산 창고가 아닌 창고는 400 — 생산창고가 아니게 된 창고도 400 이고 이미 나간 요청은 그대로', async () => {
     const none = await fx.create({ productionWarehouseId: lonely, lines: [{ item: 'X', qty: 1, source: w.MAT.warehouseId }] }).expect(400);
     expect(none.body.errors).toContainEqual(expect.objectContaining({ field: 'productionWarehouseId', code: 'INVALID' }));
     await fx.create({ productionWarehouseId: w.MAT.warehouseId, lines: [{ item: 'X', qty: 1, source: w.MAT2.warehouseId }] }).expect(400);
 
     const before = await prisma.material_issue_request.findMany({ where: { location: { warehouse_id: flat } }, select: { material_issue_request_id: true, status_code: true } });
-    await prisma.department_production_warehouse.deleteMany({ where: { warehouse_id: flat } });
+    await prisma.warehouse.update({ where: { warehouse_id: flat }, data: { warehouse_type_code: 'GENERAL' } });
     await fx.create({ productionWarehouseId: flat, lines: [{ item: 'V', qty: 1, source: w.MAT.warehouseId }] }).expect(400);
     const after = await prisma.material_issue_request.findMany({ where: { location: { warehouse_id: flat } }, select: { material_issue_request_id: true, status_code: true } });
     expect(after).toEqual(before);

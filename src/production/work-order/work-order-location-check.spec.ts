@@ -33,7 +33,6 @@ function fakeTx(options: { erpCode: string | null; planned?: boolean; current?: 
       }),
       findUniqueOrThrow: jest.fn(async () => locations[0]),
     },
-    department_production_warehouse: {},
   } as never;
 }
 
