@@ -55,9 +55,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/replenishment-settings/warehouses/{warehouseId}': ['W-02-12'],
   // 쓸 수 있는 양 — W-02-10 품목 줄의 남은 수량(omf-all-around#232).
   'GET /logistics/material-issue-requests/free-stock': ['W-02-10'],
-  // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
-  'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
-  'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
 
   // `W-06-07` 물류 마스터 — §3 이 「창고 등록」만 적어 도출표에 `POST` 만 들어왔다.
   // 수정과 활성 전이는 같은 화면의 같은 자원이다.

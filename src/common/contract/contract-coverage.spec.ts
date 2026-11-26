@@ -139,7 +139,8 @@ describe('계약 커버리지', () => {
     // 엑셀 내보내기 2 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 650 → 652.
     // 교대 관리 4 — 등록·상세·수정·중지(omf-all-around#318): 652 → 656.
     // 교대 다시 사용 1(omf-all-around#318): 657.
-    expect(registry.size).toBe(657);
+    // 부서 생산 창고 조회·바꾸기 2건 삭제 — 생산 창고는 창고 유형(사용자 결정 2026-11-25): 657 → 655.
+    expect(registry.size).toBe(655);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
