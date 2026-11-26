@@ -70,8 +70,8 @@ describe('생산 창고 자동 보충 러너 (e2e)', () => {
     await prisma.warehouse.update({ where: { warehouse_id: w.OFF.warehouseId }, data: { is_active: false } });
     await fx.department('D1', ['PROD', 'PROD2', 'PROD3', 'PROD4', 'BROKEN'].map((k) => w[k].warehouseId));
     await fx.department('D2', [w.SPROD.warehouseId]);
-    // 부서 연결이 끊긴 창고(FR-036) — 관리 품목이 있어도 돌지 않는다.
-    await prisma.department_production_warehouse.deleteMany({ where: { warehouse_id: w.PROD4.warehouseId } });
+    // 생산창고가 아니게 된 창고(FR-036) — 관리 품목이 있어도 돌지 않는다.
+    await prisma.warehouse.update({ where: { warehouse_id: w.PROD4.warehouseId }, data: { warehouse_type_code: 'GENERAL' } });
     // 실패하는 창고 — 나뉜 창고인데 적치 대기 위치가 없다(도착 위치를 풀지 못한다).
     await prisma.location.deleteMany({ where: { warehouse_id: w.BROKEN.warehouseId, system_role_code: 'PUTAWAY_STAGING' } });
 

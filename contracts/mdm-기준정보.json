@@ -19768,7 +19768,7 @@
       "x-source-column": "warehouse_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
+      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32). PRODUCTION(생산창고)은 출고 요청 출발·창고 보충을 받는 생산 창고다(사용자 결정 2026-11-25). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
@@ -19845,7 +19845,7 @@
       "x-source-column": "warehouse_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
+      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32). PRODUCTION(생산창고)은 출고 요청 출발·창고 보충을 받는 생산 창고다(사용자 결정 2026-11-25). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
@@ -19909,7 +19909,7 @@
       "x-source-column": "warehouse_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
+      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32). PRODUCTION(생산창고)은 출고 요청 출발·창고 보충을 받는 생산 창고다(사용자 결정 2026-11-25). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },

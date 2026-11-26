@@ -169,6 +169,10 @@ export class MaterialIssueFixture {
     return lot.lot_id;
   }
 
+  /**
+   * 라인 담당 부서. `warehouseIds` 가 그 공장의 생산창고 «전부»가 된다 — 판정은 공장 단위 창고 유형이라, 앞 시험이 만든
+   * 이 묶음의 생산창고는 그 공장에서 일반창고로 되돌린다(시험마다 새 창고 묶음). 부서 연결은 그 경로를 지울 때까지 남긴다.
+   */
   async department(code: string, warehouseIds: bigint[]): Promise<bigint> {
     const department = await this.prisma.department.create({
       data: { department_code: `${this.prefix}-${code}`, department_name: code },
@@ -176,6 +180,12 @@ export class MaterialIssueFixture {
     await this.prisma.department_production_warehouse.createMany({
       data: warehouseIds.map((warehouse_id) => ({ department_id: department.department_id, warehouse_id })),
     });
+    const plants = await this.prisma.warehouse.findMany({ where: { warehouse_id: { in: warehouseIds } }, select: { plant_id: true }, distinct: ['plant_id'] });
+    await this.prisma.warehouse.updateMany({
+      where: { plant_id: { in: plants.map((row) => row.plant_id) }, warehouse_code: { startsWith: this.prefix }, warehouse_type_code: 'PRODUCTION' },
+      data: { warehouse_type_code: 'GENERAL' },
+    });
+    await this.prisma.warehouse.updateMany({ where: { warehouse_id: { in: warehouseIds } }, data: { warehouse_type_code: 'PRODUCTION' } });
     return department.department_id;
   }
 

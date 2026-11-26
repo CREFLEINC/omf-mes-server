@@ -5905,7 +5905,7 @@
      "logistics"
     ],
     "summary": "추가 자재 출고 요청 발행",
-    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 추가 자재 출고 요청(W-02-10)은 관리웹이고, 관리웹 셸에는 오프라인이 없다(공유계약 C-5 · W-02-10 §1). Idempotency-Key 는 필수이나 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(C-8) — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6 ⭐ 생산 창고를 쓰는 공장(피처 003): 출발 생산 창고별로 요청을 나눠 만들고 바로 배포한다. 쓸 수 있는 양(가용 − 예정)을 넘으면 409 PLANNED_STOCK_CONFLICT — 사유가 긴급 대응·부족 보충이면 overridable=true(acceptPlannedOverride 로 다시 보내면 실제 가용까지 가져가고 다른 요청에 동적 부족이 생기며 이력이 남는다), 그 밖 사유는 쓸 수 있는 양까지만 담고(나머지 부족) 쓸 수 있는 양이 0 이면 overridable=false. 「자동」인데 어느 부서 생산 창고에도 가용 재고가 없는 자재는 noStockedWarehouse=true · overridable=false. 응답에 만든 요청 전부 requests(하나여도 배열 · 지금 방식 공장도 싣는다). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 ⭐ 라인은 재고 단위(품목 기본 단위)로 바꿔 담는다 — 다른 단위로 온 라인은 W/O 배포와 같은 환산(품목 환산 → 공통 환산)으로 바꾸고 재고 단위 decimal_scale 로 올림한다. 환산이 없으면 400 INVALID(lines[i].uomId). 근거: omf-all-around#297",
+    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 추가 자재 출고 요청(W-02-10)은 관리웹이고, 관리웹 셸에는 오프라인이 없다(공유계약 C-5 · W-02-10 §1). Idempotency-Key 는 필수이나 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(C-8) — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6 ⭐ 생산 창고를 쓰는 공장(피처 003): 출발 생산 창고별로 요청을 나눠 만들고 바로 배포한다. 쓸 수 있는 양(가용 − 예정)을 넘으면 409 PLANNED_STOCK_CONFLICT — 사유가 긴급 대응·부족 보충이면 overridable=true(acceptPlannedOverride 로 다시 보내면 실제 가용까지 가져가고 다른 요청에 동적 부족이 생기며 이력이 남는다), 그 밖 사유는 쓸 수 있는 양까지만 담고(나머지 부족) 쓸 수 있는 양이 0 이면 overridable=false. 「자동」인데 어느 생산 창고에도 가용 재고가 없는 자재는 noStockedWarehouse=true · overridable=false. 응답에 만든 요청 전부 requests(하나여도 배열 · 지금 방식 공장도 싣는다). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 ⭐ 라인은 재고 단위(품목 기본 단위)로 바꿔 담는다 — 다른 단위로 온 라인은 W/O 배포와 같은 환산(품목 환산 → 공통 환산)으로 바꾸고 재고 단위 decimal_scale 로 올림한다. 환산이 없으면 400 INVALID(lines[i].uomId). 근거: omf-all-around#297",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6320,7 +6320,7 @@
      "logistics"
     ],
     "summary": "출고 요청 수정",
-    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고(W/O 라인 담당 부서의 이 공장 활성 생산 창고만 — 아니면 400 sourceWarehouseId INVALID)·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 RANGE), 늘리면 같은 상한을 건다(넘는 양은 부족), 미출고가 모두 0 이 되면 완료(POSTED · displayStatus DONE)로 옮기고 남은 피킹을 닫는다, 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청(requestTypeCode=REPLENISHMENT)은 고칠 수 없다 — 409 STATE_LOCKED(취소하고 다시 요청한다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고(이 공장의 활성 생산창고만 — 아니면 400 sourceWarehouseId INVALID)·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 RANGE), 늘리면 같은 상한을 건다(넘는 양은 부족), 미출고가 모두 0 이 되면 완료(POSTED · displayStatus DONE)로 옮기고 남은 피킹을 닫는다, 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청(requestTypeCode=REPLENISHMENT)은 고칠 수 없다 — 409 STATE_LOCKED(취소하고 다시 요청한다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -27989,7 +27989,7 @@
      "sourceWarehouseId": {
       "type": "integer",
       "format": "int64",
-      "description": "새 출발 생산 창고 — W/O 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(W/O 상세 productionWarehouses)"
+      "description": "새 출발 생산 창고 — 이 공장의 활성 생산창고(W/O 상세 productionWarehouses)"
      },
      "destinationLocationId": {
       "type": "integer",
@@ -28441,7 +28441,7 @@
         },
         "noStockedWarehouse": {
          "type": "boolean",
-         "description": "어느 부서 생산 창고에도 가용 재고가 없다"
+         "description": "어느 생산 창고에도 가용 재고가 없다"
         },
         "affectedRequests": {
          "type": "array",
@@ -28755,7 +28755,7 @@
       "items": {
        "$ref": "#/components/schemas/ReplenishmentWarehouseSetting"
       },
-      "description": "공장 생산 창고(부서에 연결된 활성 창고) 전부"
+      "description": "공장 생산 창고(유형이 생산창고인 활성 창고) 전부"
      }
     },
     "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
@@ -28793,7 +28793,7 @@
      "productionWarehouseId": {
       "type": "integer",
       "format": "int64",
-      "description": "보충받을 생산 창고(부서에 연결된 활성 창고) — 아니면 400 INVALID"
+      "description": "보충받을 생산 창고(유형이 생산창고인 활성 창고) — 아니면 400 INVALID"
      },
      "businessDate": {
       "type": "string",

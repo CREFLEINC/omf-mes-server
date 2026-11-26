@@ -193,8 +193,9 @@ describe('00:00 출고 요청 배포 러너 (e2e)', () => {
 
   it('FR-022 한 건의 실패는 나머지를 막지 않고 원인을 남긴다 — 다음 회차 간격 뒤 다시 시도', async () => {
     const good = await line('P1', [['X', 100]]);
-    const bad = await line('P1', [['X', 100]]);
     const ok = await waiting('P1', good, 'X20', 4);
+    // 생산창고는 공장 단위라 둘째 라인이 앞 창고를 생산창고에서 뺀다 — 이미 정한 요청의 출발 창고는 그대로다.
+    const bad = await line('P1', [['X', 100]]);
     const broken = await waiting('P1', bad, 'X20', 4);
     await prisma.warehouse.update({ where: { warehouse_id: bad.warehouseId }, data: { is_active: false } });
 
