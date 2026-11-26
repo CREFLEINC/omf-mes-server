@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { FgPlace, FgRule, LOCATION_FACT_SELECT } from '../../core/erp-warehouse/fg-location';
 import { FgOverrideBody, judgeFgOverride } from './fg-override';
 import { WorkOrderSupplement } from '../production-plan/expand';
+import { cycleTimeEstimate, cycleTimeWindow } from '../production-plan/standard-cycle-time';
 import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
 import { DraftRef, ExistingDraftAction, draftActionOf, draftChoiceErrors, planSetErrors } from './plan-set-rules';
@@ -151,7 +152,8 @@ export async function judgeConfirm(
     if (plan.plannedLineId !== null && !lineUsable(refs.lines.get(BigInt(plan.plannedLineId)), order.plant_id)) {
       error(`${path}.plannedLineId`, 'LINE_PLANT_MISMATCH', '이 ERP W/O 공장의 사용 중인 라인이 아닙니다.');
     }
-    const operationIds = (facts.operations.get(routingId) ?? []).map((operation) => operation.routing_operation_id);
+    const operations = facts.operations.get(routingId) ?? [];
+    const operationIds = operations.map((operation) => operation.routing_operation_id);
     const sent = plan.workOrders.map((workOrder) => BigInt(workOrder.routingOperationId));
     if (usable.has(routingId) && !sameSet(operationIds, sent)) {
       error(`${path}.workOrders`, ERROR_CODE.INVALID, 'Routing 공정마다 W/O 하나씩 실어야 합니다 — 공정이 빠졌거나 겹쳤거나 다른 Routing 의 공정입니다.');
@@ -193,12 +195,19 @@ export async function judgeConfirm(
       const shiftTimes = shift === undefined
         ? null
         : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time) }, timezone);
-      const time = judgeTime(`${path}.workOrders[${at}]`, workOrder, { system: shiftTimes ?? day, day, shift: shiftTimes, planDate: plan.planDate, timezone });
+      const operationId = BigInt(workOrder.routingOperationId);
+      const operation = operations.find((candidate) => candidate.routing_operation_id === operationId);
+      const estimate = cycleTimeEstimate(plan.plannedQty, operation?.standard_cycle_time_sec);
+      const available = shiftTimes ?? day;
+      const system = cycleTimeWindow(available, estimate.expectedDurationSec);
+      if (system.plannedEndAt > available.plannedEndAt) {
+        warnings.push({ code: 'PLAN_CYCLE_TIME_CAPACITY_EXCEEDED', field: field('plannedEndAt'), message: '예상 소요시간이 가동 시간을 초과합니다.' });
+      }
+      const time = judgeTime(`${path}.workOrders[${at}]`, workOrder, { system, day, shift: shiftTimes, planDate: plan.planDate, timezone });
       errors.push(...time.errors);
       warnings.push(...time.warnings);
       corrections.push(...time.corrections);
       const window = time.window;
-      const operationId = BigInt(workOrder.routingOperationId);
       windows.set(operationId, window);
       timed.push({ path: `${path}.workOrders[${at}]`, routingOperationId: operationId, source: workOrder.plannedTimeSourceCode, window });
       const { productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId } = resources;

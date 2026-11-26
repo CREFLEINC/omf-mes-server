@@ -157,6 +157,28 @@ describe('생산계획 근무일 판정 조회 (e2e)', () => {
     return user.app_user_id;
   }
 
+  it('표준 C/T가 주어지면 등록된 활성 교대 시간으로 일별 상한을 계산한다', async () => {
+    const shift = await prisma.shift.create({
+      data: {
+        plant_id: id.P, shift_code: 'AA322', shift_name: 'AA322',
+        start_time: new Date('1970-01-01T08:00:00Z'),
+        end_time: new Date('1970-01-01T16:00:00Z'),
+      },
+    });
+    try {
+      const period = { plantId: Number(id.P), from: '2027-03-01', to: '2027-03-01' };
+      const response = await resolve([
+        { ...period, capacity: { cycleTimeSec: 31, decimalScale: 0 } },
+        period,
+      ]).expect(200);
+      expect(resultValidator()(response.body)).toBe(true);
+      expect(response.body.items[0].days[0].capacityQty).toBe(929);
+      expect(response.body.items[1].days[0]).not.toHaveProperty('capacityQty');
+    } finally {
+      await prisma.shift.delete({ where: { shift_id: shift.shift_id } });
+    }
+  });
+
   it('공장 층 — 캘린더 날짜(평일 공휴일 HOLIDAY·부분 가동·토요일 특근 WORKING)가 정책보다 앞서고, 없는 날은 그날 유효한 정책의 요일이다', async () => {
     const response = await resolve([{ plantId: Number(id.P), from: '2027-03-01', to: '2027-03-13' }]).expect(200);
     expect(resultValidator()(response.body)).toBe(true);

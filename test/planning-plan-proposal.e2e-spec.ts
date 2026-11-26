@@ -1036,6 +1036,43 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(first.planned_start_at?.toISOString()).toBe(local(planStart, '19:00:00'));
     });
 
+    it('표준 C/T를 제안, 재검증과 확정에 같은 방식으로 적용한다', async () => {
+      const orderId = await newOrder('TIME-CYCLE', shiftDays(planStart, 25));
+      await prisma.routing_operation.update({
+        where: { routing_operation_id: id.op10 },
+        data: { standard_cycle_time_sec: 12 },
+      });
+      try {
+        const proposal = await proposalOf(orderId);
+        const shown = proposal.plans[0].workOrders[0];
+        const body = bodyOf(proposal);
+        const expectedSeconds = proposal.plans[0].proposedQty * 12;
+        expect(shown).toMatchObject({ expectedDurationSec: expectedSeconds, cycleTimeSource: 'ROUTING_OPERATION' });
+        expect(proposal.plans[0].workOrders[1]).toMatchObject({ expectedDurationSec: null, cycleTimeSource: 'UNSET' });
+        const checked = await revalidate(orderId, body).expect(200);
+        const times = checked.body.plans[0].workOrders[0];
+        expect(times).toMatchObject({
+          expectedDurationSec: expectedSeconds,
+          plannedStartAt: shown.plannedStartAt,
+          plannedEndAt: shown.plannedEndAt,
+        });
+        expect(Date.parse(times.plannedEndAt) - Date.parse(times.plannedStartAt)).toBe(expectedSeconds * 1000);
+        const confirmed = await confirm(orderId, body).expect(200);
+        const stored = await prisma.work_order.findFirstOrThrow({
+          where: {
+            production_plan_id: BigInt(confirmed.body.plans[0].productionPlanId),
+            routing_operation_id: id.op10,
+          },
+        });
+        expect(stored.planned_end_at?.toISOString()).toBe(times.plannedEndAt);
+      } finally {
+        await prisma.routing_operation.update({
+          where: { routing_operation_id: id.op10 },
+          data: { standard_cycle_time_sec: null },
+        });
+      }
+    });
+
     it('직접 정한 시각이 비거나 거꾸로거나 계획일 근무일 밖이면 400 이고 재검증도 같은 오류다', async () => {
       const orderId = await newOrder('TIME-BAD', planStart);
       const body = bodyOf(await proposalOf(orderId));

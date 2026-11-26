@@ -1,3 +1,4 @@
+import { cycleTimeEstimate } from '../production-plan/standard-cycle-time';
 import { toDateString } from '../../common/master';
 import { ExistingDraft, Proposal, ProposalPlan, ProposalWorkOrder } from './proposal-builder';
 
@@ -115,6 +116,7 @@ function workOrderView(workOrder: ProposalWorkOrder) {
       routingOperationId: Number(predecessor.routingOperationId),
       dependencyTypeCode: predecessor.dependencyTypeCode,
     })),
+    ...cycleTimeEstimate(workOrder.proposedQty, workOrder.operation.standard_cycle_time_sec),
     plannedStartAt: workOrder.window.plannedStartAt.toISOString(),
     plannedEndAt: workOrder.window.plannedEndAt.toISOString(),
     equipmentRequired: operation.equipment_required,
