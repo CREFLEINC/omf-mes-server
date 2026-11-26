@@ -12086,7 +12086,7 @@
       "properties": {
        "materialIssueRequests": {
         "type": "array",
-        "description": "생산 창고를 쓰는 공장에서만 싣는다 — 출발 창고별로 만든 출고 요청 요약(창고 id 순). 출고 작업일이 공장 오늘 이하면 이미 배포(REGISTERED)됐다. 생산 창고를 연결하지 않은 공장은 칸이 없다(지금 방식). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+        "description": "생산 창고를 쓰는 공장에서만 싣는다 — 출발 창고별로 만든 출고 요청 요약(창고 id 순). 출고 작업일이 공장 오늘 이하면 이미 배포(REGISTERED)됐다. 생산창고가 없는 공장은 칸이 없다(지금 방식). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
         "items": {
          "type": "object",
          "required": [

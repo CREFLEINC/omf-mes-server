@@ -70,8 +70,9 @@ describe('ContractRegistry', () => {
   // 교대 관리 4 — 등록·상세·수정·중지(omf-all-around#318): 656.
   // 교대 다시 사용 1(omf-all-around#318): 657.
   // BOM 구성 자재 가용 수량 1(omf-all-around#320): 658.
-  it('계약 7파일에서 오퍼레이션 658건을 적재한다', () => {
-    expect(registry.size).toBe(658);
+  // 부서 생산 창고 조회·바꾸기 2건 삭제 — 생산 창고는 창고 유형(사용자 결정 2026-11-25): 656.
+  it('계약 7파일에서 오퍼레이션 656건을 적재한다', () => {
+    expect(registry.size).toBe(656);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
