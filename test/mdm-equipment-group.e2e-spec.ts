@@ -323,13 +323,16 @@ describe('설비 그룹 (e2e)', () => {
     expect(kept.body).toMatchObject({ groupName: '이름만', defaultScrapLocationId: locationId });
   });
 
-  it('⛔ 자재창고 위치는 기본 위치로 둘 수 없다 — 400 INVALID', async () => {
-    const materialLocationId = await makeLocation(plantId, 'M', 'MATERIAL');
+  it.each([
+    ['자재창고', 'M', 'MATERIAL'],
+    ['생산창고', 'P', 'PRODUCTION'],
+  ])('⛔ %s 위치는 기본 위치로 둘 수 없다 — 400 INVALID', async (_name, code, type) => {
+    const stockLocationId = await makeLocation(plantId, code, type);
     const rejected = await request(app.getHttpServer())
       .post('/api/mdm/equipment-groups')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send(body(`${PREFIX}-LOCM`, { defaultWipLocationId: materialLocationId }))
+      .send(body(`${PREFIX}-LOC${code}`, { defaultWipLocationId: stockLocationId }))
       .expect(400);
     expect(rejected.body.errors[0]).toMatchObject({ field: 'defaultWipLocationId', code: 'INVALID' });
   });
