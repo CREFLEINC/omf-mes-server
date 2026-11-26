@@ -66,10 +66,9 @@ export interface ItemQuery extends ReferenceQuery {
   hasRouting?: boolean;
   /** 가장 최근 Rev 의 상태(#231) — 계약 enum 이 DRAFT · CONFIRMED · OBSOLETE 로 막는다. */
   latestRoutingStatus?: string;
-  /** 계약에 없는 조건이라 검증 가드가 불리언으로 바꾸지 않는다 — 문자열로 온다(장부 P-130). */
-  hasBom?: string;
-  /** 위와 같다 — 문자열로 온다(장부 P-138). */
-  inspectionRequired?: string;
+  plantId?: number;
+  hasBom?: boolean;
+  inspectionRequired?: boolean;
 }
 
 type ItemRow = Prisma.itemGetPayload<object>;
@@ -106,9 +105,10 @@ export class ItemService {
       ...(query.hasRouting === undefined
         ? {}
         : { routing: query.hasRouting ? { some: {} } : { none: {} } }),
-      // ERP 연동 현황 › BOM 탭의 모품목 목록 — 이 품목을 모품목으로 하는 BOM 이 있는가.
-      ...withBom(query.hasBom),
-      ...flagWhere('inspectionRequired', query.inspectionRequired, (on) => ({ inspection_required: on })),
+      // q 가 최상위 OR 를 쓴다 — 공장 조건은 AND 에 싣는다.
+      ...(query.plantId === undefined ? {} : { AND: [plantWhere(query.plantId)] }),
+      ...(query.hasBom === undefined ? {} : bomWhere(query.hasBom, query.plantId)),
+      ...(query.inspectionRequired === undefined ? {} : { inspection_required: query.inspectionRequired }),
     });
     const [rows, total] = await Promise.all([
       this.prisma.item.findMany({
@@ -287,23 +287,30 @@ function view(row: ItemRow): ItemView {
   };
 }
 
-function withBom(value: string | undefined): Prisma.itemWhereInput {
-  return flagWhere('hasBom', value, (on) => ({ bom: on ? { some: {} } : { none: {} } }));
+/**
+ * 품목에는 공장 칸이 없어 BOM 으로 정한다 — 모품목이나 구성품으로 든 BOM 중 그 공장 것이 있으면 그 공장 품목이다.
+ * 공장이 정해진 BOM 에 한 번도 들지 않은 품목은 공장을 몰라 어느 공장에도 든다(클라이언트 요청 2026-11-26).
+ */
+function plantWhere(plantId: number): Prisma.itemWhereInput {
+  const inPlant = { plant_id: plantId };
+  const known = { plant_id: { not: null } };
+  return {
+    OR: [
+      { bom: { some: inPlant } },
+      { bom_component: { some: { bom: inPlant } } },
+      { bom: { none: known }, bom_component: { none: { bom: known } } },
+    ],
+  };
 }
 
-function flagWhere(
-  field: string,
-  value: string | undefined,
-  where: (on: boolean) => Prisma.itemWhereInput,
-): Prisma.itemWhereInput {
-  if (value === undefined) return {};
-  // ⛔ 틀린 값을 무시하지 않는다 — 걸러지지 않은 전 품목이 걸러진 것처럼 보인다.
-  if (value !== 'true' && value !== 'false') {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field, code: ERROR_CODE.INVALID, message: `${field} 은 true 또는 false 여야 합니다.` },
-    ]);
-  }
-  return where(value === 'true');
+/**
+ * 공장과 함께면 그 공장 BOM 과 공장이 빈(공통) BOM 만 센다 — `GET /planning/boms` 의 `plantId` 와 같은 셈이라,
+ * BOM 탭에 선 모품목을 같은 공장으로 열면 BOM 이 비지 않는다.
+ */
+function bomWhere(hasBom: boolean, plantId: number | undefined): Prisma.itemWhereInput {
+  const counted: Prisma.bomWhereInput =
+    plantId === undefined ? {} : { OR: [{ plant_id: plantId }, { plant_id: null }] };
+  return { bom: hasBom ? { some: counted } : { none: counted } };
 }
 
 /** 새 이름은 계약 밖이라 검증 가드가 보지 않는다 — 계약이 옛 이름에 건 `> 0` 을 여기서 건다. */
