@@ -326,6 +326,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /planning/production-orders/{productionOrderId}/audit-events': ['W-02-01', 'W-02-02', 'W-02-03', 'W-02-04'],
   // 계획 날짜를 고르는 두 화면(자동 분배·분할)이 근무일을 본다 — 계획 제안 조회와 같은 권한이다.
   'POST /planning/working-days:resolve': ['W-02-01', 'W-02-02'],
+  // 처리 화면 BOM 단계·제안 검토(W-02-01·W-02-02)와 배포 확인(W-02-04)이 구성 자재 가용 수량을 본다(omf-all-around#320).
+  'POST /planning/boms:material-availability': ['W-02-01', 'W-02-02', 'W-02-04'],
 
   // `W-06-03` 불량코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
   // 수정·활성 전이가 도출표에 안 들어왔다.

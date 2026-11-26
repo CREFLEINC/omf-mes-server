@@ -10,6 +10,7 @@ import { PlanProposalController } from './plan-proposal/plan-proposal.controller
 import { PlanProposalService } from './plan-proposal/plan-proposal.service';
 import { BomController } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
+import { MaterialAvailabilityController } from './bom/material-availability.controller';
 import { AcknowledgeService } from './production-order/acknowledge.service';
 import { AutoPlanService } from './production-order/auto-plan.service';
 import { ProductionOrderController } from './production-order/production-order.controller';
@@ -31,7 +32,7 @@ import { WorkingDayController } from './working-day/working-day.controller';
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, DocumentStateModule, NumberingModule, OutboxModule],
-  controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController, PlanProposalController, WorkingDayController],
+  controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController, PlanProposalController, WorkingDayController, MaterialAvailabilityController],
   providers: [
     RoutingService,
     RoutingOperationService,
