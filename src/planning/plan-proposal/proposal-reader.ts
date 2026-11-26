@@ -6,7 +6,6 @@ import { isAutoWorkOrderPlant } from '../../app/policy/plant-policy-text';
 import { resolveWorkingDays } from '../../app/policy/working-day-resolver';
 import { toDateString } from '../../common/master';
 import { PLAN_DATE_SEARCH_LIMIT_DAYS, PlanningCalendarDay, addDays } from '../../core/calendar/working-day';
-import { RELEASED_WORK_ORDER_STATUSES } from '../../core/work-order';
 import type { EquipmentFacts, MoldFacts, RivalWindow } from '../../production/work-order/validation';
 import { DefaultBomRow, UsableRoutingRow, chooseRouting, readMastersOf } from '../production-plan/master-choice';
 import { localDate } from '../production-plan/plan-window';
@@ -64,6 +63,7 @@ export interface RoutingRow {
 }
 
 export interface OperationRow {
+  standard_cycle_time_sec?: Prisma.Decimal | null;
   routing_operation_id: bigint;
   routing_id: bigint;
   operation_seq: number;
@@ -181,7 +181,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
           orderBy: [{ routing_id: 'asc' }, { operation_seq: 'asc' }],
           select: {
             routing_operation_id: true, routing_id: true, operation_seq: true, operation_name: true, process_id: true,
-            equipment_required: true, mold_required: true, version_no: true, process: { select: { process_code: true, process_name: true } },
+            equipment_required: true, mold_required: true, standard_cycle_time_sec: true, version_no: true, process: { select: { process_code: true, process_name: true } },
           },
         }),
       ]);

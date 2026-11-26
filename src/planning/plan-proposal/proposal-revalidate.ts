@@ -1,3 +1,4 @@
+import { cycleTimeEstimate } from '../production-plan/standard-cycle-time';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -177,6 +178,7 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
         predecessors: dependencies
           .filter((dependency) => dependency.successor_operation_id === operationId)
           .map((dependency) => ({ routingOperationId: Number(dependency.predecessor_operation_id), dependencyTypeCode: dependency.dependency_type_code })),
+        ...cycleTimeEstimate(plan.body.plannedQty, operation?.standard_cycle_time_sec),
         plannedStartAt: window?.plannedStartAt.toISOString() ?? null,
         plannedEndAt: window?.plannedEndAt.toISOString() ?? null,
         plannedTimeSourceCode: workOrder.plannedTimeSourceCode,
