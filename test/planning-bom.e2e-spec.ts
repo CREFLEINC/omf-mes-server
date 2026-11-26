@@ -417,6 +417,59 @@ describe('BOM (e2e)', () => {
     expect(filtered.body.items[0].bomCode).toBe(`${PREFIX}-B1`);
   });
 
+  it('⭐ plantId 를 주면 그 공장 BOM 과 공장이 빈 BOM 만 낸다 — 공장이 빈 BOM 은 공통이다(클라이언트 요청 2026-11-26)', async () => {
+    const base = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
+    const plant = async (suffix: string): Promise<number> =>
+      Number(
+        (
+          await prisma.plant.create({
+            data: {
+              plant_code: `${PREFIX}_${suffix}`,
+              plant_name: `${PREFIX} ${suffix}`,
+              legal_entity_id: base.legal_entity_id,
+              timezone_code: 'Asia/Ho_Chi_Minh',
+            },
+          })
+        ).plant_id,
+      );
+    const plantA = await plant('A');
+    const plantB = await plant('B');
+    const parent = await createItem('PL');
+    const bomOf = async (bomCode: string, plantId: number | null): Promise<number> =>
+      Number(
+        (
+          await prisma.bom.create({
+            data: {
+              parent_item_id: parent,
+              bom_code: bomCode,
+              bom_version: 1,
+              status_code: REVISION_STATUS.CONFIRMED,
+              effective_from: new Date('2026-01-01'),
+              base_qty: 1,
+              base_uom_id: uomId,
+              plant_id: plantId,
+            },
+          })
+        ).bom_id,
+      );
+    const inA = await bomOf(`${PREFIX}-PA`, plantA);
+    const inB = await bomOf(`${PREFIX}-PB`, plantB);
+    const common = await bomOf(`${PREFIX}-PC`, null);
+    const listed = async (query: string): Promise<number[]> =>
+      (
+        await request(app.getHttpServer())
+          .get(`/api/planning/boms?parentItemId=${parent}${query}`)
+          .set('Cookie', cookie)
+          .expect(200)
+      ).body.items
+        .map((b: { bomId: number }) => b.bomId)
+        .sort((x: number, y: number) => x - y);
+
+    expect(await listed(`&plantId=${plantA}`)).toEqual([inA, common]);
+    expect(await listed(`&plantId=${plantB}`)).toEqual([inB, common]);
+    expect(await listed('')).toEqual([inA, inB, common]);
+  });
+
   it('⛔ 남의 BOM 의 구성품은 경로를 바꿔도 못 고친다', async () => {
     const otherBom = await createBom(`${PREFIX}-B5`, 1, REVISION_STATUS.CONFIRMED);
 
@@ -540,6 +593,7 @@ describe('BOM (e2e)', () => {
       where: { bom_id: { in: boms.map((row) => row.bom_id) } },
     });
     await prisma.bom.deleteMany({ where: { bom_id: { in: boms.map((row) => row.bom_id) } } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     const routings = await prisma.routing.findMany({
       where: { item_id: { in: ids } },
       select: { routing_id: true },

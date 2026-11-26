@@ -143,7 +143,7 @@ describe('품목 마스터 (e2e)', () => {
     expect(withIds).not.toContain(plainItemId);
   });
 
-  it('⭐ hasBom 은 그 품목을 모품목으로 하는 BOM 이 있는가로 거른다 — 계약 밖(장부 P-130)', async () => {
+  it('⭐ hasBom 은 그 품목을 모품목으로 하는 BOM 이 있는가로 거른다', async () => {
     const parentId = await createItem(`${PREFIX}-B`);
     await prisma.bom.create({
       data: {
@@ -181,7 +181,7 @@ describe('품목 마스터 (e2e)', () => {
     expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['hasBom']);
   });
 
-  it('⭐ inspectionRequired 는 품목의 IQC 대상 여부로 거른다 — 계약 밖(장부 P-138)', async () => {
+  it('⭐ inspectionRequired 는 품목의 IQC 대상 여부로 거른다', async () => {
     const inspectedId = await createItem(`${PREFIX}-I`);
     await prisma.item.update({ where: { item_id: BigInt(inspectedId) }, data: { inspection_required: true } });
     const listed = async (value: string): Promise<number[]> =>
@@ -207,6 +207,97 @@ describe('품목 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .expect(400);
     expect(rejected.body.errors.map((e: { field: string }) => e.field)).toEqual(['inspectionRequired']);
+  });
+
+  describe('공장으로 거른다 — 품목의 공장은 BOM 으로 정한다(클라이언트 요청 2026-11-26)', () => {
+    const Q = `${PREFIX}-PL-`;
+    const id: Record<string, number> = {};
+    let plantA = 0;
+    let plantB = 0;
+
+    beforeAll(async () => {
+      const base = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
+      const plant = async (suffix: string): Promise<number> =>
+        Number(
+          (
+            await prisma.plant.create({
+              data: {
+                plant_code: `${PREFIX}_${suffix}`,
+                plant_name: `${PREFIX} ${suffix}`,
+                legal_entity_id: base.legal_entity_id,
+                timezone_code: 'Asia/Ho_Chi_Minh',
+              },
+            })
+          ).plant_id,
+        );
+      plantA = await plant('A');
+      plantB = await plant('B');
+      for (const name of ['PA', 'PB', 'CROSS', 'COMMON']) id[name] = await createItem(`${Q}${name}`, 'FINISHED');
+      for (const name of ['CA', 'BOTH', 'COMMONC', 'NONE']) id[name] = await createItem(`${Q}${name}`);
+      await createBom(id.PA, plantA, [id.CA, id.BOTH, id.CROSS]);
+      await createBom(id.PB, plantB, [id.BOTH]);
+      // CROSS 는 B 공장 BOM 의 모품목이면서 A 공장 BOM 의 구성품이다.
+      await createBom(id.CROSS, plantB, []);
+      await createBom(id.COMMON, null, [id.COMMONC]);
+      await prisma.routing.create({
+        data: {
+          item_id: id.PA,
+          routing_code: `${Q}RT`,
+          routing_version: 1,
+          status_code: 'CONFIRMED',
+          effective_from: new Date('2026-01-01'),
+        },
+      });
+    });
+
+    const listed = async (query: string): Promise<string[]> =>
+      (
+        await request(app.getHttpServer())
+          .get(`/api/mdm/items?q=${Q}&size=50&${query}`)
+          .set('Cookie', cookie)
+          .expect(200)
+      ).body.items
+        .map((i: { itemCode: string }) => i.itemCode.slice(Q.length))
+        .sort();
+
+    it('⭐ plantId 는 모품목·구성품으로 든 BOM 의 공장으로 거른다 — 두 공장 BOM 에 든 품목은 두 공장에서 나온다', async () => {
+      expect(await listed(`plantId=${plantA}`)).toEqual(['BOTH', 'CA', 'COMMON', 'COMMONC', 'CROSS', 'NONE', 'PA']);
+      expect(await listed(`plantId=${plantB}`)).toEqual(['BOTH', 'COMMON', 'COMMONC', 'CROSS', 'NONE', 'PB']);
+    });
+
+    it('⭐ 공장이 정해진 BOM 에 든 적 없는 품목은 어느 plantId 로도 나온다 — 공장이 빈 BOM 에만 든 품목도 그렇다', async () => {
+      expect(await listed('plantId=999999999')).toEqual(['COMMON', 'COMMONC', 'NONE']);
+      expect(await listed('')).toHaveLength(8);
+    });
+
+    it('⭐ hasBom 은 plantId 와 함께면 그 공장 BOM 과 공장이 빈 BOM 만 센다 — 다른 공장 BOM 의 모품목은 구성품으로 든 공장의 BOM 탭에 서지 않는다', async () => {
+      expect(await listed(`plantId=${plantA}&hasBom=true`)).toEqual(['COMMON', 'PA']);
+      expect(await listed(`plantId=${plantA}&hasBom=false`)).toEqual(['BOTH', 'CA', 'COMMONC', 'CROSS', 'NONE']);
+      expect(await listed(`plantId=${plantB}&hasBom=true`)).toEqual(['COMMON', 'CROSS', 'PB']);
+      expect(await listed('hasBom=true')).toEqual(['COMMON', 'CROSS', 'PA', 'PB']);
+
+      // BOM 탭에 선 모품목을 같은 공장으로 열면 BOM 이 하나 이상 나온다.
+      for (const name of await listed(`plantId=${plantB}&hasBom=true`)) {
+        const boms = await request(app.getHttpServer())
+          .get(`/api/planning/boms?parentItemId=${id[name]}&plantId=${plantB}`)
+          .set('Cookie', cookie)
+          .expect(200);
+        expect(boms.body.items).toHaveLength(1);
+      }
+    });
+
+    it('⭐ q·itemTypeCode·hasRouting 과 함께 쓰고 page.total 도 걸러진 건수다', async () => {
+      const paged = await request(app.getHttpServer())
+        .get(`/api/mdm/items?q=${Q}&plantId=${plantA}&size=2`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(paged.body.items).toHaveLength(2);
+      expect(paged.body.page.total).toBe(7);
+
+      expect(await listed(`plantId=${plantA}&itemTypeCode=FINISHED`)).toEqual(['COMMON', 'CROSS', 'PA']);
+      expect(await listed(`plantId=${plantA}&hasRouting=true`)).toEqual(['PA']);
+      expect(await listed(`plantId=${plantB}&hasRouting=true`)).toEqual([]);
+    });
   });
 
   it('ERP 규격·품목그룹이 목록·상세에 실린다 · 없으면 null 이다(장부 P-75)', async () => {
@@ -483,6 +574,29 @@ describe('품목 마스터 (e2e)', () => {
     return Number(created.item_id);
   }
 
+  async function createBom(parentId: number, plantId: number | null, componentIds: number[]): Promise<void> {
+    await prisma.bom.create({
+      data: {
+        parent_item_id: parentId,
+        bom_code: `${PREFIX}-PLBOM`,
+        bom_version: 1,
+        status_code: 'CONFIRMED',
+        effective_from: new Date('2026-01-01'),
+        base_qty: 1,
+        base_uom_id: baseUomId,
+        plant_id: plantId,
+        bom_component: {
+          create: componentIds.map((componentId, i) => ({
+            component_item_id: componentId,
+            required_qty: 1,
+            uom_id: baseUomId,
+            sequence_no: i + 1,
+          })),
+        },
+      },
+    });
+  }
+
   async function login(loginId: string = LOGIN_ID): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
@@ -500,7 +614,9 @@ describe('품목 마스터 (e2e)', () => {
     });
     const ids = items.map((i) => i.item_id);
     await prisma.routing.deleteMany({ where: { item_id: { in: ids } } });
+    await prisma.bom_component.deleteMany({ where: { bom: { parent_item_id: { in: ids } } } });
     await prisma.bom.deleteMany({ where: { parent_item_id: { in: ids } } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     // IQC 대상을 바꾸면 서버가 그 품목 전용 IQC 기준을 만든다(사용자 결정 2026-11-04).
     await prisma.inspection_plan.deleteMany({ where: { item_id: { in: ids } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
