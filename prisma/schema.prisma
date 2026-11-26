@@ -2033,7 +2033,6 @@ model department {
   production_line      production_line[]
   notification_event   notification_event[]
   notification_department_setting notification_department_setting[]
-  department_production_warehouse department_production_warehouse[]
 
   @@index([parent_department_id], map: "ix_department_parent")
   @@schema("mdm")
@@ -2383,19 +2382,6 @@ model location_code_rename {
   new_code     String   @db.VarChar(50)
   renamed_at   DateTime @default(now()) @db.Timestamptz(6)
 
-  @@schema("mdm")
-}
-
-model department_production_warehouse {
-  department_id BigInt
-  warehouse_id  BigInt
-  created_at    DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by    BigInt?
-  department    department @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse     warehouse  @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([department_id, warehouse_id], map: "pk_department_production_warehouse")
-  @@index([warehouse_id], map: "ix_department_production_warehouse_warehouse")
   @@schema("mdm")
 }
 
@@ -2843,7 +2829,6 @@ model warehouse {
   recycle_entry                                                                      recycle_entry[]
   terminal                                                                           terminal[]
   material_issue_request          material_issue_request[]
-  department_production_warehouse department_production_warehouse[]
   replenishment_item              replenishment_item[]             @relation("replenishment_item_warehouse")
   replenishment_item_source       replenishment_item[]             @relation("replenishment_item_source_warehouse")
   replenishment_warehouse_setting replenishment_warehouse_setting?

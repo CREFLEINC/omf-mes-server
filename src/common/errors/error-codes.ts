@@ -96,7 +96,7 @@ export const ERROR_CODE = {
   // 화면이 「공장을 먼저 맞추라」를 따로 말한다.
   PLANT_MISMATCH: 'PLANT_MISMATCH',
   // 계획 기반 출고 요청(피처 003 · omf-all-around#66). 배포 400 의 빠진 기준정보 셋 — 화면이 사유마다 고칠
-  // 자리(라인 부서 · 부서 생산 창고 · 라인 생산 현장)로 바로 보낸다.
+  // 자리(라인 부서 · 생산창고 · 라인 생산 현장)로 바로 보낸다.
   LINE_DEPARTMENT_MISSING: 'LINE_DEPARTMENT_MISSING',
   PRODUCTION_WAREHOUSE_MISSING: 'PRODUCTION_WAREHOUSE_MISSING',
   PRODUCTION_FLOOR_LOCATION_MISSING: 'PRODUCTION_FLOOR_LOCATION_MISSING',

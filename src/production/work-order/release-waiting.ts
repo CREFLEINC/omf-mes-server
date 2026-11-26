@@ -106,8 +106,8 @@ export async function writeWaitingRequests(
 }
 
 /**
- * D 는 트랜잭션 밖에서 읽었다 — 그 사이 부서 생산 창고 연결이 바뀌었으면 옛 D 로 요청을 만들지 않는다.
- * 다시 배포하면 새 연결로 풀린다(저장 충돌과 같은 뜻이라 STALE_VERSION).
+ * D 는 트랜잭션 밖에서 읽었다 — 그 사이 생산창고가 바뀌었으면 옛 D 로 요청을 만들지 않는다.
+ * 다시 배포하면 새 생산창고로 풀린다(저장 충돌과 같은 뜻이라 STALE_VERSION).
  */
 async function assertSameCandidates(tx: Prisma.TransactionClient, waiting: WaitingPlan): Promise<void> {
   const now = await resolveCandidates(tx, { plantId: waiting.plantId, productionLineId: waiting.productionLineId });
@@ -117,7 +117,7 @@ async function assertSameCandidates(tx: Prisma.TransactionClient, waiting: Waiti
     now.warehouseIds.join() === waiting.warehouseIds.join();
   if (same) return;
   throw new ContractException(HttpStatus.BAD_REQUEST, [
-    { scope: 'screen', code: ERROR_CODE.STALE_VERSION, message: '배포하는 사이 부서 생산 창고 연결이 바뀌었습니다. 다시 배포하세요.' },
+    { scope: 'screen', code: ERROR_CODE.STALE_VERSION, message: '배포하는 사이 생산창고가 바뀌었습니다. 다시 배포하세요.' },
   ]);
 }
 
