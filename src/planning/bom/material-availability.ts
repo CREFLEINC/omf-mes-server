@@ -63,11 +63,12 @@ export async function materialAvailability(
   const errors: ErrorItem[] = [];
   if (plant === null) errors.push({ scope: 'field', field: 'plantId', code: ERROR_CODE.INVALID, message: '없는 공장입니다.' });
   body.lines.forEach((line, index) => {
-    if (!componentOf.has(BigInt(line.bomComponentId))) {
+    const component = componentOf.get(BigInt(line.bomComponentId));
+    if (component === undefined) {
       errors.push({ scope: 'field', field: `lines[${index}].bomComponentId`, code: ERROR_CODE.INVALID, message: '없는 BOM 구성 행입니다.' });
     }
   });
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+  if (plant === null || errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   if (scope !== null && !scope.includes(plantId)) {
     throw new ContractException(HttpStatus.FORBIDDEN, [
       { scope: 'field', field: 'plantId', code: ERROR_CODE.PERMISSION_DENIED, message: '이 공장에 대한 데이터 권한이 없습니다.' },
@@ -75,28 +76,16 @@ export async function materialAvailability(
   }
 
   const itemIds = [...new Set(components.map((row) => row.component_item_id))];
-  const [table, materialWarehouses, productionWarehouses] = await Promise.all([
-    loadStockUomTable(client, itemIds, localDate(new Date(), (plant as { timezone_code: string }).timezone_code)),
-    client.warehouse.findMany({
-      where: { plant_id: plantId, is_active: true, warehouse_type_code: MATERIAL_WAREHOUSE },
-      select: { warehouse_id: true },
-    }),
-    plantProductionWarehouses(client, plantId),
+  const [table, available] = await Promise.all([
+    loadStockUomTable(client, itemIds, localDate(new Date(), plant.timezone_code)),
+    plantAvailable(client, plantId, itemIds),
   ]);
-  const warehouseIds = [...new Set([...materialWarehouses.map((row) => row.warehouse_id), ...productionWarehouses])];
-  const available = new Map<bigint, Prisma.Decimal>();
-  if (warehouseIds.length > 0) {
-    const byPair = await availableQty(client, warehouseIds, itemIds);
-    for (const [key, qty] of byPair) {
-      const itemId = BigInt(key.split(':')[1]);
-      available.set(itemId, (available.get(itemId) ?? new Prisma.Decimal(0)).plus(qty));
-    }
-  }
 
   const uomCode = (uomId: bigint) => table.uoms.get(uomId)?.code ?? '';
   return {
-    items: body.lines.map((request) => {
-      const component = componentOf.get(BigInt(request.bomComponentId)) as (typeof components)[number];
+    items: body.lines.flatMap((request) => {
+      const component = componentOf.get(BigInt(request.bomComponentId));
+      if (component === undefined) return []; // 위 검증에서 400 — 여기 오지 않는다.
       const [line] = materialRequirements([component], new Prisma.Decimal(request.quantity), component.bom.base_qty);
       const required = line ?? {
         line_no: 1,
@@ -123,4 +112,23 @@ export async function materialAvailability(
       };
     }),
   };
+}
+
+/** 공장 자재창고 + 생산창고의 품목별 피킹 가능 잔액 합. 창고가 없으면 묻지 않는다. */
+async function plantAvailable(client: Prisma.TransactionClient, plantId: bigint, itemIds: bigint[]): Promise<Map<bigint, Prisma.Decimal>> {
+  const [materialWarehouses, productionWarehouses] = await Promise.all([
+    client.warehouse.findMany({
+      where: { plant_id: plantId, is_active: true, warehouse_type_code: MATERIAL_WAREHOUSE },
+      select: { warehouse_id: true },
+    }),
+    plantProductionWarehouses(client, plantId),
+  ]);
+  const warehouseIds = [...new Set([...materialWarehouses.map((row) => row.warehouse_id), ...productionWarehouses])];
+  const available = new Map<bigint, Prisma.Decimal>();
+  if (warehouseIds.length === 0) return available;
+  for (const [key, qty] of await availableQty(client, warehouseIds, itemIds)) {
+    const itemId = BigInt(key.split(':')[1]);
+    available.set(itemId, (available.get(itemId) ?? new Prisma.Decimal(0)).plus(qty));
+  }
+  return available;
 }
