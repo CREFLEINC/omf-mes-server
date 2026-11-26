@@ -47,9 +47,13 @@ function fakeDb(overrides: { warehouses?: bigint[]; productionWarehouses?: bigin
       ]),
     },
     item_uom_conversion: { findMany: jest.fn(async () => []) },
-    warehouse: { findMany: jest.fn(async () => (overrides.warehouses ?? [10n]).map((id) => ({ warehouse_id: id }))) },
-    department_production_warehouse: {
-      findMany: jest.fn(async () => (overrides.productionWarehouses ?? [20n, 10n]).map((id) => ({ warehouse_id: id }))),
+    // 자재창고(MATERIAL)와 생산창고(PRODUCTION)를 유형으로 나눠 묻는다.
+    warehouse: {
+      findMany: jest.fn(async (args: { where: { warehouse_type_code: string } }) =>
+        (args.where.warehouse_type_code === 'PRODUCTION' ? (overrides.productionWarehouses ?? [20n, 10n]) : (overrides.warehouses ?? [10n])).map((id) => ({
+          warehouse_id: id,
+        })),
+      ),
     },
     inventory_balance: { groupBy },
   };

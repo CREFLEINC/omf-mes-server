@@ -35,8 +35,7 @@ export interface MaterialAvailabilityLine {
  *
  * 필요 수량은 배포와 «같은 함수»(`materialRequirements` → `stockUomLines`)로 재고 단위까지 낸다 — 배포 확인의
  * 출고 기준 소요량과 어긋나지 않게. 가용은 피킹이 집을 수 있는 잔액 합(`availableQty`)이고, 다른 계획의
- * 출고 예정은 빼지 않는다(이슈 결정 3). 창고는 공장의 자재창고와 생산 창고(`plantProductionWarehouses` —
- * 창고 유형 코드에 「생산창고」가 없어 부서 생산 창고 연결로 정한다)다.
+ * 출고 예정은 빼지 않는다(이슈 결정 3). 창고는 공장의 자재창고와 생산창고(`plantProductionWarehouses`)다.
  */
 export async function materialAvailability(
   client: Prisma.TransactionClient,
