@@ -113,58 +113,27 @@ describe('검사 기준 저장 — 품목 「수입검사 대상」 연동 (omf-
 });
 
 /** 「전 품목 공통」 IQC 기준 — 전용 IQC 기준이 없는 품목의 「수입검사 대상」을 맞춘다(사용자 결정 2026-11-04). */
-describe('검사 기준 저장 — 공통 IQC 기준의 품목 연동', () => {
-  const common = (overrides: Record<string, unknown> = {}) => ({
-    inspection_plan_id: 1n, item_id: null, process_id: null, routing_id: null,
-    inspection_type_code: 'IQC', is_active: true, default_skip: false, ...overrides,
-  });
-  const syncAll = (skip: boolean) => ({
-    where: { inspection_required: skip, inspection_plan: { none: { inspection_type_code: 'IQC', is_active: true } } },
-    data: { inspection_required: !skip, version_no: { increment: 1 } },
-  });
+describe('검사 기준 저장 — 품목 필수 (omf-all-around#366)', () => {
+  const targets = () => {
+    const prisma = { item: { findUnique: jest.fn().mockResolvedValue({ item_id: 40n }) } } as unknown as PrismaService;
+    const service = new InspectionPlanService(prisma, {} as NumberingService) as unknown as {
+      assertTargets(input: InspectionPlanWrite, self: number | null): Promise<void>;
+    };
+    return (input: InspectionPlanWrite, self: number | null) => service.assertTargets(input, self);
+  };
+  const required = { errors: [expect.objectContaining({ field: 'itemId', code: 'REQUIRED' })] };
 
-  it('공통 IQC 기준을 등록하면 전용 기준이 없는 품목을 맞춘다', async () => {
-    const { service, tx, itemUpdateMany } = harness();
-    tx.inspection_plan.create.mockResolvedValueOnce(common());
-    await service.create(plan({ itemId: null, defaultSkip: false }));
-
-    expect(itemUpdateMany).toHaveBeenCalledWith(syncAll(false));
-  });
-
-  it('기본 생략을 바꿔 저장하면 맞춘다', async () => {
-    const { service, tx, itemUpdateMany } = harness();
-    tx.inspection_plan.findUnique.mockResolvedValueOnce(common({ default_skip: false })).mockResolvedValueOnce(common({ default_skip: true }));
-    await service.update(1, 1, plan({ itemId: null, defaultSkip: true }));
-
-    expect(itemUpdateMany).toHaveBeenCalledWith(syncAll(true));
+  it.each<[string, Partial<InspectionPlanWrite>, number | null]>([
+    ['등록에서 품목을 비우면', { itemId: null }, null],
+    ['등록에서 품목을 보내지 않으면', { itemId: undefined }, null],
+    ['수정에서 품목을 null 로 보내면', { itemId: null }, 1],
+  ])('%s 400 REQUIRED 다', async (_label, overrides, self) => {
+    await expect(targets()(plan(overrides), self)).rejects.toMatchObject(required);
   });
 
-  it('기본 생략이 그대로인 저장(이름만 고침)은 품목을 건드리지 않는다', async () => {
-    const { service, tx, itemUpdateMany } = harness();
-    tx.inspection_plan.findUnique.mockResolvedValueOnce(common()).mockResolvedValueOnce(common());
-    await service.update(1, 1, plan({ itemId: null, defaultSkip: false }));
-
-    expect(itemUpdateMany).not.toHaveBeenCalled();
-  });
-
-  it('공통 IQC 기준을 다시 사용하면 맞춘다', async () => {
-    const { service, tx, itemUpdateMany } = harness();
-    tx.inspection_plan.findUnique.mockResolvedValueOnce(common({ default_skip: true }));
-    await service.setActive(1, 1, true);
-
-    expect(itemUpdateMany).toHaveBeenCalledWith(syncAll(true));
-  });
-
-  it.each<[string, Record<string, unknown>]>([
-    ['공통 PQC 기준', { inspection_type_code: 'PQC' }],
-    ['공통 OQC 기준', { inspection_type_code: 'OQC' }],
-    ['사용 중지된 공통 IQC 기준', { is_active: false }],
-  ])('%s 은 품목을 건드리지 않는다', async (_label, overrides) => {
-    const { service, tx, itemUpdateMany } = harness();
-    tx.inspection_plan.create.mockResolvedValueOnce(common(overrides));
-    await service.create(plan({ itemId: null, inspectionTypeCode: String(overrides.inspection_type_code ?? 'IQC') }));
-
-    expect(itemUpdateMany).not.toHaveBeenCalled();
+  it('수정에서 품목을 보내지 않으면 저장된 값을 두고 통과한다 · 품목이 있으면 통과한다', async () => {
+    await expect(targets()(plan({ itemId: undefined }), 1)).resolves.toBeUndefined();
+    await expect(targets()(plan({}), null)).resolves.toBeUndefined();
   });
 });
 
@@ -188,7 +157,7 @@ describe('검사 기준 저장 — PQC 기준은 공정 없이 제품에', () =>
   });
 });
 
-/** 같은 제품(또는 전 품목 공통)에 사용 중인 PQC 기준은 하나다 — 둘이면 의뢰가 기준을 고르지 못한다. */
+/** 같은 제품에 사용 중인 PQC 기준은 하나다 — 둘이면 의뢰가 기준을 고르지 못한다. */
 describe('검사 기준 저장 — 제품당 PQC 기준 하나', () => {
   const guard = (other: { inspection_plan_code: string } | null, stored: { item_id: bigint | null } | null = null) => {
     const findFirst = jest.fn().mockResolvedValue(other);

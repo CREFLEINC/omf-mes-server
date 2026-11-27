@@ -283,24 +283,29 @@ describe('LotRegistryService', () => {
     });
   });
 
-  /* omf-all-around#101 결정 A — 기준이 정해지지 않아도 LOT·라벨은 막지 않고, 기준 칸이 빈 의뢰를 세운다. */
-  it.each([
-    ['없으면', []],
-    ['복수면(임의로 고르지 않는다)', [{ inspection_plan_version_id: 55n, inspection_plan_id: 5n, plan_version: 1 }, { inspection_plan_version_id: 56n, inspection_plan_id: 6n, plan_version: 1 }]],
-  ])('LOT 코어 — 유효한 IQC 계획이 %s LOT 과 기준 빈 의뢰를 만든다', async (_label, iqcPlans) => {
+  const incomingIqc = { requestNo: 'IRQ-20260911-0001', effectiveDate: '2026-09-11', requestedAt: '2026-09-11T01:00:00.000Z' };
+
+  /* omf-all-around#366 — 품목 전용 기준이 없으면 검사 대기·보류 없이 정상으로 세우고, 의뢰는 기준 빈 생략 기록만 남긴다. */
+  it('LOT 코어 — 유효한 IQC 계획이 없으면 LOT 은 정상 · 보류 없음 · 기준 빈 의뢰는 SKIPPED(DEFAULT)', async () => {
+    const { tx, calls, args } = fake({ line: { lot_id: null }, iqcPlans: [] });
+
+    await service.createWithin(tx, input({ incomingIqc }), 7);
+
+    expect(args[calls.indexOf('lot.create')].data).toMatchObject({ status_code: 'NORMAL' });
+    expect(calls).not.toContain('lot_hold.create');
+    expect(args[calls.indexOf('iqc.request.create')].data).toMatchObject({
+      inspection_plan_version_id: null,
+      status_code: 'SKIPPED',
+      skip_basis_code: 'DEFAULT',
+    });
+  });
+
+  /* omf-all-around#101 결정 A — 기준이 둘 이상이면 임의로 고르지 않고, LOT·라벨은 막지 않고 기준 칸이 빈 의뢰를 세운다. */
+  it('LOT 코어 — 유효한 IQC 계획이 복수면 LOT 과 기준 빈 의뢰(REQUESTED)를 만든다', async () => {
+    const iqcPlans = [{ inspection_plan_version_id: 55n, inspection_plan_id: 5n, plan_version: 1 }, { inspection_plan_version_id: 56n, inspection_plan_id: 6n, plan_version: 1 }];
     const { tx, calls, args } = fake({ line: { lot_id: null }, iqcPlans });
 
-    await service.createWithin(
-      tx,
-      input({
-        incomingIqc: {
-          requestNo: 'IRQ-20260911-0001',
-          effectiveDate: '2026-09-11',
-          requestedAt: '2026-09-11T01:00:00.000Z',
-        },
-      }),
-      7,
-    );
+    await service.createWithin(tx, input({ incomingIqc }), 7);
 
     expect(calls).toContain('lot.create');
     expect(args[calls.indexOf('iqc.request.create')].data).toMatchObject({

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { NumberingService } from '../../core/numbering/numbering.service';
-import { planDefaultSkip, resolveInspectionPlanVersion } from '../../core/quality/inspection-plan-version';
+import { planDefaultSkip, resolveInspectionPlanVersionOrNone } from '../../core/quality/inspection-plan-version';
 
 /** 출하검사. 의뢰·결과·판정이 모두 이 문자열로 묶인다(`shipment-oqc.ts` 와 같은 값). */
 const OQC = 'OQC';
@@ -27,8 +27,9 @@ export interface PreparedOqcRequest {
   itemId: number;
   uomId: number;
   targetQty: number;
-  planVersionId: bigint;
-  /** 고른 기준이 「기본 생략」 — 의뢰를 생략(SKIPPED · 근거 DEFAULT)으로 세운다. 관문이 합격으로 읽는다(omf-all-around#212). */
+  /** 품목 전용 기준이 없으면 `null` — 그 의뢰는 생략이다(omf-all-around#366). */
+  planVersionId: bigint | null;
+  /** 고른 기준이 「기본 생략」이거나 기준이 없다 — 의뢰를 생략(SKIPPED · 근거 DEFAULT)으로 세운다. 관문이 합격으로 읽는다(omf-all-around#212 · #366). */
   defaultSkip: boolean;
 }
 
@@ -69,9 +70,8 @@ export function groupOqcLines(lines: OqcRequestLine[]): Map<number, { uomId: num
  * ⛔ 기준 버전 조회도 밖이다 — 없거나 둘이면 **400 으로 편성을 막는** 검사라, 트랜잭션을
  * 열어 놓고 던지면 롤백할 것이 없는데도 커넥션을 잡고 있게 된다.
  *
- * ⚠ 기준이 없으면 던지는 쪽을 골랐다. 라인의 `shipping_inspection_required` 가 이미
- * 「검사 불요」를 뜻하므로, 필수라고 해 놓고 기준이 없는 것은 마스터 결손이다. 조용히
- * 넘기면 그 출하는 결과가 영영 안 생겨 판정이 `PENDING` 에 갇힌다.
+ * ⭐ 품목 전용 기준이 없으면 의뢰를 생략(SKIPPED · DEFAULT)으로 세운다(omf-all-around#366) — 생략 기록이 있어야
+ * 출하 관문이 통과로 읽는다. 기준이 둘 이상이면 종전처럼 400 으로 막는다(어느 기준인지 모른다).
  */
 export async function prepareOqcRequests(
   prisma: Prisma.TransactionClient,
@@ -84,9 +84,11 @@ export async function prepareOqcRequests(
 
   const items = [...byItem.entries()].sort(([a], [b]) => a - b);
   const planVersions = await Promise.all(
-    items.map(([itemId]) => resolveInspectionPlanVersion(prisma, OQC, itemId, requestedShipDate)),
+    items.map(([itemId]) => resolveInspectionPlanVersionOrNone(prisma, OQC, itemId, requestedShipDate)),
   );
-  const defaultSkips = await Promise.all(planVersions.map((versionId) => planDefaultSkip(prisma, versionId)));
+  const defaultSkips = await Promise.all(
+    planVersions.map((versionId) => (versionId === null ? true : planDefaultSkip(prisma, versionId))),
+  );
   const numbers = await numbering.nextMany(
     INSPECTION_REQUEST_DOCUMENT_TYPE,
     null,

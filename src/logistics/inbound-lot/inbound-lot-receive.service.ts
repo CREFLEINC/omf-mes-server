@@ -11,7 +11,7 @@ import {
   registerMaterialLotsWithin,
 } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
-import { findInspectionPlanVersion, planDefaultSkip } from '../../core/quality/inspection-plan-version';
+import { findInspectionPlanVersion, inspectionPlanMissing, planDefaultSkip } from '../../core/quality/inspection-plan-version';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertDay, assertInstant, isDuplicateLotNo } from '../../trace/lot/lot-rules';
@@ -295,11 +295,15 @@ export class InboundLotReceiveService {
   }
 }
 
-/** 품목이 수입검사 대상이고 그날의 IQC 기준이 「기본 생략」이 아니면 검사가 필요하다(입하 LOT 이 생길 때 한 번 정한다). */
+/**
+ * 품목이 수입검사 대상이고 그날의 IQC 기준이 「기본 생략」이 아니면 검사가 필요하다(입하 LOT 이 생길 때 한 번 정한다).
+ * 품목 전용 기준이 없으면 검사하지 않는다 — 마감이 생략 기록을 남긴다(omf-all-around#366).
+ */
 async function inspectionNeeded(tx: Prisma.TransactionClient, itemId: bigint, required: boolean, businessDate: string): Promise<boolean> {
   if (!required) return false;
   const version = await findInspectionPlanVersion(tx, 'IQC', Number(itemId), businessDate);
-  return version === null || !(await planDefaultSkip(tx, version));
+  if (version === null) return !(await inspectionPlanMissing(tx, 'IQC', Number(itemId), businessDate));
+  return !(await planDefaultSkip(tx, version));
 }
 
 /** 입하 중이 된 날(`open_since_date`)이 공장 현지 오늘보다 앞이면 날짜 자동 마감 대상이다(R-21). */
