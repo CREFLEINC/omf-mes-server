@@ -1897,7 +1897,7 @@
      "app"
     ],
     "summary": "로그인",
-    "description": "⛔ 실패해도 아이디와 비밀번호 중 무엇이 틀렸는지 말하지 않는다 — 계정이 있는지가 새어 나간다. 남은 시도 횟수는 알린다(잠긴 뒤에야 알리지 않기 위해서다). 잠긴 계정은 스스로 풀 수 없다 — 관리자가 푼다. 근거: W-CO-01 §5-1·§5-2",
+    "description": "⛔ 실패해도 아이디와 비밀번호 중 무엇이 틀렸는지 말하지 않는다 — 계정이 있는지가 새어 나간다. 근거: W-CO-01 §5-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1945,16 +1945,6 @@
      },
      "400": {
       "description": "검증 실패. 고쳐야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "423": {
-      "description": "실패가 쌓여 잠겼다 — 스스로 풀 수 없다",
       "content": {
        "application/json": {
         "schema": {
@@ -2040,7 +2030,7 @@
      "app"
     ],
     "summary": "내 비밀번호 변경",
-    "description": "⛔ 현재 비밀번호를 틀려도 계정을 잠그지 않는다 — 로그인과 달리 이미 인증된 본인이기 때문이다. ⛔ 바꾼 뒤 다시 로그인시키지 않는다 — 작업 중일 수 있다. 근거: W-CO-10 §5-2·§5-3",
+    "description": "⛔ 바꾼 뒤 다시 로그인시키지 않는다 — 작업 중일 수 있다. 근거: W-CO-10 §5-3",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -7233,7 +7223,7 @@
       "description": "평문은 저장하지도 기록하지도 않는다"
      }
     },
-    "x-internal-note": "서버 구현 기준: 자격증명은 app.user_credential의 password_hash·failed_attempt_count·last_login_at으로 관리한다."
+    "x-internal-note": "서버 구현 기준: 자격증명은 app.user_credential의 password_hash·last_login_at으로 관리한다."
    },
    "LoginFailure": {
     "type": "object",
@@ -7245,11 +7235,6 @@
      "message": {
       "type": "string",
       "example": "아이디 또는 비밀번호가 맞지 않습니다"
-     },
-     "remainingAttempts": {
-      "type": "integer",
-      "example": 3,
-      "description": "남은 시도 횟수. 잠긴 뒤에야 알리지 않는다. ⚠ 없는 계정에는 오지 않는다 — 그래서 계정 존재가 드러나지만 「잠길 줄 모르는 것」보다 낫다고 판단했다"
      }
     }
    },
@@ -7341,7 +7326,7 @@
      "currentPassword",
      "newPassword"
     ],
-    "description": "현재 비밀번호를 틀려도 계정을 잠그지 않는다 — 이미 인증된 본인이다. 바꾼 뒤 다시 로그인시키지도 않는다. 근거: W-CO-10 §5-2·§5-3",
+    "description": "바꾼 뒤 다시 로그인시키지 않는다. 근거: W-CO-10 §5-3",
     "properties": {
      "currentPassword": {
       "type": "string",

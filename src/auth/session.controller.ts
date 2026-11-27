@@ -49,26 +49,10 @@ export class SessionController {
   ): Promise<Session | LoginFailure> {
     const result = await this.credentials.verify(body.loginId, body.password);
 
-    if (result.outcome === 'locked') {
-      // 423 — 「실패가 쌓여 잠겼다. 스스로 풀 수 없다」(계약).
-      throw new ContractException(HttpStatus.LOCKED, [
-        {
-          scope: 'screen',
-          code: ERROR_CODE.STATE_LOCKED,
-          message: '계정이 잠겼습니다. 관리자에게 문의하세요.',
-        },
-      ]);
-    }
-
     if (result.outcome === 'invalid') {
       // ⛔ 401 은 계약 LoginFailure 형태다 — ErrorResponse 봉투가 아니다.
       // 아이디·비밀번호 중 무엇이 틀렸는지 말하지 않는다.
-      const failure: LoginFailure = {
-        message: '아이디 또는 비밀번호가 맞지 않습니다',
-        ...(result.remainingAttempts === undefined
-          ? {}
-          : { remainingAttempts: result.remainingAttempts }),
-      };
+      const failure: LoginFailure = { message: '아이디 또는 비밀번호가 맞지 않습니다' };
       // ⛔ 예외로 던지지 않는다. 전역 필터가 HttpException 을 ErrorResponse 봉투로 바꾸는데,
       // 계약은 이 401 을 «LoginFailure» 로 정의했다 — 봉투를 씌우면 계약과 어긋난다.
       response.status(HttpStatus.UNAUTHORIZED);

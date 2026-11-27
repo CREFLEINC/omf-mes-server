@@ -124,10 +124,6 @@ export class UserAssignmentService {
    *
    * ⛔ 자격증명 행이 «없을 수» 있다 — `POST /app/users` 는 비밀번호를 받지 않으므로 갓
    * 만든 계정은 해시가 없다. 그래서 upsert 다: 초기화가 첫 비밀번호를 세우는 경로이기도 하다.
-   *
-   * ⛔ 실패 횟수와 잠금을 함께 푼다. 계약이 「잠긴 계정은 스스로 풀 수 없다. 관리자가
-   * 푼다」라고 적었고, 관리자가 푸는 경로가 이것뿐이다 — 여기서 안 풀면 잠긴 계정은
-   * 새 비밀번호를 받고도 못 들어온다.
    */
   async resetPassword(appUserId: number, actorId?: number): Promise<PasswordReset> {
     await this.assertUser(appUserId);
@@ -141,8 +137,6 @@ export class UserAssignmentService {
       // 임시 비밀번호이므로 바꾸게 표시해 둔다. ⚠ 지금 이 값을 읽어 «강제»하는 화면은
       // 아직 없다(`POST /app/users/me:change-password` 미구현) — 그때 이 표시가 쓰인다.
       must_change_password: true,
-      failed_attempt_count: 0,
-      locked_until: null,
       ...(actorId === undefined ? {} : { updated_by: actorId }),
     };
     await this.prisma.user_credential.upsert({
