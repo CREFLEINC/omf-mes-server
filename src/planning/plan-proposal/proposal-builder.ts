@@ -267,7 +267,7 @@ function workOrdersOf(
       moldId: resource?.moldId ?? null,
       defaultWipLocationId: line?.default_wip_location_id ?? null,
       defaultFgLocationId: fgPick.locationId,
-      defaultScrapLocationId: line?.default_scrap_location_id ?? null,
+      defaultScrapLocationId: null,
     };
     const equipmentIds = resource?.equipmentId == null ? [] : [resource.equipmentId];
     const moldIds = resource?.moldId == null ? [] : [resource.moldId];
@@ -310,7 +310,7 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
   const locationIds = new Set([
     ...[...lineIds].flatMap((id) => {
       const line = facts.lines.get(id);
-      return line === undefined ? [] : [line.default_wip_location_id, line.default_fg_location_id, line.default_scrap_location_id];
+      return line === undefined ? [] : [line.default_wip_location_id, line.default_fg_location_id];
     }),
     fg.kind === 'ERP_STORAGE_LOCATION' ? fg.location.id : null,
   ].filter((id) => id !== null));

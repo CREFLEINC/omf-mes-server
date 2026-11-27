@@ -13,7 +13,6 @@ type LocationBody = {
 const LOCATION_COLUMNS = [
   ['defaultWipLocationId', 'default_wip_location_id'],
   ['defaultFgLocationId', 'default_fg_location_id'],
-  ['defaultScrapLocationId', 'default_scrap_location_id'],
 ] as const;
 
 /**
@@ -29,7 +28,6 @@ export async function assertLocationsAllowed(tx: Prisma.TransactionClient, workO
     select: {
       default_wip_location_id: true,
       default_fg_location_id: true,
-      default_scrap_location_id: true,
       production_plan: { select: { production_order: { select: { plant_id: true, erp_storage_location_code: true } } } },
     },
   });
