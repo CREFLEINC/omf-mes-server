@@ -11,6 +11,7 @@ import { AutoPlanService } from './auto-plan.service';
 import { progressSql, progressStatusCode, progressWhere } from './production-order-progress';
 import { CONFIRMED_PLAN_QTY_SQL, DRAFT_PLAN_QTY_SQL, PLAN_STATUS_SQL, PlanQuantities, planQuantities } from '../production-plan/plan-quantity';
 import { plantScopeFor, scopeSql, scopeWhere, scopedPlantIds } from './production-order-scope';
+import { ProductionOrderSort, assertSort, orderByOf, orderSqlOf } from './production-order-sort';
 import {
   AUTO_PLAN_DONE_SQL,
   AUTO_PLAN_UNTOUCHED_SQL,
@@ -69,22 +70,14 @@ export interface ProductionOrderListQuery {
   itemGroupCode?: string;
   /** 계약 밖 질의(장부 P-133) — `OPEN`·`COMPLETED`. includeChildren 이면 루트에 건다. */
   progress?: string;
+  /** `plannedStartDate`·`plannedStartDate,asc`·`plannedStartDate,desc` — `production-order-sort.ts`. */
+  sort?: string;
   page?: number;
   size?: number;
 }
 export interface ProductionOrderDetailQuery {
   withLastChange?: boolean;
 }
-
-/**
- * 정렬은 계약에 축이 없다 — 서버가 고정한다(§1-2). ERP W/O 는 납기 없이 계획 시작일만 와서
- * 시작일이 먼저다(사용자 결정 2026-10-20). 시작일이 없는 테스트용 등록분(P-30)은 뒤에 납기 순으로 선다.
- */
-const ORDER_BY: Prisma.production_orderOrderByWithRelationInput[] = [
-  { planned_start_date: { sort: 'asc', nulls: 'last' } },
-  { due_date: { sort: 'asc', nulls: 'last' } },
-  { production_order_id: 'asc' },
-];
 
 @Injectable()
 export class ProductionOrderService {
@@ -99,15 +92,17 @@ export class ProductionOrderService {
     const page = pageRequest(query);
     const withLastChange = query.withLastChange === true;
     const worklistState = assertWorklistState(query.worklistState);
+    const sort = assertSort(query.sort);
     if (query.autoPlanStatus !== undefined || worklistState !== undefined || query.planStatusCode !== undefined) {
-      return this.listBySql(query, scope, sqlFilters(query.autoPlanStatus, worklistState, query.planStatusCode), page, withLastChange);
+      const extra = sqlFilters(query.autoPlanStatus, worklistState, query.planStatusCode);
+      return this.listBySql(query, scope, extra, sort, page, withLastChange);
     }
     const base: Prisma.production_orderWhereInput = { AND: [buildWhere(query), scopeWhere(scope)] };
     const where = query.unacknowledgedOnly === true ? await this.excludeAcknowledged(base) : base;
-    if (query.includeChildren === true) return this.listWithChildren(where, scope, page, withLastChange);
+    if (query.includeChildren === true) return this.listWithChildren(where, scope, sort, page, withLastChange);
 
     const [rows, total] = await Promise.all([
-      this.prisma.production_order.findMany({ where, orderBy: ORDER_BY, skip: page.skip, take: page.take }),
+      this.prisma.production_order.findMany({ where, orderBy: orderByOf(sort), skip: page.skip, take: page.take }),
       this.prisma.production_order.count({ where }),
     ]);
     return { items: await this.viewsOf(rows, withLastChange), page: { page: page.page, size: page.size, total } };
@@ -146,6 +141,7 @@ export class ProductionOrderService {
   private async listWithChildren(
     where: Prisma.production_orderWhereInput,
     scope: bigint[] | null,
+    sort: ProductionOrderSort,
     page: PageRequest,
     withLastChange: boolean,
   ): Promise<PagedResponse<ProductionOrderView>> {
@@ -154,7 +150,7 @@ export class ProductionOrderService {
       this.prisma.production_order.count({ where: rootWhere }),
       this.prisma.production_order.findMany({
         where: rootWhere,
-        orderBy: ORDER_BY,
+        orderBy: orderByOf(sort),
         skip: page.skip,
         take: page.take,
         select: { production_order_id: true },
@@ -184,6 +180,10 @@ export class ProductionOrderService {
       where: { production_order_id: { in: descendants.map((d) => d.production_order_id) }, ...scopeWhere(scope) },
       orderBy: [{ bom_level: 'asc' }, { production_order_id: 'asc' }],
     });
+    // 루트는 쪽을 고른 정렬 그대로 앞에 선다 — 하위는 그 뒤에 레벨 → id 순이다.
+    const rank = new Map(rootIds.map((id, index) => [id, index]));
+    const rankOf = (row: ProductionOrderRow): number => rank.get(row.production_order_id) ?? rootIds.length;
+    rows.sort((a, b) => rankOf(a) - rankOf(b));
     return { items: await this.viewsOf(rows, withLastChange), page: meta };
   }
 
@@ -207,6 +207,7 @@ export class ProductionOrderService {
     query: ProductionOrderListQuery,
     scope: bigint[] | null,
     extra: Prisma.Sql[],
+    sort: ProductionOrderSort,
     page: PageRequest,
     withLastChange: boolean,
   ): Promise<PagedResponse<ProductionOrderView>> {
@@ -217,7 +218,7 @@ export class ProductionOrderService {
       this.prisma.$queryRaw<{ total: number }[]>(Prisma.sql`SELECT count(*)::int AS total FROM planning.production_order o ${where}`),
       this.prisma.$queryRaw<{ production_order_id: bigint }[]>(Prisma.sql`
         SELECT o.production_order_id FROM planning.production_order o ${where}
-         ORDER BY o.planned_start_date ASC NULLS LAST, o.due_date ASC NULLS LAST, o.production_order_id ASC
+         ${orderSqlOf(sort)}
          LIMIT ${page.take} OFFSET ${page.skip}`),
     ]);
     const ids = idRows.map((r) => r.production_order_id);

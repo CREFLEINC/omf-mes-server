@@ -156,47 +156,6 @@ describe('ERP W/O 조회 (e2e)', () => {
       expect(ids).toEqual([orderMainId]);
     });
 
-    it('4. 기본 정렬은 계획 시작일 → 납기 → id 순이다 — ERP W/O 는 납기가 없다', async () => {
-      const day = (text: string): Date => new Date(`${text}T00:00:00.000Z`);
-      // 만든 순서(id 순)와 기대 순서를 일부러 어긋나게 둔다.
-      const rows: [string, Date | null, Date | null][] = [
-        ['SORT-A', day('2026-10-05'), null],
-        ['SORT-D', null, null],
-        ['SORT-C', day('2026-10-03'), day('2026-10-30')],
-        ['SORT-B', null, day('2026-10-01')],
-      ];
-      const idOf: Record<string, number> = {};
-      try {
-        for (const [suffix, plannedStartDate, dueDate] of rows) {
-          const created = await prisma.production_order.create({
-            data: {
-              production_order_no: `${PREFIX}-${suffix}`,
-              business_unit_id: mainBusinessUnitId,
-              plant_id: plantId,
-              item_id: itemId,
-              order_qty: 1,
-              uom_id: uomId,
-              planned_start_date: plannedStartDate,
-              due_date: dueDate,
-              status_code: 'RECEIVED',
-            },
-          });
-          idOf[suffix] = Number(created.production_order_id);
-        }
-
-        const response = await request(app.getHttpServer())
-          .get('/api/planning/production-orders')
-          .query({ businessUnitId: mainBusinessUnitId, q: 'SORT' })
-          .set('Cookie', cookie)
-          .expect(200);
-
-        const ids = response.body.items.map((item: { productionOrderId: number }) => item.productionOrderId);
-        expect(ids).toEqual([idOf['SORT-C'], idOf['SORT-A'], idOf['SORT-B'], idOf['SORT-D']]);
-      } finally {
-        await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: `${PREFIX}-SORT-` } } });
-      }
-    });
-
     it('계획 시작일 기간으로 걸러지고 ERP 원본 칸 넷이 실린다 — 계획 시작일은 계약 밖(장부 P-66·P-75)', async () => {
       const make = (suffix: string, start: string) =>
         prisma.production_order.create({
@@ -252,6 +211,70 @@ describe('ERP W/O 조회 (e2e)', () => {
       expect(response.body.errors).toEqual([
         expect.objectContaining({ scope: 'field', field: 'plannedStartDateFrom', code: 'INVALID' }),
       ]);
+    });
+  });
+
+  describe('목록 — 정렬(sort)', () => {
+    // 만든 순서(id 순)와 기대 순서를 일부러 어긋나게 둔다. A·E·F 는 계획 시작일이 같고 A·F 는 납기도 같다.
+    const rows: [string, string | null, string | null][] = [
+      ['A', '2026-10-05', '2026-10-20'],
+      ['D', null, null],
+      ['C', '2026-10-03', '2026-10-30'],
+      ['B', null, '2026-10-01'],
+      ['E', '2026-10-05', '2026-10-02'],
+      ['F', '2026-10-05', '2026-10-20'],
+    ];
+    const idOf: Record<string, number> = {};
+    const day = (text: string | null): Date | null => (text === null ? null : new Date(`${text}T00:00:00.000Z`));
+    const expected = (...suffixes: string[]): number[] => suffixes.map((suffix) => idOf[suffix]);
+    const idsOf = async (query: Record<string, string | boolean>): Promise<number[]> => {
+      const response = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ businessUnitId: mainBusinessUnitId, q: 'SORT', ...query })
+        .set('Cookie', cookie)
+        .expect(200);
+      return response.body.items.map((item: { productionOrderId: number }) => item.productionOrderId);
+    };
+
+    beforeAll(async () => {
+      for (const [suffix, plannedStartDate, dueDate] of rows) {
+        const created = await prisma.production_order.create({
+          data: {
+            production_order_no: `${PREFIX}-SORT-${suffix}`,
+            business_unit_id: mainBusinessUnitId,
+            plant_id: plantId,
+            item_id: itemId,
+            order_qty: 1,
+            uom_id: uomId,
+            planned_start_date: day(plannedStartDate),
+            due_date: day(dueDate),
+            status_code: 'RECEIVED',
+          },
+        });
+        idOf[suffix] = Number(created.production_order_id);
+      }
+    });
+
+    afterAll(async () => {
+      await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: `${PREFIX}-SORT-` } } });
+    });
+
+    it('4. 기본 정렬은 계획 시작일 → 납기 → id 순이다 — ERP W/O 는 납기가 없다', async () => {
+      expect(await idsOf({})).toEqual(expected('C', 'E', 'A', 'F', 'B', 'D'));
+      expect(await idsOf({ sort: 'plannedStartDate,asc' })).toEqual(expected('C', 'E', 'A', 'F', 'B', 'D'));
+    });
+
+    it('sort=plannedStartDate,desc 는 계획 시작일 최신순이다 — 같은 날은 납기 → id, 시작일 없는 건은 맨 뒤', async () => {
+      expect(await idsOf({ sort: 'plannedStartDate,desc' })).toEqual(expected('E', 'A', 'F', 'C', 'B', 'D'));
+    });
+
+    it('계획 상태 조건(SQL 경로)과 하위 펼침에서도 같은 순서다', async () => {
+      for (const sort of ['plannedStartDate,asc', 'plannedStartDate,desc']) {
+        const plain = await idsOf({ sort });
+        expect(await idsOf({ sort, planStatusCode: 'UNPLANNED' })).toEqual(plain);
+        expect(await idsOf({ sort, includeChildren: true })).toEqual(plain);
+        expect(await idsOf({ sort, includeChildren: true, planStatusCode: 'UNPLANNED' })).toEqual(plain);
+      }
     });
   });
 
