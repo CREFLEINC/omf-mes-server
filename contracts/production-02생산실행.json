@@ -2201,7 +2201,7 @@
      "production"
     ],
     "summary": "자재 투입 등록",
-    "description": "오투입 판정이 서버에서 일어난다 — 화면만으로 막지 않는다. 한 호출이 투입 한 건이다 — 스캔한 자재가 여럿이면 건마다 부른다. ⭐ 자재LOT → 생산LOT 계보가 시작되는 지점이다 — 서버가 계보 관계를 이 등록과 한 트랜잭션으로 만든다(공유계약 B-8). 화면은 추적 정확도·배분 방법을 보내지 않는다 — 서버가 투입 형태로 정한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: P-02-03 §5-1·5-3·§5-4 · 공유계약 F-1",
+    "description": "오투입 판정이 서버에서 일어난다 — 화면만으로 막지 않는다. 한 호출이 투입 한 건이다 — 스캔한 자재가 여럿이면 건마다 부른다. ⭐ 자재LOT → 생산LOT 계보가 시작되는 지점이다 — 서버가 계보 관계를 이 등록과 한 트랜잭션으로 만든다(공유계약 B-8). 화면은 추적 정확도·배분 방법을 보내지 않는다 — 서버가 투입 형태로 정한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: P-02-03 §5-1·5-3·§5-4 · 공유계약 F-1 ⭐ 공정 반제품(LOT 유형 WIP · 피처 016)은 BOM 대신 세 가지를 본다 — ① LOT 품목 = 투입 W/O 품목(아니면 400 INVALID 「다른 품목의 반제품입니다.」) ② 반제품을 만든 W/O 의 공정 마스터 = 투입 W/O 의 Routing 에서 투입 공정 바로 앞(순번이 작은 것 중 가장 큰) 공정의 공정 마스터 — 다른 Rev·다른 생산계획의 같은 앞 공정 반제품도 받고, 첫 공정 W/O 는 반제품을 받지 않는다(아니면 400 INVALID 「이 W/O 의 앞 공정 반제품이 아닙니다.」) ③ inputQty ≤ 남은 투입 가능 수량(Lot.wipRemainingQty = 실적 배분 합 − 투입 합) — LOT 을 잠그고 다시 세므로 동시 투입도 하나만 통과한다(넘으면 409 WIP_QTY_EXCEEDED). 반제품 투입은 BOM 줄이 없어 bomComponentId 를 저장하지 않는다 — 응답에서 그 키가 빠진다(빈 선택 칸 규칙). 상태(NORMAL)·작업자·멱등·계보는 자재 투입과 같다. 근거: 피처 016 R-3 · omf-all-around#359",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2270,11 +2270,18 @@
       }
      },
      "409": {
-      "description": "충돌",
+      "description": "충돌(ProductionConflictResponse) 또는 반제품 남은 수량 초과(WipQtyExceededResponse — errors[0].code=WIP_QTY_EXCEEDED, meta.remainingQty·meta.producedQty)",
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ProductionConflictResponse"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ProductionConflictResponse"
+          },
+          {
+           "$ref": "#/components/schemas/WipQtyExceededResponse"
+          }
+         ]
         }
        }
       }
@@ -13462,6 +13469,42 @@
      "startedAt",
      "statusCode"
     ]
+   },
+   "WipQtyExceededResponse": {
+    "type": "object",
+    "required": [
+     "errors",
+     "meta"
+    ],
+    "properties": {
+     "errors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErrorItem"
+      },
+      "description": "code=WIP_QTY_EXCEEDED · field=inputQty · 「남은 수량을 넘습니다 (남은 {n})」"
+     },
+     "meta": {
+      "type": "object",
+      "required": [
+       "remainingQty",
+       "producedQty"
+      ],
+      "properties": {
+       "remainingQty": {
+        "type": "number",
+        "description": "잠금 안에서 다시 센 남은 투입 가능 수량(0 이상)",
+        "example": 40
+       },
+       "producedQty": {
+        "type": "number",
+        "description": "그 반제품 LOT 의 실적 배분 합 — 이미 투입한 양 = producedQty − remainingQty",
+        "example": 100
+       }
+      }
+     }
+    },
+    "description": "반제품(LOT 유형 WIP) 투입이 남은 투입 가능 수량을 넘었다(409). 화면은 「남은 수량(n)보다 많이 넣었습니다. 실적 p 중 c 은 이미 투입했습니다.」로 알린다. 근거: 피처 016 FR-011 · omf-all-around#359"
    },
    "ProductionConflictResponse": {
     "type": "object",

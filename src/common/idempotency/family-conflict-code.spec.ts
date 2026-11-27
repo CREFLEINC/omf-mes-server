@@ -22,6 +22,8 @@ const MARKER = 'FAMILY_CONFLICT_CODE';
 interface ConflictSchema {
   required: string[];
   codeEnum: string[];
+  /** `oneOf` 의 한 갈래가 계열 봉투인가 — 업무 거절 봉투가 따로 있는 자리(예: 반제품 남은 수량 초과 · 피처 016). */
+  familyMember: boolean;
 }
 
 type Json = Record<string, unknown>;
@@ -56,10 +58,14 @@ function conflictSchemas(): Map<string, ConflictSchema> {
         let schema = (content?.schema ?? {}) as Json;
         if (typeof schema.$ref === 'string') schema = resolve(document, schema.$ref);
 
+        const members = Array.isArray(schema.oneOf)
+          ? (schema.oneOf as Json[]).map((member) => (typeof member.$ref === 'string' ? resolve(document, member.$ref) : member))
+          : [];
         const code = ((schema.properties ?? {}) as Json).code as Json | undefined;
         found.set(`${method.toUpperCase()} ${path}`, {
           required: (schema.required ?? []) as string[],
           codeEnum: ((code?.enum ?? []) as string[]) ?? [],
+          familyMember: members.some((member) => ((member.required ?? []) as string[]).includes('code')),
         });
       }
     }
@@ -113,8 +119,9 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
   it('⭐ 계열 봉투가 «아닌데» 넘긴 호출부가 없다 — 「언제나 싣기」의 반대 방향', () => {
     // `ConflictResponse`(app·equipment·logistics·mdm)에는 `code` 프로퍼티 자체가 없다.
     // 한 컨트롤러 파일 «안»에서도 갈린다 — `work-order` 의 자원계획 2건 · `production-order:resync`.
+    // `oneOf` 로 계열 봉투와 업무 거절 봉투를 함께 둔 자리는 넘겨도 된다 — 멱등 충돌은 계열 봉투로 나간다(자재 투입 · 피처 016).
     const extra = sites
-      .filter((site) => site.passes && !isFamily(site.key))
+      .filter((site) => site.passes && !isFamily(site.key) && schemas.get(site.key)?.familyMember !== true)
       .map((site) => `${site.source} — ${site.key}`);
 
     expect(extra).toEqual([]);
