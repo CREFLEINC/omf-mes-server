@@ -5,6 +5,7 @@ import { ERROR_CODE, field, one } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { VOIDED_LIFECYCLE, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
+import { isLastOperation } from '../../core/work-order';
 import { postReceipt } from '../../logistics/goods-receipt/receipt-posting';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NUMBERING_DOCUMENT, ProductionResultService } from '../../production/production-result/production-result.service';
@@ -26,6 +27,7 @@ const WORK_ORDER_SELECT = {
   uom_id: true,
   default_fg_location_id: true,
   item: { select: { item_code: true } },
+  routing_operation: { select: { routing_id: true, operation_seq: true } },
   production_plan: { select: { bom_id: true, production_order: { select: { plant_id: true } } } },
   location_work_order_default_fg_location_idTolocation: { select: { warehouse_id: true } },
 } satisfies Prisma.work_orderSelect;
@@ -104,7 +106,11 @@ export class TrackingProduction {
     };
   }
 
-  /** 실적 → 시리얼 → 제품 입고(W/O 완제품 위치 · 정상·가용 · 적치 지시 없음) → 자재 차감 → 전송이 만든 문서. */
+  /**
+   * 실적 → 시리얼 → 제품 입고(W/O 완제품 위치 · 정상·가용 · 적치 지시 없음) → 자재 차감 → 전송이 만든 문서.
+   * ⭐ 반제품 공정(Routing 의 마지막이 아닌 공정) W/O 는 제품 입고를 건너뛴다 — 반제품 LOT 은 제품 입고하지 않는다(피처 016 R-9).
+   *    다음 공정 자동 투입은 하지 않는다(이 흐름은 W/O 단위 실적만 보낸다) — 반제품 계보가 비는 것은 알려진 것이다.
+   */
   async produceWithin(tx: Tx, production: Production): Promise<void> {
     const { workOrder, trackingTransmissionId: transmission } = production;
     const lotId = await productLot(tx, workOrder.work_order_id);
@@ -116,7 +122,7 @@ export class TrackingProduction {
     await assertLotNormal(tx, lotId);
     if (production.serialNos.length > 0) await registerSerialNumbers(tx, { lotId, itemId: workOrder.item_id, serialNos: production.serialNos });
     const location = workOrder.location_work_order_default_fg_location_idTolocation as { warehouse_id: bigint };
-    const receiptId = await postReceipt(tx, this.posting, {
+    const receiptId = !(await isLastOperation(tx, workOrder.routing_operation)) ? null : await postReceipt(tx, this.posting, {
       receiptTypeCode: 'PRODUCT', plantId: Number(production.plantId), warehouseId: Number(location.warehouse_id),
       receiptDatetime: production.occurredAt.toISOString(), sourceDocumentTypeCode: 'PRODUCTION_RESULT', sourceDocumentId: result.productionResultId,
       businessDate: production.businessDate,
@@ -133,7 +139,7 @@ export class TrackingProduction {
     });
     await tx.tracking_transmission_document.createMany({ data: [
       { tracking_transmission_id: transmission, document_type_code: 'PRODUCTION_RESULT', document_id: BigInt(result.productionResultId) },
-      { tracking_transmission_id: transmission, document_type_code: 'GOODS_RECEIPT', document_id: receiptId },
+      ...(receiptId === null ? [] : [{ tracking_transmission_id: transmission, document_type_code: 'GOODS_RECEIPT', document_id: receiptId }]),
       ...(issueId === null ? [] : [{ tracking_transmission_id: transmission, document_type_code: 'GOODS_ISSUE', document_id: issueId }]),
     ] });
   }

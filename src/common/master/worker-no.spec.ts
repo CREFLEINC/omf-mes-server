@@ -65,7 +65,6 @@ const EXISTENCE_CHECKED = [
   'logistics/stock-transfer/transfer-arrive.service.ts',
   'maintenance/downtime/downtime-close.service.ts',
   'maintenance/downtime/downtime-create.service.ts',
-  'production/operation-handover/operation-handover.service.ts',
   'production/precheck-decision/precheck-decision.service.ts',
   'production/repair-execution/repair-execution-return.service.ts',
   'production/repair-execution/repair-execution.service.ts',

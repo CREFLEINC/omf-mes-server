@@ -2,7 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { LOT_SPLIT_SOURCE } from '../../core/lot';
+import { LOT_SPLIT_SOURCE, WIP_LOT_TYPE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MATERIAL_RECEIPT, erpInboundLines } from './erp-receipt';
 import { inboundLineOfLot, receivableQtyOf, receivingInboundLotOf } from './lot-receivable';
@@ -19,6 +19,7 @@ const IQC_PASSED_LOT_STATUS = 'NORMAL';
 const DEFECTIVE_LOT_STATUS = 'DEFECTIVE';
 
 export interface InboundGateLot {
+  lot_type_code: string;
   status_code: string;
   source_type_code: string;
   source_id: bigint;
@@ -51,7 +52,7 @@ export function lotTotals(lines: GoodsReceiptCreate['lines']): Map<number, Prism
 export async function assertInboundLotsWithin(tx: Prisma.TransactionClient, input: GoodsReceiptCreate): Promise<void> {
   const lotIds = [...new Set(input.lines.map((line) => BigInt(line.lotId)))];
   const lots = await tx.$queryRaw<(InboundGateLot & { lot_id: bigint })[]>`
-    SELECT lot_id, status_code, source_type_code, source_id
+    SELECT lot_id, lot_type_code, status_code, source_type_code, source_id
       FROM trace.lot
      WHERE lot_id IN (${Prisma.join(lotIds.map((id) => Prisma.sql`${id}::bigint`))})
      ORDER BY lot_id
@@ -96,7 +97,10 @@ export async function assertNotPurchaseInbound(db: Pick<PrismaService, 'lot'>, i
   if (errors.length > 0) throw new ContractException(HttpStatus.CONFLICT, errors);
 }
 
-/** 입하 LOT 의 문 셋 — 입고 상한 · 불량은 불량창고만 · IQC 합격 전 금지. 입하와 무관한 LOT 은 지나간다. */
+/**
+ * 입하 LOT 의 문 셋 — 입고 상한 · 불량은 불량창고만 · IQC 합격 전 금지. 입하와 무관한 LOT 은 지나간다.
+ * ⛔ 그 앞에 반제품 — 공정 반제품 LOT 은 다음 공정에 투입하는 것이지 입고하지 않는다(피처 016 FR-004).
+ */
 export async function inboundGate(
   db: Prisma.TransactionClient,
   warehouseId: number,
@@ -106,6 +110,10 @@ export async function inboundGate(
   lotTotal: Prisma.Decimal,
   errors: ErrorItem[],
 ): Promise<void> {
+  if (lot.lot_type_code === WIP_LOT_TYPE) {
+    errors.push(field(`${at}.lotId`, ERROR_CODE.INVALID, '반제품 LOT 은 제품 입고할 수 없습니다.'));
+    return;
+  }
   // 입하에서 온 LOT — 선별로 떼어 낸 자식(`LOT_SPLIT`)은 조상의 입하 라인을 따른다(장부 P-56).
   const inboundLineId =
     lot.source_type_code === INBOUND_LOT_SOURCE

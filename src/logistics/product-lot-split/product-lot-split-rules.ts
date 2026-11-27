@@ -1,13 +1,15 @@
 import { Prisma } from '@prisma/client';
 
 import { PUTAWAY_STAGING, WAREHOUSE_WHOLE } from '../../common/master/system-location';
-import { PRODUCTION_LOT_TYPE } from '../../core/lot';
+import { PRODUCTION_LOT_TYPE, WIP_LOT_TYPE } from '../../core/lot';
 
 type Db = Pick<Prisma.TransactionClient, '$queryRaw'>;
 
 /** 분리 거절 사유 — 409 `ShipmentConflictResponse.code` 와 스캔 조회 `blocked.code`(research R-8). */
 export const SPLIT_BLOCK = {
   NOT_PRODUCTION_LOT: 'NOT_PRODUCTION_LOT',
+  /** 공정 반제품 LOT — 생산 LOT 이 아니지만 사유를 따로 알린다(피처 016). */
+  SEMI_FINISHED_LOT: 'SEMI_FINISHED_LOT',
   SPLIT_SERIAL_LOT: 'SPLIT_SERIAL_LOT',
   INVALID_STATE: 'INVALID_STATE',
   LOT_SPLIT_UNCONFIRMED: 'LOT_SPLIT_UNCONFIRMED',
@@ -97,6 +99,7 @@ export async function loadSplitLocations(db: Db, plantId: bigint, lotId: bigint)
 
 /** LOT 단위 막힘(R-8 ①~⑤) — 첫 번째 사유 하나. */
 export function lotBlocked(lot: SplitLotFacts): SplitBlock | null {
+  if (lot.lot_type_code === WIP_LOT_TYPE) return { code: SPLIT_BLOCK.SEMI_FINISHED_LOT, detail: lot.lot_type_code };
   if (lot.lot_type_code !== PRODUCTION_LOT_TYPE) return { code: SPLIT_BLOCK.NOT_PRODUCTION_LOT, detail: lot.lot_type_code };
   if (lot.serial_control_type_code !== 'NONE') return { code: SPLIT_BLOCK.SPLIT_SERIAL_LOT, detail: lot.serial_control_type_code };
   if (lot.status_code === 'DEFECTIVE' || lot.status_code === 'SCRAPPED') return { code: SPLIT_BLOCK.INVALID_STATE, detail: lot.status_code };

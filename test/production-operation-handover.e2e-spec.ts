@@ -60,15 +60,12 @@ describe('공정 인계 3건 (e2e)', () => {
 
   let woAId: number;
   let woBId: number;
-  /** 등록 전용 — woC 는 기본 WIP 위치가 locA · woD 는 locB · woE 는 **NULL**(400 갈래). */
+  /** 등록 전용 — 등록은 닫혔다(409 · 피처 016). 본문을 채우는 W/O 쌍이다. */
   let woCId: number;
   let woDId: number;
-  let woEId: number;
   let lotAId: number;
   let lotBId: number;
   let uomId: number;
-  let locAId: number;
-  let locBId: number;
   /** ho1·ho2 동률(T1) · ho3 다른 시각(T2) · ho4 반대 방향(from↔to) · ho5 다른 statusCode. */
   let ho1Id: number;
   let ho2Id: number;
@@ -293,229 +290,31 @@ describe('공정 인계 3건 (e2e)', () => {
       }
     });
 
-    it('⭐ 픽스처의 id 가 서로 다르다 — 값 단언이 «출처»를 가를 수 있게 하는 전제', () => {
-      // 하나라도 같으면 뒤바뀜 변이가 값까지 같아 안 잡힌다(§7-1 ⓑ · PR ① 리뷰).
-      const ids = [woCId, woDId, woEId, lotAId, lotBId, uomId, locAId, locBId];
-      expect(new Set(ids).size).toBe(ids.length);
+    /*
+     * ⭐ 피처 016(omf-all-around#359) 부터 등록을 닫았다 — 공정 인계는 POP 자재 투입의 반제품 투입으로 바뀌었다(R-7).
+     *    옛 PR ② 의 201 경로 시험(응답 8칸·위치·채번·400 갈래·멱등 두 벌)은 닫힌 경로라 지웠다. 조회는 위 블록이 그대로 본다.
+     */
+    it('US2-8·Q16·FR-014 — 등록은 409 HANDOVER_RETIRED 이고 인계를 만들지 않는다', async () => {
+      const before = await prisma.operation_handover.count();
+
+      const response = await post(handoverBody()).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'HANDOVER_RETIRED', conflictCause: 'user', message: '공정 인계는 반제품 투입으로 바뀌었습니다.' });
+      expect(validator('POST /production/operation-handovers', 409)(response.body)).toBe(true);
+      expect(created.status).toBe(409);
+      expect(await prisma.operation_handover.count()).toBe(before);
     });
 
-    it('⭐ 201 — 응답 8칸을 «값»까지 통째로 못박는다(receivedAt 포함)', async () => {
-      expect(created.status).toBe(201);
-      const validate = validator('POST /production/operation-handovers', 201);
-      expect(validate(created.body)).toBe(true);
-      expect(validate.errors ?? []).toEqual([]);
-
-      // ⭐ 키 집합만 보면 「있어야 할 칸이 어느 물리 칸에서 왔나」를 못 본다 — 값으로 못박는다.
-      expect(created.body).toEqual({
-        operationHandoverId: expect.any(Number),
-        handoverNo: expect.stringMatching(/^OH-\d{8}-\d{4}$/),
-        fromWorkOrderId: woCId,
-        toWorkOrderId: woDId,
-        statusCode: STATUS_MAIN,
-        handedOverAt: HANDED_OVER_AT,
-        // ⭐ 계약이 인계·인수를 «한 행위»로 접었다 — 두 시각이 같다(R-2).
-        receivedAt: HANDED_OVER_AT,
-        lines: [
-          { operationHandoverLineId: expect.any(Number), lotId: lotAId, handoverQty: 12.5, uomId },
-          { operationHandoverLineId: expect.any(Number), lotId: lotBId, handoverQty: 7.25, uomId },
-        ],
-      });
-    });
-
-    it('⭐ 조회가 그 행을 8칸으로 되읽는다 — PR ① 이 못 돌린 「receivedAt 이 찬 헤더」 경로', async () => {
-      const detail = await request(app.getHttpServer())
-        .get(`${HANDOVERS}/${created.body.operationHandoverId}`)
-        .set('Cookie', cookie)
-        .expect(200);
-
-      expect(validator('GET /production/operation-handovers/{operationHandoverId}')(detail.body)).toBe(true);
-      // 8칸이다 — PR ① 픽스처는 `received_at` 이 전 행 NULL 이라 7칸 경로만 돌았다(Minor-3).
-      expect(Object.keys(detail.body).sort()).toEqual([
-        'fromWorkOrderId',
-        'handedOverAt',
-        'handoverNo',
-        'lines',
-        'operationHandoverId',
-        'receivedAt',
-        'statusCode',
-        'toWorkOrderId',
-      ]);
-      expect(detail.body).toEqual(created.body);
-    });
-
-    it('⭐ DB — received_qty = handoverQty · 위치 두 칸이 두 W/O 의 기본 WIP 위치 · line_no 1..N', async () => {
-      const handoverId = BigInt(created.body.operationHandoverId as number);
-      const header = await prisma.operation_handover.findUniqueOrThrow({
-        where: { operation_handover_id: handoverId },
-      });
-      expect(header.status_code).toBe(STATUS_MAIN);
-      expect(header.handed_over_at.toISOString()).toBe(HANDED_OVER_AT);
-      expect(header.received_at?.toISOString()).toBe(HANDED_OVER_AT);
-
-      // ⭐ 응답에 «안 나오는» 칸 넷이다 — 이 DB 단언이 유일한 그물이다(§7-6).
-      const lines = await prisma.operation_handover_line.findMany({
-        where: { operation_handover_id: handoverId },
-        orderBy: { line_no: 'asc' },
-      });
-      expect(
-        lines.map((line) => ({
-          lineNo: line.line_no,
-          lotId: Number(line.source_lot_id),
-          handoverQty: Number(line.handover_qty),
-          receivedQty: Number(line.received_qty),
-          sourceLocationId: Number(line.source_location_id),
-          destinationLocationId: Number(line.destination_location_id),
-        })),
-      ).toEqual([
-        { lineNo: 1, lotId: lotAId, handoverQty: 12.5, receivedQty: 12.5, sourceLocationId: locAId, destinationLocationId: locBId },
-        { lineNo: 2, lotId: lotBId, handoverQty: 7.25, receivedQty: 7.25, sourceLocationId: locAId, destinationLocationId: locBId },
-      ]);
-    });
-
-    it('⭐ 채번 — OH-{YYYYMMDD}-{SEQ4} 이고 기간 키가 handedOverAt 의 UTC 날짜다 · 둘째 건이 +1', async () => {
-      expect(created.body.handoverNo).toContain(`OH-${HANDED_OVER_AT.slice(0, 10).replace(/-/g, '')}-`);
-      const first = await post(handoverBody()).expect(201);
-      const second = await post(handoverBody()).expect(201);
-      const seq = (no: string) => Number(no.slice(-4));
-      expect(seq(second.body.handoverNo)).toBe(seq(first.body.handoverNo) + 1);
-    });
-
-    it('fromWorkOrderId 와 toWorkOrderId 가 같으면 400 INVALID(CHECK 앞당김)', async () => {
-      const response = await post(handoverBody({ toWorkOrderId: woCId })).expect(400);
-      expect(response.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'toWorkOrderId', code: 'INVALID' }),
-      );
-    });
-
-    it('⭐ 기본 WIP 위치가 NULL 인 W/O 는 400 INVALID(자리 1 — 못 풀면 거부한다)', async () => {
-      const asSource = await post(handoverBody({ fromWorkOrderId: woEId })).expect(400);
-      expect(asSource.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'fromWorkOrderId', code: 'INVALID' }),
-      );
-      const asDestination = await post(handoverBody({ toWorkOrderId: woEId })).expect(400);
-      expect(asDestination.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'toWorkOrderId', code: 'INVALID' }),
-      );
-    });
-
-    it('라인 수량 0 은 400 RANGE · 없는 lotId 는 400 INVALID(404 가 아니다)', async () => {
-      const zero = await post(handoverBody({ lines: [{ lotId: lotAId, handoverQty: 0, uomId }] })).expect(400);
-      expect(zero.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'lines[0].handoverQty', code: 'RANGE' }),
-      );
-      const missing = await post(
-        handoverBody({ lines: [{ lotId: 999999999, handoverQty: 1, uomId }] }),
-      ).expect(400);
-      expect(missing.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'lines[0].lotId', code: 'INVALID' }),
-      );
-
-      // ⭐ 없는 uomId 도 400 INVALID 다. 이 갈래를 지우면 FK 가 터져 «500 이 새다»
-      //    (PR #440 리뷰 Minor-1 — §7-6 「전수」 미이행 자리였다).
-      const badUom = await post(
-        handoverBody({ lines: [{ lotId: lotAId, handoverQty: 1, uomId: 999999999 }] }),
-      ).expect(400);
-      expect(badUom.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'lines[0].uomId', code: 'INVALID' }),
-      );
-    });
-
-    /* omf-all-around#127 · 장부 P-69 — PQC 가 끝난 정상 LOT 만 인계한다(PQ-06). 정상 LOT 201 은 위 픽스처(created)가 이미 본다. */
-    it('⭐ 검사 대기·불량 LOT 은 400 STATE_LOCKED 이고 인계를 만들지 않는다', async () => {
-      const before = await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } });
-      await prisma.lot.update({ where: { lot_id: BigInt(lotAId) }, data: { status_code: 'INSPECTION_PENDING' } });
-      await prisma.lot.update({ where: { lot_id: BigInt(lotBId) }, data: { status_code: 'DEFECTIVE' } });
-      try {
-        const blocked = await post(handoverBody()).expect(400);
-        expect(blocked.body.errors).toContainEqual(
-          expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('검사 대기') }),
-        );
-        expect(blocked.body.errors).toContainEqual(
-          expect.objectContaining({ field: 'lines[1].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('불량') }),
-        );
-        expect(await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } })).toBe(before);
-      } finally {
-        await prisma.lot.updateMany({
-          where: { lot_id: { in: [BigInt(lotAId), BigInt(lotBId)] } },
-          data: { status_code: 'NORMAL' },
-        });
-      }
-    });
-
-    /* #127 담당자 결정(2026-10-20) — 정상이어도 열린 보류가 있으면 서버도 막는다(모바일 M-02-01 과 같은 규칙). */
-    it('⭐ 열린 보류가 있는 정상 LOT 은 400 STATE_LOCKED 이고 인계를 만들지 않는다', async () => {
-      const before = await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } });
-      // CHECK ck_lot_hold_held_actor — 건 주체(계정 또는 작업자) 하나가 있어야 한다. 이 픽스처의 작업자를 쓴다.
-      const worker = await prisma.worker.findFirstOrThrow({ where: { worker_no: WORKER_NO }, select: { worker_id: true } });
-      const hold = await prisma.lot_hold.create({
-        data: {
-          lot_id: BigInt(lotAId),
-          reason_code: 'QUALITY',
-          status_code: 'HELD',
-          held_at: new Date(),
-          held_worker_id: worker.worker_id,
-        },
-      });
-      try {
-        const blocked = await post(handoverBody()).expect(400);
-        expect(blocked.body.errors).toEqual([
-          expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('보류') }),
-        ]);
-        expect(await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } })).toBe(before);
-
-        // ⭐ 보류가 LOT 을 검사 대기로 옮긴 실제 모양(C10) — 보류를 먼저 보므로 「PQC 판정」이 아니라 보류 문구다(대안 ①).
-        await prisma.lot.update({ where: { lot_id: BigInt(lotAId) }, data: { status_code: 'INSPECTION_PENDING' } });
-        const pending = await post(handoverBody()).expect(400);
-        expect(pending.body.errors).toEqual([
-          expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('보류') }),
-        ]);
-      } finally {
-        await prisma.lot_hold.delete({ where: { lot_hold_id: hold.lot_hold_id } });
-        await prisma.lot.update({ where: { lot_id: BigInt(lotAId) }, data: { status_code: 'NORMAL' } });
-      }
-    });
-
-    it('X-Worker-No 가 없으면 400 REQUIRED · 없는 사번이면 400 INVALID', async () => {
-      const absent = await post(handoverBody(), { workerNo: null }).expect(400);
-      expect(absent.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'X-Worker-No', code: 'REQUIRED' }),
-      );
-      const unknown = await post(handoverBody(), { workerNo: `${PREFIX}-NOPE` }).expect(400);
-      expect(unknown.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'X-Worker-No', code: 'INVALID' }),
-      );
-    });
-
-    it('⭐ 같은 Idempotency-Key 재전송이 인계를 두 벌 만들지 않는다(행 수를 센다)', async () => {
+    it('US2-8 — 같은 Idempotency-Key 재전송도 같은 409 다', async () => {
       const key = randomUUID();
-      const before = await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } });
-      const first = await post(handoverBody(), { key }).expect(201);
-      const again = await post(handoverBody(), { key }).expect(201);
+      const first = await post(handoverBody(), { key }).expect(409);
+      const again = await post(handoverBody(), { key }).expect(409);
       expect(again.body).toEqual(first.body);
-      const after = await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } });
-      // 행 수를 안 세면 반증이 안 된다 — 응답만 보면 두 벌이 생겨도 초록이다.
-      expect(after).toBe(before + 1);
-      expect(
-        await prisma.operation_handover_line.count({
-          where: { operation_handover_id: BigInt(first.body.operationHandoverId as number) },
-        }),
-      ).toBe(2);
-    });
-
-    it('같은 키 · 다른 본문은 409 DUPLICATE_KEY · conflictCause=user', async () => {
-      const key = randomUUID();
-      await post(handoverBody(), { key }).expect(201);
-      const conflict = await post(handoverBody({ handedOverAt: '2026-09-09T05:00:00.000Z' }), { key }).expect(409);
-      expect(conflict.body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
     });
 
     it('무권한 사용자는 403', async () => {
-      // ⭐ `derived-permissions.ts:230` 의 `['M-02-01']` 이 살아 있음을 증명한다.
+      // ⭐ `derived-permissions.ts:230` 의 `['M-02-01']` 이 살아 있음을 증명한다 — 권한 거절이 409 보다 먼저다.
       await post(handoverBody(), { cookie: noPermCookie }).expect(403);
-    });
-
-    it('If-Match 는 「선택」이라 틀린 버전을 보내도 201(받되 버린다)', async () => {
-      await post(handoverBody(), { ifMatch: '"999"' }).expect(201);
     });
   });
 
@@ -572,7 +371,6 @@ describe('공정 인계 3건 (e2e)', () => {
         location_type_code: 'BIN',
       },
     });
-    locAId = Number(locationA.location_id);
     const locationB = await prisma.location.create({
       data: {
         warehouse_id: warehouse.warehouse_id,
@@ -581,7 +379,6 @@ describe('공정 인계 3건 (e2e)', () => {
         location_type_code: 'BIN',
       },
     });
-    locBId = Number(locationB.location_id);
     const process = await prisma.process.create({
       data: { process_code: `${PREFIX}-PR`, process_name: '사출공정', process_type_code: 'MOLDING' },
     });
@@ -645,8 +442,6 @@ describe('공정 인계 3건 (e2e)', () => {
     // 등록 전용 쌍 — 두 기본 WIP 위치를 **서로 다르게** 둔다(뒤바뀜 변이를 값이 잡는다 · §7-1 ⓑ).
     woCId = Number((await workOrder('WOC', locationA.location_id)).work_order_id);
     woDId = Number((await workOrder('WOD', locationB.location_id)).work_order_id);
-    // 기본 WIP 위치가 NULL — 자리 1 의 400 갈래를 지켜본다.
-    woEId = Number((await workOrder('WOE')).work_order_id);
 
     await prisma.worker.create({
       data: {

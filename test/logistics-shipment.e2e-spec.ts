@@ -935,6 +935,22 @@ describe('출하 목록 (e2e)', () => {
     expect(row.picked_qty.toNumber()).toBe(0);
   });
 
+  it('US1-3·Q4·SC-002 — 반제품(WIP) LOT 은 긴급 직행도 400 「반제품 LOT 은 제품 입고할 수 없습니다.」 — 입고 줄이 서지 않는다(피처 016)', async () => {
+    const semi = await ensure(prisma.lot, { lot_no: `${PREFIX}-LOT-WIP` }, {
+      lot_no: `${PREFIX}-LOT-WIP`, item_id: ids.item, lot_type_code: 'WIP', plant_id: ids.plant, initial_qty: 100, uom_id: ids.uom,
+      source_type_code: 'WORK_ORDER', source_id: 1n, status_code: 'NORMAL',
+    }) as { lot_id: bigint };
+    const [line] = expeditedBody().lines;
+
+    const failed = await post(expeditedBody({
+      lines: [{ ...line, allocations: [{ lotId: Number(semi.lot_id), allocatedQty: 3, uomId: Number(ids.uom) }] }],
+    }), 400);
+
+    expect(firstError(failed)).toMatchObject({ field: 'lines[0].allocations[0].lotId', code: 'INVALID' });
+    expect((failed.errors as { message: string }[])[0].message).toBe('반제품 LOT 은 제품 입고할 수 없습니다.');
+    expect(await prisma.goods_receipt_line.count({ where: { lot_id: semi.lot_id } })).toBe(0);
+  });
+
   it('E-5 ⛔ 적치 지시가 «0건»이다 — 물건이 이미 나갔다', async () => {
     const created = await post(expeditedBody());
     const receipt = await receiptOf(created.shipmentId);

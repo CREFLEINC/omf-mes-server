@@ -42,6 +42,7 @@ export function chooseLine(lines: readonly CandidateLine[], lotWarehouseIds: Rea
 interface LotRow {
   lot_id: bigint;
   item_id: bigint;
+  lot_type_code: string;
   status_code: string;
   expiry_date: Date | null;
 }
@@ -56,7 +57,7 @@ export async function findBusinessUnitLot(
   businessUnitId: bigint | null,
   terminalPlantId: bigint | undefined,
 ): Promise<LotRow> {
-  const select = { lot_id: true, item_id: true, status_code: true, plant_id: true, expiry_date: true };
+  const select = { lot_id: true, item_id: true, lot_type_code: true, status_code: true, plant_id: true, expiry_date: true };
   const lots = body.lotId !== undefined
     ? await tx.lot.findMany({ where: { lot_id: BigInt(body.lotId) }, select })
     : await tx.lot.findMany({ where: { lot_no: (body.lotNo as string).trim(), plant: { business_unit_id: businessUnitId } }, select });

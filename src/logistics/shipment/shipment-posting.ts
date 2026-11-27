@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { lockBalancesByItemLot, withoutEmptyBalances } from '../../core/inventory-posting/balance-lock';
+import { WIP_LOT_TYPE } from '../../core/lot';
 import {
   GoodsIssueLineWriteInput,
   postIssue,
@@ -137,6 +138,7 @@ export async function postShipment(
   //    LOT」이라 잔액 행이 없다 — 뒤집으면 아래 `resolveSources` 가 0행으로 400 을 낸다.
   //    ⚠ 헤더 «뒤»다 — 입고 전표의 원천 id 도 이 출하다(A-10).
   const expedited = input.expedited === true;
+  if (expedited) assertNoSemiFinished(input, lots);
   if (expedited) await postExpeditedReceipt(tx, posting, write, shipmentId, lots);
   const sources = await resolveSources(tx, write, lots);
   if (!expedited) await assertPicked(tx, input, lots);
@@ -359,14 +361,25 @@ function flatten(input: ShipmentCreateWrite): FlatAllocation[] {
  * 품질·재고 상태 칸을 안 실어 **어느 것을 낼지 정할 수 없다**(출고 코어가 같은 자리에서 같은
  * 판정을 한다 · `issue-posting.ts:131-141`).
  */
-type LotRow = { lot_id: bigint; lot_no: string; item_id: bigint; status_code: string };
+type LotRow = { lot_id: bigint; lot_no: string; item_id: bigint; lot_type_code: string; status_code: string };
+
+/**
+ * 긴급 직행은 제품 입고를 먼저 전기한다 — 반제품 LOT 은 제품 입고 줄 검사와 같은 400 으로 막는다(피처 016 FR-004).
+ * 입고 줄 검사(`inboundGate`)를 지나지 않고 `postReceipt` 를 바로 부르므로 여기서 본다.
+ */
+function assertNoSemiFinished(input: ShipmentCreateWrite, lots: Map<string, LotRow>): void {
+  const errors = flatten(input)
+    .filter((entry) => lots.get(String(entry.allocation.lotId))?.lot_type_code === WIP_LOT_TYPE)
+    .map((entry) => field(`lines[${entry.lineIndex}].allocations[${entry.allocationIndex}].lotId`, ERROR_CODE.INVALID, '반제품 LOT 은 제품 입고할 수 없습니다.'));
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
 
 /** 배분이 가리키는 LOT 을 «한 번» 읽는다 — 품질 게이트와 위치 해소가 같은 행을 쓴다. */
 async function readLots(tx: Tx, input: ShipmentCreateWrite): Promise<Map<string, LotRow>> {
   const lotIds = [...new Set(flatten(input).map((entry) => BigInt(entry.allocation.lotId)))];
   const lots = await tx.lot.findMany({
     where: { lot_id: { in: lotIds } },
-    select: { lot_id: true, lot_no: true, item_id: true, status_code: true },
+    select: { lot_id: true, lot_no: true, item_id: true, lot_type_code: true, status_code: true },
   });
   return new Map(lots.map((lot) => [lot.lot_id.toString(), lot]));
 }
