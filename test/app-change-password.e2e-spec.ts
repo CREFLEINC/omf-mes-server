@@ -1,8 +1,7 @@
 /**
  * 내 비밀번호 변경 — 화면 `W-CO-10`.
  *
- * ⭐ 계약이 로그인과 «다르게» 정한 두 가지가 이 스위트의 핵심이다 — 틀려도 잠그지 않고,
- * 바꾼 뒤 다시 로그인시키지 않는다.
+ * ⭐ 계약이 로그인과 «다르게» 정한 것이 이 스위트의 핵심이다 — 바꾼 뒤 다시 로그인시키지 않는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -11,7 +10,6 @@ import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
-import { MAX_FAILED_ATTEMPTS } from '../src/auth/credential.service';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -63,20 +61,6 @@ describe('내 비밀번호 변경 (e2e)', () => {
       field: 'currentPassword',
       code: 'INVALID',
     });
-  });
-
-  it('⛔ 틀려도 계정을 잠그지 않는다 — 이미 인증된 본인이다', async () => {
-    for (let i = 0; i < MAX_FAILED_ATTEMPTS + 2; i += 1) {
-      await change('계속-틀린-비밀번호', SECOND).expect(401);
-    }
-
-    const credential = await prisma.user_credential.findUniqueOrThrow({
-      where: { app_user_id: userId },
-    });
-    expect(credential.failed_attempt_count).toBe(0);
-    expect(credential.locked_until).toBeNull();
-    // 잠기지 않았으니 원래 비밀번호로 여전히 로그인된다.
-    await login(FIRST);
   });
 
   it('⭐ 바꾸면 204 이고, 강제 변경이 풀리며, 바꾼 쪽 세션은 그대로다', async () => {

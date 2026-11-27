@@ -609,31 +609,6 @@ describe('사용자 마스터 (e2e)', () => {
     expect(stored.must_change_password).toBe(true);
   });
 
-  it('⭐ 잠긴 계정이 초기화로 풀린다 — 관리자가 푸는 경로가 이것뿐이다', async () => {
-    const created = await create(`${PREFIX}-p2`);
-    await request(app.getHttpServer())
-      .post(`/api/app/users/${created.appUserId}:reset-password`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .expect(200);
-    await prisma.user_credential.update({
-      where: { app_user_id: created.appUserId },
-      data: { failed_attempt_count: 5, locked_until: new Date('9999-12-31T00:00:00.000Z') },
-    });
-
-    const reset = await request(app.getHttpServer())
-      .post(`/api/app/users/${created.appUserId}:reset-password`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .post('/api/app/sessions')
-      .set('Idempotency-Key', randomUUID())
-      .send({ loginId: `${PREFIX}-p2`, password: reset.body.temporaryPassword })
-      .expect(200);
-  });
-
   it('⭐ 초기화하면 그 계정의 기존 로그인이 끊기고, 관리자 자신의 세션은 그대로다', async () => {
     const created = await create(`${PREFIX}-p4`);
     const first = await request(app.getHttpServer())

@@ -58,15 +58,6 @@ describe('세션 엔드포인트 (e2e)', () => {
     await prisma.app_user.delete({ where: { app_user_id: existing.app_user_id } });
   }
 
-  async function reset(): Promise<void> {
-    await prisma.user_credential.updateMany({
-      where: { app_user: { login_id: LOGIN_ID } },
-      data: { failed_attempt_count: 0, locked_until: null },
-    });
-  }
-
-  beforeEach(reset);
-
   it('⭐ 로그인이 200 과 계약 Session 을 주고 httpOnly 쿠키를 세운다', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
@@ -91,7 +82,6 @@ describe('세션 엔드포인트 (e2e)', () => {
       .expect(401);
 
     expect(contractValidator('LoginFailure')(response.body)).toBe(true);
-    expect(response.body.remainingAttempts).toBe(4);
     // 봉투가 씌워지지 않는다 — 계약은 이 401 을 LoginFailure 로 정의했다.
     expect(response.body).not.toHaveProperty('errors');
   });
@@ -113,16 +103,6 @@ describe('세션 엔드포인트 (e2e)', () => {
     expect(wrongPassword.body.message).toBe(noSuchAccount.body.message);
   });
 
-  it('⛔ 없는 계정에는 remainingAttempts 가 오지 않는다', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/app/sessions')
-      .set('Idempotency-Key', randomUUID())
-      .send({ loginId: '없는-계정', password: '아무거나' })
-      .expect(401);
-
-    expect(response.body).not.toHaveProperty('remainingAttempts');
-  });
-
   it('⭐ 계약 검증 가드가 로그인 본문을 거른다 — loginId 누락은 400', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
@@ -133,19 +113,20 @@ describe('세션 엔드포인트 (e2e)', () => {
     expect(response.body.errors[0]).toMatchObject({ scope: 'field', field: 'loginId' });
   });
 
-  it('잠기면 423 을 낸다', async () => {
-    for (let i = 0; i < 5; i += 1) {
+  it('⭐ 열 번 틀린 뒤에도 맞는 비밀번호로 들어온다 — 잠그지 않는다', async () => {
+    for (let i = 0; i < 10; i += 1) {
       await request(app.getHttpServer())
         .post('/api/app/sessions')
-      .set('Idempotency-Key', randomUUID())
-        .send({ loginId: LOGIN_ID, password: '틀린값' });
+        .set('Idempotency-Key', randomUUID())
+        .send({ loginId: LOGIN_ID, password: '틀린값' })
+        .expect(401);
     }
 
     await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: PASSWORD })
-      .expect(423);
+      .expect(200);
   });
 
   it('쿠키로 현재 세션을 읽는다', async () => {
