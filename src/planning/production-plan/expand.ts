@@ -44,7 +44,7 @@ export interface WorkOrderSupplement {
   moldId: bigint | null;
   workerId: bigint | null;
   shiftId: bigint | null;
-  defaultWipLocationId: bigint;
+  defaultWipLocationId: bigint | null;
   defaultFgLocationId: bigint;
   defaultScrapLocationId: bigint | null;
   window: PlanWindow;

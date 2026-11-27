@@ -79,8 +79,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     expect(new Date(`${friday}T00:00:00Z`).getUTCDay()).toBe(5);
     expect(only).toMatchObject({ status_code: 'WAITING', source_warehouse_id: warehouses.A, released_at: null });
     expect(only.issue_work_date?.toISOString().slice(0, 10)).toBe(friday);
-    const line = await prisma.production_line.findUniqueOrThrow({ where: { production_line_id: lineId } });
-    expect(only.destination_location_id).toBe(line.default_wip_location_id);
+    expect(only.destination_location_id).toBeNull();
     expect(qtys(only.material_issue_request_line)).toEqual([['X', 20, 0], ['Y', 10, 0], ['Z', 10, 0]]);
     // US1-4 — 대기 요청은 피킹 지시가 없다: 모바일 피킹 목록·대기 작업 수·T2 는 모두 피킹 지시를 센다.
     expect(await fx.pickings(only.material_issue_request_id)).toEqual([]);
@@ -90,7 +89,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     expect(response.body.unsourcedShortages).toEqual([]);
   });
 
-  it('US1-5 출고 요청 응답에 출고 작업일·출발 창고·입고지·상태가 실린다', async () => {
+  it('US1-5 출고 요청 응답에 출고 작업일·출발 창고·상태가 실리고 도착 위치가 비어 있다', async () => {
     const { lineId, warehouses } = await scenario('P1', { A: [['X', 100]] });
     const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 3) });
     await fx.release(workOrderId).expect(200);
@@ -104,7 +103,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
       statusCode: 'WAITING',
       sourceWarehouseId: Number(warehouses.A),
       issueWorkDate: row.issue_work_date?.toISOString().slice(0, 10),
-      destinationLocationId: Number(row.destination_location_id),
+      destinationLocationId: null,
       releasedAt: null,
       closedAt: null,
     });
@@ -248,11 +247,16 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     ]);
   });
 
-  it('US2-5 기준정보가 빠지면 배포 400 — 공장 생산창고·생산 현장 위치를 모아 안내, 라인 담당 부서는 묻지 않는다', async () => {
+  it('US2-5 WIP 없이 배포하고 활성 생산창고가 없을 때만 막는다', async () => {
     const { warehouses } = await scenario('P1', { A: [['X', 10]] });
     const bare = await fx.line('P1', 'BARE', null, false);
-    const noFloor = await fx.release(await fx.workOrder({ plantKey: 'P1', lineId: bare, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) })).expect(400);
-    expect(noFloor.body.errors.map((e: { code: string }) => e.code)).toEqual(['PRODUCTION_FLOOR_LOCATION_MISSING']);
+    const noFloor = await fx.workOrder({ plantKey: 'P1', lineId: bare, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
+    await prisma.work_order.update({ where: { work_order_id: noFloor }, data: { default_wip_location_id: null } });
+    await fx.release(noFloor).expect(200);
+    expect((await fx.requests(noFloor))[0]).toMatchObject({
+      destination_location_id: null,
+      source_warehouse_id: warehouses.A,
+    });
 
     const noDepartment = await fx.line('P1', `S${scenarioSeq}-ND`, null);
     const released = await fx.workOrder({ plantKey: 'P1', lineId: noDepartment, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });

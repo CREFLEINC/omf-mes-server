@@ -132,25 +132,24 @@ describe('출발 생산 창고 고르기', () => {
       return { db, findWarehouses };
     }
 
-    it('공장 생산창고 없음 · 생산 현장 위치 없음을 함께 낸다 — 라인 담당 부서는 묻지 않는다', async () => {
+    it('공장 생산창고가 없을 때만 위치 관련 오류를 낸다 — 라인 담당 부서는 묻지 않는다', async () => {
       const { db } = lineDb({ default_wip_location_id: null }, []);
-      const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
-      expect('errors' in result && result.errors.map((e) => [e.code, e.field])).toEqual([
+      const result = await resolveCandidates(db, 1n);
+      expect(result.errors?.map((e) => [e.code, e.field])).toEqual([
         ['PRODUCTION_WAREHOUSE_MISSING', 'plantId'],
-        ['PRODUCTION_FLOOR_LOCATION_MISSING', 'productionLineId'],
       ]);
     });
 
     it('이 공장의 생산창고 유형만 찾는다 — 없으면 PRODUCTION_WAREHOUSE_MISSING', async () => {
       const { db, findWarehouses } = lineDb({ default_wip_location_id: 40n }, []);
-      const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
-      expect('errors' in result && result.errors.map((e) => e.code)).toEqual(['PRODUCTION_WAREHOUSE_MISSING']);
+      const result = await resolveCandidates(db, 1n);
+      expect(result.errors?.map((e) => e.code)).toEqual(['PRODUCTION_WAREHOUSE_MISSING']);
       expect(findWarehouses.mock.calls[0][0].where).toEqual({ plant_id: 1n, warehouse_type_code: 'PRODUCTION' });
     });
 
     it('생산창고가 모두 사용 중지면 같은 사유 · 다른 안내', async () => {
       const { db } = lineDb({ default_wip_location_id: 40n }, [], [3n]);
-      const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
+      const result = await resolveCandidates(db, 1n);
       expect('errors' in result && result.errors).toEqual([
         expect.objectContaining({ code: 'PRODUCTION_WAREHOUSE_MISSING', message: expect.stringContaining('모두 사용 중지') }),
       ]);
@@ -158,14 +157,13 @@ describe('출발 생산 창고 고르기', () => {
 
     it('사용 중지된 창고는 D 에서 빠진다', async () => {
       const { db } = lineDb({ default_wip_location_id: 40n }, [1n], [2n]);
-      expect(await resolveCandidates(db, { plantId: 1n, productionLineId: 5n })).toEqual({ warehouseIds: [1n], destinationLocationId: 40n });
+      expect(await resolveCandidates(db, 1n)).toEqual({ warehouseIds: [1n] });
     });
 
-    it('다 있으면 D 와 라인 생산 현장을 낸다', async () => {
-      const { db } = lineDb({ default_wip_location_id: 40n }, [1n, 2n]);
-      expect(await resolveCandidates(db, { plantId: 1n, productionLineId: 5n })).toEqual({
+    it('활성 생산창고가 있으면 WIP 없이 후보를 반환한다', async () => {
+      const { db } = lineDb(null, [1n, 2n]);
+      expect(await resolveCandidates(db, 1n)).toEqual({
         warehouseIds: [1n, 2n],
-        destinationLocationId: 40n,
       });
     });
   });

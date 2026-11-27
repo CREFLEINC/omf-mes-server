@@ -17,6 +17,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { CancelEligibilityService } from '../src/logistics/document-progress/cancel-eligibility.service';
 
 const PREFIX = 'PIE2E';
 const LOGIN_ID = 'e2e-pick-issue-probe';
@@ -48,6 +49,72 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
   afterAll(async () => {
     await cleanup();
     await app.close();
+  });
+
+  it('생산창고 출고는 WIP 없이 수령하고 기존 POP 수령 조회와 투입으로 이어진다', async () => {
+    await prisma.warehouse.update({
+      where: { warehouse_id: ids.materialWarehouse }, data: { warehouse_type_code: 'PRODUCTION' },
+    });
+    try {
+      const { order, lines, requestId, workOrderId } = await releaseAndPick(100, undefined, null);
+      const requestRow = await prisma.material_issue_request.findUniqueOrThrow({ where: { material_issue_request_id: requestId } });
+      expect(requestRow.destination_location_id).toBeNull();
+      const sourceBefore = await onHand(ids.materialLocation);
+      const wipBefore = await onHand(ids.wipLocation);
+      const posted = await issue(order, lines).expect(201);
+      expect(posted.body.goodsIssue).toMatchObject({ statusCode: 'POSTED', destinationTypeCode: null, destinationId: null });
+      expect(await ledgerLines(posted.body.goodsIssue.goodsIssueId)).toEqual([
+        expect.objectContaining({ from_location_id: ids.materialLocation, to_location_id: null }),
+      ]);
+      expect(await onHand(ids.materialLocation)).toBe(sourceBefore - 100);
+      expect(await onHand(ids.wipLocation)).toBe(wipBefore);
+      const lotId = posted.body.lines[0].lotId as number;
+      const issueId = posted.body.goodsIssue.goodsIssueId as number;
+      const pending = await request(app.getHttpServer())
+        .get('/api/logistics/goods-issues').query({ lotId, awaitingShopfloorReceiptOnly: true })
+        .set('Cookie', cookie).expect(200);
+      expect(pending.body.items).toEqual([expect.objectContaining({ goodsIssueId: issueId })]);
+
+      const receiptBody = {
+        goodsIssueId: issueId, workOrderId: Number(workOrderId),
+        receivedAt: OCCURRED_AT, businessDate: BUSINESS_DATE, occurredAt: OCCURRED_AT,
+        lines: [{ goodsIssueLineId: posted.body.lines[0].goodsIssueLineId, lotId, itemId: Number(ids.item),
+          uomId: Number(ids.uom), issuedQty: 100, receivedQty: 95, varianceReasonCode: 'DAMAGED_IN_TRANSIT' }],
+      };
+      const receive = (body: object) => request(app.getHttpServer()).post('/api/logistics/shopfloor-receipts')
+        .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('X-Worker-No', `${PREFIX}-WK`).send(body);
+      const otherWorkOrder = await workOrder(null);
+      const wrong = await receive({ ...receiptBody, workOrderId: Number(otherWorkOrder) }).expect(400);
+      expect(wrong.body.errors).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'workOrderId' })]));
+      await receive({ ...receiptBody, destinationLocationId: Number(ids.wipLocation) }).expect(400);
+      await receive({ ...receiptBody, lines: [{ ...receiptBody.lines[0], receivedQty: 101 }] }).expect(400);
+
+      const receipts = await Promise.all([receive(receiptBody), receive(receiptBody)]);
+      expect(receipts.map((result) => result.status).sort()).toEqual([201, 400]);
+      const received = receipts.find((result) => result.status === 201)?.body;
+      if (received === undefined) throw new Error('수령 응답이 없습니다.');
+      expect(received.shopfloorReceipt).toMatchObject({ destinationLocationId: null, workOrderId: Number(workOrderId) });
+      expect(received.lines).toEqual([expect.objectContaining({ lotId, receivedQty: 95 })]);
+      const eligibility = await app.get(CancelEligibilityService).evaluate(prisma, 'GOODS_ISSUE', BigInt(issueId));
+      expect(eligibility).toMatchObject({ cancellable: false, cancelBlockedReasonCode: 'STATE_LOCKED' });
+      const available = await request(app.getHttpServer()).get('/api/logistics/shopfloor-receipts')
+        .query({ workOrderId: Number(workOrderId) }).set('Cookie', cookie).expect(200);
+      expect(available.body.items).toEqual([expect.objectContaining({
+        destinationLocationId: null, lines: [expect.objectContaining({ lotId, receivedQty: 95 })],
+      })]);
+
+      const consumed = await request(app.getHttpServer()).post('/api/production/material-consumptions')
+        .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('X-Worker-No', `${PREFIX}-WK`)
+        .send({ workOrderId: Number(workOrderId), lotId, itemId: Number(ids.item), uomId: Number(ids.uom), inputQty: 60, occurredAt: OCCURRED_AT })
+        .expect(201);
+      expect(consumed.body.shopfloorReceiptLineId).toBe(received.lines[0].shopfloorReceiptLineId);
+      expect(await onHand(ids.materialLocation)).toBe(sourceBefore - 100);
+      expect(await onHand(ids.wipLocation)).toBe(wipBefore);
+    } finally {
+      await prisma.warehouse.update({
+        where: { warehouse_id: ids.materialWarehouse }, data: { warehouse_type_code: 'MATERIAL' },
+      });
+    }
   });
 
   it('⭐ 전량 출고 — 지시가 닫히고, 도착지가 채워지고, 기출고가 오른다', async () => {
@@ -517,9 +584,9 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
   async function releaseAndPick(
     orderQty: number,
     pickQty?: number,
-    destinationLocationId?: bigint,
+    destinationLocationId: bigint | null = ids.wipLocation,
   ): Promise<{ order: bigint; lines: bigint[]; requestId: bigint; workOrderId: bigint }> {
-    const workOrderId = await workOrder(destinationLocationId ?? ids.wipLocation);
+    const workOrderId = await workOrder(destinationLocationId);
     await request(app.getHttpServer())
       .post(`/api/production/work-orders/${String(workOrderId)}:release`)
       .set('Cookie', cookie)
@@ -531,6 +598,13 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     const requestRow = await prisma.material_issue_request.findFirstOrThrow({
       where: { work_order_id: workOrderId },
     });
+    // 위치 수령 회귀 테스트에서는 전환 전에 만들어진 요청을 재현한다.
+    if (destinationLocationId !== null) {
+      await prisma.material_issue_request.update({
+        where: { material_issue_request_id: requestRow.material_issue_request_id },
+        data: { destination_location_id: destinationLocationId },
+      });
+    }
     const orderRow = await prisma.picking_order.findFirstOrThrow({
       where: {
         source_document_type_code: 'MATERIAL_ISSUE_REQUEST',
@@ -610,7 +684,7 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     return prisma.picking_order.findUniqueOrThrow({ where: { picking_order_id: orderId } });
   }
 
-  async function workOrder(destinationLocationId: bigint): Promise<bigint> {
+  async function workOrder(destinationLocationId: bigint | null): Promise<bigint> {
     const row = await prisma.work_order.create({
       data: {
         work_order_no: `${PREFIX}-WO${++seq}`,
@@ -624,7 +698,7 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
         production_line_id: ids.productionLine,
         responsible_worker_id: ids.worker,
         default_wip_location_id: destinationLocationId,
-        default_fg_location_id: destinationLocationId,
+        default_fg_location_id: destinationLocationId ?? ids.wipLocation,
         default_scrap_location_id: destinationLocationId,
       },
     });
@@ -733,7 +807,7 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '출고검사용' } });
     await prisma.role_permission.createMany({
-      data: ['W-02-04', 'W-02-10', 'M-01-08', 'W-01-05', 'W-03-02', 'M-01-09'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
+      data: ['W-02-04', 'W-02-10', 'M-01-08', 'W-01-05', 'W-03-02', 'M-01-09', 'P-02-03'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     const login = await request(app.getHttpServer())
@@ -756,6 +830,7 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     );
     // 분할 LOT 출고의 생산창고 입고(US3-1) — 라인·적치 지시는 위 TRUNCATE CASCADE 가 비운다.
     await prisma.putaway_task.deleteMany({ where: { shopfloor_receipt_line: { shopfloor_receipt: { goods_issue: { warehouse: { warehouse_code: { startsWith: PREFIX } } } } } } });
+    await prisma.material_consumption.deleteMany({ where: workOrderScope });
     await prisma.shopfloor_receipt_line.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
     await prisma.shopfloor_receipt.deleteMany({ where: { goods_issue: { warehouse: { warehouse_code: { startsWith: PREFIX } } } } });
     await prisma.goods_issue_line.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });

@@ -193,7 +193,7 @@ describe('생산 창고 자동 보충 러너 (e2e)', () => {
       where: { material_issue_request: { request_type_code: 'REPLENISHMENT', status_code: { in: ['WAITING', 'REGISTERED'] }, closed_at: null, location: { warehouse_id: { in: [w.PROD.warehouseId, w.PROD2.warehouseId] } } } },
       select: { item_id: true, material_issue_request: { select: { location: { select: { warehouse_id: true } } } } },
     });
-    const pairs = lines.map((l) => `${l.material_issue_request.location.warehouse_id}:${l.item_id}`);
+    const pairs = lines.map((l) => `${l.material_issue_request.location?.warehouse_id}:${l.item_id}`);
     expect(new Set(pairs).size).toBe(pairs.length);
   });
 

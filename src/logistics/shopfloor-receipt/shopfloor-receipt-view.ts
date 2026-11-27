@@ -38,7 +38,7 @@ export interface ShopfloorReceiptView {
   goodsIssueId: number;
   /** 창고 보충 출고 수령(피처 004)은 W/O 가 없다 — null. */
   workOrderId: number | null;
-  destinationLocationId: number;
+  destinationLocationId: number | null;
   receivedAt: string;
   receivedBy: number | null;
   statusCode: string;
@@ -75,7 +75,7 @@ export function shopfloorReceiptView(row: ShopfloorReceiptRow): ShopfloorReceipt
     shopfloorReceiptNo: row.shopfloor_receipt_no,
     goodsIssueId: Number(row.goods_issue_id),
     workOrderId: row.work_order_id === null ? null : Number(row.work_order_id),
-    destinationLocationId: Number(row.destination_location_id),
+    destinationLocationId: row.destination_location_id === null ? null : Number(row.destination_location_id),
     receivedAt: row.received_at.toISOString(),
     receivedBy: row.received_by === null ? null : Number(row.received_by),
     statusCode: row.status_code,

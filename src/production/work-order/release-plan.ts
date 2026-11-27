@@ -19,7 +19,6 @@ const RELEASE_SELECT = {
   uom_id: true,
   routing_operation_id: true,
   work_order_type_code: true,
-  default_wip_location_id: true,
   default_fg_location_id: true,
   responsible_worker_id: true,
   // 배포 자체는 라인을 안 쓴다 — 현장 단말의 권한 검사가 «라인의 공장»으로 판정하므로
@@ -70,11 +69,9 @@ export interface ReleasePlan {
 /** 출발 창고별 대기 요청을 만드는 데 필요한 값 — 채번까지 트랜잭션 밖에서 끝낸다. */
 export interface WaitingPlan {
   plantId: bigint;
-  productionLineId: bigint;
   /** 생산창고 D(W/O 공장의 활성 생산창고). */
   warehouseIds: bigint[];
   /** 라인의 생산 현장. */
-  destinationLocationId: bigint;
   /** 생산일(공장 현지 `planned_start_at` 날짜)의 직전 근무일. 만들 때 한 번 계산한다(FR-033). */
   issueWorkDate: string;
   /** 출고 작업일이 공장 오늘 이하 — 같은 트랜잭션에서 배포한다(FR-003). */
@@ -114,15 +111,9 @@ export async function releasePlan(
   // ⛔ 이 검사와 `lineErrors` 를 바꾸면 `production-order-worklist.ts` 의 조각도 함께 고친다 — 갈리면 ERP W/O 목록에는 「배포 대기」로 보이는데 배포가 막힌다.
   // 추적 시스템 연동이 세운 계획의 W/O 는 라인 없이 배포한다 — 현장 단말이 다루지 않는다(사용자 2026-11-12). 제품은 완제품 위치로 들어간다.
   const lineless = plan.created_automatically && row.production_line_id === null;
-  const requiredLocations: [string, bigint | null][] = lineless
-    ? [['defaultFgLocationId', row.default_fg_location_id]]
-    : [
-        ['defaultWipLocationId', row.default_wip_location_id],
-        ['defaultFgLocationId', row.default_fg_location_id],
-      ];
-  const locationErrors = requiredLocations
-    .filter(([, value]) => value === null)
-    .map(([name]) => field(name, ERROR_CODE.REQUIRED, name === 'defaultWipLocationId' ? '생산 라인의 기본 WIP 위치를 설정한 뒤 배정을 저장하세요.' : '배포 전에 기본 위치를 지정해야 합니다.'));
+  const locationErrors = row.default_fg_location_id === null
+    ? [field('defaultFgLocationId', ERROR_CODE.REQUIRED, '배포 전에 생산품 입고 위치를 지정해야 합니다.')]
+    : [];
   const preconditionErrors = [...locationErrors, ...(lineless ? [] : lineErrors(row, plan))];
   if (preconditionErrors.length > 0) {
     throw new ContractException(HttpStatus.BAD_REQUEST, preconditionErrors);
@@ -141,7 +132,7 @@ export async function releasePlan(
     : await releaseMaterials(prisma, { components, orderQty: row.order_qty, baseQty: plan.bom.base_qty, plantToday, ...uom });
   const waiting =
     components.length > 0 && row.production_line_id !== null && (await usesProductionWarehouses(prisma, plantId))
-      ? await waitingPlan(prisma, numbering, { row, plantId, productionLineId: row.production_line_id, businessDate })
+      ? await waitingPlan(prisma, numbering, { row, plantId, businessDate })
       : null;
 
   return {
@@ -165,16 +156,16 @@ export async function releasePlan(
 }
 
 /**
- * 생산 창고 공장의 대기 요청 준비(피처 003 · research R-5·R-7). 빠진 기준정보(공장 생산창고 · 라인 생산 현장)는
+ * 생산 창고 공장의 대기 요청 준비(피처 003 · research R-5·R-7). 빠진 기준정보(공장 생산창고)는
  * 모아 400 이다(FR-009) — 재고 부족은 배포를 막지 않는다. 창고 고르기는 재고에 기대므로 트랜잭션 안이다.
  */
 async function waitingPlan(
   prisma: PrismaService,
   numbering: NumberingService,
-  input: { row: ReleaseRow; plantId: bigint; productionLineId: bigint; businessDate: string },
+  input: { row: ReleaseRow; plantId: bigint; businessDate: string },
 ): Promise<WaitingPlan> {
-  const scope = await resolveCandidates(prisma, { plantId: input.plantId, productionLineId: input.productionLineId });
-  if ('errors' in scope) throw new ContractException(HttpStatus.BAD_REQUEST, scope.errors);
+  const scope = await resolveCandidates(prisma, input.plantId);
+  if (scope.errors !== undefined) throw new ContractException(HttpStatus.BAD_REQUEST, scope.errors);
 
   const timezone = input.row.production_plan?.production_order.plant.timezone_code ?? 'UTC';
   const plantToday = localDate(new Date(), timezone);
@@ -187,7 +178,6 @@ async function waitingPlan(
   return {
     ...scope,
     plantId: input.plantId,
-    productionLineId: input.productionLineId,
     issueWorkDate: workDate,
     releaseNow,
     issueRequestNos: await numbering.nextMany('MATERIAL_ISSUE_REQUEST', input.plantId, input.businessDate, count),

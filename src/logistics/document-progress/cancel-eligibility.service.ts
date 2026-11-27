@@ -44,6 +44,7 @@ export interface CancelEligibility {
    * 요청·실행은 409 `INBOUND_LOT_FINALIZED` 다. 비면 키가 없다.
    */
   finalizedLotNos?: string[];
+  hasLocationlessReceipt?: true;
 }
 
 const CANCELLED = 'CANCELLED';
@@ -105,12 +106,19 @@ export class CancelEligibilityService {
     let statusCode: string | undefined;
     let cancelApprovalRequestId: bigint | undefined;
     let ownedByShipment = false;
+    let hasLocationlessReceipt = false;
 
     if (mapping.cancelable) {
       const document = await this.readDocument(tx, typeCode, documentId);
       // 행이 없으면 404 는 호출자가 «이 함수 앞에서» 낸다(§6-2 ③-1 · 계약은 상세 GET 에만 선언).
       statusCode = document?.status_code;
       ownedByShipment = document?.source_document_type_code === SHIPMENT_OWNER;
+      if (typeCode === 'GOODS_ISSUE' && document?.source_document_type_code === 'PICKING_ORDER'
+        && document.destination_type_code === null) {
+        hasLocationlessReceipt = await tx.shopfloor_receipt.count({
+          where: { goods_issue_id: documentId, destination_location_id: null },
+        }) > 0;
+      }
       // ⛔ 유형 접두가 필수다 — 없으면 다른 축의 승인이 취소 품의를 대신한다(I-5.md §6-2).
       const open = await tx.approval_request.findFirst({
         where: { target_type_code: mapping.entityTypeCode, target_id: documentId, approval_type_code: `${typeCode}_CANCEL`, status_code: 'PENDING' },
@@ -133,7 +141,7 @@ export class CancelEligibilityService {
       // (되돌릴 경로가 없어 잠긴 문서다 · I-5.md §4-4 · 문의 033).
       CANCEL_IN_PROGRESS: statusCode === CANCEL_REQUESTED || cancelApprovalRequestId !== undefined,
       INBOUND_LOT_FINALIZED: finalizedLotNos.length > 0,
-      STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment,
+      STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment || hasLocationlessReceipt,
       SUCCESSOR_EXISTS: found.count > 0,
     };
     const blocked = BLOCK_ORDER.find((code) => hit[code]);
@@ -146,6 +154,7 @@ export class CancelEligibilityService {
       ...(cancelApprovalRequestId === undefined ? {} : { cancelApprovalRequestId }),
       ...(statusCode === undefined ? {} : { statusCode }),
       ...(finalizedLotNos.length === 0 ? {} : { finalizedLotNos }),
+      ...(hasLocationlessReceipt ? { hasLocationlessReceipt: true } : {}),
     };
   }
 
@@ -154,7 +163,7 @@ export class CancelEligibilityService {
     tx: Tx,
     typeCode: LogisticsDocumentType,
     documentId: bigint,
-  ): Promise<{ status_code: string; source_document_type_code?: string | null } | null> {
+  ): Promise<{ status_code: string; source_document_type_code?: string | null; destination_type_code?: string | null } | null> {
     // 원천 유형은 입고·출고만 갖는다 — 입하에는 그 칸이 없다(자리 ⑤ 는 두 유형을 덮는다).
     const select = { status_code: true };
     const withSource = { status_code: true, source_document_type_code: true };
@@ -164,7 +173,7 @@ export class CancelEligibilityService {
       case 'GOODS_RECEIPT':
         return tx.goods_receipt.findUnique({ where: { goods_receipt_id: documentId }, select: withSource });
       case 'GOODS_ISSUE':
-        return tx.goods_issue.findUnique({ where: { goods_issue_id: documentId }, select: withSource });
+        return tx.goods_issue.findUnique({ where: { goods_issue_id: documentId }, select: { ...withSource, destination_type_code: true } });
       default:
         return null;
     }

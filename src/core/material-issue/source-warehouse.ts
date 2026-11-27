@@ -9,7 +9,7 @@ import { PRODUCTION_WAREHOUSE } from './production-warehouse';
 /**
  * 출고 요청의 출발 생산 창고(피처 003 · research R-5).
  *
- * ① tx 밖 — 공장 모드·생산창고 집합 D·입고지(라인 생산 현장)를 정하고, 빠진 기준정보를 모아 400 으로 낸다.
+ * ① tx 밖 — 공장 모드·생산창고 집합 D를 정하고, 빠진 기준정보를 모아 400 으로 낸다.
  * ② tx 안 — 예정 재고 자물쇠 뒤에 자재마다 D 가운데 가용 재고가 있는 창고(후보)에서 쓸 수 있는 양이 가장 큰
  *    창고를 고른다. 동점은 그 창고 가용 재고의 가장 이른 선출 키(피킹과 같은 키) → 창고 코드. 후보가 없으면
  *    요청에 넣지 않는다(FR-007a). 한 자재는 한 창고에서만 나간다 — 나눠 출고하지 않는다(SC-007).
@@ -19,7 +19,6 @@ const FEFO = 'FEFO';
 
 export interface SourceScope {
   warehouseIds: bigint[];
-  destinationLocationId: bigint;
 }
 
 export interface SourceCandidate {
@@ -55,22 +54,16 @@ export async function usesProductionWarehouses(db: Prisma.TransactionClient, pla
   return row !== null;
 }
 
-/** D 는 «W/O 공장의 활성» 생산창고 전부다 — 라인을 가리지 않는다. 라인은 입고지(생산 현장)만 준다. */
+/** D 는 «W/O 공장의 활성» 생산창고 전부다 — 라인을 가리지 않는다. */
 export async function resolveCandidates(
   db: Prisma.TransactionClient,
-  input: { plantId: bigint; productionLineId: bigint },
-): Promise<SourceScope | { errors: ErrorItem[]; warehouseIds: bigint[] }> {
-  const [line, warehouses] = await Promise.all([
-    db.production_line.findUnique({
-      where: { production_line_id: input.productionLineId },
-      select: { default_wip_location_id: true },
-    }),
-    db.warehouse.findMany({
-      where: { plant_id: input.plantId, warehouse_type_code: PRODUCTION_WAREHOUSE },
-      select: { warehouse_id: true, is_active: true },
-      orderBy: { warehouse_id: 'asc' },
-    }),
-  ]);
+  plantId: bigint,
+): Promise<(SourceScope & { errors?: never }) | { errors: ErrorItem[]; warehouseIds: bigint[] }> {
+  const warehouses = await db.warehouse.findMany({
+    where: { plant_id: plantId, warehouse_type_code: PRODUCTION_WAREHOUSE },
+    select: { warehouse_id: true, is_active: true },
+    orderBy: { warehouse_id: 'asc' },
+  });
   const errors: ErrorItem[] = [];
   const warehouseIds = warehouses.filter((row) => row.is_active).map((row) => row.warehouse_id);
   if (warehouseIds.length === 0) {
@@ -81,13 +74,7 @@ export async function resolveCandidates(
         : '이 공장의 생산창고가 모두 사용 중지되었습니다. 창고를 다시 쓰거나 다른 창고를 생산창고로 둬야 합니다.';
     errors.push(field('plantId', ERROR_CODE.PRODUCTION_WAREHOUSE_MISSING, message));
   }
-  if (line?.default_wip_location_id == null) {
-    errors.push(
-      field('productionLineId', ERROR_CODE.PRODUCTION_FLOOR_LOCATION_MISSING, '생산라인에 생산 현장 위치를 지정해야 합니다.'),
-    );
-  }
-  if (errors.length > 0 || line?.default_wip_location_id == null) return { errors, warehouseIds };
-  return { warehouseIds, destinationLocationId: line.default_wip_location_id };
+  return errors.length > 0 ? { errors, warehouseIds } : { warehouseIds };
 }
 
 /** 후보 가운데 하나 — 쓸 수 있는 양 → 선출 키 → 창고 코드. 가용이 없는 창고는 후보가 아니다. */

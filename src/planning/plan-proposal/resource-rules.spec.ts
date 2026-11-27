@@ -52,10 +52,10 @@ describe('resourceFindings — 공정 W/O 의 라인·설비·금형·기본 위
 
   it('기본 위치 — 비면 REQUIRED, 자재창고·다른 공장·사용 중지는 LOCATION_INVALID', () => {
     expect(codes({ defaultWipLocationId: null, defaultFgLocationId: 2n, defaultScrapLocationId: 3n })).toEqual([
-      ['defaultWipLocationId', 'WORK_ORDER_LOCATION_REQUIRED'],
       ['defaultFgLocationId', 'LOCATION_INVALID'],
     ]);
-    expect(codes({ defaultWipLocationId: 4n })).toEqual([['defaultWipLocationId', 'LOCATION_INVALID']]);
+    expect(codes({ defaultWipLocationId: 4n })).toEqual([]);
+    expect(codes({ defaultFgLocationId: null })).toEqual([['defaultFgLocationId', 'WORK_ORDER_LOCATION_REQUIRED']]);
   });
 
   it('스크랩 위치는 비어 있거나 과거 값이어도 필수·자원 검사를 하지 않는다', () => {

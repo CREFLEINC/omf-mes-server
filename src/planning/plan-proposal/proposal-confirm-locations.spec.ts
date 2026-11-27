@@ -27,9 +27,9 @@ describe('제안 확정 — 라인 WIP 자동 적용과 스크랩 선택값', ()
     expect(result.errors).toEqual([]);
     expect(result.resolved[0].supplements.get(1n)?.defaultWipLocationId).toBe(10n);
   });
-  it('라인 기본 WIP가 없으면 입력으로 우회하지 못하고 설정 보완을 안내한다', async () => {
+  it('라인 기본 WIP가 없어도 생산품 입고 위치가 있으면 확정한다', async () => {
     const result = await check(null, 999);
-    expect(result.errors).toContainEqual(expect.objectContaining({ field: 'plans[0].workOrders[0].defaultWipLocationId', code: 'WORK_ORDER_LOCATION_REQUIRED' }));
-    expect(result.resolved[0].supplements.size).toBe(0);
+    expect(result.errors).toEqual([]);
+    expect(result.resolved[0].supplements.get(1n)).toMatchObject({ defaultWipLocationId: null, defaultFgLocationId: 20n });
   });
 });

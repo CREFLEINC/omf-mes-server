@@ -74,7 +74,7 @@ export async function writeWaitingRequests(
         issue_request_no: waiting.issueRequestNos[index],
         work_order_id: input.workOrderId,
         source_warehouse_id: warehouseId,
-        destination_location_id: waiting.destinationLocationId,
+        destination_location_id: null,
         issue_work_date: new Date(`${waiting.issueWorkDate}T00:00:00.000Z`),
         status_code: WAITING,
         requested_by: input.appUserId,
@@ -110,10 +110,9 @@ export async function writeWaitingRequests(
  * 다시 배포하면 새 생산창고로 풀린다(저장 충돌과 같은 뜻이라 STALE_VERSION).
  */
 async function assertSameCandidates(tx: Prisma.TransactionClient, waiting: WaitingPlan): Promise<void> {
-  const now = await resolveCandidates(tx, { plantId: waiting.plantId, productionLineId: waiting.productionLineId });
+  const now = await resolveCandidates(tx, waiting.plantId);
   const same =
     !('errors' in now) &&
-    now.destinationLocationId === waiting.destinationLocationId &&
     now.warehouseIds.join() === waiting.warehouseIds.join();
   if (same) return;
   throw new ContractException(HttpStatus.BAD_REQUEST, [

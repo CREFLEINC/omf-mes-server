@@ -182,7 +182,7 @@ export async function judgeConfirm(
       // 제안이 사유를 내는 판정과 같은 것 — 「확정 가능」 제안을 그대로 보내면 여기서 막히지 않는다.
       locations.set(BigInt(workOrder.routingOperationId), resources);
       for (const finding of resourceFindings(order.plant_id, resources, refs, fgRule)) {
-        if (!EMPTY_CODES.has(finding.code) || finding.field === 'defaultWipLocationId') error(field(finding.field), finding.code, finding.message);
+        if (!EMPTY_CODES.has(finding.code)) error(field(finding.field), finding.code, finding.message);
       }
       const workerId = idOf(workOrder.responsibleWorkerId);
       if (workerId !== null) {
@@ -211,7 +211,7 @@ export async function judgeConfirm(
       windows.set(operationId, window);
       timed.push({ path: `${path}.workOrders[${at}]`, routingOperationId: operationId, source: workOrder.plannedTimeSourceCode, window });
       const { productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId } = resources;
-      if (productionLineId !== null && defaultWipLocationId !== null && defaultFgLocationId !== null) {
+      if (productionLineId !== null && defaultFgLocationId !== null) {
         supplements.set(operationId, { ...resources, productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId, workerId, shiftId, window });
       }
     });

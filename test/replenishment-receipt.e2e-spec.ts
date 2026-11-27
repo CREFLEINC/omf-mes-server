@@ -63,6 +63,8 @@ describe('창고 보충 출고 수령 (e2e)', () => {
     const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId, operation: 'X20', productionDate: fx.nextWeekday('P1', 1) });
     await fx.release(workOrderId).expect(200);
     const [wo] = await fx.requests(workOrderId);
+    // 전환 전에 생성된 현장 수령 대상 요청을 재현한다.
+    await prisma.material_issue_request.update({ where: { material_issue_request_id: wo.material_issue_request_id }, data: { destination_location_id: w.PROD.locationId } });
     // 출고 작업일 전이라 대기다 — 003 배포 함수로 바로 배포한다.
     const releaser = new MaterialIssueReleaser(app.get(DocumentStateService), app.get(PickingHandoverNotifier));
     await prisma.$transaction((tx) => releaser.release(tx, wo.material_issue_request_id, `${PREFIX}-PKWO`, null));
