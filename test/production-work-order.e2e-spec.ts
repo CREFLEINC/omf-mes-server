@@ -116,7 +116,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
       expect(results.filter(result => result.status === 'rejected')).toHaveLength(1);
       const winner = targets[results.findIndex(result => result.status === 'fulfilled')];
-      const loser = targets.find(id => id !== winner)!;
+      const loser = targets.find(id => id !== winner);
+      if (loser === undefined) throw new Error('Expected a rejected work order');
       expect(await prisma.work_order.count({where:{work_order_id:{in:targets},planned_equipment_id:ids.equipment}})).toBe(1);
       await service.update(Number(loser), 1, {...body, plannedStartAt:body.plannedEndAt, plannedEndAt:'2036-11-23T12:00:00Z'}, undefined);
       expect(await prisma.work_order.count({where:{work_order_id:{in:targets},planned_equipment_id:ids.equipment}})).toBe(2);
