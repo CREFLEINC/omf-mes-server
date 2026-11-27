@@ -15,6 +15,8 @@
 ⓐ 계약이 ⌜보내지 않으면 서버가 기본 투입 유형으로 기록한다 · **값 목록은 아직 확정 전**⌝ + `x-no-code-key` ⌜남는 것이 「정상」 **하나**다⌝ 라 적어 **뜻은 줬다**. 없는 것은 그 뜻을 담을 «문자열»뿐이고 `CONSUMPTION_TYPE` 코드 그룹 자체가 DB 에 없다. ⇒ 서버가 `'NORMAL'` 을 골랐다.
 
 **② 이름뿐인 것 — `material_consumption.status_code` · `material_return.status_code`**
+> ✅ `material_return.status_code` 해소(2026-11-27 · 피처 019 · omf-all-around#367) — 반납 입고가 요청 단계 없이 바로 서버 상수 `RECEIVED` 로 쓴다(공통코드 아님 · 계약 `x-no-code-key` 갱신). 옛 행의 `REQUESTED` 는 그대로다. 전이 액션은 여전히 없다(취소 없음 · FR-009).
+
 ⓑ 둘 다 `x-no-code-key` 에 ⌜기록 전용 · **전이 액션 0건**⌝ / ⌜전이 액션도 없다 · 진행은 `requestedAt ↔ receivedAt` 의 유무로 판정한다⌝ 라 적혔다. 뜻이 「출발점」밖에 없어 서버가 `'RECORDED'`·`'REQUESTED'` 를 골랐다. ⚠ I-9 의 `'REGISTERED'` 를 베끼지 않았다 — 그것은 `LOGISTICS_DOCUMENT_STATUS` 4값이 실재하는 물류 문서의 값이고 이 두 표는 그 그룹에 속하지 않는다(`DocumentProgress.documentTypeCode` 9값에도 없다).
 
 **③ 칸조차 없는 것 — `material_return_line.return_quality_status_code`**
