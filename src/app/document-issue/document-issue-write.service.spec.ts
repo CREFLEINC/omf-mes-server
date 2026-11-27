@@ -86,6 +86,21 @@ describe("발행 배치 작성 (I-27 C3b)", () => {
     expect(badReason.created).toEqual([]);
   });
 
+  it("R-7 사람 요청이 서버 사유 LOT_SPLIT 을 보내면 422, 분리 서비스는 비활성이어도 쓴다", async () => {
+    const human = fake({ sequences: [sequence(10n, 1)], reasonActive: true });
+    await expect(
+      service.issueWithin(human.tx, input([10], "LOT_SPLIT"), context()),
+    ).rejects.toMatchObject({
+      status: 422,
+      errors: [expect.objectContaining({ field: "reissueReasonCode", code: "INVALID" })],
+    });
+    expect(human.created).toEqual([]);
+
+    const system = fake({ sequences: [sequence(10n, 1)] });
+    await service.issueWithin(system.tx, input([10], "LOT_SPLIT"), context(), { systemReissueReason: "LOT_SPLIT" });
+    expect(system.created[0]).toMatchObject({ issue_seq: 2, reissue_reason_code: "LOT_SPLIT" });
+  });
+
   it("미존재 대상은 로그를 만들지 않고 422다", async () => {
     const setup = fake({
       sequences: [sequence(10n, 0)],

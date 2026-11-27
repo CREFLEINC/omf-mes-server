@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
+import { loadStockUomTable, toStockUom } from '../../core/bom/stock-uom';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ensureItemIqcPlan } from '../../quality/inspection-plan/item-iqc-plan-sync';
 import { Editability, ReferenceQuery, assertCodeValues, optional, referencePage, referenceWhere } from '../../common/master';
@@ -32,6 +33,8 @@ interface ItemView {
   /** 품목유형별 LOT 기본크기 — 계약 밖 이름(장부 P-139). 전환 동안 옛 이름에도 같은 값을 싣는다. */
   defaultLotSize: number | null;
   defaultProductionLotSize: number | null;
+  defaultPackageUomId: number | null;
+  defaultPackageCount: number | null;
   erpSpec: string | null;
   erpItemGroupCode: string | null;
 }
@@ -51,6 +54,9 @@ export interface ItemUpdate {
   /** 위와 같다 — 옛 이름도 받는다. 둘 다 오면 같아야 한다. */
   defaultLotSize?: unknown;
   defaultProductionLotSize?: number | null;
+  /** 둘은 함께 있거나 함께 비고, LOT 기본크기 ÷ 패키징 수량(봉지당 양)이 소수 1자리까지 떨어져야 한다(피처 014 FR-018). */
+  defaultPackageUomId?: number | null;
+  defaultPackageCount?: number | null;
   nameKo?: string | null;
   nameVi?: string | null;
 }
@@ -60,10 +66,9 @@ export interface ItemQuery extends ReferenceQuery {
   hasRouting?: boolean;
   /** 가장 최근 Rev 의 상태(#231) — 계약 enum 이 DRAFT · CONFIRMED · OBSOLETE 로 막는다. */
   latestRoutingStatus?: string;
-  /** 계약에 없는 조건이라 검증 가드가 불리언으로 바꾸지 않는다 — 문자열로 온다(장부 P-130). */
-  hasBom?: string;
-  /** 위와 같다 — 문자열로 온다(장부 P-138). */
-  inspectionRequired?: string;
+  plantId?: number;
+  hasBom?: boolean;
+  inspectionRequired?: boolean;
 }
 
 type ItemRow = Prisma.itemGetPayload<object>;
@@ -100,9 +105,10 @@ export class ItemService {
       ...(query.hasRouting === undefined
         ? {}
         : { routing: query.hasRouting ? { some: {} } : { none: {} } }),
-      // ERP 연동 현황 › BOM 탭의 모품목 목록 — 이 품목을 모품목으로 하는 BOM 이 있는가.
-      ...withBom(query.hasBom),
-      ...flagWhere('inspectionRequired', query.inspectionRequired, (on) => ({ inspection_required: on })),
+      // q 가 최상위 OR 를 쓴다 — 공장 조건은 AND 에 싣는다.
+      ...(query.plantId === undefined ? {} : { AND: [plantWhere(query.plantId)] }),
+      ...(query.hasBom === undefined ? {} : bomWhere(query.hasBom, query.plantId)),
+      ...(query.inspectionRequired === undefined ? {} : { inspection_required: query.inspectionRequired }),
     });
     const [rows, total] = await Promise.all([
       this.prisma.item.findMany({
@@ -150,8 +156,10 @@ export class ItemService {
     input: ItemUpdate,
   ): Promise<{ item: ItemView; editability: Editability; versionNo: number }> {
     await this.assertWritable(input);
+    const lotSize = lotSizeOf(input);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await assertPackageDefault(tx, itemId, input, lotSize);
       const before = await tx.item.findUnique({
         where: { item_id: itemId },
         select: { item_id: true, item_code: true, item_name: true, inspection_required: true },
@@ -171,7 +179,9 @@ export class ItemService {
           ...optional('opened_shelf_life_hours', input.openedShelfLifeHours),
           ...optional('is_development_item', input.developmentItem),
           ...optional('default_lot_storage_uom_id', input.defaultLotStorageUomId),
-          ...optional('default_production_lot_size', lotSizeOf(input)),
+          ...optional('default_production_lot_size', lotSize),
+          ...optional('default_package_uom_id', input.defaultPackageUomId),
+          ...optional('default_package_count', input.defaultPackageCount),
           ...optional('name_ko', input.nameKo),
           ...optional('name_vi', input.nameVi),
           version_no: { increment: 1 },
@@ -270,28 +280,37 @@ function view(row: ItemRow): ItemView {
       row.default_lot_storage_uom_id === null ? null : Number(row.default_lot_storage_uom_id),
     defaultLotSize: lotSize,
     defaultProductionLotSize: lotSize,
+    defaultPackageUomId: row.default_package_uom_id === null ? null : Number(row.default_package_uom_id),
+    defaultPackageCount: row.default_package_count,
     erpSpec: row.erp_spec,
     erpItemGroupCode: row.erp_item_group_code,
   };
 }
 
-function withBom(value: string | undefined): Prisma.itemWhereInput {
-  return flagWhere('hasBom', value, (on) => ({ bom: on ? { some: {} } : { none: {} } }));
+/**
+ * 품목에는 공장 칸이 없어 BOM 으로 정한다 — 모품목이나 구성품으로 든 BOM 중 그 공장 것이 있으면 그 공장 품목이다.
+ * 공장이 정해진 BOM 에 한 번도 들지 않은 품목은 공장을 몰라 어느 공장에도 든다(클라이언트 요청 2026-11-26).
+ */
+function plantWhere(plantId: number): Prisma.itemWhereInput {
+  const inPlant = { plant_id: plantId };
+  const known = { plant_id: { not: null } };
+  return {
+    OR: [
+      { bom: { some: inPlant } },
+      { bom_component: { some: { bom: inPlant } } },
+      { bom: { none: known }, bom_component: { none: { bom: known } } },
+    ],
+  };
 }
 
-function flagWhere(
-  field: string,
-  value: string | undefined,
-  where: (on: boolean) => Prisma.itemWhereInput,
-): Prisma.itemWhereInput {
-  if (value === undefined) return {};
-  // ⛔ 틀린 값을 무시하지 않는다 — 걸러지지 않은 전 품목이 걸러진 것처럼 보인다.
-  if (value !== 'true' && value !== 'false') {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      { scope: 'field', field, code: ERROR_CODE.INVALID, message: `${field} 은 true 또는 false 여야 합니다.` },
-    ]);
-  }
-  return where(value === 'true');
+/**
+ * 공장과 함께면 그 공장 BOM 과 공장이 빈(공통) BOM 만 센다 — `GET /planning/boms` 의 `plantId` 와 같은 셈이라,
+ * BOM 탭에 선 모품목을 같은 공장으로 열면 BOM 이 비지 않는다.
+ */
+function bomWhere(hasBom: boolean, plantId: number | undefined): Prisma.itemWhereInput {
+  const counted: Prisma.bomWhereInput =
+    plantId === undefined ? {} : { OR: [{ plant_id: plantId }, { plant_id: null }] };
+  return { bom: hasBom ? { some: counted } : { none: counted } };
 }
 
 /** 새 이름은 계약 밖이라 검증 가드가 보지 않는다 — 계약이 옛 이름에 건 `> 0` 을 여기서 건다. */
@@ -310,4 +329,68 @@ function lotSizeOf(input: ItemUpdate): number | null | undefined {
     throw invalid('defaultLotSize 와 defaultProductionLotSize 가 다릅니다.');
   }
   return value;
+}
+
+const PACKAGE_NOT_DIVISIBLE = '패키징 수량이 부적합 합니다. 자재 LOT 기본크기를 정확히 나눌 수 있는 값을 입력해주세요.';
+
+/**
+ * 패키징 기본값 — 보내지 않은 칸은 저장된 값으로 채워 «저장 뒤 모양»을 본다(기본크기만 바꿔도 나눔을 다시 본다).
+ * 기본크기는 보관 단위 값 그대로 나눈다 — 비어 있으면 자동 생성이 어차피 멈추므로(`NO_DEFAULT`) 검사하지 않는다.
+ * 봉지당 양은 소수 1자리까지 허용한다(사용자 결정 2026-11-24) — 「기본크기 × 10 mod 패키징 수량 = 0」(2.5 ÷ 5 = 0.5 통과, 2.5 ÷ 2 = 1.25 막힘).
+ * 보관 단위 ≠ 기본 단위이고 환산이 있으면, 자동 생성이 실제로 쓰는 「기본 단위로 바꾼 크기 ÷ 패키징 수」도 소수 6자리(`qty_per_package`
+ * scale) 안에서 딱 떨어져야 한다(피처 014 T049) — 떨어지지 않으면 자동 생성이 패키징 없이 만들기 때문이다. 환산이 없으면(NO_CONVERSION)
+ * 자동 생성이 어차피 멈추므로 이 검사는 건너뛴다.
+ */
+async function assertPackageDefault(
+  prisma: Prisma.TransactionClient,
+  itemId: number,
+  input: ItemUpdate,
+  lotSize: number | null | undefined,
+): Promise<void> {
+  if (input.defaultPackageUomId === undefined && input.defaultPackageCount === undefined && lotSize === undefined) return;
+  const stored = await prisma.item.findUnique({
+    where: { item_id: itemId },
+    select: { default_package_uom_id: true, default_package_count: true, default_production_lot_size: true, default_lot_storage_uom_id: true },
+  });
+  if (stored === null) return;
+  const storageUomId = input.defaultLotStorageUomId === undefined ? stored.default_lot_storage_uom_id : input.defaultLotStorageUomId;
+  const uomId = input.defaultPackageUomId === undefined ? stored.default_package_uom_id : input.defaultPackageUomId;
+  const count = input.defaultPackageCount === undefined ? stored.default_package_count : input.defaultPackageCount;
+  const size = lotSize === undefined ? stored.default_production_lot_size : lotSize;
+  const reject = (fieldName: string, code: string, message: string): ContractException =>
+    new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'field', field: fieldName, code, message }]);
+  if ((uomId === null) !== (count === null)) {
+    throw reject(uomId === null ? 'defaultPackageUomId' : 'defaultPackageCount', ERROR_CODE.PAIR,
+      '패키징 단위와 LOT 당 패키징 수량은 함께 넣거나 함께 비워야 합니다.');
+  }
+  if (count === null || uomId === null) return;
+  if (input.defaultPackageUomId !== undefined && input.defaultPackageUomId !== null) {
+    const uom = await prisma.uom.findUnique({ where: { uom_id: input.defaultPackageUomId }, select: { uom_id: true } });
+    if (uom === null) throw reject('defaultPackageUomId', ERROR_CODE.INVALID, '없는 단위입니다.');
+  }
+  if (size !== null && !new Prisma.Decimal(size).times(10).mod(count).isZero()) {
+    throw reject('defaultPackageCount', ERROR_CODE.INVALID, PACKAGE_NOT_DIVISIBLE);
+  }
+  if (size !== null && storageUomId !== null && !await baseSizeDivides(prisma, itemId, BigInt(storageUomId), new Prisma.Decimal(size), count)) {
+    throw reject('defaultPackageCount', ERROR_CODE.INVALID, PACKAGE_NOT_DIVISIBLE);
+  }
+}
+
+/**
+ * 기본 단위로 바꾼 LOT 크기 ÷ 패키징 수가 소수 6자리 안에서 딱 떨어지는가 — 자동 생성(`material-lot-po-plan` packageSizeOf)과 같은 셈.
+ * 보관 단위 = 기본 단위면 위의 소수 1자리 규칙으로 이미 충분하고, 환산이 없으면 볼 것이 없어 통과시킨다.
+ * 환산 유효일은 저장하는 날(UTC)로 본다 — 품목은 공장에 매이지 않는다.
+ */
+async function baseSizeDivides(
+  prisma: Prisma.TransactionClient,
+  itemId: number,
+  storageUomId: bigint,
+  size: Prisma.Decimal,
+  count: number,
+): Promise<boolean> {
+  const table = await loadStockUomTable(prisma, [BigInt(itemId)], new Date().toISOString().slice(0, 10));
+  const converted = toStockUom(table, BigInt(itemId), storageUomId, size);
+  if (converted.source === null || converted.stockQty === null) return true;
+  const perPackage = converted.stockQty.dividedBy(count).toDecimalPlaces(6);
+  return perPackage.times(count).equals(converted.stockQty);
 }

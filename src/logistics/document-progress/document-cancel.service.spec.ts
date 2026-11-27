@@ -134,12 +134,14 @@ describe('DocumentCancelService', () => {
     });
   });
 
-  it('요청 — approvalTypeCode 는 {유형}_CANCEL 이다(계약 enum 12값과 대조)', async () => {
+  it('요청 — approvalTypeCode 는 {유형}_CANCEL 이다(계약 enum 8값과 대조)', async () => {
     const declared = approvalTypeEnum();
     // 9값 + 서버 선행 특채 CONCESSION(장부 P-79 · omf-all-around#84).
     // +1 — OQC 생략(OQC_SKIP · omf-all-around#119 · 장부 P-83).
     // +1 — PQC 생략(PQC_SKIP · omf-all-around#212 · 장부 P-152).
-    expect(declared).toHaveLength(12);
+    // −3 — IQC·OQC·PQC 생략(IQC_SKIP·OQC_SKIP·PQC_SKIP)을 없앴다(omf-all-around#353).
+    // −1 — 특채 CONCESSION 은 결재 없이 바로 적용돼 뺐다(omf-all-around#352).
+    expect(declared).toHaveLength(8);
 
     for (const typeCode of ['INBOUND_RECEIPT', 'GOODS_RECEIPT', 'GOODS_ISSUE'] as const) {
       const { service, at } = fake({ locked: { status_code: 'POSTED', version_no: VERSION } });

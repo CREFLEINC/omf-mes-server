@@ -55,9 +55,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/replenishment-settings/warehouses/{warehouseId}': ['W-02-12'],
   // 쓸 수 있는 양 — W-02-10 품목 줄의 남은 수량(omf-all-around#232).
   'GET /logistics/material-issue-requests/free-stock': ['W-02-10'],
-  // 부서 생산 창고 — 같은 화면의 부서 폼 「생산 창고」 구획이다(omf-all-around#66).
-  'GET /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
-  'PUT /mdm/departments/{departmentId}/production-warehouses': ['W-06-06'],
 
   // `W-06-07` 물류 마스터 — §3 이 「창고 등록」만 적어 도출표에 `POST` 만 들어왔다.
   // 수정과 활성 전이는 같은 화면의 같은 자원이다.
@@ -97,6 +94,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/terminals/{terminalId}:issue-token': ['W-CO-06'],
   // 툴도 같다 — 도출표에 :deactivate·:dispose 만 들어왔다. 재개는 중지의 짝이다.
   'POST /mdm/molds/{moldId}:activate': ['W-05-13'],
+  'POST /mdm/terminals/{terminalId}:activate': ['W-CO-06'],
   'POST /mdm/terminals/{terminalId}:deactivate': ['W-CO-06'],
 
   // `W-06-08` 예비품 마스터 — §5 가 「등록·올리기」만 적어 나머지가 도출표에 안 들어왔다.
@@ -132,6 +130,13 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/material-lot-batches': ['P-01-01', 'W-01-14'],
   'GET /logistics/waiting-material-lots': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lot-pairs': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lot-suppliers': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lots': ['P-01-01', 'W-01-14'],
+  'GET /logistics/material-lots/lookup': ['P-01-01', 'W-01-14'],
+  'POST /logistics/material-lots/{lotId}:revise': ['P-01-01', 'W-01-14'],
+  // 분할 LOT 라벨(피처 008 · omf-all-around#289) — POP P-01-02 가 출고 QR 대신 부분 출고 분할 LOT 의 자재 LOT 라벨을 찍는다.
+  'GET /logistics/split-material-lots': ['P-01-02'],
   'POST /trace/lots:void': ['P-01-01', 'W-01-14'],
   // PDA 입하 받기·해제·공급사 LOT(피처 005 §3) — 받기와 공급사 LOT 입력은 스캔 화면 M-01-01 뿐이고(M-01-03 에는 입력
   // 화면이 없다), 해제는 스캔 화면 카드와 입하 마감 화면 M-01-03 둘 다 한다.
@@ -156,27 +161,28 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 「부모의 화면이 곧 이 오퍼레이션의 화면」이라 답했다(`plan-uiux.md:852`). 부모를 소유한
   // 화면 하나만 적는다.
   'PUT /trace/lots/{lotId}/external-identifiers': ['M-01-02'],
-  // 긴급 IQC 생략 요청 — 도출표는 `W-01-13` 인데 계약·§U9 의 화면은 `M-01-13`(「긴급 IQC 생략
-  // 요청」)이다. 두 표는 «합집합»이라 같은 키를 다시 적어도 도출된 화면이 빠지지 않는다 —
-  // 이 한 줄이 없으면 M-01-13 사용자의 주 버튼이 403 으로 죽는다.
-  // 관리웹 IQC 판정(W-01-01)의 생략 구획도 같은 요청을 올린다(omf-all-around#212 · 장부 P-152).
-  'POST /trace/lots/{lotId}:request-iqc-skip': ['M-01-13', 'W-01-01'],
-  // 승인된 IQC 생략의 실행 — 생략을 승인하는 결재 화면 W-01-02 의 조작이다(omf-all-around#105 · 장부 P-36).
-  'POST /trace/lots/{lotId}:skip-iqc': ['W-01-02', 'W-01-01'],
-  // OQC 생략 요청·실행 — 출하검사 판정 화면 W-04-03 의 조작이다. 결재는 W-03-09 가 한다(omf-all-around#119 · 장부 P-83).
-  'POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip': ['W-04-03'],
-  // 실행은 결재 화면 W-03-09 에서도 한다 — IQC 생략(위 `:skip-iqc` 가 결재 화면 W-01-02)과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
-  'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03', 'W-03-09'],
-  // PQC 건별 생략 — 요청은 PQC 검사 조회·판정(W-03-11), 실행은 그 화면과 한도승인(W-03-09)(omf-all-around#212 · 장부 P-152).
-  'POST /production/work-orders/{workOrderId}:request-pqc-skip': ['W-03-11'],
-  'POST /production/work-orders/{workOrderId}:skip-pqc': ['W-03-11', 'W-03-09'],
+  // LOT 통째 피킹 — 옛 `:pick` 과 같은 화면(M-04-01 제품 LOT 피킹)이다(피처 010 · omf-all-around#305).
+  'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot': ['M-04-01'],
+  // OQC 불합격 LOT 교체·출하 관리 코드 — 같은 PDA 피킹 화면의 조작이다(피처 010).
+  'POST /logistics/shipment-request-lots/{shipmentRequestLotId}:replace': ['M-04-01'],
+  'PUT /logistics/shipment-request-lots/{shipmentRequestLotId}/management-code': ['M-04-01'],
+  // 출하 완료 — POP P-04-07 전용 화면이다. 계정 세션은 서비스가 403 으로 막는다(단말만 완료한다).
+  'POST /logistics/shipment-requests/{shipmentRequestId}:complete': ['P-04-07'],
+  // 지시서 코드 해석 — 피처 012 가 다른 사업부 지시서에 403 `BUSINESS_UNIT_MISMATCH` 를 선언해 가드가 보게 됐다. 단말(POP P-04-07)은
+  // 가드가 세지 않고, 계정 세션은 지시서를 다루는 화면(출하 완료·PDA 피킹·출하 예정 목록·출하 취소) 중 하나면 된다.
+  'GET /logistics/shipment-requests:lookup': ['P-04-07', 'M-04-01', 'W-04-02', 'W-04-12'],
+  // 생산 LOT 수량 분리(피처 013) — POP P-04-08 스캔·분리, 목록은 PDA M-04-05 첫 스캔도 쓴다. 계정 세션은 서비스가 403.
+  'GET /logistics/product-lot-splits:lookup': ['P-04-08'],
+  'POST /logistics/product-lot-splits': ['P-04-08'],
+  'GET /logistics/product-lot-splits': ['P-04-08', 'M-04-05'],
+  'POST /logistics/product-lot-splits/{productLotSplitId}:confirm': ['M-04-05'],
   // 불량 기록 등록 — IQC 불합격 사유를 남기는 수입검사 판정 화면의 조작이다(omf-all-around#106 · 장부 P-42).
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
   'POST /quality/defect-records': ['W-01-01', 'W-03-03', 'P-02-14'],
-  // 품목별 IQC 검사 수준 지정·수동 변경 — 검사 수준 관리 화면의 조작이다(omf-all-around#64 · 장부 P-87).
-  'POST /quality/item-inspection-levels': ['W-03-12'],
-  'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-03-12'],
+  // 품목별 IQC 검사 수준 지정·수동 변경(omf-all-around#64 · 장부 P-87) — 검사 수준 관리(W-03-12)를 검사기준 등록에 합쳤다(omf-all-around#357).
+  'POST /quality/item-inspection-levels': ['W-06-02'],
+  'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-06-02'],
   // 시리얼 OQC 스캔·의뢰의 시리얼 판정 — OQC 출하검사 판정 화면(관리웹·POP)의 조회다(omf-all-around#68 · 장부 P-101).
   'GET /quality/oqc-serials/{serialNo}': ['W-04-03', 'P-04-06'],
   'GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials': ['W-04-03', 'P-04-06'],
@@ -229,6 +235,15 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 같은 화면의 기간별 이력 중 투입·포장(장부 P-151).
   'GET /trace/material-input-lines': ['W-02-09'],
   'GET /trace/packing-lines': ['W-02-09'],
+  // 자재 기준 생산 추적(W-02-13)·제품 기준 역추적(W-02-14) — 피처 015 · omf-all-around#355. 설계 밖 화면이라 그 화면만 연다.
+  // 번호 풀기는 두 화면이 함께 쓰고 서비스가 direction 에 맞는 권한을 다시 본다(contracts 머리).
+  'GET /trace/material-trace-lots': ['W-02-13'],
+  'GET /trace/product-trace-lots': ['W-02-14'],
+  'GET /trace/trace-starts': ['W-02-13', 'W-02-14'],
+  'GET /trace/forward-tree': ['W-02-13'],
+  'GET /trace/backward-tree': ['W-02-14'],
+  'POST /trace/forward-exports': ['W-02-13'],
+  'POST /trace/backward-exports': ['W-02-14'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.
@@ -285,6 +300,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 보지 않지만, 화면이 부르는 자리를 같은 줄로 남긴다.
   'GET /production/work-orders/{workOrderId}/validation': ['W-02-04'],
   'GET /production/work-orders/{workOrderId}': ['W-02-04'],
+  // 배포 확인의 자재 소요·단위 환산 — 설계 밖 경로라 도출표에 없다. 배포 화면이 확인 단계에서 부른다.
+  'GET /production/work-orders/{workOrderId}/material-requirements': ['W-02-04'],
 
   // `W-06-10` 연계 동기화 현황·실패 재처리 — 계약 x-internal-note 가 「소관 = W-06-10
   // (공유계약 B-4-1 ④ · 중복 구현 금지)」라 직접 적었다. `W-06-10` §5-1 액션 8건에 이
@@ -309,6 +326,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /planning/production-orders/{productionOrderId}/audit-events': ['W-02-01', 'W-02-02', 'W-02-03', 'W-02-04'],
   // 계획 날짜를 고르는 두 화면(자동 분배·분할)이 근무일을 본다 — 계획 제안 조회와 같은 권한이다.
   'POST /planning/working-days:resolve': ['W-02-01', 'W-02-02'],
+  // 처리 화면 BOM 단계·제안 검토(W-02-01·W-02-02)와 배포 확인(W-02-04)이 구성 자재 가용 수량을 본다(omf-all-around#320).
+  'POST /planning/boms:material-availability': ['W-02-01', 'W-02-02', 'W-02-04'],
 
   // `W-06-03` 불량코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
   // 수정·활성 전이가 도출표에 안 들어왔다.
@@ -319,7 +338,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `W-06-02` 검사기준 등록 — §3-3 이 「기준 추가」·「승인」만 적어 수정·활성 전이가
   // 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
   'PUT /quality/inspection-plans/{inspectionPlanId}': ['W-06-02'],
-  'POST /quality/inspection-plans/{inspectionPlanId}:approve': ['W-06-02'],
   'POST /quality/inspection-plans/{inspectionPlanId}:activate': ['W-06-02'],
   // 복사 — 같은 화면의 조작이다(omf-all-around#255).
   'POST /quality/inspection-plans/{inspectionPlanId}:copy': ['W-06-02'],
@@ -348,6 +366,17 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `permission.guard.ts:47-53`). ⛔ `M-04-04` 를 넣지 않는다 — 그 화면 §5-6 이
   // 「임시 위치 적재는 `M-01-07` 이 자재 전용이라 제품용 경로가 없다」라 적었다.
   'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary': ['M-01-07'],
+  // 지시 없는 구매 입고 적치(피처 009 · omf-all-around#294 · FR-041) — 목록·LOT 확인은 적치(M-01-05)와 임시 적치(M-01-07)가
+  // 함께 읽고, 위치 판정은 적치 화면만 부른다.
+  'GET /logistics/putaway-pending-lots': ['M-01-05', 'M-01-07'],
+  'GET /logistics/putaway-pending-lots:lookup': ['M-01-05', 'M-01-07'],
+  'GET /logistics/putaway-pending-lots/{lotId}/location-check': ['M-01-05'],
+  // 적치(지정·미지정 위치 — 미지정이면 보관 품목 자동 추가 포함)는 M-01-05, 창고만 고르는 임시 적치는 M-01-07.
+  'POST /logistics/putaway-pending-lots/{lotId}:putaway': ['M-01-05'],
+  'POST /logistics/putaway-pending-lots/{lotId}:putaway-temporary': ['M-01-07'],
+  // PDA 적치 기록(M-01-14 · 피처 011 · omf-all-around#325) — 새 화면 권한을 만들지 않고 적치(M-01-05)·임시 적치(M-01-07)
+  // 화면을 쓰는 사람이 본다(plan 「설계에서 정한 세부」). 단말 전용이라 계정 세션은 서비스가 401 로 막는다.
+  'GET /logistics/putaway-records': ['M-01-05', 'M-01-07'],
 
   // `W-06-09` ERP-MES I/F 연계정의 관리 — §3 이 「정의 추가」만 적어 수정·활성 전이·연결
   // 시험이 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
@@ -451,31 +480,21 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 이동 문서의 유일한 화면으로 둔다(결정 — 통보 123).
   'PUT /logistics/stock-transfers/{stockTransferId}/lines': ['M-01-10'],
 
-  // `GET /app/approval-requests` — ⭐ 도출표에 «이미 있는» 키에 호출 셸을 더한다(`GET /app/users` 와 같은 모양).
-  // 도출표는 `['W-01-13','W-03-09','W-CO-09']` 인데 계약이 이름 적은 호출자 둘이 빠져 있다:
-  //  · `M-01-13` — 오퍼레이션 description 「⭐ 부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과
-  //    **모바일 상신 화면(M-01-13 의 「내가 올린 요청」 구획)**」 · `requestedByMe` 근거 「M-01-13 §4」.
-  //  · `W-01-02` — `assignedToMe` description 「승인 화면은 관리웹뿐이라(W-CO-09·**W-01-02**·W-03-09)」.
-  //    셋 중 둘은 도출표에 있고 이것만 없다.
-  // 원인은 181 과 같다 — 도출 원천인 요구서 §3 이 화면보다 낡았다. // 결정 — 통보 189
-  // ⛔ `M-CO-01` 은 넣지 않는다 — 계약이 그 이름을 「모바일 셸에는 계정 로그인이 없다(M-CO-01 §2)」로
-  //    «인증 모델»의 근거로만 적었고 「그 화면이 이 목록을 부른다」로는 적지 않았다(통보 189 §끝).
-  // `W-04-03` — OQC 생략 구획이 자기 출하작업지시의 결재 상태(`targetTypeCode`·`targetId`)를 읽는다(omf-all-around#119 · 장부 P-83).
-  // `W-03-11` — PQC 생략 구획이 자기 작업지시의 결재 상태를 읽는다(omf-all-around#212 · 장부 P-152).
-  'GET /app/approval-requests': ['M-01-13', 'W-01-02', 'W-04-03', 'W-03-11', 'W-01-01'],
-
   // `W-03-10` 처분 판정 처리 — ⭐ 도출 원천이 화면보다 «낡아» 한 줄도 안 도출된 자리다(그 화면은
   // DR-008 확정 3-A 로 2026-08-13 «신설»됐다). 그 결과 판정 저장이 `P-02-13`(POP · PQC) 하나만
-  // 요구해 **정작 그 화면 담당자가 403 을 받는다**(계약 본문이 화면 코드를 직접 적었다).
+  // 요구해 **정작 그 화면 담당자가 403 을 받았다**(계약 본문이 화면 코드를 직접 적었다). P-02-13 은
+  // #293 에서 없앴다 — 지금은 이 줄만 남는다.
   // ⚠ 조회 셋은 계약이 403 을 «선언하지 않아» 오늘은 가드가 안 본다(`permission.guard.ts:40`).
   // // 결정 — 통보 181
-  'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
-  'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
-  'GET /quality/nonconformances': ['W-03-10'],
-  'GET /quality/nonconformances/{nonconformanceId}': ['W-03-10'],
+  // ⭐ 「부적합 처분 관리」 메뉴를 없애고 처분을 IQC(W-01-01)·OQC(W-04-03) 판정 화면 안의 처분 상자로 옮겼다(omf-all-around#354).
+  //   W-03-10 은 이미 그 권한을 받은 역할을 위해 남긴다.
+  'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-01-01', 'W-03-10', 'W-04-03'],
+  'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-01-01', 'W-03-10', 'W-04-03'],
+  'GET /quality/nonconformances': ['W-01-01', 'W-03-10', 'W-04-03'],
+  'GET /quality/nonconformances/{nonconformanceId}': ['W-01-01', 'W-03-10', 'W-04-03'],
   // 재작업 W/O 발행도 같은 화면의 조작이다(omf-all-around#47 · 장부 P-33) — 생산 쪽 발행 경로는
   // `W-02-02`·`W-02-07` 이라 품질 담당이 403 을 받는다.
-  'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order': ['W-03-10'],
+  'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order': ['W-01-01', 'W-03-10', 'W-04-03'],
 
   // `M-01-12` 재생재 등록 — ⭐ 도출표가 `['M-01-01','M-01-02']`(입하 등록·LOT 발번)이라
   // **그 화면 권한만 가진 계정이 403** 을 받는다. 계약 본문·`plan-uiux.md:262` 가 둘 다
@@ -500,23 +519,24 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['P-04-05'],
   'POST /logistics/shipping-units/{shippingUnitId}:close': ['P-04-05'],
   // `W-03-11` PQC 검사 등록·조회(설계 밖 관리웹 화면 · 장부 P-51) — 그 화면이 «스스로» PQC 판정을
-  // 확정한다. 도출표의 `P-02-13`(POP)과 합집합이다. ⭐ 같은 화면이 부르는 조회(의뢰·회차·기준 항목·
+  // 확정한다. 도출표에 있던 `P-02-13`(POP)은 #293 에서 없앴다. ⭐ 같은 화면이 부르는 조회(의뢰·회차·기준 항목·
   // 코드)는 계약에 403 이 없어 권한표가 보지 않으므로 적지 않는다.
   'POST /quality/inspection-results': ['W-03-11'],
   // 입하 LOT 검사의 작성중 결과 삭제(피처 005 §8 · omf-all-around#254) — IQC 판정 화면(W-01-01)이 결과 목록에서 지운다.
   'DELETE /quality/inspection-results/{inspectionResultId}': ['W-01-01'],
+  // 출하 OQC 새 흐름(피처 010)의 작성중 결과 고치기 — 출하검사 판정(W-04-03) 결과 목록에서 고친다. 도출표의 W-01-01 과 합집합이다.
+  'PUT /quality/inspection-results/{inspectionResultId}': ['W-04-03'],
   // 입하 LOT 검사의 판정 확정·확정 취소(피처 005 §8 · R-12·R-13) — 화면이 아니라 W-01-01 안의 동작 권한 W-01-15 만.
   // 결과 기록(W-01-01)만 가진 검사자는 확정·취소를 못 한다(US4-7).
   'POST /quality/inspection-requests/{inspectionRequestId}:confirm': ['W-01-15'],
   'POST /quality/inspection-requests/{inspectionRequestId}:cancel-confirm': ['W-01-15'],
-  // 특채 요청·적용(omf-all-around#84 · 장부 P-79) — 처분 판정 처리(W-03-10)가 그 부적합에서 만든다.
-  // 승인은 결재 경로(W-03-09)의 몫이라 여기 적지 않는다.
-  'POST /quality/concessions': ['W-03-10'],
-  // 적용은 결재 화면 W-03-09 에서도 한다 — IQC·OQC 생략 실행과 같은 짜임이다(omf-all-around#193 · 장부 P-127).
-  'POST /quality/concessions/{concessionId}:apply': ['W-03-10', 'W-03-09'],
+  // 특채 저장(omf-all-around#84 · 장부 P-79) — 처분 판정 처리(W-03-10)가 그 부적합에서 만들고 바로 적용한다(omf-all-around#352).
+  'POST /quality/concessions': ['W-01-01', 'W-03-10', 'W-04-03'],
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],
+  // 검사 의뢰 첨부를 나중에 자재 관리 LOT 에 연결(omf-all-around#296) — 올리기와 같은 IQC·OQC 판정 화면.
+  'POST /app/attachments/{attachmentId}:link-lots': ['W-01-01', 'W-04-03'],
   // 웹 입고 관리(W-01-09)의 「라인 표에서 바로 입하」가 `:per-line` 을 부르고 단추는 웹 입하 등록 W-01-03 으로 선다 — `:per-line` 은
   // 입하 등록과 같은 권한이다(장부 P-117). W-01-03 은 이미 `:split` 으로 보통 입하를 만들 수 있어 새로 생기는
   // 힘은 없다(사용자 결정 2026-10-27).
@@ -542,5 +562,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/supplier-item-defaults': ['W-06-25'],
   'PUT /mdm/supplier-item-defaults/{supplierItemDefaultId}': ['W-06-25'],
   'DELETE /mdm/supplier-item-defaults/{supplierItemDefaultId}': ['W-06-25'],
+  // 교대 관리(omf-all-around#318) — 설계 밖 기준정보 화면 W-06-26 이 공장별 교대(주간·야간)를 등록·수정·중지한다.
+  // 목록(`GET /mdm/shifts`)은 4M 자원배정도 읽는 조회라 403 이 없다 — 여기 두지 않는다.
+  'POST /mdm/shifts': ['W-06-26'],
+  'PUT /mdm/shifts/{shiftId}': ['W-06-26'],
+  'POST /mdm/shifts/{shiftId}:deactivate': ['W-06-26'],
+  'POST /mdm/shifts/{shiftId}:activate': ['W-06-26'],
 };
 

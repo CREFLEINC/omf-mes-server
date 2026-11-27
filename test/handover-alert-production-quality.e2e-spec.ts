@@ -14,6 +14,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { LogisticsHandoverNotifier } from '../src/logistics/logistics-handover';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { WorkOrderHandoverNotifier } from '../src/production/work-order/work-order-handover';
 import { InboundLotFixture, closeInboundLotFixture, issueAndReceive, sessionAuth } from './support/inbound-lot-fixture';
@@ -112,21 +113,26 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     expect(await eventsOf('WORK_ORDER_RELEASED', 'WORK_ORDER', workOrderId)).toHaveLength(1);
   });
 
-  it('US1-5 FR-002 T8 OQC 의뢰가 품목 둘에 생겨도 출하지시 1건에 알림 1건, 내용에 의뢰 수', async () => {
-    const requestId = await shipmentRequest(ids.plant, true);
+  // 피처 012 FR-016 — 받는 공장은 지시서 사업부의 활성 공장들이다(OQC 는 사업부 안 어느 POP 에서나 한다).
+  it('US1-5 FR-002 FR-016 T8 OQC 의뢰가 품목 둘에 생겨도 출하지시 1건에 사업부 공장마다 알림 1건, 내용에 의뢰 수', async () => {
+    const requestId = await shipmentRequest(true);
     const requests = await prisma.inspection_request.count({
       where: { inspection_type_code: 'OQC', target_type_code: 'SHIPMENT_REQUEST', target_id: requestId },
     });
     expect(requests).toBe(2);
 
+    const plants = await prisma.plant.count({ where: { business_unit_id: ids.unit, is_active: true } });
     const events = await eventsOf('OQC_INSPECTION_REQUESTED', 'SHIPMENT_REQUEST', requestId);
-    expect(events).toHaveLength(1);
-    expect(events[0].payload).toMatchObject({ request_count: 2, ship_date: '30/10/2026' });
+    expect(events).toHaveLength(plants);
+    for (const event of events) expect(event.payload).toMatchObject({ request_count: 2, ship_date: '30/10/2026' });
   });
 
-  it('US1-5 T8 이행 공장이 없으면 OQC 알림은 없다', async () => {
-    const requestId = await shipmentRequest(null, true);
-    expect(await eventsOf('OQC_INSPECTION_REQUESTED', 'SHIPMENT_REQUEST', requestId)).toHaveLength(0);
+  it('US1-5 US6-3 T8 사업부도 이행 공장도 없는 지시서는 OQC 알림이 없다', async () => {
+    const requestId = await shipmentRequest(true);
+    const before = (await eventsOf('OQC_INSPECTION_REQUESTED', 'SHIPMENT_REQUEST', requestId)).length;
+    await prisma.shipment_request.update({ where: { shipment_request_id: requestId }, data: { business_unit_id: null, fulfillment_plant_id: null } });
+    await prisma.$transaction((tx) => app.get(LogisticsHandoverNotifier).oqcRequested(tx, requestId, 2));
+    expect(await eventsOf('OQC_INSPECTION_REQUESTED', 'SHIPMENT_REQUEST', requestId)).toHaveLength(before);
   });
 
   it('US1-5 T9 재작업 W/O 발행 → 원천 계획 공장의 담당자에게 재작업 알림, 내용에 부적합 번호', async () => {
@@ -272,7 +278,7 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
     return row.work_order_id;
   }
 
-  async function shipmentRequest(plantId: bigint | null, inspect: boolean): Promise<bigint> {
+  async function shipmentRequest(inspect: boolean): Promise<bigint> {
     const response = await request(app.getHttpServer())
       .post('/api/logistics/shipment-requests')
       .set('Cookie', cookie)
@@ -281,13 +287,14 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
         customerId: Number(ids.customer),
         shipToPartnerId: Number(ids.customer),
         requestedShipDate: '2026-10-30',
-        ...(plantId === null ? {} : { fulfillmentPlantId: Number(plantId) }),
+        businessUnitId: Number(ids.unit),
         lines: [ids.itemOqc1, ids.itemOqc2].map((itemId) => ({
           itemId: Number(itemId),
           requestedQty: 5,
           allocatedQty: 5,
           uomId: Number(ids.uom),
           shippingInspectionRequired: inspect,
+          warehouseId: Number(ids.whM),
         })),
       })
       .expect(201);
@@ -347,6 +354,7 @@ describe('인계 작업 알림 — 생산·품질 (e2e)', () => {
   async function fixtures(): Promise<void> {
     const base = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     const unit = await prisma.business_unit.findFirstOrThrow({ orderBy: { business_unit_id: 'asc' } });
+    ids.unit = unit.business_unit_id;
     // 공장은 고정 코드로 다시 쓴다 — 원장이 붙어 지울 수 없어, 실행마다 새로 만들면 공장 목록(mdm-reference 등)의 쪽을 밀어낸다.
     ids.plant = (
       (await prisma.plant.findFirst({ where: { plant_code: `${ROOT}-P` } })) ??

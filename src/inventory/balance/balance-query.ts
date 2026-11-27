@@ -1,7 +1,8 @@
 import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { INVENTORY_AVAILABLE, QUALITY_NORMAL } from '../../core/picking/picking-generation';
+import { inboundLotFamilySql, inboundLotOfSql } from '../../core/lot';
+import { INVENTORY_AVAILABLE, LOT_JUDGED_QUALITIES, LOT_NORMAL, QUALITY_NORMAL } from '../../core/picking/picking-generation';
 
 /**
  * 잔액 집계 SQL 을 짓는다.
@@ -113,7 +114,8 @@ const FROM = `
     JOIN mdm.warehouse w ON w.warehouse_id = b.warehouse_id
     JOIN mdm.location loc ON loc.location_id = b.location_id
     LEFT JOIN trace.lot l ON l.lot_id = b.lot_id
-    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = l.inbound_lot_id
+    -- 분할 LOT 은 입하 LOT 칸이 비어 있다 — 조상의 입하 LOT 을 보인다(피처 008).
+    LEFT JOIN trace.inbound_lot il ON il.inbound_lot_id = ${inboundLotOfSql('l')}
     LEFT JOIN LATERAL (
       SELECT 1 AS held FROM trace.lot_hold h
        WHERE h.lot_id = b.lot_id AND h.released_at IS NULL LIMIT 1
@@ -125,8 +127,18 @@ const FROM = `
  *
  * ⛔ 예전에는 가용을 `보유 − 예약 − 피킹 − blocked_qty` 로만 셌는데 `blocked_qty` 를 쓰는 경로가 없어(보류는
  * `lot_hold` 가 정본) 불량 · 보류 재고가 그대로 「가용」으로, 「보류」는 늘 0 으로 나갔다.
+ * LOT 이 있는 행은 LOT 판정이 정한다 — 검사 대기로 입고된 행도 PQC 합격이면 가용이다(omf-all-around#302).
  */
-const PICKABLE_ROW = `(b.quality_status_code = '${QUALITY_NORMAL}' AND b.inventory_status_code = '${INVENTORY_AVAILABLE}' AND hh.held IS NULL)`;
+const JUDGED = LOT_JUDGED_QUALITIES.map((code) => `'${code}'`).join(', ');
+const QUALITY_OK = `(CASE WHEN b.lot_id IS NULL THEN b.quality_status_code = '${QUALITY_NORMAL}'
+  ELSE l.status_code = '${LOT_NORMAL}' AND b.quality_status_code IN (${JUDGED}) END)`;
+/**
+ * 화면에 싣고 거르는 품질 — LOT 판정을 따르는 행(정상·검사 대기)은 LOT 판정을, 나머지는 행 값을 낸다(omf-all-around#302).
+ * 검사 대기로 입고된 재고가 합격 뒤에도 「검사 대기」로 보이면 가용 수량과 어긋난다. 원장 차원은 그대로다 — 전기는 행을 직접 읽는다.
+ */
+const JUDGED_QUALITY = `(CASE WHEN b.lot_id IS NOT NULL AND b.quality_status_code IN (${JUDGED}) THEN l.status_code
+  ELSE b.quality_status_code END)`;
+const PICKABLE_ROW = `(${QUALITY_OK} AND b.inventory_status_code = '${INVENTORY_AVAILABLE}' AND hh.held IS NULL)`;
 
 /** 예약 · 피킹 · 묶음을 뺀 나머지 — 집을 수 있는 행이면 가용, 아니면 보류로 간다. */
 const FREE_QTY = '(b.on_hand_qty - b.reserved_qty - b.picked_qty - b.blocked_qty)';
@@ -145,9 +157,9 @@ function conditionsOf(filters: BalanceFilters, withExpiry: boolean): Conditions 
   if (filters.itemId !== undefined) c.add((p) => `b.item_id = ${p}::bigint`, filters.itemId);
   if (filters.lotId !== undefined) c.add((p) => `b.lot_id = ${p}::bigint`, filters.lotId);
   if (filters.locationId !== undefined) c.add((p) => `b.location_id = ${p}::bigint`, filters.locationId);
-  if (filters.inboundLotId !== undefined) c.add((p) => `l.inbound_lot_id = ${p}::bigint`, filters.inboundLotId);
-  if (filters.inboundLotNo !== undefined) c.add((p) => `il.inbound_lot_no = ${p}`, filters.inboundLotNo);
-  if (filters.qualityStatusCode !== undefined) c.add((p) => `b.quality_status_code = ${p}`, filters.qualityStatusCode);
+  if (filters.inboundLotId !== undefined) c.add((p) => `b.lot_id IN (${inboundLotFamilySql('ID', p)})`, filters.inboundLotId);
+  if (filters.inboundLotNo !== undefined) c.add((p) => `b.lot_id IN (${inboundLotFamilySql('NO', p)})`, filters.inboundLotNo);
+  if (filters.qualityStatusCode !== undefined) c.add((p) => `${JUDGED_QUALITY} = ${p}`, filters.qualityStatusCode);
   if (filters.inventoryStatusCode !== undefined) c.add((p) => `b.inventory_status_code = ${p}`, filters.inventoryStatusCode);
   if (filters.ownershipTypeCode !== undefined) c.add((p) => `b.ownership_type_code = ${p}`, filters.ownershipTypeCode);
   if (filters.mesCategoryCode !== undefined) c.add((p) => `i.mes_category_code = ${p}`, filters.mesCategoryCode);
@@ -172,16 +184,16 @@ function conditionsOf(filters: BalanceFilters, withExpiry: boolean): Conditions 
 /** 줄 하나 — 접힌 축은 값이 하나일 때만 싣는다. */
 function foldedColumns(groupBy: GroupBy): string {
   const keys = new Set(GROUP_KEYS[groupBy]);
-  return FOLDABLE.map((column) =>
-    keys.has(`b.${column}`)
-      ? `b.${column}`
-      : `CASE WHEN count(DISTINCT b.${column}) = 1 THEN min(b.${column}::text) END AS ${column}`,
-  ).join(',\n           ');
+  return FOLDABLE.map((column) => {
+    if (keys.has(`b.${column}`)) return `b.${column}`;
+    const value = column === 'quality_status_code' ? JUDGED_QUALITY : `b.${column}`;
+    return `CASE WHEN count(DISTINCT ${value}) = 1 THEN min(${value}::text) END AS ${column}`;
+  }).join(',\n           ');
 }
 
 /** LOT 으로 묶은 줄만 싣는다 — LOT 이 키라 줄마다 입하 LOT 이 하나다(계약: 다른 묶음 방식에는 칸 없음). */
 const INBOUND_LOT_COLUMNS = `
-           min(l.inbound_lot_id) AS inbound_lot_id,
+           min(il.inbound_lot_id) AS inbound_lot_id,
            min(il.inbound_lot_no) AS inbound_lot_no,`;
 
 export function balanceRowsQuery(groupBy: GroupBy, filters: BalanceFilters): BuiltQuery {

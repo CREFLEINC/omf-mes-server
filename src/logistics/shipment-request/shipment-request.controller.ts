@@ -11,16 +11,15 @@ import {
   Query,
   Req,
   Res,
-  Put,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
-import { logisticsWriteActorOf } from '../logistics-write-actor';
+import type { SessionScope } from '../../auth/session.types';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
-import { runIdempotent, runVersioned } from '../../common/master';
+import { runIdempotent } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import {
@@ -28,14 +27,10 @@ import {
   ShipmentRequestSummaryView,
 } from './shipment-request-query.service';
 import { ShipmentRequestFilters, ShipmentRequestQuery } from './shipment-request-query.sql';
-import { ShipmentRequestLineView, ShipmentRequestView } from './shipment-request-view';
-import { ShipmentLinePick, ShipmentPickService } from './shipment-pick.service';
-import { ShipmentOqcSkipService } from './shipment-oqc-skip.service';
-import {
-  ShipmentRequestCreate,
-  ShipmentRequestService,
-  ShipmentRequestUpdate,
-} from './shipment-request.service';
+import { ShipmentRequestView } from './shipment-request-view';
+import { ConflictException } from '../../common/errors';
+import { PICK_CONFLICT } from './shipment-lot-pick.service';
+import { ShipmentRequestCreate, ShipmentRequestService } from './shipment-request.service';
 
 /**
  * MES 출하작업지시 — 화면 `W-04-01`(편성) · `W-04-02`(목록·요약·상세) · `M-04-01`(피킹).
@@ -51,15 +46,19 @@ export class ShipmentRequestController {
   constructor(
     private readonly queries: ShipmentRequestQueryService,
     private readonly requests: ShipmentRequestService,
-    private readonly picks: ShipmentPickService,
-    private readonly oqcSkips: ShipmentOqcSkipService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
   @Get()
   @Contract('GET /logistics/shipment-requests')
   list(@Req() request: Request, @Query() query: ShipmentRequestQuery): Promise<PagedResponse<ShipmentRequestView>> {
-    return this.queries.list(query, currentTerminal(request)?.plantId);
+    const terminal = currentTerminal(request);
+    return this.queries.list(query, terminal === undefined ? undefined : {
+      plantId: terminal.plantId,
+      warehouseId: terminal.warehouseId ?? null,
+      // PDA 는 피킹할 줄이 있는 지시서, POP(완료 찾기)은 사업부 지시서(피처 012 R-2).
+      rule: terminal.terminalTypeCode === 'MOBILE' ? 'LINE' : 'BUSINESS_UNIT',
+    }, accountScopes(request));
   }
 
   /**
@@ -70,17 +69,18 @@ export class ShipmentRequestController {
    */
   @Get('summary')
   @Contract('GET /logistics/shipment-requests/summary')
-  summary(@Query() query: ShipmentRequestFilters): Promise<ShipmentRequestSummaryView> {
-    return this.queries.summary(query);
+  summary(@Req() request: Request, @Query() query: ShipmentRequestFilters): Promise<ShipmentRequestSummaryView> {
+    return this.queries.summary(query, accountScopes(request));
   }
 
   @Get(':shipmentRequestId')
   @Contract('GET /logistics/shipment-requests/{shipmentRequestId}')
   async get(
+    @Req() request: Request,
     @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ShipmentRequestView> {
-    const view = await this.queries.get(shipmentRequestId);
+    const view = await this.queries.get(shipmentRequestId, accountScopes(request));
     if (view.versionNo === undefined) throw new Error('출하작업지시 versionNo가 없습니다.');
     setEtag(response, view.versionNo);
     return view;
@@ -111,105 +111,23 @@ export class ShipmentRequestController {
     );
   }
 
-  /** 기존 미배정 요청에 공장을 지정한다. If-Match와 멱등 키는 계약에서 모두 필수다. */
-  @Put(':shipmentRequestId')
-  @Contract('PUT /logistics/shipment-requests/{shipmentRequestId}')
-  updateFulfillmentPlant(
-    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
-    @Body() body: ShipmentRequestUpdate,
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<ShipmentRequestView> {
-    const session = currentSession(request);
-    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-    return runVersioned<ShipmentRequestView, 'shipmentRequest'>(
-      this.idempotency,
-      request,
-      response,
-      'shipmentRequest',
-      (version) =>
-        this.requests.updateFulfillmentPlant(shipmentRequestId, version, body, {
-          appUserId: session.userId,
-          scopes: session.scopes,
-        }),
-      FAMILY_CONFLICT_CODE,
-    );
-  }
-
   /**
-   * ⭐⭐ 제품 LOT 피킹 확정(`M-04-01`) — 응답은 헤더가 아니라 **갱신된 라인**이다.
-   * ⛔ `If-Match`·ETag 가 계약에 0건이라 `runVersioned`·`setEtag` 를 부르지 않는다(§1-1).
-   * ⛔ 헤더는 계약 검증 가드가 «안 본다» — `X-Worker-No` 필수 판정은 서비스 몫이다.
-   * ⛔ 409 봉투가 계열이라 `FAMILY_CONFLICT_CODE` 를 넘긴다 — 안 넘기면 멱등 충돌 409 에서
-   *   required `code` 가 빠지고, 그 자리는 e2e 로 반증되지 않아 `family-conflict-code.spec.ts`
-   *   가 유일한 그물이다.
+   * 옛 수량 피킹(`M-04-01` 옛 화면) — 피처 010 부터 LOT 통째 피킹(`:pick-lot`)만 받는다. 경로는 남겨 옛 PDA 가
+   * 「업데이트하세요」를 알 수 있게 409 `USE_PICK_LOT` 로 답한다(배포 전 예약만 있는 옛 피킹은 출하 처리 경로로 끝낸다).
    */
   @Post(':shipmentRequestId/lines/:shipmentRequestLineId\\:pick')
   @Contract('POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick')
-  // 계약 응답이 200 이다 — Nest 의 `@Post` 기본값 201 을 되돌린다.
   @HttpCode(HttpStatus.OK)
-  pick(
-    @Req() request: Request,
-    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
-    @Param('shipmentRequestLineId', ParseIntPipe) shipmentRequestLineId: number,
-    @Body() body: ShipmentLinePick,
-  ): Promise<ShipmentRequestLineView> {
-    const workerNo = request.headers['x-worker-no'];
-
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.OK,
-      () =>
-        this.picks.pick(shipmentRequestId, shipmentRequestLineId, body, {
-          workerNo: typeof workerNo === 'string' ? workerNo : undefined,
-          ...logisticsWriteActorOf(
-            request,
-            'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick',
-          ),
-        }),
-      FAMILY_CONFLICT_CODE,
-    );
-  }
-
-  /**
-   * OQC 생략 요청 — 출하검사 판정(W-04-03)이 결재를 상신한다(omf-all-around#119 · 장부 P-83). 의뢰·LOT 은 옮기지 않는다(J-8).
-   */
-  @Post(':shipmentRequestId\\:request-oqc-skip')
-  @Contract('POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip')
-  @HttpCode(HttpStatus.ACCEPTED)
-  requestOqcSkip(
-    @Req() request: Request,
-    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
-    @Body() body: { reason: string },
-  ): Promise<{ approvalRequestId: number }> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
-      this.oqcSkips.requestSkip(shipmentRequestId, body.reason, appUserId),
-    );
-  }
-
-  /**
-   * 승인된 OQC 생략의 실행 — 열린 OQC 의뢰를 생략으로 닫고 집은 LOT 에 C27 이력을 남긴다(장부 P-83).
-   * ⛔ If-Match 를 안 읽는다 — 출하작업지시를 잠근 뒤 상태로 판정한다(두 번째 실행은 400).
-   */
-  @Post(':shipmentRequestId\\:skip-oqc')
-  @Contract('POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc')
-  @HttpCode(HttpStatus.OK)
-  skipOqc(
-    @Req() request: Request,
-    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
-  ): Promise<ShipmentRequestView> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.oqcSkips.execute(shipmentRequestId, appUserId);
-      return this.queries.get(shipmentRequestId);
-    });
+  pick(@Req() request: Request): Promise<never> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => {
+      throw new ConflictException('user', '수량 피킹은 더 쓰지 않습니다. LOT 을 스캔해 통째로 피킹하세요(앱을 업데이트하세요).', {
+        code: PICK_CONFLICT.USE_PICK_LOT,
+      });
+    }, FAMILY_CONFLICT_CODE);
   }
 }
 
-function userOf(request: Request): number {
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
-  return session.userId;
+/** 계정 세션의 데이터 범위(W-04-02 · 피처 012 D-12) — 단말 호출은 단말 범위가 따로 걸리므로 없다. */
+function accountScopes(request: Request): SessionScope[] | undefined {
+  return currentSession(request)?.scopes;
 }

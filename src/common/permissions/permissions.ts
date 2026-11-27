@@ -40,11 +40,9 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'M-01-10', name: '재고이동·불량 반출', groupCode: '01' },
   { code: 'M-01-11', name: '실물 카운트', groupCode: '01' },
   { code: 'M-01-12', name: '재생재 등록', groupCode: '01' },
-  { code: 'M-01-13', name: '긴급 IQC 생략 요청', groupCode: '01' },
   { code: 'P-01-01', name: '자재LOT 등록·라벨 발행', groupCode: '01' },
   { code: 'P-01-02', name: '출고 QR 발행', groupCode: '01' },
   { code: 'W-01-01', name: 'IQC 수입검사·판정', groupCode: '01' },
-  { code: 'W-01-02', name: '긴급 IQC 생략 한도승인', groupCode: '01' },
   { code: 'W-01-03', name: '초과 입하 분리', groupCode: '01' },
   { code: 'W-01-04', name: '재고실사', groupCode: '01' },
   { code: 'W-01-05', name: '공급사 반품 처리', groupCode: '01' },
@@ -69,12 +67,11 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-02-05', name: '인식표 발행·부착', groupCode: '02' },
   { code: 'P-02-06', name: '생산LOT 완료 처리', groupCode: '02' },
   { code: 'P-02-07', name: 'LOT 라벨 출력·부착', groupCode: '02' },
-  { code: 'P-02-08', name: '포장 작업 (LOT 스캔·제품 포장)', groupCode: '02' },
-  { code: 'P-02-09', name: '포장 라벨·인식표 재출력·부착', groupCode: '02' },
+  // P-02-08 포장 작업 · P-02-09 포장 라벨 재출력 — POP 화면을 없앴다(omf-all-around#293).
   { code: 'P-02-10', name: '작업 중단(홀드) 등록', groupCode: '02' },
   { code: 'P-02-11', name: '러닝체인지 부품 교체 등록', groupCode: '02' },
   { code: 'P-02-12', name: '긴급 W/O 현장 투입·실적', groupCode: '02' },
-  { code: 'P-02-13', name: 'PQC 제품 검사·검사 결과 입력', groupCode: '02' },
+  // P-02-13 PQC 제품 검사 — POP 화면을 없앴다. PQC 판정은 관리웹 W-03-11 에서만 한다(omf-all-around#293).
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(사용자 결정 · 장부 P-52).
   { code: 'P-02-14', name: '자재 불량 등록', groupCode: '02' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).
@@ -95,17 +92,18 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-02-11', name: '출고 요청 현황', groupCode: '02' },
   // 설계 저장소 생성본에 없는 화면 — 피처 004 생산 창고 보충(omf-all-around#230). 시드가 관리자에게 준다.
   { code: 'W-02-12', name: '생산 창고 보충', groupCode: '02' },
+  // 피처 015 — W-02-09 를 정방향·역방향 두 화면으로 나눈다(omf-all-around#355). 마이그 20261125090000 이 W-02-09 보유 역할에 준다.
+  { code: 'W-02-13', name: '자재 기준 생산 추적', groupCode: '02' },
+  { code: 'W-02-14', name: '제품 기준 역추적', groupCode: '02' },
   // 03 품질
   { code: 'W-03-01', name: 'Lot Status 현황·변경이력 조회', groupCode: '03' },
   { code: 'W-03-02', name: 'Lot Status 판정·전이 처리', groupCode: '03' },
   { code: 'W-03-03', name: '의심자재 등록', groupCode: '03' },
   { code: 'W-03-05', name: '검사실적·검사결과 조회 (불량률·불량코드 분포 집계 포함)', groupCode: '03' },
-  { code: 'W-03-09', name: '특채·한도승인 승인 처리', groupCode: '03' },
   { code: 'W-03-10', name: '처분 판정 처리(재작업/폐기/정상)', groupCode: '03' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(사용자 결정 · 장부 P-51).
   { code: 'W-03-11', name: 'PQC 검사 등록·조회', groupCode: '03' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(omf-all-around#64 · 장부 P-87).
-  { code: 'W-03-12', name: '검사 수준 관리', groupCode: '03' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).
   { code: 'W-03-13', name: '제품 검사표 조회·출력', groupCode: '03' },
   // ⚠ 생성기 산출물이 아니다 — 같은 조회 화면의 서명·승인 권한을 따로 둔다(omf-all-around#89 · 장부 P-102 · 담당자 결정 ③).
@@ -121,7 +119,12 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-04-05', name: '출하 단위 구성', groupCode: '04' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(사용자 결정 · 장부 P-80).
   { code: 'P-04-06', name: 'OQC 출하검사 판정', groupCode: '04' },
-  { code: 'W-04-01', name: '출하지시서 Import·작업지시 생성', groupCode: '04' },
+  // ⚠ 생성기 산출물이 아니다 — 피처 010 POP 출하 완료 화면(omf-all-around#305).
+  { code: 'P-04-07', name: '출하 완료', groupCode: '04' },
+  // ⚠ 생성기 산출물이 아니다 — 피처 013 POP 생산 LOT 분리·PDA 분리 확인 화면(omf-all-around#303).
+  { code: 'P-04-08', name: '생산 LOT 분리', groupCode: '04' },
+  { code: 'M-04-05', name: 'LOT 분리 확인', groupCode: '04' },
+  { code: 'W-04-01', name: '출하작업지시 생성', groupCode: '04' },
   { code: 'W-04-02', name: '출하 예정 목록', groupCode: '04' },
   { code: 'W-04-03', name: 'OQC 출하검사 판정', groupCode: '04' },
   { code: 'W-04-04', name: '출하 처리(상차·실물 출고)', groupCode: '04' },
@@ -131,7 +134,9 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-04-08', name: '완제품 재고·Lot Status 조회', groupCode: '04' },
   { code: 'W-04-10', name: '제품 폐기 요청', groupCode: '04' },
   { code: 'W-04-11', name: '재고 재등록', groupCode: '04' },
-  { code: 'W-04-12', name: '출하 확정·취소', groupCode: '04' },
+  // 피처 012 R-6 — 출하 내역 화면(W-04-12)을 없앴다. 코드는 메뉴 없는 「출하 취소」 권한으로 남긴다(역할 저장값을 그대로 잇는다 · FR-024).
+  //   W-04-02 상세 「출하」 칸이 이 권한으로 취소 요청·실행과 남은 미확정 출하 확정을 부른다.
+  { code: 'W-04-12', name: '출하 취소(송신 전)', groupCode: '04' },
   // 05 설비·툴
   { code: 'M-05-01', name: '설비 점검 입력', groupCode: '05' },
   { code: 'M-05-02', name: '설비 고장 현장 보고', groupCode: '05' },
@@ -180,6 +185,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-06-24', name: '검사표 기준', groupCode: '06' },
   // 피처 005(omf-all-around#254) — 설계 밖 기준정보 화면.
   { code: 'W-06-25', name: '공급사·품목 기본 정보', groupCode: '06' },
+  // omf-all-around#318 — 설계 밖 기준정보 화면(공장별 주간·야간 교대).
+  { code: 'W-06-26', name: '교대 관리', groupCode: '06' },
   // CO 공통
   { code: 'M-CO-01', name: '기기 등록·사번 인증', groupCode: 'CO' },
   { code: 'P-CO-01', name: '사번 경량 인증', groupCode: 'CO' },

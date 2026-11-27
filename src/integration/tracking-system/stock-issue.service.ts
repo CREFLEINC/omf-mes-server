@@ -3,10 +3,12 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
-import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import { productionRootOf } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
+import { LOT_JUDGED_QUALITIES } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TrackingIssueLine, postTrackingIssue } from './goods-issue-write';
+import { unconfirmedSplitLots } from '../../logistics/product-lot-split/product-lot-split-guard';
 import { claimTransmission } from './tracking-transmission';
 
 type Tx = Prisma.TransactionClient;
@@ -159,21 +161,29 @@ async function shippableLots(tx: Tx, lotIds: bigint[]): Promise<Map<bigint, Ship
   const lots = await tx.lot.findMany({
     where: { lot_id: { in: lotIds } },
     select: {
-      lot_id: true, lot_no: true, status_code: true, source_type_code: true, source_id: true,
+      lot_id: true, lot_no: true, status_code: true,
       _count: { select: { lot_hold: { where: { released_at: null } } } },
     },
   });
+  // 제품 분리 자식은 원천이 W/O 가 아니다 — 분할 뿌리의 W/O 완제품 창고로 본다(피처 013 R-11).
+  const [roots, unconfirmed] = await Promise.all([
+    productionRootOf(tx, lots.map((lot) => lot.lot_id)), unconfirmedSplitLots(tx, lots.map((lot) => lot.lot_id)),
+  ]);
+  const rootOf = (lotId: bigint) => roots.get(lotId)?.workOrderId;
   const workOrders = await tx.work_order.findMany({
-    where: { work_order_id: { in: lots.filter((lot) => lot.source_type_code === WORK_ORDER_LOT_SOURCE).map((lot) => lot.source_id) } },
+    where: { work_order_id: { in: lots.flatMap((lot) => rootOf(lot.lot_id) ?? []) } },
     select: { work_order_id: true, default_fg_location_id: true, location_work_order_default_fg_location_idTolocation: { select: { warehouse_id: true } } },
   });
   const workOrderOf = new Map(workOrders.map((row) => [row.work_order_id, row]));
   const errors: ErrorItem[] = [];
   const shippable = new Map<bigint, ShippableLot>();
   for (const lot of lots) {
-    const workOrder = lot.source_type_code === WORK_ORDER_LOT_SOURCE ? workOrderOf.get(lot.source_id) : undefined;
+    const rootWorkOrderId = rootOf(lot.lot_id);
+    const workOrder = rootWorkOrderId === undefined ? undefined : workOrderOf.get(rootWorkOrderId);
     const fg = workOrder?.location_work_order_default_fg_location_idTolocation;
-    if (lot.status_code !== LOT_NORMAL || lot._count.lot_hold > 0) {
+    if (unconfirmed.has(lot.lot_id)) {
+      errors.push({ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: `LOT ${lot.lot_no} 은 분리 확인 전입니다 — PDA 「LOT 분리 확인」에서 두 라벨을 먼저 스캔하세요.` });
+    } else if (lot.status_code !== LOT_NORMAL || lot._count.lot_hold > 0) {
       errors.push({ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: `LOT ${lot.lot_no} 이 정상이 아닙니다(${lot.status_code}) — MES 의 LOT 보류·품질 상태를 확인하세요.` });
     } else if (fg === undefined || fg === null) {
       errors.push({ scope: 'screen', code: ERROR_CODE.INVALID, message: `LOT ${lot.lot_no} 의 W/O 에 완제품 위치가 없습니다.` });
@@ -198,7 +208,7 @@ async function lockStock(tx: Tx, lots: Map<bigint, ShippableLot>): Promise<Slot[
        FOR UPDATE`;
   const fgFirst = (row: { lot_id: bigint; location_id: bigint }) => (row.location_id === lots.get(row.lot_id)?.fgLocationId ? 0 : 1);
   return rows
-    .filter((row) => row.warehouse_id === lots.get(row.lot_id)?.warehouseId && row.quality_status_code === 'NORMAL'
+    .filter((row) => row.warehouse_id === lots.get(row.lot_id)?.warehouseId && LOT_JUDGED_QUALITIES.includes(row.quality_status_code)
       && row.inventory_status_code === 'AVAILABLE' && row.available_qty !== null && row.available_qty.gt(0))
     .sort((a, b) => fgFirst(a) - fgFirst(b) || (a.location_id < b.location_id ? -1 : a.location_id > b.location_id ? 1 : 0))
     .map((row) => ({ lotId: row.lot_id, itemId: row.item_id, uomId: row.uom_id, locationId: row.location_id, left: row.available_qty as Prisma.Decimal }));

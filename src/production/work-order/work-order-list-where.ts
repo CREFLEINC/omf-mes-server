@@ -18,6 +18,8 @@ export interface WorkOrderListQuery {
   plannedEquipmentId?: number;
   includeUnplannedEquipment?: boolean;
   workOrderTypeCode?: string;
+  /** 이 유형을 뺀다 — 「전체 작업지시」가 긴급을 빼고 묻는다(omf-all-around#330). */
+  excludeWorkOrderTypeCode?: string;
   plannedStartFrom?: string;
   plannedStartTo?: string;
   updatedSince?: string;
@@ -117,6 +119,7 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
     eq('production_line_id', query.productionLineId),
     plannedEquipmentWhere(query.plannedEquipmentId, query.includeUnplannedEquipment),
     eq('work_order_type_code', query.workOrderTypeCode),
+    query.excludeWorkOrderTypeCode === undefined ? {} : { work_order_type_code: { not: query.excludeWorkOrderTypeCode } },
     plannedStartWhere(query.plannedStartFrom, query.plannedStartTo),
     query.updatedSince === undefined ? {} : { updated_at: { gte: new Date(query.updatedSince) } },
     // ⛔ ERP W/O 번호는 이 축으로 검색되지 않는다(계약 자인) — `work_order_no` 만 본다.
@@ -131,8 +134,11 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
  */
 function plannedEquipmentWhere(equipmentId?: number, includeUnplanned?: boolean): Prisma.work_orderWhereInput {
   if (equipmentId === undefined) return {};
-  if (includeUnplanned !== true) return { planned_equipment_id: equipmentId };
-  return { OR: [{ planned_equipment_id: equipmentId }, { planned_equipment_id: null }] };
+  const assigned = [
+    { planned_equipment_id: equipmentId },
+    { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: BigInt(equipmentId) } } },
+  ];
+  return { OR: includeUnplanned === true ? [...assigned, { planned_equipment_id: null }] : assigned };
 }
 
 /** «계획 시작 시각» 반열림(From 이상·To 미만) — 비워도 400 이 아니다(계약 자인 · `plan.md` §5 규칙 11). */

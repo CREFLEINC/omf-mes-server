@@ -244,7 +244,6 @@ export class DocumentProgressQueryService {
       this.prisma.approval_request.findFirst({
         where: { target_type_code: mapping.entityTypeCode, target_id: documentId, approval_type_code: `${typeCode}_CANCEL` },
         orderBy: { requested_at: 'desc' },
-        include: { requested_worker: { select: { worker_name: true } } },
       }),
       this.prisma.document_cancellation.findFirst({
         where: { document_type_code: typeCode, document_id: documentId },
@@ -268,9 +267,7 @@ export class DocumentProgressQueryService {
       cancelRequested:
         cancelRequest === null ? undefined : {
           occurredAt: cancelRequest.requested_at,
-          actorName: cancelRequest.requested_by === null
-            ? cancelRequest.requested_worker?.worker_name
-            : names.get(cancelRequest.requested_by),
+          actorName: cancelRequest.requested_by === null ? undefined : names.get(cancelRequest.requested_by),
         },
       cancelled:
         cancellation === null

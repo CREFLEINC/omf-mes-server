@@ -7,11 +7,22 @@ describe('work-order-list-where', () => {
   describe('buildWorkOrderWhere', () => {
     it('where — includeUnplannedEquipment 면 그 설비 또는 설비 미지정 W/O 다', () => {
       expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: true })).toEqual({
-        AND: [{ OR: [{ planned_equipment_id: 5 }, { planned_equipment_id: null }] }],
+        AND: [{ OR: [{ planned_equipment_id: 5 }, { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: 5n } } }, { planned_equipment_id: null }] }],
       });
-      expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: false })).toEqual({ AND: [{ planned_equipment_id: 5 }] });
+      expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: false })).toEqual({ AND: [{ OR: [{ planned_equipment_id: 5 }, { work_order_resource_assignment: { some: { resource_type_code: 'EQUIPMENT', equipment_id: 5n } } }] }] });
       // 설비 축이 없으면 스위치는 뜻이 없다.
       expect(buildWorkOrderWhere({ includeUnplannedEquipment: true })).toEqual({});
+    });
+
+    it('where — excludeWorkOrderTypeCode 는 그 유형을 빼고, workOrderTypeCode 와 함께 걸린다(omf-all-around#330)', () => {
+      expect(buildWorkOrderWhere({ excludeWorkOrderTypeCode: 'EMERGENCY' })).toEqual({ AND: [{ work_order_type_code: { not: 'EMERGENCY' } }] });
+      expect(buildWorkOrderWhere({ open: true, excludeWorkOrderTypeCode: 'EMERGENCY' }).AND).toContainEqual({ work_order_type_code: { not: 'EMERGENCY' } });
+      // 같은 칸을 두 축이 함께 걸어도 서로 덮어쓰지 않는다 — AND 의 따로 된 조건이다.
+      expect(buildWorkOrderWhere({ workOrderTypeCode: 'NORMAL', excludeWorkOrderTypeCode: 'EMERGENCY' })).toEqual({
+        AND: [{ work_order_type_code: 'NORMAL' }, { work_order_type_code: { not: 'EMERGENCY' } }],
+      });
+      // 미지정은 유형 축을 걸지 않는다.
+      expect(buildWorkOrderWhere({})).toEqual({});
     });
 
     it('where — statusCode 는 쉼표로 여러 값을 받고, 값 하나면 그대로 일치다', () => {

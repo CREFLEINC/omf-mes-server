@@ -29,8 +29,7 @@ export interface ApprovalRequestInput {
   targetId: bigint;
   /** ⚠ P/O 만 전표 값을 준다. 나머지 8자리는 `null`(공통본) — 설계 미정 · 문의 022. */
   businessUnitId: bigint | null;
-  requestedBy?: bigint;
-  requestedWorkerId?: bigint;
+  requestedBy: bigint;
   reason: string;
 }
 
@@ -75,9 +74,6 @@ export class ApprovalService {
    *   `approval_request` 가 없다).
    */
   async request(tx: Tx, input: ApprovalRequestInput): Promise<{ approvalRequestId: bigint }> {
-    if ((input.requestedBy === undefined) === (input.requestedWorkerId === undefined)) {
-      throw new Error('승인 요청에는 계정 또는 작업자 주체 하나가 필요합니다.');
-    }
     const requestedAt = new Date();
     await this.assertNoOpenRequest(tx, input.targetTypeCode, input.targetId, input.approvalTypeCode);
     const { approvalRouteId } = await this.selectRoute(tx, input.approvalTypeCode, input.businessUnitId);
@@ -88,8 +84,7 @@ export class ApprovalService {
         approval_type_code: input.approvalTypeCode,
         target_type_code: input.targetTypeCode,
         target_id: input.targetId,
-        requested_by: input.requestedBy ?? null,
-        requested_worker_id: input.requestedWorkerId ?? null,
+        requested_by: input.requestedBy,
         requested_at: requestedAt,
         status_code: 'PENDING',
         reason: input.reason,

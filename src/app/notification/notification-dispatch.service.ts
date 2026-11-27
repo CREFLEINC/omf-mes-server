@@ -38,6 +38,8 @@ const TARGET_LABEL_KEY: Readonly<Record<string, string>> = {
   SHIPMENT: 'shipment_no',
   INBOUND_RECEIPT: 'receipt_no',
   LOT: 'receipt_no',
+  // 적치 대기(피처 009) — 입하 LOT 번호.
+  INBOUND_LOT: 'inbound_lot_no',
 };
 
 /**

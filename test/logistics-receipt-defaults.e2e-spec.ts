@@ -1,13 +1,12 @@
 /**
- * 입고 기본값(장부 P-150) — 입고는 사람이 하되 서버가 입고 칸을 미리 채운다(사용자 결정 2026-10-29).
- * 창고는 발주 라인의 ERP 창고와 같은 코드의 MES 창고, 불량은 공장 불량창고, 위치는 그 창고의 적치 대기 자리다.
+ * 입고 기본값(장부 P-150) — 관리웹 입고 처리가 입고 칸을 미리 채우던 자리(사용자 결정 2026-10-29).
+ * 피처 009(omf-all-around#294)부터 구매 입하 LOT 은 PDA 적치로 입고하므로 칸을 비우고 USE_PDA_PUTAWAY 를 낸다.
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import request from 'supertest';
@@ -91,93 +90,25 @@ describe('입고 기본값 (e2e · 장부 P-150)', () => {
     expect(validate(response.body) ? [] : validate.errors).toEqual([]);
     return response.body.items as Defaults[];
   };
-  const slot = async (warehouse: bigint): Promise<number> => Number((await prisma.location.findFirstOrThrow({
-    where: { warehouse_id: warehouse, system_role_code: 'PUTAWAY_STAGING' },
-  })).location_id);
   const codes = (row: Defaults): string[] => row.issues.map((item) => item.code);
 
-  it('⭐ 합격 LOT — 발주 라인 ERP 창고의 MES 창고 · 적치 대기 자리 · 정상·가용 · 입고 가능 수량', async () => {
-    const lot = await lotOn([ids.lineWh], 'NORMAL', 30);
-
-    const [row] = await defaultsOf(lot);
-
-    expect(row).toMatchObject({
-      lotId: Number(lot), plantId: Number(ids.plant), itemId: Number(ids.item), uomId: Number(ids.uom),
-      receiptTypeCode: 'MATERIAL', receiptQty: 30,
-      warehouseId: Number(ids.wh), warehouseCode: `${PREFIX}-WH`, destinationLocationId: await slot(ids.wh),
-      destinationLocationCode: 'SYS-STAGING', qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', issues: [],
-    });
-  });
-
-  it('⭐ 낸 기본값 그대로 입고하면 들어간다 — 합격은 그 창고로, 불합격은 불량창고로 · 다 받은 뒤엔 NOT_RECEIPT_READY', async () => {
-    const good = await lotOn([ids.lineWh], 'NORMAL', 12);
+  // 피처 009(omf-all-around#294 · R-2) — 구매 입하 자재는 PDA 적치로 입고한다. 기본값은 창고·위치·상태·수량을 고르지 않고
+  // 칸을 비운 채 USE_PDA_PUTAWAY 를 낸다(옛 관리웹 W-01-10 이 입고 처리 창을 열어도 채울 것이 없다).
+  it('Q21 R-2 구매 입하 LOT 은 합격·불합격·검사 대기 모두 USE_PDA_PUTAWAY — 칸은 LOT·품목·단위만 · 없는 LOT 은 NOT_FOUND · 같은 id 는 한 번', async () => {
+    const good = await lotOn([ids.lineWh], 'NORMAL', 30);
     const bad = await lotOn([ids.lineWh], 'DEFECTIVE', 5);
-
-    for (const row of await defaultsOf(good, bad)) {
-      await request(app.getHttpServer())
-        .post('/api/logistics/goods-receipts')
-        .set('Cookie', cookies.receiver)
-        .set('Idempotency-Key', randomUUID())
-        .send({
-          receiptTypeCode: row.receiptTypeCode, plantId: row.plantId, warehouseId: row.warehouseId,
-          receiptDatetime: `${DAY}T05:00:00.000Z`, businessDate: DAY,
-          lines: [{
-            inboundReceiptLineId: row.inboundReceiptLineId, itemId: row.itemId, lotId: row.lotId, receiptQty: row.receiptQty,
-            uomId: row.uomId, qualityStatusCode: row.qualityStatusCode, inventoryStatusCode: row.inventoryStatusCode,
-            destinationLocationId: row.destinationLocationId,
-          }],
-        })
-        .expect(201);
-    }
-
-    expect((await defaultsOf(good, bad)).map(codes)).toEqual([['NOT_RECEIPT_READY'], ['NOT_RECEIPT_READY']]);
-  });
-
-  it('⭐ 불합격 LOT — 공장 불량창고 · 그 적치 대기 자리 · 불량·보류 · 불량창고가 없거나 둘이면 까닭을 낸다', async () => {
-    const lot = await lotOn([ids.lineWh], 'DEFECTIVE', 4);
-
-    expect((await defaultsOf(lot))[0]).toMatchObject({
-      warehouseId: Number(ids.ng), destinationLocationId: await slot(ids.ng),
-      qualityStatusCode: 'DEFECTIVE', inventoryStatusCode: 'ON_HOLD', receiptQty: 4, issues: [],
-    });
-
-    const second = await warehouse('NG2', ids.plant, true);
-    expect(codes((await defaultsOf(lot))[0])).toEqual(['MULTIPLE_DEFECT_WAREHOUSES']);
-    await prisma.warehouse.updateMany({ where: { warehouse_id: { in: [second, ids.ng] } }, data: { is_defect: false } });
-    const none = (await defaultsOf(lot))[0];
-    await prisma.warehouse.update({ where: { warehouse_id: ids.ng }, data: { is_defect: true } });
-
-    expect(none).toMatchObject({ warehouseId: null, destinationLocationId: null, qualityStatusCode: 'DEFECTIVE', receiptQty: 4 });
-    expect(codes(none)).toEqual(['NO_DEFECT_WAREHOUSE']);
-  });
-
-  it('⭐ 창고를 못 정하면 창고·위치만 null 이고 까닭을 낸다 — 상태·수량은 채운다', async () => {
-    const lots = [
-      await lotOn([ids.lineNone], 'NORMAL', 1),
-      await lotOn([ids.lineMissing], 'NORMAL', 1),
-      await lotOn([ids.lineOther], 'NORMAL', 1),
-      await lotOn([ids.lineWh, ids.lineOther], 'NORMAL', 2),
-    ];
-
-    const rows = await defaultsOf(...lots);
-
-    expect(rows.map(codes)).toEqual([
-      ['NO_ERP_WAREHOUSE'], ['NO_MES_WAREHOUSE'], ['OTHER_PLANT_WAREHOUSE'], ['MULTIPLE_ERP_WAREHOUSES'],
-    ]);
-    for (const row of rows) {
-      expect(row).toMatchObject({ warehouseId: null, destinationLocationId: null, qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE' });
-      expect(row.receiptQty).toBeGreaterThan(0);
-    }
-  });
-
-  it('⛔ 입고 대기가 아닌 LOT 은 NOT_RECEIPT_READY · 없는 LOT 은 NOT_FOUND — 다른 칸은 비운다 · 같은 id 는 한 번', async () => {
     const pending = await lotOn([ids.lineWh], 'INSPECTION_PENDING', 3);
 
-    const [waiting, missing, ...rest] = await defaultsOf(pending, 999999999n, pending);
+    const [g, b, p, missing, ...rest] = await defaultsOf(good, bad, pending, 999999999n, good);
 
     expect(rest).toEqual([]);
-    expect(waiting).toMatchObject({ lotId: Number(pending), warehouseId: null, receiptQty: null, qualityStatusCode: null });
-    expect(codes(waiting)).toEqual(['NOT_RECEIPT_READY']);
+    for (const [row, lot] of [[g, good], [b, bad], [p, pending]] as const) {
+      expect(row).toMatchObject({
+        lotId: Number(lot), itemId: Number(ids.item), uomId: Number(ids.uom), plantId: null, warehouseId: null, destinationLocationId: null,
+        receiptQty: null, qualityStatusCode: null, inventoryStatusCode: null,
+      });
+      expect(codes(row)).toEqual(['USE_PDA_PUTAWAY']);
+    }
     expect(missing).toMatchObject({ lotId: 999999999, itemId: null });
     expect(codes(missing)).toEqual(['NOT_FOUND']);
   });

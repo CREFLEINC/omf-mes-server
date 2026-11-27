@@ -20,6 +20,7 @@ import {
   referenceWhere,
 } from '../../common/master';
 import { assertErpWarehouse } from './erp-warehouse-rules';
+import { assertLocationPrefixFormat, assertLocationPrefixKept, locationPrefixTaken } from './location-prefix';
 
 /**
  * 창고를 FK 로 가리키는 자리 전부. `pg_constraint` 에서 뽑았고, e2e 가 같은 질의로
@@ -44,13 +45,15 @@ export const WAREHOUSE_REFERRERS: readonly Referrer[] = [
   ['logistics.replenishment_run', 'warehouse_id'],
   ['logistics.replenishment_warehouse_setting', 'warehouse_id'],
   ['logistics.shipment', 'warehouse_id'],
+  ['logistics.shipment_request_line', 'warehouse_id'],
   ['logistics.stock_transfer', 'from_warehouse_id'],
   ['logistics.stock_transfer', 'to_warehouse_id'],
-  ['mdm.department_production_warehouse', 'warehouse_id'],
   ['mdm.location', 'warehouse_id'],
   ['mdm.terminal', 'warehouse_id'],
   ['mdm.warehouse_layout', 'warehouse_id'],
   ['production.material_return', 'destination_warehouse_id'],
+  // 생산 LOT 분리 기록(피처 013).
+  ['trace.product_lot_split', 'warehouse_id'],
 ];
 
 /** 계약 `Warehouse` 와 동형. */
@@ -66,6 +69,8 @@ interface WarehouseView {
   isActive: boolean;
   /** MES 별칭 — 계약 밖(장부 P-148). */
   aliasName: string | null;
+  /** 창고 위치 코드 — 위치 코드 앞 조각(omf-all-around#292). */
+  locationPrefix: string;
 }
 
 interface WarehouseCreate {
@@ -76,6 +81,8 @@ interface WarehouseCreate {
   warehouseTypeCode: string;
   isExternal?: boolean;
   isDefect?: boolean;
+  /** 빼면 DB 가 쓰지 않은 무작위 4자를 채운다(`mdm.new_location_prefix()` · #292). */
+  locationPrefix?: string;
   /** 계약 밖이라 검증 가드가 보지 않는다 — `aliasOf` 가 본다. */
   aliasName?: unknown;
 }
@@ -87,6 +94,8 @@ interface WarehouseUpdate {
   warehouseTypeCode: string;
   isExternal: boolean;
   isDefect: boolean;
+  /** 등록한 뒤 바꾸지 않는다 — 빼거나 같은 값만 받는다(#292). */
+  locationPrefix?: string;
   aliasName?: unknown;
 }
 
@@ -171,6 +180,7 @@ export class WarehouseService {
     const aliasName = aliasOf(input.aliasName);
     await this.assertCodes(input);
     await assertErpWarehouse(this.prisma, input, null);
+    await this.assertLocationPrefixFree(input.locationPrefix);
     return view(
       await this.prisma.warehouse.create({
         data: {
@@ -183,6 +193,7 @@ export class WarehouseService {
           ...optional('is_external', input.isExternal),
           ...optional('is_defect', input.isDefect),
           ...optional('alias_name', aliasName),
+          ...optional('location_prefix', input.locationPrefix),
         },
       }),
     );
@@ -197,9 +208,10 @@ export class WarehouseService {
     await this.assertCodes(input);
     const current = await this.prisma.warehouse.findUnique({
       where: { warehouse_id: warehouseId },
-      select: { warehouse_code: true },
+      select: { warehouse_code: true, location_prefix: true },
     });
     if (!current) throw new NotFoundException('없는 창고입니다.');
+    assertLocationPrefixKept(current.location_prefix, input.locationPrefix);
     await assertErpWarehouse(this.prisma, input, { warehouseId: BigInt(warehouseId), warehouseCode: current.warehouse_code });
     const updated = await this.prisma.warehouse.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
@@ -253,6 +265,17 @@ export class WarehouseService {
     ]);
   }
 
+  /**
+   * 사람이 고쳐 보낸 창고 위치 코드 — 형식과 겹침을 저장 전에 본다(#292). 빼고 보내면 DB 기본값이 채운다.
+   * 동시에 같은 값으로 등록하면 `uq_warehouse_location_prefix` 가 막는다(그물 — `prismaErrorResponse`).
+   */
+  private async assertLocationPrefixFree(prefix: string | undefined): Promise<void> {
+    if (prefix === undefined) return;
+    assertLocationPrefixFormat(prefix);
+    const other = await this.prisma.warehouse.findUnique({ where: { location_prefix: prefix }, select: { warehouse_id: true } });
+    if (other !== null) throw locationPrefixTaken();
+  }
+
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
   private async assertExists(warehouseId: number, count: number): Promise<void> {
     if (count > 0) return;
@@ -277,5 +300,6 @@ function view(row: WarehouseRow): WarehouseView {
     isDefect: row.is_defect,
     isActive: row.is_active,
     aliasName: row.alias_name,
+    locationPrefix: row.location_prefix,
   };
 }

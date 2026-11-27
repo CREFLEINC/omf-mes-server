@@ -10,8 +10,8 @@ export interface LocationItemView {
 }
 
 /**
- * 위치 품목 제한(사용자 결정 2026-10-29) — 위치마다 지정 품목, 걸어 둔 그 위치에만 적용한다. 지정 밖 품목이 들어오는
- * 재고 전기는 재고 코어가 막는다.
+ * 위치 보관 품목(사용자 결정 2026-10-29) — 위치마다 둘 품목. ⭐ 지정은 안내다(2026-11-18 결정 · 피처 009): 「지정 품목만 받기」
+ * (`item_restricted`)를 켠 위치만 재고 코어가 지정 밖 품목을 막고, 지정 밖 재고 검사도 그 위치에서만 한다.
  */
 @Injectable()
 export class LocationItemService {
@@ -32,13 +32,7 @@ export class LocationItemService {
     if (found !== ids.length) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('itemIds', ERROR_CODE.INVALID, '없거나 쓰지 않는 품목이 있습니다.')]);
     }
-    if (ids.length > 0) {
-      const outside = await this.prisma.inventory_balance.findFirst({
-        where: { location_id: locationId, NOT: { on_hand_qty: 0 }, item_id: { notIn: ids } },
-        select: { inventory_balance_id: true },
-      });
-      if (outside !== null) throw locked('itemIds', '지정 밖 품목의 재고가 있어 걸 수 없습니다 — 재고를 먼저 옮깁니다.');
-    }
+    if (location.item_restricted) await assertRestrictable(this.prisma, BigInt(locationId), ids, 'itemIds');
     await this.prisma.$transaction([
       this.prisma.location_item.deleteMany({ where: { location_id: locationId } }),
       this.prisma.location_item.createMany({
@@ -48,10 +42,10 @@ export class LocationItemService {
     return this.read(locationId);
   }
 
-  private async findLocation(locationId: number): Promise<{ system_role_code: string | null }> {
+  private async findLocation(locationId: number): Promise<{ system_role_code: string | null; item_restricted: boolean }> {
     const location = await this.prisma.location.findUnique({
       where: { location_id: locationId },
-      select: { system_role_code: true },
+      select: { system_role_code: true, item_restricted: true },
     });
     if (location === null) throw new NotFoundException('없는 위치입니다.');
     return location;
@@ -67,6 +61,21 @@ export class LocationItemService {
       items: rows.map(({ item }) => ({ itemId: Number(item.item_id), itemCode: item.item_code, itemName: item.item_name })),
     };
   }
+}
+
+/**
+ * 「지정 품목만 받기」를 켤 수 있는가(FR-017c) — 지정 품목이 1개 이상이고 지정 밖 품목의 재고가 없어야 한다. 켠 위치의 지정을
+ * 바꿀 때도 같은 조건이다. 시스템 자리는 부르는 쪽이 먼저 막는다.
+ */
+export async function assertRestrictable(
+  db: Pick<PrismaService, 'inventory_balance'>, locationId: bigint, itemIds: readonly bigint[], path: string,
+): Promise<void> {
+  if (itemIds.length === 0) throw locked(path, '지정 품목이 없어 「지정 품목만 받기」를 켤 수 없습니다 — 품목을 먼저 지정합니다.');
+  const outside = await db.inventory_balance.findFirst({
+    where: { location_id: locationId, NOT: { on_hand_qty: 0 }, item_id: { notIn: [...itemIds] } },
+    select: { inventory_balance_id: true },
+  });
+  if (outside !== null) throw locked(path, '지정 밖 품목의 재고가 있어 「지정 품목만 받기」를 켤 수 없습니다 — 재고를 먼저 옮깁니다.');
 }
 
 const locked = (path: string | null, message: string): ContractException =>

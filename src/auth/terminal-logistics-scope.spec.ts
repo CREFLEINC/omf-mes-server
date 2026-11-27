@@ -32,12 +32,20 @@ describe('terminal logistics scope', () => {
     // 줄마다 입하 한 건(장부 P-117)을 별칭 대신 제 이름으로 더했다: 41 → 42.
     // 입하 LOT 조회 2·받기·해제·공급사 LOT(피처 005)을 더했다: 42 → 47.
     // 입하 마감·마감 취소(피처 005 S5)를 더했다: 47 → 49.
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(49);
+    // 적치 대기 LOT 목록·확인·위치 판정(피처 009 S3)을 더했다: 49 → 52. 적치·임시 적치(S4): 52 → 54.
+    // LOT 통째 피킹(피처 010 S2)을 더했다: 54 → 55.
+    // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 55 → 57.
+    // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 57 → 59.
+    // POP 지시서 상세(P-04-06 머리 · 피처 010 검증 1회차): 59 → 60.
+    // PDA 적치 기록(피처 011 · omf-all-around#325)을 더했다: 60 → 61.
+    // 생산 LOT 분리 스캔 조회·분리·목록(피처 013 · omf-all-around#303): 61 → 64.
+    // PDA 분리 확인(피처 013 S3): 64 → 65.
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(65);
     // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
     //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
     expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(
       (key) => key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE '),
-    )).toHaveLength(23);
+    )).toHaveLength(31);
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/shipments', mobile)).rejects.toBeDefined();
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/goods-issues', pop)).rejects.toBeDefined();
   });
@@ -137,16 +145,19 @@ describe('terminal logistics scope', () => {
     }));
   });
 
-  it('rejects an unshipped request before product picking because it has no plant owner', async () => {
-    const db = prisma({ shipment_request: { findFirst: jest.fn().mockResolvedValue(null) } });
+  it('US2-2·FR-010 product picking needs the path line in the terminal scope (line warehouse plant, legacy line = request plant)', async () => {
+    const db = prisma({ shipment_request_line: { findFirst: jest.fn().mockResolvedValue(null) } });
     await expect(assertTerminalLogisticsScope(
       db,
       request({ shipmentRequestId: '21', shipmentRequestLineId: '22' }, { lotId: 8 }),
       'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick',
       mobile,
     )).rejects.toBeDefined();
-    expect(db.shipment_request.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { shipment_request_id: 21n, fulfillment_plant_id: 3n },
+    expect(db.shipment_request_line.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { AND: [{ shipment_request_line_id: 22n, shipment_request_id: 21n }, { OR: [
+        { warehouse: { plant_id: 3n } },
+        { warehouse_id: null, shipment_request: { fulfillment_plant_id: 3n } },
+      ] }] },
     }));
   });
 

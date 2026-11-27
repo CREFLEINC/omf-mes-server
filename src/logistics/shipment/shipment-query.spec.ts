@@ -4,6 +4,7 @@ import {
   orderBySql,
   whereSql,
 } from './shipment-query.sql';
+import { shipmentWhereSql } from './shipment-query.service';
 
 const FROM = '2026-09-01';
 
@@ -34,11 +35,13 @@ describe('출하 목록 SQL', () => {
 
   it('기간 축은 shipped_at 이고 «공장 로컬» 자정으로 펴며 끝 경계를 «포함»한다', () => {
     const built = where({ shipDateTo: '2026-09-30' });
-    expect(built.sql).toContain('s.shipped_at >= (($1::date)::timestamp AT TIME ZONE (SELECT p.timezone_code');
+    expect(built.sql).toContain('s.shipped_at >= (($1::date)::timestamp AT TIME ZONE COALESCE(');
     // ⛔ `<= to` 로 적으면 그 날 자정만 걸려 하루가 통째로 샌다 — timestamptz 칸이다.
-    expect(built.sql).toContain('s.shipped_at < (($2::date + 1)::timestamp AT TIME ZONE (SELECT p.timezone_code');
+    expect(built.sql).toContain('s.shipped_at < (($2::date + 1)::timestamp AT TIME ZONE COALESCE(');
     // ⭐ 시간대는 «출하 행의» 창고에서 푼다 — 요청 하나에 하나로 접으면 공장이 섞인 목록이 갈린다.
     expect(built.sql).toContain('WHERE w.warehouse_id = s.warehouse_id');
+    // 피처 010 — POP 완료 출하는 창고가 없어 지시서 이행 공장의 시간대로 떨어진다.
+    expect(built.sql).toContain('JOIN mdm.plant p ON p.plant_id = r.fulfillment_plant_id');
     expect(built.params).toEqual([FROM, '2026-09-30']);
   });
 
@@ -70,10 +73,11 @@ describe('출하 목록 SQL', () => {
     expect(where({ pickedOnly: true }).sql).toContain(PICKED_ONLY_SQL);
   });
 
-  it('⛔ q 의 범위는 shipment_no 하나다 — 계약이 닫았다', () => {
+  it('US7-3 q 의 범위는 출하번호·지시서 번호·고객 코드·이름이다(W-04-12 시안) — LOT 은 넣지 않는다', () => {
     const built = where({ q: 'SH-2026' });
     expect(built.sql).toContain("s.shipment_no ILIKE '%' || $2 || '%'");
-    expect(built.sql).not.toContain('customer');
+    expect(built.sql).toContain("qr.shipment_request_no ILIKE '%' || $2 || '%'");
+    expect(built.sql).toContain("qc.partner_name ILIKE '%' || $2 || '%'");
     expect(built.sql).not.toContain('lot');
   });
 
@@ -96,5 +100,24 @@ describe('출하 목록 SQL', () => {
     expect(() => orderBySql('createdAt')).toThrow();
     // 프로토타입 키로 통과하지 않는다(`hasOwnProperty` 로 본다).
     expect(() => orderBySql('constructor')).toThrow();
+  });
+});
+
+describe('단말 출하 목록 범위(피처 012 R-5 · omf-all-around#331)', () => {
+  it('SC-005·FR-017 창고 없는 POP 완료 출하는 출고 전표 창고로 본다 — 창고 지정 단말은 그 창고의 전표', () => {
+    const built = shipmentWhereSql({ shipDateFrom: FROM }, { plantId: 3n, warehouseId: 7n });
+    expect(built.sql).toContain("tg.source_document_type_code = 'SHIPMENT' AND tg.source_document_id = s.shipment_id");
+    expect(built.sql).toContain('tw.plant_id = $2::bigint AND tg.source_warehouse_id = $3::bigint');
+    // 옛 흐름 출하(창고 있는 출하)는 출하 창고 조건 그대로다.
+    expect(built.sql).toContain('AND s.warehouse_id = $3::bigint');
+    // ⛔ 「출하 창고 = 단말 창고」를 모든 출하에 거는 절이 남으면 창고 없는 새 흐름 출하가 빠진다(#331).
+    expect(built.sql.trimEnd().endsWith('AND s.warehouse_id = $3::bigint')).toBe(false);
+    expect(built.params).toEqual([FROM, 3n, 7n]);
+  });
+
+  it('FR-017 창고 없는 단말은 공장만 본다 — 출고 전표 창고 조건이 없다', () => {
+    const built = shipmentWhereSql({ shipDateFrom: FROM }, { plantId: 3n, warehouseId: null });
+    expect(built.sql).not.toContain('tg.source_warehouse_id =');
+    expect(built.params).toEqual([FROM, 3n]);
   });
 });

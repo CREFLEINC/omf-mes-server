@@ -175,6 +175,63 @@ describe('창고 마스터 (e2e)', () => {
     });
   });
 
+  describe('창고 위치 코드(locationPrefix · omf-all-around#292)', () => {
+    // 사람이 고친 값은 6자로 둔다 — 무작위 값은 4자라 다른 창고와 우연히 겹치지 않는다.
+    const FIXED = 'MDMWH6';
+
+    const post = (extra: Record<string, unknown>) => request(app.getHttpServer())
+      .post('/api/mdm/warehouses')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-P${randomUUID().slice(0, 6)}`, extra));
+
+    it('⭐ 빼고 등록하면 서버가 무작위 4자를 채운다 — 시스템 위치도 그 값으로 시작한다', async () => {
+      const created = await post({}).expect(201);
+      expect(created.body.locationPrefix).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$/);
+      const systems = await prisma.location.findMany({
+        where: { warehouse_id: created.body.warehouseId }, select: { location_code: true }, orderBy: { location_code: 'asc' },
+      });
+      expect(systems.map((row) => row.location_code))
+        .toEqual([`${created.body.locationPrefix}-SYS-STAGING`, `${created.body.locationPrefix}-SYS-WHOLE`]);
+
+      const detail = await request(app.getHttpServer()).get(`/api/mdm/warehouses/${created.body.warehouseId}`).set('Cookie', cookie).expect(200);
+      expect(detail.body.warehouse.locationPrefix).toBe(created.body.locationPrefix);
+      const validate = validator('GET /mdm/warehouses/{warehouseId}');
+      expect(validate(detail.body)).toBe(true);
+    });
+
+    it('⭐ 고쳐 보낸 값을 쓰고, 다른 창고가 쓰면 400 UNIQUE_VIOLATION, 형식이 틀리면 400 INVALID', async () => {
+      const created = await post({ locationPrefix: FIXED }).expect(201);
+      expect(created.body.locationPrefix).toBe(FIXED);
+
+      const taken = await post({ locationPrefix: FIXED }).expect(400);
+      expect(taken.body.errors).toEqual([
+        expect.objectContaining({ field: 'locationPrefix', code: 'UNIQUE_VIOLATION', uniqueScope: ['locationPrefix'] }),
+      ]);
+      for (const bad of ['k7qx', 'K7-Q', 'A', 'ABCDEFG']) {
+        const rejected = await post({ locationPrefix: bad }).expect(400);
+        expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'locationPrefix', code: 'INVALID' })]);
+      }
+    });
+
+    it('⛔ 등록한 뒤에는 바꿀 수 없다 — 빼거나 같은 값은 통과한다', async () => {
+      const { id, etag } = await createWarehouse(`${PREFIX}-PFX`);
+      const current = (await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id } })).location_prefix;
+      const put = (extra: Record<string, unknown>, ifMatch: string) => request(app.getHttpServer())
+        .put(`/api/mdm/warehouses/${id}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key())
+        .set('If-Match', ifMatch)
+        .send({ businessUnitId, warehouseCode: `${PREFIX}-PFX`, warehouseName: '고친 이름', warehouseTypeCode, isExternal: false, isDefect: false, ...extra });
+
+      const locked = await put({ locationPrefix: 'ZZ99' }, etag).expect(400);
+      expect(locked.body.errors).toEqual([expect.objectContaining({ field: 'locationPrefix', code: 'STATE_LOCKED' })]);
+      const omitted = await put({}, etag).expect(200);
+      expect(omitted.body.locationPrefix).toBe(current);
+      await put({ locationPrefix: current }, omitted.headers.etag).expect(200);
+    });
+  });
+
   it('⛔ 창고코드가 공백만이면 400 이다 — 계약이 「공백만 불가」로 적었다', async () => {
     const rejected = await request(app.getHttpServer())
       .post('/api/mdm/warehouses')
@@ -353,7 +410,8 @@ describe('창고 마스터 (e2e)', () => {
     await prisma.location.createMany({
       data: [zoned.id, legacy.id].map((id, n) => ({
         warehouse_id: id,
-        location_code: `${PREFIX}-L${n}`,
+        // 위치 코드는 모든 창고를 통틀어 유일하다(#292) — 앞 검사의 `-L1` 과 겹치지 않게 따로 짓는다.
+        location_code: `${PREFIX}-DIV${n}`,
         location_name: '구역',
         location_type_code: locationTypeCode,
       })),

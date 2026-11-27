@@ -5,6 +5,7 @@ import { AdjustedPlanDate, PlanningCalendarDay, adjustPlanDate, keepUserDate } f
 import { FgResolution, FgSource, fgLocationOf } from '../../core/erp-warehouse/fg-location';
 import { checkCalibration, checkDoubleBooked, checkMoldLife, localToday } from '../../production/work-order/validation';
 import { defaultBomOf } from '../production-plan/master-choice';
+import { cycleTimeEstimate, cycleTimeWindow } from '../production-plan/standard-cycle-time';
 import { PlanWindow, dayStartOf, dayWindow, localDate, timeOfColumn } from '../production-plan/plan-window';
 import { PlanQuantities, isPlanCancelled, planQuantities, sumPlanQty } from '../production-plan/plan-quantity';
 import { OperationNeed, assignResources, pairKey } from '../production-plan/resource-assign';
@@ -213,7 +214,7 @@ function warnSiblingDoubleBooking(plans: readonly ProposalPlan[]): void {
   rows.forEach((row, index) => {
     if (row.equipmentId === null || row.issues.some((issue) => issue.code === 'EQUIPMENT_DOUBLE_BOOKED')) return;
     const rivals = rows.filter((other, at) => at !== index && other.equipmentId !== null).map((other) => ({ planned_equipment_id: other.equipmentId, ...windowOf(other) }));
-    for (const finding of checkDoubleBooked([row.equipmentId], windowOf(row), rivals)) row.issues.push(warnIssue(finding.code, finding.message, finding.field));
+    for (const finding of checkDoubleBooked([row.equipmentId], windowOf(row), rivals)) row.issues.push(finding.code === 'EQUIPMENT_DOUBLE_BOOKED' ? blockIssue('EQUIPMENT_DOUBLE_BOOKED', finding.message, finding.field) : warnIssue(finding.code, finding.message, finding.field));
   });
 }
 
@@ -249,12 +250,13 @@ function workOrdersOf(
   const maps = (facts.maps.get(pairKey(order.plant_id, order.item_id)) ?? []).map((row) => row.map);
   const resources = assignResources(needs, maps);
   const activeStarts = (facts.shifts.get(order.plant_id) ?? []).filter((shift) => shift.is_active).map((shift) => timeOfColumn(shift.start_time));
-  const window = dayWindow(planDate, dayStartOf(activeStarts), order.plant.timezone_code);
+  const available = dayWindow(planDate, dayStartOf(activeStarts), order.plant.timezone_code);
   const dependencies = facts.dependencies.get(routingId) ?? [];
   const today = localToday(now, order.plant.timezone_code);
   const fg = fgOf(facts, order);
 
   return operations.map((operation) => {
+    const window = cycleTimeWindow(available, cycleTimeEstimate(qty, operation.standard_cycle_time_sec).expectedDurationSec);
     const resource = resources.get(operation.routing_operation_id);
     const lineId = planLineId ?? resource?.equipmentLineId ?? null;
     const line = lineId === null ? undefined : facts.lines.get(lineId);
@@ -285,7 +287,7 @@ function workOrdersOf(
       defaultFgLocationSource: fgPick.source,
       issues: [
         ...resourceFindings(order.plant_id, values, facts, fg).map((finding) => blockIssue(finding.code, finding.message, finding.field)),
-        ...findings.map((finding) => warnIssue(finding.code, finding.message, finding.field)),
+        ...findings.map((finding) => finding.code === 'EQUIPMENT_DOUBLE_BOOKED' ? blockIssue('EQUIPMENT_DOUBLE_BOOKED', finding.message, finding.field) : warnIssue(finding.code, finding.message, finding.field)),
       ],
     };
   });
@@ -321,7 +323,7 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
       routings.map((row) => [row.routing_id, row.is_default, row.status_code, row.effective_from, row.effective_to, row.version_no]),
       [...routingIds].sort(compare).map((id) => [
         id,
-        (facts.operations.get(id) ?? []).map((row) => [row.routing_operation_id, row.operation_seq, row.process_id, row.equipment_required, row.mold_required, row.version_no]),
+        (facts.operations.get(id) ?? []).map((row) => [row.routing_operation_id, row.operation_seq, row.process_id, row.equipment_required, row.mold_required, row.version_no, row.standard_cycle_time_sec ?? null]),
         (facts.dependencies.get(id) ?? []).map((row) => [row.predecessor_operation_id, row.successor_operation_id, row.dependency_type_code]),
       ]),
     ]),

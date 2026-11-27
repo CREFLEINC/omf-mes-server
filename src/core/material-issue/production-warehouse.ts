@@ -3,26 +3,28 @@ import { Prisma } from '@prisma/client';
 import { PUTAWAY_STAGING, WAREHOUSE_WHOLE } from '../../common/master';
 
 /**
- * 생산 창고 판정(피처 004 · research R-3·R-7). 생산 창고 = 부서 생산 창고로 연결된 활성 창고(003 의 공장 모드
- * `usesProductionWarehouses` 와 같은 연결 표). 창고 보충의 요청·관리 품목·자동 보충이 같은 정의를 쓴다.
+ * 생산 창고 판정(피처 004 · research R-3·R-7). 생산 창고 = 유형이 생산창고인 활성 창고 — 한 공장의 모든 라인이
+ * 같은 생산 창고들을 쓴다(사용자 결정 2026-11-25 · 부서 연결을 대신함). 창고 보충의 요청·관리 품목·자동 보충과
+ * 출고 요청의 출발 창고(`source-warehouse.ts`)가 같은 정의를 쓴다.
  */
 
-type Db = Pick<Prisma.TransactionClient, 'department_production_warehouse' | 'location'>;
+export const PRODUCTION_WAREHOUSE = 'PRODUCTION';
 
-/** 공장의 생산 창고 — 어느 부서에든 연결된 그 공장의 활성 창고(중복 제거, 창고 번호 순). */
+type Db = Pick<Prisma.TransactionClient, 'warehouse' | 'location'>;
+
+/** 공장의 생산 창고 — 그 공장의 활성 생산창고(창고 번호 순). */
 export async function plantProductionWarehouses(db: Db, plantId: bigint): Promise<bigint[]> {
-  const rows = await db.department_production_warehouse.findMany({
-    where: { warehouse: { plant_id: plantId, is_active: true } },
+  const rows = await db.warehouse.findMany({
+    where: { plant_id: plantId, warehouse_type_code: PRODUCTION_WAREHOUSE, is_active: true },
     select: { warehouse_id: true },
-    distinct: ['warehouse_id'],
     orderBy: { warehouse_id: 'asc' },
   });
   return rows.map((row) => row.warehouse_id);
 }
 
 export async function isProductionWarehouse(db: Db, warehouseId: bigint): Promise<boolean> {
-  const row = await db.department_production_warehouse.findFirst({
-    where: { warehouse_id: warehouseId, warehouse: { is_active: true } },
+  const row = await db.warehouse.findFirst({
+    where: { warehouse_id: warehouseId, warehouse_type_code: PRODUCTION_WAREHOUSE, is_active: true },
     select: { warehouse_id: true },
   });
   return row !== null;

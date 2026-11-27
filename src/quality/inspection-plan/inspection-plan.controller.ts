@@ -73,29 +73,8 @@ export class InspectionPlanController {
     @Body() body: InspectionPlanWrite,
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'inspectionPlan', (version) =>
-      this.plans.update(inspectionPlanId, version, body),
+      this.plans.update(inspectionPlanId, version, body, currentSession(request)?.userId),
     );
-  }
-
-  @Post(':inspectionPlanId\\:approve')
-  @Contract('POST /quality/inspection-plans/{inspectionPlanId}:approve')
-  @HttpCode(HttpStatus.OK)
-  async approve(
-    @Req() request: Request,
-    @Param('inspectionPlanId', ParseIntPipe) inspectionPlanId: number,
-  ): Promise<unknown> {
-    // ⛔ 승인자는 «현재 사용자»다 — 본문으로 받지 않는다(계약). 세션이 없으면 인증 가드가
-    // 이미 막았으므로 여기 오면 값이 있다.
-    const actorId = currentSession(request)?.userId;
-    if (actorId === undefined) throw new Error('세션 없이 승인이 도달했다 — 인증 가드와 어긋났다');
-
-    const { inspectionPlan } = await runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.OK,
-      () => this.plans.approve(inspectionPlanId, actorId),
-    );
-    return inspectionPlan;
   }
 
   /** 복사(omf-all-around#255) — 원본 버전의 설정 · 검사 항목을 담은 새 기준(버전 1 작성중)을 만든다. */

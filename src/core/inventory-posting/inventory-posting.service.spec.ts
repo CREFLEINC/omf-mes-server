@@ -113,9 +113,8 @@ function fake(seed: Seed = {}) {
     },
     location: {
       findFirst: record('location.findFirst', () => null),
-    },
-    location_item: {
-      findMany: record('location_item.findMany', () => []),
+      // 「지정 품목만 받기」를 켠 위치(피처 009) — 없으면 품목 제한을 보지 않는다.
+      findMany: record('location.findMany', () => []),
     },
     warehouse: {
       findUniqueOrThrow: record('warehouse.findUniqueOrThrow', () => ({

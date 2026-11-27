@@ -100,6 +100,17 @@ describe('추적 시스템 연동 — 출하 출고 처리 (e2e)', () => {
     expect(issue.map((entry) => [entry.source_location_id, entry.issue_qty.toNumber()])).toEqual([[ids.location, 1], [ids.shelf, 2]]);
   });
 
+  it('FR-011·Q26 확인된 제품 분리 자식 LOT 은 분할 뿌리의 W/O 완제품 창고에서 출고된다', async () => {
+    const lot = await packed(2);
+    const child = await splitChild(lot, true);
+
+    await issues.receive(body([line('D1', PREFIX, child.serialNos)]), ids.plant);
+
+    const issued = await prisma.goods_issue_line.findMany({ where: { lot_id: child.lotId } });
+    expect(issued.map((entry) => [entry.source_location_id, entry.issue_qty.toNumber()])).toEqual([[ids.location, 1]]);
+    expect(await statuses(child)).toEqual(['SHIPPED']);
+  });
+
   const rejections: [string, string, () => Promise<{ input: StockIssue; plantId?: bigint }>][] = [
     ['MES 에 없는 시리얼', 'INVALID', async () => ({ input: body([line('D1', PREFIX, [...(await packed(1)).serialNos, `${PREFIX}-NONE`])]) })],
     ['다른 공장의 시리얼', 'INVALID', async () => ({ input: body([line('D1', PREFIX, (await packed(1)).serialNos)]), plantId: ids.otherPlant })],
@@ -119,6 +130,12 @@ describe('추적 시스템 연동 — 출하 출고 처리 (e2e)', () => {
       const lot = await packed(1);
       await prisma.lot_hold.create({ data: { lot_id: lot.lotId, reason_code: 'SUSPECT', status_code: 'HELD', held_at: OCCURRED, held_worker_id: ids.worker } });
       return { input: body([line('D1', PREFIX, lot.serialNos)]) };
+    }],
+    // 피처 013 FR-011·Q26 — 분리 확인 전인 자식 LOT 의 시리얼은 출고하지 않는다.
+    ['분리 확인 전인 LOT', 'STATE_LOCKED', async () => {
+      const lot = await packed(2);
+      const child = await splitChild(lot, false);
+      return { input: body([line('D1', PREFIX, child.serialNos)]) };
     }],
     ['출고할 재고가 모자람', 'NEGATIVE_BALANCE', async () => {
       const lot = await packed(2);
@@ -181,6 +198,29 @@ describe('추적 시스템 연동 — 출하 출고 처리 (e2e)', () => {
     expect(await prisma.tracking_transmission.count({ where: { transmission_id: input.transmissionId } })).toBe(0);
   });
 
+  /**
+   * 포장 묶음의 마지막 시리얼 하나를 제품 분리 자식 LOT 으로 옮긴 모양(피처 013) — 재고 1·시리얼·분리 기록.
+   * 분리 API 는 시리얼 관리 품목을 막지만, 여기서는 출고 경로의 뿌리 W/O·확인 전 거절만 본다.
+   */
+  async function splitChild(parent: Packed, confirmed: boolean): Promise<Packed> {
+    const source = await prisma.lot.findUniqueOrThrow({ where: { lot_id: parent.lotId } });
+    const balance = await prisma.inventory_balance.findFirstOrThrow({ where: { lot_id: parent.lotId, location_id: ids.location } });
+    const child = await prisma.lot.create({ data: {
+      lot_no: `${source.lot_no}-S1`, item_id: source.item_id, lot_type_code: 'PRODUCTION', plant_id: ids.plant, initial_qty: 1, uom_id: ids.uom,
+      source_type_code: 'PRODUCT_LOT_SPLIT', source_id: 1, parent_lot_id: parent.lotId, status_code: source.status_code,
+      lifecycle_status_code: source.lifecycle_status_code,
+    } });
+    await prisma.inventory_balance.update({ where: { inventory_balance_id: balance.inventory_balance_id }, data: { on_hand_qty: { decrement: 1 } } });
+    await stockAt({ lotId: child.lot_id, serialNos: [] }, ids.location, 1, parent.lotId);
+    const serialNo = parent.serialNos[parent.serialNos.length - 1];
+    await prisma.serial_number.update({ where: { serial_no: serialNo }, data: { lot_id: child.lot_id } });
+    await prisma.product_lot_split.create({ data: {
+      plant_id: ids.plant, parent_lot_id: parent.lotId, child_lot_id: child.lot_id, warehouse_id: ids.warehouse, location_id: ids.location,
+      split_qty: 1, uom_id: ids.uom, ...(confirmed ? { confirmed_at: OCCURRED, confirmed_terminal_id: ids.trackingTerminal } : {}),
+    } });
+    return { lotId: child.lot_id, serialNos: [serialNo] };
+  }
+
   async function statuses(...lots: Packed[]): Promise<string[]> {
     const serialNos = lots.flatMap((lot) => lot.serialNos);
     const rows = await prisma.serial_number.findMany({ where: { serial_no: { in: serialNos } } });
@@ -201,11 +241,11 @@ describe('추적 시스템 연동 — 출하 출고 처리 (e2e)', () => {
     return { serials: serials.map(({ serial_no, status_code }) => [serial_no, status_code]).sort(), balances: balances.map((row) => [row.inventory_balance_id, row.on_hand_qty.toNumber()]) };
   }
 
-  async function stockAt(lot: Packed, locationId: bigint, qty: number): Promise<void> {
-    const balance = await prisma.inventory_balance.findFirstOrThrow({ where: { lot_id: lot.lotId } });
+  async function stockAt(lot: Packed, locationId: bigint, qty: number, like: bigint = lot.lotId): Promise<void> {
+    const balance = await prisma.inventory_balance.findFirstOrThrow({ where: { lot_id: like } });
     await prisma.inventory_balance.create({ data: {
       legal_entity_id: balance.legal_entity_id, business_unit_id: balance.business_unit_id, plant_id: balance.plant_id, warehouse_id: balance.warehouse_id,
-      location_id: locationId, item_id: balance.item_id, lot_id: balance.lot_id, quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE',
+      location_id: locationId, item_id: balance.item_id, lot_id: lot.lotId, quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE',
       ownership_type_code: balance.ownership_type_code, on_hand_qty: qty, uom_id: balance.uom_id,
     } });
   }
@@ -293,6 +333,7 @@ describe('추적 시스템 연동 — 출하 출고 처리 (e2e)', () => {
       const terminal = await prisma.terminal.create({ data: {
         terminal_code: `${PREFIX}-${type}`, plant_id: ids.plant, terminal_type_code: type, status_code: 'RUNNING',
       } });
+      if (caller === 'tracking') ids.trackingTerminal = terminal.terminal_id;
       callers[caller] = ['Authorization', `Bearer ${jwt.sign({
         sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code, plantId: Number(ids.plant),
       })}`];

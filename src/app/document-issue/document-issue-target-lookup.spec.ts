@@ -72,7 +72,7 @@ describe('발행 대상 이름 배치 조회 (I-27 P1r)', () => {
         ],
         [
           targetKey('HANDLING_UNIT', 3n),
-          { displayName: 'HU-3', screenId: 'P-02-09' },
+          { displayName: 'HU-3', screenId: 'P-04-02' },
         ],
         // 결정 — 레인 B 번호 없는 통보(I-27): 전표 번호와 라인 번호를 함께 보존한다.
         [

@@ -18,6 +18,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptCall } from './support/legacy-goods-receipt';
 
 const PREFIX = 'INPROG';
 const LOGIN_ID = 'e2e-inbound-progress';
@@ -95,13 +96,14 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
 
     await confirm(resultId, 'ACCEPTED').expect(200);
     const accepted = await rowOf(lotId);
-    expect(accepted).toMatchObject({ stageCode: 'RECEIPT_READY', nextActionCode: 'POST_RECEIPT' });
+    // 피처 009(R-8) — 입고 가능 LOT 은 「적치 대기」(PDA 적치가 곧 입고다).
+    expect(accepted).toMatchObject({ stageCode: 'PUTAWAY_PENDING', nextActionCode: 'PUTAWAY' });
     expect(accepted.inspection).toMatchObject({ statusCode: 'COMPLETED', judgmentCode: 'ACCEPTED' });
     expect(accepted.inspection?.judgedAt).not.toBeNull();
 
     await receive(lotId, lineId, 4).expect(201);
     const partly = await rowOf(lotId);
-    expect(partly).toMatchObject({ stageCode: 'RECEIPT_READY', receivableQty: 6 });
+    expect(partly).toMatchObject({ stageCode: 'PUTAWAY_PENDING', receivableQty: 6 });
     expect(partly.goodsReceipt).not.toBeNull();
 
     await receive(lotId, lineId, 6).expect(201);
@@ -168,11 +170,11 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     });
   });
 
-  it('⭐ 무검사 품목 LOT 은 의뢰 없이 RECEIPT_READY 다', async () => {
+  it('⭐ D-7 무검사 품목 LOT 은 의뢰 없이 PUTAWAY_PENDING 이다', async () => {
     const { lotId } = await registerLot('plainItem', ids.plainLine, 7);
     expect(await rowOf(lotId)).toMatchObject({
-      stageCode: 'RECEIPT_READY',
-      nextActionCode: 'POST_RECEIPT',
+      stageCode: 'PUTAWAY_PENDING',
+      nextActionCode: 'PUTAWAY',
       inspection: null,
       blockedReasons: [],
     });
@@ -193,7 +195,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     expect(row).toMatchObject({
       lotNo: `${lot.lot_no}-S1`,
       inboundReceiptLineId: parent.lineId,
-      stageCode: 'RECEIPT_READY',
+      stageCode: 'PUTAWAY_PENDING',
       receivableQty: 2,
       inspection: { statusCode: 'REQUESTED' },
     });
@@ -292,7 +294,8 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
         (response.body.items as { purchaseOrderNo: string; inboundStageCounts: object }[]).map((item) => [item.purchaseOrderNo, item.inboundStageCounts]),
       );
       expect(counts).toEqual({
-        [`${Q}1`]: { INSPECTION: 1, RECEIPT: 1 }, [`${Q}2`]: { HELD: 1 }, [`${Q}3`]: {}, [`${Q}4`]: { LABEL: 1 },
+        // 피처 009 — 입고 가능 LOT 은 PUTAWAY 묶음이다(RECEIPT 묶음은 늘 0).
+        [`${Q}1`]: { INSPECTION: 1, PUTAWAY: 1 }, [`${Q}2`]: { HELD: 1 }, [`${Q}3`]: {}, [`${Q}4`]: { LABEL: 1 },
       });
     });
 
@@ -304,14 +307,15 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
       expect(await numbers({ inboundStage: 'LABEL' })).toEqual({ nos: [`${Q}4`], total: 1 });
       expect(await numbers({ inboundStage: 'INSPECTION' })).toEqual({ nos: [`${Q}1`], total: 1 });
       expect(await numbers({ inboundStage: 'HELD', size: 1 })).toEqual({ nos: [`${Q}2`], total: 1 });
-      expect(await numbers({ inboundStage: 'PUTAWAY' })).toEqual({ nos: [], total: 0 });
+      expect(await numbers({ inboundStage: 'PUTAWAY' })).toEqual({ nos: [`${Q}1`], total: 1 });
+      expect(await numbers({ inboundStage: 'RECEIPT' })).toEqual({ nos: [], total: 0 });
     });
 
     it('⭐ 건수 경로는 page·size·inboundStage 를 빼고 조건 전체를 센다 — 응답이 계약 모양이다', async () => {
       const response = await stageCounts({ q: Q, page: 1, size: 1, inboundStage: 'HELD' }).expect(200);
       expect(validateCounts(response.body)).toBe(true);
       expect(validateCounts.errors ?? []).toEqual([]);
-      expect(response.body).toEqual({ counts: { LABEL: 1, INSPECTION: 1, HELD: 1, RECEIPT: 1, PUTAWAY: 0 } });
+      expect(response.body).toEqual({ counts: { LABEL: 1, INSPECTION: 1, HELD: 1, RECEIPT: 0, PUTAWAY: 1 } });
       // 계약 밖 조건도 목록처럼 형을 맞춘다 — 글자 'false' 를 참으로 읽으면 납기 없는 발주가 모두 빠진다.
       const unfiltered = await stageCounts({ q: Q, overdueOnly: 'false' }).expect(200);
       expect(unfiltered.body).toEqual(response.body);
@@ -492,12 +496,8 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
       .send({ overallJudgmentCode: judgment });
   }
 
-  function receive(lotId: number, lineId: number, qty: number): request.Test {
-    return request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({
+  function receive(lotId: number, lineId: number, qty: number): ReturnType<typeof legacyGoodsReceiptCall> {
+    return legacyGoodsReceiptCall(app, cookie, {
         receiptTypeCode: 'MATERIAL', plantId: Number(ids.plant), warehouseId: Number(ids.warehouse),
         receiptDatetime: `${DAY}T05:00:00.000Z`, businessDate: DAY,
         lines: [{

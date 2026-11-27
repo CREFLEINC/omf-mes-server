@@ -51,13 +51,10 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   { code: 'P-02-01', flag: 'can_start_work' },
   { code: 'P-02-03', flag: 'can_input_material' },
   { code: 'P-02-04', flag: 'can_input_result' },
-  { code: 'P-02-08', flag: 'can_complete_work' },
-  { code: 'P-02-09', flag: 'can_print_label' },
   { code: 'P-02-10', flag: 'can_start_work' },
   { code: 'P-02-11', flag: 'can_input_material' },
   // 긴급 W/O 는 플래그 축이 없다 — 긴급은 매핑 밖의 일을 여는 화면이다.
   { code: 'P-02-12', flag: null },
-  { code: 'P-02-13', flag: 'can_input_inspection' },
   // ⭐ 자재 불량 등록(장부 P-52) — 품질 POP 화면이라 검사 입력 공정 단말에만 연다(사용자 결정 2026-10-16).
   { code: 'P-02-14', flag: 'can_input_inspection' },
   // ⭐ 제품 검사표 입력(장부 P-102) — 품질 POP 화면이라 검사 입력 공정 단말에만 연다(P-02-14 와 같다).
@@ -72,6 +69,11 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   // ⭐ OQC 출하검사 판정(장부 P-80) — 검사 입력 공정 단말에만 연다(사용자 결정 2026-10-16).
   //    생산 단말에 출하검사가 보이지 않게 하려는 것이라 «항상»이 아니다.
   { code: 'P-04-06', flag: 'can_input_inspection' },
+  // ⭐ 출하 완료(피처 010 · omf-all-around#305) — 공장 축이라 «항상»이다. 서버 `:complete` 는 POP 단말·공장만 보고
+  //    공정 플래그를 보지 않는다 — 공정으로 막으면 화면 목록이 API 보다 엄격해진다(P-01-01 과 같은 이유).
+  { code: 'P-04-07', flag: null },
+  // ⭐ 생산 LOT 분리(피처 013) — 분리하면 라벨 두 장이 나온다. 서버가 분리 가족 LOT 의 생산 LOT 라벨을 이 플래그로 낸다(D-7).
+  { code: 'P-04-08', flag: 'can_print_label' },
   // 공구·비가동은 공정 매핑과 무관한 설비 축이다.
   { code: 'P-05-01', flag: null },
   { code: 'P-05-02', flag: null },

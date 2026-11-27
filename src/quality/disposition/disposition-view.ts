@@ -27,6 +27,9 @@ export interface DispositionDecisionRow {
   sort_defect_qty?: unknown;
   /** 특채 LOT 에 불량창고 재고가 남았는가(#207) — `reinstatable` 판정에만 쓴다. */
   concession_defect_stock?: boolean | null;
+  /** 선별 판정이 만든 새 부적합(omf-all-around#352) — 선별이 아니면 NULL. */
+  new_nonconformance_id?: bigint | number | null;
+  new_nonconformance_no?: string | null;
 }
 
 /** 계약 `DispositionDecision` 과 동형(required 10 / 프로퍼티 18). */
@@ -51,6 +54,8 @@ export interface DispositionDecisionView {
   followUpQty: number;
   sortGoodQty: number | null;
   sortDefectQty: number | null;
+  newNonconformanceId?: number;
+  newNonconformanceNo?: string;
 }
 
 export interface DispositionDecisionRendered {
@@ -97,6 +102,8 @@ export function dispositionDecisionView(row: DispositionDecisionRow): Dispositio
     followUpQty: followUp.followUpQty,
     sortGoodQty: qtyOrNull(row.sort_good_qty),
     sortDefectQty: qtyOrNull(row.sort_defect_qty),
+    newNonconformanceId: row.new_nonconformance_id == null ? undefined : Number(row.new_nonconformance_id),
+    newNonconformanceNo: row.new_nonconformance_no ?? undefined,
   });
   return { view, followUp };
 }

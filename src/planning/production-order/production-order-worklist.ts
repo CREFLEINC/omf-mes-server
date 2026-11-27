@@ -40,7 +40,7 @@ const PENDING = Prisma.sql`w.released_at IS NULL AND w.status_code IN ('PLANNED'
 const LINELESS = Prisma.sql`(w.production_line_id IS NULL AND pp.created_automatically)`;
 const LINE_MISSING = Prisma.sql`(w.production_line_id IS NULL AND NOT pp.created_automatically)`;
 const LOCATION_MISSING = Prisma.sql`(w.default_fg_location_id IS NULL OR (NOT ${LINELESS}
-  AND (w.default_wip_location_id IS NULL OR w.default_scrap_location_id IS NULL)))`;
+  AND w.default_wip_location_id IS NULL))`;
 const LINE_PLANT_MISMATCH = Prisma.sql`(w.production_line_id IS NOT NULL AND NOT EXISTS (
   SELECT 1 FROM mdm.production_line l WHERE l.production_line_id = w.production_line_id AND l.plant_id = o.plant_id))`;
 const BLOCKED = Prisma.sql`(${LINE_MISSING} OR ${LOCATION_MISSING} OR ${LINE_PLANT_MISMATCH})`;

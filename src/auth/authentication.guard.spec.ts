@@ -36,6 +36,7 @@ function setup(type: 'POP' | 'MOBILE' = 'MOBILE', options: { active?: boolean; v
     handling_unit: { findFirst: jest.fn().mockResolvedValue({ handling_unit_id: 47n }) },
     inspection_request: { findFirst: jest.fn().mockResolvedValue({ inspection_request_id: 61n }) },
     shipment_request: { findMany: jest.fn().mockResolvedValue([]) },
+    plant: { findUnique: jest.fn().mockResolvedValue({ business_unit_id: null }) },
     nonconformance: { findFirst: jest.fn().mockResolvedValue({ nonconformance_id: 67n }) },
   } as unknown as PrismaService;
   const account = { userId: 1, permissions: ['W-CO-06'] };
@@ -109,12 +110,13 @@ describe('FR-004/005 terminal bearer authentication', () => {
   });
 
   // 품질 +2 — POP 시리얼 OQC 스캔·의뢰의 시리얼 판정(omf-all-around#68 · 장부 P-101): 44 → 46.
-  it('keeps the 46 reviewed generic and quality read keys disjoint', () => {
+  // +1 — PDA 제품 입고·적치의 위치 지정 품목(omf-all-around#293): 46 → 47.
+  it('keeps the 47 reviewed generic and quality read keys disjoint', () => {
     const generic = Object.keys(TERMINAL_READ_OPERATIONS);
     const quality = Object.keys(TERMINAL_QUALITY_READ_OPERATIONS);
-    expect(generic).toHaveLength(32);
+    expect(generic).toHaveLength(33);
     expect(quality).toHaveLength(14);
-    expect(new Set([...generic, ...quality]).size).toBe(46);
+    expect(new Set([...generic, ...quality]).size).toBe(47);
     expect([...generic, ...quality].every((key) => key.startsWith('GET '))).toBe(true);
   });
 
@@ -286,6 +288,7 @@ describe('FR-004/005 terminal bearer authentication', () => {
       ['GET /mdm/items/{itemId}', 'MOBILE', {}, { itemId: '41' }],
       ['GET /mdm/locations', 'MOBILE', { warehouseId: '29' }, {}],
       ['GET /mdm/locations/{locationId}', 'MOBILE', {}, { locationId: '37' }],
+      ['GET /mdm/locations/{locationId}/items', 'MOBILE', {}, { locationId: '37' }],
       ['GET /mdm/partners', 'MOBILE', { roleTypeCode: 'SUPPLIER' }, {}],
       ['GET /mdm/partners', 'MOBILE', { roleTypeCode: 'CUSTOMER' }, {}],
       ['GET /mdm/uoms', 'MOBILE', { includeInactive: 'true' }, {}],
@@ -337,6 +340,8 @@ describe('FR-004/005 terminal bearer authentication', () => {
     expect(mobile.prisma.location.findFirst).toHaveBeenCalledWith({
       where: { location_id: 37n, warehouse: { plant_id: 3n } }, select: { location_id: true },
     });
+    expect(await statusOf(mobile.guard.canActivate(context('GET /mdm/locations/{locationId}/items', {}, { locationId: '37' }, `Bearer ${mobile.token}`).execution))).toBe(401);
+    expect(await statusOf(setup('POP').guard.canActivate(context('GET /mdm/locations/{locationId}/items', {}, { locationId: '37' }, `Bearer ${setup('POP').token}`).execution))).toBe(401);
     expect(await statusOf(mobile.guard.canActivate(context('GET /mdm/molds', {}, {}, `Bearer ${mobile.token}`).execution))).toBe(401);
   });
 

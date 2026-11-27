@@ -104,6 +104,9 @@ describe('출하작업지시 편성 (e2e)', () => {
     salesOrderLine2: 0,
     otherSalesOrder: 0,
     otherSalesOrderLine: 0,
+    // 피처 012 — 편성은 사업부·줄 출고 창고가 필수다. 이 스위트의 관심 밖이라 있는 창고 하나를 빌려 쓴다.
+    businessUnit: 0,
+    warehouse: 0,
   };
 
   beforeAll(async () => {
@@ -616,13 +619,41 @@ describe('출하작업지시 편성 (e2e)', () => {
 
     // ⭐ ajv 는 «타입»만 본다 — 열두 칸을 뒤바꿔도 통과한다(§6-3 ⑴). 값으로 못 박는다.
     //   고객·배송처가 «다른» 파트너이고 진행·검사가 «다른» 문자열이라 뒤바꿈이 드러난다.
+    const partnerOf = async (partnerId: number) => {
+      const row = await prisma.partner.findUniqueOrThrow({ where: { partner_id: BigInt(partnerId) } });
+      return { partnerId, partnerCode: row.partner_code, partnerName: row.partner_name };
+    };
     expect(body).toEqual({
       shipmentRequestId: Number(stored.shipment_request_id),
       shipmentRequestNo: stored.shipment_request_no,
+      // 피처 010 — 지시서 QR 값과 피킹 창고(편성 직후라 없다)가 더해졌다.
+      code: `SHPREQ:${stored.shipment_request_no}`,
+      pickingWarehouses: [],
+      replacementCount: 0,
+      // 출하 완료 관문(피처 010 S5) — 편성 직후라 피킹 부족이고 완료 출하가 없다.
+      // 피처 012 — 피킹 부족에 줄 출고 창고 이름을 싣는다(「피킹 부족: 라인 n(창고 …)」).
+      completionBlockers: [
+        { code: 'PICKING_SHORT', lineNo: 1, warehouseName: '출하편성창고' }, { code: 'PICKING_SHORT', lineNo: 2, warehouseName: '출하편성창고' },
+      ],
+      blockerSummary: { PICKING_SHORT: 2 },
+      lotJudgmentSummary: { notInspected: 0, accepted: 0, rejected: 0, held: 0 },
+      completedShipment: null,
       salesOrderId: ids.salesOrder,
+      // 피처 010 시안 차이 보완 — 수주 번호를 함께 싣는다(PDA 피킹 머리·W-04-02 상세).
+      salesOrderNo: (await prisma.sales_order.findUniqueOrThrow({ where: { sales_order_id: BigInt(ids.salesOrder) } })).sales_order_no,
       fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
+      // 피처 012 — 사업부 지시서는 공장이 없고 사업부·줄 출고 창고 요약을 싣는다.
+      businessUnitId: ids.businessUnit,
+      businessUnit: await businessUnitOf(ids.businessUnit),
+      warehouses: [await warehouseOf(ids.warehouse)],
+      // 피처 012 FR-018·FR-019 — 출하가 아직 없어 송신 상태 없음·출하 빈 목록.
+      erpSendStatus: null,
+      shipments: [],
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
+      // 피처 010 검증 1회차 — 고객·납품처 이름을 함께 싣는다(PDA 카드·POP 찾기·P-04-06 머리).
+      customer: await partnerOf(ids.customer),
+      shipTo: await partnerOf(ids.shipTo),
       requestedShipDate: SHIP_DATE,
       statusCode: 'REGISTERED',
       timeSlotCode: 'AFTERNOON',
@@ -636,7 +667,18 @@ describe('출하작업지시 편성 (e2e)', () => {
     // `requested_ship_date` 를 `created_at` 에서 길어 오면 오늘 날짜가 나온다.
     expect(body.requestedShipDate).not.toBe(stored.created_at.toISOString().slice(0, 10));
     expect(body.versionNo).toBe(stored.version_no);
+    expect(stored.fulfillment_plant_id).toBeNull();
   });
+
+  async function businessUnitOf(id: number) {
+    const row = await prisma.business_unit.findUniqueOrThrow({ where: { business_unit_id: BigInt(id) } });
+    return { businessUnitId: id, businessUnitCode: row.business_unit_code, businessUnitName: row.business_unit_name };
+  }
+
+  async function warehouseOf(id: number) {
+    const row = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: BigInt(id) }, include: { plant: true } });
+    return { warehouseId: id, warehouseCode: row.warehouse_code, warehouseName: row.warehouse_name, plantId: Number(row.plant_id), plantName: row.plant.plant_name };
+  }
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
   interface LineInput {
@@ -657,6 +699,7 @@ describe('출하작업지시 편성 (e2e)', () => {
       allocatedQty: 60,
       uomId: ids.uom1,
       shippingInspectionRequired: false,
+      warehouseId: ids.warehouse,
       ...overrides,
     };
   }
@@ -666,6 +709,7 @@ describe('출하작업지시 편성 (e2e)', () => {
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
       requestedShipDate: SHIP_DATE,
+      businessUnitId: ids.businessUnit,
       lines: [line()],
       ...overrides,
     };
@@ -700,6 +744,22 @@ describe('출하작업지시 편성 (e2e)', () => {
   }
 
   async function makeMasters(): Promise<void> {
+    // 사업부·창고 마스터는 접두어로 «있으면 쓴다» — 지시서 줄이 창고를 가리켜 지우지 않는다.
+    const entity = (await prisma.legal_entity.findFirst({ where: { legal_entity_code: `${PREFIX}-LE` } }))
+      ?? await prisma.legal_entity.create({ data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: '출하편성법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' } });
+    const unit = (await prisma.business_unit.findFirst({ where: { business_unit_code: `${PREFIX}-BU` } }))
+      ?? await prisma.business_unit.create({ data: { legal_entity_id: entity.legal_entity_id, business_unit_code: `${PREFIX}-BU`, business_unit_name: '출하편성사업부' } });
+    const plant = (await prisma.plant.findFirst({ where: { plant_code: `${PREFIX}-P` } }))
+      ?? await prisma.plant.create({ data: {
+        legal_entity_id: entity.legal_entity_id, business_unit_id: unit.business_unit_id, plant_code: `${PREFIX}-P`, plant_name: '출하편성공장', timezone_code: 'Asia/Ho_Chi_Minh',
+      } });
+    const warehouse = (await prisma.warehouse.findFirst({ where: { warehouse_code: `${PREFIX}-WH` } }))
+      ?? await prisma.warehouse.create({ data: {
+        plant_id: plant.plant_id, business_unit_id: unit.business_unit_id, warehouse_code: `${PREFIX}-WH`, warehouse_name: '출하편성창고',
+        warehouse_type_code: 'PRODUCT', management_level_code: 'WAREHOUSE',
+      } });
+    ids.businessUnit = Number(unit.business_unit_id);
+    ids.warehouse = Number(warehouse.warehouse_id);
     const [uom1, uom2] = await prisma.uom.findMany({ take: 2, orderBy: { uom_id: 'asc' } });
     ids.uom1 = Number(uom1.uom_id);
     ids.uom2 = Number(uom2.uom_id);

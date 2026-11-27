@@ -18,8 +18,6 @@ import { LotLifecycleEventController } from './lot/lot-lifecycle-event.controlle
 import { LotCompleteService } from './lot/lot-complete.service';
 import { LotExternalIdentifierService } from './lot/lot-external-identifier.service';
 import { LotHoldListService } from './lot/lot-hold-list.service';
-import { LotIqcSkipExecuteService } from './lot/lot-iqc-skip-execute.service';
-import { LotIqcSkipService } from './lot/lot-iqc-skip.service';
 import { LotLifecycleEventService } from './lot/lot-lifecycle-event.service';
 import { LotStatusEventController } from './lot/lot-status-event.controller';
 import { LotStatusEventService } from './lot/lot-status-event.service';
@@ -32,6 +30,11 @@ import { LotImpactService } from './lot/lot-impact.service';
 import { SerialNumberQueryService } from './serial-number/serial-number-query.service';
 import { SerialNumberCreateService } from './serial-number/serial-number-create.service';
 import { SerialNumberController } from './serial-number/serial-number.controller';
+import { TraceLotsService } from './tree/trace-lots.service';
+import { TraceStartsService } from './tree/trace-starts.service';
+import { TraceExportService } from './tree/trace-export.service';
+import { TraceTreeController } from './tree/trace-tree.controller';
+import { TraceTreeService } from './tree/trace-tree.service';
 
 /**
  * 계약 최상위 경로 `/trace` — LOT 과 그 계보·이력.
@@ -39,7 +42,7 @@ import { SerialNumberController } from './serial-number/serial-number.controller
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, LotRegistryModule, ApprovalModule, NumberingModule, AuthModule, NotificationCoreModule],
-  controllers: [LotController, LotVoidController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController, TraceHistoryController],
+  controllers: [LotController, LotVoidController, LotLifecycleEventController, LotStatusEventController, SerialNumberController, LotFlowController, TraceHistoryController, TraceTreeController],
   providers: [
     LotVoidService,
     IqcHandoverNotifier,
@@ -49,8 +52,6 @@ import { SerialNumberController } from './serial-number/serial-number.controller
     LotCompleteService,
     LotExternalIdentifierService,
     LotHoldListService,
-    LotIqcSkipService,
-    LotIqcSkipExecuteService,
     LotLifecycleEventService,
     LotStatusEventService,
     SerialNumberQueryService,
@@ -60,6 +61,10 @@ import { SerialNumberController } from './serial-number/serial-number.controller
     LotFlowChainService,
     MaterialInputLineListService,
     PackingLineListService,
+    TraceLotsService,
+    TraceStartsService,
+    TraceTreeService,
+    TraceExportService,
   ],
 })
 export class TraceModule {}

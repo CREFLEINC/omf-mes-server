@@ -1,3 +1,4 @@
+import { assertEquipmentOccupancy, lockEquipmentOccupancy } from '../../production/work-order/equipment-occupancy';
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -10,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { assertPlannableRouting } from '../routing/routing.service';
 import { PlanLine, PlanToExpand, WorkOrderSupplement, dependencyRows, workOrderRows } from './expand';
 import { assertDefaultBom } from './master-choice';
+import { cycleTimeEstimate, cycleTimeWindow } from './standard-cycle-time';
 import { DEFAULT_DAY_START, PlanWindow, dayWindow, timeOfColumn } from './plan-window';
 import { assertWithinOrder } from './plan-quantity';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
@@ -60,7 +62,7 @@ export class PlanConfirmService {
     const plan = await client.production_plan.findUnique({
       where: { production_plan_id: BigInt(productionPlanId) },
       select: {
-        planned_qty: true, routing_id: true, status_code: true, uom_id: true, plan_date: true, planned_line_id: true,
+        planned_qty: true, routing_id: true, status_code: true, uom_id: true, plan_date: true, planned_line_id: true, created_automatically: true,
         production_order: { select: { item_id: true, plant_id: true, erp_storage_location_code: true } },
       },
     });
@@ -69,7 +71,7 @@ export class PlanConfirmService {
     const operations = await client.routing_operation.findMany({
       where: { routing_id: plan.routing_id },
       orderBy: { operation_seq: 'asc' },
-      select: { routing_operation_id: true, process_id: true, equipment_required: true, mold_required: true },
+      select: { routing_operation_id: true, process_id: true, equipment_required: true, mold_required: true, standard_cycle_time_sec: true },
     });
     if (operations.length === 0) throw one(field('routingId', ERROR_CODE.LINE_REQUIRED, '공정이 한 줄도 없습니다.'));
     // 작성 중 계획만 본다 — 확정된 계획의 재확정은 아래 전이 판정이 400 STATE_LOCKED 로 막는다.
@@ -94,6 +96,10 @@ export class PlanConfirmService {
     return {
       productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id,
       operationIds, window, line, fg, resources, equipmentLines, dependencies,
+      operationWindows: plan.created_automatically ? undefined : new Map(operations.map((operation) => [
+        operation.routing_operation_id,
+        cycleTimeWindow(window, cycleTimeEstimate(plan.planned_qty, operation.standard_cycle_time_sec).expectedDurationSec),
+      ])),
     };
   }
 
@@ -126,6 +132,7 @@ export class PlanConfirmService {
     appUserId: number | undefined,
     supplements?: ReadonlyMap<bigint, WorkOrderSupplement>,
   ): Promise<ProductionPlanView> {
+    await lockEquipmentOccupancy(tx);
     const productionPlanId = BigInt(plan.productionPlanId);
     const locked = await lockPlan(tx, plan.productionPlanId);
     assertPlanVersion(locked, version);
@@ -153,6 +160,7 @@ export class PlanConfirmService {
       data: workOrderRows({ ...plan, fg }, workOrderNos, appUserId, supplements),
       select: { work_order_id: true, routing_operation_id: true },
     });
+    for (const row of created) await assertEquipmentOccupancy(tx, row.work_order_id);
     if (plan.dependencies.length > 0) {
       const workOrderIdOf = new Map(created.map((row) => [row.routing_operation_id, row.work_order_id]));
       await tx.work_order_dependency.createMany({ data: dependencyRows(plan, workOrderIdOf, appUserId) });

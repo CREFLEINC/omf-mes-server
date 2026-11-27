@@ -15,7 +15,6 @@ import {
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
-import { currentTerminalApprovalListScope } from '../../auth/terminal-app-read-scope';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runVersioned } from '../../common/master';
@@ -35,8 +34,8 @@ interface ApprovalRejectionInput {
 }
 
 /**
- * 결재함 조회 2건 + 결재 2건. 화면은 `W-CO-09`(결재함) · 현장 상신 화면(`W-01-13`·
- * `W-03-09`)이 함께 부른다.
+ * 결재함 조회 2건 + 결재 2건. 화면은 `W-CO-09`(결재함) · 현장 상신 화면(`W-01-13` 등)이 함께 부른다.
+ * 품질 승인 처리(`W-03-09`)는 없앴다(omf-all-around#352).
  */
 @Controller('app/approval-requests')
 export class ApprovalRequestController {
@@ -51,10 +50,7 @@ export class ApprovalRequestController {
     @Req() request: Request,
     @Query() query: ApprovalRequestQuery,
   ): Promise<PagedResponse<ApprovalRequestView>> {
-    const terminalScope = currentTerminalApprovalListScope(request);
-    return terminalScope
-      ? this.requests.listForTerminal(query, terminalScope)
-      : this.requests.list(query, actorId(request));
+    return this.requests.list(query, actorId(request));
   }
 
   @Get(':approvalRequestId')

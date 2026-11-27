@@ -381,7 +381,8 @@ describe('단말 마스터 (e2e)', () => {
       .set('Authorization', `Bearer ${token}`).expect(200);
     // ⭐ D3 — 공정 매핑이 0행인 단말은 «축 없는 화면»만 받는다. 전에는 `['P-01-01']` 고정이었다.
     //    P-06-01(창고 적재 위치 라벨 발행)도 공장 축이라 여기 든다(장부 P-28).
-    expect(owned.body).toEqual({ screenCodes: ['P-01-01', 'P-02-12', 'P-05-01', 'P-05-02', 'P-06-01'] });
+    //    P-04-07(출하 완료)도 공장 축이다 — 서버의 :complete 는 공정 플래그를 보지 않는다(피처 010).
+    expect(owned.body).toEqual({ screenCodes: ['P-01-01', 'P-02-12', 'P-04-07', 'P-05-01', 'P-05-02', 'P-06-01'] });
     expect(owned.headers['cache-control']).toBe('private, no-store');
     await issueToken(id);
     await request(app.getHttpServer()).get(path)
@@ -459,8 +460,8 @@ describe('단말 마스터 (e2e)', () => {
       expect(screens.body.screenCodes).toContain(code);
     }
     // 켜지 않은 축은 닫혀 있다.
-    expect(screens.body.screenCodes).not.toContain('P-02-08');
-    expect(screens.body.screenCodes).not.toContain('P-02-13');
+    expect(screens.body.screenCodes).not.toContain('P-04-01');
+    expect(screens.body.screenCodes).not.toContain('P-02-14');
   });
 
   it('⭐ 빠진 공정은 지워진다', async () => {

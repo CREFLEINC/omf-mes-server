@@ -7,7 +7,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
 import { idempotencyContextOf } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
-import { INBOUND_LOT_RECEIVING, type InboundLotActor, IqcHandoverNotifier } from '../../core/lot';
+import { INBOUND_LOT_RECEIVING, type InboundLotActor, IqcHandoverNotifier, PutawayPendingNotifier } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { findInspectionPlanVersion } from '../../core/quality/inspection-plan-version';
 import { localDate } from '../../planning/production-plan/plan-window';
@@ -80,6 +80,7 @@ export class InboundLotCloseService {
     private readonly numbering: NumberingService,
     private readonly idempotency: IdempotencyService,
     private readonly iqcNotices: IqcHandoverNotifier,
+    private readonly putawayNotices: PutawayPendingNotifier,
   ) {}
 
   /** `POST /logistics/inbound-lots/{id}:close-receipt`. */
@@ -155,6 +156,8 @@ export class InboundLotCloseService {
       ...iqc, requestNo: input.iqcRequestNo as string, qty: line.received_qty, lotCount,
       inboundReceiptId: line.inbound_receipt.inbound_receipt_id, inboundReceiptNo: line.inbound_receipt.inbound_receipt_no,
     });
+    // 검사 불필요·생략 품목은 마감으로 LOT 이 바로 적치 대기다 — 「적치 대기」 알림(피처 009 · 검사 대상이면 판정 확정 때).
+    await this.putawayNotices.inboundLot(tx, locked.inbound_lot_id, input.actor ?? null);
     await recordInboundLotEvent(tx, locked.inbound_lot_id, 'RECEIPT_CLOSED', input.actor, {
       auto: input.auto, lotCount, qty: line.received_qty.toString(),
       allocations: allocation.allocations.map((row) => ({ purchaseOrderLineId: String(row.purchaseOrderLineId), qty: row.qty.toString() })),

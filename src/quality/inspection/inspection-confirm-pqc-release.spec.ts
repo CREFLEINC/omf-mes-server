@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { DocumentStateService } from '../../core/document-state';
-import { LotHoldService, LotQualityStatusService } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService, PutawayPendingNotifier } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
@@ -27,11 +27,14 @@ function harness(
       }),
     },
     lot: { findMany },
+    // 제품 분리 자손 넓히기(피처 013 R-15) — 이 시험의 LOT 에는 자식이 없다.
+    $queryRaw: jest.fn().mockResolvedValue([{ lot_id: 41n }, { lot_id: 42n }]),
     lot_hold: { findMany: openHolds },
   } as unknown as Prisma.TransactionClient;
   const lots = { moveWithin: jest.fn().mockResolvedValue({ movedLotIds: [] }) } as unknown as LotQualityStatusService;
   const holds = { lockLotsWithin: jest.fn().mockResolvedValue([]) } as unknown as LotHoldService;
-  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService, { rejected: jest.fn() } as unknown as IqcRejectedHandoverNotifier);
+  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService, { rejected: jest.fn() } as unknown as IqcRejectedHandoverNotifier,
+    { lot: jest.fn() } as unknown as PutawayPendingNotifier);
   const run = () =>
     service.applyConfirmEffects(tx, {
       inspectionResultId: 8n,
@@ -53,11 +56,14 @@ describe('PQC 확정 — 생산LOT 정상 전환 (omf-all-around#105)', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           source_id: 7n,
-          status_code: 'INSPECTION_PENDING',
           // 폐번(VOIDED) — 취소된 W/O 의 LOT 은 남은 PQC 를 확정해도 옮기지 않는다(#213).
           lifecycle_status_code: { notIn: ['WAITING', 'VOIDED'] },
         }),
       }),
+    );
+    // 검사 대기 여부는 뿌리 + 제품 분리 자식 각자로 본다(피처 013 R-15).
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { lot_id: { in: [41n, 42n] }, status_code: 'INSPECTION_PENDING' } }),
     );
     expect(lots.moveWithin).toHaveBeenCalledWith(
       expect.anything(),

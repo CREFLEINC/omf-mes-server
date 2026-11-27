@@ -106,6 +106,23 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 (e2e)', () => {
     expect(await eventCodes(iqc.requestId)).toEqual(['RESULT_ADDED', 'RESULT_ADDED', 'CONFIRMED']);
   });
 
+  it('FR-034 Q20 합격 확정 → 「적치 대기」 알림 입하 LOT 당 1건(대상 INBOUND_LOT · LOT 수)', async () => {
+    const iqc = await iqcLot(3);
+    await addResult(iqc.requestId);
+    await confirm(iqc.requestId, 200);
+    const alerts = await putawayPendingOf('INBOUND_LOT', [iqc.inboundLotId]);
+    expect(alerts).toHaveLength(1);
+    const inbound = await prisma.inbound_lot.findUniqueOrThrow({ where: { inbound_lot_id: BigInt(iqc.inboundLotId) } });
+    expect(alerts[0].payload).toMatchObject({ inbound_lot_no: inbound.inbound_lot_no, lot_count: 3 });
+  });
+
+  it('FR-034 보류 확정은 적치 대기가 생기지 않아 알림이 없다', async () => {
+    const iqc = await iqcLot(2);
+    await addResult(iqc.requestId, { acceptedQty: 5, heldQty: 5, overallJudgmentCode: 'HELD' });
+    await confirm(iqc.requestId, 200);
+    expect(await putawayPendingOf('INBOUND_LOT', [iqc.inboundLotId])).toHaveLength(0);
+  });
+
   it('US4-1 다른 열린 보류가 남은 LOT 은 합격이어도 옮기지 않는다 — 검사 대기 보류만 닫힌다', async () => {
     const iqc = await iqcLot(2);
     await prisma.lot_hold.create({
@@ -138,6 +155,8 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 (e2e)', () => {
       where: { event_type_code: 'IQC_INSPECTION_REJECTED', aggregate_type_code: 'LOT', aggregate_id: { in: lotIdsOf(iqc) } },
     });
     expect(alerts).toBe(1);
+    // FR-034 — 불합격 LOT 도 불량창고 적치를 기다린다: 「적치 대기」 1건(불합격 알림도 그대로).
+    expect(await putawayPendingOf('INBOUND_LOT', [iqc.inboundLotId])).toHaveLength(1);
   });
 
   it('US4-3 보류(불합격 없음) → LOT 전부 검사 대기 그대로(C5)·보류 유지·부적합 없음', async () => {
@@ -264,9 +283,17 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 (e2e)', () => {
     expect(confirmed).toMatchObject({ status_code: 'COMPLETED', overall_judgment_code: 'ACCEPTED', confirmed_by: ids.user });
     expect(confirmed.confirmed_at).not.toBeNull();
     expect((await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(legacy.lotId) } })).status_code).toBe('NORMAL');
+    // FR-034 — 이전 흐름 단건 확정은 대상 LOT 으로 「적치 대기」 1건.
+    expect(await putawayPendingOf('LOT', [legacy.lotId])).toHaveLength(1);
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  function putawayPendingOf(aggregateTypeCode: 'INBOUND_LOT' | 'LOT', ids: number[]) {
+    return prisma.notification_event.findMany({
+      where: { event_type_code: 'PUTAWAY_PENDING', aggregate_type_code: aggregateTypeCode, aggregate_id: { in: ids.map(BigInt) } },
+    });
+  }
 
   async function iqcLot(lotCount: number): Promise<IqcLot> {
     supplierSeq += 1;
@@ -408,7 +435,8 @@ describe('피처 005 S9 입하 LOT IQC 판정 확정 (e2e)', () => {
     const results = `SELECT inspection_result_id FROM quality.inspection_result WHERE inspection_request_id IN (${requests})`;
     const events = `SELECT notification_event_id FROM app.notification_event
       WHERE (aggregate_type_code = 'INBOUND_RECEIPT' AND aggregate_id IN (${receipts}))
-         OR (aggregate_type_code = 'LOT' AND aggregate_id IN (${lots}))`;
+         OR (aggregate_type_code = 'LOT' AND aggregate_id IN (${lots}))
+         OR (aggregate_type_code = 'INBOUND_LOT' AND aggregate_id IN (${inboundLots}))`;
     const users = `SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${PREFIX}%'`;
     const roles = `SELECT role_id FROM app.role WHERE role_code LIKE '${PREFIX}%'`;
     const keyList = [...keys].map((key) => `'${key}'`).join(',');

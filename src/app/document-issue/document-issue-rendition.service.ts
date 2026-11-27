@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 
+import { productionRootOf } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { locationLabelPng, locationLabelValues } from './location-label';
 import type { LocationLabelValues } from './location-label-layout';
@@ -8,6 +9,7 @@ import { materialLotLabelPng, materialLotLabelValues } from './material-lot-labe
 import type { MaterialLotLabelValues } from './material-lot-label-layout';
 import { materialLotTspl } from './material-lot-tspl';
 import { productionLotLabelValues } from './production-lot-label';
+import { productionLotLabelQty } from './production-lot-label-qty';
 
 @Injectable()
 export class DocumentIssueRenditionService {
@@ -58,7 +60,7 @@ export class DocumentIssueRenditionService {
   }
 
   /**
-   * 발행 기록 → LOT → 품목·단위·공장, 그리고 실적 배분과 원천 W/O 를 푼다.
+   * 발행 기록 → LOT → 품목·단위·공장, 그리고 라벨 수량과 생산 뿌리의 실적·W/O 를 푼다.
    * ⛔ 값이 없어도 422 로 막지 않는다 — 발행은 이미 됐고, 빈 칸으로 그리는 것이 규약이다.
    */
   private async productionLotLabelValues(issueId: number): Promise<MaterialLotLabelValues> {
@@ -71,30 +73,30 @@ export class DocumentIssueRenditionService {
     if (issue.document_type_code !== 'PRODUCTION_LOT_LABEL' || lot === null) {
       throw new UnprocessableEntityException('생산 LOT 라벨 발행 기록만 렌더링할 수 있습니다.');
     }
-    const [allocated, latest, workOrder] = await Promise.all([
-      this.prisma.production_result_lot_allocation.aggregate({
-        where: { lot_id: lot.lot_id },
-        _sum: { allocated_qty: true },
-      }),
+    // ⭐ 제품 분리 자식(`-S1`)은 원천이 W/O 가 아니다 — W/O·생산일은 분할 뿌리(원천 W/O LOT)의 것이다(피처 013 R-5).
+    const root = (await productionRootOf(this.prisma, [lot.lot_id])).get(lot.lot_id) ?? null;
+    const rootLotId = root?.rootLotId ?? lot.lot_id;
+    const [labelQty, latest, workOrder] = await Promise.all([
+      productionLotLabelQty(this.prisma, [lot.lot_id]),
       this.prisma.production_result_lot_allocation.findFirst({
-        where: { lot_id: lot.lot_id },
+        where: { lot_id: rootLotId },
         orderBy: { production_result_lot_allocation_id: 'desc' },
         select: { production_result: { select: { occurred_at: true } } },
       }),
-      // 생산 LOT 의 원천은 W/O 다(`source_type_code = 'WORK_ORDER'`).
-      lot.source_type_code === 'WORK_ORDER'
-        ? this.prisma.work_order.findUnique({
-            where: { work_order_id: lot.source_id },
+      root === null
+        ? Promise.resolve(null)
+        : this.prisma.work_order.findUnique({
+            where: { work_order_id: root.workOrderId },
             select: { work_order_no: true },
-          })
-        : Promise.resolve(null),
+          }),
     ]);
     return productionLotLabelValues({
       issue_seq: issue.issue_seq,
       issued_at: issue.issued_at,
       lot,
       allocation: {
-        qty: allocated._sum.allocated_qty,
+        // 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(R-4). 위치별이 아니다.
+        qty: labelQty.get(lot.lot_id) ?? null,
         occurredAt: latest?.production_result.occurred_at ?? null,
       },
       workOrderNo: workOrder?.work_order_no ?? '',

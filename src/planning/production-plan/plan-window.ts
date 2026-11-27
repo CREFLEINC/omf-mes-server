@@ -9,7 +9,8 @@ import { crossesMidnight } from '../../core/calendar/shift-crossing';
  */
 export const DEFAULT_DAY_START = '08:00:00';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const PLAN_DAY_SECONDS = 24 * 60 * 60;
+const DAY_MS = PLAN_DAY_SECONDS * 1000;
 
 export interface PlanWindow {
   plannedStartAt: Date;
@@ -58,6 +59,25 @@ export function dayStartOf(activeShiftStarts: readonly string[]): string {
 
 function addDays(date: string, days: number): string {
   return new Date(new Date(`${date}T00:00:00.000Z`).getTime() + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** 등록된 활성 교대가 겹치면 겹친 시간은 한 번만 센다. */
+export function workingSeconds(planDate: string, timezone: string, shifts: readonly ShiftTimes[]): number {
+  if (shifts.length === 0) return PLAN_DAY_SECONDS;
+  const day = dayWindow(planDate, dayStartOf(shifts.map((shift) => shift.startTime)), timezone);
+  const until = day.plannedEndAt.getTime();
+  const previousDate = addDays(planDate, -1);
+  const windows = shifts.flatMap((shift) => [shiftWindow(previousDate, shift, timezone), shiftWindow(planDate, shift, timezone)])
+    .sort((left, right) => left.plannedStartAt.getTime() - right.plannedStartAt.getTime());
+  let time = 0;
+  let previousEnd = day.plannedStartAt.getTime();
+  for (const window of windows) {
+    const start = Math.max(previousEnd, window.plannedStartAt.getTime());
+    const end = Math.min(until, window.plannedEndAt.getTime());
+    time += Math.max(0, end - start);
+    previousEnd = Math.max(previousEnd, end);
+  }
+  return time / 1000;
 }
 
 /** 그 순간 `timezone` 의 벽시계 날짜(`YYYY-MM-DD`). */

@@ -28,7 +28,7 @@ const HOLD = 'POST /quality/lot-holds';
 const RELEASE = 'POST /quality/lot-holds/{lotHoldId}:release';
 /** 처분 판정 저장 — LOT 축 전이 3 과 부적합 축 전이 1 을 «한 트랜잭션»에서 연다(I-21 · B-8). */
 const DECIDE = 'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions';
-/** 입하 마감 취소 — 생략 무효(C30)와 IQC 요청 취소를 «한 트랜잭션»에서 연다(피처 005). */
+/** 입하 마감 취소 — IQC 요청 취소를 연다(피처 005). */
 const REOPEN_RECEIPT = 'POST /logistics/inbound-lots/{inboundLotId}:reopen-receipt';
 /** IQC 판정 확정 취소 — LOT(C29)·결과·부적합 세 축을 «한 트랜잭션»에서 되돌린다(피처 005 R-13). */
 const CANCEL_CONFIRM = 'POST /quality/inspection-requests/{inspectionRequestId}:cancel-confirm';
@@ -275,29 +275,18 @@ export const TRANSITIONS: TransitionRegistry = {
     // PQC 의뢰가 없는 W/O 의 생산LOT 은 실적이 곧 정상이다(검사를 하지 않는다).
     'inspection-not-required': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
       transitionCode: 'C21', sourceOperation: 'POST /production/production-results' },
-    // 승인된 IQC 생략의 실행 — 승인 자체는 LOT 을 옮기지 않는다(공유계약 J-8).
-    'iqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
-      transitionCode: 'C22', sourceOperation: 'POST /trace/lots/{lotId}:skip-iqc' },
     // PQC 기준이 «생략 허용»이라 배포가 PQC 의뢰를 생략(SKIPPED)으로 만든 W/O 의 생산LOT — 실적이 곧 정상이다
     // (omf-all-around#119 · 장부 P-82). C21(비대상)과 이력 코드로 가른다. ⚠ C25 는 #84(특채)가 쓴다.
     'pqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
       transitionCode: 'C26', sourceOperation: 'POST /production/production-results' },
-    // 승인된 OQC 생략 실행 — 그 출하작업지시가 집은 LOT 에 「검사를 생략하고 출하」를 남긴다(omf-all-around#119 · 장부 P-83).
+    // OQC 기본 생략 — 출하 완료가 생략된 OQC 의뢰의 피킹 LOT 에 「검사를 생략하고 출하」를 남긴다(omf-all-around#119 · 피처 010 FR-012).
     // OQC 는 헤더 대상이라 LOT 은 이미 정상이다 — 상태는 그대로 두고 이력만 쌓는다(C4 의 정상 → 정상과 같은 자리).
     'oqc-skipped': { from: ['NORMAL'], to: 'NORMAL',
-      transitionCode: 'C27', sourceOperation: 'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc' },
-    // 승인된 PQC 생략 실행 — 실행 «전»에 실적이 나 검사 대기로 남은 생산LOT 을 정상으로 올린다(omf-all-around#212 · 장부 P-152).
-    // 기본 생략(C26)과 이력 코드로 가른다 — IQC(C22)·OQC(C27) 결재 생략과 같은 자리다.
-    'pqc-skip-approved': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
-      transitionCode: 'C28', sourceOperation: 'POST /production/work-orders/{workOrderId}:skip-pqc' },
+      transitionCode: 'C27', sourceOperation: 'POST /logistics/shipment-requests/{shipmentRequestId}:complete' },
     // 입하 등록 해제(피처 005 R-3) — 받기 때 검사 불필요·기본 생략으로 정상(C21)이 된 자재 관리 LOT 을 미리 만든 상태
     // (검사 대기)로 되돌린다. 다시 받으면 C21 이 다시 돈다. ⛔ C29(판정 확정 취소)와 섞지 않는다.
     'material-inbound-unregistered-quality-reset': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
       transitionCode: 'C31', sourceOperation: 'POST /logistics/inbound-lots/{inboundLotId}:unregister-lots' },
-    // 입하 마감 취소(피처 005 R-5a) — 긴급 생략을 실행한(C22) 입하 LOT 를 입고 전에 다시 열면 생략이 무효가 되어 검사 대기로
-    // 돌아간다. 검사 대기 보류는 호출자가 다시 건다.
-    'iqc-skip-voided': { from: ['NORMAL'], to: 'INSPECTION_PENDING',
-      transitionCode: 'C30', sourceOperation: REOPEN_RECEIPT },
     // 판정 확정 취소(피처 005 R-13) — 합격(C4)·불합격(C6)으로 옮긴 자재 관리 LOT 을 검사 대기로 되돌린다. 보류 확정(C5)은
     // 이미 검사 대기라 옮기지 않는다. 검사 대기 보류는 호출자가 다시 건다.
     'iqc-confirm-cancelled': { from: ['NORMAL', 'DEFECTIVE'], to: 'INSPECTION_PENDING',
@@ -330,7 +319,7 @@ export const TRANSITIONS: TransitionRegistry = {
     // ── 특채 적용(omf-all-around#84 · 장부 P-79) — 승인된 특채가 불합격 LOT 을 조건부로 쓰게 연다 ──
     // ⚠ `from` 은 처분 셋과 같다 — IQC 불합격(C6)은 `DEFECTIVE`, 보류 판정은 `INSPECTION_PENDING` 으로 온다.
     'concession-apply': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'NORMAL',
-      transitionCode: 'C25', sourceOperation: 'POST /quality/concessions/{concessionId}:apply' },
+      transitionCode: 'C25', sourceOperation: 'POST /quality/concessions' },
   },
 
   /**
@@ -641,6 +630,12 @@ export const TRANSITIONS: TransitionRegistry = {
     },
     'shipment-cancel': {
       from: ['UNCONFIRMED'],
+      to: 'CANCELLED',
+      sourceOperation: 'POST /logistics/shipments/{shipmentId}:cancel',
+    },
+    // POP 출하 완료 출하는 확정으로 태어난다 — ERP 로 보내기 «전»이면 취소된다(피처 010 · 송신 전 판정은 서비스가 한다).
+    'shipment-cancel-unsent': {
+      from: ['CONFIRMED'],
       to: 'CANCELLED',
       sourceOperation: 'POST /logistics/shipments/{shipmentId}:cancel',
     },

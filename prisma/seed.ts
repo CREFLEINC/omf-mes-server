@@ -246,6 +246,9 @@ const SEED: CodeGroupSeed[] = [
      * 2026-09-03 코드 사전(CD-WAREHOUSE-TYPE)이 MATERIAL·PRODUCT·SPARE_PART·GENERAL 넷으로
      * 닫았다. 잠정으로 쓰던 SEMI_FINISHED·MERCHANDISE·PRODUCTION 은 대응값이 없어 내린다 —
      * 등록부라 고객이 필요하면 W-06-06 에서 다시 세운다. 기존 창고 행의 문자열은 그대로 둔다.
+     *
+     * PRODUCTION(생산창고)은 2026-11-25 다시 세웠다 — 생산 창고 판정이 부서 연결에서 이 유형으로 옮겼다(사용자 결정).
+     * 동작이 이 글자에 걸리므로 마이그레이션 `20261125180000_production_warehouse_type` 도 같은 값을 세운다.
      */
     groupCode: 'WAREHOUSE_TYPE',
     groupName: '창고유형',
@@ -254,8 +257,9 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PRODUCT', codeName: '제품창고', order: 20 },
       { code: 'SPARE_PART', codeName: '예비품창고', order: 30 },
       { code: 'GENERAL', codeName: '일반창고', order: 40 },
+      { code: 'PRODUCTION', codeName: '생산창고', order: 50 },
     ],
-    retired: ['SEMI', 'MDSE', 'DEFECT', 'REWORK', 'SEMI_FINISHED', 'MERCHANDISE', 'PRODUCTION'],
+    retired: ['SEMI', 'MDSE', 'DEFECT', 'REWORK', 'SEMI_FINISHED', 'MERCHANDISE'],
   },
   {
     // BOM·Routing·검사기준은 개정(Rev) 단위로 살아 있다 — 상태축이 곧 개정 수명주기다.
@@ -459,8 +463,6 @@ const SEED: CodeGroupSeed[] = [
       { code: 'RETEST_FAIL', codeName: '재검사 불합격', order: 20 },
       { code: 'INVESTIGATION_CLEARED', codeName: '조사 종결', order: 30 },
       { code: 'MANAGER_OVERRIDE', codeName: '관리자 직권 해제', order: 40 },
-      // 승인된 IQC 생략의 실행(omf-all-around#105) — 마이그 20261016090000 에도 있다.
-      { code: 'INCOMING_INSPECTION_SKIPPED', codeName: '수입검사 생략', order: 50 },
       // 처분 정상·선별 양품(omf-all-around#108 · 장부 P-63) — 마이그 20261020120000 에도 같은 줄이 있다.
       { code: 'DISPOSITION_NORMAL', codeName: '처분 정상(입고 가능)', order: 60 },
       // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
@@ -579,22 +581,19 @@ const SEED: CodeGroupSeed[] = [
       // ⭐ 재등록(I-23)은 «우리가 정했다» — 결정 · 통보 218(근거는 통보 089 `:69-70`).
       //    배포는 시드를 안 돌리므로 마이그레이션에도 같은 한 줄이 있다.
       { code: 'C20', codeName: '재등록 → 정상', order: 130 },
-      // ⭐ 검사 비대상·생략(omf-all-around#105) — 마이그 20261016090000 에도 같은 두 줄이 있다.
+      // ⭐ 검사 비대상(omf-all-around#105) — 마이그 20261016090000 에도 같은 줄이 있다. C22(IQC 생략)는 #353 이 지웠다.
       { code: 'C21', codeName: '검사 비대상 → 정상', order: 140 },
-      { code: 'C22', codeName: 'IQC 생략 → 정상', order: 150 },
-      // 처분 선별(omf-all-around#108) — 마이그 20261020110000 에도 같은 줄이 있다. C21·C22 는 #105 몫이다.
+      // 처분 선별(omf-all-around#108) — 마이그 20261020110000 에도 같은 줄이 있다. C21 은 #105 몫이다.
       { code: 'C23', codeName: '처분 선별 → 정상(양품)', order: 160 },
       { code: 'C24', codeName: '처분 선별 → 불량(불량분 분할)', order: 170 },
       // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
       { code: 'C25', codeName: '특채 승인 → 정상(조건부 사용)', order: 180 },
       // PQC 생략 허용(omf-all-around#119) — 마이그 20261021120000 에도 같은 줄이 있다. C25 는 #84(특채) 몫이다.
       { code: 'C26', codeName: 'PQC 생략 → 정상', order: 190 },
-      // OQC 생략 실행(omf-all-around#119) — 마이그 20261021130000 에도 같은 줄이 있다.
+      // OQC 생략(omf-all-around#119) — 마이그 20261021130000 에도 같은 줄이 있다. C28(PQC 생략 결재)은 #353 이 지웠다.
       { code: 'C27', codeName: 'OQC 생략 → 정상', order: 200 },
-      { code: 'C28', codeName: 'PQC 생략(결재) → 정상', order: 210 },
       // 입하 LOT IQC(피처 005 · omf-all-around#254) — 마이그 20261112090000 에도 같은 줄이 있다.
       { code: 'C29', codeName: 'IQC 확정 취소 → 검사 대기', order: 220 },
-      { code: 'C30', codeName: 'IQC 생략 무효 → 검사 대기', order: 230 },
       { code: 'C31', codeName: '입하 등록 해제 → 검사 대기', order: 240 },
     ],
   },
@@ -900,6 +899,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PRINT_FAILURE', codeName: '인쇄 실패', order: 30 },
       { code: 'PACKAGING', codeName: '포장', order: 40 },
       { code: 'QUANTITY_CHANGE', codeName: '재구성으로 수량 변경', order: 50 },
+      // 생산 LOT 분리가 원래 LOT 라벨을 다시 낼 때 서버가 붙이는 사유 — 사람이 고르는 목록에서 뺀다(피처 013 · 마이그 20261120120000).
+      { code: 'LOT_SPLIT', codeName: 'LOT 분리', order: 60 },
     ],
   },
   {
@@ -1119,6 +1120,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PROCESSING', codeName: '처리중', order: 20 },
       { code: 'DONE', codeName: '완료', order: 30 },
       { code: 'FAILED', codeName: '실패', order: 40 },
+      // 송신 전 취소된 출하 메시지(omf-all-around#305) — 러너는 PENDING 만 집는다.
+      { code: 'CANCELLED', codeName: '취소', order: 50 },
     ],
   },
   {
@@ -1175,6 +1178,10 @@ const SEED: CodeGroupSeed[] = [
       { code: 'LOT_SPLIT', codeName: 'LOT 분할(선별 불량분)', order: 40 },
       // 미리 만든 자재 관리 LOT — 받기 때 INBOUND_RECEIPT_LINE 으로 바뀐다(피처 005 · 마이그 20261112090000).
       { code: 'MATERIAL_LOT_BATCH', codeName: '자재 관리 LOT 발행 묶음', order: 50 },
+      // 부분 출고가 떼어 낸 분할 LOT — source_id 는 출고 라인이다(피처 008 · 마이그레이션 없음).
+      { code: 'GOODS_ISSUE_SPLIT', codeName: '분할 출고', order: 60 },
+      // POP 생산 LOT 분리가 떼어 낸 자식 LOT — source_id 는 분리 기록(trace.product_lot_split)이다(피처 013).
+      { code: 'PRODUCT_LOT_SPLIT', codeName: '생산 LOT 분리', order: 70 },
     ],
   },
   {
@@ -1314,8 +1321,6 @@ const SEED: CodeGroupSeed[] = [
       { code: 'CONFIRMED', codeName: '판정 확정', order: 40 },
       { code: 'CONFIRM_CANCELLED', codeName: '확정 취소', order: 50 },
       { code: 'REOPENED_BY_REWORK', codeName: '재작업 재열기', order: 60 },
-      { code: 'SKIPPED', codeName: '생략', order: 70 },
-      { code: 'SKIP_VOIDED', codeName: '생략 무효', order: 80 },
       { code: 'SPLIT_OUT', codeName: '분리로 나감', order: 90 },
       { code: 'SPLIT_IN', codeName: '분리로 들어옴', order: 100 },
       { code: 'CANCELLED_BY_REOPEN', codeName: '마감 취소로 무효', order: 110 },
@@ -1357,6 +1362,18 @@ const SEED: CodeGroupSeed[] = [
       { code: 'COMPLETED', codeName: '적치 완료', order: 20 },
       { code: 'COMPLETED_TEMPORARY', codeName: '임시 적치 완료', order: 30 },
       { code: 'CANCELLED', codeName: '전량 반품으로 적치 취소', order: 40 },
+    ],
+  },
+  {
+    // logistics.goods_receipt_line.putaway_mode_code — PDA 지시 없는 적치(omf-all-around#294). 그 밖의 입고는 NULL.
+    // 마이그 `20261118090000_putaway_direct` 에도 같은 값(베트남어 이름 포함)이 있다.
+    groupCode: 'GOODS_RECEIPT_PUTAWAY_MODE',
+    groupName: '입고 적치 방식',
+    isSystemOwned: true,
+    values: [
+      { code: 'DESIGNATED', codeName: '지정 위치', order: 10 },
+      { code: 'UNDESIGNATED', codeName: '미지정 위치 적치', order: 20 },
+      { code: 'TEMPORARY', codeName: '임시 적치', order: 30 },
     ],
   },
   {
@@ -1425,6 +1442,18 @@ const SEED: CodeGroupSeed[] = [
       { code: 'UNCONFIRMED', codeName: '미확정', order: 10 },
       { code: 'CONFIRMED', codeName: '확정', order: 20 },
       { code: 'CANCELLED', codeName: '취소', order: 30 },
+    ],
+  },
+  {
+    // logistics.shipment_request_lot.status_code — PDA LOT 통째 피킹(omf-all-around#305). 마이그 `20261118120000_shipment_request_lot` 에도
+    // 같은 값(베트남어 이름 포함)이 있다.
+    groupCode: 'SHIPMENT_REQUEST_LOT_STATUS',
+    groupName: '출하 지시 피킹 LOT 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'PICKED', codeName: '피킹', order: 10 },
+      { code: 'REPLACED', codeName: '교체됨', order: 20 },
+      { code: 'SHIPPED', codeName: '출하됨', order: 30 },
     ],
   },
   {
@@ -1745,8 +1774,6 @@ const ROLES = [
       // 관리웹 PQC 검사 등록·조회(omf-all-around#107 · 장부 P-51) — 설계 밖 화면이라 시드가
       // 주지 않으면 아무도 메뉴를 볼 수 없다.
       'W-03-11',
-      // 검사 수준 관리(omf-all-around#64 · 장부 P-87) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
-      'W-03-12',
       // 알림 연결 설정·발송 이력(omf-all-around#160 · 장부 P-92) — 같은 이유다.
       'W-CO-12',
       'W-CO-13',
@@ -1777,6 +1804,9 @@ const ROLES = [
       'W-06-23',
       // LOT 생산 이력 조회(장부 P-119) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
       'W-02-09',
+      // 자재 기준 생산 추적·제품 기준 역추적(피처 015 · omf-all-around#355) — 같은 이유다. 기존 W-02-09 보유 역할은 마이그 20261125090000 이 준다.
+      'W-02-13',
+      'W-02-14',
       // 자재 LOT 운영 구조 변경(피처 005 · omf-all-around#254) — 설계 밖 화면·권한이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
       // 기존 역할에 덧붙이는 부여(W-01-01 → W-01-15, W-01-09 → W-01-16, M-01-01 → M-01-03)는 마이그 20261112090000 이 한다.
       'W-01-14',
@@ -1784,6 +1814,9 @@ const ROLES = [
       'W-01-16',
       'W-06-25',
       'M-01-03',
+      // 교대 관리(omf-all-around#318) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
+      // 기존 W-CO-15(공장 근무일 설정) 보유 역할은 마이그 20261125170000 이 준다.
+      'W-06-26',
     ],
   },
 ];

@@ -13,9 +13,11 @@ import {
   lotsFreeOfOpenHolds,
   pqcAcceptanceExceeded,
   PREISSUED_LIFECYCLE,
+  PutawayPendingNotifier,
   VOIDED_LIFECYCLE,
   Tx,
   WORK_ORDER_LOT_SOURCE,
+  withProductSplitDescendants,
 } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -121,6 +123,7 @@ export class InspectionConfirmService {
     private readonly numbering: NumberingService,
     private readonly defects: DefectRecordWriteService,
     private readonly rejectedNotices: IqcRejectedHandoverNotifier,
+    private readonly putawayNotices: PutawayPendingNotifier,
   ) {}
 
   async confirm(
@@ -289,6 +292,11 @@ export class InspectionConfirmService {
     const c14 = await this.spreadC14(tx, request, input.rejectedQty, moveContext);
     // ⛔ C14 가 걸린 합격은 정상 전환을 하지 않는다 — 방금 검사 대기로 돌린 LOT 을 같은 트랜잭션에서 되돌린다(#105 리뷰).
     if (!c14) await this.releasePqcLots(tx, request, input.judgment, moveContext);
+    // 005 이전 흐름 IQC 단건 확정 — 정상·불량이 된 대상 LOT 마다 「적치 대기」(피처 009 · 입하 LOT 요청은 요청 확정이 보낸다).
+    if (request.inspection_type_code === IQC) {
+      const by = input.appUserId !== undefined ? { appUserId: input.appUserId } : { workerId: terminalAudit?.workerId };
+      for (const lotId of lotIds) await this.putawayNotices.lot(tx, lotId, by);
+    }
   }
 
   /**
@@ -305,14 +313,18 @@ export class InspectionConfirmService {
     context: LotQualityMoveContext,
   ): Promise<void> {
     if (request.inspection_type_code !== PQC || request.work_order_id === null || judgment !== ACCEPTED) return;
-    const lots = await tx.lot.findMany({
+    const roots = await tx.lot.findMany({
       where: {
         source_type_code: WORK_ORDER_LOT_SOURCE,
         source_id: request.work_order_id,
         work_order_lot_seq: { not: null },
-        status_code: 'INSPECTION_PENDING',
         lifecycle_status_code: { notIn: [PREISSUED_LIFECYCLE, VOIDED_LIFECYCLE] },
       },
+      select: { lot_id: true },
+    });
+    // 제품 분리 자식도 함께 — 생애·회차는 뿌리로 보고, 검사 대기 여부는 LOT 자신으로 본다(피처 013 R-15).
+    const lots = await tx.lot.findMany({
+      where: { lot_id: { in: await withProductSplitDescendants(tx, roots.map((lot) => lot.lot_id)) }, status_code: 'INSPECTION_PENDING' },
       select: { lot_id: true },
     });
     // 다른 열린 보류(의심자재 등)가 있는 LOT 은 올리지 않는다 — IQC 확정과 같은 규율(#105 리뷰).
@@ -474,7 +486,8 @@ export class InspectionConfirmService {
     });
     await this.lots.moveWithin(
       tx,
-      lots.map((lot) => lot.lot_id),
+      // 제품 분리 자식도 함께(피처 013 R-15).
+      await withProductSplitDescendants(tx, lots.map((lot) => lot.lot_id)),
       'pqc-acceptance-exceeded',
       context,
     );

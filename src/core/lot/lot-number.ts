@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
+import { Prisma } from '@prisma/client';
+
 /**
  * LOT 번호 — 출처가 둘이고 실패의 «성격»이 다르다(계약 `POST /trace/lots`).
  *
@@ -202,4 +204,75 @@ export function materialMesLotNo(input: {
   serial: number;
 }): string {
   return materialLotPrefix(input) + materialLotSerialSegment(input.serial);
+}
+
+/** 분할 LOT 의 번호 칸 — 원조 4자리 뒤에 `-S{n}` 이 겹겹이 붙는다(피처 008 R-5). */
+const SPLIT_SERIAL = /^\d{4}(-S\d+)*$/;
+
+/** 분할 번호를 셀 «가족» — 같은 가족 안에서 `-S` 차례가 겹치지 않는다. 수량 칸은 가족을 가르지 않는다. */
+export interface SplitLotNoFamily {
+  /** 권고 잠금 열쇠. 원조가 같은 분할은 모두 같은 열쇠다. */
+  lockKey: string;
+  /** 같은 가족 후보를 좁히는 조회 조건 — 걸러 낸 뒤 `splitMaterialLotNo` 가 정확히 가린다. */
+  startsWith: string;
+  contains: string;
+}
+
+function splitParts(lotNo: string): string[] | null {
+  const parts = lotNo.split(MATERIAL_LOT_SEPARATOR);
+  return parts.length === 5 && SPLIT_SERIAL.test(parts[4]) ? parts : null;
+}
+
+export function splitLotNoFamily(parentLotNo: string): SplitLotNoFamily {
+  const parts = splitParts(parentLotNo);
+  if (parts === null) return { lockKey: parentLotNo, startsWith: `${parentLotNo}-S`, contains: '' };
+  const [item, , date, supplier, serial] = parts;
+  const root = serial.slice(0, 4);
+  return { lockKey: [item, date, supplier, root].join(MATERIAL_LOT_SEPARATOR), startsWith: `${item}|`, contains: `|${date}|${supplier}|${root}` };
+}
+
+/**
+ * 부분 출고 분할 LOT 번호 — 부모 번호의 수량 칸을 분할 수량으로 바꾸고 번호 칸에 `-S{n}` 을 붙인다.
+ * `n` 은 같은 가족(품목·날짜·공급사·번호 칸이 같고 수량은 무관)의 `-S` 최댓값 + 1 이다 — 원조 번호 칸이
+ * 같은 다른 수량의 LOT 이 있어도 번호가 겹치지 않는다(`uq_lot`).
+ * 64자를 넘으면 원조 번호 칸 + `-S{원조 기준 차례}` 로 줄인다(부모는 `parent_lot_id` 가 든다).
+ * 5칸이 아닌 옛 번호는 `원번호-S{n}` 이다.
+ */
+export function splitMaterialLotNo(parentLotNo: string, qty: Prisma.Decimal, family: readonly string[]): string {
+  const parts = splitParts(parentLotNo);
+  if (parts === null) {
+    const n = nextOrdinal(family, (no) => (no.startsWith(parentLotNo) ? no.slice(parentLotNo.length) : null));
+    return `${parentLotNo}-S${String(n)}`;
+  }
+  const [item, , date, supplier, serial] = parts;
+  const head = [item, decimalLotQty(qty), date, supplier, ''].join(MATERIAL_LOT_SEPARATOR);
+  const build = (base: string) => {
+    const n = nextOrdinal(family, (no) => {
+      const other = no.split(MATERIAL_LOT_SEPARATOR);
+      const same = other.length === 5 && other[0] === item && other[2] === date && other[3] === supplier;
+      return same && other[4].startsWith(`${base}-S`) ? other[4].slice(base.length) : null;
+    });
+    return `${head}${base}-S${String(n)}`;
+  };
+  const full = build(serial);
+  return full.length <= MATERIAL_LOT_MAX_LENGTH ? full : build(serial.slice(0, 4));
+}
+
+/** `tailOf` 가 돌려준 꼬리가 정확히 `-S{숫자}` 인 것만 센다 — `-S1-S2` 는 손자라 이 가족의 차례가 아니다. */
+function nextOrdinal(lotNos: readonly string[], tailOf: (lotNo: string) => string | null): number {
+  let max = 0;
+  for (const lotNo of lotNos) {
+    const match = /^-S(\d+)$/.exec(tailOf(lotNo) ?? '');
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return max + 1;
+}
+
+/** `normalizeLotQty` 와 같은 표기 — 계산은 `Decimal` 로 한다(부동소수 오차가 번호에 새지 않게). */
+function decimalLotQty(qty: Prisma.Decimal): string {
+  if (!qty.isFinite() || qty.lte(0)) {
+    throw new MaterialLotFormatError('수량은 0보다 큰 유한한 값이어야 합니다.', 'SEGMENT');
+  }
+  const fixed = qty.toFixed(6);
+  return fixed.replace(/0+$/, '').replace(/\.$/, '');
 }

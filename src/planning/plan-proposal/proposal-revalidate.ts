@@ -1,3 +1,4 @@
+import { cycleTimeEstimate } from '../production-plan/standard-cycle-time';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -110,11 +111,13 @@ export async function revalidateProposal(client: Prisma.TransactionClient, order
     planned_line_id: plan.body.plannedLineId === null ? null : BigInt(plan.body.plannedLineId),
     plan_date: new Date(`${plan.body.planDate}T00:00:00.000Z`),
   })));
+  const resourceWarnings = await workOrderWarnings(client, proposal.order, facts, resolved, now);
+  errors.push(...resourceWarnings.filter(finding => finding.code === 'EQUIPMENT_DOUBLE_BOOKED').map(finding => ({...finding, scope:'field' as const})));
   const warnings = [
     ...resolved.flatMap((plan, at) => planDayIssues(plan.body.planDate, days[at]).map((issue) => ({ code: issue.code, field: `plans[${plan.index}].planDate`, message: issue.message }))),
     ...timeWarnings,
     ...resolved.flatMap((plan) => fgOverrideWarning(`plans[${plan.index}]`, proposal.fg, plan.fgOverride)),
-    ...(await workOrderWarnings(client, proposal.order, facts, resolved, now)),
+    ...resourceWarnings.filter(finding => finding.code !== 'EQUIPMENT_DOUBLE_BOOKED'),
   ];
   const arrivalOf = (warehouseId: bigint) => findArrivalLocationId(client, warehouseId);
   const fgWarehouses = await Promise.all(resolved.map((plan) => fgWarehouseView(proposal.fg, { sent: plan.fgOverrideSent, applied: plan.fgOverride }, arrivalOf)));
@@ -175,6 +178,7 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
         predecessors: dependencies
           .filter((dependency) => dependency.successor_operation_id === operationId)
           .map((dependency) => ({ routingOperationId: Number(dependency.predecessor_operation_id), dependencyTypeCode: dependency.dependency_type_code })),
+        ...cycleTimeEstimate(plan.body.plannedQty, operation?.standard_cycle_time_sec),
         plannedStartAt: window?.plannedStartAt.toISOString() ?? null,
         plannedEndAt: window?.plannedEndAt.toISOString() ?? null,
         plannedTimeSourceCode: workOrder.plannedTimeSourceCode,
@@ -183,9 +187,9 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
         plannedEquipmentId: equipmentId,
         plannedMoldId: moldId,
         responsibleWorkerId: workOrder.responsibleWorkerId ?? null,
-        defaultWipLocationId: workOrder.defaultWipLocationId ?? null,
+        defaultWipLocationId: Number(plan.locations?.get(operationId)?.defaultWipLocationId) || null,
         defaultFgLocationId: workOrder.defaultFgLocationId ?? null,
-        defaultScrapLocationId: workOrder.defaultScrapLocationId ?? null,
+        defaultScrapLocationId: Number(plan.locations?.get(operationId)?.defaultScrapLocationId) || null,
         equipmentRequired,
         moldRequired,
         // 확정·배포가 막지 않는 빈 칸이다 — 공정이 요구하는데 비었음을 알린다.

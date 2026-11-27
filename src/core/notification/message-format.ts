@@ -17,7 +17,7 @@ export const EVENT_PARAMS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * 인계 작업 11종의 Zalo 파라미터 — 템플릿마다 «전부»를 적는다(omf-all-around#190 · specs/002 zalo-templates.md).
+ * 인계 작업 12종의 Zalo 파라미터 — 템플릿마다 «전부»를 적는다(omf-all-around#190 · specs/002 zalo-templates.md).
  * 6종과 달리 `event_time`·`actor` 를 덧붙이지 않는다 — 템플릿에 없는 파라미터를 실으면 키 집합이 표와 달라진다(SC-006).
  * `EVENT_PARAMS`(6종) 키 집합은 그대로다.
  */
@@ -33,6 +33,8 @@ export const HANDOVER_PARAMS: Readonly<Record<string, readonly string[]>> = {
   REWORK_WORK_ORDER_CREATED: ['wo_no', 'item', 'qty', 'ncr_no', 'process', 'event_time', 'actor'],
   IQC_INSPECTION_REQUESTED: ['receipt_no', 'lot_count', 'supplier', 'event_time'],
   IQC_INSPECTION_REJECTED: ['receipt_no', 'item', 'lot_no', 'supplier', 'qty', 'next_step', 'event_time'],
+  // 피처 009 — 적치 대기(입하 LOT 단위). Zalo 템플릿은 고객사가 새로 등록한다(그 전에는 Zalo 를 끈다 — 마이그레이션이 끈 채 복사).
+  PUTAWAY_PENDING: ['inbound_lot_no', 'item', 'lot_count', 'event_time', 'actor'],
 };
 
 /** 인계 알림센터 문장의 라벨 — 6종 키와 겹치지 않는 키만 둔다(6종 문장 불변). */

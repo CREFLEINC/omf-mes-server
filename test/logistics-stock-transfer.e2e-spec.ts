@@ -16,6 +16,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-st-probe';
 /** 403 을 재려면 «권한 없는» 계정이 하나 더 있어야 한다 — 정리 루프도 함께 고친다(출고 선례). */
@@ -429,6 +430,37 @@ describe('재고 이동 조회 (e2e)', () => {
     expect(await onHand(lot, location1Id, 'AVAILABLE')).toBe(6);
     expect(await onHand(lot, location2Id, 'IN_TRANSIT')).toBe(0);
     expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(4);
+  });
+
+  // 피처 009(omf-all-around#294 · 2026-11-18 결정) — 품목 지정은 안내다. 「지정 품목만 받기」가 꺼진 위치는 지정 밖 품목도 받는다.
+  it('Q25 FR-017b 다른 품목만 지정된 도착 위치(「지정 품목만 받기」 꺼짐)로 지정 밖 품목 이동·도착이 통과한다', async () => {
+    const other = await prisma.item.create({
+      data: { item_code: `${PREFIX}-IT9`, item_name: '이동검사다른품목', item_type_code: 'RAW_MATERIAL', base_uom_id: uomId },
+    });
+    await prisma.location_item.create({ data: { location_id: location2Id, item_id: other.item_id } });
+    try {
+      expect((await prisma.location.findUniqueOrThrow({ where: { location_id: location2Id } })).item_restricted).toBe(false);
+      const lot = await seedBalance(10);
+      const transfer = await created(draft(lot, 4));
+      await callArrive(transfer, arrival(transfer, 4)).expect(200);
+      expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(4);
+    } finally {
+      await prisma.location_item.deleteMany({ where: { location_id: location2Id } });
+    }
+  });
+
+  // R-6 — 정상 LOT 은 불량창고에 둘 수 없다는 규칙은 새 PDA 적치 경로에만 건다. 재고 이동은 지금처럼 된다.
+  it('R-6 정상 LOT 을 재고 이동으로 불량창고에 옮기면 지금처럼 도착까지 된다(새 막힘 없음)', async () => {
+    await prisma.warehouse.update({ where: { warehouse_id: warehouse2Id }, data: { is_defect: true } });
+    try {
+      const lot = await seedBalance(10);
+      await prisma.lot.update({ where: { lot_id: lot }, data: { status_code: 'NORMAL' } });
+      const transfer = await created(draft(lot, 3));
+      await callArrive(transfer, arrival(transfer, 3)).expect(200);
+      expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(3);
+    } finally {
+      await prisma.warehouse.update({ where: { warehouse_id: warehouse2Id }, data: { is_defect: false } });
+    }
   });
 
   it('⭐ 같은 품목·LOT 을 같은 위치로 두 번 이동해도 도착이 200 이다', async () => {
@@ -1129,11 +1161,7 @@ describe('재고 이동 조회 (e2e)', () => {
   /** 잔액은 입고 오퍼레이션이 세운다 — 입고가 세운 차원이 곧 반출이 되읽을 차원이다. */
   async function seedBalance(qty: number): Promise<number> {
     const forLotId = await makeLot();
-    await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId,
         warehouseId: warehouse1Id,
@@ -1150,8 +1178,7 @@ describe('재고 이동 조회 (e2e)', () => {
             destinationLocationId: location1Id,
           },
         ],
-      })
-      .expect(201);
+      });
     return forLotId;
   }
 

@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
   HttpStatus,
   NotFoundException,
   Param,
@@ -23,7 +22,7 @@ import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConcessionFilters, concessionByIdQuery, concessionCountQuery, concessionRowsQuery, todayUtc } from './concession-query';
 import { ConcessionRow, ConcessionView, assertUsableInvariant, concessionView } from './concession-view';
-import { ConcessionApply, ConcessionBatch, ConcessionCreate, ConcessionWriteService } from './concession-write.service';
+import { ConcessionBatch, ConcessionCreate, ConcessionWriteService } from './concession-write.service';
 
 export interface ConcessionListQuery extends ConcessionFilters {
   page?: number;
@@ -32,7 +31,7 @@ export interface ConcessionListQuery extends ConcessionFilters {
 
 /**
  * `GET /quality/concessions` · `…/{concessionId}`(I-21 PR ⑤ — 맨 뒤로 미뤄 낸다 · uiux 수정
- * 2). `W-03-09` ②「조건」 구획이 부른다. ⛔ **이 표는 writer 가 0개다** — 계약이 생성·승인·
+ * 2). 이 목록을 보이던 품질 승인 처리(`W-03-09`)는 없앴다(#352). ⛔ **이 표는 writer 가 0개다** — 계약이 생성·승인·
  * 수정 경로를 두지 않아(§2-4 · 통보 089 §2) 운영에서 목록이 늘 빈다. ⛔ 멱등·If-Match·ETag·
  * 403 게이트 0 — 계약 미선언(§1-1 · `permission.guard.ts:37-41`). `concession-query.ts` 가
  * `usable` 을 원시 SQL 로 다시 걸러 페이지네이션 «전» 필터한다(§4-3 — 다른 도메인 service
@@ -47,7 +46,7 @@ export class ConcessionController {
   ) {}
 
   /**
-   * 특채 요청(omf-all-around#84 · 장부 P-79) — 특채(PENDING)와 결재 요청을 함께 만든다. LOT 이 여럿인 부적합은 LOT 마다 행이 서고
+   * 특채 저장(omf-all-around#84 · 장부 P-79) — 결재 없이 바로 적용한다(omf-all-around#352). LOT 이 여럿인 부적합은 LOT 마다 행이 서고
    * 응답은 첫 행 + 묶음 id(`concessionIds`)다(피처 005 D-14).
    */
   @Post('concessions')
@@ -57,25 +56,6 @@ export class ConcessionController {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
       const batch = await this.writes.request(body, appUserId);
       return { ...(await this.get(batch.concessionIds[0])), ...batch };
-    });
-  }
-
-  /**
-   * 특채 적용 — 승인됐으면 묶음의 LOT 전부를 정상으로 열고, 반려됐으면 묶음을 닫는다. 일부 특채가 없어져(FR-038)
-   * `splitResult` 는 늘 null 이다(옛 화면 호환).
-   */
-  @Post('concessions/:concessionId\\:apply')
-  @Contract('POST /quality/concessions/{concessionId}:apply')
-  @HttpCode(HttpStatus.OK)
-  apply(
-    @Req() request: Request,
-    @Param('concessionId', ParseIntPipe) concessionId: number,
-    @Body() body: ConcessionApply | undefined,
-  ): Promise<ConcessionView & ConcessionBatch & { splitResult: null }> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      const batch = await this.writes.apply(concessionId, appUserId, body ?? {});
-      return { ...(await this.get(concessionId)), ...batch, splitResult: null };
     });
   }
 

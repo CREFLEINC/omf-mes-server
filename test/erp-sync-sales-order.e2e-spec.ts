@@ -145,7 +145,7 @@ describeRelay('ERP 수주 받기 (e2e · 중계 DB)', () => {
     ]);
   });
 
-  it('출하된 수량 밑으로 줄이는 판은 원본에 사유를 남기고 N 으로 둔다', async () => {
+  it('Q3·D-16 출하된 수량 밑으로 줄이는 판도 반영하고 처리 기록에 경고를 남긴다(피처 010)', async () => {
     const so = await salesOrder();
     await prisma.sales_order_line.update({
       where: { sales_order_line_id: so.sales_order_line[0].sales_order_line_id },
@@ -155,15 +155,13 @@ describeRelay('ERP 수주 받기 (e2e · 중계 DB)', () => {
 
     const result = await cycle.run(TABLE);
 
-    expect(result).toMatchObject({ failed: 1 });
-    const failed = await sa
-      .request()
-      .query<{ MES_APPLY_FLAG: string; MES_APPLY_ERROR: string }>(
-        `SELECT MES_APPLY_FLAG, MES_APPLY_ERROR FROM dbo.${COPY} WHERE IF_SEQ = 2`,
-      );
-    expect(failed.recordset[0].MES_APPLY_FLAG).toBe('N');
-    expect(failed.recordset[0].MES_APPLY_ERROR).toContain('출하 수량 50');
-    expect((await salesOrder()).sales_order_line[0].ordered_qty.toString()).toBe('84');
+    // ERP 는 수주 초과 출고를 받는다 — 막지 않고 새 수량을 반영한다.
+    expect(result).toMatchObject({ failed: 0 });
+    expect((await salesOrder()).sales_order_line[0].ordered_qty.toString()).toBe('40');
+    const done = await prisma.integration_message.findFirstOrThrow({
+      where: { interface_code: TABLE.source.interfaceCode, status_code: 'DONE', last_error_message: { contains: '출하 수량 50' } },
+    });
+    expect(done.last_error_message).toContain('수량 40');
   });
 
   it('처음부터 취소(C)로 온 수주는 CANCELLED 로 선다 — 라인은 남는다', async () => {

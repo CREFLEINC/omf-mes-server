@@ -1,3 +1,4 @@
+import { assertEquipmentOccupancy, lockEquipmentOccupancy } from './equipment-occupancy';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -7,7 +8,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { WORK_ORDER_DEFAULT_PRIORITY, WORK_ORDER_DEFAULT_TYPE, WORK_ORDER_INITIAL_STATUS } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertLocationsAllowed } from './work-order-location-check';
+import { assertLocationsAllowed, withLineWip } from './work-order-location-check';
 
 /** 계약 `WorkOrderCreate` 11칸 — required 넷. */
 export interface WorkOrderCreate {
@@ -172,6 +173,7 @@ export class WorkOrderWriteService {
     appUserId: number | undefined,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      await lockEquipmentOccupancy(tx);
       const locked = await lockWorkOrder(tx, workOrderId);
       assertVersion(locked, version);
       if (locked.released_at !== null) {
@@ -187,16 +189,18 @@ export class WorkOrderWriteService {
         body.plannedEndAt !== undefined ? at(body.plannedEndAt) ?? null : locked.planned_end_at,
       );
 
-      await assertLocationsAllowed(tx, workOrderId, body);
+      const resolved = await withLineWip(tx, workOrderId, body);
+      await assertLocationsAllowed(tx, workOrderId, resolved);
 
       await tx.work_order.update({
         where: { work_order_id: BigInt(workOrderId) },
         data: {
-          ...workOrderUpdateData(body),
+          ...workOrderUpdateData(resolved),
           updated_by: appUserId ?? null,
           version_no: { increment: 1 },
         },
       });
+      await assertEquipmentOccupancy(tx, workOrderId);
     });
   }
 }

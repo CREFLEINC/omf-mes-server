@@ -14,6 +14,13 @@ import { PickingAllocation, PickingDemand, allocatePicking } from './allocation'
 
 const MATERIAL_WAREHOUSE = 'MATERIAL';
 export const QUALITY_NORMAL = 'NORMAL';
+/**
+ * 잔액 행의 품질 칸 중 «LOT 판정을 따르는» 값 — 검사 대기로 입고된 재고는 판정이 나도 행이 그대로라
+ * (판정은 원장을 지나지 않는다) 쓸 수 있는지는 LOT 판정이 정한다(omf-all-around#302). 불량 행은 따르지 않는다.
+ */
+export const LOT_JUDGED_QUALITIES = [QUALITY_NORMAL, 'INSPECTION_PENDING'];
+/** LOT 판정(`trace.lot.status_code`)의 정상. */
+export const LOT_NORMAL = 'NORMAL';
 export const INVENTORY_AVAILABLE = 'AVAILABLE';
 const FEFO = 'FEFO';
 /** 코드 그룹 `PICKING_TYPE` 의 자재출고피킹. */
@@ -26,15 +33,15 @@ const PICKING_REGISTERED = 'REGISTERED';
 const logger = new Logger('PickingGeneration');
 
 /**
- * 집을 수 있는 잔액 — 정상 품질·가용 상태·가용 > 0, 보류 중인 LOT 제외. 라인의 `lot_id` 가 NOT NULL 이고,
+ * 집을 수 있는 잔액 — 정상 LOT(행 품질은 정상·검사 대기)·가용 상태·가용 > 0, 보류 중인 LOT 제외. 라인의 `lot_id` 가 NOT NULL 이고,
  * 보류 중인 LOT 은 `:pick` 이 400 으로 막는다 — 집을 수 없는 LOT 을 지시에 넣지 않는다.
  * 출고 예정 재고·출발 창고 결정(`core/material-issue`)도 같은 조건으로 «가용»을 센다.
  */
 export const PICKABLE_BALANCE: Prisma.inventory_balanceWhereInput = {
-  quality_status_code: QUALITY_NORMAL,
+  quality_status_code: { in: LOT_JUDGED_QUALITIES },
   inventory_status_code: INVENTORY_AVAILABLE,
   available_qty: { gt: 0 },
-  lot: { is: { lot_hold: { none: { released_at: null } } } },
+  lot: { is: { status_code: LOT_NORMAL, lot_hold: { none: { released_at: null } } } },
 };
 
 export interface PickingPlan extends PickingAllocation {

@@ -10,11 +10,14 @@ import { InspectionAqlPlanView, inspectionAqlPlan } from './inspection-aql-plan'
 import { InspectionGuideView, inspectionGuides } from './inspection-guide';
 import { FOUR_M_CHANGE_INCLUDE, InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 import { InboundLotRequestDetailView, inboundLotRequestDetail, inboundLotSummaries } from './iqc-request-detail';
+import { OqcRequestDetailView, OqcRequestSummary, oqcListSummaries, oqcRequestDetail } from './oqc-request-detail';
 
 /** 조회 2건(I-19 PR ②). */
 export interface InspectionRequestListQuery {
   inspectionTypeCode?: string;
   statusCode?: string;
+  /** 확정된 종합 판정(omf-all-around#356) — 확정 전 의뢰는 판정이 비어 빠진다. */
+  overallJudgmentCode?: string;
   pendingOnly?: boolean;
   itemId?: number;
   supplierId?: number;
@@ -49,13 +52,16 @@ const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
 export type InspectionRequestDetailView = InspectionRequestView & {
   inspectionGuides?: InspectionGuideView[];
   aqlPlan?: InspectionAqlPlanView;
-} & Partial<InboundLotRequestDetailView>;
+} & Partial<InboundLotRequestDetailView> & Partial<Omit<OqcRequestDetailView, 'lots'>> & { lots?: unknown[] };
+
+/** 목록 행 — 출하 OQC 새 흐름 의뢰는 지시서 번호·피킹 LOT 수·LOT 판정 수를 더한다(피처 010). */
+export type InspectionRequestListRow = InspectionRequestView & Partial<OqcRequestSummary>;
 
 @Injectable()
 export class InspectionRequestService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: InspectionRequestListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<InspectionRequestView>> {
+  async list(query: InspectionRequestListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<InspectionRequestListRow>> {
     const page = pageRequest(query);
     const where = await inspectionRequestListWhere(this.prisma, query, scope);
     const [rows, total] = await Promise.all([
@@ -64,8 +70,10 @@ export class InspectionRequestService {
       }),
       this.prisma.inspection_request.count({ where }),
     ]);
-    const [levels, inboundLots] = await Promise.all([iqcInspectionLevels(this.prisma, rows), inboundLotSummaries(this.prisma, rows)]);
-    return pagedResponse(rows.map((row, index) => inspectionRequestView(row, levels[index], inboundLots[index])), total, page);
+    const [levels, inboundLots, oqc] = await Promise.all([
+      iqcInspectionLevels(this.prisma, rows), inboundLotSummaries(this.prisma, rows), oqcListSummaries(this.prisma, rows),
+    ]);
+    return pagedResponse(rows.map((row, index) => ({ ...inspectionRequestView(row, levels[index], inboundLots[index]), ...oqc[index] })), total, page);
   }
 
   async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestDetailView> {
@@ -75,8 +83,9 @@ export class InspectionRequestService {
       include: FOUR_M_CHANGE_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
-    const [[level], [inboundLot], inbound] = await Promise.all([
+    const [[level], [inboundLot], inbound, oqc] = await Promise.all([
       iqcInspectionLevels(this.prisma, [row]), inboundLotSummaries(this.prisma, [row]), inboundLotRequestDetail(this.prisma, row),
+      oqcRequestDetail(this.prisma, row),
     ]);
     // 안내 문구는 상세에만 싣는다 — 목록 줄마다 기준을 읽지 않는다(omf-all-around#252).
     const [guides, aqlPlan] = await Promise.all([
@@ -88,6 +97,7 @@ export class InspectionRequestService {
       ...(guides.length === 0 ? {} : { inspectionGuides: guides }),
       ...(aqlPlan === null ? {} : { aqlPlan }),
       ...inbound,
+      ...oqc,
     };
   }
 }
@@ -190,6 +200,28 @@ function requestedAtWhere(query: InspectionRequestListQuery): Prisma.inspection_
   return { requested_at: { ...(from === undefined ? {} : { gte: from }), ...(to === undefined ? {} : { lt: to }) } };
 }
 
+/**
+ * 확정된 종합 판정(omf-all-around#356). 의뢰에 판정이 적히는 것은 입하 LOT IQC · 출하 OQC 새 흐름뿐이고(확정 때 서버가 적는다),
+ * PQC · 옛 OQC 는 결과 단위로 확정해 판정이 결과에만 있다 — 그 의뢰는 완료이면서 마지막(회차가 가장 큰) 확정 결과의 판정으로 본다.
+ */
+async function judgmentWhere(prisma: PrismaService, code: string): Promise<Prisma.inspection_requestWhereInput> {
+  const lastConfirmed = await prisma.$queryRaw<{ id: bigint }[]>`
+    SELECT inspection_request_id AS id FROM (
+      SELECT DISTINCT ON (res.inspection_request_id) res.inspection_request_id, res.overall_judgment_code
+      FROM quality.inspection_result res
+      JOIN quality.inspection_request req ON req.inspection_request_id = res.inspection_request_id
+       AND req.overall_judgment_code IS NULL AND req.status_code = 'COMPLETED'
+      WHERE res.status_code = 'CONFIRMED'
+      ORDER BY res.inspection_request_id, res.inspection_round DESC
+    ) last WHERE overall_judgment_code = ${code}`;
+  return {
+    OR: [
+      { overall_judgment_code: code },
+      { overall_judgment_code: null, status_code: 'COMPLETED', inspection_request_id: { in: lastConfirmed.map((row) => row.id) } },
+    ],
+  };
+}
+
 /** 오프셋이 붙은 시각만 받는다 — 오프셋 없는 글자는 어느 시간대인지 몰라 400 이다. */
 function instantOf(field: string, value: string | undefined): Date | undefined {
   if (value === undefined) return undefined;
@@ -208,7 +240,7 @@ export async function inspectionRequestListWhere(
   query: InspectionRequestListQuery,
   scope?: TerminalQualityReadScope,
 ): Promise<Prisma.inspection_requestWhereInput> {
-  return scope === undefined
-    ? buildWhere(query)
-    : { AND: [buildWhere(query), await terminalInspectionRequestWhere(prisma, scope)] };
+  const where = buildWhere(query);
+  if (query.overallJudgmentCode !== undefined) where.AND = [...(where.AND as Prisma.inspection_requestWhereInput[]), await judgmentWhere(prisma, query.overallJudgmentCode)];
+  return scope === undefined ? where : { AND: [where, await terminalInspectionRequestWhere(prisma, scope)] };
 }

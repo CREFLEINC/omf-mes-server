@@ -298,7 +298,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "줄에 배분된 LOT 의 원천 W/O 번호 정확 일치(장부 P-151)"
+      "description": "줄에 배분된 LOT 의 원천 W/O 번호 정확 일치(장부 P-151) 피처 013(omf-all-around#303): 그 W/O 의 제품 분리 자식 LOT 을 배분한 출하 라인도 찾힌다."
      },
      {
       "name": "statusCode",
@@ -953,7 +953,7 @@
      "shipment"
     ],
     "summary": "출하작업지시 목록",
-    "description": "W-04-02 출하 예정 목록. 기간이 필수다(공유계약 L-3). 근거: W-04-02 §5",
+    "description": "W-04-02 출하 예정 목록. 기간이 필수다(공유계약 L-3). 근거: W-04-02 §5 ⭐ 피처 012 D-12: 계정 세션이면 계정 데이터 범위(사업부 줄·공장 줄 모두 그 사업부의 지시서, 사업부 없는 옛 지시서는 공장 줄의 이행 공장)로 좁힌다 — 범위 줄이 없는 계정은 전부. 단말이면 PDA 는 단말 범위 안 줄이 하나라도 있는 지시서, POP 은 단말 공장 사업부의 지시서다(사업부 없는 옛 지시서는 이행 공장). PDA 목록 행에 `pickableLineCount`, 줄에 `inTerminalScope`·`outOfScopeReason` 을 싣는다(범위 밖 줄도 읽기 전용으로 보이도록 싣는다).",
     "parameters": [
      {
       "name": "customerId",
@@ -972,6 +972,34 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "businessUnitId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "지시서 사업부(피처 012 FR-007 · W-04-02 조회 조건 셋째 칸)."
+     },
+     {
+      "name": "erpSendStatus",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NOT_QUEUED",
+        "NOT_SENT_NO_SALES_ORDER",
+        "CANCELLED",
+        "SEND_ERROR",
+        "PENDING",
+        "SENT",
+        "NO_SHIPMENT"
+       ],
+       "example": "PENDING"
+      },
+      "description": "대표 출하의 ERP 송신 상태로 거른다(피처 012 FR-018 · W-04-02 칩). 대표 출하 = 취소 안 된 출하 중 가장 최근, 모두 취소면 가장 최근 출하. 값은 010 출하 목록 `erpSendStatus` 와 같은 판정이고, `NO_SHIPMENT` 는 출하가 아직 없는 지시서다."
      },
      {
       "name": "itemId",
@@ -1099,6 +1127,34 @@
        "example": 1
       },
       "description": "기본 50"
+     },
+     {
+      "name": "hasReplacement",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "OQC 불합격으로 교체한 LOT 이 있는 지시서만(피처 010 FR-015). false 는 거르지 않는다"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 100,
+       "example": "SR-2026"
+      },
+      "description": "지시서 번호·고객(코드·이름)·품목(코드·이름) 부분 일치(POP 찾기 · 피처 010) ⭐ 피처 012: 출하 번호(SH-)로도 찾는다(지시서 번호·고객·품목 그대로)."
+     },
+     {
+      "name": "completionReadyOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "완료 대기만 — completionBlockers 가 빈 지시서(피킹 ≥ 목표 · LOT 전부 합격·검사 불필요·생략 · 수주 라인 취소 없음 · 완료 전). false 는 거르지 않는다"
      }
     ],
     "security": [
@@ -1122,11 +1178,19 @@
           },
           "page": {
            "$ref": "#/components/schemas/PageMeta"
+          },
+          "erpSendStatusCounts": {
+           "type": "object",
+           "additionalProperties": {
+            "type": "integer"
+           },
+           "description": "ERP 송신 상태별 지시서 수(피처 012 W-04-02 칩) — `erpSendStatus` 조건만 빼고 같은 조건으로 센다. 키는 `erpSendStatus` 값(`NO_SHIPMENT` 포함), 0건 상태는 키가 없다."
           }
          },
          "required": [
           "items",
-          "page"
+          "page",
+          "erpSendStatusCounts"
          ]
         }
        }
@@ -1230,6 +1294,16 @@
         }
        }
       }
+     },
+     "422": {
+      "description": "업무 규칙 위반(피처 012) — 사업부·줄 출고 창고 누락 또는 쓸 수 없는 값, S/O 잔여 초과. `errors[].field` 가 그 칸이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     }
    }
@@ -1259,6 +1333,16 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "businessUnitId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "지시서 사업부(피처 012 FR-007). 목록과 같은 기준."
      },
      {
       "name": "statusCode",
@@ -1413,7 +1497,7 @@
      "shipment"
     ],
     "summary": "출하작업지시 한 건",
-    "description": "라인을 함께 내린다",
+    "description": "라인을 함께 내린다 · POP 단말도 읽는다(P-04-06 머리·피킹 LOT 몫 — 단말 공장 지시서만, 피처 010) ⭐ 피처 012 D-12: 계정 데이터 범위 밖 지시서는 404.",
     "security": [
      {
       "omfSession": []
@@ -1460,105 +1544,6 @@
      }
     },
     "x-internal-note": "편성 취소 경로를 두지 않았다 — 화면이 「⛔ 두지 않는다 — 출하작업지시 취소는 범위 밖」이라 적었다(W-04-01 §5-7)."
-   },
-   "put": {
-    "tags": [
-     "shipment"
-    ],
-    "summary": "출하작업지시 이행 공장 지정",
-    "description": "기존 미배정 요청의 이행 공장을 지정한다. 피킹 이력이 있으면 바꾸지 않으며, 이미 연결된 출하가 있으면 모든 출하 창고가 대상 공장에 속해야 한다.",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ShipmentRequestUpdate"
-       }
-      }
-     }
-    },
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "공장 지정됨",
-      "headers": {
-       "ETag": {
-        "schema": {
-         "type": "string"
-        }
-       }
-      },
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ShipmentRequest"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "피킹 또는 최신 판 충돌",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ShipmentConflictResponse"
-        }
-       }
-      }
-     }
-    }
    }
   },
   "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick": {
@@ -1567,7 +1552,7 @@
      "shipment"
     ],
     "summary": "제품 LOT 피킹 확정",
-    "description": "현장이 집은 제품 LOT 과 수량을 이 라인에 기록한다. ⭐ 화면이 예약을 직접 쓰지 않는다 — 서버가 이 피킹의 결과로 inventory_reservation 을 걸고 푼다(01 자재창고 계약 · M-01-08 §5-5 와 같은 규약). 자재 피킹의 :pick 과 대칭이다. ⛔ 오프라인 대상이 아니다 — Release 판정값을 캐시할 수 없어 이 화면은 온라인에서만 돈다(공유계약 C-6 · M-04-01 §5-6). 권장 외 LOT 을 집어도 막지 않는다 — 경고 후 통과이고 사유는 남기지 않는다(M-04-01 §5-5). 근거: M-04-01 §5-7",
+    "description": "⛔ 피처 010(omf-all-around#305)부터 쓰지 않는다 — 늘 409 USE_PICK_LOT 이다. LOT 통째 피킹 :pick-lot 을 쓴다. 현장이 집은 제품 LOT 과 수량을 이 라인에 기록한다. ⭐ 화면이 예약을 직접 쓰지 않는다 — 서버가 이 피킹의 결과로 inventory_reservation 을 걸고 푼다(01 자재창고 계약 · M-01-08 §5-5 와 같은 규약). 자재 피킹의 :pick 과 대칭이다. ⛔ 오프라인 대상이 아니다 — Release 판정값을 캐시할 수 없어 이 화면은 온라인에서만 돈다(공유계약 C-6 · M-04-01 §5-6). 권장 외 LOT 을 집어도 막지 않는다 — 경고 후 통과이고 사유는 남기지 않는다(M-04-01 §5-5). 근거: M-04-01 §5-7",
     "parameters": [
      {
       "name": "shipmentRequestId",
@@ -1663,7 +1648,7 @@
       }
      },
      "409": {
-      "description": "충돌 — LOT 이 Hold 이거나 가용이 모자라거나 배정을 넘는다",
+      "description": "충돌 — 피처 010 부터 늘 USE_PICK_LOT",
       "content": {
        "application/json": {
         "schema": {
@@ -1676,191 +1661,13 @@
     "x-internal-note": "서버가 막는 것 셋 — ① lot_hold 가 걸린 LOT ② 가용 수량 초과 ③ allocatedQty − pickedQty 초과. 잔여 유효기간 하한(minimumRemainingShelfLifeDays)도 서버가 판정한다. customerLotRequirement 는 자유 텍스트라 서버도 화면도 해석하지 않는다(M-04-01 §5-3 · 공유계약 A-12 읽는 쪽 판)."
    }
   },
-  "/logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip": {
-   "parameters": [
-    {
-     "name": "shipmentRequestId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "shipment"
-    ],
-    "summary": "OQC 생략 요청",
-    "description": "출하작업지시의 출하검사(OQC)를 생략하도록 결재를 요청한다. 요청을 만들기만 하고 의뢰·LOT 은 옮기지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)가 없으면 400(code=STATE_LOCKED), 결재선이 없으면 400(code=ROUTE_NOT_FOUND), 진행 중인 요청이 있으면 400(code=APPROVAL_IN_PROGRESS). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83)",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ApprovalRequestCreate"
-       }
-      }
-     }
-    },
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "202": {
-      "description": "요청됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ApprovalRequestRef"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없는 출하작업지시",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "approval_type_code=OQC_SKIP · target_type_code=SHIPMENT_REQUEST · target_id=shipment_request_id 로 서버가 채운다(서버 선행 · 장부 P-83)."
-   }
-  },
-  "/logistics/shipment-requests/{shipmentRequestId}:skip-oqc": {
-   "parameters": [
-    {
-     "name": "shipmentRequestId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "shipment"
-    ],
-    "summary": "승인된 OQC 생략 실행",
-    "description": "OQC 생략 요청이 **승인된** 출하작업지시의 출하검사를 생략한다 — 확정 결과가 없는 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)를 `SKIPPED` 로 닫고, 검사 대상 라인이 집은(피킹) LOT 마다 이력을 남긴다(정상 → 정상 · 전이 C27). 생략된 의뢰는 출하검사 판정에서 «통과»로 센다. ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8). 승인된 요청이 없거나, 생략할 열린 의뢰가 없거나, 검사 대상 라인의 피킹이 끝나지 않았으면 400(code=STATE_LOCKED). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83)",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     }
-    ],
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "생략 실행됨 — 실행 뒤 출하작업지시 상세",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ShipmentRequest"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없는 출하작업지시",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "승인 조회: approval_type_code=OQC_SKIP · target_type_code=SHIPMENT_REQUEST · target_id=shipment_request_id · status_code=APPROVED. 서버 선행(장부 P-83)."
-   }
-  },
   "/logistics/shipments": {
    "get": {
     "tags": [
      "shipment"
     ],
     "summary": "출하 목록",
-    "description": "W-04-02·W-04-04·W-04-12 가 함께 쓴다. 기간 필수(L-3)",
+    "description": "W-04-02·W-04-04·W-04-12 가 함께 쓴다. 기간 필수(L-3) ⭐ 피처 012 D-11: W-04-02 「출하」 칸도 부른다(출하 내역 W-04-12 화면은 없앴다). ⭐ 피처 012 R-5(omf-all-around#331): 단말 범위 — 창고 있는 출하는 출하 창고가 단말 공장(창고 지정 단말은 그 창고), 창고 없는 POP 완료 출하는 «출고 전표» 창고 중 하나라도 단말 공장(창고 지정 단말은 그 창고)이면 보인다.",
     "parameters": [
      {
       "name": "shipmentRequestId",
@@ -1953,7 +1760,7 @@
        "type": "string",
        "example": "SH-2026-0813-0031"
       },
-      "description": "출하 번호 검색. ⛔ 범위는 shipment_no 하나다 — 고객은 customerId 를, LOT 은 lotId 를 쓴다(omf-mes#170 과 같은 처리). 근거: W-04-06 §3"
+      "description": "검색어 — 출하 번호 · 출하 지시서 번호 · 고객 코드·이름 부분 일치(피처 010 W-04-12 시안 「출하번호·지시서·고객」). ⛔ LOT 은 lotId 를 쓴다. 근거: W-04-06 §3 · 010 시안 W-04-12"
      },
      {
       "name": "lotId",
@@ -1995,6 +1802,23 @@
        "example": 1
       },
       "description": "기본 50"
+     },
+     {
+      "name": "erpSendStatus",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NOT_QUEUED",
+        "NOT_SENT_NO_SALES_ORDER",
+        "CANCELLED",
+        "SEND_ERROR",
+        "PENDING",
+        "SENT"
+       ],
+       "example": "NOT_SENT_NO_SALES_ORDER"
+      },
+      "description": "ERP 송신 상태로 거른다(응답 erpSendStatus 와 같은 판정 · 피처 010)"
      }
     ],
     "security": [
@@ -2018,6 +1842,18 @@
           },
           "page": {
            "$ref": "#/components/schemas/PageMeta"
+          },
+          "erpSendStatusCounts": {
+           "type": "object",
+           "description": "ERP 송신 상태별 건수(W-04-12 거르기 칩 · 피처 010) — erpSendStatus 를 뺀 나머지 조건으로 센다. 키는 erpSendStatus 값(NOT_QUEUED·PENDING·SENT·SEND_ERROR·CANCELLED·NOT_SENT_NO_SALES_ORDER) — 0건인 상태는 빠진다",
+           "additionalProperties": {
+            "type": "integer"
+           },
+           "example": {
+            "PENDING": 2,
+            "SENT": 5,
+            "NOT_SENT_NO_SALES_ORDER": 1
+           }
           }
          },
          "required": [
@@ -2149,7 +1985,7 @@
      "shipment"
     ],
     "summary": "출하 한 건",
-    "description": "라인과 LOT 배분을 함께 내린다 — genealogy 종결점이다",
+    "description": "라인과 LOT 배분을 함께 내린다 — genealogy 종결점이다 ⭐ 피처 012 D-11: W-04-02 상세 「출하」 칸이 이 상세를 그대로 쓴다.",
     "security": [
      {
       "omfSession": []
@@ -2216,7 +2052,7 @@
      "shipment"
     ],
     "summary": "출하 취소 실행",
-    "description": "승인 완료 후 실행한다. ⭐ 승인만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이 확정됐으면 409 다. 근거: W-04-12 §5-8",
+    "description": "승인 완료 후 실행한다. ⭐ 승인만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이 확정됐으면 409 다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 완료 출하는 송신 전이면 실행한다 — 창고마다의 내부 재고 차감 기록 전부를 역전기·취소, 지시·수주 출하 수량을 내리고, 메시지를 CANCELLED 로, 피킹 LOT 을 PICKED 로 되돌려 같은 잔액 행에 예약을 다시 건다(다시 잡을 수 없는 LOT 은 풀린 채 피킹 LOT 행을 지운다). 지시서는 「출하 완료 전」이 된다. OQC 결과는 그대로. 보낸 뒤는 409 ERP_ALREADY_SENT. ⭐ 2026-11-19 사용자 결정: 송신 오류(메시지 FAILED — 재처리로 다시 대기가 된 것 포함)라도 ERP 가 거절한 행만 있으면(ERP 에 들어갔거나 반영된 행이 없으면) 보내기 전으로 본다 — 실행이 그 메시지를 CANCELLED 로 둬 다시 시도하지 않는다. 실행은 그 지시서의 출하 OQC 의뢰(완료)를 진행으로 다시 연다 — 종합 판정·확정 시각을 비우고, 확정된 결과는 판정 근거로 그대로 둔다. 새로 피킹한 LOT 의 결과는 작성중으로 쌓이고 다시 출하 완료할 때 확정된다. ⭐ 피처 012 R-6: 권한 `W-04-12` — W-04-02 상세 「출하」 칸에서 부른다(결재함 [열기] 착지도 W-04-02).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2292,7 +2128,7 @@
       }
      },
      "409": {
-      "description": "충돌",
+      "description": "충돌 · ERP_ALREADY_SENT(POP 완료 출하 — 이미 보냄)",
       "content": {
        "application/json": {
         "schema": {
@@ -2322,7 +2158,7 @@
      "shipment"
     ],
     "summary": "출하 확정",
-    "description": "미확정 → 확정. ⭐ 이 시점에 ERP 송신 적재가 걸린다(2026-08-07 출하 2단 확정) — 재고는 앞 단계(출하 처리)에서 이미 차감됐다. 취소 결재가 진행 중이면 409 CANCEL_IN_PROGRESS 다(공유계약 J-7). ⛔ 확정 취소 경로가 없다 — 되돌릴 수 없다. 근거: W-04-12 §5-3·§5-8",
+    "description": "미확정 → 확정. ⭐ 이 시점에 ERP 송신 적재가 걸린다(2026-08-07 출하 2단 확정) — 재고는 앞 단계(출하 처리)에서 이미 차감됐다. 취소 결재가 진행 중이면 409 CANCEL_IN_PROGRESS 다(공유계약 J-7). ⛔ 확정 취소 경로가 없다 — 되돌릴 수 없다. 근거: W-04-12 §5-3·§5-8 ⭐ 피처 012 R-6: 권한 `W-04-05`·`W-04-12` — 남은 미확정 출하는 W-04-02 상세 「출하」 칸이 `W-04-12` 로 부른다(W-04-05 는 메뉴에서 감춤).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2418,7 +2254,7 @@
      "shipment"
     ],
     "summary": "출하 취소 요청",
-    "description": "미확정 구간에서만 된다. 사유가 필수다. 승인은 공통 계약이 소유한다. 01 자재창고가 쓰는 :request-cancel 과 같은 형태다. 근거: W-04-12 §5-8",
+    "description": "미확정 구간에서만 된다. 사유가 필수다. 승인은 공통 계약이 소유한다. 01 자재창고가 쓰는 :request-cancel 과 같은 형태다. 근거: W-04-12 §5-8 ⭐ 피처 010: POP 출하 완료로 확정된 출하도 ERP 로 보내기 전(메시지 PENDING · sentAt 없음 · 바깥 행 0 · 수주 없는 출하는 늘)이면 상신한다 — 보낸 뒤는 409 ERP_ALREADY_SENT. 상신 중에는 러너가 그 출하를 보내지 않는다. ⭐ 2026-11-19 사용자 결정: 송신 오류(메시지 FAILED — 재처리로 다시 대기가 된 것 포함)라도 ERP 가 거절한 행만 있으면(ERP 에 들어갔거나 반영된 행이 없으면) 보내기 전으로 본다 — 실행이 그 메시지를 CANCELLED 로 둬 다시 시도하지 않는다. ⭐ 피처 012 R-6: 권한 `W-04-12`(메뉴 없는 「출하 취소(송신 전)」) — W-04-02 상세 「출하」 칸에서 부른다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2494,7 +2330,7 @@
       }
      },
      "409": {
-      "description": "충돌",
+      "description": "충돌 · ERP_ALREADY_SENT(POP 완료 출하 — 이미 보냄)",
       "content": {
        "application/json": {
         "schema": {
@@ -2716,6 +2552,15 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "withoutInspectionRequestOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "참이면 **검사 건(IQC · OQC)에 묶이지 않은 부적합만** 낸다 — 재작업/폐기 판정 의뢰(W-04-07)로 올린 반품 · 제품 부적합이다. 검사 조회·판정 OQC 탭 「구분: 판정 의뢰」가 쓴다(omf-all-around#354). ⛔ 화면이 응답을 걸러 대신하지 않는다(페이지 단위)."
      },
      {
       "name": "severityCode",
@@ -3612,6 +3457,884 @@
      }
     }
    }
+  },
+  "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick-lot": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "제품 LOT 통째 피킹",
+    "description": "PDA(M-04-01)가 LOT 을 스캔하면 그 LOT 의 공장 안 가용 잔액 전부(불량창고 제외 — 여러 창고·위치·적치 대기 자리 포함)를 이 라인에 피킹한다. 잔액 행마다 예약을 하나씩 걸고 곧바로 푼다(picked += 가용). 라인 피킹 합이 목표(allocatedQty)보다 작을 때만 받으므로 초과는 마지막 LOT 에서만 생긴다. 수량 입력은 없다. 피킹 LOT 행(shipment_request_lot)이 PICKED 로 생긴다. 근거: 피처 010 FR-004·004a·005·006 ⭐ 피처 012 R-3: 줄 출고 창고가 있는 지시서는 경로의 줄을 «품목 힌트»로만 쓴다 — 서버가 LOT 의 가용 잔액이 있는 창고로 같은 품목·단말 범위 안 줄(남은 수량이 있는 앞 줄)을 골라 그 «창고의» 잔액만 통째로 잡고, 실제 줄을 응답 `line` 으로 알린다. 다른 창고에 남은 몫은 `otherWarehouseQty`. 창고 없는 옛 줄은 지금 규칙(지시서 공장의 불량 외 모든 창고) 그대로다.",
+    "parameters": [
+     {
+      "name": "shipmentRequestId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "shipmentRequestLineId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShipmentLotPick"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "피킹됨 — 피킹 LOT 행과 갱신된 라인",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentLotPickResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — LOT 이 없다·이 공장 LOT 이 아니다·다른 라인 품목·출하할 수 없는 LOT 상태·잔여 유효기간 부족",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "라인이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — LOT_TARGET_REACHED · LOT_ALREADY_RESERVED · LOT_ALREADY_PICKED · NO_LINE_FOR_ITEM · INVALID_STATE(보류·피킹 막힌 상태·재고 없음·이행 공장 없음) · LOT_SPLIT_UNCONFIRMED(PDA 확인 전인 생산 LOT 분리의 원래·자식 · 피처 013)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "단말은 PDA(MOBILE)만 부른다 — 소유 검사는 지시서 fulfillment_plant_id = 단말 공장. 세션은 M-04-01 권한."
+   }
+  },
+  "/logistics/shipment-request-lots/{shipmentRequestLotId}:replace": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "OQC 불합격 피킹 LOT 교체",
+    "description": "PDA [교체] — 한 트랜잭션에서 그 LOT 의 예약을 모두 풀고(잔액 피킹분 → 가용, 예약 released), 피킹 LOT 행을 REPLACED(근거 결과·부적합·작업자·시각)로, LOT 을 불량(C6)으로 옮기고 부적합 1건(PENDING_DECISION · 의뢰 = OQC 의뢰)을 만든다. 지시서는 바뀌지 않고 라인이 다시 피킹을 받는다. 본문 없음. 근거: 피처 010 FR-013·014",
+    "parameters": [
+     {
+      "name": "shipmentRequestLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "교체됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentLotReplaceResult"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "피킹 LOT 이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — LOT_NOT_REJECTED(판정이 불합격이 아님 · PICKED 아님 · 출하 완료 뒤)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "단말은 PDA(MOBILE)만 — 소유는 지시서 이행 공장 = 단말 공장. 세션은 M-04-01."
+   }
+  },
+  "/logistics/shipment-request-lots/{shipmentRequestLotId}/management-code": {
+   "put": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 관리 코드 저장",
+    "description": "PDA 가 코드 칸에서 스캔하거나 직접 넣은 값을 그 피킹 LOT 에 저장한다(FR-020·021). PICKED 일 때만 — 출하 완료(SHIPPED)·교체(REPLACED) 뒤는 409. 출하 완료 때 출하 내역의 LOT 배분 줄에 그대로 보인다.",
+    "parameters": [
+     {
+      "name": "shipmentRequestLotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShipmentLotManagementCode"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "저장됨 — 피킹 LOT 행",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentRequestLot"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "100자 초과(RANGE)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "피킹 LOT 이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — INVALID_STATE(출하 완료·교체 뒤)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "단말은 PDA(MOBILE)만 — 소유는 지시서 이행 공장 = 단말 공장. 세션은 M-04-01."
+   }
+  },
+  "/logistics/shipment-requests:lookup": {
+   "get": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "지시서 코드 해석 · 출하 완료 확인 값",
+    "description": "POP P-04-07 스캔·PDA 코드 보기 — SHPREQ:{지시서 번호} 를 해석해 완료 확인 값을 낸다. 단말이면 그 공장 지시서만(다른 공장은 404). 근거: 피처 010 FR-018 · R-9 ⭐ 피처 012 FR-013: 단말이면 단말 공장 사업부의 지시서만 연다 — 다른 사업부면 403 `BUSINESS_UNIT_MISMATCH` 「다른 사업부의 출하 지시서입니다」(지시서 내용·상대 사업부 이름은 싣지 않는다). 사업부 없는 옛 지시서는 그 이행 공장 단말만.",
+    "parameters": [
+     {
+      "name": "code",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "maxLength": 150,
+       "example": "SHPREQ:SR-20261118-0001"
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "확인 값",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentRequestCompletion"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "NOT_SHIPMENT_REQUEST_CODE — 지시서 코드 형식이 아니다(LOT 라벨 등)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "다른 사업부의 지시서 — BUSINESS_UNIT_MISMATCH(피처 012)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "SHIPMENT_REQUEST_NOT_FOUND — 형식은 맞지만 지시서가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/shipment-requests/{shipmentRequestId}:complete": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 완료(POP)",
+    "description": "POP P-04-07 [출하 완료] 한 번 — 한 트랜잭션에서 관문(FR-016) → 출하 «하나»(CONFIRMED 로 바로 · warehouseId null · 완료 단말·작업자) → 창고마다 내부 재고 차감 기록(goods_issue)·원장 출고 → 출하 라인·LOT 배분(예약 행마다) → 지시·수주 라인 출하 수량 → 피킹 LOT SHIPPED → 출하 OQC 확정(작성중 결과 확정·의뢰 완료·LOT 이력 C4, 생략 의뢰는 남은 LOT 에 C27) → 수주 연결 라인이 있으면 ERP 송신 적재. 같은 지시서는 한 번만 완료된다. 근거: 피처 010 FR-016~019 · R-8 ⭐ 피처 012: 사업부 안 어느 POP 에서나 완료한다 — 다른 사업부면 403 `BUSINESS_UNIT_MISMATCH`. 출하 번호는 완료한 POP 의 공장, 출고 전표는 창고마다 하나이고 번호는 그 창고의 공장 체계다(R-4). ERP 송신 행의 PLANT_CD 는 그 행 출고 전표 창고의 공장.",
+    "parameters": [
+     {
+      "name": "shipmentRequestId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersionOptional"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShipmentCompletion"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "완료됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentCompletionResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "본문 검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "POP 단말이 아니다 · 다른 사업부의 지시서 — BUSINESS_UNIT_MISMATCH(피처 012)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "지시서가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "COMPLETION_BLOCKED(blockers) · ALREADY_COMPLETED · VERSION_CONFLICT · INVALID_STATE(피킹이 방금 바뀜)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "POP 단말 전용 — 소유는 지시서 이행 공장 = 단말 공장. 계정 세션은 403."
+   }
+  },
+  "/logistics/product-lot-splits:lookup": {
+   "get": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "생산 LOT 분리 스캔 조회(POP)",
+    "description": "POP P-04-08 — LOT 번호(정확 일치)로 LOT·라벨 수량·W/O 와 이 공장의 보유 위치별 잔액·고를 수 있는지·막힌 이유를 낸다. 분리 요청과 같은 규칙(R-8)이고 분리 때 다시 검사한다. 근거: 피처 013 R-14",
+    "parameters": [
+     {
+      "name": "lotNo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "maxLength": 100,
+       "example": "M00000120261117000012ABCDEFGHJKLMN"
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "스캔 조회",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductLotSplitLookup"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "REQUIRED — lotNo 가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 · POP 단말이 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "계정 세션 — 단말 전용",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "이 공장에 없는 LOT 번호",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "POP 단말 전용 — 공장은 단말 공장. 계정 세션은 403."
+   }
+  },
+  "/logistics/product-lot-splits": {
+   "get": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "생산 LOT 분리 목록·찾기(POP·PDA)",
+    "description": "단말 공장의 분리. status 기본 UNCONFIRMED(분리 시각 오래된 순), CONFIRMED·ALL 은 최신순. lotNo(원래·자식 어느 쪽이든 정확 일치)를 주면 많아야 한 건 — 그 LOT 의 확인 대기 분리, 없으면 가장 최근 확인된 분리(status 무시), 둘 다 없으면 빈 목록(PDA M-04-05 첫 스캔). unconfirmedCount 는 P-04-08 목록 머리 수. 근거: 피처 013 FR-009 · R-3",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "UNCONFIRMED",
+        "CONFIRMED",
+        "ALL"
+       ],
+       "example": "UNCONFIRMED"
+      }
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 100,
+       "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ProductLotSplit"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "unconfirmedCount": {
+           "type": "integer",
+           "description": "단말 공장의 확인 대기 분리 수",
+           "example": 3
+          }
+         },
+         "required": [
+          "items",
+          "page",
+          "unconfirmedCount"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "status 값이 올바르지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 · 단말 유형이 아니다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "계정 세션 — 단말 전용",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "POP·PDA 단말 전용 — 공장은 단말 공장. 계정 세션은 403(관리웹 화면이 없다)."
+   },
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "생산 LOT 분리(POP)",
+    "description": "POP P-04-08 — 한 트랜잭션에서 분리 기록(확인 대기) → 자식 LOT 원번호-S{n}(원천 PRODUCT_LOT_SPLIT · 상태·생애·유효기간·제조일·BOM 복사 · SPLIT 계보) → 원장 LOT_SPLIT 1건(같은 자리 원래 → 자식, 거래번호 PLS-{id}) → 생산 LOT 라벨 발행 기록 2건(원래 = 다음 회차·사유 LOT_SPLIT 자동, 자식 = 1회차). 하나라도 실패하면 아무것도 남지 않는다. 막는 조건은 409 code(검사 순서 R-8), 입력 형식은 400. 근거: 피처 013 FR-001~008 · R-1·R-7·R-8",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductLotSplitCreate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "분리됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductLotSplitResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "REQUIRED · RANGE(0 < qty < 그 위치 보유, 단위 소수 자리 · 그 위치에 재고 없음) · INVALID(businessDate)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 · POP 단말이 아니다 · 다른 공장 LOT·위치",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "계정 세션 · 라벨 출력 권한(can_print_label 공정) 없는 단말",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "NOT_PRODUCTION_LOT · SPLIT_SERIAL_LOT · INVALID_STATE · LOT_SPLIT_UNCONFIRMED · LOT_ALREADY_RESERVED · PUTAWAY_PENDING · NOT_PRODUCT_WAREHOUSE · MIXED_STOCK_STATUS · DUPLICATE_KEY",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "POP 단말 전용 — 공장은 단말 공장. 재발행 사유 LOT_SPLIT 은 서버만 쓰고 고객이 코드를 꺼도 분리는 된다(R-7)."
+   }
+  },
+  "/logistics/product-lot-splits/{productLotSplitId}:confirm": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "생산 LOT 분리 확인(PDA)",
+    "description": "PDA M-04-05 — 두 라벨(원래·자식, 순서 무관)이 이 분리의 짝이면 확인 시각·작업자·단말을 남긴다. LOT 상태와 무관하다(보류·불량이 된 뒤에도 확인한다). 확인 뒤 두 LOT 은 출하 피킹·추적 시스템 출고·재분리를 다시 받는다. 근거: 피처 013 FR-010·FR-012 · R-3",
+    "parameters": [
+     {
+      "name": "productLotSplitId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductLotSplitConfirm"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "확인됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductLotSplit"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "INVALID — 두 LOT 이 이 분리의 원래·자식 짝이 아니다(한 장·같은 장 두 번 포함)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 · PDA 단말이 아니다 · 다른 공장 분리",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "계정 세션 — 단말 전용",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 분리",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "ALREADY_CONFIRMED — 이미 확인된 분리(PDA 는 「이미 확인됨」 안내) · DUPLICATE_KEY",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "PDA 단말 전용 — 공장은 단말 공장. 확인은 한 번이고 되돌리지 않는다."
+   }
   }
  },
  "components": {
@@ -3656,6 +4379,18 @@
     },
     "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
     "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178.",
+    "example": "100027"
+   },
+   "WorkerNoOptional": {
+    "name": "X-Worker-No",
+    "in": "header",
+    "required": false,
+    "schema": {
+     "type": "string",
+     "maxLength": 50
+    },
+    "description": "관리웹도 같은 오퍼레이션을 부르는 자리에서는 선택이다 — 관리웹은 계정 토큰으로 오므로 서버가 인증 주체에서 행위자를 푼다. 단말 토큰으로 온 요청에 이 헤더가 없으면 서버가 거부한다. 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
+    "x-internal-note": "현장 단말·모바일 전용 오퍼레이션에는 WorkerNo(required)를 그대로 쓴다 — 이 완화는 두 셸이 함께 부르는 오퍼레이션에만 적용한다. OpenAPI 로는 「단말 토큰이면 필수」를 표현할 수 없어 선택으로 두고 규칙을 설명에 적는다. 판정 근거는 인증 토큰의 종류(app_user / mdm.terminal)이지 헤더의 유무가 아니다. 이슈 #178.",
     "example": "100027"
    }
   },
@@ -4481,9 +5216,13 @@
       "example": 1001
      },
      "warehouseId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "출하 창고. ⭐ POP 출하 완료(피처 010)로 생긴 출하는 여러 창고라 null — warehouses[] 를 본다(응답 모양 변경)"
      },
      "vehicleNo": {
       "type": "string",
@@ -4552,6 +5291,11 @@
       "description": "⭐ 선행 구현(P-24) — 포장이 끝났는데 아직 어느 출하 단위에도 들어가지 않은 상자 수. 목록에서만 채운다(상세는 세지 않는다). 한 상자가 배분 여럿에 걸릴 수 있어 상자 기준으로 센다",
       "example": 2
      },
+     "unpackedLotCount": {
+      "type": "integer",
+      "description": "아직 포장하지 않은 LOT 배분 수 — `GET /logistics/shipment-lot-allocations?shipmentId=&unpackedOnly=true` 의 건수와 같은 기준(포장 단위가 안 붙은 배분). 0 이면 포장할 LOT 이 남지 않았다. 목록에서만 채운다(상세는 세지 않는다). 근거: P-04-03 출하 포장 「확정 불가」 표시 (omf-all-around#329)",
+      "example": 3
+     },
      "expedited": {
       "type": "boolean",
       "default": false,
@@ -4575,6 +5319,215 @@
      "versionNo": {
       "type": "integer",
       "example": 1
+     },
+     "erpSendStatus": {
+      "type": "string",
+      "enum": [
+       "NOT_QUEUED",
+       "NOT_SENT_NO_SALES_ORDER",
+       "CANCELLED",
+       "SEND_ERROR",
+       "PENDING",
+       "SENT"
+      ],
+      "example": "PENDING",
+      "description": "ERP 송신 상태(출하 예정 목록 W-04-02 「출하」 칸 · 피처 010) — 위에서부터 처음 맞는 값: 미확정 NOT_QUEUED(확정 전) · 수주 연결 라인 0 NOT_SENT_NO_SALES_ORDER(송신 안 함) · 메시지 없음 NOT_QUEUED · 메시지 취소 CANCELLED · 송신 실패 SEND_ERROR · 보내기 전(PENDING·sentAt 없음·바깥 행 0) PENDING(대기) · 그 밖 SENT(보냄). 출하 완료 단계 화면에는 표시하지 않는다"
+     },
+     "cancelRequestPending": {
+      "type": "boolean",
+      "example": false,
+      "description": "열린 취소 결재(SHIPMENT_CANCEL · 상신 중) — 그동안 ERP 송신을 보류한다(FR-024)"
+     },
+     "completedTerminal": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "terminalId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "terminalCode": {
+        "type": "string",
+        "example": "POP-01"
+       }
+      },
+      "required": [
+       "terminalId",
+       "terminalCode"
+      ],
+      "description": "POP 출하 완료 단말(피처 010) — 옛 흐름은 null"
+     },
+     "completedWorker": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "workerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "workerNo": {
+        "type": "string",
+        "example": "100027"
+       },
+       "workerName": {
+        "type": "string",
+        "example": "작업자"
+       }
+      },
+      "required": [
+       "workerId",
+       "workerNo",
+       "workerName"
+      ],
+      "description": "POP 출하 완료 작업자(피처 010)"
+     },
+     "warehouses": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "warehouseCode": {
+         "type": "string",
+         "example": "WH-FG"
+        },
+        "warehouseName": {
+         "type": "string",
+         "example": "완제품창고"
+        },
+        "goodsIssueNos": {
+         "type": "array",
+         "items": {
+          "type": "string",
+          "example": "GI-20261118-0011"
+         },
+         "description": "그 창고의 출고 전표(내부 재고 차감 기록) 번호 — 창고마다 한 장. 확정 전이면 빈 배열"
+        },
+        "qty": {
+         "type": "number",
+         "format": "double",
+         "example": 90,
+         "description": "그 창고에서 빠진 수량(출고 전표 합). 확정 전이면 0"
+        },
+        "locations": {
+         "type": "array",
+         "description": "위치별 빠진 수량",
+         "items": {
+          "type": "object",
+          "properties": {
+           "locationId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+           },
+           "locationCode": {
+            "type": "string",
+            "example": "A-01-01"
+           },
+           "locationSystemRoleCode": {
+            "type": [
+             "string",
+             "null"
+            ],
+            "example": "PUTAWAY_STAGING",
+            "description": "위치의 시스템 역할 — PUTAWAY_STAGING 이면 적치 대기 자리(화면 「적치 대기」). 보통 자리는 null"
+           },
+           "qty": {
+            "type": "number",
+            "format": "double",
+            "example": 70
+           }
+          },
+          "required": [
+           "locationId",
+           "locationCode",
+           "locationSystemRoleCode",
+           "qty"
+          ]
+         }
+        }
+       },
+       "required": [
+        "warehouseId",
+        "warehouseCode",
+        "warehouseName",
+        "goodsIssueNos",
+        "qty",
+        "locations"
+       ]
+      },
+      "description": "재고가 빠진 창고들 — 출하 창고와 내부 재고 차감 기록(goods_issue) 기준(피처 010)"
+     },
+     "shipmentRequestNo": {
+      "type": "string",
+      "example": "SR-20261118-0001",
+      "description": "출하 지시서 번호(출하 내역 W-04-12 「고객 · 지시서」 · 피처 010)"
+     },
+     "customer": {
+      "type": "object",
+      "description": "고객(출하 지시서 기준 · 피처 010)",
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "C001"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "고객사"
+       }
+      },
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ]
+     },
+     "shipTo": {
+      "type": "object",
+      "description": "납품처(출하 지시서 기준 · 피처 010)",
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "C001"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "고객사"
+       }
+      },
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ]
+     },
+     "salesOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "SO-0001",
+      "description": "수주 번호 — 수주 없는 지시서는 null(피처 010)"
      }
     },
     "required": [
@@ -4882,6 +5835,14 @@
       "format": "double",
       "description": "이미 포장에 담긴 수량. 배분 잔여 = allocatedQty − packedQty 를 서버가 파생한다(L-2) ⛔ 없으면 화면이 잔여를 계산할 수 없다 — 항상 내린다(P-04-01 §5-6).",
       "example": 120.0
+     },
+     "managementCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "BOX-0001",
+      "description": "출하 관리 코드(피처 010 FR-020) — 출하 상세에서만 싣는다(조회만)"
      }
     },
     "required": [
@@ -4956,7 +5917,60 @@
        "null"
       ],
       "format": "int64",
-      "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+      "description": "옛 지시서(피처 012 배포 전)의 이행 공장 — 창고 미지정 줄의 피킹 범위 근거로만 남는다(FR-026·027). 새 지시서는 null 이다(공장은 줄 출고 창고가 정한다). ⛔ 생성 본문에서 뺐다(보내면 400), 공장 지정 PUT 도 없앴다(D-1)."
+     },
+     "businessUnitId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "지시서 사업부(피처 012). null = 사업부 없는 공장의 옛 지시서(「사업부 미지정」)."
+     },
+     "businessUnit": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentRequestBusinessUnit"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "지시서 사업부 표시 칸 — `businessUnitId` 가 null 이면 null."
+     },
+     "warehouses": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+      },
+      "description": "줄 출고 창고 요약(피처 012 W-04-02 「출고 창고」) — 줄 순서대로 겹치지 않게. 창고 없는 옛 줄은 담지 않는다."
+     },
+     "erpSendStatus": {
+      "oneOf": [
+       {
+        "type": "string",
+        "enum": [
+         "NOT_QUEUED",
+         "NOT_SENT_NO_SALES_ORDER",
+         "CANCELLED",
+         "SEND_ERROR",
+         "PENDING",
+         "SENT"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "대표 출하의 ERP 송신 상태(피처 012 FR-018) — 출하가 없으면 null. ⛔ 완료 전 화면(PDA·POP 완료·인쇄)은 이 칸을 그리지 않는다(FR-025)."
+     },
+     "shipments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestShipment"
+      },
+      "description": "이 지시서의 출하 — 취소된 것 포함, 최신순(피처 012 FR-019)."
      },
      "shipmentRequestId": {
       "type": "integer",
@@ -5028,7 +6042,7 @@
        "PARTIALLY_SHIPPED",
        "SHIPPED"
       ],
-      "description": "⭐ W-04-02 「진행」 열의 판정 근거 — 출하작업지시 «한 건»의 진행이다. 라인 전체의 요청·배정·피킹·출하 4수량을 서버가 롤업해 하나로 낸다. ⛔ 서버가 계산한다 — 화면이 다시 계산하지 않는다(공유계약 L-2 · L-2-1 ⑴). ⛔ 저장하지 않는다 — A-17 의 두 질문이 둘 다 「아니오」다(달력이 값을 바꾸지 않고, 과거 값을 얼릴 이유도 없다). NOT_ALLOCATED=배정 합 0 · PARTIALLY_ALLOCATED=0 보다 크고 요청 합보다 작은 배정 합 · PICKING=배정 합이 요청 합과 같고 피킹 합이 배정 합보다 작다 · PICKED=피킹 합이 배정 합과 같고 출하 합 0 · PARTIALLY_SHIPPED=출하 합이 0 보다 크고 배정 합보다 작다 · SHIPPED=출하 합이 배정 합과 같다. ⭐ 판정 순서는 뒤가 이긴다 — NOT_ALLOCATED, PARTIALLY_ALLOCATED, PICKING, PICKED, PARTIALLY_SHIPPED, SHIPPED. ⚠ statusCode 와 축이 다르다 — 그 칸은 「칸 불필요」로 닫혔고(x-no-code-key) 값이 없다. ⚠ shippingInspectionStatusCode 와도 축이 다르다 — 「검사 대기」는 이 축의 값이 아니라 그 축의 PENDING 이다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⛔ 화면이 라인을 순회해 판정하지 않는다 — W-04-01·W-04-02·W-04-04 가 각자 접으면 같은 건을 다르게 부른다(W-04-02 §9-1). 근거: W-04-02 §3·§4-A·§5-3 · W-04-04 §3·§5-4 · omf-mes#402",
+      "description": "⭐ W-04-02 「진행」 열의 판정 근거 — 출하작업지시 «한 건»의 진행이다. 라인 전체의 요청·배정·피킹·출하 4수량을 서버가 롤업해 하나로 낸다. ⛔ 서버가 계산한다 — 화면이 다시 계산하지 않는다(공유계약 L-2 · L-2-1 ⑴). ⛔ 저장하지 않는다 — A-17 의 두 질문이 둘 다 「아니오」다(달력이 값을 바꾸지 않고, 과거 값을 얼릴 이유도 없다). NOT_ALLOCATED=배정 합 0 · PARTIALLY_ALLOCATED=0 보다 크고 요청 합보다 작은 배정 합 · PICKING=배정 합이 요청 합과 같고 피킹 합이 배정 합보다 작다 · PICKED=피킹 합이 배정 합과 같고 출하 합 0 · PARTIALLY_SHIPPED=출하 합이 0 보다 크고 배정 합보다 작다 · SHIPPED=출하 합이 배정 합과 같다. ⭐ 판정 순서는 뒤가 이긴다 — NOT_ALLOCATED, PARTIALLY_ALLOCATED, PICKING, PICKED, PARTIALLY_SHIPPED, SHIPPED. ⚠ statusCode 와 축이 다르다 — 그 칸은 「칸 불필요」로 닫혔고(x-no-code-key) 값이 없다. ⚠ shippingInspectionStatusCode 와도 축이 다르다 — 「검사 대기」는 이 축의 값이 아니라 그 축의 PENDING 이다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⛔ 화면이 라인을 순회해 판정하지 않는다 — W-04-01·W-04-02·W-04-04 가 각자 접으면 같은 건을 다르게 부른다(W-04-02 §9-1). 근거: W-04-02 §3·§4-A·§5-3 · W-04-04 §3·§5-4 · omf-mes#402 ⭐ 피처 010: PICKED 는 P ≥ A ∧ S = 0, SHIPPED 는 S ≥ A(초과 피킹·출하).",
       "example": "PICKING",
       "x-code-key": "CD-SHIPMENT-PROGRESS"
      },
@@ -5041,6 +6055,148 @@
      "versionNo": {
       "type": "integer",
       "example": 1
+     },
+     "code": {
+      "type": "string",
+      "description": "지시서 QR·스캔 값 SHPREQ:{shipmentRequestNo}(피처 010)",
+      "example": "SHPREQ:SR-20261118-0001"
+     },
+     "pickingWarehouses": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentPickingWarehouse"
+      },
+      "description": "살아 있는 피킹 LOT 의 몫이 있는 창고들 — 지시서는 창고를 정하지 않는다(공장 단위)."
+     },
+     "replacementCount": {
+      "type": "integer",
+      "description": "OQC 불합격으로 교체한 LOT 수(FR-015 · 「LOT 교체 n」)",
+      "example": 1
+     },
+     "completionBlockers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentCompletionBlocker"
+      },
+      "description": "출하 완료를 막는 이유(FR-016) — 비면 완료 대기"
+     },
+     "blockerSummary": {
+      "type": "object",
+      "description": "목록의 「막힘 n」 — 이유 코드별 수(없는 이유는 키 생략)",
+      "properties": {
+       "PICKING_SHORT": {
+        "type": "integer",
+        "example": 1
+       },
+       "NOT_INSPECTED": {
+        "type": "integer",
+        "example": 1
+       },
+       "REJECTED": {
+        "type": "integer",
+        "example": 1
+       },
+       "HELD": {
+        "type": "integer",
+        "example": 1
+       },
+       "SALES_ORDER_LINE_CANCELLED": {
+        "type": "integer",
+        "example": 1
+       },
+       "ALREADY_COMPLETED": {
+        "type": "integer",
+        "example": 1
+       }
+      }
+     },
+     "lotJudgmentSummary": {
+      "$ref": "#/components/schemas/ShipmentLotJudgmentSummary"
+     },
+     "completedShipment": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentCompletedShipment"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "salesOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "SO-0001",
+      "description": "수주 번호(피처 010 시안 — PDA 피킹 머리·W-04-02 상세). 수주 없는 지시서는 null"
+     },
+     "customer": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "고객(피처 010 — PDA 카드·POP 찾기·P-04-06 머리). 거래처가 없으면 null",
+        "properties": {
+         "partnerId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 1001
+         },
+         "partnerCode": {
+          "type": "string",
+          "example": "C001"
+         },
+         "partnerName": {
+          "type": "string",
+          "example": "고객사"
+         }
+        },
+        "required": [
+         "partnerId",
+         "partnerCode",
+         "partnerName"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "shipTo": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "납품처(피처 010). 거래처가 없으면 null",
+        "properties": {
+         "partnerId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 1001
+         },
+         "partnerCode": {
+          "type": "string",
+          "example": "C001"
+         },
+         "partnerName": {
+          "type": "string",
+          "example": "고객사"
+         }
+        },
+        "required": [
+         "partnerId",
+         "partnerCode",
+         "partnerName"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pickableLineCount": {
+      "type": "integer",
+      "example": 1,
+      "description": "PDA(단말 MOBILE) 목록에만 — 이 기기에서 피킹할 줄 수(피처 012 빈 곳 ⑥). 관리웹·POP 응답에는 없다."
      }
     },
     "required": [
@@ -5051,7 +6207,22 @@
      "requestedShipDate",
      "statusCode",
      "shippingInspectionStatusCode",
-     "shipmentProgressCode"
+     "shipmentProgressCode",
+     "code",
+     "pickingWarehouses",
+     "replacementCount",
+     "completionBlockers",
+     "blockerSummary",
+     "lotJudgmentSummary",
+     "completedShipment",
+     "salesOrderNo",
+     "customer",
+     "shipTo",
+     "businessUnitId",
+     "businessUnit",
+     "warehouses",
+     "erpSendStatus",
+     "shipments"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },
@@ -5113,30 +6284,17 @@
     ],
     "description": "W-04-02 요약 구획 — 필터 전체 기준(목록 페이지와 다른 모집단). 근거: W-04-02 §4-B · omf-mes#232"
    },
-   "ShipmentRequestUpdate": {
-    "type": "object",
-    "properties": {
-     "fulfillmentPlantId": {
-      "type": "integer",
-      "format": "int64",
-      "minimum": 1,
-      "description": "기존 미배정 출하작업지시를 활성·권한 공장에 지정한다. null 해제는 이번 경로에 없다. 이미 피킹한 요청은 바꿀 수 없고, 연결된 출하가 있으면 그 모든 출하 창고의 공장과 같아야 한다."
-     }
-    },
-    "required": [
-     "fulfillmentPlantId"
-    ]
-   },
    "ShipmentRequestCreate": {
     "type": "object",
     "properties": {
-     "fulfillmentPlantId": {
+     "businessUnitId": {
       "type": [
        "integer",
        "null"
       ],
       "format": "int64",
-      "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+      "example": 1001,
+      "description": "지시서 사업부(피처 012 D-1 · FR-001). ⭐ 업무 필수 — 비우면 422 `businessUnitId`. 활성이고 계정 데이터 범위 안이어야 한다(밖이면 403). 지시서는 공장이 아니라 사업부 단위이고 공장은 줄 출고 창고가 정한다. ⛔ `fulfillmentPlantId` 는 더 받지 않는다 — 보내면 400."
      },
      "salesOrderId": {
       "type": [
@@ -5185,7 +6343,7 @@
      "requestedShipDate",
      "lines"
     ],
-    "description": "편성. 라인 1건 이상이고 배정 수량이 1 이상이어야 한다(W-04-01 §5-7). ⛔ 편성 취소를 두지 않는다 — 출하작업지시 취소는 범위 밖이다"
+    "description": "편성. 라인 1건 이상이고 배정 수량이 1 이상이어야 한다(W-04-01 §5-7). ⛔ 편성 취소를 두지 않는다 — 출하작업지시 취소는 범위 밖이다 ⭐ 피처 012: 사업부(`businessUnitId`)와 줄마다 출고 창고(`lines[].warehouseId`)가 필수다(422). 같은 S/O 줄(`salesOrderLineId`)을 가리키는 줄을 여럿 둘 수 있다 — 창고별로 나눈 줄의 배정 합은 S/O 잔여(주문 − 누적 출하) 이하여야 하고, 넘으면 그 줄들이 422 `lines[n].allocatedQty`(「S/O 잔여 수량을 넘습니다」)다(D-3)."
    },
    "ShipmentRequestLine": {
     "type": "object",
@@ -5228,7 +6386,7 @@
       "type": "number",
       "example": 120,
       "x-source-column": "picked_qty",
-      "description": "누적 피킹 수량. ⭐ 서버가 유지한다 — 화면이 더하지 않는다(공유계약 L-2). 배정 잔여 = allocatedQty − pickedQty"
+      "description": "누적 피킹 수량. ⭐ 서버가 유지한다 — 화면이 더하지 않는다(공유계약 L-2). 배정 잔여 = allocatedQty − pickedQty ⭐ 피처 010: 목표(allocatedQty)를 넘을 수 있다 — LOT 통째 피킹의 마지막 LOT 이 초과를 만든다."
      },
      "shippedQty": {
       "type": "number",
@@ -5267,6 +6425,111 @@
        "$ref": "#/components/schemas/ShipmentLinePickedLot"
       },
       "description": "이 라인에서 실제로 집은 제품 LOT 별 내역. ⭐ 서버가 유지한다 — W-04-04 출하 처리가 ShipmentCreate.lines[].allocations 를 채우는 원천이 이것이다(공유계약 L-2). 근거: M-04-01 §5-7 · W-04-04 §3"
+     },
+     "overQty": {
+      "type": "number",
+      "format": "double",
+      "description": "초과 = 피킹 − 목표(배정 allocatedQty). 목표에 못 미치면 0(피처 010)",
+      "example": 40
+     },
+     "lots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestLot"
+      },
+      "description": "피킹 LOT 행(교체 이력 포함 · 피처 010). picks 는 예약 행 그대로다."
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "FG-A100",
+      "description": "품목 코드(표시용 · 피처 010)"
+     },
+     "itemName": {
+      "type": "string",
+      "example": "센서 모듈 A",
+      "description": "품목 이름(표시용 · POP 찾기 줄·W-04-02 · 피처 010)"
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "EA",
+      "description": "단위 코드(표시용 · 피처 010)"
+     },
+     "salesOrderLine": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "수주 라인(피처 010 W-04-02 「SO · 라인」·「수주 잔량」) — 수주 잔량 = orderedQty − shippedQty 이고 음수면 화면이 「0 + 초과 n」으로 보인다(D-16). 수주 없는 라인은 null",
+      "properties": {
+       "salesOrderLineId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "salesOrderNo": {
+        "type": "string",
+        "example": "SO-0001"
+       },
+       "lineNo": {
+        "type": "integer",
+        "example": 1
+       },
+       "orderedQty": {
+        "type": "number",
+        "format": "double",
+        "example": 100
+       },
+       "shippedQty": {
+        "type": "number",
+        "format": "double",
+        "example": 110,
+        "description": "수주 출하 수량 — 수주 수량을 넘을 수 있다(D-16)"
+       },
+       "cancelled": {
+        "type": "boolean",
+        "example": false,
+        "description": "ERP 에서 취소된 수주 라인"
+       }
+      },
+      "required": [
+       "salesOrderLineId",
+       "salesOrderNo",
+       "lineNo",
+       "orderedQty",
+       "shippedQty",
+       "cancelled"
+      ]
+     },
+     "warehouse": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "출고 창고(피처 012) — 이 줄은 이 창고 잔액에서만 피킹한다. null = 배포 전 줄(「창고 미지정」, 지시서 이행 공장의 불량 외 창고 전부)."
+     },
+     "inTerminalScope": {
+      "type": "boolean",
+      "example": true,
+      "description": "PDA 목록에만 — 이 줄이 이 기기 범위 안인가(줄 창고의 공장 = 단말 공장, 창고 지정 단말은 그 창고 · 옛 줄은 지시서 공장). 밖이면 읽기 전용."
+     },
+     "outOfScopeReason": {
+      "oneOf": [
+       {
+        "type": "string",
+        "enum": [
+         "OTHER_PLANT",
+         "OTHER_WAREHOUSE"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "PDA 목록에만 — 범위 밖인 이유. OTHER_PLANT = 다른 공장 창고, OTHER_WAREHOUSE = 같은 공장의 이 기기 창고 밖(피처 012)."
      }
     },
     "required": [
@@ -5279,12 +6542,28 @@
      "uomId",
      "shippingInspectionRequired",
      "pickedQty",
-     "picks"
+     "picks",
+     "overQty",
+     "lots",
+     "itemCode",
+     "itemName",
+     "uomCode",
+     "salesOrderLine",
+     "warehouse"
     ]
    },
    "ShipmentRequestLineCreate": {
     "type": "object",
     "properties": {
+     "warehouseId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "출고 창고(피처 012 D-2 · FR-003). ⭐ 업무 필수 — 비우면 422 `lines[n].warehouseId`. 지시서 사업부의 활성 창고이고 불량창고가 아니어야 하며(아니면 422), 계정 공장 범위 안이어야 한다(밖이면 403). 이 줄은 이 창고의 잔액에서만 피킹한다."
+     },
      "salesOrderLineId": {
       "type": [
        "integer",
@@ -5350,9 +6629,26 @@
        "DUPLICATE_KEY",
        "INVALID_STATE",
        "ALREADY_CONFIRMED",
-       "CANCEL_IN_PROGRESS"
+       "CANCEL_IN_PROGRESS",
+       "USE_PICK_LOT",
+       "LOT_TARGET_REACHED",
+       "LOT_ALREADY_RESERVED",
+       "LOT_ALREADY_PICKED",
+       "NO_LINE_FOR_ITEM",
+       "LOT_NOT_REJECTED",
+       "COMPLETION_BLOCKED",
+       "ALREADY_COMPLETED",
+       "ERP_ALREADY_SENT",
+       "LOT_NOT_IN_LINE_WAREHOUSE",
+       "LINE_WAREHOUSE_UNAVAILABLE",
+       "NOT_PRODUCTION_LOT",
+       "SPLIT_SERIAL_LOT",
+       "LOT_SPLIT_UNCONFIRMED",
+       "PUTAWAY_PENDING",
+       "NOT_PRODUCT_WAREHOUSE",
+       "MIXED_STOCK_STATUS"
       ],
-      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8",
+      "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8 피처 010(omf-all-around#305): USE_PICK_LOT 는 옛 수량 피킹(:pick)이 닫혔다는 뜻이다 — LOT 통째 피킹(:pick-lot)을 쓴다. LOT_TARGET_REACHED 는 라인 피킹 합이 이미 목표(배정) 이상이다. LOT_ALREADY_RESERVED 는 그 LOT 의 잔액 행에 다른 예약·피킹·차단이 걸려 통째로 잡을 수 없다. LOT_ALREADY_PICKED 는 이미 이 지시서에 피킹한 LOT 이다. NO_LINE_FOR_ITEM 은 이 지시서에 그 LOT 품목의 라인이 없다. LOT_NOT_REJECTED 는 교체할 수 없는 피킹 LOT 이다 — OQC 판정이 불합격이 아니거나(교체 전에 재검 합격이 들어온 경우 포함) 이미 교체·출하됐다. COMPLETION_BLOCKED 는 출하 완료를 막는 이유가 있다(blockers 에 실린다). ALREADY_COMPLETED 는 이미 POP 에서 출하 완료한 지시서다(다시 스캔·동시 완료). ERP_ALREADY_SENT 는 ERP 로 이미 보낸(또는 보내는 중인) POP 완료 출하라 취소할 수 없다 — ERP 에서 처리한다. 피처 012(omf-all-around#338): LOT_NOT_IN_LINE_WAREHOUSE 는 스캔한 LOT 의 가용 잔액이 이 기기 범위 안 같은 품목 줄의 출고 창고 어디에도 없다 — `warehouses` 에 LOT 이 있는 창고(공장)를 싣는다. LINE_WAREHOUSE_UNAVAILABLE 은 고른 줄의 출고 창고가 비활성이거나 지시서 사업부의 창고가 아니다(「출고 창고를 쓸 수 없습니다」). 창고 맞는 줄 찾기가 먼저이고, 맞는 줄이 모두 목표를 채웠을 때만 LOT_TARGET_REACHED 다. 피처 013(omf-all-around#303) 생산 LOT 분리: NOT_PRODUCTION_LOT 는 생산 LOT 이 아니다. SPLIT_SERIAL_LOT 는 시리얼 관리 품목 LOT 이다. LOT_SPLIT_UNCONFIRMED 는 PDA 확인 전인 분리의 원래·자식 LOT 이다(재분리·출하 피킹 거절). PUTAWAY_PENDING 은 적치 대기 자리이거나 그 자리에서 출발하는 열린 적치 지시가 있다. NOT_PRODUCT_WAREHOUSE 는 제품 창고(불량 창고 제외) 위치가 아니다. MIXED_STOCK_STATUS 는 그 위치에 품질·재고 상태가 다른 잔액이 섞여 있다. 분리의 INVALID_STATE 는 보류·불량·폐기·무효, LOT_ALREADY_RESERVED 는 그 LOT 의 어느 잔액에든 예약·피킹·차단이 걸렸다는 뜻이다. 분리 확인(:confirm)의 ALREADY_CONFIRMED 는 이미 확인된 분리다.",
       "example": "VERSION_CONFLICT"
      },
      "message": {
@@ -5373,6 +6669,28 @@
       ],
       "description": "충돌 원인. 근거: 공유계약 B-1 확장 — user=다른 사용자, erpSync=ERP 재동기화 배치, workerLease=워커가 처리 중. 구분 없이 내려주면 화면이 「다른 사용자가 먼저 수정했습니다」라는 사실과 다른 안내를 하게 된다. code와 독립적인 필수 원인 축으로 모든 409 응답에 포함된다",
       "example": "user"
+     },
+     "blockers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentCompletionBlocker"
+      },
+      "description": "COMPLETION_BLOCKED 일 때만 — 막는 이유 목록"
+     },
+     "warehouses": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+      },
+      "description": "LOT_NOT_IN_LINE_WAREHOUSE 일 때 그 LOT 의 가용 잔액이 있는 창고들(공장 이름 포함 · 피처 012)."
+     },
+     "detail": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "생산 LOT 분리 거절(피처 013)일 때 문구에 쓸 값 — 스캔 조회 blocked.detail 과 같다. INVALID_STATE 는 상태(DEFECTIVE·SCRAPPED·VOIDED·HOLD), LOT_SPLIT_UNCONFIRMED 는 확인 대기 분리 시각(ISO), LOT_ALREADY_RESERVED 는 피킹한 출하 지시서 번호, NOT_PRODUCTION_LOT 는 LOT 유형, SPLIT_SERIAL_LOT 는 시리얼 관리 유형. 위치 단위 사유는 null",
+      "example": "SR-20261118-0001"
      }
     },
     "required": [
@@ -6003,6 +7321,1761 @@
       "$ref": "#/components/schemas/PageMeta"
      }
     }
+   },
+   "ShipmentLotPick": {
+    "type": "object",
+    "description": "LOT 통째 피킹 본문 — lotId 나 lotNo 중 하나(스캔은 LOT 번호). 수량은 받지 않는다 — 서버가 그 LOT 의 공장 안 가용 전부(불량창고 제외)를 피킹한다(피처 010 · omf-all-around#305).",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "maxLength": 100,
+      "example": "LOT-0001"
+     }
+    }
+   },
+   "ShipmentLotPortion": {
+    "type": "object",
+    "description": "피킹 LOT 의 창고·위치별 몫 — 그 LOT 의 예약 행(잔액 행마다 하나)에서 읽는다. 적치 대기 자리 몫도 포함한다.",
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseCode": {
+      "type": "string",
+      "example": "WH-FG"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고"
+     },
+     "locationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "locationCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "FG-A01"
+     },
+     "qty": {
+      "type": "number",
+      "format": "double",
+      "example": 40
+     },
+     "locationSystemRoleCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "PUTAWAY_STAGING",
+      "description": "위치의 시스템 역할 — PUTAWAY_STAGING 이면 적치 대기 자리(화면 「적치 대기」). 보통 자리는 null"
+     }
+    },
+    "required": [
+     "warehouseId",
+     "warehouseCode",
+     "warehouseName",
+     "locationId",
+     "locationCode",
+     "qty",
+     "locationSystemRoleCode"
+    ]
+   },
+   "ShipmentRequestLot": {
+    "type": "object",
+    "description": "출하 지시서 피킹 LOT(logistics.shipment_request_lot) — 지시서 라인 × LOT 한 행. 교체된 행(REPLACED)도 이력으로 싣는다.",
+    "properties": {
+     "shipmentRequestLotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "LOT-0001"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "pickedQty": {
+      "type": "number",
+      "format": "double",
+      "description": "피킹 때 그 LOT 의 공장 안 가용 합(통째)",
+      "example": 40
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "statusCode": {
+      "type": "string",
+      "enum": [
+       "PICKED",
+       "REPLACED",
+       "SHIPPED"
+      ],
+      "x-code-key": "SHIPMENT_REQUEST_LOT_STATUS",
+      "example": "PICKED"
+     },
+     "managementCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "출하 관리 코드(선택, ≤100자)",
+      "example": "값"
+     },
+     "pickedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T03:00:00Z"
+     },
+     "pickedWorker": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "workerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "workerNo": {
+        "type": "string",
+        "example": "W-001"
+       },
+       "workerName": {
+        "type": "string",
+        "example": "작업자"
+       }
+      },
+      "required": [
+       "workerId",
+       "workerNo",
+       "workerName"
+      ]
+     },
+     "shipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "SHIPPED 가 된 출하",
+      "example": 1001
+     },
+     "portions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentLotPortion"
+      }
+     },
+     "oqcLotStatus": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "NOT_REQUIRED",
+       "SKIPPED",
+       "NOT_INSPECTED",
+       "ACCEPTED",
+       "REJECTED",
+       "HELD",
+       null
+      ],
+      "description": "LOT OQC 판정 6종(FR-007) — 위에서부터 처음 맞는 값: 검사 불필요 NOT_REQUIRED · 의뢰 생략 SKIPPED · 이 지시서에서 그 LOT 을 매칭한 마지막 결과의 판정 · 없으면 NOT_INSPECTED(다른 지시서의 합격은 잇지 않는다). 교체된 행은 null.",
+      "example": "NOT_INSPECTED"
+     },
+     "replacement": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentLotReplacement"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "교체된 행(REPLACED)만 — 그 밖은 null"
+     },
+     "oqcResult": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "OQC 판정을 정한 결과(이 지시서에서 그 LOT 을 매칭한 마지막 결과) — PDA 불합격 줄 「OQC 결과 n · HH:mm」. 판정이 합격·불합격·보류일 때만, 미검사·검사 불필요·생략·교체된 행은 null",
+      "properties": {
+       "inspectionResultId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "resultNo": {
+        "type": "string",
+        "example": "IRS-20261118-0001"
+       },
+       "round": {
+        "type": "integer",
+        "example": 2,
+        "description": "결과 회차(의뢰 안 순번)"
+       },
+       "resultAt": {
+        "type": "string",
+        "format": "date-time",
+        "example": "2026-11-18T07:10:00Z",
+        "description": "검사 시각"
+       }
+      },
+      "required": [
+       "inspectionResultId",
+       "resultNo",
+       "round",
+       "resultAt"
+      ]
+     }
+    },
+    "required": [
+     "shipmentRequestLotId",
+     "lotId",
+     "lotNo",
+     "itemId",
+     "pickedQty",
+     "uomId",
+     "statusCode",
+     "managementCode",
+     "pickedAt",
+     "pickedWorker",
+     "shipmentId",
+     "portions",
+     "oqcLotStatus",
+     "replacement",
+     "oqcResult"
+    ]
+   },
+   "ShipmentPickingWarehouse": {
+    "type": "object",
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseCode": {
+      "type": "string",
+      "example": "WH-FG"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고"
+     }
+    },
+    "required": [
+     "warehouseId",
+     "warehouseCode",
+     "warehouseName"
+    ]
+   },
+   "ShipmentLotPickResult": {
+    "type": "object",
+    "description": "통째 피킹 결과 — 만든 피킹 LOT 행과 갱신된 라인(목표·피킹·초과).",
+    "properties": {
+     "pickedLot": {
+      "$ref": "#/components/schemas/ShipmentRequestLot"
+     },
+     "line": {
+      "$ref": "#/components/schemas/ShipmentRequestLine",
+      "description": "실제로 피킹한 줄 — 경로의 줄과 다를 수 있다(피처 012)."
+     },
+     "otherWarehouseQty": {
+      "type": "number",
+      "format": "double",
+      "example": 20,
+      "description": "줄 출고 창고 밖에 남은 그 LOT 의 수량(피처 012 — 두 창고에 걸친 LOT). 0 이면 싣지 않는다."
+     }
+    },
+    "required": [
+     "pickedLot",
+     "line"
+    ]
+   },
+   "ShipmentLotReplacement": {
+    "type": "object",
+    "description": "교체 근거(FR-015) — 불합격 결과·교체가 만든 부적합·작업자·시각.",
+    "properties": {
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "resultNo": {
+      "type": "string",
+      "example": "IRS-20261118-0001"
+     },
+     "resultAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T03:00:00Z"
+     },
+     "judgment": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "REJECTED"
+     },
+     "nonconformanceId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "nonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "NC-20261118-0001"
+     },
+     "replacedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T04:00:00Z"
+     },
+     "worker": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "workerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "workerNo": {
+        "type": "string",
+        "example": "W-001"
+       },
+       "workerName": {
+        "type": "string",
+        "example": "작업자"
+       }
+      },
+      "required": [
+       "workerId",
+       "workerNo",
+       "workerName"
+      ]
+     },
+     "resultRound": {
+      "type": "integer",
+      "example": 2,
+      "description": "근거 결과의 회차(의뢰 안 순번) — 「결과 #n」"
+     }
+    },
+    "required": [
+     "inspectionResultId",
+     "resultNo",
+     "resultAt",
+     "judgment",
+     "nonconformanceId",
+     "nonconformanceNo",
+     "replacedAt",
+     "worker",
+     "resultRound"
+    ]
+   },
+   "ShipmentLotReplaceResult": {
+    "type": "object",
+    "description": "교체 결과 — 교체된 피킹 LOT 행(이력), 교체가 만든 부적합 번호(그 LOT 에 열린 부적합이 이미 있으면 null), 다시 피킹을 받는 라인.",
+    "properties": {
+     "replacedLot": {
+      "$ref": "#/components/schemas/ShipmentRequestLot"
+     },
+     "nonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "NC-20261118-0001"
+     },
+     "line": {
+      "$ref": "#/components/schemas/ShipmentRequestLine"
+     }
+    },
+    "required": [
+     "replacedLot",
+     "nonconformanceNo",
+     "line"
+    ]
+   },
+   "ShipmentLotManagementCode": {
+    "type": "object",
+    "description": "출하 관리 코드(FR-020) — 최대 100자, 중복·형식 검사 없음. null·빈 글자는 지운다.",
+    "properties": {
+     "managementCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "BOX-0001"
+     }
+    },
+    "required": [
+     "managementCode"
+    ]
+   },
+   "ShipmentCompletionBlocker": {
+    "type": "object",
+    "description": "출하 완료를 막는 이유(FR-016). SALES_ORDER_LINE_CANCELLED 는 「담당자에게 문의」 안내만 — 푸는 경로가 없다(FR-028b).",
+    "properties": {
+     "code": {
+      "type": "string",
+      "enum": [
+       "PICKING_SHORT",
+       "NOT_INSPECTED",
+       "REJECTED",
+       "HELD",
+       "SALES_ORDER_LINE_CANCELLED",
+       "ALREADY_COMPLETED"
+      ],
+      "example": "NOT_INSPECTED"
+     },
+     "lineNo": {
+      "type": "integer",
+      "example": 1,
+      "description": "PICKING_SHORT·SALES_ORDER_LINE_CANCELLED 의 라인"
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "LOT-0001",
+      "description": "NOT_INSPECTED·REJECTED·HELD 의 LOT"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고 B",
+      "description": "PICKING_SHORT 줄의 출고 창고 이름(피처 012 — 「피킹 부족: 라인 n(창고 …)」). 창고 없는 옛 줄은 없다."
+     }
+    },
+    "required": [
+     "code"
+    ]
+   },
+   "ShipmentLotJudgmentSummary": {
+    "type": "object",
+    "description": "피킹 LOT 의 OQC 판정 수 — 교체된 LOT 만 빼고 출하한 LOT 도 센다(omf-all-around#344)",
+    "properties": {
+     "notInspected": {
+      "type": "integer",
+      "example": 0
+     },
+     "accepted": {
+      "type": "integer",
+      "example": 3
+     },
+     "rejected": {
+      "type": "integer",
+      "example": 0
+     },
+     "held": {
+      "type": "integer",
+      "example": 0
+     }
+    },
+    "required": [
+     "notInspected",
+     "accepted",
+     "rejected",
+     "held"
+    ]
+   },
+   "ShipmentCompletedShipment": {
+    "type": "object",
+    "description": "POP 에서 완료한 출하(취소 아님)",
+    "properties": {
+     "shipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shipmentNo": {
+      "type": "string",
+      "example": "SH-20261118-0001"
+     },
+     "completedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T05:00:00Z"
+     },
+     "completedTerminal": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "완료한 POP 단말(피처 010 6회차 — 시안 「POP-출하-01 · 김작업(W-0102)」)",
+        "properties": {
+         "terminalId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 61
+         },
+         "terminalCode": {
+          "type": "string",
+          "example": "POP-SHIP-01"
+         }
+        },
+        "required": [
+         "terminalId",
+         "terminalCode"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "completedWorker": {
+      "oneOf": [
+       {
+        "type": "object",
+        "description": "완료한 작업자",
+        "properties": {
+         "workerId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 71
+         },
+         "workerNo": {
+          "type": "string",
+          "example": "W-0102"
+         },
+         "workerName": {
+          "type": "string",
+          "example": "김작업"
+         }
+        },
+        "required": [
+         "workerId",
+         "workerNo",
+         "workerName"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "shipmentId",
+     "shipmentNo",
+     "completedAt",
+     "completedTerminal",
+     "completedWorker"
+    ]
+   },
+   "ShipmentRequestCompletion": {
+    "type": "object",
+    "description": "POP 출하 완료 확인 값(P-04-07) — 지시서 코드 스캔과 찾기가 같은 값을 본다. ⛔ ERP 송신 여부는 싣지 않는다(출하 완료 단계 화면에 표시하지 않는다 · 2026-11-18).",
+    "properties": {
+     "shipmentRequestId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shipmentRequestNo": {
+      "type": "string",
+      "example": "SR-20261118-0001"
+     },
+     "code": {
+      "type": "string",
+      "example": "SHPREQ:SR-20261118-0001"
+     },
+     "versionNo": {
+      "type": "integer",
+      "example": 3,
+      "description": ":complete 의 If-Match 값"
+     },
+     "requestedShipDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-18"
+     },
+     "customer": {
+      "type": "object",
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "C001"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "고객사"
+       }
+      },
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ]
+     },
+     "shipTo": {
+      "type": "object",
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "C001"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "고객사"
+       }
+      },
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ]
+     },
+     "salesOrderNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "SO-0001"
+     },
+     "warehouses": {
+      "type": "array",
+      "description": "재고가 빠질 창고들(정보 — 출하는 하나)",
+      "items": {
+       "type": "object",
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "warehouseCode": {
+         "type": "string",
+         "example": "WH-FG"
+        },
+        "warehouseName": {
+         "type": "string",
+         "example": "완제품창고"
+        },
+        "lotCount": {
+         "type": "integer",
+         "example": 2
+        },
+        "qty": {
+         "type": "number",
+         "format": "double",
+         "example": 40
+        },
+        "plantId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "plantName": {
+         "type": "string",
+         "example": "1공장",
+         "description": "그 창고의 공장(피처 012 — 출고 전표 공장)"
+        }
+       },
+       "required": [
+        "warehouseId",
+        "warehouseCode",
+        "warehouseName",
+        "lotCount",
+        "qty",
+        "plantId",
+        "plantName"
+       ]
+      }
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "shipmentRequestLineId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lineNo": {
+         "type": "integer",
+         "example": 1
+        },
+        "itemId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "itemCode": {
+         "type": "string",
+         "example": "A-001"
+        },
+        "itemName": {
+         "type": "string",
+         "example": "품목"
+        },
+        "uomId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "targetQty": {
+         "type": "number",
+         "format": "double",
+         "description": "목표 = 배정",
+         "example": 40
+        },
+        "pickedQty": {
+         "type": "number",
+         "format": "double",
+         "example": 40
+        },
+        "overQty": {
+         "type": "number",
+         "format": "double",
+         "example": 40
+        },
+        "shippedQty": {
+         "type": "number",
+         "format": "double",
+         "example": 40
+        },
+        "lotCount": {
+         "type": "integer",
+         "example": 3
+        },
+        "salesOrderLineId": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "example": 1001
+        },
+        "uomCode": {
+         "type": "string",
+         "example": "EA"
+        },
+        "warehouse": {
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/ShipmentRequestWarehouse"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "description": "줄 출고 창고(공장) — null 은 옛 줄(창고 미지정 · 피처 012)."
+        }
+       },
+       "required": [
+        "shipmentRequestLineId",
+        "lineNo",
+        "itemId",
+        "itemCode",
+        "itemName",
+        "uomId",
+        "targetQty",
+        "pickedQty",
+        "overQty",
+        "shippedQty",
+        "lotCount",
+        "salesOrderLineId",
+        "uomCode",
+        "warehouse"
+       ]
+      }
+     },
+     "lots": {
+      "type": "array",
+      "description": "살아 있는(또는 출하된) 피킹 LOT — 교체된 LOT 은 빠진다",
+      "items": {
+       "type": "object",
+       "properties": {
+        "shipmentRequestLotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lineNo": {
+         "type": "integer",
+         "example": 1
+        },
+        "lotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lotNo": {
+         "type": "string",
+         "example": "LOT-0001"
+        },
+        "itemId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "qty": {
+         "type": "number",
+         "format": "double",
+         "example": 40
+        },
+        "statusCode": {
+         "type": "string",
+         "enum": [
+          "PICKED",
+          "SHIPPED"
+         ],
+         "example": "PICKED"
+        },
+        "oqcLotStatus": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "enum": [
+          "NOT_REQUIRED",
+          "SKIPPED",
+          "NOT_INSPECTED",
+          "ACCEPTED",
+          "REJECTED",
+          "HELD",
+          null
+         ],
+         "description": "LOT OQC 판정 6종(FR-007) — 위에서부터 처음 맞는 값: 검사 불필요 NOT_REQUIRED · 의뢰 생략 SKIPPED · 이 지시서에서 그 LOT 을 매칭한 마지막 결과의 판정 · 없으면 NOT_INSPECTED(다른 지시서의 합격은 잇지 않는다). 교체된 행은 null.",
+         "example": "NOT_INSPECTED"
+        },
+        "managementCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "BOX-0001"
+        },
+        "uomId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "uomCode": {
+         "type": "string",
+         "example": "EA"
+        },
+        "portions": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ShipmentLotPortion"
+         },
+         "description": "창고·위치별 몫(적치 대기 자리 포함) — 「창고 A 20 · B 20」"
+        }
+       },
+       "required": [
+        "shipmentRequestLotId",
+        "lineNo",
+        "lotId",
+        "lotNo",
+        "itemId",
+        "qty",
+        "statusCode",
+        "oqcLotStatus",
+        "managementCode",
+        "uomId",
+        "uomCode",
+        "portions"
+       ]
+      }
+     },
+     "blockers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentCompletionBlocker"
+      },
+      "description": "비면 완료 가능"
+     },
+     "completedShipment": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentCompletedShipment"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "replacedLots": {
+      "type": "array",
+      "description": "교체로 빠진 LOT(REPLACED) — 출하에 들지 않는다. 확인 화면 「교체로 빠진 LOT n」",
+      "items": {
+       "type": "object",
+       "properties": {
+        "shipmentRequestLotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lineNo": {
+         "type": "integer",
+         "example": 1
+        },
+        "lotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "lotNo": {
+         "type": "string",
+         "example": "LOT-0003"
+        },
+        "itemId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "qty": {
+         "type": "number",
+         "format": "double",
+         "example": 30
+        },
+        "uomCode": {
+         "type": "string",
+         "example": "EA"
+        },
+        "portions": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ShipmentLotPortion"
+         }
+        },
+        "judgment": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "REJECTED",
+         "description": "교체 근거 결과의 판정"
+        },
+        "nonconformanceNo": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "NC-20261118-0001"
+        },
+        "replacedAt": {
+         "type": "string",
+         "format": "date-time",
+         "example": "2026-11-18T04:00:00Z"
+        }
+       },
+       "required": [
+        "shipmentRequestLotId",
+        "lineNo",
+        "lotId",
+        "lotNo",
+        "itemId",
+        "qty",
+        "uomCode",
+        "portions",
+        "judgment",
+        "nonconformanceNo",
+        "replacedAt"
+       ]
+      }
+     },
+     "businessUnit": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ShipmentRequestBusinessUnit"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "지시서 사업부(피처 012 — POP 머리). 사업부 없는 옛 지시서는 null(「사업부 미지정」)."
+     }
+    },
+    "required": [
+     "shipmentRequestId",
+     "shipmentRequestNo",
+     "code",
+     "versionNo",
+     "requestedShipDate",
+     "customer",
+     "shipTo",
+     "salesOrderNo",
+     "warehouses",
+     "lines",
+     "lots",
+     "blockers",
+     "completedShipment",
+     "replacedLots",
+     "businessUnit"
+    ]
+   },
+   "ShipmentCompletion": {
+    "type": "object",
+    "description": "출하 완료 본문 — 영업일은 단말이 보낸다(서버가 수신 시각으로 다시 잡지 않는다 · C-8). 시각을 빼면 서버 시각.",
+    "properties": {
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-18"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T05:00:00Z"
+     }
+    },
+    "required": [
+     "businessDate"
+    ]
+   },
+   "ShipmentCompletionResult": {
+    "type": "object",
+    "description": "완료 결과 — 만든 출하와 완료 뒤의 확인 값(완료 결과는 다음 스캔까지 남는다).",
+    "properties": {
+     "shipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shipmentNo": {
+      "type": "string",
+      "example": "SH-20261118-0001"
+     },
+     "completedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-18T05:00:00Z"
+     },
+     "completion": {
+      "$ref": "#/components/schemas/ShipmentRequestCompletion"
+     },
+     "goodsIssues": {
+      "type": "array",
+      "description": "창고마다 출고 전표 하나(피처 012 FR-014) — 번호는 그 창고 공장의 체계다.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "goodsIssueNo": {
+         "type": "string",
+         "example": "GI-20261120-0001"
+        },
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "warehouseName": {
+         "type": "string",
+         "example": "완제품창고 A"
+        },
+        "plantId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "plantName": {
+         "type": "string",
+         "example": "1공장"
+        }
+       },
+       "required": [
+        "goodsIssueNo",
+        "warehouseId",
+        "warehouseName",
+        "plantId",
+        "plantName"
+       ]
+      }
+     }
+    },
+    "required": [
+     "shipmentId",
+     "shipmentNo",
+     "completedAt",
+     "completion",
+     "goodsIssues"
+    ]
+   },
+   "ShipmentRequestBusinessUnit": {
+    "type": "object",
+    "properties": {
+     "businessUnitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "businessUnitCode": {
+      "type": "string",
+      "example": "BU01"
+     },
+     "businessUnitName": {
+      "type": "string",
+      "example": "제1사업부"
+     }
+    },
+    "required": [
+     "businessUnitId",
+     "businessUnitCode",
+     "businessUnitName"
+    ],
+    "description": "출하 지시서 사업부 표시 칸(피처 012)."
+   },
+   "ShipmentRequestWarehouse": {
+    "type": "object",
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseCode": {
+      "type": "string",
+      "example": "WH-FG-A"
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "완제품창고 A"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "plantName": {
+      "type": "string",
+      "example": "1공장"
+     }
+    },
+    "required": [
+     "warehouseId",
+     "warehouseCode",
+     "warehouseName",
+     "plantId",
+     "plantName"
+    ],
+    "description": "지시서 줄 출고 창고와 그 공장(피처 012) — 화면은 「완제품창고 A · 1공장」으로 그린다."
+   },
+   "ShipmentRequestShipment": {
+    "type": "object",
+    "properties": {
+     "shipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shipmentNo": {
+      "type": "string",
+      "example": "SH-20261120-0001"
+     },
+     "statusCode": {
+      "type": "string",
+      "example": "CONFIRMED",
+      "description": "출하 상태(`Shipment.statusCode` 와 같은 값 — 미확정·확정·취소)"
+     },
+     "erpSendStatus": {
+      "type": "string",
+      "enum": [
+       "NOT_QUEUED",
+       "NOT_SENT_NO_SALES_ORDER",
+       "CANCELLED",
+       "SEND_ERROR",
+       "PENDING",
+       "SENT"
+      ],
+      "example": "PENDING",
+      "description": "010 출하 목록과 같은 판정"
+     },
+     "cancelRequestPending": {
+      "type": "boolean",
+      "example": false,
+      "description": "열린 취소 결재가 있다"
+     }
+    },
+    "required": [
+     "shipmentId",
+     "shipmentNo",
+     "statusCode",
+     "erpSendStatus",
+     "cancelRequestPending"
+    ],
+    "description": "지시서의 출하 한 건(피처 012 W-04-02 상세 「출하」 칸 머리). 내용·취소·확정은 `GET /logistics/shipments/{shipmentId}`·`:request-cancel`·`:cancel`·`:confirm` 을 그대로 쓴다."
+   },
+   "ProductLotSplitBlock": {
+    "type": "object",
+    "description": "분리를 막는 이유(피처 013 R-8). code 로 POP 문구를 고른다.",
+    "properties": {
+     "code": {
+      "type": "string",
+      "enum": [
+       "NOT_PRODUCTION_LOT",
+       "SPLIT_SERIAL_LOT",
+       "INVALID_STATE",
+       "LOT_SPLIT_UNCONFIRMED",
+       "LOT_ALREADY_RESERVED",
+       "PUTAWAY_PENDING",
+       "NOT_PRODUCT_WAREHOUSE",
+       "MIXED_STOCK_STATUS"
+      ],
+      "example": "LOT_ALREADY_RESERVED"
+     },
+     "detail": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "문구에 쓸 값 — INVALID_STATE 는 상태(DEFECTIVE·SCRAPPED·VOIDED·HOLD), LOT_SPLIT_UNCONFIRMED 는 확인 대기 분리 시각(ISO), LOT_ALREADY_RESERVED 는 피킹한 출하 지시서 번호(없으면 null)",
+      "example": "SR-20261118-0001"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "ProductLotSplitLookup": {
+    "type": "object",
+    "description": "POP P-04-08 스캔 조회 — LOT 과 이 공장의 보유 위치(불량 창고 제외)·막힌 이유. 분리 요청과 같은 규칙이다(피처 013 R-14).",
+    "properties": {
+     "lot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN"
+       },
+       "itemCode": {
+        "type": "string",
+        "example": "PH-2207-0031"
+       },
+       "itemName": {
+        "type": "string",
+        "example": "제품"
+       },
+       "uomCode": {
+        "type": "string",
+        "example": "EA"
+       },
+       "statusCode": {
+        "type": "string",
+        "example": "NORMAL"
+       },
+       "workOrderNo": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "생산 뿌리(원천 W/O LOT)의 W/O — 분리 자식도 원래 LOT 의 W/O",
+        "example": "WO-261117-0012"
+       },
+       "labelQty": {
+        "type": "number",
+        "format": "double",
+        "example": 180,
+        "description": "LOT 수량 − 제품 분리로 떼어 낸 수량"
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "itemCode",
+       "itemName",
+       "uomCode",
+       "statusCode",
+       "workOrderNo",
+       "labelQty"
+      ]
+     },
+     "blocked": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/ProductLotSplitBlock"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "LOT 단위 막힘(NOT_PRODUCTION_LOT·SPLIT_SERIAL_LOT·INVALID_STATE·LOT_SPLIT_UNCONFIRMED·LOT_ALREADY_RESERVED). 없으면 null"
+     },
+     "locations": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "locationId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1001
+        },
+        "locationCode": {
+         "type": "string",
+         "example": "FG-A-01"
+        },
+        "warehouseCode": {
+         "type": "string",
+         "example": "FG"
+        },
+        "onHandQty": {
+         "type": "number",
+         "format": "double",
+         "example": 100
+        },
+        "selectable": {
+         "type": "boolean",
+         "description": "LOT·위치 둘 다 막힘이 없을 때만 true",
+         "example": true
+        },
+        "blocked": {
+         "type": [
+          "object",
+          "null"
+         ],
+         "properties": {
+          "code": {
+           "type": "string",
+           "enum": [
+            "PUTAWAY_PENDING",
+            "NOT_PRODUCT_WAREHOUSE",
+            "MIXED_STOCK_STATUS"
+           ],
+           "example": "PUTAWAY_PENDING"
+          }
+         },
+         "required": [
+          "code"
+         ]
+        },
+        "systemRoleCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "위치 역할 — PUTAWAY_STAGING(적치 대기 자리)·WAREHOUSE_WHOLE 등. 보통 위치는 null",
+         "example": "PUTAWAY_STAGING"
+        }
+       },
+       "required": [
+        "locationId",
+        "locationCode",
+        "warehouseCode",
+        "onHandQty",
+        "selectable",
+        "blocked",
+        "systemRoleCode"
+       ]
+      }
+     }
+    },
+    "required": [
+     "lot",
+     "blocked",
+     "locations"
+    ]
+   },
+   "ProductLotSplitCreate": {
+    "type": "object",
+    "description": "분리 요청 — 그 위치의 LOT 몫에서 qty 를 떼어 자식 LOT 을 만든다. 영업일은 단말이 보낸다(C-8). 시각을 빼면 서버 시각.",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "locationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "qty": {
+      "type": "number",
+      "format": "double",
+      "example": 30,
+      "description": "0 < qty < 그 위치 보유, 단위 소수 자리 안"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-20"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-20T03:00:00Z"
+     }
+    },
+    "required": [
+     "lotId",
+     "locationId",
+     "qty",
+     "businessDate"
+    ]
+   },
+   "ProductLotSplitResult": {
+    "type": "object",
+    "description": "분리 결과 — 두 발행 기록(원래 = 다음 회차·사유 LOT_SPLIT, 자식 = 1회차). POP 은 두 documentIssueLogId 로 렌디션 → 인쇄 → :report-print 한다.",
+    "properties": {
+     "productLotSplitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "parentLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       },
+       "documentIssueLogId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "issueSeq": {
+        "type": "integer",
+        "example": 2
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty",
+       "documentIssueLogId",
+       "issueSeq"
+      ]
+     },
+     "childLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       },
+       "documentIssueLogId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "issueSeq": {
+        "type": "integer",
+        "example": 2
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty",
+       "documentIssueLogId",
+       "issueSeq"
+      ]
+     },
+     "location": {
+      "type": "object",
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "locationCode": {
+        "type": "string",
+        "example": "FG-A-01"
+       },
+       "warehouseCode": {
+        "type": "string",
+        "example": "FG"
+       }
+      },
+      "required": [
+       "locationId",
+       "locationCode",
+       "warehouseCode"
+      ]
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-20T03:00:00Z"
+     }
+    },
+    "required": [
+     "productLotSplitId",
+     "parentLot",
+     "childLot",
+     "location",
+     "splitAt"
+    ]
+   },
+   "ProductLotSplit": {
+    "type": "object",
+    "description": "분리 한 건(trace.product_lot_split). UNCONFIRMED 인 동안 두 LOT 은 출하 피킹·추적 시스템 출고·재분리를 받지 않는다.",
+    "properties": {
+     "productLotSplitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "UNCONFIRMED",
+       "CONFIRMED"
+      ],
+      "example": "UNCONFIRMED"
+     },
+     "parentLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty"
+      ]
+     },
+     "childLot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "lotNo": {
+        "type": "string",
+        "example": "M00000120261117000012ABCDEFGHJKLMN-S1"
+       },
+       "qty": {
+        "type": "number",
+        "format": "double",
+        "example": 30,
+        "description": "생산 LOT 라벨 수량 = LOT 수량 − 제품 분리로 떼어 낸 수량(위치별이 아니라 LOT 하나의 값)"
+       }
+      },
+      "required": [
+       "lotId",
+       "lotNo",
+       "qty"
+      ]
+     },
+     "item": {
+      "type": "object",
+      "properties": {
+       "itemId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "itemCode": {
+        "type": "string",
+        "example": "PH-2207-0031"
+       },
+       "itemName": {
+        "type": "string",
+        "example": "제품"
+       },
+       "uomCode": {
+        "type": "string",
+        "example": "EA"
+       }
+      },
+      "required": [
+       "itemId",
+       "itemCode",
+       "itemName",
+       "uomCode"
+      ]
+     },
+     "location": {
+      "type": "object",
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "locationCode": {
+        "type": "string",
+        "example": "FG-A-01"
+       }
+      },
+      "required": [
+       "locationId",
+       "locationCode"
+      ]
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-11-20T03:00:00Z"
+     },
+     "splitWorkerNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "100027"
+     },
+     "confirmedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-11-20T03:10:00Z"
+     },
+     "confirmedWorkerNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "100031"
+     },
+     "lastPrint": {
+      "type": "object",
+      "description": "LOT 마다 가장 최근 생산 LOT 라벨 발행의 인쇄 결과 — 보고 전은 NONE",
+      "properties": {
+       "parent": {
+        "type": "string",
+        "enum": [
+         "PRINTED",
+         "FAILED",
+         "NONE"
+        ],
+        "example": "PRINTED"
+       },
+       "child": {
+        "type": "string",
+        "enum": [
+         "PRINTED",
+         "FAILED",
+         "NONE"
+        ],
+        "example": "FAILED"
+       }
+      },
+      "required": [
+       "parent",
+       "child"
+      ]
+     }
+    },
+    "required": [
+     "productLotSplitId",
+     "status",
+     "parentLot",
+     "childLot",
+     "item",
+     "location",
+     "splitAt",
+     "splitWorkerNo",
+     "confirmedAt",
+     "confirmedWorkerNo",
+     "lastPrint"
+    ]
+   },
+   "ProductLotSplitConfirm": {
+    "type": "object",
+    "description": "PDA M-04-05 — 스캔한 두 라벨의 LOT. 순서 무관, 정확히 둘.",
+    "properties": {
+     "lotIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "minItems": 2,
+      "maxItems": 2
+     }
+    },
+    "required": [
+     "lotIds"
+    ]
    }
   },
   "securitySchemes": {

@@ -61,6 +61,30 @@ describe("발행 생산 단말 권한 (I-27 C3a)", () => {
     }
   });
 
+  it("D-7 제품 분리 가족 LOT 은 라벨 공정이 하나라도 있는 단말(P-04-08)이 낸다 — 자식은 원천이 W/O 가 아니어도", async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ work_order_id: 10n, can_print_label: false }])
+      .mockResolvedValueOnce([{ family: 2, label: true }]);
+    const tx = { $queryRaw: query } as unknown as Prisma.TransactionClient;
+
+    await expect(
+      assertDocumentIssueTerminalPermission(tx, "PRODUCTION_LOT_LABEL", 7n, [lot(1n, 10n), lot(2n, 5n, "PRODUCT_LOT_SPLIT")]),
+    ).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("D-7 가족이 아닌 LOT 이 섞이거나 단말에 라벨 공정이 없으면 403 이다", async () => {
+    for (const second of [{ family: 1, label: true }, { family: 2, label: false }]) {
+      const query = jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([second]);
+      await expect(
+        assertDocumentIssueTerminalPermission(
+          { $queryRaw: query } as unknown as Prisma.TransactionClient, "PRODUCTION_LOT_LABEL", 7n,
+          [lot(1n, 10n), lot(2n, 5n, "PRODUCT_LOT_SPLIT")],
+        ),
+      ).rejects.toMatchObject({ status: 403 });
+    }
+  });
+
   it("없는 대상 facts는 권한을 지어내지 않고 후속 미존재 판정에 맡긴다", async () => {
     const setup = fake([]);
     await expect(

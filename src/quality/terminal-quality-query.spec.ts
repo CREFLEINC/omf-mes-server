@@ -12,6 +12,7 @@ describe('quality query terminal filters', () => {
     const shipments = jest.fn().mockResolvedValue([{ shipment_request_id: 31n }]);
     const service = new InspectionRequestService({
       inspection_request: { findMany, count }, shipment_request: { findMany: shipments },
+      plant: { findUnique: jest.fn().mockResolvedValue({ business_unit_id: null }) },
     } as unknown as PrismaService);
     await service.list({ workOrderId: 42, pendingOnly: true }, scope);
     const where = findMany.mock.calls[0][0].where;

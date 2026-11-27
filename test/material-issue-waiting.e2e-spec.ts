@@ -45,7 +45,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     await app.close();
   });
 
-  /** 공장에 생산 창고 `codes` 를 만들고 재고를 넣은 뒤 그 창고들을 연결한 부서·라인을 낸다. */
+  /** 공장에 생산 창고 `codes` 를 만들고 재고를 넣은 뒤 그 창고들을 그 공장의 생산창고로 두고 라인을 낸다. */
   async function scenario(
     plantKey: string,
     stocks: Record<string, [ItemKey, number, string?][]>,
@@ -248,20 +248,26 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     ]);
   });
 
-  it('US2-5 기준정보가 빠지면 배포 400 — 라인 부서·생산 현장 위치·부서 생산 창고를 모아 안내', async () => {
-    await scenario('P1', { A: [['X', 10]] });
+  it('US2-5 기준정보가 빠지면 배포 400 — 공장 생산창고·생산 현장 위치를 모아 안내, 라인 담당 부서는 묻지 않는다', async () => {
+    const { warehouses } = await scenario('P1', { A: [['X', 10]] });
     const bare = await fx.line('P1', 'BARE', null, false);
-    const noLine = await fx.release(await fx.workOrder({ plantKey: 'P1', lineId: bare, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) })).expect(400);
-    expect(noLine.body.errors.map((e: { code: string }) => e.code)).toEqual(['LINE_DEPARTMENT_MISSING', 'PRODUCTION_FLOOR_LOCATION_MISSING']);
+    const noFloor = await fx.release(await fx.workOrder({ plantKey: 'P1', lineId: bare, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) })).expect(400);
+    expect(noFloor.body.errors.map((e: { code: string }) => e.code)).toEqual(['PRODUCTION_FLOOR_LOCATION_MISSING']);
 
-    // 다른 공장 창고만 연결한 부서 — 이 공장의 후보가 아니다.
-    const elsewhere = await fx.warehouse(fx.ids.p2, `S${++scenarioSeq}-OTHER`);
-    const department = await fx.department(`S${scenarioSeq}-D`, [elsewhere.warehouseId]);
-    const line = await fx.line('P1', `S${scenarioSeq}-L`, department);
-    const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId: line, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
+    const noDepartment = await fx.line('P1', `S${scenarioSeq}-ND`, null);
+    const released = await fx.workOrder({ plantKey: 'P1', lineId: noDepartment, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
+    await fx.release(released).expect(200);
+    expect((await fx.requests(released)).map((r) => r.source_warehouse_id)).toEqual([warehouses.A]);
+
+    // 이 공장의 생산창고가 모두 꺼졌다 — 다른 공장 생산창고는 후보가 아니다.
+    const elsewhere = await fx.warehouse(fx.ids.p2, `S${scenarioSeq}-OTHER`);
+    await prisma.warehouse.update({ where: { warehouse_id: elsewhere.warehouseId }, data: { warehouse_type_code: 'PRODUCTION' } });
+    await prisma.warehouse.update({ where: { warehouse_id: warehouses.A }, data: { is_active: false } });
+    const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId: noDepartment, operation: 'X20', productionDate: fx.nextWeekday('P1', 2) });
     const noWarehouse = await fx.release(workOrderId).expect(400);
-    expect(noWarehouse.body.errors).toEqual([expect.objectContaining({ field: 'departmentId', code: 'PRODUCTION_WAREHOUSE_MISSING' })]);
+    expect(noWarehouse.body.errors).toEqual([expect.objectContaining({ field: 'plantId', code: 'PRODUCTION_WAREHOUSE_MISSING' })]);
     expect(await fx.requests(workOrderId)).toEqual([]);
+    await prisma.warehouse.update({ where: { warehouse_id: warehouses.A }, data: { is_active: true } });
   });
 
   it('FR-035 다른 사업부의 W/O 도 같은 규칙이다', async () => {
@@ -273,7 +279,7 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
     expect(row.status_code).toBe('WAITING');
   });
 
-  it('US2-7 US2-8 생산 창고 없는 공장은 지금 방식 — 연결한 뒤 새 W/O 부터 대기, 먼저 나간 요청은 그대로', async () => {
+  it('US2-7 US2-8 생산 창고 없는 공장은 지금 방식 — 생산창고를 둔 뒤 새 W/O 부터 대기, 먼저 나간 요청은 그대로', async () => {
     fx.ids.p3 = await fx.plant('P3', HANOI);
     const material = await fx.warehouse(fx.ids.p3, 'P3-MAT', 'MATERIAL');
     await fx.stock(material, 'X', 100);
@@ -296,6 +302,52 @@ describe('배포 → 대기 출고 요청 (e2e)', () => {
   });
 
   // US2-8 의 「지금 방식 요청은 PUT·:cancel 대상이 아니다(409)」는 material-issue-edit.e2e-spec.ts 가 본다.
+
+  it('BOM 단위(GR)와 재고 단위(KG)가 다른 자재 — 쓸 수 있는 양을 재고 단위로 견줘 0.037 KG 를 담고 부족을 남기지 않는다', async () => {
+    const [kg, gr] = await Promise.all(['KG', 'GR'].map(async (code) => (await prisma.uom.findUniqueOrThrow({ where: { uom_code: code } })).uom_id));
+    const resin = await prisma.item.create({ data: { item_code: `${PREFIX}-RESIN`, item_name: 'RESIN', item_type_code: 'RAW_MATERIAL', base_uom_id: kg } });
+    await prisma.item_uom_conversion.create({
+      data: { item_id: resin.item_id, from_uom_id: kg, to_uom_id: gr, conversion_rate: 1000, effective_from: new Date('2026-01-01T00:00:00.000Z') },
+    });
+    const process = await prisma.process.findUniqueOrThrow({ where: { process_code: `${PREFIX}-PR` } });
+    const operation = await prisma.routing_operation.create({
+      data: { routing_id: fx.ids.routing, operation_seq: 900, process_id: process.process_id, operation_name: 'RESIN' },
+    });
+    const component = await prisma.bom_component.create({
+      data: { bom_id: fx.ids.bom, component_item_id: resin.item_id, required_qty: 36.7, routing_operation_id: operation.routing_operation_id, uom_id: gr, sequence_no: 900 },
+    });
+    fx.operations.RESIN = operation.routing_operation_id;
+    const target = await fx.warehouse(fx.ids.p1, 'RESIN-A');
+    const resinLine = await fx.line('P1', 'RESIN-L', await fx.department('RESIN-D', [target.warehouseId]));
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-RESIN-LOT`, item_id: resin.item_id, lot_type_code: 'MATERIAL', plant_id: fx.ids.p1, initial_qty: 25,
+        uom_id: kg, source_type_code: 'GOODS_RECEIPT', source_id: 0, status_code: 'NORMAL',
+      },
+    });
+    await prisma.inventory_balance.create({
+      data: {
+        legal_entity_id: fx.ids.entity, business_unit_id: fx.ids.unit, plant_id: fx.ids.p1, warehouse_id: target.warehouseId, location_id: target.locationId,
+        item_id: resin.item_id, lot_id: lot.lot_id, quality_status_code: 'NORMAL', inventory_status_code: 'AVAILABLE', ownership_type_code: 'OWNED',
+        on_hand_qty: 25, uom_id: kg,
+      },
+    });
+    const workOrderId = await fx.workOrder({ plantKey: 'P1', lineId: resinLine, operation: 'RESIN', productionDate: localDate(new Date(), HANOI) });
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/production/work-orders/${workOrderId}:release`)
+      .set('Cookie', fx.cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', '1')
+      .send({ lotSize: 1, materialUomConfirmations: [{ bomComponentId: Number(component.bom_component_id), confirmed: true }] })
+      .expect(200);
+    expect(response.body.unsourcedShortages).toEqual([]);
+    const [only] = await fx.requests(workOrderId);
+    // 36.7 GR → 0.0367 KG → 재고 단위 3자리 올림 0.037 KG. 단위 없이 견주면 min(36.7, 25) = 25 · 부족 11.7 이 된다.
+    expect(only.material_issue_request_line.map((line) => [line.uom_id, line.requested_qty.toNumber(), line.shortage_qty.toNumber()])).toEqual([[kg, 0.037, 0]]);
+    const pickings = await fx.pickings(only.material_issue_request_id);
+    expect(pickings.flatMap((order) => order.picking_line.map((line) => [line.lot_id, line.uom_id, line.planned_qty.toNumber()]))).toEqual([[lot.lot_id, kg, 0.037]]);
+  });
 
   /** SC-007 — BOM 의 자재마다 요청 줄 또는 미배정 부족 행 «한 곳»에만 있다. */
   async function expectEachMaterialOnce(workOrderId: bigint, operation: string): Promise<void> {

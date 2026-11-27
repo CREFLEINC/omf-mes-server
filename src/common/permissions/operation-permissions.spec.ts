@@ -67,13 +67,12 @@ describe('오퍼레이션 권한 매핑', () => {
     // 테스트용 ERP W/O 등록 1건(장부 P-30) — `W-02-01` 소유다: 258.
     // 재작업 W/O 발행 1건(장부 P-33) — `W-03-10` 소유다: 259.
     // 계정-작업자 연결 치환 1건(장부 P-38) — `W-CO-02` 소유다: 260.
-    // IQC 생략 실행 1건(장부 P-36) — `W-01-02` 소유다: 261.
     // 불량 기록 등록 1건(장부 P-42) — `W-01-01` 소유다: 262.
     // 품목 설비·금형 매핑 등록·수정 2건(장부 P-61) — `W-06-05` 소유다: 264.
     // ERP W/O 자동 계획 재시도 1건(장부 P-67) — `W-02-01`·`W-02-02` 소유다: 265.
     // 특채 요청·적용 2건(장부 P-79) — `W-03-10` 소유다: 267.
     // OQC 생략 요청·실행 2건(#119 · 장부 P-83) — `W-04-03` 소유다: 269.
-    // 품목 검사 수준 지정·수동 변경 2건(#64 · 장부 P-87) — `W-03-12` 소유다: 271.
+    // 품목 검사 수준 지정·수동 변경 2건(#64 · 장부 P-87) — `W-06-02` 소유다(W-03-12 를 합침 · #357): 271.
     // 부서×이벤트 알림 설정 4건(#160 · 장부 P-92) — `W-CO-11` 소유다: 275.
     // Zalo 연결 2건(#160 · 장부 P-96) — `W-CO-12` 소유다: 277.
     // 발송 이력 2건(#160 · 장부 P-98) — `W-CO-13` 소유다: 279.
@@ -129,7 +128,37 @@ describe('오퍼레이션 권한 매핑', () => {
     // 제품 LOT OQC 스캔 1 — `W-04-03`: 373.
     // 계획 제안 보완값 재검증 1 — `W-02-01`·`W-02-02`: 374.
     // ERP W/O 감사 기록 조회 1 — `W-02-01`~`W-02-04`: 375.
-    expect(declares403).toHaveLength(375);
+    // 분할 LOT 라벨 목록 1 — `P-01-02`(피처 008): 376.
+    // 배포 전 자재 소요·단위 환산 1 — `W-02-04`: 377.
+    // 적치 대기 LOT 목록·확인·위치 판정 3 — `M-01-05`·`M-01-07`(피처 009): 380.
+    // 적치·임시 적치 2 — `M-01-05`·`M-01-07`(피처 009): 382.
+    // 검사 의뢰 첨부 LOT 연결 — `W-01-01`·`W-04-03`(omf-all-around#296): 383.
+    // LOT 통째 피킹 1 — `M-04-01`(피처 010 S2): 384.
+    // OQC 불합격 LOT 교체·출하 관리 코드 2건(피처 010 S4): 386.
+    // 지시서 코드 해석·출하 완료 2건(피처 010 S5): 387.
+    // PDA 적치 기록 1 — `M-01-05`·`M-01-07`(피처 011 · omf-all-around#325): 388.
+    // 단말 다시 사용 1 — `W-CO-06`(omf-all-around#333): 389.
+    // 출하작업지시 공장 지정 PUT 삭제(피처 012 D-1 · omf-all-around#338): 388.
+    // 지시서 코드 해석 403 BUSINESS_UNIT_MISMATCH(피처 012 FR-013): 389.
+    // 생산 LOT 분리 스캔 조회·분리·목록 3 — `P-04-08`·`M-04-05`(피처 013 · omf-all-around#303): 392.
+    // PDA 분리 확인 1 — `M-04-05`(피처 013): 393.
+    // 긴급 IQC 생략 요청·실행 2건 삭제(omf-all-around#353): 391.
+    // PQC·OQC 생략 요청·실행 4건 삭제(omf-all-around#353): 387.
+    // 특채 적용 삭제 — 결재 없이 저장 때 바로 적용(omf-all-around#352): 386.
+    // 자재 관리 LOT 공급사·품목·탭·번호 찾기 3 — `P-01-01`·`W-01-14`(피처 014 · omf-all-around#349): 389.
+    // 출력 전 자재 관리 LOT 수정 1 — `P-01-01`·`W-01-14`(피처 014 S4): 390.
+    // 자재 관리 LOT 공급사 목록 1 — `P-01-01`·`W-01-14`(피처 014 S5 · 세 칸): 391.
+    // 검사 기준 승인 1건 삭제 — `W-06-02`: 390.
+    // LOT 목록 둘 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 392.
+    // 번호 풀기 1 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 393.
+    // 자재 기준 정방향 계보 1 — `W-02-13`(피처 015 · omf-all-around#355): 394.
+    // 제품 기준 역방향 계보 1 — `W-02-14`(피처 015 · omf-all-around#355): 395.
+    // 엑셀 내보내기 2 — `W-02-13`·`W-02-14`(피처 015 · omf-all-around#355): 397.
+    // 교대 관리 3 — 등록·수정·중지 `W-06-26`(omf-all-around#318): 400.
+    // 교대 다시 사용 1 — `W-06-26`(omf-all-around#318): 401.
+    // BOM 구성 자재 가용 수량 1 — `W-02-01`·`W-02-02`·`W-02-04`(omf-all-around#320): 402.
+    // 부서 생산 창고 조회·바꾸기 2건 삭제 — `W-06-06`(사용자 결정 2026-11-25): 400.
+    expect(declares403).toHaveLength(400);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
@@ -143,13 +172,17 @@ describe('오퍼레이션 권한 매핑', () => {
    * 요구서 §3 에서 나오므로 계약 description 만 아는 셸은 잡히지 않는다 — 통보 181·189 가
    * 그 사고 둘이다. 수동표에 넣어도 «아무것도 그것을 지키지 않아» 지우면 그대로 사라진다.
    */
-  it('⛔ 결재함 목록에 계약이 이름 적은 호출 셸 넷이 전부 있다 — 통보 189', () => {
-    // `get.description` 「부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과 모바일 상신 화면
-    // (M-01-13 의 「내가 올린 요청」 구획)」 · `assignedToMe` 「승인 화면은 관리웹뿐이라
-    // (W-CO-09·W-01-02·W-03-09)」.
-    expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(
-      expect.arrayContaining(['W-CO-09', 'M-01-13', 'W-01-02', 'W-03-09']),
-    );
+  it('⛔ 결재함 목록에 계약이 이름 적은 호출 셸이 전부 있다 — 통보 189', () => {
+    // `assignedToMe` 「승인 화면은 관리웹뿐이라(W-CO-09)」 — 품질 승인 처리(W-03-09)는 없앴다(#352).
+    expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(expect.arrayContaining(['W-CO-09']));
+  });
+
+  // 품질 승인 처리(W-03-09)를 없애며 승인·반려는 결재함(W-CO-09)으로 옮겼다(omf-all-around#352) — 빠지면 아무도 승인하지 못한다.
+  it('⛔ 결재 승인·반려는 결재함 권한으로 한다 — 없앤 W-03-09 가 남지 않는다', () => {
+    for (const action of ['approve', 'reject']) {
+      expect(OPERATION_PERMISSIONS[`POST /app/approval-requests/{approvalRequestId}:${action}`]).toEqual(['W-CO-09']);
+    }
+    expect(Object.values(OPERATION_PERMISSIONS).some((screens) => screens.includes('W-03-09'))).toBe(false);
   });
 
   /**
@@ -169,6 +202,20 @@ describe('오퍼레이션 권한 매핑', () => {
     }
   });
 
+  // 처분을 IQC·OQC 판정 화면의 처분 상자로 옮겼다(omf-all-around#354) — 두 화면 권한만 가진 검사자도 처분한다.
+  it('⛔ 처분 상자의 조회·판정·특채·재작업 발행을 IQC(W-01-01)·OQC(W-04-03) 권한으로도 한다 — #354', () => {
+    for (const key of [
+      'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances',
+      'GET /quality/nonconformances/{nonconformanceId}',
+      'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order',
+      'POST /quality/concessions',
+    ]) {
+      expect(OPERATION_PERMISSIONS[key]).toEqual(expect.arrayContaining(['W-01-01', 'W-03-10', 'W-04-03']));
+    }
+  });
+
   it('⛔ 발행 POST에 재구성 라벨과 검사성적서 호출 셸이 모두 있다 — I-27 R11', () => {
     expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toEqual(
       expect.arrayContaining(['P-04-04', 'W-04-03']),
@@ -181,14 +228,6 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(OPERATION_PERMISSIONS['POST /logistics/inbound-receipts:per-line']).toEqual(['M-01-01', 'W-01-03']);
   });
 
-  // 결재 화면(W-03-09)에서 승인한 뒤 실행 · 적용까지 잇는다 — IQC 생략 실행과 같은 짜임(장부 P-127 · omf-all-around#193).
-  it('⛔ OQC 생략 실행 · 특채 적용에 결재 화면이 함께 있다 — 장부 P-127', () => {
-    // 순서는 도출표와 수동 표를 합친 차례라 뜻이 없다 — 화면 집합으로 본다.
-    const screensOf = (operation: string): string[] => [...(OPERATION_PERMISSIONS[operation] ?? [])].sort();
-    expect(screensOf('POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc')).toEqual(['W-03-09', 'W-04-03']);
-    expect(screensOf('POST /quality/concessions/{concessionId}:apply')).toEqual(['W-03-09', 'W-03-10']);
-  });
-
   // P-06-01(창고 적재 위치 라벨 발행)은 설계 밖 화면이라 도출표가 영영 주지 않는다 — 장부 P-28.
   it('⛔ 발행 POST에 창고 적재 위치 라벨 발행 화면이 있다 — 장부 P-28', () => {
     expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toContain('P-06-01');
@@ -197,7 +236,7 @@ describe('오퍼레이션 권한 매핑', () => {
   // W-03-11(PQC 검사 등록·조회)은 설계 밖 관리웹 화면이다 — 장부 P-51. 도출된 화면이 빠지지 않아야 한다.
   it('⛔ 검사 결과 저장에 관리웹 PQC 화면이 도출된 화면들과 함께 있다 — 장부 P-51', () => {
     expect(OPERATION_PERMISSIONS['POST /quality/inspection-results']).toEqual(
-      expect.arrayContaining(['P-02-13', 'W-01-01', 'W-04-03', 'W-03-11']),
+      expect.arrayContaining(['W-01-01', 'W-04-03', 'W-03-11']),
     );
   });
 
@@ -311,6 +350,21 @@ describe('오퍼레이션 권한 매핑', () => {
     ]) {
       // 도출된 화면이 빠지면 안 된다 — 합집합이어야 한다.
       expect(OPERATION_PERMISSIONS[key]).toEqual(expect.arrayContaining([...DERIVED_PERMISSIONS[key], 'W-02-04']));
+    }
+  });
+});
+
+describe('피처 012 — 출하 취소·확정 권한(R-6 · D-11 · FR-024)', () => {
+  it('US5-5·D-11 취소 요청·실행은 W-04-12, 미확정 확정은 W-04-05·W-04-12 그대로 — W-04-02 만으로는 열리지 않는다', () => {
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:request-cancel']).toEqual(['W-04-12']);
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:cancel']).toEqual(['W-04-12']);
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:confirm']).toEqual(expect.arrayContaining(['W-04-05', 'W-04-12']));
+    expect(OPERATION_PERMISSIONS['POST /logistics/shipments/{shipmentId}:confirm']).not.toContain('W-04-02');
+  });
+
+  it('D-11·T064 W-04-02 「출하」 칸이 부르는 조회 넷은 W-04-02·W-04-12 근거를 함께 갖는다', () => {
+    for (const key of ['GET /logistics/shipment-requests', 'GET /logistics/shipment-requests/{shipmentRequestId}', 'GET /logistics/shipments', 'GET /logistics/shipments/{shipmentId}']) {
+      expect(DERIVED_PERMISSIONS[key]).toEqual(expect.arrayContaining(['W-04-02', 'W-04-12']));
     }
   });
 });

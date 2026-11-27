@@ -252,19 +252,39 @@ describe('재고 posting (실 DB)', () => {
     }
   });
 
-  it('⛔ 지정 품목이 있는 위치로 다른 품목은 들어오지 않는다 — 400 STATE_LOCKED · 그 품목을 지정하면 된다', async () => {
+  // 피처 009(omf-all-around#294 · 2026-11-18 결정) — 품목 지정은 안내다. 「지정 품목만 받기」(item_restricted)를 켠 위치만 막는다.
+  it('FR-017b Q25 지정 품목이 있어도 「지정 품목만 받기」가 꺼진 위치는 다른 품목을 받는다', async () => {
     await run(input());
     const other = await prisma.item.create({
       data: { item_code: `${PREFIX}-IT2`, item_name: '다른품목', item_type_code: 'RAW_MATERIAL', base_uom_id: uomId },
     });
     await prisma.location_item.create({ data: { location_id: hereB.locationId, item_id: other.item_id } });
+    try {
+      await run(input({ lines: [{ itemId, qty: 1, uomId, from: hereA, to: hereB, ownershipTypeCode: 'OWNED' }] }));
+    } finally {
+      await prisma.location_item.deleteMany({ where: { location_id: hereB.locationId } });
+    }
+  });
+
+  it('FR-017d Q29 「지정 품목만 받기」를 켠 위치로 지정 밖 품목은 들어오지 않는다 — 400 LOCATION_ITEM_RESTRICTED · 그 품목을 지정하면 된다', async () => {
+    await run(input());
+    const other = await prisma.item.create({
+      data: { item_code: `${PREFIX}-IT3`, item_name: '다른품목3', item_type_code: 'RAW_MATERIAL', base_uom_id: uomId },
+    });
+    await prisma.location_item.create({ data: { location_id: hereB.locationId, item_id: other.item_id } });
+    await prisma.location.update({ where: { location_id: hereB.locationId }, data: { item_restricted: true } });
     const moving = () => input({ lines: [{ itemId, qty: 1, uomId, from: hereA, to: hereB, ownershipTypeCode: 'OWNED' }] });
     try {
-      await expect(run(moving())).rejects.toMatchObject({ errors: [expect.objectContaining({ code: 'STATE_LOCKED' })] });
+      await expect(run(moving())).rejects.toMatchObject({
+        errors: [expect.objectContaining({ code: 'LOCATION_ITEM_RESTRICTED', message: '이 위치는 지정 품목만 받습니다.' })],
+      });
+      await expect(run(input({ lines: [{ itemId, qty: 1, uomId, to: hereB, ownershipTypeCode: 'OWNED' }] })))
+        .rejects.toMatchObject({ errors: [expect.objectContaining({ code: 'LOCATION_ITEM_RESTRICTED' })] });
 
       await prisma.location_item.create({ data: { location_id: hereB.locationId, item_id: itemId } });
       await run(moving());
     } finally {
+      await prisma.location.update({ where: { location_id: hereB.locationId }, data: { item_restricted: false } });
       await prisma.location_item.deleteMany({ where: { location_id: hereB.locationId } });
     }
   });

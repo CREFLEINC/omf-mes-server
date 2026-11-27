@@ -33,14 +33,17 @@ export interface PreparedOqcSerial {
 export async function prepareOqcSerials(
   prisma: PrismaService,
   body: InspectionResultCreate,
+  /** 출하 OQC 새 흐름(피처 010)의 매칭 LOT — 주면 작성중 저장에서도 받고 시리얼 LOT 은 이 안이어야 한다(수량 칸은 서버가 채워 대조 안 함). */
+  matchedLotIds?: readonly bigint[],
 ): Promise<PreparedOqcSerial[] | null> {
   const serials = body.serials ?? [];
   if (serials.length === 0) return null;
-  if (body.statusCode !== CONFIRMED) throw invalid('시리얼 판정은 확정 저장에서만 받습니다.');
+  const newFlow = matchedLotIds !== undefined;
+  if (!newFlow && body.statusCode !== CONFIRMED) throw invalid('시리얼 판정은 확정 저장에서만 받습니다.');
   if (new Set(serials.map((s) => s.serialNumberId)).size !== serials.length) throw invalid('같은 시리얼이 두 번 실렸습니다.');
   // Q3 — 수량 칸은 사람이 넣고, 시리얼과 모순되는 것만 막는다.
-  if (serials.length > body.inspectedQty) throw invalid('검사한 시리얼 수가 검사 수량보다 많습니다.');
-  if (serials.filter((s) => s.judgmentCode === 'NG').length > body.rejectedQty) {
+  if (!newFlow && serials.length > body.inspectedQty) throw invalid('검사한 시리얼 수가 검사 수량보다 많습니다.');
+  if (!newFlow && serials.filter((s) => s.judgmentCode === 'NG').length > body.rejectedQty) {
     throw invalid('NG 시리얼 수가 불합격 수량보다 많습니다.');
   }
 
@@ -56,9 +59,7 @@ export async function prepareOqcSerials(
     select: { serial_number_id: true, serial_no: true, item_id: true, lot_id: true },
   });
   const byId = new Map(rows.map((row) => [String(row.serial_number_id), row]));
-  const picked = await oqcPickedLots(prisma, request.target_id, request.item_id);
-  assertOqcPicked(picked, '판정하세요');
-  const pickedLots = new Set(picked.lotIds.map(String));
+  const pickedLots = new Set((matchedLotIds ?? (await pickedLotIds(prisma, request.target_id, request.item_id))).map(String));
   return serials.map((serial) => {
     const row = byId.get(String(serial.serialNumberId));
     if (row === undefined) throw invalid('없는 시리얼입니다.');
@@ -103,6 +104,12 @@ export async function recordOqcSerialsWithin(
       update: { ...values, updated_at: new Date(), version_no: { increment: 1 } },
     });
   }
+}
+
+async function pickedLotIds(prisma: PrismaService, shipmentRequestId: bigint, itemId: bigint): Promise<bigint[]> {
+  const picked = await oqcPickedLots(prisma, shipmentRequestId, itemId);
+  assertOqcPicked(picked, '판정하세요');
+  return picked.lotIds;
 }
 
 function invalid(message: string): ContractException {

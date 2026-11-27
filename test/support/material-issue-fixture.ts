@@ -169,13 +169,20 @@ export class MaterialIssueFixture {
     return lot.lot_id;
   }
 
+  /**
+   * 라인 담당 부서. `warehouseIds` 가 그 공장의 생산창고 «전부»가 된다 — 판정은 공장 단위 창고 유형이라, 앞 시험이 만든
+   * 이 묶음의 생산창고는 그 공장에서 일반창고로 되돌린다(시험마다 새 창고 묶음).
+   */
   async department(code: string, warehouseIds: bigint[]): Promise<bigint> {
     const department = await this.prisma.department.create({
       data: { department_code: `${this.prefix}-${code}`, department_name: code },
     });
-    await this.prisma.department_production_warehouse.createMany({
-      data: warehouseIds.map((warehouse_id) => ({ department_id: department.department_id, warehouse_id })),
+    const plants = await this.prisma.warehouse.findMany({ where: { warehouse_id: { in: warehouseIds } }, select: { plant_id: true }, distinct: ['plant_id'] });
+    await this.prisma.warehouse.updateMany({
+      where: { plant_id: { in: plants.map((row) => row.plant_id) }, warehouse_code: { startsWith: this.prefix }, warehouse_type_code: 'PRODUCTION' },
+      data: { warehouse_type_code: 'GENERAL' },
     });
+    await this.prisma.warehouse.updateMany({ where: { warehouse_id: { in: warehouseIds } }, data: { warehouse_type_code: 'PRODUCTION' } });
     return department.department_id;
   }
 
@@ -256,12 +263,13 @@ export class MaterialIssueFixture {
     await p.material_issue_request.deleteMany({ where: workOrder });
     await p.inventory_balance.deleteMany({ where: plant });
     await p.lot_lifecycle_history.deleteMany({ where: { lot: plant } });
+    // 부분 출고 분할 계보(피처 008) — 부모·자식이 같은 공장이라 lot 은 한 문장으로 지운다.
+    await p.lot_relation.deleteMany({ where: { lot_lot_relation_target_lot_idTolot: plant } });
     await p.lot.deleteMany({ where: plant });
     await p.work_order.deleteMany({ where: { work_order_no: { startsWith: prefix } } });
     await p.production_plan.deleteMany({ where: { plan_no: { startsWith: prefix } } });
     await p.production_order.deleteMany({ where: { production_order_no: { startsWith: prefix } } });
     await p.production_line.deleteMany({ where: { line_code: { startsWith: prefix } } });
-    await p.department_production_warehouse.deleteMany({ where: { department: { department_code: { startsWith: prefix } } } });
     // W/O 취소·마감이 라인 부서로 남기는 알림 사건(피처 001) — 부서보다 먼저 지운다.
     const events = await p.notification_event.findMany({
       where: { department: { department_code: { startsWith: prefix } } },
@@ -280,6 +288,7 @@ export class MaterialIssueFixture {
     await p.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: prefix } } } });
     await p.routing.deleteMany({ where: { routing_code: { startsWith: prefix } } });
     await p.process.deleteMany({ where: { process_code: { startsWith: prefix } } });
+    await p.item_uom_conversion.deleteMany({ where: { item: { item_code: { startsWith: prefix } } } });
     await p.item.deleteMany({ where: { item_code: { startsWith: prefix } } });
     await p.plant.deleteMany({ where: { plant_code: { startsWith: prefix } } });
     await p.business_unit.deleteMany({ where: { business_unit_code: { startsWith: prefix } } });

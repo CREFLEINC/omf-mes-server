@@ -68,7 +68,10 @@ export class LogisticsHandoverNotifier {
     }, undefined);
   }
 
-  /** T4 — 출하지시에 이행 공장이 있다(등록 때, 또는 처음 정해질 때). */
+  /**
+   * T4 — 출하지시 등록. 받는 공장 = 줄 출고 창고의 공장들(피처 012 FR-016 — 공장 둘에 걸치면 둘 다).
+   * 창고 없는 옛 지시서는 이행 공장 하나.
+   */
   async shipmentPicking(tx: Tx, shipmentRequestId: bigint): Promise<void> {
     await this.emitter.guarded(tx, `SHIPMENT_PICKING_REQUESTED ${shipmentRequestId}`, async () => {
       const request = await tx.shipment_request.findUniqueOrThrow({
@@ -78,45 +81,62 @@ export class LogisticsHandoverNotifier {
           fulfillment_plant_id: true,
           requested_ship_date: true,
           partner_shipment_request_customer_idTopartner: { select: { partner_name: true } },
-          _count: { select: { shipment_request_line: true } },
+          shipment_request_line: { select: { warehouse: { select: { plant_id: true } } } },
         },
       });
-      if (request.fulfillment_plant_id === null) return;
-      await this.emitter.emitHandover(tx, {
-        alertTypeCode: 'SHIPMENT_PICKING_REQUESTED',
-        plantId: request.fulfillment_plant_id,
-        aggregateTypeCode: 'SHIPMENT_REQUEST',
-        aggregateId: shipmentRequestId,
-        occurredAt: new Date(),
-        values: {
-          request_no: request.shipment_request_no,
-          customer: request.partner_shipment_request_customer_idTopartner.partner_name,
-          item_count: request._count.shipment_request_line,
-          ship_date: formatCalendarDate(request.requested_ship_date),
-        },
-      });
+      const linePlants = request.shipment_request_line.flatMap((line) => (line.warehouse === null ? [] : [line.warehouse.plant_id]));
+      const plants = uniqueIds(linePlants.length > 0 ? linePlants : request.fulfillment_plant_id === null ? [] : [request.fulfillment_plant_id]);
+      const at = Date.now();
+      for (const [index, plantId] of plants.entries()) {
+        await this.emitter.emitHandover(tx, {
+          alertTypeCode: 'SHIPMENT_PICKING_REQUESTED',
+          plantId,
+          // 공장마다 한 건 — 같은 지시서의 둘째 공장 알림이 «이미 보냄»으로 접히지 않게. 사건 유일 키(유형·대상·시각)가
+          // 겹치지 않게 시각을 공장 순번만큼 1ms 씩 민다.
+          repeatable: plants.length > 1,
+          aggregateTypeCode: 'SHIPMENT_REQUEST',
+          aggregateId: shipmentRequestId,
+          occurredAt: new Date(at + index),
+          values: {
+            request_no: request.shipment_request_no,
+            customer: request.partner_shipment_request_customer_idTopartner.partner_name,
+            item_count: request.shipment_request_line.length,
+            ship_date: formatCalendarDate(request.requested_ship_date),
+          },
+        });
+      }
     }, undefined);
   }
 
-  /** T8 — 출하지시 등록이 OQC 의뢰를 세웠다(출하지시 1건에 1건, 의뢰 수를 내용에 · 확정 항목 3). 이행 공장이 없으면 없다. */
+  /**
+   * T8 — 출하지시 등록이 OQC 의뢰를 세웠다(출하지시 1건에 1건, 의뢰 수를 내용에 · 확정 항목 3). 받는 공장 = 지시서 사업부의
+   * 활성 공장들(피처 012 FR-016 — OQC 는 사업부 안 어느 POP 에서나 한다). 사업부 없는 옛 지시서는 이행 공장, 둘 다 없으면 없다.
+   */
   async oqcRequested(tx: Tx, shipmentRequestId: bigint, requestCount: number): Promise<void> {
     const request = await tx.shipment_request.findUniqueOrThrow({
       where: { shipment_request_id: shipmentRequestId },
-      select: { shipment_request_no: true, fulfillment_plant_id: true, requested_ship_date: true },
+      select: { shipment_request_no: true, fulfillment_plant_id: true, business_unit_id: true, requested_ship_date: true },
     });
-    if (request.fulfillment_plant_id === null) return;
-    await this.emitter.emitHandover(tx, {
-      alertTypeCode: 'OQC_INSPECTION_REQUESTED',
-      plantId: request.fulfillment_plant_id,
-      aggregateTypeCode: 'SHIPMENT_REQUEST',
-      aggregateId: shipmentRequestId,
-      occurredAt: new Date(),
-      values: {
-        request_no: request.shipment_request_no,
-        request_count: requestCount,
-        ship_date: formatCalendarDate(request.requested_ship_date),
-      },
-    });
+    const plants = request.business_unit_id !== null
+      ? (await tx.plant.findMany({ where: { business_unit_id: request.business_unit_id, is_active: true }, select: { plant_id: true } }))
+        .map((plant) => plant.plant_id)
+      : request.fulfillment_plant_id === null ? [] : [request.fulfillment_plant_id];
+    const at = Date.now();
+    for (const [index, plantId] of plants.entries()) {
+      await this.emitter.emitHandover(tx, {
+        alertTypeCode: 'OQC_INSPECTION_REQUESTED',
+        plantId,
+        repeatable: plants.length > 1,
+        aggregateTypeCode: 'SHIPMENT_REQUEST',
+        aggregateId: shipmentRequestId,
+        occurredAt: new Date(at + index),
+        values: {
+          request_no: request.shipment_request_no,
+          request_count: requestCount,
+          ship_date: formatCalendarDate(request.requested_ship_date),
+        },
+      });
+    }
   }
 
   /** T5 — 출하가 생겼다(긴급 직행 포함). 공장 = 출하 창고의 공장. */
@@ -127,24 +147,29 @@ export class LogisticsHandoverNotifier {
         select: {
           shipment_no: true,
           warehouse: { select: { warehouse_name: true, plant_id: true } },
-          shipment_request: { select: { requested_ship_date: true } },
+          shipment_request: { select: { requested_ship_date: true, fulfillment_plant_id: true } },
         },
       });
       await this.emitter.emitHandover(tx, {
         alertTypeCode: 'SHIPMENT_PACKING_REQUESTED',
-        plantId: shipment.warehouse.plant_id,
+        // 출하 처리(W-04-04·긴급 직행)만 부른다 — 창고가 늘 있다. 없으면 지시서 공장이다(omf-all-around#305).
+        plantId: shipment.warehouse?.plant_id ?? (shipment.shipment_request.fulfillment_plant_id as bigint),
         aggregateTypeCode: 'SHIPMENT',
         aggregateId: shipmentId,
         occurredAt: new Date(),
         values: {
           shipment_no: shipment.shipment_no,
-          warehouse: shipment.warehouse.warehouse_name,
+          warehouse: shipment.warehouse?.warehouse_name ?? '',
           ship_date: formatCalendarDate(shipment.shipment_request.requested_ship_date),
           actor: await actorName(tx, { appUserId }),
         },
       });
     }, undefined);
   }
+}
+
+function uniqueIds(ids: bigint[]): bigint[] {
+  return [...new Set(ids.map(String))].map(BigInt);
 }
 
 /** 처리자 — 계정이면 계정 이름, 단말 작성이면 사번 작업자 이름(단말 actor 에 계정이 없다 · research R-3). */

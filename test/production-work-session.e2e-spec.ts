@@ -934,7 +934,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
               approval_type_code: 'PRODUCTION_RESULT_CORRECT',
               target_type_code: 'PRODUCTION_RESULT',
               target_id: BigInt(firstResultId),
-              requested_worker_id: ids.worker1,
+              requested_by: (await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } })).app_user_id,
               requested_at: new Date(START_AT),
               status_code: 'APPROVED',
               reason: '공동 작업자 배분 검사',

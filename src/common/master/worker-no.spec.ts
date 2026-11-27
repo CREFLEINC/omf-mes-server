@@ -49,11 +49,9 @@ const SHARED = 'common/master/worker-no.ts';
 const PRESENCE_ONLY = [
   'logistics/picking/picking-pick.service.ts',
   'logistics/shipment-allocation/allocation-packing.service.ts',
-  'logistics/shipment-request/shipment-pick.service.ts',
   'logistics/shopfloor-receipt/shopfloor-receipt.service.ts',
   'production/material-return/material-return.service.ts',
   'trace/lot/lot-complete.service.ts',
-  'trace/lot/lot-iqc-skip.service.ts',
 ];
 
 /** **실재까지 본다** — 형식 + `mdm.worker` 조회 한 번. 고르는 근거는 위 주석에 있다. */
@@ -145,7 +143,6 @@ const WORKER_TABLE_READERS = [
   'app/document-issue/document-issue-write.service.ts',
   'audit/terminal-worker-audit.ts',
   // 단말 경계의 사번/ID 판정. 활성·공장 검사는 각각의 정확한 오퍼레이션 범위에 묶인다.
-  'auth/terminal-app-read-scope.ts',
   'auth/terminal-app-write-scope.ts',
   'auth/terminal-inspection-sheet-scope.ts',
   'auth/terminal-inventory-scope.ts',
@@ -159,6 +156,8 @@ const WORKER_TABLE_READERS = [
   'auth/terminal-quality-write-scope.ts',
   'auth/terminal-read-policy.ts',
   SHARED,
+  // 인계 알림 「적치 대기」의 처리자 이름(피처 009) — 이미 판정된 작업자 id 로 이름만 읽는다. 사번 판정이 아니다.
+  'core/lot/putaway-pending-handover.ts',
   // ERP 사원 수신 — 원본 행의 사번으로 작업자를 만들고 고친다. 사번 헤더 판정이 아니다.
   'integration/erp/apply/employee.apply.ts',
   // 추적 시스템 연동의 시스템 작업자(사용자 2026-11-16) — 고정 사번으로 찾는다. 사번 헤더 판정이 아니다.
@@ -166,6 +165,9 @@ const WORKER_TABLE_READERS = [
   'inventory/count/inventory-count-update.service.ts',
   // 인계 알림의 처리자 이름 — 이미 판정된 작업자 id 로 이름만 읽는다(omf-all-around#190). 사번 판정이 아니다.
   'logistics/logistics-handover.ts',
+  // PDA 적치 기록 「내 기록」(피처 011) — 읽기라 단말 범위가 사번을 심지 않는다. 이 공장 재직 작업자만 받고 없으면 계약대로
+  // 400 INVALID(부재 포함 — 공용 함수는 부재를 REQUIRED 로 내고 공장을 보지 않는다).
+  'logistics/putaway-record/putaway-record.service.ts',
   // 첨부는 같은 트랜잭션에서 작업자를 재확인하고, LOT 완료는 감사 기록이 재확인한다.
   'maintenance/breakdown/breakdown-attachment.service.ts',
   'maintenance/breakdown/breakdown-create.service.ts',
@@ -306,7 +308,11 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     // 판정은 `logisticsWriteActorOf` 가 한다 — 위 표들이 그 자리를 이미 덮는다.
     // 줄마다 입하 한 건(장부 P-117) — 입하 등록과 같은 판정(`logisticsWriteActorOf`): 40 → 41.
     // 줄마다 입하(장부 P-117)를 WorkerNoOptional 로 — 관리웹도 부른다(입고·출고와 같은 갈래): 41 → 40.
-    expect(required).toBe(40);
+    // 출하 완료 `:complete`(피처 010 · POP 전용) — 판정은 `logisticsWriteActorOf`(단말 물류 범위가 사번을 푼다): 40 → 41.
+    // 생산 LOT 분리(피처 013 · POP 전용) — 판정은 `splitActorOf`(단말 물류 범위가 사번을 푼다): 41 → 42.
+    // PDA 분리 확인 :confirm(피처 013 · MOBILE 전용) — 판정은 `splitActorOf`: 42 → 43.
+    // 긴급 IQC 생략 요청 `:request-iqc-skip` 을 없앴다(omf-all-around#353): 43 → 42.
+    expect(required).toBe(42);
   });
 });
 

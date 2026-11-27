@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
+import { MATERIAL_STOCK_TYPES } from '../../core/erp-warehouse/fg-location';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Editability, ReferenceQuery, Referrer, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
@@ -259,8 +260,8 @@ export class EquipmentGroupService {
   }
 
   /**
-   * 기본 위치는 그 라인 공장의, 자재창고가 아닌 창고 위치여야 한다 — 다른 공장 위치면 재고가 공장을 넘고,
-   * 자재창고 위치면 WIP 출고가 창고 안에서 맴돈다. 칸별 창고 유형은 고객이 유형을 늘릴 수 있어 화면이 거른다.
+   * 기본 위치는 그 라인 공장의, 자재·생산창고가 아닌 창고 위치여야 한다 — 다른 공장 위치면 재고가 공장을 넘고,
+   * 자재·생산창고 위치면 WIP 출고가 창고 안에서 맴돈다. 칸별 창고 유형은 고객이 유형을 늘릴 수 있어 화면이 거른다.
    */
   private async assertDefaultLocations(plantId: number, input: LineDefaultLocations): Promise<void> {
     for (const field of Object.keys(DEFAULT_LOCATION_COLUMNS) as (keyof LineDefaultLocations)[]) {
@@ -273,8 +274,8 @@ export class EquipmentGroupService {
       if (location === null || Number(location.warehouse.plant_id) !== plantId) {
         throw locationError(field, '이 공장의 위치가 아닙니다.');
       }
-      if (location.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE) {
-        throw locationError(field, '자재창고 위치는 라인 기본 위치로 둘 수 없습니다.');
+      if (MATERIAL_STOCK_TYPES.includes(location.warehouse.warehouse_type_code)) {
+        throw locationError(field, '자재·생산창고 위치는 라인 기본 위치로 둘 수 없습니다.');
       }
     }
   }
@@ -308,8 +309,6 @@ export class EquipmentGroupService {
     assertUpdated(0);
   }
 }
-
-const MATERIAL_WAREHOUSE = 'MATERIAL';
 
 function locationError(field: string, message: string): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [

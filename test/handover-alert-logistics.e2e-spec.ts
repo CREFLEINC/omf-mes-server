@@ -17,6 +17,7 @@ import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { NotificationEmitter } from '../src/core/notification';
 import { LogisticsHandoverNotifier } from '../src/logistics/logistics-handover';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const ROOT = 'E2E_HOLOG_';
 const PREFIX = `${ROOT}${randomUUID().slice(0, 6)}`;
@@ -174,29 +175,26 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     expect(notes.map((n) => n.recipient_user_id)).toEqual([users.U2]);
   });
 
-  it('US1-5 T4 공장 있는 출하지시는 알림 1건, 공장 없는 등록은 0건이고 공장이 처음 정해질 때 1건, 바꿀 때는 없다', async () => {
+  // 피처 012 FR-016 — 공장 지정 PUT 이 없어졌다(D-1). 받는 공장은 줄 출고 창고의 공장들이다.
+  it('US1-5 FR-016 T4 출하지시는 줄 출고 창고의 공장마다 알림 1건 — 한 공장이면 1건, 공장 둘에 걸치면 공장마다', async () => {
     await configure(ids.plant1, 'SHIPMENT_PICKING_REQUESTED', [users.U1], false);
     await configure(ids.plant2, 'SHIPMENT_PICKING_REQUESTED', [users.U1], false);
 
-    const withPlant = await createShipmentRequest(ids.plant1);
-    const [event] = await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', withPlant);
+    const onePlant = await createShipmentRequest([ids.whA, ids.whB]);
+    const [event, ...rest] = await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', onePlant);
+    expect(rest).toHaveLength(0);
     expect(event).toMatchObject({ dispatch_status_code: 'NOTIFIED' });
-    expect(event.payload).toMatchObject({ customer: `${PREFIX} 고객`, item_count: 1, ship_date: '30/10/2026' });
+    expect(event.payload).toMatchObject({ customer: `${PREFIX} 고객`, item_count: 2, ship_date: '30/10/2026' });
 
-    const noPlant = await createShipmentRequest(null);
-    expect(await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', noPlant)).toHaveLength(0);
-
-    await assignPlant(noPlant, ids.plant1, '1');
-    expect(await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', noPlant)).toHaveLength(1);
-
-    await assignPlant(noPlant, ids.plant2, '2');
-    const after = await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', noPlant);
-    expect(after).toHaveLength(1);
+    const twoPlants = await createShipmentRequest([ids.whA, ids.whC]);
+    const events = await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', twoPlants);
+    expect(events).toHaveLength(2);
+    expect(await prisma.notification.count({ where: { notification_event_id: { in: events.map((row) => row.notification_event_id) } } })).toBe(2);
   });
 
   it('US1-5 T5 출하가 생기면 출하 창고 공장의 담당자에게 포장 알림 1건', async () => {
     await configure(ids.plant1, 'SHIPMENT_PACKING_REQUESTED', [users.U1, users.U2], true);
-    const requestId = await createShipmentRequest(ids.plant1);
+    const requestId = await createShipmentRequest();
     const shipment = await prisma.shipment.create({
       data: { shipment_no: `${PREFIX}-SH`, shipment_request_id: requestId, warehouse_id: ids.whA, status_code: 'REGISTERED' },
     });
@@ -222,7 +220,8 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     const lot = await prisma.lot.create({
       data: { lot_no: `${PREFIX}-EXPLOT`, item_id: ids.itemA, lot_type_code: 'PRODUCTION', plant_id: ids.plant1, initial_qty: 10, uom_id: ids.uom, source_type_code: 'WORK_ORDER', source_id: 1, status_code: 'NORMAL' },
     });
-    const requestId = await createShipmentRequest(ids.plant1);
+    // 긴급 직행은 고치지 않았다(피처 012 D-13) — 공장 단위 옛 지시서 모양에서만 등록된다.
+    const requestId = await legacyShipmentRequest(ids.plant1);
     const line = await prisma.shipment_request_line.findFirstOrThrow({ where: { shipment_request_id: requestId } });
 
     const response = await request(app.getHttpServer())
@@ -252,7 +251,7 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
   });
 
   it('FR-002 같은 대상·같은 종류는 다시 불러도 한 번이다', async () => {
-    const requestId = await createShipmentRequest(ids.plant1);
+    const requestId = await createShipmentRequest();
     await prisma.$transaction((tx) => app.get(LogisticsHandoverNotifier).shipmentPicking(tx, requestId));
     expect(await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', requestId)).toHaveLength(1);
   });
@@ -262,16 +261,20 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     // 시험 스위치 — 담당자 판정에서 실패를 주입한다.
     jest.spyOn(emitter as unknown as { decideHandover: () => Promise<never> }, 'decideHandover').mockRejectedValue(new Error('주입'));
 
-    const requestId = await createShipmentRequest(ids.plant1);
+    const requestId = await createShipmentRequest();
     expect(await prisma.shipment_request.count({ where: { shipment_request_id: requestId } })).toBe(1);
     expect(await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', requestId)).toHaveLength(0);
   });
 
   it('FR-003 업무 트랜잭션이 롤백되면 알림도 없다', async () => {
-    const requestId = await createShipmentRequest(null);
+    const requestId = await createShipmentRequest();
+    // 등록이 이미 남긴 T4 를 걷고 «다시 부르는» 트랜잭션만 본다.
+    const before = (await eventsOf('SHIPMENT_PICKING_REQUESTED', 'SHIPMENT_REQUEST', requestId)).map((row) => row.notification_event_id);
+    await prisma.zalo_delivery.deleteMany({ where: { notification_event_id: { in: before } } });
+    await prisma.notification.deleteMany({ where: { notification_event_id: { in: before } } });
+    await prisma.notification_event.deleteMany({ where: { notification_event_id: { in: before } } });
     await expect(
       prisma.$transaction(async (tx) => {
-        await tx.shipment_request.update({ where: { shipment_request_id: requestId }, data: { fulfillment_plant_id: ids.plant1 } });
         await app.get(LogisticsHandoverNotifier).shipmentPicking(tx, requestId);
         expect(await tx.notification_event.count({ where: { aggregate_type_code: 'SHIPMENT_REQUEST', aggregate_id: requestId } })).toBe(1);
         throw new Error('업무 실패');
@@ -325,11 +328,7 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
   }
 
   async function postReceipt(warehouseId: bigint, locationId: bigint, itemId: bigint, plantId: bigint, lotId: bigint) {
-    await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({
+    await legacyGoodsReceiptOk(app, cookie, {
         receiptTypeCode: 'MATERIAL',
         plantId: Number(plantId),
         warehouseId: Number(warehouseId),
@@ -346,11 +345,11 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
             destinationLocationId: Number(locationId),
           },
         ],
-      })
-      .expect(201);
+      });
   }
 
-  async function createShipmentRequest(plantId: bigint | null): Promise<bigint> {
+  /** 사업부 지시서(피처 012) — 줄마다 출고 창고. 기본은 공장1 창고 A 한 줄. */
+  async function createShipmentRequest(warehouses: bigint[] = [ids.whA]): Promise<bigint> {
     const response = await request(app.getHttpServer())
       .post('/api/logistics/shipment-requests')
       .set('Cookie', cookie)
@@ -359,8 +358,10 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
         customerId: Number(ids.customer),
         shipToPartnerId: Number(ids.customer),
         requestedShipDate: '2026-10-30',
-        ...(plantId === null ? {} : { fulfillmentPlantId: Number(plantId) }),
-        lines: [{ itemId: Number(ids.itemA), requestedQty: 5, allocatedQty: 5, uomId: Number(ids.uom), shippingInspectionRequired: false }],
+        businessUnitId: Number(ids.businessUnit),
+        lines: warehouses.map((warehouseId) => ({
+          itemId: Number(ids.itemA), requestedQty: 5, allocatedQty: 5, uomId: Number(ids.uom), shippingInspectionRequired: false, warehouseId: Number(warehouseId),
+        })),
       })
       .expect(201);
     const id = BigInt(response.body.shipmentRequestId);
@@ -368,14 +369,12 @@ describe('인계 작업 알림 — 물류 (e2e)', () => {
     return id;
   }
 
-  async function assignPlant(requestId: bigint, plantId: bigint, version: string): Promise<void> {
-    await request(app.getHttpServer())
-      .put(`/api/logistics/shipment-requests/${requestId}`)
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .set('If-Match', version)
-      .send({ fulfillmentPlantId: Number(plantId) })
-      .expect(200);
+  /** 배포 전 모양(공장 단위·창고 미지정 줄)의 지시서 — 긴급 직행·옛 흐름 회귀용. */
+  async function legacyShipmentRequest(plantId: bigint): Promise<bigint> {
+    const id = await createShipmentRequest();
+    await prisma.shipment_request.update({ where: { shipment_request_id: id }, data: { fulfillment_plant_id: plantId } });
+    await prisma.shipment_request_line.updateMany({ where: { shipment_request_id: id }, data: { warehouse_id: null } });
+    return id;
   }
 
   function userCookie(appUserId: bigint): string {

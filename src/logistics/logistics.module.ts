@@ -6,7 +6,7 @@ import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule, DocumentStateService } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
-import { IqcHandoverNotifier, LotRegistryModule } from '../core/lot';
+import { IqcHandoverNotifier, LotRegistryModule, PutawayPendingNotifier } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule, NumberingService } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
@@ -34,10 +34,16 @@ import { InboundLotSplitService } from './inbound-lot/inbound-lot-split.service'
 import { MaterialLotBatchController } from './material-lot-batch/material-lot-batch.controller';
 import { MaterialLotBatchQueryService } from './material-lot-batch/material-lot-batch-query.service';
 import { MaterialLotBatchService } from './material-lot-batch/material-lot-batch.service';
+import { MaterialLotPairService } from './material-lot-batch/material-lot-pair.service';
+import { MaterialLotReviseService } from './material-lot-batch/material-lot-revise.service';
+import { MaterialLotTabService } from './material-lot-batch/material-lot-tab.service';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { DocumentProgressModule } from './document-progress/document-progress.module';
+import { ProductLotSplitModule } from './product-lot-split/product-lot-split.module';
 import { GoodsIssueController } from './goods-issue/goods-issue.controller';
+import { SplitMaterialLotController } from './split-material-lot/split-material-lot.controller';
+import { SplitMaterialLotQueryService } from './split-material-lot/split-material-lot-query.service';
 import { GoodsIssueQueryService } from './goods-issue/goods-issue-query.service';
 import { GoodsIssueUpdateService } from './goods-issue/goods-issue-update.service';
 import { GoodsIssueService } from './goods-issue/goods-issue.service';
@@ -87,6 +93,11 @@ import { ReplenishmentSettingService } from './replenishment/replenishment-setti
 import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayCompleteService } from './putaway/putaway-complete.service';
+import { PutawayDirectController } from './putaway-direct/putaway-direct.controller';
+import { PutawayDirectQueryService } from './putaway-direct/putaway-direct.query.service';
+import { PutawayDirectService } from './putaway-direct/putaway-direct.service';
+import { PutawayRecordController } from './putaway-record/putaway-record.controller';
+import { PutawayRecordService } from './putaway-record/putaway-record.service';
 import { PutawayTaskController } from './putaway/putaway-task.controller';
 import { PutawayTaskService } from './putaway/putaway-task.service';
 import { InboundProgressService } from './purchase-order/inbound-progress.service';
@@ -118,8 +129,11 @@ import { StockReinstatementController } from './stock-reinstatement/stock-reinst
 import { StockReinstatementService } from './stock-reinstatement/stock-reinstatement.service';
 import { ShipmentConfirmService } from './shipment/shipment-confirm.service';
 import { ShipmentService } from './shipment/shipment.service';
-import { ShipmentPickService } from './shipment-request/shipment-pick.service';
-import { ShipmentOqcSkipService } from './shipment-request/shipment-oqc-skip.service';
+import { ShipmentLotPickService } from './shipment-request/shipment-lot-pick.service';
+import { ShipmentLotReplaceService } from './shipment-request/shipment-lot-replace.service';
+import { ShipmentLotCodeService } from './shipment-request/shipment-lot-code.service';
+import { ShipmentCompletionService } from './shipment-request/shipment-completion.service';
+import { ShipmentRequestLotController } from './shipment-request/shipment-request-lot.controller';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
 import { ShipmentRequestService } from './shipment-request/shipment-request.service';
@@ -148,6 +162,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
+    // 생산 LOT 수량 분리(피처 013 · omf-all-around#303).
+    ProductLotSplitModule,
     // 인계 작업 알림(omf-all-around#190) — 입고·이동·출고 요청·출하지시·출하가 같은 tx 에서 알림을 쓴다.
     NotificationCoreModule,
     // 계약 밖 경로(입하 초과분)가 가드 밖이라 세션을 직접 푼다.
@@ -157,6 +173,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     MaterialLotBatchController,
     InboundLotController,
     GoodsIssueController,
+    SplitMaterialLotController,
     ReplenishmentItemController,
     ReplenishmentRunController,
     ReplenishmentArrivalController,
@@ -167,6 +184,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     GoodsReceiptLineListController,
     PickingController,
     PutawayTaskController,
+    PutawayDirectController,
+    PutawayRecordController,
     PurchaseOrderController,
     PurchaseOrderLineListController,
     InboundStageCountController,
@@ -174,6 +193,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentAllocationController,
     ShippingUnitController,
     ShipmentRequestController,
+    ShipmentRequestLotController,
     ShipmentController,
     ShipmentLineListController,
     StockReinstatementController,
@@ -194,6 +214,9 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
   providers: [
     MaterialLotBatchService,
     MaterialLotBatchQueryService,
+    MaterialLotTabService,
+    MaterialLotPairService,
+    MaterialLotReviseService,
     InboundLotReceiveService,
     InboundLotLotsService,
     InboundLotQueryService,
@@ -261,7 +284,9 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
         ),
     },
     IqcHandoverNotifier,
+    PutawayPendingNotifier,
     GoodsIssueQueryService,
+    SplitMaterialLotQueryService,
     GoodsIssueService,
     GoodsIssueUpdateService,
     GoodsReceiptService,
@@ -271,6 +296,9 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PickingQueryService,
     PutawayCompleteService,
     PutawayTaskService,
+    PutawayDirectQueryService,
+    PutawayDirectService,
+    PutawayRecordService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
     PurchaseOrderLineListService,
@@ -281,8 +309,10 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShippingUnitBoxService,
     ShippingUnitQueryService,
     ShippingUnitService,
-    ShipmentPickService,
-    ShipmentOqcSkipService,
+    ShipmentLotPickService,
+    ShipmentLotReplaceService,
+    ShipmentLotCodeService,
+    ShipmentCompletionService,
     ShipmentRequestQueryService,
     ShipmentRequestService,
     ShipmentQueryService,

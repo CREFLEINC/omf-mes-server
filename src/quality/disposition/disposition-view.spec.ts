@@ -39,6 +39,16 @@ describe('dispositionDecisionView', () => {
     expect(followUp.followUpPending).toBe(false);
   });
 
+  it('선별 판정은 새로 생긴 부적합을 싣고, 없으면 키를 생략한다(omf-all-around#352)', () => {
+    const sorted = dispositionDecisionView({
+      ...BASE_ROW, disposition_type_code: 'SORT', new_nonconformance_id: 11n, new_nonconformance_no: 'NC-0002',
+    }).view;
+    expect(sorted).toMatchObject({ newNonconformanceId: 11, newNonconformanceNo: 'NC-0002' });
+    const scrap = dispositionDecisionView({ ...BASE_ROW, new_nonconformance_id: null, new_nonconformance_no: null }).view;
+    expect(scrap).not.toHaveProperty('newNonconformanceId');
+    expect(scrap).not.toHaveProperty('newNonconformanceNo');
+  });
+
   it('⭐⭐ R-13 — lotId·lotNo·approvalRequestId 가 null 이면 키를 생략한다(널이 아니다)', () => {
     const { view } = dispositionDecisionView({ ...BASE_ROW, lot_id: null, lot_no: null, approval_request_id: null });
     expect(view).not.toHaveProperty('lotId');

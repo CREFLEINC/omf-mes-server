@@ -116,16 +116,17 @@ describe('ERP 보내기 실행기 (e2e · 대역)', () => {
     const where = { interface_code: { in: [CODE, `${CODE}-OTHER`] } };
     await prisma.erp_outbound_row.deleteMany({ where: { integration_message: where } });
     await prisma.integration_message.deleteMany({ where });
+    await prisma.approval_request.deleteMany({ where: { approval_request_no: { startsWith: CODE } } });
   }
 
-  async function message(interfaceCode = CODE): Promise<bigint> {
+  async function message(interfaceCode = CODE, target: { type: string; id: bigint } = { type: 'WORK_ORDER', id: 1n }): Promise<bigint> {
     const created = await prisma.integration_message.create({
       data: {
         message_key: `${interfaceCode}:${Math.random()}`,
         interface_code: interfaceCode,
         direction_code: 'OUTBOUND',
-        target_type_code: 'WORK_ORDER',
-        target_id: 1n,
+        target_type_code: target.type,
+        target_id: target.id,
         payload: {},
         status_code: 'PENDING',
         available_at: READY(),
@@ -361,6 +362,46 @@ describe('ERP 보내기 실행기 (e2e · 대역)', () => {
     await holder.release();
 
     expect((await stateOf(mine)).status_code).toBe('PENDING');
+  });
+
+  it('US6-3·Q14 취소 결재가 열린(상신 중·승인 뒤 미실행) 출하의 메시지는 잡지 않고 기다린다 — 반려되면 보낸다(피처 010)', async () => {
+    // 없는 출하 id 를 쓴다 — 실행기는 결재만 본다(출하가 취소됐으면 메시지가 이미 CANCELLED 라 잡히지 않는다).
+    const shipmentId = 900_000_000n + BigInt(Math.floor(Math.random() * 1_000_000));
+    const held = await message(CODE, { type: 'SHIPMENT', id: shipmentId });
+    const user = await prisma.app_user.findFirstOrThrow({ select: { app_user_id: true } });
+    const approval = await prisma.approval_request.create({ data: {
+      approval_request_no: `${CODE}-AP-${shipmentId}`, approval_type_code: 'SHIPMENT_CANCEL', target_type_code: 'SHIPMENT',
+      target_id: shipmentId, requested_by: user.app_user_id, requested_at: new Date(), status_code: 'PENDING', reason: '취소 상신',
+    } });
+
+    await runner.tick();
+    expect((await stateOf(held)).status_code).toBe('PENDING');
+    await prisma.approval_request.update({ where: { approval_request_id: approval.approval_request_id }, data: { status_code: 'APPROVED' } });
+    await runner.tick();
+    expect((await stateOf(held)).status_code).toBe('PENDING');
+
+    await prisma.approval_request.update({ where: { approval_request_id: approval.approval_request_id }, data: { status_code: 'REJECTED' } });
+    await runner.tick();
+    expect((await stateOf(held)).status_code).not.toBe('PENDING');
+    expect(builds).toBe(1);
+  });
+
+  it('FR-023·FR-024·Q14 송신 오류(FAILED) 출하도 취소 결재가 열려 있으면 재시도로 대기가 돼도 잡지 않는다(피처 010)', async () => {
+    const shipmentId = 900_000_000n + BigInt(Math.floor(Math.random() * 1_000_000));
+    const held = await message(CODE, { type: 'SHIPMENT', id: shipmentId });
+    await prisma.integration_message.update({ where: { integration_message_id: held }, data: { status_code: 'FAILED', retry_count: 1 } });
+    const user = await prisma.app_user.findFirstOrThrow({ select: { app_user_id: true } });
+    await prisma.approval_request.create({ data: {
+      approval_request_no: `${CODE}-APF-${shipmentId}`, approval_type_code: 'SHIPMENT_CANCEL', target_type_code: 'SHIPMENT',
+      target_id: shipmentId, requested_by: user.app_user_id, requested_at: new Date(), status_code: 'PENDING', reason: '송신 오류 출하 취소 상신',
+    } });
+    // 관리자가 재처리(`:retry`)를 눌러 대기로 돌린 모양 — 재처리 서비스와 같은 갱신.
+    await prisma.integration_message.update({ where: { integration_message_id: held }, data: { status_code: 'PENDING', available_at: READY() } });
+
+    await runner.tick();
+
+    expect((await stateOf(held)).status_code).toBe('PENDING');
+    expect(builds).toBe(0);
   });
 
   it('종료 신호 뒤에는 잡은 메시지를 보내지 않고 대기로 돌려놓는다', async () => {

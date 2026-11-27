@@ -689,7 +689,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "입하 LOT 으로 거른다 — 그 입하 LOT 의 자재 관리 LOT 잔액만. 범위 조건으로 인정한다(이것 하나로 조회할 수 있다). 근거: 피처 005 FR-035 · D-29"
+      "description": "입하 LOT 으로 거른다 — 그 입하 LOT 의 자재 관리 LOT 잔액만. 범위 조건으로 인정한다(이것 하나로 조회할 수 있다). 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "inboundLotNo",
@@ -697,7 +697,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "입하 LOT 번호 정확 일치 — inboundLotId 와 같은 범위 조건. 근거: 피처 005 FR-035 · D-29"
+      "description": "입하 LOT 번호 정확 일치 — inboundLotId 와 같은 범위 조건. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "qualityStatusCode",
@@ -705,7 +705,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "품질 상태로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED · 공유계약 G-32). ⛔ 목록은 서버가 갖는다 — 값을 화면에 박지 않는다(고객이 W-06-06 에서 바꾼다 · 공유계약 G-31 마스터안전형). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "품질 상태로 거른다 — 응답 qualityStatusCode 와 같은 기준(LOT 판정 · omf-all-around#302). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED · 공유계약 G-32). ⛔ 목록은 서버가 갖는다 — 값을 화면에 박지 않는다(고객이 W-06-06 에서 바꾼다 · 공유계약 G-31 마스터안전형). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-code-key": "CD-LOT-STATUS"
      },
      {
@@ -1472,6 +1472,14 @@
        "type": "string"
       },
       "description": "취급 단위 번호 검색"
+     },
+     {
+      "name": "labelIssued",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "포장 라벨(PACKING_LABEL) 발행 기록이 있는 포장만(true) · 없는 포장만(false). 인쇄 결과와 무관하게 발행 기록이 한 건이라도 있으면 발행된 것이다. 생략하면 거르지 않는다. 근거: P-04-04 발행 대기 · 재발행 (omf-all-around#327)"
      },
      {
       "name": "page",
@@ -2893,6 +2901,24 @@
       "description": "라인 단위 출고 QR 을 스캔했을 때. 그 라인이 속한 출고 전표를 낸다. 근거: P-01-02 §5-2 · M-01-09 §5-6"
      },
      {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "그 LOT 을 출고한 라인이 있는 전표. 자재 LOT 라벨(분할 LOT·전량 출고한 원래 LOT)을 스캔해 받을 출고를 찾을 때 쓴다(awaitingShopfloorReceiptOnly 와 함께). 근거: M-01-09 · 피처 008(omf-all-around#289)"
+     },
+     {
+      "name": "awaitingShopfloorReceiptOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "참이면 생산창고 입고 대상(원천 PICKING_ORDER)이고 전기 완료(POSTED)이며 생산창고 입고가 아직 없는 전표만. 폐기·반품 등 다른 원천 출고는 빠진다. 근거: M-01-09 · 피처 008(omf-all-around#289)"
+     },
+     {
       "name": "q",
       "in": "query",
       "schema": {
@@ -2965,7 +2991,7 @@
      "logistics"
     ],
     "summary": "출고 등록",
-    "description": "postImmediately 가 참이면 등록과 전기가 같은 트랜잭션이다 — 화면이 한 버튼인 경우다. 승인을 먼저 받는 기타 출고는 거짓으로 보낸다. 전기 때 생산 투입 출고(sourceDocumentTypeCode=PICKING_ORDER)는 LOT 상태가 정상(NORMAL)이 아니면 400 STATE_LOCKED(lines[i].lotId)다 — 공급사 반품·폐기 출고는 LOT 상태를 보지 않는다(omf-all-around#240). 근거: M-01-08 · W-01-05 · W-01-06",
+    "description": "postImmediately 가 참이면 등록과 전기가 같은 트랜잭션이다 — 화면이 한 버튼인 경우다. 승인을 먼저 받는 기타 출고는 거짓으로 보낸다. 전기 때 생산 투입 출고(sourceDocumentTypeCode=PICKING_ORDER)는 LOT 상태가 정상(NORMAL)이 아니면 400 STATE_LOCKED(lines[i].lotId)다 — 공급사 반품·폐기 출고는 LOT 상태를 보지 않는다(omf-all-around#240). 근거: M-01-08 · W-01-05 · W-01-06 부분 출고 분할(피처 008 · omf-all-around#289): 원천이 PICKING_ORDER 인 출고가 전기될 때, 라인 수량을 내도 그 LOT 재고가 어디든 남으면(부분 출고) 줄마다 분할 LOT(번호 = 수량 칸을 분할 수량으로 바꾸고 번호 칸에 -S{n})을 만들어 그것을 낸다 — 그래서 응답 lines[].lotId 는 요청의 lotId(원래 LOT)와 다르고 splitFromLotId 가 원래 LOT 이다. 분할은 원천 GOODS_ISSUE_SPLIT 의 분할 원장(LOT_SPLIT)으로 출발 위치에서 원래 LOT → 분할 LOT 으로 옮긴 뒤 출고 원장이 분할 LOT 을 낸다. 전량 출고면 분할하지 않는다. 피킹 라인의 LOT 은 원래 LOT 그대로다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4019,7 +4045,7 @@
      "logistics"
     ],
     "summary": "입고 처리",
-    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다). ⭐ ERP 구매입고(IF-GR-SEND, 입고번호 키)는 입고 줄의 LOT 이 모두 새 흐름(erp_send_mode_code=ON_FINALIZE) 입하 LOT 소속이면 적재하지 않는다 — 새 흐름은 입하 LOT 마다 최종 마감 때 한 번 간다(피처 005 §6 · R-25, 그 송신은 #265). 이전 데이터(PER_RECEIPT)와 섞이면 적재하고 보낼 때 새 흐름 줄을 뺀다. ⭐ 입고는 입하 마감 뒤에만 한다(피처 005 FR-014a · 2026-11-13, 검사 불필요 품목 포함): 줄의 자재 관리 LOT 이 입하 중(RECEIVING)인 새 흐름(ON_FINALIZE) 입하 LOT 소속이면 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=INBOUND_LOT_RECEIVING(문구에 입하 LOT 번호). 이전 데이터(PER_RECEIPT)·입하 LOT 없는 LOT 은 지금 그대로.",
+    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다). ⭐ ERP 구매입고(IF-GR-SEND, 입고번호 키)는 입고 줄의 LOT 이 모두 새 흐름(erp_send_mode_code=ON_FINALIZE) 입하 LOT 소속이면 적재하지 않는다 — 새 흐름은 입하 LOT 마다 최종 마감 때 한 번 간다(피처 005 §6 · R-25, 그 송신은 #265). 이전 데이터(PER_RECEIPT)와 섞이면 적재하고 보낼 때 새 흐름 줄을 뺀다. ⭐ 입고는 입하 마감 뒤에만 한다(피처 005 FR-014a · 2026-11-13, 검사 불필요 품목 포함): 줄의 자재 관리 LOT 이 입하 중(RECEIVING)인 새 흐름(ON_FINALIZE) 입하 LOT 소속이면 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=INBOUND_LOT_RECEIVING(문구에 입하 LOT 번호). 이전 데이터(PER_RECEIPT)·입하 LOT 없는 LOT 은 지금 그대로. ⭐⭐ 구매 입하 자재는 PDA 적치로 입고한다(피처 009 · 2026-11-18): 줄의 LOT 이 입하에서 왔으면(선별 자식은 조상 기준) 409 — errors[] 가 그 줄마다 scope=field · field=lines[i].lotId · code=USE_PDA_PUTAWAY. 제품 입고(M-04-04)·반품 입고(W-04-06)는 그대로다. 구매 입하 LOT 의 입고는 POST /logistics/putaway-pending-lots/{lotId}:putaway · :putaway-temporary. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4217,7 +4243,7 @@
      "logistics"
     ],
     "summary": "입고 기본값",
-    "description": "입고 처리 화면(W-01-10·W-04-06)이 LOT 마다 입고 칸을 미리 채운다 — 입고는 사람이 한다. 창고는 LOT 이 걸린 발주 라인의 ERP 창고와 같은 코드의 활성 MES 창고(입하와 같은 공장 · ERP 구매입고 송신도 같은 값), 불량 LOT 은 입하 공장의 활성 불량창고다. 위치는 그 창고의 적치 대기 자리. 상태는 정상 → NORMAL·AVAILABLE, 불량 → DEFECTIVE·ON_HOLD. 못 채운 칸은 null 이고 issues 가 까닭이다. 영업일·입고 시각은 화면이 채운다(공유계약 C-8). 근거: 사용자 결정 2026-10-29 · 장부 P-150 피처 005 FR-014a: 입하 중(RECEIVING)인 새 흐름 입하 LOT 의 자재 관리 LOT 은 입고 대상이 아니다 — 칸을 비우고 issues 에 INBOUND_LOT_RECEIVING.",
+    "description": "입고 처리 화면(W-01-10·W-04-06)이 LOT 마다 입고 칸을 미리 채운다 — 입고는 사람이 한다. 창고는 LOT 이 걸린 발주 라인의 ERP 창고와 같은 코드의 활성 MES 창고(입하와 같은 공장 · ERP 구매입고 송신도 같은 값), 불량 LOT 은 입하 공장의 활성 불량창고다. 위치는 그 창고의 적치 대기 자리. 상태는 정상 → NORMAL·AVAILABLE, 불량 → DEFECTIVE·ON_HOLD. 못 채운 칸은 null 이고 issues 가 까닭이다. 영업일·입고 시각은 화면이 채운다(공유계약 C-8). 근거: 사용자 결정 2026-10-29 · 장부 P-150 피처 005 FR-014a: 입하 중(RECEIVING)인 새 흐름 입하 LOT 의 자재 관리 LOT 은 입고 대상이 아니다 — 칸을 비우고 issues 에 INBOUND_LOT_RECEIVING. ⭐⭐ 피처 009 부터 입하에서 온 LOT 은 칸을 비우고(lotNo·itemId·uomId 만) issues 에 USE_PDA_PUTAWAY 하나 — 구매 입하 자재는 PDA 적치로 입고한다. 입하와 무관한 LOT 은 NOT_RECEIPT_READY, 없는 LOT 은 NOT_FOUND. 나머지 코드는 더 내지 않는다(옛 클라이언트를 위해 enum 에 남긴다). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
     "parameters": [
      {
       "name": "lotIds",
@@ -5879,7 +5905,7 @@
      "logistics"
     ],
     "summary": "추가 자재 출고 요청 발행",
-    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 추가 자재 출고 요청(W-02-10)은 관리웹이고, 관리웹 셸에는 오프라인이 없다(공유계약 C-5 · W-02-10 §1). Idempotency-Key 는 필수이나 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(C-8) — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6 ⭐ 생산 창고를 쓰는 공장(피처 003): 출발 생산 창고별로 요청을 나눠 만들고 바로 배포한다. 쓸 수 있는 양(가용 − 예정)을 넘으면 409 PLANNED_STOCK_CONFLICT — 사유가 긴급 대응·부족 보충이면 overridable=true(acceptPlannedOverride 로 다시 보내면 실제 가용까지 가져가고 다른 요청에 동적 부족이 생기며 이력이 남는다), 그 밖 사유는 쓸 수 있는 양까지만 담고(나머지 부족) 쓸 수 있는 양이 0 이면 overridable=false. 「자동」인데 어느 부서 생산 창고에도 가용 재고가 없는 자재는 noStockedWarehouse=true · overridable=false. 응답에 만든 요청 전부 requests(하나여도 배열 · 지금 방식 공장도 싣는다). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 추가 자재 출고 요청(W-02-10)은 관리웹이고, 관리웹 셸에는 오프라인이 없다(공유계약 C-5 · W-02-10 §1). Idempotency-Key 는 필수이나 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(C-8) — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6 ⭐ 생산 창고를 쓰는 공장(피처 003): 출발 생산 창고별로 요청을 나눠 만들고 바로 배포한다. 쓸 수 있는 양(가용 − 예정)을 넘으면 409 PLANNED_STOCK_CONFLICT — 사유가 긴급 대응·부족 보충이면 overridable=true(acceptPlannedOverride 로 다시 보내면 실제 가용까지 가져가고 다른 요청에 동적 부족이 생기며 이력이 남는다), 그 밖 사유는 쓸 수 있는 양까지만 담고(나머지 부족) 쓸 수 있는 양이 0 이면 overridable=false. 「자동」인데 어느 생산 창고에도 가용 재고가 없는 자재는 noStockedWarehouse=true · overridable=false. 응답에 만든 요청 전부 requests(하나여도 배열 · 지금 방식 공장도 싣는다). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 ⭐ 라인은 재고 단위(품목 기본 단위)로 바꿔 담는다 — 다른 단위로 온 라인은 W/O 배포와 같은 환산(품목 환산 → 공통 환산)으로 바꾸고 재고 단위 decimal_scale 로 올림한다. 환산이 없으면 400 INVALID(lines[i].uomId). 근거: omf-all-around#297",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5971,7 +5997,7 @@
      "logistics"
     ],
     "summary": "W/O 품목별 소요·기출고·부족",
-    "description": "추가 자재 출고 요청 화면(W-02-10 §3 ②)의 표를 이 한 호출이 채운다 — 「BOM 소요량 불러오기」 버튼이 부르는 것이 이 경로다. 자재 명세(BOM) 조회를 화면이 따로 하지 않는다. 근거: W-02-10 §5 · 공유계약 L-2",
+    "description": "추가 자재 출고 요청 화면(W-02-10 §3 ②)의 표를 이 한 호출이 채운다 — 「BOM 소요량 불러오기」 버튼이 부르는 것이 이 경로다. 자재 명세(BOM) 조회를 화면이 따로 하지 않는다. 근거: W-02-10 §5 · 공유계약 L-2 ⭐ 소요·부족은 재고 단위(품목 기본 단위)로 낸다 — W/O 배포와 같은 환산(품목 환산 → 공통 환산)을 쓴다. 근거: omf-all-around#297",
     "parameters": [
      {
       "name": "workOrderId",
@@ -6294,7 +6320,7 @@
      "logistics"
     ],
     "summary": "출고 요청 수정",
-    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고(W/O 라인 담당 부서의 이 공장 활성 생산 창고만 — 아니면 400 sourceWarehouseId INVALID)·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 RANGE), 늘리면 같은 상한을 건다(넘는 양은 부족), 미출고가 모두 0 이 되면 완료(POSTED · displayStatus DONE)로 옮기고 남은 피킹을 닫는다, 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청(requestTypeCode=REPLENISHMENT)은 고칠 수 없다 — 409 STATE_LOCKED(취소하고 다시 요청한다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "description": "생산 창고 규칙으로 만든 요청(sourceWarehouseId 있음)만 고친다 — 지금 방식 요청은 409 STATE_LOCKED. 모든 칸은 선택. 진행(줄 집은 양 또는 기출고 > 0) 없음: 출고 작업일·출발 창고(이 공장의 활성 생산창고만 — 아니면 400 sourceWarehouseId INVALID)·입고지·수량을 고치고, 배포된 요청이면 피킹 지시를 닫은 뒤 출고 작업일이 공장 오늘 이하면 다시 배포, 미래면 대기로 되돌린다. 수량·출발 창고가 바뀌면 생산 창고의 쓸 수 있는 양(가용 − 다른 요청의 예정)을 넘는 양은 줄여 shortageQty 로 남긴다. 진행 있음: lines 만 — requestedQty 는 기출고 이상(400 RANGE), 늘리면 같은 상한을 건다(넘는 양은 부족), 미출고가 모두 0 이 되면 완료(POSTED · displayStatus DONE)로 옮기고 남은 피킹을 닫는다, 집었지만 출고하지 않은 양이 있으면 409 STATE_LOCKED(잠시 뒤 다시). 날짜·창고 변경은 409 STATE_LOCKED. 휴일(공장 주간 근무일 밖)로 바꾸는데 acknowledgeHoliday 가 없으면 422 HOLIDAY_ACK_REQUIRED. versionNo 가 다르면 409 저장 충돌. 이력을 남긴다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66 창고 보충 요청(requestTypeCode=REPLENISHMENT)은 고칠 수 없다 — 409 STATE_LOCKED(취소하고 다시 요청한다). 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -8164,7 +8190,7 @@
      "logistics"
     ],
     "summary": "적치 완료",
-    "description": "`allowedLocations` 가 있으면 그 중 하나여야 한다 — 아니면 400 으로 막는다. 비어 있으면 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있으며, 이때도 실제 위치는 반드시 남는다. 근거: M-01-05 §5-2-1 · 사용자 결정 2026-10-29(적치 규칙 제거) 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "description": "`allowedLocations` 는 안내다 — 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있고(목록 밖이라고 막지 않는다), 실제 위치는 반드시 남는다. 막는 것은 「지정 품목만 받기」를 켠 위치의 지정 밖 품목(400 LOCATION_ITEM_RESTRICTED)과 맨 아래 위치·창고 일치 검사다. 근거: 피처 009 T054 · 사용자 결정 2026-11-18 · omf-all-around#294. 근거: M-01-05 §5-2-1 · 사용자 결정 2026-10-29(적치 규칙 제거) 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 단말 요청이면 지시에 완료 작업자·단말(completed_worker_id·completed_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 완료는 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -8263,7 +8289,7 @@
      "logistics"
     ],
     "summary": "임시 위치 적재",
-    "description": "정상 적치와 상태가 구분된다. 사유 코드와 비고 중 적어도 하나는 있어야 한다. 근거: M-01-07 §5-5 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230",
+    "description": "정상 적치와 상태가 구분된다. 사유 코드와 비고 중 적어도 하나는 있어야 한다. 근거: M-01-07 §5-5 창고 보충 수령 원천 지시는 적치 대기에 남은 만큼만 옮기고 끝낸다(0 이면 원장 없이 완료) — 응답 movedQty. 근거: 피처 004 생산 창고 보충 · omf-all-around#230 단말 요청이면 지시에 완료 작업자·단말(completed_worker_id·completed_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 완료는 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -10027,7 +10053,7 @@
      "trace"
     ],
     "summary": "LOT 하나의 하위 사슬(정방향)",
-    "description": "입하·자재입고 → 투입 W/O → 생산 LOT → 생산입고·포장(출하 단위)·출하. 반제품은 한 번에 한 단만 푼다 — consumedFurther 가 0 보다 큰 생산 LOT 으로 다시 부른다. 실적 배분이 없는 생산 LOT 은 잇지 않는다. 근거: 서버 선행 · 장부 P-119",
+    "description": "입하·자재입고 → 투입 W/O → 생산 LOT → 생산입고·포장(출하 단위)·출하. 반제품은 한 번에 한 단만 푼다 — consumedFurther 가 0 보다 큰 생산 LOT 으로 다시 부른다. 실적 배분이 없는 생산 LOT 은 잇지 않는다. 근거: 서버 선행 · 장부 P-119 부분 출고 분할(피처 008): 투입·생산 LOT 이음은 이 LOT 과 그 분할 자손(SPLIT 계보)의 투입을 함께 센다.",
     "security": [
      {
       "omfSession": []
@@ -10050,7 +10076,9 @@
             "basis",
             "workOrders",
             "truncated",
-            "totalProductionLotCount"
+            "totalProductionLotCount",
+            "splitFrom",
+            "splits"
            ],
            "properties": {
             "lot": {
@@ -10080,7 +10108,8 @@
                "firstConsumedAt",
                "lastConsumedAt",
                "linkBasis",
-               "productionLots"
+               "productionLots",
+               "viaLot"
               ],
               "properties": {
                "workOrderId": {
@@ -10123,6 +10152,30 @@
                 "items": {
                  "$ref": "#/components/schemas/LotFlowProductionLot"
                 }
+               },
+               "viaLot": {
+                "oneOf": [
+                 {
+                  "type": "object",
+                  "required": [
+                   "lotId",
+                   "lotNo"
+                  ],
+                  "properties": {
+                   "lotId": {
+                    "type": "integer",
+                    "format": "int64"
+                   },
+                   "lotNo": {
+                    "type": "string"
+                   }
+                  }
+                 },
+                 {
+                  "type": "null"
+                 }
+                ],
+                "description": "이 LOT 이 아니라 분할 자손으로만 투입된 W/O 면 그 자손 LOT(첫 투입). 이 LOT 자신이 투입됐으면 null"
                }
               }
              },
@@ -10134,6 +10187,24 @@
             },
             "totalProductionLotCount": {
              "type": "integer"
+            },
+            "splitFrom": {
+             "oneOf": [
+              {
+               "$ref": "#/components/schemas/LotFlowSplitLink"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "description": "이 LOT 이 분할 LOT 이면 그 부모(분할된 원래 LOT)"
+            },
+            "splits": {
+             "type": "array",
+             "items": {
+              "$ref": "#/components/schemas/LotFlowSplitLink"
+             },
+             "description": "이 LOT 에서 나온 분할 LOT — 자손 전체, 깊이 순(같은 깊이는 분할 시각 순). workOrders·생산 LOT 이음은 이 자손들의 투입을 함께 센다"
             }
            }
           }
@@ -10193,7 +10264,7 @@
      "trace"
     ],
     "summary": "LOT 하나의 상위 사슬(역방향)",
-    "description": "출하·포장·생산입고 ← 생산 LOT ← W/O·실적 ← 투입 자재 LOT ← 자재입고·입하(공급사·입하 번호·공급사 LOT 번호). 반제품은 한 번에 한 단만 푼다 — producedBy 가 있는 투입 자재 LOT 으로 다시 부른다. 투입 자재 집합과 근거는 input-materials 와 같다. 근거: 서버 선행 · 장부 P-119",
+    "description": "출하·포장·생산입고 ← 생산 LOT ← W/O·실적 ← 투입 자재 LOT ← 자재입고·입하(공급사·입하 번호·공급사 LOT 번호). 반제품은 한 번에 한 단만 푼다 — producedBy 가 있는 투입 자재 LOT 으로 다시 부른다. 투입 자재 집합과 근거는 input-materials 와 같다. 근거: 서버 선행 · 장부 P-119 피처 013(omf-all-around#303): 제품 분리 자식 LOT 은 원천이 W/O 가 아니어도 분할 뿌리(원천 W/O LOT)의 W/O·투입 자재를 채운다. 투입 자재가 반제품 분리 자식이면 producedBy 도 뿌리 W/O 다.",
     "security": [
      {
       "omfSession": []
@@ -10216,7 +10287,8 @@
             "goodQty",
             "basis",
             "workOrder",
-            "inputMaterials"
+            "inputMaterials",
+            "splitFrom"
            ],
            "properties": {
             "lot": {
@@ -10311,6 +10383,17 @@
               "$ref": "#/components/schemas/LotFlowInputMaterial"
              },
              "description": "투입 자재 LOT — 첫 투입 시각 → LOT 번호순. 실적 배분이 없는 생산 LOT 은 비운다(정방향이 그 LOT 을 잇지 않는 것과 같다)"
+            },
+            "splitFrom": {
+             "oneOf": [
+              {
+               "$ref": "#/components/schemas/LotFlowSplitLink"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "description": "이 LOT 이 분할 LOT 이면 그 부모 — 제품 분리 자식이면 원래 LOT(피처 013 · omf-all-around#303)"
             }
            }
           }
@@ -10427,7 +10510,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "투입한 LOT 의 입하 LOT — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
+      "description": "투입한 LOT 의 입하 LOT — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "inboundLotNo",
@@ -10435,7 +10518,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "투입한 LOT 의 입하 LOT 번호 정확 일치 — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29"
+      "description": "투입한 LOT 의 입하 LOT 번호 정확 일치 — 집는 조건이라 기간은 선택이다. 근거: 피처 005 FR-035 · D-29 부분 출고 분할 LOT(피처 008)은 입하 LOT 칸이 비어 있어 원래 LOT(조상)의 입하 LOT 으로 내고, 입하 LOT 으로 거르면 원래 LOT 에서 나온 분할 LOT 도 함께 나온다."
      },
      {
       "name": "supplierId",
@@ -11133,7 +11216,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "이 W/O 를 원천으로 발행된 LOT 만. 선발행 슬롯을 빠짐없이 훑는 경로다 — 마감(W-02-05 §3)과 POP 의 실적 대상 LOT 선택(P-02-04 §5)·생산LOT 완료(P-02-06 §3 좌단 LOT 목록)가 같은 축을 쓴다. ⭐ 저장된 형태는 다형 참조 짝(sourceTypeCode + sourceId)이지만 판별자 값 목록이 아직 미확정이라 짝 필터를 열지 않았다 — 값을 모르는 채 열면 눌러도 아무것도 안 걸린다(공유계약 G-23). 서버가 W/O 원천으로 풀어 준다"
+      "description": "이 W/O 를 원천으로 발행된 LOT 만. 선발행 슬롯을 빠짐없이 훑는 경로다 — 마감(W-02-05 §3)과 POP 의 실적 대상 LOT 선택(P-02-04 §5)·생산LOT 완료(P-02-06 §3 좌단 LOT 목록)가 같은 축을 쓴다. ⭐ 저장된 형태는 다형 참조 짝(sourceTypeCode + sourceId)이지만 판별자 값 목록이 아직 미확정이라 짝 필터를 열지 않았다 — 값을 모르는 채 열면 눌러도 아무것도 안 걸린다(공유계약 G-23). 서버가 W/O 원천으로 풀어 준다 피처 013(omf-all-around#303): 그 W/O 의 제품 분리 자식 LOT 도 함께 찾힌다(currentOnly 는 원천 W/O LOT 만)."
      },
      {
       "name": "receiptDispositionCode",
@@ -11946,7 +12029,6 @@
         "C14",
         "C15",
         "C29",
-        "C30",
         "C31"
        ]
       },
@@ -12097,185 +12179,6 @@
       }
      }
     }
-   }
-  },
-  "/trace/lots/{lotId}:request-iqc-skip": {
-   "parameters": [
-    {
-     "name": "lotId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "trace"
-    ],
-    "summary": "긴급 IQC 생략 요청",
-    "description": "입하돼 수입검사 대기인 LOT 에 대해 현장이 검사 생략을 요청한다 — 대상은 그 LOT 의 «입하 LOT» 이다(결재 targetTypeCode=INBOUND_LOT · targetId = 입하 LOT id, 피처 005 FR-032 · R-16). 입하 마감된(RECEIVED) 입하 LOT 만 — 입하 중·최종 마감이면 409. 입하 LOT 의 자재 관리 LOT 이 모두 입하 원천(아니면 400 INVALID)·수입검사 대기(아니면 400 STATE_LOCKED)여야 한다. 같은 입하 LOT 에 진행 중 요청이 있으면 400 APPROVAL_IN_PROGRESS. 요청을 만들기만 하고 한도는 승인자가 정한다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 응답에 그 입하 LOT 의 번호·자재 관리 LOT 수. 근거: M-01-13 §5-A · 공유계약 J-4 · 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/WorkerNo"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ApprovalRequestCreate"
-       }
-      }
-     }
-    },
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "202": {
-      "description": "요청됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/IqcSkipRequested"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "입하 마감된(RECEIVED) 입하 LOT 이 아니다 — 입하 중이면 먼저 입하 마감한다(errors[].code = INBOUND_LOT_RECEIVING). 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "approval_type_code=IQC_SKIP · target_type_code=INBOUND_LOT · target_id=lot_id 로 서버가 채운다(M-01-13 §5-A · 공유계약 A-16 등재 대상)."
-   }
-  },
-  "/trace/lots/{lotId}:skip-iqc": {
-   "parameters": [
-    {
-     "name": "lotId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "trace"
-    ],
-    "summary": "승인된 IQC 생략 실행",
-    "description": "긴급 IQC 생략 요청이 **승인된** 입하 LOT 의 수입검사를 생략한다 — 경로의 LOT 은 그 «입하 LOT» 을 가리킨다(결재 W-01-02 는 결재 대상의 targetLotId 를 싣는다 · 피처 005 FR-032). 입하 LOT 의 열린 IQC 의뢰(입하 LOT 요청 · 이전된 옛 LOT 요청)를 `SKIPPED` 로 닫고(변경 이력 SKIPPED), 자재 관리 LOT «전부»의 수입검사 대기 보류를 `INCOMING_INSPECTION_SKIPPED` 사유로 해제하고, 다른 열린 보류가 없으면 LOT 전부를 `NORMAL` 로 옮긴다(전이 C22 — 하나라도 다른 보류가 남으면 400 이고 아무것도 바뀌지 않는다). ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 승인된 요청이 없거나(입하 마감 취소가 무효로 만든 승인 포함) LOT 이 수입검사 대기가 아니거나 열린 IQC 의뢰가 없으면 400(code=STATE_LOCKED). 근거: W-01-02 · omf-all-around#105 (서버 선행 · 장부 P-36) · 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     }
-    ],
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "생략 실행됨 — 실행 뒤 LOT 상세 + 입하 LOT 번호·자재 관리 LOT 수",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/IqcSkipExecuted"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없는 LOT",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "승인 조회: approval_type_code=IQC_SKIP · target_type_code=INBOUND_LOT · target_id=lot_id · status_code=APPROVED. 서버 선행(장부 P-36)."
    }
   },
   "/trace/lots/{lotId}:complete": {
@@ -14145,6 +14048,640 @@
     }
    }
   },
+  "/logistics/material-lot-suppliers": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 공급사 목록(POP 첫째 칸)",
+    "description": "근거: P-01-01 (피처 014 FR-010·011, 세 칸). 공급사 = GET /logistics/material-lot-pairs 의 조합 셋(같은 q 거르기)을 공급사로 묶은 것 — 조합 하나라도 맞으면 그 공급사가 선다(발행 이력 없는 공급사도). unprintedCount·creatableCount 는 그 공급사 조합들의 합(pairs 와 같은 계산). 정렬: 할 일(미출력 LOT 이 있거나 P/O 남은 양이 받기 전 자동 LOT 보다 많은) 조합이 있는 공급사 먼저, 그다음 공급사 코드. 만들지 않는다",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사·품목 코드·이름(부분 일치) — 품목으로 찾으면 그 품목을 가진 공급사가 선다"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 200
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaterialLotSupplier"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-lot-pairs": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 공급사·품목 목록(왼쪽)",
+    "description": "근거: P-01-01 · W-01-14 (피처 014 FR-010·011). 조합 = 발행 묶음 ∪ 공급사·품목 기본 정보 ∪ 그 공장의 미마감 P/O 라인 — 발행 여부와 상관없이 모두. 정렬: supplierId 가 없으면(W-01-14) 할 일(미출력 LOT 이 있거나 P/O 남은 양이 받기 전 자동 LOT 보다 많은) 조합 먼저, 그다음 공급사 코드·품목 코드. supplierId 로 거르면(POP 품목 표) 최근 발행(lastIssuedAt)이 오래된 조합부터, 발행 이력 없는 조합은 맨 뒤, 그다음 품목 코드 — 전체 기준으로 줄 세운 뒤 쪽을 나눈다. 만들지 않는다",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사 — POP P-01-01 둘째 칸(품목 표)은 고른 공급사로 거른다(피처 014 세 칸). 비우면 모든 공급사"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "공급사·품목 코드·이름(부분 일치)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 200
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "summary"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaterialLotPair"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "summary": {
+           "type": "object",
+           "required": [
+            "unprintedCount"
+           ],
+           "properties": {
+            "unprintedCount": {
+             "type": "integer",
+             "description": "공장 전체 이미 만든 미출력 LOT 수 — POP 「화면 이동」 배지(찾기와 상관없음)"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 탭 목록(오른쪽) — 미출력은 P/O 몫을 만들면서",
+    "description": "근거: P-01-01 · W-01-14 (피처 014 FR-001~004·008·012~014). tab=UNPRINTED 일 때만 만든다 — (공장·공급사·품목) 잠금 안에서 P/O 몫(라인 남은 양 − 받은 양에 아직 들어가지 않은 자동 LOT, 발주일 순)을 계산해 이 쪽까지 모자란 만큼(page×size − 이미 있는 미출력)만 만든다. total(UNPRINTED) = 이미 있는 미출력 + 아직 만들 수 있는 수. 정렬: UNPRINTED 만든 차례(lot_id 오름차순) · PRINTED 마지막 발행 최근 순 · RECEIVED 받은 시각 최근 순 · VOIDED 폐기 시각 최근 순(기간 제한 없음).",
+    "x-internal-note": "조회가 만든다 — 같은 요청을 몇 번 보내도 결과가 같다(이미 만든 것을 다시 계산에 넣는다). GET 이라 POP 단말은 작업자 번호·멱등 키 없이 부른다. 자동 묶음은 creation_mode_code=AUTO, 만든 사람 = 요청 계정(단말이면 비움). 번호 충돌은 트랜잭션을 3번까지 다시 한다",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사",
+      "required": true
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목",
+      "required": true
+     },
+     {
+      "name": "tab",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "UNPRINTED",
+        "PRINTED",
+        "RECEIVED",
+        "VOIDED"
+       ]
+      },
+      "description": "탭 — 미출력 · 출력됨(입하 전) · 입하된 LOT(입하 마감 전까지만) · 폐기 LOT",
+      "required": true
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "minimum": 1
+      },
+      "description": "쪽"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "minimum": 1,
+       "maximum": 200
+      },
+      "description": "쪽 크기"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "generation"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaterialLotTabRow"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "generation": {
+           "oneOf": [
+            {
+             "$ref": "#/components/schemas/MaterialLotGeneration"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "description": "UNPRINTED 만 — 다른 탭은 null"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "LOT_NO_CONFLICT — 번호 충돌이 거듭됐다. 다시 부르면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-lots/lookup": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "자재 관리 LOT 번호 스캔 찾기",
+    "description": "근거: P-01-01 (피처 014 FR-021). 공장 안 자재 관리 LOT 하나를 번호로 찾아 그 공급사·품목과 속한 탭을 알린다. 만들지 않는다. 탭: 입하 LOT 이 있으면 RECEIVED, 폐기 VOIDED, 대기이고 라벨 발행 기록이 있으면 PRINTED, 없으면 UNPRINTED",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 100
+      },
+      "description": "자재 관리 LOT 번호(스캔 값)",
+      "required": true
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "찾음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "lot",
+          "supplier",
+          "item",
+          "tab"
+         ],
+         "properties": {
+          "lot": {
+           "$ref": "#/components/schemas/MaterialLotTabRow"
+          },
+          "supplier": {
+           "$ref": "#/components/schemas/MaterialLotPairSupplier"
+          },
+          "item": {
+           "$ref": "#/components/schemas/MaterialLotPairItem"
+          },
+          "tab": {
+           "type": "string",
+           "enum": [
+            "UNPRINTED",
+            "PRINTED",
+            "RECEIVED",
+            "VOIDED"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 POP 이고 질의 plantId 가 단말 공장이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NOT_FOUND 「이 공장에 없는 자재 관리 LOT 번호입니다」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/material-lots/{lotId}:revise": {
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "출력 전 자재 관리 LOT 수정",
+    "description": "근거: P-01-01 · W-01-14 (피처 014 FR-016·017). 미출력(대기 · 자재 관리 LOT 라벨 발행 기록 없음) LOT 의 수량·패키징을 고친다 — 자동·수동 모두. 같은 LOT(lotId·P/O 몫 기록 그대로)이고, 수량이 바뀌면 lotNo 를 새 수량 접두사(품목·수량·날짜·공급사)의 다음 일련으로 바꾼다. 같으면 번호 그대로. 줄인 몫은 다음 미출력 조회가 다시 만들고, 늘리면 만들 양이 줄어든다. 바꾼 사실은 감사(audit_event MATERIAL_LOT_REVISED, 옛·새 번호)에 남는다",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "POP 단말에서는 필수(활성 작업자 사번 — 단말 공장). 웹(W-01-14)은 보내지 않는다 — 계정이 행위자다."
+     },
+     {
+      "name": "lotId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "자재 관리 LOT"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaterialLotRevise"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "고친 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialLotTabRow"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — qty ≤ 0(RANGE) · qty ≠ count × qtyPerPackage(INVALID) · 없는 패키징 단위(INVALID)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다. 단말은 POP 이고 작업자(X-Worker-No)·멱등 키가 있어야 하며 LOT 이 단말 공장의 것이어야 한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-01 · W-01-14 중 하나가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "ALREADY_PRINTED(한 번이라도 출력한 LOT) · STATE_LOCKED(대기 아님 — 입하·폐기, 또는 자재 관리 LOT 이 아님) · LOT_NO_CONFLICT(번호 충돌이 거듭됨 — 다시 부르면 풀린다)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/trace/lots:void": {
    "post": {
     "tags": [
@@ -14965,7 +15502,7 @@
      "logistics"
     ],
     "summary": "입하 마감 취소",
-    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(대기·결과 0건 진행 중·생략 — 요청을 잠근 뒤 결과가 생겼으면 409 IQC_RECORDED. 행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 긴급 생략을 실행한 건은 자재 관리 LOT NORMAL → INSPECTION_PENDING(C30)·검사 대기 보류 다시·이벤트 SKIP_VOIDED·생략 결재 기록에 무효 표시, 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 먼저 열면 409 OPEN_RECEIPT_EXISTS(이때 openInboundLotNo 는 null — 다시 읽으면 목록이 번호를 준다). 근거: M-01-03",
+    "description": "피처 005 §3 · R-5a. 마감 취소 가능 조건(행 reopenable)일 때만 — 마감(RECEIVED)이 아니면 409 STATE_LOCKED, 조건을 못 채우면 409 InboundLotReopenBlocked(errors[].code 가 막힘 코드). 효과: P/O 배정 행 삭제·라인 received_qty 감소, RECEIVING·open_since_date = 공장 현지 오늘·마감 칸 비움·closed_automatically=false, IQC 요청 CANCELLED(대기·결과 0건 진행 중·생략 — 요청을 잠근 뒤 결과가 생겼으면 409 IQC_RECORDED. 행은 남기고 이벤트 CANCELLED_BY_REOPEN — 다시 마감하면 새 요청), 이벤트 RECEIPT_REOPENED. 다시 마감하면 배정을 처음부터 계산한다. 판정 뒤 같은 조합의 첫 받기가 입하 LOT 을 먼저 열면 409 OPEN_RECEIPT_EXISTS(이때 openInboundLotNo 는 null — 다시 읽으면 목록이 번호를 준다). 근거: M-01-03",
     "parameters": [
      {
       "name": "inboundLotId",
@@ -15574,6 +16111,1455 @@
       }
      }
     }
+   }
+  },
+  "/logistics/split-material-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "분할 LOT 라벨 목록",
+    "description": "부분 출고가 만든 분할 LOT(원천 GOODS_ISSUE_SPLIT)과 그 자재 LOT 라벨(MATERIAL_LOT_LABEL) 발행 요약. 미발행 = 발행 기록이 없거나 마지막 인쇄 결과가 FAILED(인쇄 대기 PENDING 은 찍은 것으로 본다). labelState=UNPRINTED(기본)는 기간 제한 없이 분할 시각 오래된 순, PRINTED 는 출고일(issuedFrom·issuedTo, UTC 하루 경계, 기본 오늘까지 최근 7일) 안에서 최근 순. unprintedCount 는 기간과 상관없는 그 공장 전체 미발행 수다. 라벨 발행은 POST /app/document-issues(MATERIAL_LOT_LABEL · 대상 LOT)를 그대로 쓴다. 단말(POP)은 질의 plantId 가 단말 공장이어야 한다. 근거: P-01-02 · 피처 008(omf-all-around#289)",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장",
+      "required": true
+     },
+     {
+      "name": "labelState",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "UNPRINTED",
+        "PRINTED"
+       ],
+       "default": "UNPRINTED"
+      },
+      "description": "UNPRINTED = 라벨 안 찍음(기간 무관) · PRINTED = 찍음"
+     },
+     {
+      "name": "issuedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "PRINTED 일 때 출고일 시작(기본 오늘−6일)"
+     },
+     {
+      "name": "issuedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "PRINTED 일 때 출고일 끝(기본 오늘)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "unprintedCount"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/SplitMaterialLot"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "unprintedCount": {
+           "type": "integer",
+           "minimum": 0,
+           "description": "이 공장의 라벨 안 찍은 분할 LOT 수(기간 무관)"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 공장 범위 밖이거나 작업자가 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — P-01-02 가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/putaway-pending-lots": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 대기 LOT 목록",
+    "description": "적치 지시 없이 PDA 에서 적치할 구매 입하 자재 관리 LOT. 단말이면 단말 공장으로 고정한다(창고로는 거르지 않는다 — LOT 이 아직 창고에 없다). 정렬: 입하 마감 오래된 순(입하 LOT 없는 이전 흐름 LOT 먼저) → 입하 LOT → LOT 번호. page.total 은 PDA 배지에 더하는 수와 같다. 근거: M-01-05 · M-01-07 ·피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 — 세션 호출이면 필수(없으면 400), 단말은 단말 공장"
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "한 LOT 만"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 200,
+       "default": 100
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/PutawayPendingLot"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/putaway-pending-lots:lookup": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 대기 LOT 확인(라벨 스캔)",
+    "description": "자재 관리 LOT 번호로 찾는다. 적치 대기가 아니어도 이유를 돌려준다(FR-011) — HAS_TASK 면 PDA 는 지금 적치 지시 경로로 연다. 다른 공장 LOT·입하 LOT 아님은 LOT 칸 없이 이유만. 근거: M-01-05 · M-01-07 ·피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "name": "lotNo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 100
+      }
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장(세션) — 없으면 LOT 의 공장으로 본다. 단말은 단말 공장"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "찾은 결과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayPendingLotLookup"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/putaway-pending-lots/{lotId}/location-check": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 위치 판정",
+    "description": "스캔한 위치 코드(전체 유일 — omf-all-around#292)로 위치를 찾고 판정·경로를 돌려준다. 창고를 먼저 고르지 않는다. 적치 쓰기가 같은 판정을 다시 한다. LOT 이 적치 대기가 아니면 409(code = PutawayPendingReason, ALREADY_PUT_AWAY 는 메시지에 위치). 근거: M-01-05 ·피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "parameters": [
+     {
+      "name": "locationCode",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 50
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "판정",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayLocationCheck"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다. 단말은 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/putaway-pending-lots/{lotId}:putaway": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치(입고)",
+    "description": "LOT 을 잠근 뒤 적치 대기 조건과 위치 판정을 다시 하고, 입고 1건(라인 1줄 · 수량 = 입고 가능 수량)을 적치 지시 없이 전기한다. 재고는 적치 대기 자리를 거치지 않고 그 위치로 바로 들어간다. DESIGNATED → 모드 DESIGNATED. UNDESIGNATED 는 confirmUndesignated=true 일 때만 모드 UNDESIGNATED 로 기록하고, 같은 트랜잭션에서 그 위치의 보관 품목에 이 품목을 더한다(이미 있으면 그대로 · 시스템 자리 제외 · FR-017a). 그 밖 판정은 400. 코어가 「지정 품목만 받기」로 거절하면(잠금 사이에 옵션이 켜짐) RESTRICTED_LOCATION 으로 돌려준다. 입고 상태: 정상 LOT NORMAL/AVAILABLE, 불량 LOT DEFECTIVE/ON_HOLD. ERP 구매입고 적재 규칙은 웹 입고와 같다(새 흐름 입하 LOT 은 최종 마감 때). 처리자는 단말 작업자 감사(대상 GOODS_RECEIPT·LOCATION_ITEM)로 남는다. 근거: M-01-05 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294 만든 입고 전표에 단말 작업자·단말(putaway_worker_id·putaway_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 호출은 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PutawayDirect"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "입고됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayDirectResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 또는 막힌 위치·창고 — code 가 판정 코드(PutawayLocationVerdict: NOT_FOUND · INACTIVE · OTHER_PLANT · STAGING · NOT_LEAF · DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE · NORMAL_LOT_IN_DEFECT_WAREHOUSE · RESTRICTED_LOCATION)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — 단말은 작업자 사번·멱등 키가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason · ALREADY_PUT_AWAY 는 메시지에 위치) · 또는 UNDESIGNATED_NEEDS_CONFIRM(미지정 위치인데 확인 표시 없음)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수다. 같은 LOT 동시 적치는 LOT 잠금으로 하나만 성공한다(FR-030)."
+   }
+  },
+  "/logistics/putaway-pending-lots/{lotId}:putaway-temporary": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "임시 적치(창고만)",
+    "description": "창고만 골라 그 창고의 「창고 전체」 자리로 입고한다(모드 TEMPORARY · 사유 없음 · 보관 품목 지정은 더하지 않는다). 창고 판정: 없음(NOT_FOUND)·꺼짐(INACTIVE)·다른 공장(OTHER_PLANT)·불량 규칙(DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE·NORMAL_LOT_IN_DEFECT_WAREHOUSE)이면 400. 같은 창고 안 정위치 이동 화면은 별도(omf-all-around#304). 근거: M-01-07 · 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294 만든 입고 전표에 단말 작업자·단말(putaway_worker_id·putaway_terminal_id)을 남긴다 — 적치 기록(GET /logistics/putaway-records)이 이 둘로 거른다. 세션 호출은 비운다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PutawayTemporary"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "입고됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PutawayDirectResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 또는 막힌 위치·창고 — code 가 판정 코드(PutawayLocationVerdict: NOT_FOUND · INACTIVE · OTHER_PLANT · STAGING · NOT_LEAF · DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE · NORMAL_LOT_IN_DEFECT_WAREHOUSE · RESTRICTED_LOCATION)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — 단말은 작업자 사번·멱등 키가 필요하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "적치 대기가 아닌 LOT — code 가 이유(PutawayPendingReason · ALREADY_PUT_AWAY 는 메시지에 위치)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수다."
+   }
+  },
+  "/logistics/putaway-records": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "적치 기록",
+    "description": "PDA 가 「내 기록」(scope=WORKER — X-Worker-No 의 작업자가 한 적치, 단말 무관) 또는 「이 단말」(scope=TERMINAL — 이 단말로 한 적치, 작업자 무관)의 적치를 공장 영업일 하루 단위로 본다. 지시 없는 적치(DIRECT — PDA :putaway·:putaway-temporary 로 만든 입고 라인)와 지시 적치(TASK — 단말이 :complete·:complete-temporary 한 적치 지시)를 합친다. MOBILE 단말 토큰 전용 — 계정 세션은 401(화면 권한이 없으면 403), POP 은 401. 결과는 언제나 단말 공장 안이다. businessDate 는 공장 오늘 ~ 6일 전, 벗어나면 400 RANGE. scope=WORKER 인데 X-Worker-No 가 없거나 이 공장 재직 작업자가 아니면 400 INVALID(필드 X-Worker-No). 정렬: recordedAt 내림차순, 같은 시각은 TASK 먼저·id 내림차순. 관리웹 입고·세션 완료(작업자·단말 없음)는 나오지 않는다. 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
+    "parameters": [
+     {
+      "name": "scope",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "WORKER",
+        "TERMINAL"
+       ]
+      },
+      "description": "WORKER — 요청 머리 X-Worker-No 의 작업자 · TERMINAL — 토큰의 단말"
+     },
+     {
+      "name": "businessDate",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "공장 영업일(YYYY-MM-DD) — 공장 시간대로 그날의 적치를 거른다. 공장 오늘 ~ 6일 전"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 200,
+       "default": 50
+      }
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/PutawayRecord"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — INVALID(scope·businessDate 형식, 작업자 없음) · RANGE(기간 밖 날짜)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "MOBILE 단말 토큰이 아니다(토큰 없음·계정 세션·POP) 또는 단말 범위 밖",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음(계정 세션)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/trace/material-trace-lots": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 기준 생산 추적 LOT 목록",
+    "description": "조건이 없으면 최근 100개 — 마지막 생산 투입 시각(정정된 원 투입 제외) 내림차순, 같으면 lotId 내림차순. 투입되지 않은 LOT 은 없다(반제품도 투입되면 들어간다). 공급사(partnerId) + 입하일 기간이면 조건 — 입하에 직접 든 관리 LOT(분할 자손 빼고)을 입하일(입하 LOT 입하일, 없으면 첫 자재 입고일) 내림차순으로 100개씩. 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-12",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 — 다른 공장 LOT 은 나오지 않는다"
+     },
+     {
+      "name": "partnerId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사 — dateFrom·dateTo 와 함께 주면 조건 목록"
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 시작(공장 현지 날짜)"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 종료(포함). 최대 366일"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      },
+      "description": "조건 목록만 — 최근 목록은 늘 첫 100개"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100,
+       "default": 100
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "LOT 목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TraceLotPage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 상대·기간 중 일부만 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 자재 기준 생산 추적 화면 권한(W-02-13)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/product-trace-lots": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "제품 기준 역추적 LOT 목록",
+    "description": "조건이 없으면 최근 100개 — LOT 마다 마지막 출하 완료 시각, 없으면 마지막 제품 창고 생산 입고 시각 하나로 섞어 내림차순(결정 2-나). 출하도 입고도 없는 LOT 은 없다. 고객(partnerId) + 출하일 기간이면 조건 — 그 고객 출하 완료분에 배분된 제품 LOT 을 한 줄씩(기간 안 마지막 출하일 내림차순) 100개씩. 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-12",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장 — 다른 공장 LOT 은 나오지 않는다"
+     },
+     {
+      "name": "partnerId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "고객 — dateFrom·dateTo 와 함께 주면 조건 목록"
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 시작(공장 현지 날짜)"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "기간 종료(포함). 최대 366일"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "default": 1
+      },
+      "description": "조건 목록만 — 최근 목록은 늘 첫 100개"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100,
+       "default": 100
+      }
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "LOT 목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TraceLotPage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 상대·기간 중 일부만 · 종료가 시작보다 앞섬 · 366일 초과(field·code 가 있는 칸 오류)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 제품 기준 역추적 화면 권한(W-02-14)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/trace-starts": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "번호 하나를 목록 줄 LOT 들로 풀기",
+    "description": "입력·스캔한 번호(앞뒤 공백 무시, 정확 일치)의 종류를 서버가 알아내 목록 줄 모양의 LOT 들로 준다. 같은 글자가 여러 종류에 맞으면 모두 준다. 맞는 것이 없거나 다른 공장 번호면 matches 가 빈 배열(200). 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-5·R-6",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "direction",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "FORWARD",
+        "BACKWARD"
+       ]
+      },
+      "description": "FORWARD = 자재 기준(W-02-13 필요) · BACKWARD = 제품 기준(W-02-14 필요)"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 200
+      },
+      "description": "번호 하나"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "맞은 번호 종류들",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "matches"
+         ],
+         "properties": {
+          "matches": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/TraceStartMatch"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — plantId·direction·q 없음, direction 값이 틀림",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 두 화면 권한 모두 없음, 또는 direction 에 맞는 권한(FORWARD W-02-13 · BACKWARD W-02-14) 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/forward-tree": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 기준 생산 추적 — LOT 하나의 정방향 계보",
+    "description": "기준 LOT 에서 투입 W/O → 생산 LOT → (반제품이면 다시 W/O → 생산 LOT …) → 포장(옛 기록)·출하·재고까지, 분할(008)·분리(013) 자식을 지나 끝까지 한 번에 준다. 단계마다 그 단계 LOT 전부를 한 번에 질의하고, 깊이 20·겹치지 않는 LOT 5,000 에서 멈춘다. 이음 규칙(계보 추정·W/O 단위 추정)은 지금 그대로다. 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-2·R-3",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "기준 LOT 하나(아무 종류 — 반제품 포함)"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "정방향 계보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForwardTree"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — plantId·lotId 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 자재 기준 생산 추적 화면 권한(W-02-13)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "공장에 없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/backward-tree": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "제품 기준 역추적 — LOT 하나의 역방향 계보",
+    "description": "기준 LOT(또는 그 LOT 의 시리얼)에서 생산 W/O → 투입 LOT → (반제품이면 그 W/O → 투입 LOT …) → 분할 원래 LOT → 입하 LOT·IQC 까지 한 번에 준다. 줄은 뿌리에서 멀어지는 쪽이다. 투입 자재는 지금 규칙 그대로 — 계보가 있는 W/O 는 그 LOT 의 계보, 없으면 W/O 투입 전부, 실적 배분이 없는 LOT 은 잇지 않는다. 깊이 20·LOT 5,000 상한. 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-2·R-4·R-6",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "기준 LOT 하나"
+     },
+     {
+      "name": "serialNo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 150
+      },
+      "description": "시리얼로 들어온 줄을 골랐을 때 — 뿌리가 SERIAL 항목이고 조립 기록(부품 시리얼)을 한 단계 보인다"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "역방향 계보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackwardTree"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — plantId·lotId 없음, serialNo 가 그 LOT 의 시리얼이 아님",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 제품 기준 역추적 화면 권한(W-02-14)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "공장에 없는 LOT, 없는 시리얼",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/forward-exports": {
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 기준 생산 추적 엑셀 내보내기",
+    "description": "목록의 LOT 들로 .xlsx 하나를 만든다. 기준 LOT 들을 한 번에 따라가고(깊이 20·겹치지 않는 LOT 5,000 을 함께 센다) 기준 LOT 마다 나눠 적는다. 시트 「최종 LOT」 = 첫 열 기준 LOT + 최종 LOT 줄(정방향은 출하마다 한 줄 — 제품 LOT·품목·생산 수량·현황(출하·재고 등)·고객·출하번호·출하일·출하 수량·창고·위치·재고 수량·W/O·LOT 상태·비고). 시트 「LOT 계보」 = 기준 LOT 마다 계보 줄 전체(묶음·접힘 무관, 깊이 우선, 같은 항목 두 번째부터 비고 「중복 — 위와 같음」, 조상과 같으면 「순환 참조 — 전개 중단」) — 기준 LOT·깊이·단계·번호·품목 코드·품목명·수량·단위·상위 항목(바로 위 항목 번호)·연결 근거(기록/추정)·LOT 상태·비고. 단계 이름은 화면과 같다 — 분할 LOT·분할된 원래 LOT(008), 분리 LOT·분리된 원래 LOT(013 — 출고 번호 없는 생산 LOT 자식), 다음 W/O 에 투입된 생산 LOT 은 반제품 LOT. LOT 상태는 공통코드 이름, 창고·위치는 「이름 (코드)」, 숫자 칸은 천 단위 표시 형식. 멈춘 단계에서 펼치지 못한 LOT 이 닿는 기준 LOT 은 비고 「일부」. 파일 이름 material-trace-YYYYMMDD-HHmm.xlsx(공장 시간). 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-8",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TraceExportRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": ".xlsx 파일(Content-Disposition: attachment)",
+      "content": {
+       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — lotIds 0개 또는 200 초과, serialNo 가 그 LOT 의 시리얼이 아님",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 자재 기준 생산 추적 화면 권한(W-02-13)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "공장에 없는 LOT·없는 시리얼이 있음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "TRACE_EXPORT_TOO_LARGE — 「LOT 계보」가 100,000줄을 넘어 만들지 않음. 화면 「LOT 이 너무 많습니다 — 조건을 좁히세요」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
+   }
+  },
+  "/trace/backward-exports": {
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "제품 기준 역추적 엑셀 내보내기",
+    "description": "목록의 LOT 들로 .xlsx 하나를 만든다. 기준 LOT 들을 한 번에 따라가고(깊이 20·겹치지 않는 LOT 5,000 을 함께 센다) 기준 LOT 마다 나눠 적는다. 시트 「최종 LOT」 = 첫 열 기준 LOT + 최종 LOT 줄(원자재 LOT × 투입 W/O — 자재 LOT·품목·공급사·공급사 LOT·입하 LOT·입하일·IQC·W/O·생산 LOT·투입량·단위·연결 근거·LOT 상태·비고). 시트 「LOT 계보」 = 기준 LOT 마다 계보 줄 전체(묶음·접힘 무관, 깊이 우선, 같은 항목 두 번째부터 비고 「중복 — 위와 같음」, 조상과 같으면 「순환 참조 — 전개 중단」) — 기준 LOT·깊이·단계·번호·품목 코드·품목명·수량·단위·상위 항목(바로 위 항목 번호)·연결 근거(기록/추정)·LOT 상태·비고. 단계 이름은 화면과 같다 — 분할 LOT·분할된 원래 LOT(008), 분리 LOT·분리된 원래 LOT(013 — 출고 번호 없는 생산 LOT 자식), 다음 W/O 에 투입된 생산 LOT 은 반제품 LOT. LOT 상태는 공통코드 이름, 창고·위치는 「이름 (코드)」, 숫자 칸은 천 단위 표시 형식. 멈춘 단계에서 펼치지 못한 LOT 이 닿는 기준 LOT 은 비고 「일부」. 파일 이름 product-trace-YYYYMMDD-HHmm.xlsx(공장 시간). 근거: 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355 R-8",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TraceExportRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": ".xlsx 파일(Content-Disposition: attachment)",
+      "content": {
+       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — lotIds 0개 또는 200 초과, serialNo 가 그 LOT 의 시리얼이 아님",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 제품 기준 역추적 화면 권한(W-02-14)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "공장에 없는 LOT·없는 시리얼이 있음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "TRACE_EXPORT_TOO_LARGE — 「LOT 계보」가 100,000줄을 넘어 만들지 않음. 화면 「LOT 이 너무 많습니다 — 조건을 좁히세요」",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355"
    }
   }
  },
@@ -16384,7 +18370,7 @@
         "type": "null"
        }
       ],
-      "description": "재생재·분할 LOT 처럼 입하에서 오지 않았으면 null"
+      "description": "재생재·분할 LOT 처럼 입하에서 오지 않았으면 null 분할 LOT 은 입하 LOT 칸이 비어 있어 뿌리 조상(원래 자재 LOT)의 입하를 보인다(피처 008)."
      },
      "receipts": {
       "type": "array",
@@ -16588,7 +18574,8 @@
        "lastConsumedAt",
        "linkBasis",
        "producedBy",
-       "cyclic"
+       "cyclic",
+       "splitAncestry"
       ],
       "properties": {
        "consumedQty": {
@@ -16632,6 +18619,13 @@
        "cyclic": {
         "type": "boolean",
         "description": "조회한 LOT 자신으로 되돌아왔다(경로 대조는 화면이 한다)"
+       },
+       "splitAncestry": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/LotFlowSplitLink"
+        },
+        "description": "투입된 LOT 이 분할 LOT 이면 그 조상 — 가까운 부모부터 뿌리(원래 자재 LOT)까지. 분할 LOT 이 아니면 빈 목록"
        }
       }
      }
@@ -16981,6 +18975,7 @@
      "lineNo",
      "itemId",
      "lotId",
+     "lotNo",
      "issueQty",
      "uomId",
      "sourceLocationId"
@@ -17025,7 +19020,30 @@
       "x-source-column": "lot_id",
       "type": "integer",
       "format": "int64",
+      "example": 1001,
+      "description": "출고한 LOT. 부분 출고 분할이면 분할 LOT 이다(피처 008)."
+     },
+     "lotNo": {
+      "type": "string",
+      "description": "lotId 의 LOT 번호(분할이면 분할 LOT 번호).",
+      "example": "040101-00022S|300|260731|100019|0001-S1"
+     },
+     "splitFromLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "이 라인이 부분 출고로 분할 LOT 을 만들었으면 원래 LOT. 아니면 null(전량 출고, 돌아온 분할 LOT 을 다시 전량 출고한 라인 포함).",
       "example": 1001
+     },
+     "splitFromLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "splitFromLotId 의 LOT 번호.",
+      "example": "040101-00022S|1000|260731|100019|0001"
      },
      "issueQty": {
       "x-source-column": "issue_qty",
@@ -17501,6 +19519,20 @@
       "example": 1001,
       "description": "되돌아온 물건이 어느 출하의 어느 배분이었나 — 반품 입고에서 genealogy 가 역방향으로 이어지는 자리다(W-04-06 §4-B · 머리말). ⭐ 비울 수 있다 — 원 출하를 못 찾는 갈래가 정상이다(W-04-06 §5-3 · omf-mes#302 ①과 같은 근거). ⭐ 서버가 lotId 만으로는 못 잇는다 — 한 LOT 이 여러 출하에 나뉘어 나가므로 «어느 배분»인지를 화면이 보낸다(W-04-06 §5-3 「여러 출하가 섞였을 때」). 화면이 그 값을 얻는 곳: GET /logistics/shipments/{shipmentId} 응답의 lines[].allocations[].shipmentLotAllocationId. ⚠ 가리키는 곳은 04 제품출하 계약의 ShipmentLotAllocation 이다 — 계약이 갈린다.",
       "x-internal-note": "저장 컬럼은 late FK 로 이미 실재한다(goods_receipt_line.original_shipment_lot_allocation_id) — 데이터 모델 담당 대기 사항 없음. 근거: W-04-06 §2 · omf-mes#302"
+     },
+     "putawayModeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       null
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "PDA 지시 없는 적치의 적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 지정 위치 · 미지정 위치 적치 · 임시 적치. 그 밖의 입고는 null. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
      }
     }
    },
@@ -17735,7 +19767,7 @@
        "string",
        "null"
       ],
-      "example": "SYS-STAGING"
+      "example": "K7QX-SYS-STAGING"
      },
      "qualityStatusCode": {
       "type": [
@@ -17775,7 +19807,8 @@
           "OTHER_PLANT_WAREHOUSE",
           "NO_DEFECT_WAREHOUSE",
           "MULTIPLE_DEFECT_WAREHOUSES",
-          "NO_STAGING_LOCATION"
+          "NO_STAGING_LOCATION",
+          "USE_PDA_PUTAWAY"
          ],
          "description": "NOT_FOUND 는 lotId·receiptTypeCode 밖의 칸을 비우고, NOT_RECEIPT_READY 는 lotNo·itemId·uomId 까지 싣는다. 입고 대기 = 입하가 취소·취소 요청이 아니고 LOT 이 정상·불량이고 입고 가능 수량이 남음. 그 밖의 까닭은 창고·위치 칸만 비운다(NO_STAGING_LOCATION 은 위치만)",
          "example": "NO_MES_WAREHOUSE"
@@ -19890,7 +21923,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). ⭐ LOT 이 있고 행 값이 정상·검사 대기면 LOT 의 현재 판정을 싣는다 — 검사 대기로 입고된 재고가 합격 뒤에도 「검사 대기」로 보이지 않게(omf-all-around#302). 근거: 공유계약 G-32",
       "example": "NORMAL",
       "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다.",
       "x-code-key": "CD-LOT-STATUS"
@@ -19957,14 +21990,14 @@
       "x-source-column": "blocked_qty",
       "type": "number",
       "minimum": 0,
-      "description": "내보낼 수 없게 묶인 수량. 묶인 수량에 더해 출고 할당이 집지 않는 잔액(정상 품질이 아님 · 가용 상태가 아님 · 풀리지 않은 LOT 보류)의 나머지(보유 − 예약 − 피킹)를 센다(omf-all-around#285). ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
+      "description": "내보낼 수 없게 묶인 수량. 묶인 수량에 더해 출고 할당이 집지 않는 잔액(정상 품질이 아님 · 가용 상태가 아님 · 풀리지 않은 LOT 보류)의 나머지(보유 − 예약 − 피킹)를 센다(omf-all-around#285). LOT 이 있는 잔액의 품질은 LOT 판정을 따른다(omf-all-around#302). ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
       "example": 0
      },
      "availableQty": {
       "x-source-column": "available_qty",
       "type": "number",
       "readOnly": true,
-      "description": "보유 − 예약 − 피킹 − 보류. 보류에 집을 수 없는 잔액이 들어가므로 출고 할당(정상 품질 · 가용 상태 · LOT 보류 아님)과 같은 기준이다(omf-all-around#285). 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
+      "description": "보유 − 예약 − 피킹 − 보류. 보류에 집을 수 없는 잔액이 들어가므로 출고 할당(정상 품질 · 가용 상태 · LOT 보류 아님)과 같은 기준이다(omf-all-around#285). LOT 이 있는 잔액의 정상 품질은 LOT 판정이 정상이고 행 품질이 정상 또는 검사 대기인 것이다 — 검사 대기로 입고된 재고는 PQC 합격으로 가용이 되고, 정상 LOT 이 검사 대기 · 불량으로 바뀌면 보류가 된다(omf-all-around#302). 서버가 계산해 내려보내며 화면도 서버도 다시 빼지 않는다",
       "example": 80
      },
      "uomId": {
@@ -21269,7 +23302,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "속한 입하 LOT(피처 005) — 입하 전·자재가 아닌 LOT 은 null"
+      "description": "속한 입하 LOT(피처 005) — 입하 전·자재가 아닌 LOT 은 null 단건 조회에서 분할 LOT 은 조상의 입하 LOT 을 낸다(피처 008)."
      },
      "inboundLotNo": {
       "type": [
@@ -21288,6 +23321,165 @@
        }
       ],
       "description": "패키징(피처 005 R-4) — 없으면 null. 분할로 생긴 자식 LOT 은 패키징이 없다"
+     },
+     "parentLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "부모 LOT 번호 — 단건 조회(GET /trace/lots/{lotId})만 싣는다(피처 008)"
+     },
+     "splitGoodsIssue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "원천이 GOODS_ISSUE_SPLIT(부분 출고 분할)이면 그 분할을 일으킨 출고 라인 — 단건 조회만",
+      "required": [
+       "goodsIssueId",
+       "goodsIssueNo",
+       "goodsIssueLineId",
+       "lineNo"
+      ],
+      "properties": {
+       "goodsIssueId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "goodsIssueNo": {
+        "type": "string"
+       },
+       "goodsIssueLineId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lineNo": {
+        "type": "integer"
+       }
+      }
+     },
+     "splitAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "분할 시각(SPLIT 계보) — 분할 LOT 이 아니면 null. 단건 조회만"
+     },
+     "splitChildCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "이 LOT 에서 나온 분할 LOT 수(자손 전체) — 단건 조회만"
+     },
+     "productLotSplit": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "제품 분리(피처 013 · omf-all-around#303) — 자식 LOT 이면 자기 분리(CHILD), 원래 LOT 이면 가장 최근 분리(PARENT). 분리가 없으면 null. 단건 조회만 싣는다.",
+      "properties": {
+       "productLotSplitId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "role": {
+        "type": "string",
+        "enum": [
+         "PARENT",
+         "CHILD"
+        ],
+        "example": "CHILD"
+       },
+       "splitQty": {
+        "type": "number",
+        "format": "double",
+        "example": 30
+       },
+       "splitAt": {
+        "type": "string",
+        "format": "date-time",
+        "example": "2026-11-20T03:00:00Z"
+       },
+       "splitWorkerNo": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "example": "100027"
+       },
+       "splitTerminalCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "example": "POP-FG-01"
+       },
+       "location": {
+        "type": "object",
+        "properties": {
+         "locationId": {
+          "type": "integer",
+          "format": "int64",
+          "example": 1001
+         },
+         "locationCode": {
+          "type": "string",
+          "example": "FG-A-01"
+         },
+         "warehouseCode": {
+          "type": "string",
+          "example": "FG"
+         },
+         "warehouseName": {
+          "type": "string",
+          "example": "제품 창고"
+         }
+        },
+        "required": [
+         "locationId",
+         "locationCode",
+         "warehouseCode",
+         "warehouseName"
+        ],
+        "description": "분리한 자리 — 위치와 그 창고(W-03-01 「FG · FG-A-01」)"
+       },
+       "confirmedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "example": "2026-11-20T03:10:00Z"
+       },
+       "confirmedWorkerNo": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "example": "100031"
+       },
+       "workOrderNo": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "생산 뿌리(원천 W/O LOT)의 W/O",
+        "example": "WO-261117-0012"
+       }
+      },
+      "required": [
+       "productLotSplitId",
+       "role",
+       "splitQty",
+       "splitAt",
+       "splitWorkerNo",
+       "splitTerminalCode",
+       "location",
+       "confirmedAt",
+       "confirmedWorkerNo",
+       "workOrderNo"
+      ]
      }
     },
     "x-internal-note": "입하 시점의 LOT 은 Hold 로 생긴다 — 가용 재고가 아니다(M-01-01 §5-4 · ✓확정 §재정의 #5). 📨 「W/O 내 순번」(별도 속성 — 선발행 슬롯 구간 지정용)은 계약이 앞서 세울 자리이고 저장 컬럼은 통지 대상이다 — 기다리지 않는다. 근거: 02-SW설계사양서 §4.6 · omf-mes#46."
@@ -21848,10 +24040,9 @@
        "C19",
        "C20",
        "C29",
-       "C30",
        "C31"
       ],
-      "description": "원본 설계 전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표. 서버 구현 기준 C17·C18·C19·C20을 더해 응답은 13종이다\n\n서버 구현 기준 추가값: C17·C18·C19=처분 전이, C20=재고 재등록 후 정상 전이(통보 089·218). C31=입하 등록 해제로 정상 → 검사 대기(피처 005). C30=입하 마감 취소로 IQC 생략 무효 → 검사 대기(피처 005). C29=IQC 판정 확정 취소로 정상·불량 → 검사 대기(피처 005).",
+      "description": "원본 설계 전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표. 서버 구현 기준 C17·C18·C19·C20을 더해 응답은 13종이다\n\n서버 구현 기준 추가값: C17·C18·C19=처분 전이, C20=재고 재등록 후 정상 전이(통보 089·218). C31=입하 등록 해제로 정상 → 검사 대기(피처 005). C29=IQC 판정 확정 취소로 정상·불량 → 검사 대기(피처 005).",
       "example": "C7",
       "x-code-key": "CD-LOT-STATUS-HISTORY-EVENT-TRANSITION"
      },
@@ -22731,9 +24922,10 @@
      "uomId",
      "requiredQty",
      "issuedQty",
-     "shortageQty"
+     "shortageQty",
+     "conversionSource"
     ],
-    "description": "한 W/O 의 품목별 소요·기출고·부족 한 줄",
+    "description": "한 W/O 의 품목별 소요·기출고·부족 한 줄. 같은 품목이라도 환산이 없어(NONE) BOM 단위로 남은 소요는 단위가 달라 따로 한 줄이다 — 그 줄의 기출고는 0 으로 낸다(기출고는 재고 단위)",
     "properties": {
      "itemId": {
       "type": "integer",
@@ -22751,11 +24943,12 @@
      "uomId": {
       "type": "integer",
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "재고 단위(품목 기본 단위). 환산이 없는 자재(conversionSource = NONE)만 BOM 단위로 남는다. 근거: omf-all-around#297"
      },
      "requiredQty": {
       "type": "number",
-      "description": "자재 명세(BOM) 소요량 — 이 W/O 의 지시수량 기준",
+      "description": "자재 명세(BOM) 소요량 — 이 W/O 의 지시수량 기준. W/O 배포와 같은 함수로 재고 단위로 바꿔(재고 단위 decimal_scale 로 올림) 낸다 — 배포 출고요청 수량과 같다",
       "example": 200
      },
      "issuedQty": {
@@ -22767,6 +24960,20 @@
       "type": "number",
       "description": "부족 = 소요 − 기출고. 음수면 0 으로 낸다",
       "example": 80
+     },
+     "conversionSource": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "ITEM",
+       "COMMON",
+       "NONE",
+       null
+      ],
+      "description": "재고 단위 환산 출처 — ITEM(품목 환산) · COMMON(공통 환산 상수) · NONE(환산 없음 — 수량·단위가 BOM 단위 그대로다. 그대로 요청하면 400). BOM 단위와 재고 단위가 같으면 null. 근거: omf-all-around#297 — 줄마다 낸다",
+      "example": "ITEM"
      }
     }
    },
@@ -24070,7 +26277,7 @@
      "businessDate",
      "occurredAt"
     ],
-    "description": "적치 완료. `allowedLocations` 가 있으면 그 중 하나여야 한다 — 아니면 400 INVALID(`actualLocationId`). 비어 있으면 이 창고의 켜진 맨 아래 위치 어디든. 보관 품목을 걸어 둔 위치에 다른 품목을 두면 재고 코어가 400 STATE_LOCKED(screen). 정 못 두면 `:complete-temporary`(사유 필수).",
+    "description": "적치 완료. `allowedLocations` 는 안내다 — 이 창고의 켜진 맨 아래 위치 어디든 둘 수 있다(피처 009 T054 · 사용자 결정 2026-11-18). 「지정 품목만 받기」를 켠 위치에 지정 밖 품목을 두면 재고 코어가 400 LOCATION_ITEM_RESTRICTED(screen). 정 못 두면 `:complete-temporary`(사유 필수).",
     "properties": {
      "actualLocationId": {
       "x-source-column": "actual_location_id",
@@ -25273,7 +27480,9 @@
      "putaway",
      "inboundLotId",
      "inboundLotNo",
-     "package"
+     "package",
+     "putawayModeCode",
+     "putawayLocation"
     ],
     "properties": {
      "purchaseOrderLineId": {
@@ -25364,7 +27573,7 @@
        "COMPLETED",
        "CANCELLED"
       ],
-      "description": "위에서부터 처음 맞는 줄 — 입하 취소(취소 요청 포함)는 CANCELLED · LOT 이 없는 입하 라인은 LABEL_PENDING · 입고할 수량이 남았으면: 폐기 LOT 은 CANCELLED, 검사 대기 LOT 은 검사 대상이면 의뢰 상태대로(없음 INSPECTION_REQUIRED · REQUESTED · IN_PROGRESS) 그 밖(판정 보류·합격 뒤 남은 보류·무검사 품목에 건 보류)은 INSPECTION_HELD, 합격·무검사·불량(불량창고로만)은 RECEIPT_READY · 다 입고했으면 살아 있는 입고의 적치 작업이 대기면 PUTAWAY_PENDING, 임시 적치면 PUTAWAY_TEMPORARY, 아니면 COMPLETED. 일부만 입고한 LOT 은 RECEIPT_READY 다(가장 뒤처진 단계 하나)"
+      "description": "위에서부터 처음 맞는 줄 — 입하 취소(취소 요청 포함)는 CANCELLED · LOT 이 없는 입하 라인은 LABEL_PENDING · 입고할 수량이 남았으면: 폐기 LOT 은 CANCELLED, 검사 대기 LOT 은 검사 대상이면 의뢰 상태대로(없음 INSPECTION_REQUIRED · REQUESTED · IN_PROGRESS) 그 밖(판정 보류·합격 뒤 남은 보류·무검사 품목에 건 보류)은 INSPECTION_HELD, 합격·무검사·불량(불량창고로만)은 RECEIPT_READY · 다 입고했으면 살아 있는 입고의 적치 작업이 대기면 PUTAWAY_PENDING, 임시 적치면 PUTAWAY_TEMPORARY, 아니면 COMPLETED. 일부만 입고한 LOT 은 RECEIPT_READY 다(가장 뒤처진 단계 하나) ⭐⭐ 피처 009(2026-11-18): 입고할 수량이 남은 합격·무검사·불량 LOT 은 RECEIPT_READY 가 아니라 PUTAWAY_PENDING(다음 할 일 PUTAWAY — PDA 적치가 곧 입고다), 일부만 입고한 LOT 도 PUTAWAY_PENDING. 입고 라인의 적치 방식이 TEMPORARY 면 PUTAWAY_TEMPORARY. RECEIPT_READY 는 더 내지 않는다(옛 클라이언트를 위해 enum 에 남긴다)."
      },
      "nextActionCode": {
       "type": [
@@ -25377,7 +27586,7 @@
        "PUTAWAY",
        null
       ],
-      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. 검사 의뢰는 입하 등록 때 서버가 만들므로 「의뢰 요청」은 없다(사용자 결정 2026-10-29 · #805)"
+      "description": "서버가 정한 다음 할 일. ISSUE_LABEL 은 POP 「자재LOT 등록·라벨 발행」(POST /trace/lots · INBOUND_RECEIPT_LINE)의 일이다. 검사 의뢰는 입하 등록 때 서버가 만들므로 「의뢰 요청」은 없다(사용자 결정 2026-10-29 · #805) ⭐⭐ POST_RECEIPT 는 더 내지 않는다 — 구매 입하 자재는 PDA 적치로 입고한다(피처 009)."
      },
      "blockedReasons": {
       "type": "array",
@@ -25565,6 +27774,46 @@
        }
       ],
       "description": "자재 관리 LOT 의 패키징(피처 005) — 없거나 라벨 대기 줄이면 null"
+     },
+     "putawayModeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       null
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "살아 있는 입고 라인의 적치 방식 — PDA 지시 없이 적치한 LOT 만 채운다(지시로 입고했거나 입고 전이면 null). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
+     },
+     "putawayLocation": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "적치한 자리 — 지시 없이 적치했으면 입고 라인의 도착 위치(임시 적치면 그 창고 「창고 전체」), 지시로 적치했으면 그 지시의 실제 위치(putaway 와 같다). 아직이면 null. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+      "required": [
+       "locationCode",
+       "locationName",
+       "locationAliasName"
+      ],
+      "properties": {
+       "locationCode": {
+        "type": "string"
+       },
+       "locationName": {
+        "type": "string"
+       },
+       "locationAliasName": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
      }
     }
    },
@@ -25740,7 +27989,7 @@
      "sourceWarehouseId": {
       "type": "integer",
       "format": "int64",
-      "description": "새 출발 생산 창고 — W/O 라인 담당 부서에 연결한 이 공장의 활성 생산 창고(W/O 상세 productionWarehouses)"
+      "description": "새 출발 생산 창고 — 이 공장의 활성 생산창고(W/O 상세 productionWarehouses)"
      },
      "destinationLocationId": {
       "type": "integer",
@@ -26192,7 +28441,7 @@
         },
         "noStockedWarehouse": {
          "type": "boolean",
-         "description": "어느 부서 생산 창고에도 가용 재고가 없다"
+         "description": "어느 생산 창고에도 가용 재고가 없다"
         },
         "affectedRequests": {
          "type": "array",
@@ -26506,7 +28755,7 @@
       "items": {
        "$ref": "#/components/schemas/ReplenishmentWarehouseSetting"
       },
-      "description": "공장 생산 창고(부서에 연결된 활성 창고) 전부"
+      "description": "공장 생산 창고(유형이 생산창고인 활성 창고) 전부"
      }
     },
     "description": "근거: 피처 004 생산 창고 보충 · omf-all-around#230"
@@ -26544,7 +28793,7 @@
      "productionWarehouseId": {
       "type": "integer",
       "format": "int64",
-      "description": "보충받을 생산 창고(부서에 연결된 활성 창고) — 아니면 400 INVALID"
+      "description": "보충받을 생산 창고(유형이 생산창고인 활성 창고) — 아니면 400 INVALID"
      },
      "businessDate": {
       "type": "string",
@@ -27765,7 +30014,7 @@
      },
      "reopenable": {
       "type": "boolean",
-      "description": "마감 취소 가능(data-model) — RECEIVED·ON_FINALIZE 이고 다음 단계 전(검사 필요: IQC 결과 0건·요청 확정/진행 아님 · 생략 결재 대기 없음 / 검사 불필요·긴급 생략 실행: 자재 관리 LOT 입고 0건)이며 같은 공장·공급사·품목에 입하 중(RECEIVING)이 없을 때 true"
+      "description": "마감 취소 가능(data-model) — RECEIVED·ON_FINALIZE 이고 다음 단계 전(검사 필요: IQC 결과 0건·요청 확정/진행 아님 / 검사 불필요: 자재 관리 LOT 입고 0건)이며 같은 공장·공급사·품목에 입하 중(RECEIVING)이 없을 때 true"
      },
      "reopenReasonCode": {
       "type": [
@@ -27775,10 +30024,9 @@
       "enum": [
        "NO_IQC_RESULT",
        "INSPECTION_NOT_REQUIRED",
-       "IQC_SKIPPED",
        null
       ],
-      "description": "마감 취소 가능 건의 까닭(C2 정함) — NO_IQC_RESULT(검사 필요·결과 0건 — 대기 또는 결과를 지워 0건이 된 진행 중 요청) · INSPECTION_NOT_REQUIRED(검사 불필요·기본 생략, 입고 전) · IQC_SKIPPED(긴급 생략 실행, 입고 전). reopenable 이 false 면 null"
+      "description": "마감 취소 가능 건의 까닭(C2 정함) — NO_IQC_RESULT(검사 필요·결과 0건 — 대기 또는 결과를 지워 0건이 된 진행 중 요청) · INSPECTION_NOT_REQUIRED(검사 불필요·기본 생략, 입고 전). reopenable 이 false 면 null"
      },
      "reopenBlockerCode": {
       "type": [
@@ -28633,7 +30881,7 @@
     "required": [
      "errors"
     ],
-    "description": "마감 취소 막힘(409) — errors[].code 가 막힘 코드다(scope=screen, 여럿이면 모두): IQC_RECORDED(IQC 결과가 1건 이상이거나 판정 확정 — 요청 상태가 아니라 결과 수로 본다: 결과를 모두 지웠거나 확정 취소·분리로 0건이 된 진행 중 요청은 막지 않는다, 2026-11-13) · GOODS_RECEIVED(자재 관리 LOT 입고 있음) · SKIP_PENDING(IQC 생략 결재 대기) · INBOUND_LOT_FINALIZED(최종 마감) · LEGACY_INBOUND_LOT(이전 데이터 PER_RECEIPT) · OPEN_RECEIPT_EXISTS(같은 공장·공급사·품목에 입하 중 — 메시지와 openInboundLotNo 에 그 번호)",
+    "description": "마감 취소 막힘(409) — errors[].code 가 막힘 코드다(scope=screen, 여럿이면 모두): IQC_RECORDED(IQC 결과가 1건 이상이거나 판정 확정 — 요청 상태가 아니라 결과 수로 본다: 결과를 모두 지웠거나 확정 취소·분리로 0건이 된 진행 중 요청은 막지 않는다, 2026-11-13) · GOODS_RECEIVED(자재 관리 LOT 입고 있음) · INBOUND_LOT_FINALIZED(최종 마감) · LEGACY_INBOUND_LOT(이전 데이터 PER_RECEIPT) · OPEN_RECEIPT_EXISTS(같은 공장·공급사·품목에 입하 중 — 메시지와 openInboundLotNo 에 그 번호)",
     "properties": {
      "errors": {
       "type": "array",
@@ -28647,39 +30895,6 @@
        "null"
       ],
       "description": "OPEN_RECEIPT_EXISTS 일 때 같은 조합의 입하 중 입하 LOT 번호(먼저 마감할 것), 그 밖 null. 판정 뒤 동시 받기와 겹친 OPEN_RECEIPT_EXISTS 는 번호를 못 읽어 null"
-     }
-    }
-   },
-   "IqcSkipRequested": {
-    "type": "object",
-    "description": "IQC 생략 요청 접수 — 결재와 그 대상 입하 LOT. 근거: 피처 005 §11 · FR-032 · omf-all-around#254",
-    "required": [
-     "approvalRequestId",
-     "inboundLotId",
-     "inboundLotNo",
-     "lotCount"
-    ],
-    "properties": {
-     "approvalRequestId": {
-      "x-source-column": "approval_request_id",
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     },
-     "inboundLotId": {
-      "type": "integer",
-      "format": "int64",
-      "example": 31,
-      "description": "결재 대상 입하 LOT(결재 targetId)"
-     },
-     "inboundLotNo": {
-      "type": "string",
-      "example": "IL-20261112-0001"
-     },
-     "lotCount": {
-      "type": "integer",
-      "example": 3,
-      "description": "생략하면 정상이 될 자재 관리 LOT 수(그 입하 LOT 의 전부)"
      }
     }
    },
@@ -28923,32 +31138,2222 @@
      }
     }
    },
-   "IqcSkipExecuted": {
-    "description": "IQC 생략 실행 응답 — 실행 뒤 LOT 상세 + 생략이 걸린 입하 LOT(피처 005 §11 · FR-032).",
+   "LotFlowSplitLink": {
+    "type": "object",
+    "description": "분할 관계 한 줄(피처 008 · omf-all-around#289). lot 은 이 관계로 이어진 상대 LOT — splitFrom·splitAncestry 에서는 부모(분할된 원래 LOT), splits 에서는 자식(분할 LOT)이다.",
+    "required": [
+     "relationTypeCode",
+     "lot",
+     "qty",
+     "uomCode",
+     "splitAt",
+     "goodsIssue"
+    ],
+    "properties": {
+     "relationTypeCode": {
+      "type": "string",
+      "enum": [
+       "SPLIT"
+      ]
+     },
+     "lot": {
+      "$ref": "#/components/schemas/LotFlowLotHead"
+     },
+     "qty": {
+      "type": "number",
+      "description": "분할 수량"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "goodsIssue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "분할을 일으킨 출고 라인 — 출고가 아닌 옛 분할(처분 선별)은 null",
+      "required": [
+       "goodsIssueId",
+       "goodsIssueNo",
+       "goodsIssueLineId",
+       "lineNo"
+      ],
+      "properties": {
+       "goodsIssueId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "goodsIssueNo": {
+        "type": "string"
+       },
+       "goodsIssueLineId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lineNo": {
+        "type": "integer"
+       }
+      }
+     }
+    }
+   },
+   "SplitMaterialLot": {
+    "type": "object",
+    "description": "부분 출고 분할 LOT 한 줄(P-01-02 라벨 대상). 라벨 면 값은 자재 LOT 라벨과 같다 — 수량은 분할 수량(initial_qty), 패키징 줄은 없다.",
+    "required": [
+     "lotId",
+     "lotNo",
+     "statusCode",
+     "lifecycleStatusCode",
+     "item",
+     "uomId",
+     "uomCode",
+     "qty",
+     "supplier",
+     "parentLot",
+     "splitAt",
+     "goodsIssue",
+     "destination",
+     "labelIssue"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "040101-00022S|300|260731|100019|0001-S1"
+     },
+     "statusCode": {
+      "type": "string"
+     },
+     "lifecycleStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "item": {
+      "type": "object",
+      "required": [
+       "itemId",
+       "itemCode",
+       "itemName"
+      ],
+      "properties": {
+       "itemId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "itemCode": {
+        "type": "string"
+       },
+       "itemName": {
+        "type": "string"
+       }
+      }
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "description": "분할 수량(라벨 수량)"
+     },
+     "supplier": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "supplierId",
+       "supplierCode",
+       "supplierName"
+      ],
+      "properties": {
+       "supplierId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "supplierCode": {
+        "type": "string"
+       },
+       "supplierName": {
+        "type": "string"
+       }
+      },
+      "description": "원조 LOT 의 입하 공급사 — 분할 LOT 은 입하 LOT 칸이 비어 있어 원조를 따라 올라간다"
+     },
+     "parentLot": {
+      "type": "object",
+      "required": [
+       "lotId",
+       "lotNo"
+      ],
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lotNo": {
+        "type": "string"
+       }
+      }
+     },
+     "splitAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "분할 시각(출고 occurredAt)"
+     },
+     "goodsIssue": {
+      "type": "object",
+      "required": [
+       "goodsIssueId",
+       "goodsIssueNo",
+       "goodsIssueLineId",
+       "lineNo"
+      ],
+      "properties": {
+       "goodsIssueId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "goodsIssueNo": {
+        "type": "string"
+       },
+       "goodsIssueLineId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lineNo": {
+        "type": "integer"
+       }
+      }
+     },
+     "destination": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "warehouseCode",
+       "locationCode"
+      ],
+      "properties": {
+       "warehouseCode": {
+        "type": "string"
+       },
+       "locationCode": {
+        "type": "string"
+       }
+      },
+      "description": "출고 도착(위치 도착일 때만)"
+     },
+     "labelIssue": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "자재 LOT 라벨 발행 요약 — 없으면 한 번도 안 찍음",
+      "required": [
+       "issueCount",
+       "lastIssueSeq",
+       "lastPrintOutcomeCode",
+       "lastIssuedAt"
+      ],
+      "properties": {
+       "issueCount": {
+        "type": "integer"
+       },
+       "lastIssueSeq": {
+        "type": "integer"
+       },
+       "lastPrintOutcomeCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "PENDING·SUCCEEDED·FAILED"
+       },
+       "lastIssuedAt": {
+        "type": "string",
+        "format": "date-time"
+       }
+      }
+     }
+    }
+   },
+   "PutawayPendingLot": {
+    "type": "object",
+    "description": "적치 대기 자재 관리 LOT — 입하에서 온 LOT 이고 입하 LOT 이 마감됐고(또는 입하 LOT 없는 이전 흐름), 상태가 정상·불량이고, 입고 가능 수량이 0 보다 크고, 취소되지 않은 입고·PENDING 적치 지시가 없다. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "required": [
+     "lotId",
+     "lotNo",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "qty",
+     "uomCode",
+     "lotStatusCode"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "description": "입고 가능 수량 — 적치하면 이만큼 입고된다(요청에 수량 없음)"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "lotStatusCode": {
+      "type": "string",
+      "enum": [
+       "NORMAL",
+       "DEFECTIVE"
+      ],
+      "description": "판정 — 불량(DEFECTIVE)은 불량창고에만 둔다"
+     },
+     "inboundLotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inboundLotNo": {
+      "type": "string",
+      "description": "입하 LOT — 입하 LOT 없는 이전 흐름 LOT 은 비운다"
+     },
+     "supplierName": {
+      "type": "string"
+     },
+     "inboundClosedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "입하 마감 시각"
+     }
+    }
+   },
+   "PutawayPendingReason": {
+    "type": "string",
+    "enum": [
+     "RECEIVING",
+     "INSPECTION",
+     "ALREADY_PUT_AWAY",
+     "HAS_TASK",
+     "DISPOSED",
+     "OTHER_PLANT",
+     "NOT_INBOUND"
+    ],
+    "description": "적치 대기가 아닌 이유 — 입하 마감 전 · IQC 판정 전(검사 대기·보류) · 이미 적치됨 · 배포 전 적치 지시 있음(지시로 끝낸다) · 처분됨(폐기·입고 가능 0) · 다른 공장 LOT · 구매 입하 LOT 아님. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
+   },
+   "PutawayPendingLotLookup": {
+    "type": "object",
+    "description": "스캔한 자재 관리 LOT 번호로 찾은 결과. 적치 대기면 지정 위치·임시 적치 창고를 함께 준다. 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "required": [
+     "lotNo",
+     "found",
+     "eligible"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "found": {
+      "type": "boolean"
+     },
+     "eligible": {
+      "type": "boolean",
+      "description": "적치 대기인가"
+     },
+     "reasonCode": {
+      "$ref": "#/components/schemas/PutawayPendingReason"
+     },
+     "putAway": {
+      "type": "object",
+      "description": "ALREADY_PUT_AWAY 일 때 적치된 자리",
+      "required": [
+       "warehouseName",
+       "locationCode",
+       "locationPath"
+      ],
+      "properties": {
+       "warehouseName": {
+        "type": "string"
+       },
+       "locationCode": {
+        "type": "string"
+       },
+       "locationPath": {
+        "type": "string"
+       },
+       "putawayModeCode": {
+        "type": "string",
+        "enum": [
+         "DESIGNATED",
+         "UNDESIGNATED",
+         "TEMPORARY"
+        ]
+       }
+      }
+     },
+     "putawayTaskIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "HAS_TASK 일 때 PENDING 적치 지시 — PDA 는 지금 지시 경로로 연다"
+     },
+     "lot": {
+      "$ref": "#/components/schemas/PutawayPendingLot"
+     },
+     "designated": {
+      "type": "array",
+      "description": "지정 위치(창고별) — 단말 공장의 활성 창고 중 불량 규칙에 맞는 창고에서, 이 품목이 보관 품목으로 지정된 켜진 맨 아래 위치와 위치를 나누지 않은 창고의 「창고 전체」. 지정 위치가 없는 창고는 빠진다",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouseId",
+        "warehouseName",
+        "isDefect",
+        "locations"
+       ],
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "warehouseName": {
+         "type": "string"
+        },
+        "isDefect": {
+         "type": "boolean"
+        },
+        "locations": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "locationId",
+           "locationCode",
+           "locationPath"
+          ],
+          "properties": {
+           "locationId": {
+            "type": "integer",
+            "format": "int64"
+           },
+           "locationCode": {
+            "type": "string"
+           },
+           "locationPath": {
+            "type": "string",
+            "description": "창고 › 구역 › 랙 … (이름)"
+           },
+           "aliasName": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "temporaryWarehouses": {
+      "type": "array",
+      "description": "임시 적치로 고를 수 있는 창고 — 불량 규칙에 맞는 활성 창고, 지정 위치가 있는 창고가 위",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouseId",
+        "warehouseName",
+        "isDefect",
+        "designatedCount"
+       ],
+       "properties": {
+        "warehouseId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "warehouseName": {
+         "type": "string"
+        },
+        "isDefect": {
+         "type": "boolean"
+        },
+        "designatedCount": {
+         "type": "integer"
+        }
+       }
+      }
+     }
+    }
+   },
+   "PutawayLocationVerdict": {
+    "type": "string",
+    "enum": [
+     "DESIGNATED",
+     "UNDESIGNATED",
+     "NOT_FOUND",
+     "INACTIVE",
+     "OTHER_PLANT",
+     "STAGING",
+     "NOT_LEAF",
+     "DEFECT_LOT_NEEDS_DEFECT_WAREHOUSE",
+     "NORMAL_LOT_IN_DEFECT_WAREHOUSE",
+     "RESTRICTED_LOCATION"
+    ],
+    "description": "위치 판정(위에서부터 처음 맞는 것) — 없음 · 꺼짐(위치·창고) · 다른 공장 · 적치 대기 자리 · 맨 아래 아님 · 불량 LOT 인데 일반 창고 · 정상 LOT 인데 불량창고 · 「지정 품목만 받기」 위치에 지정 밖 품목 · 이 품목이 지정된 위치(또는 위치를 나누지 않은 창고의 「창고 전체」)면 DESIGNATED · 그 밖(지정 없는 위치·다른 품목만 지정된 위치·나뉜 창고의 「창고 전체」)은 UNDESIGNATED. 품목 지정은 안내다(2026-11-18 결정). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294"
+   },
+   "PutawayLocationCheck": {
+    "type": "object",
+    "required": [
+     "verdictCode",
+     "locationCode",
+     "message",
+     "designationAddable"
+    ],
+    "properties": {
+     "verdictCode": {
+      "$ref": "#/components/schemas/PutawayLocationVerdict"
+     },
+     "locationId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "locationCode": {
+      "type": "string"
+     },
+     "locationPath": {
+      "type": "string"
+     },
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "warehouseName": {
+      "type": "string"
+     },
+     "isDefectWarehouse": {
+      "type": "boolean"
+     },
+     "message": {
+      "type": "string"
+     },
+     "designationAddable": {
+      "type": "boolean",
+      "description": "미지정 위치 적치로 기록하면 이 위치의 보관 품목에 이 품목이 더해지는가 — 판정이 UNDESIGNATED 이고 사람이 만든 위치(시스템 자리 아님)일 때만 true. 나뉜 창고의 「창고 전체」는 UNDESIGNATED 여도 false(FR-017a). PDA 는 true 일 때만 「적치하면 보관 품목에 더해집니다」를 보인다. 근거: 피처 009 · omf-all-around#294 · 검증 뒤 추가"
+     }
+    }
+   },
+   "PutawayDirect": {
+    "type": "object",
+    "required": [
+     "locationId",
+     "businessDate",
+     "occurredAt"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "locationId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "스캔한 위치(location-check 의 locationId)"
+     },
+     "confirmUndesignated": {
+      "type": "boolean",
+      "default": false,
+      "description": "미지정 위치 적치 확인 — 판정이 UNDESIGNATED 면 true 여야 기록한다(아니면 409 UNDESIGNATED_NEEDS_CONFIRM)"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "영업일 — 클라이언트가 보낸다(공유계약 C-8)"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "적치한 시각 — 입고 일시가 된다"
+     }
+    }
+   },
+   "PutawayTemporary": {
+    "type": "object",
+    "required": [
+     "warehouseId",
+     "businessDate",
+     "occurredAt"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "고른 창고 — 재고는 그 창고의 「창고 전체」 자리에 들어간다. 사유는 받지 않는다"
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "영업일 — 클라이언트가 보낸다(공유계약 C-8)"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "적치한 시각 — 입고 일시가 된다"
+     }
+    }
+   },
+   "PutawayDirectResult": {
+    "type": "object",
+    "description": "적치로 생긴 입고 1건(LOT 1개 · 라인 1줄). 근거: 피처 009 적치 지시 없는 구매 입고 적치 · omf-all-around#294",
+    "required": [
+     "goodsReceiptId",
+     "goodsReceiptNo",
+     "lotId",
+     "lotNo",
+     "qty",
+     "uomCode",
+     "warehouseId",
+     "warehouseName",
+     "locationId",
+     "locationCode",
+     "locationPath",
+     "putawayModeCode",
+     "itemDesignationAdded"
+    ],
+    "properties": {
+     "goodsReceiptId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "goodsReceiptNo": {
+      "type": "string"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "description": "입고 수량 = 입고 가능 수량 전부"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "warehouseName": {
+      "type": "string"
+     },
+     "locationId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "locationCode": {
+      "type": "string"
+     },
+     "locationPath": {
+      "type": "string"
+     },
+     "putawayModeCode": {
+      "type": "string",
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY"
+      ],
+      "x-code-key": "CD-GOODS-RECEIPT-PUTAWAY-MODE",
+      "description": "적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 지정 위치 · 미지정 위치 적치 · 임시 적치"
+     },
+     "itemDesignationAdded": {
+      "type": "boolean",
+      "description": "미지정 위치 적치로 그 위치의 보관 품목에 이 품목을 더했는가(이미 있었거나 시스템 자리·임시 적치면 false)"
+     }
+    }
+   },
+   "PutawayRecord": {
+    "type": "object",
+    "description": "적치 기록 한 줄(저장하지 않는 조회 결과). 근거: M-01-14 · 피처 011 PDA 적치 기록 · omf-all-around#325",
+    "required": [
+     "recordType",
+     "recordId",
+     "putawayModeCode",
+     "sourceCode",
+     "recordedAt",
+     "documentNo",
+     "lot",
+     "item",
+     "qty",
+     "uomCode",
+     "qualityStatusCode",
+     "warehouse",
+     "location",
+     "worker",
+     "terminalCode",
+     "receiptStatusCode"
+    ],
+    "properties": {
+     "recordType": {
+      "type": "string",
+      "enum": [
+       "DIRECT",
+       "TASK"
+      ],
+      "description": "DIRECT 지시 없는 적치(입고 라인) · TASK 지시 적치(적치 지시)"
+     },
+     "recordId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "DIRECT 는 입고 라인 id, TASK 는 적치 지시 id"
+     },
+     "putawayModeCode": {
+      "type": "string",
+      "enum": [
+       "DESIGNATED",
+       "UNDESIGNATED",
+       "TEMPORARY",
+       "TASK",
+       "TASK_TEMPORARY"
+      ],
+      "description": "DIRECT 는 입고 라인 적치 방식, TASK 는 완료(TASK)·임시 완료(TASK_TEMPORARY)"
+     },
+     "sourceCode": {
+      "type": "string",
+      "enum": [
+       "PURCHASE",
+       "PRODUCT",
+       "REPLENISHMENT"
+      ],
+      "description": "입고 종류 — 제품 입고 지시는 PRODUCT, 생산 창고 보충 수령 지시(피처 004)는 REPLENISHMENT, 그 밖은 PURCHASE"
+     },
+     "recordedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "DIRECT 는 입고 일시, TASK 는 완료 시각(단말이 보낸 occurredAt)"
+     },
+     "documentNo": {
+      "type": "string",
+      "description": "DIRECT 는 입고 전표 번호, TASK 는 적치 지시 번호"
+     },
+     "lot": {
+      "type": "object",
+      "required": [
+       "lotId",
+       "lotNo"
+      ],
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "lotNo": {
+        "type": "string"
+       }
+      }
+     },
+     "item": {
+      "type": "object",
+      "required": [
+       "itemId",
+       "itemCode",
+       "itemName"
+      ],
+      "properties": {
+       "itemId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "itemCode": {
+        "type": "string"
+       },
+       "itemName": {
+        "type": "string"
+       }
+      }
+     },
+     "qty": {
+      "type": "string",
+      "description": "적치한 수량(소수 꼬리 없는 10진 문자열). TASK 는 원장에 옮긴 양 — 보충 수령 지시는 남은 만큼만 옮긴다"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "qualityStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "품질 상태 — DEFECTIVE 면 「불량」. DIRECT 는 입고 라인, TASK 는 이어진 원장 줄의 도착 품질"
+     },
+     "warehouse": {
+      "type": "object",
+      "required": [
+       "warehouseId",
+       "warehouseCode",
+       "warehouseName"
+      ],
+      "properties": {
+       "warehouseId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "warehouseCode": {
+        "type": "string"
+       },
+       "warehouseName": {
+        "type": "string"
+       }
+      }
+     },
+     "location": {
+      "type": "object",
+      "required": [
+       "locationId",
+       "locationCode",
+       "path"
+      ],
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "locationCode": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string",
+        "description": "창고 › 상위 위치 › 위치 이름"
+       }
+      }
+     },
+     "worker": {
+      "type": "object",
+      "required": [
+       "workerNo",
+       "workerName"
+      ],
+      "properties": {
+       "workerNo": {
+        "type": "string"
+       },
+       "workerName": {
+        "type": "string"
+       }
+      }
+     },
+     "terminalCode": {
+      "type": "string"
+     },
+     "receiptStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "POSTED",
+       "CANCEL_REQUESTED",
+       "CANCELLED",
+       null
+      ],
+      "description": "이어진 입고 전표 상태 — CANCELLED 「입고 취소됨」(목록에 남는다) · CANCEL_REQUESTED 「취소 요청 중」. 보충 수령 지시처럼 입고 전표가 없으면 null"
+     }
+    }
+   },
+   "MaterialLotPairSupplier": {
+    "type": "object",
+    "required": [
+     "supplierId",
+     "code",
+     "name"
+    ],
+    "description": "공급사(피처 014)",
+    "properties": {
+     "supplierId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string",
+      "example": "100019"
+     },
+     "name": {
+      "type": "string"
+     }
+    }
+   },
+   "MaterialLotPairItem": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "code",
+     "name",
+     "baseUomCode"
+    ],
+    "description": "품목(피처 014)",
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "baseUomCode": {
+      "type": "string",
+      "description": "품목 기본 단위 — LOT 수량 단위",
+      "example": "EA"
+     }
+    }
+   },
+   "MaterialLotSupplier": {
+    "type": "object",
+    "description": "POP 첫째 칸 공급사 한 줄(피처 014 FR-010·011 · P-01-01 세 칸)",
+    "required": [
+     "supplier",
+     "pairCount",
+     "unprintedCount",
+     "creatableCount"
+    ],
+    "properties": {
+     "supplier": {
+      "$ref": "#/components/schemas/MaterialLotPairSupplier"
+     },
+     "pairCount": {
+      "type": "integer",
+      "description": "찾기 조건에 맞는 그 공급사 품목 조합 수"
+     },
+     "unprintedCount": {
+      "type": "integer",
+      "description": "그 공급사 조합들의 이미 만든 미출력 LOT 수 합"
+     },
+     "creatableCount": {
+      "type": "integer",
+      "description": "그 공급사 조합들의 P/O 몫으로 아직 만들 수 있는 LOT 수 합 — 계산만 하고 만들지 않는다. 화면 「미출력 N」= unprintedCount + creatableCount"
+     }
+    }
+   },
+   "MaterialLotPair": {
+    "type": "object",
+    "description": "왼쪽 공급사·품목 한 줄(피처 014 FR-010·011 · P-01-01 · W-01-14)",
+    "required": [
+     "supplier",
+     "item",
+     "unprintedCount",
+     "creatableCount",
+     "defaultsStatus",
+     "lotDefaults",
+     "printedCount",
+     "inspectionRequired",
+     "lastIssuedAt"
+    ],
+    "properties": {
+     "supplier": {
+      "$ref": "#/components/schemas/MaterialLotPairSupplier"
+     },
+     "item": {
+      "$ref": "#/components/schemas/MaterialLotPairItem"
+     },
+     "unprintedCount": {
+      "type": "integer",
+      "description": "이미 만든 미출력 LOT 수(대기 · 자재 관리 LOT 라벨 발행 기록 없음 · 수동 포함)"
+     },
+     "creatableCount": {
+      "type": "integer",
+      "description": "P/O 몫으로 아직 만들 수 있는 LOT 수 — 계산만 하고 만들지 않는다(기본값 없음·환산 없음이면 0)"
+     },
+     "defaultsStatus": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NO_DEFAULT",
+       "NO_CONVERSION"
+      ],
+      "description": "품목 LOT 기본값 상태 — NO_DEFAULT 보관 단위·기본크기 없음, NO_CONVERSION 보관 단위 → 기본 단위 환산 없음"
+     },
+     "lotDefaults": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "lotQty",
+         "packageUomId",
+         "packageUomCode",
+         "packageCount"
+        ],
+        "properties": {
+         "lotQty": {
+          "type": "number",
+          "description": "LOT 하나의 수량(품목 기본 단위로 바꾼 값)"
+         },
+         "packageUomId": {
+          "type": [
+           "integer",
+           "null"
+          ],
+          "format": "int64"
+         },
+         "packageUomCode": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "packageCount": {
+          "type": [
+           "integer",
+           "null"
+          ],
+          "description": "LOT 당 패키징 수량"
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "defaultsStatus = OK 일 때만"
+     },
+     "printedCount": {
+      "type": "integer",
+      "description": "출력됨 LOT 수 — 대기(입하 전) · 자재 관리 LOT 라벨 발행 기록 있음(「출력됨」 탭과 같은 기준)"
+     },
+     "inspectionRequired": {
+      "type": "boolean",
+      "description": "품목 수입검사(IQC) 대상"
+     },
+     "lastIssuedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "그 공급사·품목 자재 관리 LOT 의 마지막 라벨 발행 시각(입하·폐기된 LOT 포함) — 없으면 null"
+     }
+    }
+   },
+   "MaterialLotTabRow": {
+    "description": "오른쪽 탭의 자재 관리 LOT 한 줄(피처 014) — MaterialLotSummary 에 탭 차례·만든 방식·P/O 라인·받은·폐기 시각을 더한다",
     "allOf": [
      {
-      "$ref": "#/components/schemas/LotDetailResponse"
+      "$ref": "#/components/schemas/MaterialLotSummary"
      },
      {
       "type": "object",
       "required": [
-       "inboundLotNo",
-       "lotCount"
+       "seq",
+       "uomCode",
+       "creationModeCode",
+       "purchaseOrderLine",
+       "receivedAt",
+       "voidedAt"
       ],
       "properties": {
-       "inboundLotNo": {
-        "type": "string",
-        "description": "생략이 걸린 입하 LOT 번호",
-        "example": "IL-20261112-0001"
-       },
-       "lotCount": {
+       "seq": {
         "type": "integer",
-        "description": "그 입하 LOT 의 자재 관리 LOT 수(모두 정상으로 옮겼다)",
-        "example": 3
+        "minimum": 1,
+        "description": "이 탭에서의 차례(1 부터). 미출력 탭은 만든 차례(lot_id 오름차순 = P/O 발주일 차례) — 일괄 출력 장수가 이 차례의 앞에서부터다"
+       },
+       "uomCode": {
+        "type": "string",
+        "description": "수량 단위(품목 기본 단위)"
+       },
+       "creationModeCode": {
+        "type": "string",
+        "enum": [
+         "AUTO",
+         "MANUAL"
+        ],
+        "description": "AUTO = 조회가 P/O 몫으로 만듦(몫 기록 있음) · MANUAL = [만들기]"
+       },
+       "purchaseOrderLine": {
+        "oneOf": [
+         {
+          "type": "object",
+          "required": [
+           "purchaseOrderLineId",
+           "purchaseOrderNo",
+           "lineNo"
+          ],
+          "properties": {
+           "purchaseOrderLineId": {
+            "type": "integer",
+            "format": "int64"
+           },
+           "purchaseOrderNo": {
+            "type": "string"
+           },
+           "lineNo": {
+            "type": "integer"
+           }
+          }
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "description": "만들 때 채운 P/O 라인(AUTO 만). 입하 마감 배정은 이것과 따로 발주일 순이다"
+       },
+       "receivedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "받은 시각(입하된 LOT 탭)"
+       },
+       "voidedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "폐기 시각(폐기 LOT 탭)"
        }
       }
      }
     ]
+   },
+   "MaterialLotGeneration": {
+    "type": "object",
+    "required": [
+     "status",
+     "createdNow",
+     "creatableRemaining"
+    ],
+    "description": "미출력 탭 조회가 만든 결과(피처 014). P/O 감량으로 넘쳐도 따로 알리지 않는다(FR-009)",
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NO_DEFAULT",
+       "NO_CONVERSION",
+       "NO_OPEN_PO"
+      ],
+      "description": "NO_DEFAULT 「기본 단위 설정이 안되어있습니다. 직접 생성해 주세요.」 · NO_CONVERSION 「품목 단위 환산이 없어 LOT 을 만들 수 없습니다. 관리자에게 문의하세요」 · NO_OPEN_PO(기본값은 있고 미출력·만들 수 있는 몫이 모두 0) 「입하 예정 계획이 없습니다. 관리자에게 문의하세요」. NO_* 여도 수동으로 만든 미출력 LOT 은 목록에 나온다"
+     },
+     "createdNow": {
+      "type": "integer",
+      "description": "이번 요청이 만든 LOT 수"
+     },
+     "creatableRemaining": {
+      "type": "integer",
+      "description": "이번에 만든 뒤에도 P/O 몫으로 더 만들 수 있는 LOT 수"
+     }
+    }
+   },
+   "MaterialLotRevise": {
+    "type": "object",
+    "required": [
+     "qty",
+     "package"
+    ],
+    "description": "출력 전 자재 관리 LOT 수정(피처 014 FR-016·017). 수량이 바뀌면 번호의 수량 자리가 바뀌므로 새 일련을 받는다",
+    "properties": {
+     "qty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "LOT 수량(품목 기본 단위)"
+     },
+     "package": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "uomId",
+         "count",
+         "qtyPerPackage"
+        ],
+        "properties": {
+         "uomId": {
+          "type": "integer",
+          "format": "int64",
+          "description": "패키징 단위"
+         },
+         "count": {
+          "type": "integer",
+          "minimum": 1
+         },
+         "qtyPerPackage": {
+          "type": "number",
+          "exclusiveMinimum": 0
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "null = 패키징 없음. 있으면 qty = count × qtyPerPackage 여야 한다"
+     }
+    }
+   },
+   "TraceTreeLot": {
+    "type": "object",
+    "description": "추적 LOT 머리 — 목록 줄·계보 항목이 함께 쓴다(피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355)",
+    "required": [
+     "lotId",
+     "lotNo",
+     "lotTypeCode",
+     "statusCode",
+     "lifecycleStatusCode"
+    ],
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "lotTypeCode": {
+      "type": "string"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "LOT 상태(NORMAL·HOLD·DEFECT·SCRAPPED 등) — 화면 상태 칩"
+     },
+     "lifecycleStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   },
+   "TraceTreeItem": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "code",
+     "name"
+    ],
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    }
+   },
+   "TraceTreePartner": {
+    "type": "object",
+    "description": "공급사 또는 고객",
+    "required": [
+     "partnerId",
+     "code",
+     "name"
+    ],
+    "properties": {
+     "partnerId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    }
+   },
+   "TraceLotRow": {
+    "type": "object",
+    "description": "LOT 목록 한 줄(contracts §1·§2 공통 · FR-025). 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355",
+    "required": [
+     "lot",
+     "item",
+     "qty",
+     "uomCode",
+     "partner",
+     "inboundLotNo",
+     "sortDate",
+     "sortDateKind"
+    ],
+    "properties": {
+     "lot": {
+      "$ref": "#/components/schemas/TraceTreeLot"
+     },
+     "item": {
+      "$ref": "#/components/schemas/TraceTreeItem"
+     },
+     "qty": {
+      "type": "number",
+      "description": "LOT 처음 수량"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "partner": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/TraceTreePartner"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "자재 쪽은 공급사(분할 LOT 이면 원래 LOT 의 입하 공급사, 입하 LOT 이 없으면 옛 입하 줄의 공급사), 제품 쪽은 마지막 출하 완료의 고객(출하 전이면 null)"
+     },
+     "inboundLotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "자재 쪽만 — 입하 LOT 번호(분할 LOT 이면 원래 LOT 것). 없으면 null"
+     },
+     "sortDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "정렬 날짜 — sortDateKind 의 시각. 번호 풀기 줄은 최근 규칙과 같고 없으면 null"
+     },
+     "sortDateKind": {
+      "oneOf": [
+       {
+        "type": "string",
+        "enum": [
+         "CONSUMED",
+         "INBOUND",
+         "SHIPPED",
+         "RECEIVED"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "CONSUMED = 마지막 생산 투입(정정된 원 투입 제외) · INBOUND = 입하일(입하 LOT 의 입하 문서 시각, 옛 입하는 첫 자재 입고) · SHIPPED = 마지막 출하 완료(조건 목록은 기간 안 마지막) · RECEIVED = 제품 창고 생산 입고"
+     }
+    }
+   },
+   "TraceLotPage": {
+    "type": "object",
+    "required": [
+     "mode",
+     "items",
+     "page"
+    ],
+    "properties": {
+     "mode": {
+      "type": "string",
+      "enum": [
+       "RECENT",
+       "CONDITION"
+      ],
+      "description": "RECENT = 조건 없이 최근 100개 · CONDITION = 상대 + 기간 결과(100개씩)"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceLotRow"
+      }
+     },
+     "page": {
+      "$ref": "#/components/schemas/PageMeta"
+     }
+    }
+   },
+   "TraceStartMatch": {
+    "type": "object",
+    "description": "번호 하나가 맞은 종류 하나와 그 LOT 들",
+    "required": [
+     "matchedBy",
+     "label",
+     "serialNo",
+     "otherDirection",
+     "truncated",
+     "lots"
+    ],
+    "properties": {
+     "matchedBy": {
+      "type": "string",
+      "enum": [
+       "MATERIAL_LOT_NO",
+       "INBOUND_LOT_NO",
+       "SUPPLIER_LOT_NO",
+       "PRODUCT_LOT_NO",
+       "SHIPMENT_NO",
+       "SERIAL_NO"
+      ],
+      "description": "FORWARD 는 MATERIAL_LOT_NO → INBOUND_LOT_NO → SUPPLIER_LOT_NO, BACKWARD 는 PRODUCT_LOT_NO → SHIPMENT_NO → SERIAL_NO 순으로 준다"
+     },
+     "label": {
+      "type": "string",
+      "description": "맞은 번호(화면이 「어느 번호로 들어왔는지」 줄에 보인다)"
+     },
+     "serialNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "SERIAL_NO 일 때만 — 그 줄을 고르면 backward-tree 에 serialNo 로 넘긴다"
+     },
+     "otherDirection": {
+      "type": "boolean",
+      "description": "반대 방향 LOT 번호다(LOT 번호로 맞은 것만) — FORWARD 에 생산으로 만들어지고 다시 투입되지 않은 LOT, BACKWARD 에 생산으로 만들어지지 않은 LOT. 반제품은 두 방향 모두 false. 화면은 목록을 바꾸지 않고 [그 화면으로 열기]를 보인다"
+     },
+     "truncated": {
+      "type": "boolean",
+      "description": "한 번호의 LOT 이 200 을 넘어 앞(lot id 순) 200 개만 실었다"
+     },
+     "lots": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceLotRow"
+      },
+      "description": "입하 LOT·공급사 LOT 은 그 묶음의 관리 LOT(분할 자손 빼고), 출하는 출하 완료분의 배분 LOT, 시리얼은 그 생산 LOT 하나"
+     }
+    }
+   },
+   "TraceGraphNode": {
+    "type": "object",
+    "description": "계보 항목 하나(contracts §3·§4). nodeKey 는 종류 머리글자 + id 로 유일하다(L: LOT · W: W/O · S: 출하 · H: 포장 · K: 재고 위치 · N: 시리얼 · I: 입하 LOT). 같은 LOT·W/O 는 한 항목이다. 종류별 칸만 싣는다. 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355",
+    "required": [
+     "nodeKey",
+     "kind"
+    ],
+    "properties": {
+     "nodeKey": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "MATERIAL_LOT",
+       "SPLIT_LOT",
+       "WORK_ORDER",
+       "PRODUCTION_LOT",
+       "PACKAGE",
+       "SHIPMENT",
+       "STOCK",
+       "SERIAL",
+       "COMPONENT_SERIAL",
+       "INBOUND_LOT"
+      ],
+      "description": "SPLIT_LOT = 008 부분 출고 분할·013 생산 LOT 분리 자식 · PACKAGE = 010 이전 포장 기록만 · STOCK = 그 LOT 의 창고·위치 재고(on_hand > 0)"
+     },
+     "lot": {
+      "$ref": "#/components/schemas/TraceTreeLot"
+     },
+     "item": {
+      "$ref": "#/components/schemas/TraceTreeItem"
+     },
+     "qty": {
+      "type": "number"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "material": {
+      "type": "object",
+      "description": "자재 LOT(분할 자식 포함)만 — 입하·공급사는 분할이면 원래 LOT 것. 공급사 LOT 은 lot_external_identifier 먼저, 없으면 옛 입하 줄(F-6). IQC 결과는 화면 요약(입하 LOT·공급사·공급사 LOT 옆)에 보인다",
+      "required": [
+       "inboundLotId",
+       "inboundLotNo",
+       "supplier",
+       "supplierLotNo",
+       "receivedAt",
+       "iqcJudgmentCode"
+      ],
+      "properties": {
+       "inboundLotId": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "format": "int64"
+       },
+       "inboundLotNo": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "supplier": {
+        "oneOf": [
+         {
+          "$ref": "#/components/schemas/TraceTreePartner"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "supplierLotNo": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "receivedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "입하 문서 시각"
+       },
+       "iqcJudgmentCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "입하 LOT 의 IQC 종합 판정(quality.inspection_request — IQC·그 입하 LOT·취소 제외·최근 확정). 요청이 없거나 확정 전·입하 LOT 이 없으면 null. 분할 LOT 은 원래 LOT 의 입하 LOT 것"
+       }
+      }
+     },
+     "producedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "PRODUCTION_LOT — 첫 실적 시각 · SERIAL·COMPONENT_SERIAL — 생산 시각(없으면 발번 시각)"
+     },
+     "split": {
+      "type": "object",
+      "required": [
+       "splitAt",
+       "goodsIssueNo",
+       "lineNo"
+      ],
+      "description": "SPLIT_LOT — 나뉜 시각과 분할을 일으킨 출고(013 분리면 null)",
+      "properties": {
+       "splitAt": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "goodsIssueNo": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "lineNo": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       }
+      }
+     },
+     "workOrder": {
+      "type": "object",
+      "required": [
+       "workOrderId",
+       "workOrderNo",
+       "statusCode"
+      ],
+      "properties": {
+       "workOrderId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "workOrderNo": {
+        "type": "string"
+       },
+       "statusCode": {
+        "type": "string"
+       }
+      }
+     },
+     "shipment": {
+      "type": "object",
+      "required": [
+       "shipmentId",
+       "shipmentNo",
+       "shippedAt",
+       "statusCode",
+       "customer"
+      ],
+      "properties": {
+       "shipmentId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "shipmentNo": {
+        "type": "string"
+       },
+       "shippedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       },
+       "statusCode": {
+        "type": "string"
+       },
+       "customer": {
+        "$ref": "#/components/schemas/TraceTreePartner"
+       }
+      }
+     },
+     "handlingUnitNo": {
+      "type": "string",
+      "description": "PACKAGE"
+     },
+     "warehouse": {
+      "type": "object",
+      "required": [
+       "warehouseId",
+       "code",
+       "name"
+      ],
+      "properties": {
+       "warehouseId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "code": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      }
+     },
+     "location": {
+      "type": "object",
+      "required": [
+       "locationId",
+       "code",
+       "name"
+      ],
+      "properties": {
+       "locationId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "code": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      }
+     },
+     "serialNo": {
+      "type": "string",
+      "description": "SERIAL·COMPONENT_SERIAL"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "SERIAL·COMPONENT_SERIAL — 그 시리얼의 LOT"
+     },
+     "inboundLot": {
+      "type": "object",
+      "description": "INBOUND_LOT — 입하 LOT·입하일(공장 현지 날짜)·공급사·IQC 결과(취소 제외 최근 확정)",
+      "required": [
+       "inboundLotId",
+       "inboundLotNo",
+       "receivedDate",
+       "supplier",
+       "iqcJudgmentCode"
+      ],
+      "properties": {
+       "inboundLotId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "inboundLotNo": {
+        "type": "string"
+       },
+       "receivedDate": {
+        "type": "string",
+        "format": "date"
+       },
+       "supplier": {
+        "$ref": "#/components/schemas/TraceTreePartner"
+       },
+       "iqcJudgmentCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "IQC 종합 판정 — 요청이 없거나 확정 전이면 null"
+       }
+      }
+     }
+    }
+   },
+   "TraceGraphEdge": {
+    "type": "object",
+    "description": "계보 줄 — 같은 (from, to, kind) 는 한 줄. 길마다 남긴다(같은 항목에 두 길로 닿으면 줄 둘)",
+    "required": [
+     "from",
+     "to",
+     "kind",
+     "qty",
+     "basis"
+    ],
+    "properties": {
+     "from": {
+      "type": "string"
+     },
+     "to": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "SPLIT",
+       "CONSUMED",
+       "PRODUCED",
+       "PACKED",
+       "SHIPPED",
+       "STOCKED",
+       "PRODUCED_BY",
+       "SPLIT_FROM",
+       "RECEIVED_FROM",
+       "SERIAL_OF",
+       "ASSEMBLED"
+      ],
+      "description": "정방향 SPLIT(LOT → 자식)·CONSUMED(LOT → W/O)·PRODUCED(W/O → 생산 LOT)·PACKED·SHIPPED·STOCKED, 역방향은 뿌리에서 멀어지는 쪽 PRODUCED_BY(생산 LOT → W/O)·CONSUMED(W/O → 투입 LOT)·SPLIT_FROM(자식 → 원래 LOT)·RECEIVED_FROM(자재 LOT → 입하 LOT)·SERIAL_OF·ASSEMBLED"
+     },
+     "qty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "투입량·배분량·분할량·실적 배분 합"
+     },
+     "basis": {
+      "type": "string",
+      "enum": [
+       "RECORDED",
+       "LOT_GENEALOGY_ESTIMATE",
+       "WORK_ORDER_ESTIMATE"
+      ],
+      "description": "연결 근거 — 투입·생산 이음만 추정(지금 규칙 그대로), 나머지는 RECORDED. 화면은 보이지 않고 내보낸 파일 근거 열에만 쓴다"
+     },
+     "firstAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "lastAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "TraceGraphLimit": {
+    "type": "object",
+    "required": [
+     "exceeded",
+     "maxDepthReached",
+     "lotCount",
+     "lotCap"
+    ],
+    "properties": {
+     "exceeded": {
+      "type": "boolean",
+      "description": "겹치지 않는 LOT 이 lotCap 을 넘어 그 단계에서 멈췄다 — 결과는 본 데까지(화면 「일부」)"
+     },
+     "maxDepthReached": {
+      "type": "boolean",
+      "description": "깊이(지나온 LOT 단계) 20 에 닿았는데 더 펼칠 LOT 이 남았다"
+     },
+     "lotCount": {
+      "type": "integer"
+     },
+     "lotCap": {
+      "type": "integer"
+     }
+    }
+   },
+   "TraceGraph": {
+    "type": "object",
+    "description": "LOT 하나의 계보 그래프. 순환(조상으로 되돌아오는 줄)은 그대로 싣는다 — 화면이 조상과 같으면 「순환」으로 멈춘다",
+    "required": [
+     "root",
+     "nodes",
+     "edges",
+     "limit"
+    ],
+    "properties": {
+     "root": {
+      "type": "string",
+      "description": "뿌리 항목 nodeKey"
+     },
+     "nodes": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceGraphNode"
+      }
+     },
+     "edges": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/TraceGraphEdge"
+      }
+     },
+     "limit": {
+      "$ref": "#/components/schemas/TraceGraphLimit"
+     }
+    }
+   },
+   "ForwardEndRow": {
+    "type": "object",
+    "description": "정방향 최종 LOT 한 줄 — 마지막 생산 LOT(더 투입되지 않은 생산 LOT, 분리·분할 자식 포함. 자식이 있는 원래 LOT 은 자기 출하·재고가 남았을 때만)과 그 행방. LOT 마다 한 줄이고 같은 LOT 이 여러 길로 와도 한 번이다(R-3). 피처 015 · omf-all-around#355",
+    "required": [
+     "lot",
+     "item",
+     "producedQty",
+     "uomCode",
+     "fate",
+     "shipments",
+     "stock",
+     "viaWorkOrders"
+    ],
+    "properties": {
+     "lot": {
+      "$ref": "#/components/schemas/TraceTreeLot"
+     },
+     "item": {
+      "$ref": "#/components/schemas/TraceTreeItem"
+     },
+     "producedQty": {
+      "type": "number",
+      "description": "실적 배분 합(분리·분할 자식은 그 LOT 수량)"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "fate": {
+      "type": "string",
+      "enum": [
+       "SHIPPED",
+       "IN_STOCK",
+       "PARTIAL",
+       "CONSUMED_OUT",
+       "VOIDED"
+      ],
+      "description": "PARTIAL = 출하 + 재고 · CONSUMED_OUT = 재고 0·출하 없음 · VOIDED = 폐번·폐기"
+     },
+     "shipments": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "shipmentNo",
+        "customer",
+        "shippedAt",
+        "qty"
+       ],
+       "properties": {
+        "shipmentNo": {
+         "type": "string"
+        },
+        "customer": {
+         "$ref": "#/components/schemas/TraceTreePartner"
+        },
+        "shippedAt": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "format": "date-time"
+        },
+        "qty": {
+         "type": "number"
+        }
+       }
+      },
+      "description": "취소 제외 출하 — 화면은 첫 출하 + 「외 n건」, 내보내기는 출하마다 한 줄"
+     },
+     "stock": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "warehouse",
+        "location",
+        "qty"
+       ],
+       "properties": {
+        "warehouse": {
+         "type": "object",
+         "required": [
+          "warehouseId",
+          "code",
+          "name"
+         ],
+         "properties": {
+          "warehouseId": {
+           "type": "integer",
+           "format": "int64"
+          },
+          "code": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          }
+         }
+        },
+        "location": {
+         "type": "object",
+         "required": [
+          "locationId",
+          "code",
+          "name"
+         ],
+         "properties": {
+          "locationId": {
+           "type": "integer",
+           "format": "int64"
+          },
+          "code": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          }
+         }
+        },
+        "qty": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "viaWorkOrders": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "이 LOT 을 만든 W/O 번호(분리·분할 자식은 원래 LOT 의 것)"
+     }
+    }
+   },
+   "ForwardSummary": {
+    "type": "object",
+    "description": "정방향 요약 — 본 데까지(limit.exceeded 면 「일부」), 겹치지 않게 센다",
+    "required": [
+     "lotCount",
+     "workOrderCount",
+     "endLotCount",
+     "shippedLotCount",
+     "customerCount",
+     "stockLotCount"
+    ],
+    "properties": {
+     "lotCount": {
+      "type": "integer"
+     },
+     "workOrderCount": {
+      "type": "integer"
+     },
+     "endLotCount": {
+      "type": "integer"
+     },
+     "shippedLotCount": {
+      "type": "integer"
+     },
+     "customerCount": {
+      "type": "integer"
+     },
+     "stockLotCount": {
+      "type": "integer"
+     }
+    }
+   },
+   "ForwardTree": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/TraceGraph"
+     },
+     {
+      "type": "object",
+      "required": [
+       "endRows",
+       "summary"
+      ],
+      "properties": {
+       "endRows": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/ForwardEndRow"
+        },
+        "description": "LOT 번호 순. 기준 LOT 이 아무 데도 투입되지 않았으면 빈 배열(화면 「아직 생산에 투입되지 않았습니다」)"
+       },
+       "summary": {
+        "$ref": "#/components/schemas/ForwardSummary"
+       }
+      }
+     }
+    ]
+   },
+   "BackwardEndRow": {
+    "type": "object",
+    "description": "역방향 최종 LOT 한 줄 — 원자재 LOT(생산으로 만들어지지 않은 투입 LOT) × 그것이 투입된 W/O(R-4). 입하·공급사·공급사 LOT 은 분할 LOT 이면 원래 LOT 것, 공급사 LOT 은 lot_external_identifier 먼저(F-6). 피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355",
+    "required": [
+     "lot",
+     "item",
+     "supplier",
+     "supplierLotNo",
+     "inboundLot",
+     "workOrder",
+     "productLots",
+     "consumedQty",
+     "uomCode",
+     "basis"
+    ],
+    "properties": {
+     "lot": {
+      "$ref": "#/components/schemas/TraceTreeLot"
+     },
+     "item": {
+      "$ref": "#/components/schemas/TraceTreeItem"
+     },
+     "supplier": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/TraceTreePartner"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "supplierLotNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "inboundLot": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "inboundLotNo",
+         "receivedDate",
+         "iqcJudgmentCode"
+        ],
+        "properties": {
+         "inboundLotNo": {
+          "type": "string"
+         },
+         "receivedDate": {
+          "type": "string",
+          "format": "date"
+         },
+         "iqcJudgmentCode": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        }
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "workOrder": {
+      "type": "object",
+      "required": [
+       "workOrderNo"
+      ],
+      "properties": {
+       "workOrderNo": {
+        "type": "string"
+       }
+      }
+     },
+     "productLots": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "그 W/O 가 만든 생산 LOT 번호(이 계보 안)"
+     },
+     "consumedQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "그 W/O 에 투입한 양(정정 반영)"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "basis": {
+      "type": "string",
+      "enum": [
+       "LOT_GENEALOGY_ESTIMATE",
+       "WORK_ORDER_ESTIMATE"
+      ]
+     }
+    }
+   },
+   "BackwardSummary": {
+    "type": "object",
+    "description": "역방향 요약 — 겹치지 않게 센다(productLotCount = 생산으로 만들어진 LOT 항목 수)",
+    "required": [
+     "rawLotCount",
+     "supplierCount",
+     "workOrderCount",
+     "productLotCount"
+    ],
+    "properties": {
+     "rawLotCount": {
+      "type": "integer"
+     },
+     "supplierCount": {
+      "type": "integer"
+     },
+     "workOrderCount": {
+      "type": "integer"
+     },
+     "productLotCount": {
+      "type": "integer"
+     }
+    }
+   },
+   "BackwardTree": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/TraceGraph"
+     },
+     {
+      "type": "object",
+      "required": [
+       "endRows",
+       "summary",
+       "rootShipments"
+      ],
+      "properties": {
+       "endRows": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/BackwardEndRow"
+        },
+        "description": "LOT 번호·W/O 번호 순. 투입 기록이 없으면 빈 배열(화면 「투입 자재 기록이 없습니다」)"
+       },
+       "summary": {
+        "$ref": "#/components/schemas/BackwardSummary"
+       },
+       "rootShipments": {
+        "type": "array",
+        "description": "고른 LOT 의 출하(출하 완료분) — 화면 요약. 계보에는 넣지 않는다",
+        "items": {
+         "type": "object",
+         "required": [
+          "shipmentNo",
+          "customer",
+          "shippedAt",
+          "qty"
+         ],
+         "properties": {
+          "shipmentNo": {
+           "type": "string"
+          },
+          "customer": {
+           "$ref": "#/components/schemas/TraceTreePartner"
+          },
+          "shippedAt": {
+           "type": "string",
+           "format": "date-time"
+          },
+          "qty": {
+           "type": "number"
+          }
+         }
+        }
+       }
+      }
+     }
+    ]
+   },
+   "TraceExportRequest": {
+    "type": "object",
+    "description": "내보낼 목록 LOT 들(피처 015 자재 기준 생산 추적·제품 기준 역추적 · omf-all-around#355)",
+    "required": [
+     "plantId",
+     "lotIds"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "지금 목록의 LOT(목록 순서). 기준 LOT 순서가 파일의 순서다"
+     },
+     "serialNos": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 150
+      },
+      "description": "backward 만 — 시리얼로 들어온 줄의 { lotId: serialNo }. 그 LOT 의 계보 줄 맨 위가 시리얼이다"
+     },
+     "language": {
+      "type": "string",
+      "enum": [
+       "ko",
+       "vi"
+      ],
+      "description": "파일 문구·LOT 상태 이름(공통코드 name_ko·name_vi)의 언어. 없으면 Accept-Language 첫 언어가 vi 일 때 vi, 아니면 ko"
+     }
+    }
    }
   },
   "securitySchemes": {

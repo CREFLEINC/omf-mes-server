@@ -76,10 +76,8 @@ export interface ApprovalTargetView {
   targetId: number;
   displayName: string;
   openable: boolean;
-  /** IQC 생략(대상 입하 LOT)만 — 실행 경로에 쓸 자재 관리 LOT id(피처 005). */
-  targetLotId?: number | null;
-  /** IQC 생략만 — 입하 마감 취소가 이 승인을 무효로 만들었다(실행할 수 없음, 피처 005 R-5a · G2 L7). */
-  targetVoided?: boolean;
+  /** 대상을 여는 화면 ID — 정한 유형만(출하 취소 → W-04-12). 없으면 키를 싣지 않는다. */
+  screenId?: string;
 }
 
 /**
@@ -95,7 +93,6 @@ export function toApprovalTarget(targetTypeCode: string, targetId: bigint, info?
     targetId: id,
     displayName: info?.name ?? `${targetTypeCode} #${id}`,
     openable: false,
-    ...(info?.targetLotId === undefined ? {} : { targetLotId: info.targetLotId }),
   };
 }
 
@@ -105,7 +102,6 @@ export interface ApprovalRequestView {
   approvalRequestNo: string;
   approvalTypeCode: string;
   requestedBy: number | null;
-  requestedWorkerId: number | null;
   requestedByName: string;
   requestedAt: string;
   statusCode: string;
@@ -122,7 +118,7 @@ export interface ApprovalRequestDetailView {
 }
 
 type RequestRow = Prisma.approval_requestGetPayload<{
-  include: { app_user: true; requested_worker: true;
+  include: { app_user: true;
     approval_step: { include: { app_user: true } } };
 }>;
 
@@ -136,14 +132,13 @@ export function toApprovalRequest(
     approvalRequestNo: row.approval_request_no,
     approvalTypeCode: row.approval_type_code,
     requestedBy: row.requested_by === null ? null : Number(row.requested_by),
-    requestedWorkerId: row.requested_worker_id === null ? null : Number(row.requested_worker_id),
-    requestedByName: actorName(row.app_user?.user_name, row.requested_worker?.worker_name),
+    requestedByName: actorName(row.app_user?.user_name),
     requestedAt: row.requested_at.toISOString(),
     statusCode: row.status_code,
     reason: row.reason,
     target: {
       ...toApprovalTarget(row.target_type_code, row.target_id, target),
-      ...(row.approval_type_code === IQC_SKIP ? { targetVoided: voidedByReopen(row.target_summary) } : {}),
+      ...(OPENABLE_SCREENS[row.approval_type_code] === undefined ? {} : { openable: true, screenId: OPENABLE_SCREENS[row.approval_type_code] }),
     },
     currentStepNo: derived.currentStepNo,
     totalStepNo: row.approval_step.length,
@@ -151,17 +146,17 @@ export function toApprovalRequest(
   };
 }
 
-const IQC_SKIP = 'IQC_SKIP';
+/**
+ * 대상을 여는 화면(결재 유형 → 화면 ID). 승인 뒤 실행이 대상 화면에 있는 유형만 둔다.
+ * - `SHIPMENT_CANCEL` → W-04-02 출하 예정 목록: 승인된 취소를 그 지시서 상세 「출하」 칸에서 [취소 실행]한다. 결재함은 승인만
+ *   하고 실행하지 않는다. 피처 012 R-7 이 출하 내역(W-04-12) 화면을 없애며 옮겼다 — 저장값이 아니라 응답에 싣는 매핑이라
+ *   배포 전에 상신한 결재도 W-04-02 로 간다.
+ */
+const OPENABLE_SCREENS: Readonly<Record<string, string | undefined>> = { SHIPMENT_CANCEL: 'W-04-02' };
 
-/** 입하 마감 취소가 남긴 무효 표시(`target_summary.voidedAt` — `markIqcSkipVoided`). */
-function voidedByReopen(summary: Prisma.JsonValue): boolean {
-  return typeof summary === 'object' && summary !== null && !Array.isArray(summary) && summary.voidedAt != null;
-}
-
-function actorName(accountName: string | undefined, workerName: string | undefined): string {
-  const name = accountName ?? workerName;
-  if (!name) throw new Error('Approval request actor is missing');
-  return name;
+function actorName(accountName: string | undefined): string {
+  if (!accountName) throw new Error('Approval request actor is missing');
+  return accountName;
 }
 
 /** 계약 `ApprovalStep` 과 동형. */

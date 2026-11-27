@@ -15,6 +15,7 @@ export interface PlanToExpand {
   operationIds: bigint[];
   /** 계획일의 근무일 하루 — 전개분 전부가 같은 창을 갖는다. */
   window: PlanWindow;
+  operationWindows?: ReadonlyMap<bigint, PlanWindow>;
   /** 계획의 라인과 그 라인의 기본 위치 셋. 계획에 라인이 없으면 넷 다 비운다. */
   line: PlanLine;
   /** ERP W/O 의 입고 창고(`SL_CD`) 판정 — 완제품 위치는 라인이 아니라 이것을 따른다. */
@@ -45,7 +46,7 @@ export interface WorkOrderSupplement {
   shiftId: bigint | null;
   defaultWipLocationId: bigint;
   defaultFgLocationId: bigint;
-  defaultScrapLocationId: bigint;
+  defaultScrapLocationId: bigint | null;
   window: PlanWindow;
 }
 
@@ -65,6 +66,7 @@ export function workOrderRows(
   supplements?: ReadonlyMap<bigint, WorkOrderSupplement>,
 ): Prisma.work_orderCreateManyInput[] {
   return plan.operationIds.map((routingOperationId, index) => {
+    const window = plan.operationWindows?.get(routingOperationId) ?? plan.window;
     const supplement = supplements?.get(routingOperationId);
     const resource = plan.resources.get(routingOperationId);
     const line = lineOf(plan, resource);
@@ -75,8 +77,8 @@ export function workOrderRows(
       item_id: plan.itemId,
       order_qty: plan.plannedQty,
       uom_id: plan.uomId,
-      planned_start_at: plan.window.plannedStartAt,
-      planned_end_at: plan.window.plannedEndAt,
+      planned_start_at: window.plannedStartAt,
+      planned_end_at: window.plannedEndAt,
       production_line_id: line.productionLineId,
       default_wip_location_id: line.defaultWipLocationId,
       default_fg_location_id: fgLocationOf(plan.fg, line.defaultFgLocationId).locationId,

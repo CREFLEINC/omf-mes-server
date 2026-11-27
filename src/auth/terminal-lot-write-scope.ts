@@ -7,7 +7,6 @@ import type { TerminalContext } from './terminal-context';
 
 export const TERMINAL_LOT_WRITE_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
   'POST /trace/lots': ['POP', 'MOBILE'],
-  'POST /trace/lots/{lotId}:request-iqc-skip': ['MOBILE'],
 };
 
 const WORKER = Symbol('terminalLotWorkerId');
@@ -27,25 +26,17 @@ export async function assertTerminalLotWriteScope(
     worker_no: workerNo, plant_id: terminal.plantId, is_active: true,
   }, select: { worker_id: true } });
   if (!worker) throw denied();
-  if (key === 'POST /trace/lots') {
-    const body = request.body as Record<string, unknown> | undefined;
-    const sourceId = positiveId(body?.sourceId);
-    if (positiveId(body?.plantId) !== terminal.plantId || body?.sourceTypeCode !== 'INBOUND_RECEIPT_LINE'
-      || sourceId === null) throw denied();
-    const source = await prisma.inbound_receipt_line.findFirst({ where: {
-      inbound_receipt_line_id: sourceId,
-      inbound_receipt: { plant_id: terminal.plantId },
-      // 새 흐름의 줄(입하 LOT 있음)은 `lot_id` 가 비어도 LOT 이 이미 있다 — 옛 LOT 등록으로 열지 않는다(피처 005).
-      lot_id: null, inbound_lot: null,
-    }, select: { inbound_receipt_line_id: true } });
-    if (!source) throw denied();
-  } else {
-    const lotId = positiveId(request.params.lotId);
-    const lot = lotId === null ? null : await prisma.lot.findFirst({ where: {
-      lot_id: lotId, plant_id: terminal.plantId, source_type_code: 'INBOUND_RECEIPT_LINE',
-    }, select: { lot_id: true } });
-    if (!lot) throw denied();
-  }
+  const body = request.body as Record<string, unknown> | undefined;
+  const sourceId = positiveId(body?.sourceId);
+  if (positiveId(body?.plantId) !== terminal.plantId || body?.sourceTypeCode !== 'INBOUND_RECEIPT_LINE'
+    || sourceId === null) throw denied();
+  const source = await prisma.inbound_receipt_line.findFirst({ where: {
+    inbound_receipt_line_id: sourceId,
+    inbound_receipt: { plant_id: terminal.plantId },
+    // 새 흐름의 줄(입하 LOT 있음)은 `lot_id` 가 비어도 LOT 이 이미 있다 — 옛 LOT 등록으로 열지 않는다(피처 005).
+    lot_id: null, inbound_lot: null,
+  }, select: { inbound_receipt_line_id: true } });
+  if (!source) throw denied();
   Object.defineProperty(request, WORKER, { value: worker.worker_id, configurable: true });
 }
 

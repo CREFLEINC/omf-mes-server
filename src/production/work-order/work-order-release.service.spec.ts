@@ -72,13 +72,14 @@ function stub(options: {
     production_plan: {
       bom_id: BOM,
       bom: { bom_version: 2, base_qty: new Prisma.Decimal(1) },
-      production_order: { plant_id: 5n },
+      production_order: { plant_id: 5n, plant: { timezone_code: 'Asia/Ho_Chi_Minh' } },
     },
   };
 
   const tx = {
     $queryRaw: () => Promise.resolve([{ status_code: 'PLANNED', released_at: null, version_no: 1 }]),
     work_order: {
+      findUniqueOrThrow: () => Promise.resolve({work_order_id: 700n, status_code: 'PLANNED', planned_equipment_id: null, planned_start_at: null, planned_end_at: null, work_order_resource_assignment: []}),
       update: ({ data }: { data: Row }) => {
         updated.push(data);
         return Promise.resolve({});
@@ -127,8 +128,11 @@ function stub(options: {
     // 가용 재고가 없다 — 피킹 지시는 0건이고 채번도 안 부른다(피킹 규칙은 `core/picking` spec).
     inventory_balance: { findMany: () => Promise.resolve([]) },
     item: { findMany: () => Promise.resolve([]) },
-    // 생산 창고를 연결한 적 없는 공장 — 이 기능 전 경로(피처 003 FR-009a)를 탄다.
-    department_production_warehouse: { findFirst: () => Promise.resolve(null) },
+    // 환산 기준정보가 비면 단위를 그대로 둔다 — 단위 환산은 `release-materials.spec.ts` 가 본다.
+    uom: { findMany: () => Promise.resolve([]) },
+    item_uom_conversion: { findMany: () => Promise.resolve([]) },
+    // 생산창고가 없는 공장 — 이 기능 전 경로(피처 003 FR-009a)를 탄다.
+    warehouse: { findFirst: () => Promise.resolve(null) },
     inspection_plan: { count: () => Promise.resolve(options.pqcTarget === true ? 1 : 0) },
     inspection_plan_version: { findMany: () => Promise.resolve(options.pqcVersions ?? []) },
     bom_component: {
@@ -356,6 +360,12 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.inspectionRequests).toEqual([]);
   });
 
+  it('배포 — 스크랩 위치가 없어도 배포한다', async () => {
+    const harness = stub({ scrapDestination: null, components: [component(1n, 2)] });
+    await release(harness);
+    expect(harness.updated).not.toEqual([]);
+  });
+
   it('배포 — 긴급 유형이면 출고요청을 만들지 않는다', async () => {
     const harness = stub({ typeCode: 'EMERGENCY' });
 
@@ -416,7 +426,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.calls).not.toContain('numbering');
   });
 
-  it('배포 — 기본 위치가 빠지면 세 필드의 400을 내고 아무 결과도 쓰지 않는다', async () => {
+  it('배포 — WIP·완제품 위치가 빠지면 두 필드의 400을 내고 아무 결과도 쓰지 않는다', async () => {
     const harness = stub({
       destination: null,
       fgDestination: null,
@@ -435,7 +445,6 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect((caught as ContractException).errors).toEqual([
       expect.objectContaining({ field: 'defaultWipLocationId', code: 'REQUIRED' }),
       expect.objectContaining({ field: 'defaultFgLocationId', code: 'REQUIRED' }),
-      expect.objectContaining({ field: 'defaultScrapLocationId', code: 'REQUIRED' }),
     ]);
     expect(harness.updated).toEqual([]);
     expect(harness.lots).toEqual([]);

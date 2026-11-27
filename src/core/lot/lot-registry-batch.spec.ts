@@ -109,7 +109,7 @@ describe('자재 관리 LOT 발행 묶음(T016)', () => {
     }
     expect(holds).not.toHaveBeenCalled();
     expect(requests).not.toHaveBeenCalled();
-    expect(created.batch).toMatchObject({ created_channel_code: 'WEB', created_by: 3n, created_worker_id: null, lot_count: 3 });
+    expect(created.batch).toMatchObject({ created_channel_code: 'WEB', created_by: 3n, created_worker_id: null, lot_count: 3, creation_mode_code: 'MANUAL' });
   });
 
   it('US1-5 공급사 LOT 번호는 LOT 마다 같은 값의 SUPPLIER_LOT 식별자다(N:1) — 없으면 만들지 않는다', async () => {

@@ -59,8 +59,9 @@ export class GoodsReceiptController {
   @Contract('POST /logistics/goods-receipts')
   create(@Req() request: Request, @Body() body: GoodsReceiptCreate): Promise<unknown> {
     const actor = logisticsWriteActorOf(request, 'POST /logistics/goods-receipts');
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.receipts.create(body, actor),
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
+      await this.receipts.assertWebReceiptAllowed(body);
+      return this.receipts.create(body, actor);
+    });
   }
 }

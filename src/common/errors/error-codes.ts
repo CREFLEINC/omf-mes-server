@@ -22,8 +22,6 @@ export const ERROR_CODE = {
   LAST_ADMIN: 'LAST_ADMIN',
   // 계약이 이름 붙인 값이다 — 「라인이 1건 이상이어야 한다」(Routing Rev 확정).
   LINE_REQUIRED: 'LINE_REQUIRED',
-  // 계약이 이름 붙인 값이다 — 「확정 버전이 1건 이상 있어야 한다」(검사기준 승인).
-  CONFIRMED_VERSION_REQUIRED: 'CONFIRMED_VERSION_REQUIRED',
   // 계약이 이름 붙인 값이다 — 「실패한 메시지만 재처리할 수 있다」(연계 메시지 재처리).
   NOT_RETRYABLE: 'NOT_RETRYABLE',
   NOT_YOUR_TURN: 'NOT_YOUR_TURN',
@@ -43,6 +41,8 @@ export const ERROR_CODE = {
   // 지었다 — `CD-…-CANCEL-BLOCKED-REASON` 「후속 문서가 있다」. 다형 취소(I-5)가 조회의
   // 사유와 실행 오류에 같은 문자열을 쓴다(plan-api.md §5.4).
   SUCCESSOR_EXISTS: 'SUCCESSOR_EXISTS',
+  // 「지정 품목만 받기」를 켠 위치에 지정 밖 품목이 들어온다(피처 009 · omf-all-around#294) — 재고 코어가 모든 경로에서 낸다.
+  LOCATION_ITEM_RESTRICTED: 'LOCATION_ITEM_RESTRICTED',
   // 계약이 이 자리(입하 등록의 P/O 귀속)에 코드를 안 줬다 — `ck_po_line_received`
   // (`received_qty <= ordered_qty + tolerance_over_qty`)를 손으로 앞당겨 막는 이름이다.
   // ⛔ `RANGE`(발주를 이미 받은 양보다 «적게» 고친다 — 반대 방향)와 갈린다. I-3.md §1-5.
@@ -96,14 +96,18 @@ export const ERROR_CODE = {
   // 화면이 「공장을 먼저 맞추라」를 따로 말한다.
   PLANT_MISMATCH: 'PLANT_MISMATCH',
   // 계획 기반 출고 요청(피처 003 · omf-all-around#66). 배포 400 의 빠진 기준정보 셋 — 화면이 사유마다 고칠
-  // 자리(라인 부서 · 부서 생산 창고 · 라인 생산 현장)로 바로 보낸다.
+  // 자리(라인 부서 · 생산창고 · 라인 생산 현장)로 바로 보낸다.
   LINE_DEPARTMENT_MISSING: 'LINE_DEPARTMENT_MISSING',
   PRODUCTION_WAREHOUSE_MISSING: 'PRODUCTION_WAREHOUSE_MISSING',
   PRODUCTION_FLOOR_LOCATION_MISSING: 'PRODUCTION_FLOOR_LOCATION_MISSING',
   // 새 요청이 생산 창고의 쓸 수 있는 양(가용 − 출고 예정)을 넘는다(409 · 긴급 대응·부족 보충만 확인 뒤 진행).
   PLANNED_STOCK_CONFLICT: 'PLANNED_STOCK_CONFLICT',
+  // W/O 배포 — BOM 단위와 재고 단위가 다른 자재를 확인하지 않았거나, 환산이 없는데 비율을 넣지 않았다(400 · field 가 자재를 가리킨다).
+  MATERIAL_UOM_CONFIRMATION_REQUIRED: 'MATERIAL_UOM_CONFIRMATION_REQUIRED',
   // 출고 작업일을 휴일로 바꾸려면 확인(acknowledgeHoliday)이 필요하다(422).
   HOLIDAY_ACK_REQUIRED: 'HOLIDAY_ACK_REQUIRED',
+  // LOT 추적 내보내기 — 「LOT 계보」 시트가 줄 상한을 넘어 파일을 만들지 않는다(422 · 피처 015 contracts §5).
+  TRACE_EXPORT_TOO_LARGE: 'TRACE_EXPORT_TOO_LARGE',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */

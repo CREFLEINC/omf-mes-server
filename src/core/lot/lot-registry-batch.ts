@@ -39,7 +39,12 @@ export interface MaterialLotBatchInput {
 
 export type MaterialLotBatchActor =
   | { channel: 'WEB'; appUserId: number }
-  | { channel: 'POP'; workerId: bigint; terminalAudit: TerminalWorkerAuditActor };
+  | { channel: 'POP'; workerId: bigint; terminalAudit: TerminalWorkerAuditActor }
+  /** 조회가 만든다(피처 014 자동 생성) — POP 단말의 GET 에는 작업자·멱등 키가 없다. */
+  | { channel: 'POP'; workerId: null; terminalAudit: null };
+
+/** 묶음을 사람이 [만들기]로 만들었나(`MANUAL`), 조회가 P/O 몫만큼 만들었나(`AUTO` · 피처 014). */
+export type MaterialLotCreationMode = 'MANUAL' | 'AUTO';
 
 export interface MaterialLotBatchCreated {
   batchId: bigint;
@@ -86,6 +91,7 @@ export async function issueMaterialLotBatchWithin(
   tx: Tx,
   input: MaterialLotBatchInput,
   actor: MaterialLotBatchActor,
+  creationMode: MaterialLotCreationMode = 'MANUAL',
 ): Promise<MaterialLotBatchCreated> {
   assertMaterialLotBatchShape(input);
   const baseUomId = await assertReferences(tx, input);
@@ -107,6 +113,7 @@ export async function issueMaterialLotBatchWithin(
       created_channel_code: actor.channel,
       created_by: createdBy,
       created_worker_id: actor.channel === 'POP' ? actor.workerId : null,
+      creation_mode_code: creationMode,
     },
     select: { material_lot_batch_id: true },
   });
@@ -152,7 +159,7 @@ export async function issueMaterialLotBatchWithin(
       })),
     });
   }
-  if (actor.channel === 'POP') {
+  if (actor.channel === 'POP' && actor.terminalAudit !== null) {
     await recordTerminalWorkerAudit(tx, {
       actor: actor.terminalAudit, targetTypeCode: 'MATERIAL_LOT_BATCH',
       targetId: batch.material_lot_batch_id, eventTypeCode: 'CREATED',

@@ -1,4 +1,4 @@
-import { inboundLineLotSql } from '../../core/lot';
+import { inboundLineLotSql, splitAncestors } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RECEIPT_CANCELLED, SHIPMENT_CANCELLED } from './flow-sql';
 
@@ -33,7 +33,7 @@ export interface ReceiptNode {
 }
 
 export interface MaterialSide {
-  /** 이 LOT 을 등록한 입하 줄 — 재생재·분할 LOT 처럼 입하에서 오지 않았으면 null. */
+  /** 이 LOT 을 등록한 입하 줄 — 분할 LOT 은 뿌리 조상(원래 LOT)의 입하다(피처 008). 재생재처럼 입하에서 오지 않았으면 null. */
   inbound: {
     inboundReceiptId: number;
     inboundReceiptNo: string;
@@ -109,6 +109,10 @@ async function receiptsOf(prisma: PrismaService, lotIds: readonly bigint[], type
 
 export async function materialSides(prisma: PrismaService, lotIds: readonly bigint[]): Promise<Map<bigint, MaterialSide>> {
   if (lotIds.length === 0) return new Map();
+  // 분할 LOT 은 입하 LOT 칸이 비어 있다 — 뿌리 조상의 입하를 대신 보인다(FR-003).
+  const rootOf = new Map([...(await splitAncestors(prisma, lotIds))].flatMap(([lotId, chain]) =>
+    chain.length === 0 ? [] : [[lotId, chain[chain.length - 1].parent_lot_id] as const]));
+  const inboundLots = [...new Set([...lotIds, ...rootOf.values()])];
   const [receipts, inbound] = await Promise.all([
     receiptsOf(prisma, lotIds, 'MATERIAL'),
     prisma.$queryRawUnsafe<{
@@ -123,7 +127,7 @@ export async function materialSides(prisma: PrismaService, lotIds: readonly bigi
          JOIN logistics.inbound_receipt ir ON ir.inbound_receipt_id = irl.inbound_receipt_id
          JOIN mdm.partner sp ON sp.partner_id = ir.supplier_id
         WHERE lt.lot_id = ANY($1::bigint[])
-        ORDER BY lt.lot_id, ir.receipt_datetime, irl.inbound_receipt_line_id`, [...lotIds],
+        ORDER BY lt.lot_id, ir.receipt_datetime, irl.inbound_receipt_line_id`, inboundLots,
     ),
   ]);
   const inboundOf = new Map(inbound.map((row) => [row.lot_id, {
@@ -133,7 +137,9 @@ export async function materialSides(prisma: PrismaService, lotIds: readonly bigi
   }]));
   return new Map(lotIds.map((lotId) => {
     const lines = receipts.get(lotId) ?? [];
-    return [lotId, { inbound: inboundOf.get(lotId) ?? null, receipts: lines, receivedQty: lines.reduce((sum, line) => sum + line.qty, 0) }];
+    const root = rootOf.get(lotId);
+    const inbound = inboundOf.get(lotId) ?? (root === undefined ? undefined : inboundOf.get(root));
+    return [lotId, { inbound: inbound ?? null, receipts: lines, receivedQty: lines.reduce((sum, line) => sum + line.qty, 0) }];
   }));
 }
 

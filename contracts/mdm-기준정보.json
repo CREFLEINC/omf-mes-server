@@ -201,7 +201,7 @@
       }
      },
      "400": {
-      "description": "검증 실패",
+      "description": "검증 실패. locationPrefix — 형식이 틀리면 INVALID, 다른 창고가 쓰면 UNIQUE_VIOLATION(uniqueScope [locationPrefix] · omf-all-around#292)",
       "content": {
        "application/json": {
         "schema": {
@@ -341,7 +341,7 @@
       }
      },
      "400": {
-      "description": "검증 실패",
+      "description": "검증 실패. locationPrefix 를 지금 값과 다르게 보내면 STATE_LOCKED — 창고 위치 코드는 등록한 뒤 바꿀 수 없다(omf-all-around#292)",
       "content": {
        "application/json": {
         "schema": {
@@ -548,12 +548,12 @@
      {
       "name": "warehouseId",
       "in": "query",
-      "required": true,
+      "required": false,
       "schema": {
        "type": "integer",
        "format": "int64"
       },
-      "description": "필수. Location 은 창고를 고른 뒤에 본다 — W-06-07 §3 ⚠ 위치 «코드» 스캔은 locationCode 와 함께 보낸다 — 창고는 적치 지시·화면 문맥이 준다."
+      "description": "locationCode 가 없으면 필수(없으면 400 REQUIRED). Location 은 창고를 고른 뒤에 본다 — W-06-07 §3. 위치 코드는 창고 위치 코드(Warehouse.locationPrefix)로 시작하고 모든 창고를 통틀어 유일하다(omf-all-around#292) — 위치 «코드» 스캔은 locationCode 만 보내도 한 건이 집힌다. 함께 보내면 그 창고 안에서만 찾는다."
      },
      {
       "name": "q",
@@ -561,7 +561,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "코드·명칭 검색"
+      "description": "코드·명칭·별칭(aliasName) 검색"
      },
      {
       "name": "locationCode",
@@ -746,7 +746,7 @@
      "mdm"
     ],
     "summary": "랙 하나 만들기 — 랙과 그 밑 층·셀",
-    "description": "구역 밑에 랙 1개와 층 levelCount 개, 층마다 셀 cellCountPerLevel 개를 한 번에 만든다. 응답은 만든 랙이다 — 층·셀은 GET /mdm/locations?parentLocationId= 로 받는다. 400: 구역이 아니거나(사람이 만든 켜진 구역만) 구역에 재고가 있을 때(parentLocationId)",
+    "description": "구역 밑에 랙 1개와 층 levelCount 개, 층마다 셀 cellCountPerLevel 개를 한 번에 만든다. 응답은 만든 랙이다 — 층·셀은 GET /mdm/locations?parentLocationId= 로 받는다. 400: 구역이 아니거나(사람이 만든 켜진 구역만) 구역에 재고가 있을 때(parentLocationId) · 층 수가 0 인데 셀 수가 0 이 아닐 때(cellCountPerLevel)",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1093,7 +1093,7 @@
      "mdm"
     ],
     "summary": "위치의 지정 품목 바꾸기",
-    "description": "이 위치에 지정 품목만 들어오게 한다 — 그 밖의 품목이 들어오는 재고 전기는 400. 400: 없거나 쓰지 않는 품목(itemIds INVALID) · 지정 밖 품목의 재고가 이미 있음(itemIds STATE_LOCKED — 먼저 옮긴다) · 서버가 만든 자리(STATE_LOCKED — 적치 대기에는 어떤 품목이든 들어온다)",
+    "description": "이 위치에 둘 품목(보관 품목)을 통째로 바꾼다. ⭐ 품목 지정은 안내다 — 「지정 품목만 받기」(Location.itemRestricted)를 켠 위치만 그 밖의 품목이 들어오는 재고 전기를 400(LOCATION_ITEM_RESTRICTED)으로 막는다. PDA 미지정 위치 적치가 지정을 늘린다. 400: 없거나 쓰지 않는 품목(itemIds INVALID) · 「지정 품목만 받기」를 켠 위치에서 지정 밖 품목의 재고가 이미 있거나 지정을 모두 빼려 함(itemIds STATE_LOCKED) · 서버가 만든 자리(STATE_LOCKED — 적치 대기에는 어떤 품목이든 들어온다). 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2363,6 +2363,14 @@
        "default": false
       },
       "description": "기본은 사용 중인 것만"
+     },
+     {
+      "name": "isActive",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "사용 여부 — 주면 그 값만 준다(true=사용, false=미사용). includeInactive 의 기본(사용만)보다 앞선다. 근거: omf-all-around#333"
      },
      {
       "name": "page",
@@ -5267,161 +5275,6 @@
     }
    }
   },
-  "/mdm/departments/{departmentId}/production-warehouses": {
-   "parameters": [
-    {
-     "name": "departmentId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "get": {
-    "tags": [
-     "mdm"
-    ],
-    "summary": "부서 생산 창고",
-    "description": "이 부서 라인의 W/O 자재가 나가는 생산 창고(공장 → 창고 코드 순). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "연결한 생산 창고",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/DepartmentProductionWarehouseListResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음. 근거: W-06-06",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없는 부서",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    }
-   },
-   "put": {
-    "tags": [
-     "mdm"
-    ],
-    "summary": "부서 생산 창고 바꾸기",
-    "description": "연결을 통째로 바꾼다 — 빈 배열이면 연결을 모두 뺀다. 활성 창고만 받고 창고 유형(불량·외부 등)으로 거르지 않는다. 부서에는 공장 축이 없어 다른 공장 창고를 함께 연결할 수 있다 — 출발 창고는 W/O 공장 창고만 후보로 본다. 연결을 빼도 이미 만든 출고 요청은 그 창고에서 그대로 나간다 — 응답 removed 가 뺀 창고마다 그런 요청 수를 알린다. dryRun=true 면 저장하지 않고 같은 응답을 낸다(연결 해제 확인 창). 400: 없거나 쓰지 않는 창고(warehouseIds INVALID). 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "name": "dryRun",
-      "in": "query",
-      "schema": {
-       "type": "boolean",
-       "default": false
-      },
-      "description": "참이면 저장하지 않고 결과만 낸다 — 뺄 창고의 활성 요청 수를 저장 전에 안내한다(US8-AC2)"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/DepartmentProductionWarehouseReplace"
-       }
-      }
-     }
-    },
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "바뀐(dryRun 이면 바뀔) 생산 창고와 뺀 창고",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/DepartmentProductionWarehouseReplaceResponse"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음. 근거: W-06-06",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "없는 부서",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
   "/mdm/departments/{departmentId}:deactivate": {
    "parameters": [
     {
@@ -6100,6 +5953,34 @@
       },
       "x-code-key": "CD-MASTER-VERSION-STATUS",
       "description": "가장 최근 Rev(routingVersion 이 가장 큰 개정)의 상태로 거른다 — 공정 경로 관리 품목 목록의 진행 상태 칩(omf-all-around#231). Routing 이 없는 품목은 어느 값에도 들지 않는다(그 품목은 hasRouting=false 로 거른다)"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장으로 거른다 — 관리웹 품목·BOM·Routing 목록이 사업부 공장(OA PL13 · 부품 PL11) 품목만 보인다(클라이언트 요청 2026-11-26). 품목의 공장은 BOM 으로 정한다 — 모품목이나 구성품으로 든 BOM 중 공장이 이 값인 것이 있으면 그 공장 품목이다. 두 공장 BOM 에 다 들면 두 공장에서 나온다. 공장이 정해진 BOM 에 한 번도 들지 않은 품목은 어느 공장으로 걸러도 나온다. hasBom 과 함께 오면 hasBom 의 뜻이 그 공장으로 좁혀진다(hasBom 설명)"
+     },
+     {
+      "name": "hasBom",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "이 품목을 모품목으로 하는 BOM 이 있는가로 거른다 — ERP 연동 현황 › BOM 탭(W-06-18)의 모품목 목록. false 면 그런 BOM 이 없는 품목만 낸다. plantId 와 함께 오면 「그 공장 BOM 이나 공장이 빈 BOM」만 센다 — true 는 그 공장 BOM 탭에 설 모품목, false 는 같은 공장 품목 중 나머지다"
+     },
+     {
+      "name": "inspectionRequired",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "수입검사 대상(Item.inspectionRequired)인가로 거른다 — 품목 탭(W-06-05)의 IQC 대상 Y/N 거르기"
      },
      {
       "name": "includeInactive",
@@ -6902,6 +6783,16 @@
        "type": "boolean"
       },
       "description": "지금 새 작업지시에 걸 수 있는 개정만 낸다. 판정은 서버가 한다 — 화면은 상태 문자열을 알 필요가 없고 알아서도 안 된다(공유계약 G-8). 보내지 않으면 종전대로 전부 낸다 — 자재 명세 헤더 목록(W-06-05)은 폐기 개정까지 보여야 하므로 이 파라미터를 쓰지 않는다. 긴급 발행 화면(W-02-07)이 쓴다. 근거: W-02-07 §5-9 · omf-mes#259"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "그 공장 BOM 과 공장이 빈 BOM 만 낸다 — 공장이 빈 BOM 은 공통으로 본다. 두 공장 BOM 을 가진 모품목에서 사업부 공장 것만 받는다(클라이언트 요청 2026-11-26). 보내지 않으면 공장을 가리지 않는다"
      }
     ],
     "security": [
@@ -7492,7 +7383,7 @@
      "quality"
     ],
     "summary": "검사기준 헤더 수정",
-    "description": "approvedBy·approvedAt 은 이 요청에 포함하지 않는다 — 별도 :approve 액션으로만 기록한다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-02 §4-A·§5-1",
+    "description": "낙관적 잠금은 공유계약 B-1. 근거: W-06-02 §4-A·§5-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -7819,79 +7710,6 @@
       }
      }
     }
-   }
-  },
-  "/quality/inspection-plans/{inspectionPlanId}:approve": {
-   "parameters": [
-    {
-     "name": "inspectionPlanId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "quality"
-    ],
-    "summary": "검사기준 승인",
-    "description": "approvedBy·approvedAt 을 서버가 동시에 기록한다(현재 사용자·현재 시각) — 둘은 짝이어야 하며 서버가 항상 함께 채우는 방식으로 그 짝을 보장한다(A-9 취지 · §8-3). 전제: 이 기준에 확정(status_code=확정) 버전이 1건 이상 있어야 한다 — 없으면 400(code=CONFIRMED_VERSION_REQUIRED). 승인 해제(취소)는 제공하지 않는다. 근거: W-06-02 §5-1 「승인」",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     }
-    ],
-    "security": [
-     {
-      "omfSession": []
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "승인됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/InspectionPlan"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "확정된 버전이 없음(code=CONFIRMED_VERSION_REQUIRED) — W-06-02 §5-1",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     }
-    },
-    "x-internal-note": "미결 §8-3, 결정 시 추가한다"
    }
   },
   "/quality/inspection-plan-versions": {
@@ -10372,7 +10190,7 @@
        ],
        "example": "APP_USER"
       },
-      "description": "감사 대상으로 거른다. 감사 대상 유형 — 사용자(APP_USER) · 역할(ROLE) · 작업자(WORKER) · 단말(TERMINAL) · 품목(ITEM) · 라우팅(ROUTING) · 검사기준 버전(INSPECTION_PLAN_VERSION) · 검사표 기준 버전(INSPECTION_SHEET_TEMPLATE · omf-all-around#214). ⭐ 값 일곱은 사용자와 협의해 확정했다(2026-09-03) — 변경 이력이 «남아야 하는» 마스터만 든다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고 공통코드 그룹으로 받지 않는다(A-10 · A-16 「가르는 물음 넷」 — 「가」·「나」 참). ⚠ 대상이 늘면 «화면이 문자열을 정해 넣기 전에» 계약이 먼저 값을 갖는다(A-16). ⚠ 개체 마스터(창고·위치·설비·금형·거래처 등)는 여기 들지 않는다 — 「무엇이 있나」가 바뀔 뿐 과거 판정이 소급해 달라지지 않고, B-4 물리 삭제 금지와 version_no 낙관적 잠금이 이미 받는다. 버전을 가진 마스터도 빠진다 — 결정 07 이 「변경 이력 요구는 Rev 이력 그 자체로 충족」이라 했다. ⭐ ERP W/O(PRODUCTION_ORDER)는 마스터가 아니지만 사람이 «알고 허용한 것»의 기록이 남아야 해서 든다(사용자 결정 — 기록·추적 필수) — 계획 제안 확정이 남긴다. eventTypeCode 는 시스템 소유 값 DELETE(작성중 계획 대체)·UPDATE(나머지)이고 사건은 afterValue.eventCode, 내용은 afterValue.detail 이다: PLAN_DRAFT_REPLACED(beforeValue.drafts 지운 작성중 계획의 id·번호·판·계획일·수량 · detail.newPlanIds) · FG_WAREHOUSE_OVERRIDDEN(beforeValue SL_CD·그 MES 창고·입고 위치 · detail 계획·적용 창고·W/O 마다 완제품 위치·확인 응답) · PLAN_DATE_USER_ON_HOLIDAY(beforeValue.systemDate · detail 계획·계획일·근무일 판정). performedBy 는 확정한 사용자, correlationId 는 확정 요청의 Idempotency-Key 다. 생산계획·작업지시 화면은 이 횡단 조회가 아니라 ERP W/O 한 건의 조회(GET /planning/production-orders/{productionOrderId}/audit-events)를 부른다 — 이 조회의 권한은 원래 화면 그대로다.",
+      "description": "감사 대상으로 거른다. 감사 대상 유형 — 사용자(APP_USER) · 역할(ROLE) · 작업자(WORKER) · 단말(TERMINAL) · 품목(ITEM) · 라우팅(ROUTING) · 검사기준 버전(INSPECTION_PLAN_VERSION) · 검사표 기준 버전(INSPECTION_SHEET_TEMPLATE · omf-all-around#214). ⭐ 값 일곱은 사용자와 협의해 확정했다(2026-09-03) — 변경 이력이 «남아야 하는» 마스터만 든다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고 공통코드 그룹으로 받지 않는다(A-10 · A-16 「가르는 물음 넷」 — 「가」·「나」 참). ⚠ 대상이 늘면 «화면이 문자열을 정해 넣기 전에» 계약이 먼저 값을 갖는다(A-16). ⚠ 개체 마스터(창고·위치·설비·금형·거래처 등)는 여기 들지 않는다 — 「무엇이 있나」가 바뀔 뿐 과거 판정이 소급해 달라지지 않고, B-4 물리 삭제 금지와 version_no 낙관적 잠금이 이미 받는다. 버전을 가진 마스터도 빠진다 — 결정 07 이 「변경 이력 요구는 Rev 이력 그 자체로 충족」이라 했다. ⭐ ERP W/O(PRODUCTION_ORDER)는 마스터가 아니지만 사람이 «알고 허용한 것»의 기록이 남아야 해서 든다(사용자 결정 — 기록·추적 필수) — 계획 제안 확정이 남긴다. eventTypeCode 는 시스템 소유 값 DELETE(작성중 계획 대체)·UPDATE(나머지)이고 사건은 afterValue.eventCode, 내용은 afterValue.detail 이다: PLAN_DRAFT_REPLACED(beforeValue.drafts 지운 작성중 계획의 id·번호·판·계획일·수량 · detail.newPlanIds) · FG_WAREHOUSE_OVERRIDDEN(beforeValue SL_CD·그 MES 창고·입고 위치 · detail 계획·적용 창고·W/O 마다 완제품 위치·확인 응답) · PLAN_DATE_USER_ON_HOLIDAY(beforeValue.systemDate · detail 계획·계획일·근무일 판정). performedBy 는 확정한 사용자, correlationId 는 확정 요청의 Idempotency-Key 다. ⭐ 품목(ITEM)에는 W/O 배포 확인에서 넣은 단위 환산이 남는다 — eventTypeCode CREATE · afterValue.eventCode ITEM_UOM_CONVERSION_ENTERED_AT_RELEASE · detail 은 itemUomConversionId·fromUomId(재고 단위)·toUomId(BOM 단위)·conversionRate·effectiveFrom·replacedSource(COMMON|NONE)·workOrderId·bomComponentIds · performedBy 는 배포한 사용자 · correlationId 는 배포 요청의 Idempotency-Key 다(omf-all-around#297). 생산계획·작업지시 화면은 이 횡단 조회가 아니라 ERP W/O 한 건의 조회(GET /planning/production-orders/{productionOrderId}/audit-events)를 부른다 — 이 조회의 권한은 원래 화면 그대로다.",
       "x-code-key": "CD-AUDIT-TARGET-TYPE"
      },
      {
@@ -11931,6 +11749,44 @@
       }
      },
      {
+      "name": "isActive",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "사용 여부 — 주면 그 값만 준다(true=사용, false=미사용). includeInactive 의 기본(사용만)보다 앞선다. 근거: omf-all-around#333"
+     },
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "설치 설비 — 주면 그 설비에 붙은 단말만. 근거: omf-all-around#333"
+     },
+     {
+      "name": "warehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "창고 — 주면 그 창고로 지정된 단말만. 근거: omf-all-around#333"
+     },
+     {
+      "name": "registrationStatusCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "REGISTERED",
+        "UNREGISTERED"
+       ]
+      },
+      "description": "등록 여부 — REGISTERED=기기 등록 완료(지금 세대 토큰으로 확인됨), UNREGISTERED=그 밖. 근거: omf-all-around#333"
+     },
+     {
       "name": "q",
       "in": "query",
       "schema": {
@@ -12199,6 +12055,90 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/terminals/{terminalId}:activate": {
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "단말 다시 사용",
+    "description": "사용 중지한 단말을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다. 근거: omf-all-around#333",
+    "parameters": [
+     {
+      "name": "terminalId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "재사용됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Terminal"
         }
        }
       }
@@ -17742,6 +17682,446 @@
       }
      }
     }
+   },
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 등록",
+    "description": "공장별 교대(주간·야간 등)를 등록한다. 자정 넘김(crossesMidnight)은 서버가 시각으로 정한다(끝 < 시작이면 자정 넘김). 시작과 끝이 같으면 400(endTime INVALID). 근거: omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShiftCreate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "등록됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 유일 위반이면 유일 범위(plantId·shiftCode)를 담아 돌려준다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/shifts/{shiftId}": {
+   "parameters": [
+    {
+     "name": "shiftId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 상세",
+    "description": "교대 관리 화면이 수정·사용 중지 전에 부른다 — 잠금 토큰(ETag)과 코드 수정 가부를 함께 내린다. 근거: omf-all-around#318",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShiftDetailResponse"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 수정",
+    "description": "이름·시작·끝 시각을 고친다. 자정 넘김(crossesMidnight)은 서버가 시각으로 정한다(끝 < 시작이면 자정 넘김). 시작과 끝이 같으면 400(endTime INVALID). 공장은 바꿀 수 없다. 근거: omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShiftUpdate"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "수정됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 공백 이름, 시작과 같은 종료 시간이거나, 작업·실적에 쓰인 교대의 코드를 바꾸려 했다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/shifts/{shiftId}:deactivate": {
+   "parameters": [
+    {
+     "name": "shiftId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 사용 중지",
+    "description": "물리 삭제는 제공하지 않는다. 이미 기록된 작업·실적의 교대는 그대로 남고, 이후 교대 판정·선택 목록에서 빠진다. 근거: 공유계약 B-4 · omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "처리됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "업무 규칙 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/shifts/{shiftId}:activate": {
+   "parameters": [
+    {
+     "name": "shiftId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "교대 다시 사용",
+    "description": "사용 중지한 교대를 다시 쓴다. 같은 공장에 같은 코드가 남아 있어 새로 등록할 수 없으므로 되살리는 길을 둔다. 이미 사용 중이어도 200 이고 판 번호(ETag)는 올라간다 — 사용 중지와 같다. 근거: 공유계약 B-4 · omf-all-around#318",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "처리됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Shift"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "업무 규칙 위반",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 교대 관리(W-06-26) 권한이 없거나 공장이 데이터 범위 밖이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 교대",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/mdm/item-resource-maps": {
@@ -19362,7 +19742,8 @@
      "warehouseTypeCode",
      "isExternal",
      "isDefect",
-     "isActive"
+     "isActive",
+     "locationPrefix"
     ],
     "description": "창고.",
     "properties": {
@@ -19401,7 +19782,7 @@
       "x-source-column": "warehouse_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
+      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32). PRODUCTION(생산창고)은 출고 요청 출발·창고 보충을 받는 생산 창고다 — 자재창고(MATERIAL)처럼 그 위치를 라인 기본 위치·완제품 위치로 둘 수 없다(사용자 결정 2026-11-25). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
@@ -19424,6 +19805,13 @@
       "type": "boolean",
       "default": true,
       "example": true
+     },
+     "locationPrefix": {
+      "x-source-column": "location_prefix",
+      "type": "string",
+      "pattern": "^[A-Z0-9]{2,6}$",
+      "description": "창고 위치 코드 — 이 창고의 위치 코드 앞에 붙는다({locationPrefix}-Z01 · {locationPrefix}-SYS-STAGING). 모든 창고를 통틀어 유일하고, 등록한 뒤에는 바꾸지 않는다. 창고 코드와 따로다. 근거: 사용자 결정 2026-11-17 · omf-all-around#292",
+      "example": "K7QX"
      }
     },
     "x-internal-note": "미착지: 다국어(한/베) 명칭 — #64"
@@ -19471,7 +19859,7 @@
       "x-source-column": "warehouse_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
+      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32). PRODUCTION(생산창고)은 출고 요청 출발·창고 보충을 받는 생산 창고다 — 자재창고(MATERIAL)처럼 그 위치를 라인 기본 위치·완제품 위치로 둘 수 없다(사용자 결정 2026-11-25). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
@@ -19487,6 +19875,13 @@
       "default": false,
       "description": "불량창고 여부. 근거: DR-012 확정 3-C · omf-mes#147",
       "example": false
+     },
+     "locationPrefix": {
+      "x-source-column": "location_prefix",
+      "type": "string",
+      "pattern": "^[A-Z0-9]{2,6}$",
+      "description": "창고 위치 코드 — 선택. 빼면 서버가 쓰지 않은 무작위 4자(영문 대문자·숫자, 헷갈리는 0/O·1/I/L 제외)를 채운다. 사람이 고칠 때는 대문자·숫자 2~6자. 형식이 틀리면 400 INVALID, 다른 창고가 쓰면 400 UNIQUE_VIOLATION(uniqueScope [locationPrefix]). 등록한 뒤에는 바꿀 수 없다. 근거: omf-all-around#292",
+      "example": "K7QX"
      }
     }
    },
@@ -19528,7 +19923,7 @@
       "x-source-column": "warehouse_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
+      "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32). PRODUCTION(생산창고)은 출고 요청 출발·창고 보충을 받는 생산 창고다 — 자재창고(MATERIAL)처럼 그 위치를 라인 기본 위치·완제품 위치로 둘 수 없다(사용자 결정 2026-11-25). 근거: W-05-06 §3-3",
       "example": "MATERIAL",
       "x-code-key": "CD-WAREHOUSE-TYPE"
      },
@@ -19542,6 +19937,13 @@
       "type": "boolean",
       "description": "불량창고 여부. 근거: DR-012 확정 3-C · omf-mes#147",
       "example": false
+     },
+     "locationPrefix": {
+      "x-source-column": "location_prefix",
+      "type": "string",
+      "pattern": "^[A-Z0-9]{2,6}$",
+      "description": "창고 위치 코드 — 등록한 뒤 바꿀 수 없다. 빼거나 지금 값과 같으면 통과하고, 다르면 400 STATE_LOCKED(바꾸면 그 창고의 위치 코드와 붙인 라벨이 어긋난다). 근거: omf-all-around#292",
+      "example": "K7QX"
      }
     }
    },
@@ -19573,7 +19975,8 @@
      "locationLevelCode",
      "isLeaf",
      "systemRoleCode",
-     "hasItemRestriction"
+     "hasItemRestriction",
+     "itemRestricted"
     ],
     "description": "Location. 창고 › 구역 › 랙 › 층 › 셀 계층(parent_location_id 자기참조). 코드는 서버가 발행하고 상위는 바꾸지 않는다. 근거: W-06-07 §4-B · 사용자 결정 2026-10-29",
     "properties": {
@@ -19602,9 +20005,9 @@
       "x-source-column": "location_code",
       "type": "string",
       "maxLength": 50,
-      "example": "Z01-R001-L01-C01",
+      "example": "K7QX-Z01-R001-L01-C01",
       "x-no-code-key": "코드 그룹이 아니다 — Location 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다.",
-      "description": "서버가 발행한다 — 구역 Z01 · 랙 {구역}-R001 · 층 {랙}-L01 · 셀 {층}-C01, 같은 상위 안 가장 큰 번호 + 1(자리 수를 넘으면 늘어난다). 바꿀 수 없다. 서버가 만든 자리는 SYS-STAGING · SYS-WHOLE"
+      "description": "서버가 발행한다 — 구역 {창고 위치 코드}-Z01 · 랙 {구역}-R001 · 층 {랙}-L01 · 셀 {층}-C01, 같은 상위 안 가장 큰 번호 + 1(자리 수를 넘으면 늘어난다). 창고 위치 코드는 Warehouse.locationPrefix 다(창고 코드가 아니다). 바꿀 수 없다. 모든 창고를 통틀어 유일하다(uq_location_code · omf-all-around#292) — 위치 QR 하나로 창고까지 풀린다. 서버가 만든 자리는 {창고 위치 코드}-SYS-STAGING · {창고 위치 코드}-SYS-WHOLE. 2026-11-17 이전 코드(사람이 짓던 S230-01 등 포함)는 예외 없이 {창고 위치 코드}-{옛 코드}로 바꾸었다"
      },
      "locationName": {
       "x-source-column": "location_name",
@@ -19666,7 +20069,13 @@
      "hasItemRestriction": {
       "type": "boolean",
       "example": false,
-      "description": "지정 품목이 있다 — 이 위치에는 그 품목만 들어온다(GET /mdm/locations/{locationId}/items)"
+      "description": "지정 품목이 있다(안내 — GET /mdm/locations/{locationId}/items). 막는 것은 itemRestricted 다. 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정"
+     },
+     "itemRestricted": {
+      "x-source-column": "item_restricted",
+      "type": "boolean",
+      "example": false,
+      "description": "지정 품목만 받기 — 켜면 모든 재고 기록 경로에서 지정 밖 품목을 400 LOCATION_ITEM_RESTRICTED 로 거절한다. 기본 끔(배포 때 모든 위치 끔). 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정"
      }
     }
    },
@@ -19753,6 +20162,11 @@
       "maxLength": 200,
       "example": "자재 랙 1",
       "description": "MES 별칭 — 화면이 이름처럼 보인다. 빈 글은 별칭 없음"
+     },
+     "itemRestricted": {
+      "x-source-column": "item_restricted",
+      "type": "boolean",
+      "description": "지정 품목만 받기 켜기/끄기 — 보내지 않으면 그대로. 켜기는 지정 품목이 1개 이상이고 지정 밖 품목 재고가 없고 사람이 만든 위치일 때만(아니면 400 itemRestricted STATE_LOCKED). 끄기는 늘 된다. 근거: 피처 009 · omf-all-around#294 · 2026-11-18 결정"
      }
     }
    },
@@ -21454,12 +21868,6 @@
       "description": "이 행의 출처 — ERP(Legacy 수신본, 수정/삭제 불가) · MES(자체 등록). WF06 S7 Result 「'Legacy 출처' 플래그 + MES 원천 등록분과 연계분의 구분 플래그」를 되살린 하나의 축이다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-09 §4-D · W-06-05 §9-1 · W-06-06 §5-4",
       "example": "MES",
       "x-code-key": "CD-SOURCE-SYSTEM"
-     },
-     "productionWarehouseCount": {
-      "type": "integer",
-      "minimum": 0,
-      "example": 2,
-      "description": "이 부서에 연결한 생산 창고 수(W-06-06 부서 목록 「생산 창고」 열). 목록(GET /mdm/departments)에만 싣는다 — 상세·쓰기 응답에는 없다. 근거: 피처 003 · omf-all-around#66"
      }
     },
     "x-internal-note": "미착지: 수신본 식별 플래그 — 되살렸다(sourceSystemCode, 2026-08-30). DepartmentUpdate가 노출하는 필드는 이 값으로 편집 잠금을 판정한다(editability). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다."
@@ -21998,6 +22406,26 @@
       "description": "MES 확장 — 생산LOT 기본크기. 확정 REQ-PR-0008 · E26 「기본값 + 수정 가능」. 2026-08-30 되살림. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-05 §4-B",
       "example": 500.0
      },
+     "defaultPackageUomId": {
+      "x-source-column": "default_package_uom_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "MES 확장 — 자재 관리 LOT 패키징 단위 기본값(피처 014 · omf-all-around#349). defaultPackageCount 와 함께 있거나 함께 비어야 한다. 조회 때 P/O 몫만큼 자동으로 만드는 자재 관리 LOT 에 복사한다(만든 뒤 바뀌어도 LOT 은 그대로). 근거: W-06-05 lot 그룹",
+      "example": 1001
+     },
+     "defaultPackageCount": {
+      "x-source-column": "default_package_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "description": "MES 확장 — LOT 당 패키징 수량 기본값(LOT 하나에 든 패키징 개수, 정수 ≥ 1). 패키징당 수량 = LOT 수량 ÷ 이 값. defaultProductionLotSize ÷ 이 값(패키징당 수량)이 소수 1자리까지 떨어져야 한다(예 2.5 ÷ 5 = 0.5 허용, 2.5 ÷ 2 = 1.25·100 ÷ 30 막힘, 기본크기가 비면 검사하지 않음). 피처 014 FR-018",
+      "example": 10
+     },
      "erpSpec": {
       "type": [
        "string",
@@ -22124,6 +22552,26 @@
       "exclusiveMinimum": 0,
       "description": "MES 확장 — 생산LOT 기본크기. 확정 REQ-PR-0008·E26. 2026-08-30 되살림",
       "example": 500.0
+     },
+     "defaultPackageUomId": {
+      "x-source-column": "default_package_uom_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "MES 확장 — 자재 관리 LOT 패키징 단위 기본값(피처 014 · omf-all-around#349). defaultPackageCount 와 함께 있거나 함께 비어야 한다. 조회 때 P/O 몫만큼 자동으로 만드는 자재 관리 LOT 에 복사한다(만든 뒤 바뀌어도 LOT 은 그대로). 근거: W-06-05 lot 그룹. 칸을 보내지 않으면 지금 값을 둔다",
+      "example": 1001
+     },
+     "defaultPackageCount": {
+      "x-source-column": "default_package_count",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "description": "MES 확장 — LOT 당 패키징 수량 기본값(LOT 하나에 든 패키징 개수, 정수 ≥ 1). 패키징당 수량 = LOT 수량 ÷ 이 값. defaultProductionLotSize ÷ 이 값(패키징당 수량)이 소수 1자리까지 떨어져야 한다(예 2.5 ÷ 5 = 0.5 허용, 2.5 ÷ 2 = 1.25·100 ÷ 30 막힘, 기본크기가 비면 검사하지 않음). 피처 014 FR-018. 하나만 있으면 400 PAIR, 나누지 못하면 400 INVALID 「패키징 수량이 부적합 합니다. 자재 LOT 기본크기를 정확히 나눌 수 있는 값을 입력해주세요.」",
+      "example": 10
      },
      "nameKo": {
       "x-source-column": "name_ko",
@@ -22784,26 +23232,6 @@
       "example": "IQC",
       "x-code-key": "CD-QUALITY-INSPECTION-TYPE"
      },
-     "approvedBy": {
-      "x-source-column": "approved_by",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "description": ":approve 액션으로만 기록",
-      "example": 1001
-     },
-     "approvedAt": {
-      "x-source-column": "approved_at",
-      "type": [
-       "string",
-       "null"
-      ],
-      "format": "date-time",
-      "description": "approvedBy 와 짝(CHECK 없음 — 서버가 항상 함께 기록해 보장)",
-      "example": "2026-08-04T09:12:00+09:00"
-     },
      "defaultSkip": {
       "x-source-column": "default_skip",
       "type": "boolean",
@@ -22833,7 +23261,7 @@
      "inspectionPlanName",
      "inspectionTypeCode"
     ],
-    "description": "검사기준 헤더 등록 요청. approvedBy·approvedAt·isActive 는 받지 않는다. 근거: W-06-02 §4-A·§5-1",
+    "description": "검사기준 헤더 등록 요청. isActive 는 받지 않는다. 근거: W-06-02 §4-A·§5-1",
     "properties": {
      "inspectionPlanCode": {
       "x-source-column": "inspection_plan_code",
@@ -22971,7 +23399,7 @@
      "inspectionPlanName",
      "inspectionTypeCode"
     ],
-    "description": "검사기준 헤더 수정 요청. approvedBy·approvedAt 은 :approve 전용, isActive 는 :deactivate 전용. 낙관적 잠금은 공유계약 B-1. 근거: W-06-02 §4-A",
+    "description": "검사기준 헤더 수정 요청. isActive 는 :deactivate 전용. 낙관적 잠금은 공유계약 B-1. 근거: W-06-02 §4-A",
     "properties": {
      "inspectionPlanCode": {
       "x-source-column": "inspection_plan_code",
@@ -23055,6 +23483,34 @@
       "type": "boolean",
       "example": false,
       "description": "⚠ 호환용 — defaultSkip 과 같은 값이다(omf-all-around#212 · 장부 P-152). 새 화면은 defaultSkip 을 쓴다. PQC 생략 허용 — QA #4. 2026-08-30 되살림"
+     },
+     "inspectionLevelCode": {
+      "type": "string",
+      "enum": [
+       "NONE",
+       "REDUCED",
+       "NORMAL",
+       "TIGHTENED"
+      ],
+      "description": "품목 검사 수준 — 기본 정보와 한 트랜잭션에서 저장한다. 생략 = 그대로. 저장 뒤 기준의 품목에 쓴다(같은 저장에서 품목을 바꾸면 바꾼 품목). 품목이 있는 IQC 기준이 아니면 400 inspectionLevelCode INVALID. 수준이 바뀌면 수동 이력 1건, 다른 저장이 먼저 수준을 바꿨으면 409(기본 정보도 저장 안 됨). 근거: omf-all-around#357",
+      "example": "NORMAL"
+     },
+     "inspectionLevelReason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 500,
+      "description": "검사 수준 변경 사유(선택) — 이력에 남는다. 근거: omf-all-around#357"
+     },
+     "inspectionLevelVersionNo": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "minimum": 1,
+      "description": "창을 열 때 본 품목 검사 수준의 versionNo — 미지정 품목이면 null. 지금 판과 다르면 409(기본 정보도 저장 안 됨). 생략 = 견주지 않음. 근거: omf-all-around#357",
+      "example": 3
      }
     }
    },
@@ -25539,7 +25995,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -25549,7 +26005,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -25559,7 +26015,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      },
      "departmentId": {
@@ -26586,7 +27042,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -26596,7 +27052,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -26606,7 +27062,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      },
      "departmentId": {
@@ -26682,7 +27138,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -26692,7 +27148,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -26702,7 +27158,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      },
      "departmentId": {
@@ -26762,7 +27218,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -26772,7 +27228,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -26782,7 +27238,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재·생산창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      },
      "departmentId": {
@@ -29059,6 +29515,97 @@
      }
     }
    },
+   "ShiftCreate": {
+    "type": "object",
+    "required": [
+     "plantId",
+     "shiftCode",
+     "shiftName",
+     "startTime",
+     "endTime"
+    ],
+    "description": "교대 등록. 근거: omf-all-around#318",
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "공장",
+      "example": 1
+     },
+     "shiftCode": {
+      "type": "string",
+      "maxLength": 50,
+      "example": "D",
+      "x-no-code-key": "코드 그룹이 아니다 — Shift 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
+     },
+     "shiftName": {
+      "type": "string",
+      "maxLength": 200,
+      "example": "주간"
+     },
+     "startTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "08:00:00"
+     },
+     "endTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "20:00:00"
+     }
+    }
+   },
+   "ShiftUpdate": {
+    "type": "object",
+    "required": [
+     "shiftName",
+     "startTime",
+     "endTime"
+    ],
+    "description": "shiftCode 는 참조가 0일 때만 보낼 수 있다 — 상세 조회의 editability 가 가부와 사유를 함께 내린다. 근거: 공유계약 B-4",
+    "properties": {
+     "shiftCode": {
+      "type": "string",
+      "maxLength": 50,
+      "example": "D",
+      "x-no-code-key": "코드 그룹이 아니다 — Shift 마스터 «한 건»을 가리키는 인스턴스 식별자다. 값 목록이 있는 것이 아니라 그 마스터의 행이 곧 값이다."
+     },
+     "shiftName": {
+      "type": "string",
+      "maxLength": 200,
+      "example": "주간"
+     },
+     "startTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "08:00:00"
+     },
+     "endTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+      "description": "공장 현지 시각 HH:MM:SS",
+      "example": "20:00:00"
+     }
+    }
+   },
+   "ShiftDetailResponse": {
+    "type": "object",
+    "required": [
+     "shift",
+     "editability"
+    ],
+    "properties": {
+     "shift": {
+      "$ref": "#/components/schemas/Shift"
+     },
+     "editability": {
+      "$ref": "#/components/schemas/Editability"
+     }
+    }
+   },
    "AppUserWorker": {
     "type": "object",
     "required": [
@@ -30219,17 +30766,17 @@
      },
      "levelCount": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 99,
       "example": 5,
-      "description": "층 수"
+      "description": "층 수 — 0 이면 랙이 맨 아래 위치다(사용자 결정 2026-11-19)"
      },
      "cellCountPerLevel": {
       "type": "integer",
       "minimum": 0,
       "maximum": 99,
       "example": 10,
-      "description": "층마다 셀 수 — 0 이면 층이 맨 아래 위치다"
+      "description": "층마다 셀 수 — 0 이면 층이 맨 아래 위치다. 층 수가 0 이면 0 이어야 한다"
      }
     }
    },
@@ -30289,112 +30836,6 @@
        1001,
        1002
       ]
-     }
-    }
-   },
-   "DepartmentProductionWarehouse": {
-    "type": "object",
-    "required": [
-     "warehouseId",
-     "warehouseCode",
-     "warehouseName",
-     "plantId"
-    ],
-    "properties": {
-     "warehouseId": {
-      "type": "integer",
-      "format": "int64",
-      "example": 12
-     },
-     "warehouseCode": {
-      "type": "string",
-      "example": "PW-A"
-     },
-     "warehouseName": {
-      "type": "string",
-      "example": "생산 창고 A"
-     },
-     "plantId": {
-      "type": "integer",
-      "format": "int64",
-      "example": 1
-     }
-    }
-   },
-   "DepartmentProductionWarehouseListResponse": {
-    "type": "object",
-    "required": [
-     "items"
-    ],
-    "properties": {
-     "items": {
-      "type": "array",
-      "items": {
-       "$ref": "#/components/schemas/DepartmentProductionWarehouse"
-      }
-     }
-    }
-   },
-   "DepartmentProductionWarehouseReplace": {
-    "type": "object",
-    "required": [
-     "warehouseIds"
-    ],
-    "description": "연결할 생산 창고 전부. 같은 id 는 한 번으로 센다. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
-    "properties": {
-     "warehouseIds": {
-      "type": "array",
-      "maxItems": 50,
-      "items": {
-       "type": "integer",
-       "format": "int64"
-      },
-      "example": [
-       12,
-       13
-      ]
-     }
-    }
-   },
-   "DepartmentProductionWarehouseRemoved": {
-    "type": "object",
-    "required": [
-     "warehouseId",
-     "activeRequestCount"
-    ],
-    "properties": {
-     "warehouseId": {
-      "type": "integer",
-      "format": "int64",
-      "example": 13
-     },
-     "activeRequestCount": {
-      "type": "integer",
-      "minimum": 0,
-      "example": 2,
-      "description": "이 창고가 출발지인 이 부서(W/O 생산 라인의 부서) 출고 요청 중 대기·배포이고 닫히지 않은 것의 수. 저장해도 그 요청은 그대로 진행된다"
-     }
-    }
-   },
-   "DepartmentProductionWarehouseReplaceResponse": {
-    "type": "object",
-    "required": [
-     "items",
-     "removed"
-    ],
-    "properties": {
-     "items": {
-      "type": "array",
-      "items": {
-       "$ref": "#/components/schemas/DepartmentProductionWarehouse"
-      }
-     },
-     "removed": {
-      "type": "array",
-      "description": "이번에 연결에서 빠지는 창고(창고 id 순). 없으면 빈 배열",
-      "items": {
-       "$ref": "#/components/schemas/DepartmentProductionWarehouseRemoved"
-      }
      }
     }
    },

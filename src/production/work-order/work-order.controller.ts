@@ -25,13 +25,13 @@ import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderClose } from './close-rules';
+import { WorkOrderMaterialRequirement, releaseMaterialPreview } from './release-material-preview';
 import { ResourceRecommendations, recommendResources } from './resource-recommendation';
 import { ValidationReport, validateWorkOrder } from './validation';
 import { WorkOrderCancel, WorkOrderCancelService } from './work-order-cancel.service';
 import { WorkOrderCloseActor, WorkOrderCloseService } from './work-order-close.service';
 import { WorkOrderDailyResultsService } from './work-order-daily-results.service';
 import { WorkOrderListQuery } from './work-order-list-where';
-import { WorkOrderPqcSkipService } from './work-order-pqc-skip.service';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
 import { WorkOrderRelease, WorkOrderReleaseService } from './work-order-release.service';
@@ -64,7 +64,6 @@ export class WorkOrderController {
     private readonly cancels: WorkOrderCancelService,
     private readonly resourcePlans: WorkOrderResourcePlanService,
     private readonly dailyResults: WorkOrderDailyResultsService,
-    private readonly pqcSkips: WorkOrderPqcSkipService,
     private readonly idempotency: IdempotencyService,
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
     private readonly prisma: PrismaService,
@@ -140,7 +139,7 @@ export class WorkOrderController {
   ): Promise<WorkOrderView> {
     const version = versionOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      const waiting = await this.releases.release(workOrderId, version, body, userOf(request));
+      const waiting = await this.releases.release(workOrderId, version, body, userOf(request), String(request.headers['idempotency-key']));
       // 생산 창고 공장이면 창고별 요청 요약·미배정 자재를 함께 싣는다(피처 003). 지금 방식 공장은 그대로다.
       return { ...(await this.queries.detail(workOrderId, {})).view, ...(waiting ?? {}) };
     }, FAMILY_CONFLICT_CODE);
@@ -205,41 +204,6 @@ export class WorkOrderController {
     }, FAMILY_CONFLICT_CODE);
   }
 
-  /**
-   * PQC 건별 생략 요청 — PQC 검사 조회·판정(W-03-11)이 결재를 상신한다(omf-all-around#212 · 장부 P-152). 의뢰·LOT 은 옮기지 않는다(J-8).
-   */
-  @Post(':workOrderId\\:request-pqc-skip')
-  @Contract('POST /production/work-orders/{workOrderId}:request-pqc-skip')
-  @HttpCode(HttpStatus.ACCEPTED)
-  requestPqcSkip(
-    @Req() request: Request,
-    @Param('workOrderId', ParseIntPipe) workOrderId: number,
-    @Body() body: { reason: string },
-  ): Promise<{ approvalRequestId: number }> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
-      this.pqcSkips.requestSkip(workOrderId, body.reason, appUserId),
-    );
-  }
-
-  /**
-   * 승인된 PQC 생략의 실행 — 열린 PQC 의뢰를 생략으로 닫고 검사 대기 생산LOT 을 정상(C28)으로 올린다(장부 P-152).
-   * ⛔ If-Match 를 안 읽는다 — W/O 를 잠근 뒤 상태로 판정한다(두 번째 실행은 400).
-   */
-  @Post(':workOrderId\\:skip-pqc')
-  @Contract('POST /production/work-orders/{workOrderId}:skip-pqc')
-  @HttpCode(HttpStatus.OK)
-  skipPqc(
-    @Req() request: Request,
-    @Param('workOrderId', ParseIntPipe) workOrderId: number,
-  ): Promise<WorkOrderView> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.pqcSkips.execute(workOrderId, appUserId);
-      return (await this.queries.detail(workOrderId, {})).view;
-    });
-  }
-
   @Post(':workOrderId\\:cancel')
   @Contract('POST /production/work-orders/{workOrderId}:cancel')
   @HttpCode(HttpStatus.OK)
@@ -286,6 +250,13 @@ export class WorkOrderController {
       await this.resourcePlans.remove(workOrderId, workOrderResourcePlanId);
       return undefined;
     });
+  }
+
+  /** 배포 확인 화면의 자재 소요 표 — 배포와 같은 함수로 재고 단위까지 낸다. 저장하지 않는다. */
+  @Get(':workOrderId/material-requirements')
+  @Contract('GET /production/work-orders/{workOrderId}/material-requirements')
+  materialRequirements(@Param('workOrderId', ParseIntPipe) workOrderId: number): Promise<{ items: WorkOrderMaterialRequirement[] }> {
+    return releaseMaterialPreview(this.prisma, workOrderId);
   }
 
   @Get(':workOrderId/validation')

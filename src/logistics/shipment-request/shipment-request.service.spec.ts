@@ -1,5 +1,6 @@
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertBusinessUnitAndWarehouses, assertSalesOrderRemaining } from './shipment-request-create-rules';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { ShipmentRequestView } from './shipment-request-view';
 import { ShipmentRequestCreate, ShipmentRequestService } from './shipment-request.service';
@@ -36,7 +37,11 @@ function stub() {
     item: { findMany: async () => [{ item_id: 21n }] },
     uom: { findMany: async () => [{ uom_id: 31n }] },
     sales_order_line: {
-      findMany: async () => [{ sales_order_line_id: 41n, sales_order_id: 9n }],
+      findMany: async () => [{ sales_order_line_id: 41n, sales_order_id: 9n, ordered_qty: 1000, shipped_qty: 0 }],
+    },
+    business_unit: { findUnique: async () => ({ is_active: true }) },
+    warehouse: {
+      findMany: async () => [{ warehouse_id: 5n, plant_id: 4n, business_unit_id: 1n, is_active: true, is_defect: false }],
     },
     code_value: {
       findMany: async () => [{ code: 'MORNING', code_group: { group_code: 'SHIPMENT_TIME_SLOT' } }],
@@ -111,8 +116,9 @@ function body(overrides: Partial<ShipmentRequestCreate> = {}): ShipmentRequestCr
     customerId: 11,
     shipToPartnerId: 12,
     requestedShipDate: '2026-09-21',
+    businessUnitId: 1,
     lines: [
-      { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: false },
+      { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: false, warehouseId: 5 },
     ],
     ...overrides,
   };
@@ -141,7 +147,7 @@ describe('출하작업지시 편성 — 트랜잭션 순서 (§3-1)', () => {
     await harness.service.create(
       body({
         lines: [
-          { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: true },
+          { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: true, warehouseId: 5 },
         ],
       }),
       ACTOR,
@@ -196,8 +202,8 @@ describe('출하작업지시 편성 — 트랜잭션 순서 (§3-1)', () => {
     await harness.service.create(
       body({
         lines: [
-          { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: true },
-          { itemId: 21, requestedQty: 50, allocatedQty: 50, uomId: 31, shippingInspectionRequired: false },
+          { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: true, warehouseId: 5 },
+          { itemId: 21, requestedQty: 50, allocatedQty: 50, uomId: 31, shippingInspectionRequired: false, warehouseId: 5 },
         ],
       }),
       ACTOR,
@@ -207,7 +213,11 @@ describe('출하작업지시 편성 — 트랜잭션 순서 (§3-1)', () => {
       shipment_request_no: 'SR-20260921-0001',
       status_code: 'REGISTERED',
       created_by: 3,
+      // 피처 012 D-1 — 사업부를 싣고 공장은 비운다.
+      business_unit_id: 1,
+      fulfillment_plant_id: null,
     });
+    expect(harness.recorded.lines.map((row) => row.warehouse_id)).toEqual([5, 5]);
     // ⛔ `version_no` 를 손으로 넣지 않는다 — 물리 기본값 1 이다(§3-1 ⑦-1).
     expect(harness.recorded.header).not.toHaveProperty('version_no');
     expect(harness.recorded.lines.map((row) => row.line_no)).toEqual([1, 2]);
@@ -217,46 +227,72 @@ describe('출하작업지시 편성 — 트랜잭션 순서 (§3-1)', () => {
   });
 });
 
-describe('출하작업지시 이행 공장 재지정', () => {
-  function updateHarness(picked: boolean, warehousePlantId: bigint) {
-    const updateMany = jest.fn();
-    const prisma = {
-      plant: { findFirst: jest.fn().mockResolvedValue({ business_unit_id: 1n }) },
-      $transaction: async (work: (tx: unknown) => Promise<unknown>) => work({
-        $queryRaw: async () => [{ shipment_request_id: 77n }],
-        shipment_request: {
-          findUnique: async () => ({
-            shipment_request_id: 77n,
-            version_no: 1,
-            fulfillment_plant_id: 3n,
-            shipment: [{ warehouse: { plant_id: warehousePlantId } }],
-            shipment_request_line: [{ shipment_request_line_id: 501n }],
-          }),
-          updateMany,
-        },
-        inventory_reservation: {
-          findFirst: async () => picked ? { inventory_reservation_id: 9n } : null,
-        },
-      }),
-    };
-    const service = new ShipmentRequestService(prisma as unknown as PrismaService,
-      {} as NumberingService, {} as ShipmentRequestQueryService, HANDOVER);
-    return { service, updateMany };
-  }
+/** 피처 012 R-8 — 사업부·줄 출고 창고(필수·422, 범위 밖 403)와 S/O 줄 나누기 합계(D-3). */
+describe('출하작업지시 편성 — 사업부·줄 출고 창고·S/O 나누기 (피처 012)', () => {
+  type Warehouse = { warehouse_id: bigint; plant_id: bigint; business_unit_id: bigint; is_active: boolean; is_defect: boolean };
+  const A: Warehouse = { warehouse_id: 5n, plant_id: 4n, business_unit_id: 1n, is_active: true, is_defect: false };
+  const B: Warehouse = { warehouse_id: 6n, plant_id: 7n, business_unit_id: 1n, is_active: true, is_defect: false };
+  const db = (unit: { is_active: boolean } | null, warehouses: Warehouse[]) => ({
+    business_unit: { findUnique: async () => unit },
+    warehouse: { findMany: async () => warehouses },
+  }) as unknown as PrismaService;
+  const input = (warehouseIds: (number | null)[], businessUnitId: number | null = 1) =>
+    ({ businessUnitId, lines: warehouseIds.map((warehouseId) => ({ warehouseId })) });
+  const fieldsOf = async (promise: Promise<unknown>) => {
+    const error = await promise.then(() => null, (thrown: unknown) => thrown as { getStatus: () => number; getResponse: () => { errors: { field: string }[] } });
+    return error === null ? null : { status: error.getStatus(), fields: error.getResponse().errors.map((item) => item.field) };
+  };
 
-  const actor = { appUserId: 3, scopes: [{ businessUnitId: 1, plantId: 4 }] };
-
-  it('피킹 예약 후에는 공장 변경을 거부하고 헤더를 갱신하지 않는다', async () => {
-    const { service, updateMany } = updateHarness(true, 4n);
-    await expect(service.updateFulfillmentPlant(77, 1, { fulfillmentPlantId: 4 }, actor))
-      .rejects.toMatchObject({ status: 409 });
-    expect(updateMany).not.toHaveBeenCalled();
+  it('US1-2 사업부가 없으면 422 businessUnitId, US1-6 창고 빈 줄은 422 lines[n].warehouseId', async () => {
+    expect(await fieldsOf(assertBusinessUnitAndWarehouses(db({ is_active: true }, [A]), input([5, null], null), [])))
+      .toEqual({ status: 422, fields: ['businessUnitId', 'lines[1].warehouseId'] });
   });
 
-  it('기존 출하 창고가 다른 공장이면 변경을 거부하고 헤더를 갱신하지 않는다', async () => {
-    const { service, updateMany } = updateHarness(false, 3n);
-    await expect(service.updateFulfillmentPlant(77, 1, { fulfillmentPlantId: 4 }, actor))
-      .rejects.toMatchObject({ status: 409 });
-    expect(updateMany).not.toHaveBeenCalled();
+  it('US1-3 다른 사업부·불량창고·비활성 창고는 422 lines[n].warehouseId', async () => {
+    const other = { ...A, warehouse_id: 8n, business_unit_id: 2n };
+    const defect = { ...A, warehouse_id: 9n, is_defect: true };
+    const inactive = { ...A, warehouse_id: 10n, is_active: false };
+    expect(await fieldsOf(assertBusinessUnitAndWarehouses(db({ is_active: true }, [A, other, defect, inactive]), input([5, 8, 9, 10]), [])))
+      .toEqual({ status: 422, fields: ['lines[1].warehouseId', 'lines[2].warehouseId', 'lines[3].warehouseId'] });
+  });
+
+  it('US1-3 비활성 사업부는 422, 계정 범위 밖 사업부는 403', async () => {
+    expect(await fieldsOf(assertBusinessUnitAndWarehouses(db({ is_active: false }, [A]), input([5]), [])))
+      .toEqual({ status: 422, fields: ['businessUnitId'] });
+    expect(await fieldsOf(assertBusinessUnitAndWarehouses(db({ is_active: true }, [A]), input([5]), [{ businessUnitId: 2 }])))
+      .toEqual({ status: 403, fields: ['businessUnitId'] });
+  });
+
+  it('Edge-scope 범위 없는 계정·사업부 범위 계정은 사업부 안 공장 둘의 창고를 고른다, 공장만 범위 계정은 다른 공장 창고가 403', async () => {
+    await expect(assertBusinessUnitAndWarehouses(db({ is_active: true }, [A, B]), input([5, 6]), [])).resolves.toBeUndefined();
+    await expect(assertBusinessUnitAndWarehouses(db({ is_active: true }, [A, B]), input([5, 6]), [{ businessUnitId: 1 }])).resolves.toBeUndefined();
+    expect(await fieldsOf(assertBusinessUnitAndWarehouses(db({ is_active: true }, [A, B]), input([5, 6]), [{ businessUnitId: 1, plantId: 4 }])))
+      .toEqual({ status: 403, fields: ['lines[1].warehouseId'] });
+  });
+
+  it('US1-5·Q4 같은 S/O 줄을 나눈 줄의 배정 합이 잔여(주문 − 출하) 이하면 통과, 넘으면 그 줄 모두 422', async () => {
+    const order = [{ sales_order_line_id: 41n, ordered_qty: 120, shipped_qty: 20 }];
+    expect(() => assertSalesOrderRemaining([
+      { salesOrderLineId: 41, allocatedQty: 60 }, { salesOrderLineId: 41, allocatedQty: 40 },
+    ], order)).not.toThrow();
+    let thrown: { getStatus: () => number; getResponse: () => { errors: { field: string; message: string }[] } } | undefined;
+    try {
+      assertSalesOrderRemaining([
+        { salesOrderLineId: 41, allocatedQty: 70 }, { salesOrderLineId: null, allocatedQty: 5 }, { salesOrderLineId: 41, allocatedQty: 40 },
+      ], order);
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown?.getStatus()).toBe(422);
+    expect(thrown?.getResponse().errors).toEqual([
+      expect.objectContaining({ field: 'lines[0].allocatedQty', message: 'S/O 잔여 수량을 넘습니다.' }),
+      expect.objectContaining({ field: 'lines[2].allocatedQty', message: 'S/O 잔여 수량을 넘습니다.' }),
+    ]);
+  });
+
+  it('D-1 fulfillmentPlantId 를 보내면 400 — 참조 질의 전에 막는다', async () => {
+    const harness = stub();
+    await expect(harness.service.create(body({ fulfillmentPlantId: 3 }), ACTOR)).rejects.toMatchObject({ status: 400 });
+    expect(harness.recorded.order).toEqual([]);
   });
 });

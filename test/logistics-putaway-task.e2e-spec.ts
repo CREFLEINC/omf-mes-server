@@ -21,6 +21,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { legacyGoodsReceiptOk } from './support/legacy-goods-receipt';
 
 const LOGIN_ID = 'e2e-pt-probe';
 const PASSWORD = 'PT-검사-비밀번호';
@@ -355,13 +356,30 @@ describe('적치 지시 조회 (e2e)', () => {
       expect(header.status_code).toBe('POSTED');
     });
 
-    it('⛔ 목록이 있는데 밖의 위치면 400 INVALID(actualLocationId)', async () => {
+    // 피처 009 T054(사용자 결정 2026-11-18 「명세대로 고침」) — 허용 위치 목록은 안내다. 목록 밖이라는 이유로 막지 않고,
+    // 막는 것은 「지정 품목만 받기」를 켠 위치(코어 LOCATION_ITEM_RESTRICTED)와 맨 아래 위치·창고 일치 검사뿐이다.
+    it('FR-017b T054 목록이 있어도 밖의 위치(「지정 품목만 받기」 꺼짐)로 완료하면 200 이다', async () => {
       const task = await freshTask(ruledItemId, 10);
 
-      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(400);
+      const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(200);
 
-      expect(response.body.errors[0]).toMatchObject({ code: 'INVALID', field: 'actualLocationId' });
-      expect(await onHand(task.lotId, freeId)).toBe(0);
+      expect(response.body).toMatchObject({ statusCode: 'COMPLETED', actualLocationId: freeId });
+      expect(await onHand(task.lotId, freeId)).toBe(10);
+    });
+
+    it('FR-017d T054 목록 밖이고 「지정 품목만 받기」를 켠 위치면 400 LOCATION_ITEM_RESTRICTED — 잔액 그대로', async () => {
+      const task = await freshTask(ruledItemId, 10);
+      await prisma.location_item.create({ data: { location_id: freeId, item_id: plainItemId } });
+      await prisma.location.update({ where: { location_id: freeId }, data: { item_restricted: true } });
+      try {
+        const response = await callComplete(task.taskId, { actualLocationId: freeId }).expect(400);
+
+        expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'LOCATION_ITEM_RESTRICTED' });
+        expect(await onHand(task.lotId, freeId)).toBe(0);
+      } finally {
+        await prisma.location.update({ where: { location_id: freeId }, data: { item_restricted: false } });
+        await prisma.location_item.deleteMany({ where: { location_id: freeId } });
+      }
     });
 
     it('⭐ 목록 중 어느 것으로 완료해도 200 이다', async () => {
@@ -381,12 +399,17 @@ describe('적치 지시 조회 (e2e)', () => {
       expect(response.body).toMatchObject({ statusCode: 'COMPLETED', actualLocationId: freeId, allowedLocations: [] });
     });
 
-    it('⛔ 다른 품목 전용 위치로 완료하면 400 STATE_LOCKED — 코어가 막는다', async () => {
+    // 피처 009(2026-11-18 결정) — 품목 지정은 안내다. 「지정 품목만 받기」를 켠 위치만 코어가 막는다(FR-017d).
+    it('⛔ 「지정 품목만 받기」를 켠 다른 품목 전용 위치로 완료하면 400 LOCATION_ITEM_RESTRICTED — 코어가 막는다', async () => {
       const task = await freshTask(plainItemId, 10);
+      await prisma.location.update({ where: { location_id: rackId }, data: { item_restricted: true } });
+      try {
+        const response = await callComplete(task.taskId, { actualLocationId: rackId }).expect(400);
 
-      const response = await callComplete(task.taskId, { actualLocationId: rackId }).expect(400);
-
-      expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+        expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'LOCATION_ITEM_RESTRICTED' });
+      } finally {
+        await prisma.location.update({ where: { location_id: rackId }, data: { item_restricted: false } });
+      }
     });
 
     it('⭐ 출발 위치와 같아도 200 이고 잔액이 제자리다', async () => {
@@ -522,6 +545,30 @@ describe('적치 지시 조회 (e2e)', () => {
         where: { putaway_task_id: BigInt(task.taskId) },
       });
       expect(row).toMatchObject({ reason_code: 'NO_SPACE', remarks: '선반이 찼다' });
+    });
+
+    it('D-3 H5 단말 :complete·:complete-temporary 는 지시에 작업자·단말을 쓰고, 세션 완료는 NULL', async () => {
+      const token = await mobileToken('PDA-011');
+      const terminalId = BigInt((app.get(JwtService).decode(token) as { sub: number }).sub);
+      const byTerminal = (taskId: number, path: string, body: Record<string, unknown>): request.Test =>
+        request(app.getHttpServer()).post(`/api/logistics/putaway-tasks/${taskId}:${path}`)
+          .set('Authorization', `Bearer ${token}`).set('X-Worker-No', `${PREFIX}-W1`).set('Idempotency-Key', randomUUID())
+          .send({ businessDate: DAY, occurredAt: AT, ...body });
+      const complete = await freshTask(ruledItemId, 10);
+      await byTerminal(complete.taskId, 'complete', { actualLocationId: rackId }).expect(200);
+      const temporary = await freshTask(plainItemId, 10);
+      await byTerminal(temporary.taskId, 'complete-temporary', { actualLocationId: freeId, reasonCode: 'NO_SPACE' }).expect(200);
+      const session = await freshTask(ruledItemId, 10);
+      await callComplete(session.taskId, { actualLocationId: rackId }).expect(200);
+
+      const rows = await prisma.putaway_task.findMany({
+        where: { putaway_task_id: { in: [complete, temporary, session].map((task) => BigInt(task.taskId)) } },
+      });
+      const of = (task: { taskId: number }) => rows.find((row) => row.putaway_task_id === BigInt(task.taskId));
+      for (const task of [complete, temporary]) {
+        expect(of(task)).toMatchObject({ completed_worker_id: BigInt(worker1Id), completed_terminal_id: terminalId });
+      }
+      expect(of(session)).toMatchObject({ completed_worker_id: null, completed_terminal_id: null });
     });
 
     it('임시 적재도 원장 한 줄을 쌓는다', async () => {
@@ -705,10 +752,10 @@ describe('적치 지시 조회 (e2e)', () => {
     return (response.body as TaskBody).allowedLocations.map((location) => location.locationId);
   }
 
-  async function mobileToken(): Promise<string> {
+  async function mobileToken(code = 'PDA'): Promise<string> {
     const terminal = await prisma.terminal.create({
       data: {
-        terminal_code: `${PREFIX}-PDA`,
+        terminal_code: `${PREFIX}-${code}`,
         plant_id: BigInt(plantId),
         terminal_type_code: 'MOBILE',
         status_code: 'RUNNING',
@@ -732,12 +779,7 @@ describe('적치 지시 조회 (e2e)', () => {
   }
 
   async function createReceipt(draft: ReceiptDraft): Promise<ReceiptResult> {
-    const response = await request(app.getHttpServer())
-      .post('/api/logistics/goods-receipts')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send(draft)
-      .expect(201);
+    const response = await legacyGoodsReceiptOk(app, cookie, draft);
     return response.body as ReceiptResult;
   }
 
@@ -1040,6 +1082,9 @@ describe('적치 지시 조회 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM audit.audit_event
+       WHERE terminal_id IN (SELECT terminal_id FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);

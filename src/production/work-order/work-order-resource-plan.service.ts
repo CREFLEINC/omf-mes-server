@@ -1,3 +1,4 @@
+import { assertEquipmentOccupancy, lockEquipmentOccupancy } from './equipment-occupancy';
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -25,7 +26,9 @@ export class WorkOrderResourcePlanService {
 
   /** 201 · 중복 배정은 409 · 없는 W/O 는 404 · 없는 `resourceId` 는 FK 그물이 400 으로 낸다. */
   async add(workOrderId: number, body: WorkOrderResourcePlanCreate, actorId?: number): Promise<WorkOrderResourcePlanView> {
-    const exists = await this.prisma.work_order.findUnique({
+    return this.prisma.$transaction(async (tx) => {
+      await lockEquipmentOccupancy(tx);
+    const exists = await tx.work_order.findUnique({
       where: { work_order_id: workOrderId },
       select: { work_order_id: true },
     });
@@ -35,12 +38,12 @@ export class WorkOrderResourcePlanService {
     const where = { work_order_id: workOrderId, resource_type_code: body.resourceTypeCode, ...target };
     // 손검사가 먼저다 — 식 유일 인덱스의 `P2002.meta.target` 이 이름을 어떻게 담는지 Prisma
     // 버전에 달려 있어 문구가 흔들린다. 인덱스는 경합의 «마지막 그물»로만 쓴다.
-    if (await this.prisma.work_order_resource_assignment.findFirst({ where, select: { work_order_id: true } })) {
+    if (await tx.work_order_resource_assignment.findFirst({ where, select: { work_order_id: true } })) {
       throw this.duplicate();
     }
 
     try {
-      const row = await this.prisma.work_order_resource_assignment.create({
+      const row = await tx.work_order_resource_assignment.create({
         data: {
           work_order_id: workOrderId,
           resource_type_code: body.resourceTypeCode,
@@ -50,12 +53,14 @@ export class WorkOrderResourcePlanService {
           ...(actorId === undefined ? {} : { created_by: actorId }),
         },
       });
+      if (body.resourceTypeCode === 'EQUIPMENT') await assertEquipmentOccupancy(tx, workOrderId);
       return workOrderResourcePlanView(row);
     } catch (error) {
       // 손검사와 INSERT 사이에 낀 동시 요청 — 같은 409 로 흡수한다.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw this.duplicate();
       throw error;
     }
+    });
   }
 
   /**

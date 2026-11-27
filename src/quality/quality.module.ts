@@ -6,7 +6,7 @@ import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { InspectionSheetModule } from '../core/inspection-sheet';
 import { InventoryPostingModule } from '../core/inventory-posting';
-import { LotRegistryModule } from '../core/lot';
+import { LotRegistryModule, PutawayPendingNotifier } from '../core/lot';
 import { NotificationCoreModule } from '../core/notification';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -53,6 +53,7 @@ import { InspectionRequestService } from './inspection/inspection-request.servic
 import { InspectionResultController } from './inspection/inspection-result.controller';
 import { InspectionResultQueryService } from './inspection/inspection-result-query.service';
 import { InspectionResultWriteService } from './inspection/inspection-result-write.service';
+import { OqcLotResultService } from './inspection/oqc-lot-result.service';
 import { InspectionMeasurementService } from './inspection/inspection-measurement.service';
 import { InspectionSummaryController } from './inspection/inspection-summary.controller';
 import { InspectionSummaryService } from './inspection/inspection-summary.service';
@@ -133,8 +134,10 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     OqcSerialQueryService,
     InspectionResultQueryService,
     InspectionResultWriteService,
+    OqcLotResultService,
     InspectionConfirmService,
     IqcRejectedHandoverNotifier,
+    PutawayPendingNotifier,
     IqcRequestConfirmService,
     InspectionSummaryService,
     InspectionMeasurementService,

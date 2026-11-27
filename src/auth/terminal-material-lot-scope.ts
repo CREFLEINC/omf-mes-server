@@ -16,10 +16,18 @@ import { currentTerminal, type TerminalContext } from './terminal-context';
 export const TERMINAL_MATERIAL_LOT_OPERATIONS: Readonly<Record<string, readonly 'POP'[]>> = {
   'GET /logistics/material-lot-batches': ['POP'],
   'GET /logistics/waiting-material-lots': ['POP'],
+  // 피처 014 — 조회가 P/O 몫을 만들지만 GET 이라 작업자·멱등 키 없이 부른다(공장 범위만).
+  'GET /logistics/material-lot-pairs': ['POP'],
+  'GET /logistics/material-lot-suppliers': ['POP'],
+  'GET /logistics/material-lots': ['POP'],
+  'GET /logistics/material-lots/lookup': ['POP'],
+  // 분할 LOT 라벨 목록(P-01-02 · 피처 008) — 공장 범위는 GET 규칙(질의 plantId = 단말 공장) 그대로다.
+  'GET /logistics/split-material-lots': ['POP'],
   'GET /mdm/supplier-item-defaults': ['POP'],
   'GET /mdm/items/{itemId}/uom-conversions': ['POP'],
   'POST /logistics/material-lot-batches': ['POP'],
   'POST /trace/lots:void': ['POP'],
+  'POST /logistics/material-lots/{lotId}:revise': ['POP'],
 };
 
 const WORKER = Symbol('terminalMaterialLotWorkerId');
@@ -69,6 +77,9 @@ export async function assertTerminalMaterialLotScope(
   if (!worker) throw denied();
   if (key === 'POST /logistics/material-lot-batches') {
     if (id(body.plantId) !== terminal.plantId) throw denied();
+  } else if (key === 'POST /logistics/material-lots/{lotId}:revise') {
+    const lotId = id(request.params.lotId);
+    if (lotId === -1n || await prisma.lot.count({ where: { lot_id: lotId, plant_id: terminal.plantId } }) === 0) throw denied();
   } else {
     const lotIds = Array.isArray(body.lotIds) ? body.lotIds.map(id) : [];
     if (lotIds.length === 0 || lotIds.includes(-1n)) throw denied();

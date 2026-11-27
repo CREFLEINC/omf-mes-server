@@ -13,7 +13,8 @@ export type HandoverAggregate =
   | 'SHIPMENT'
   | 'WORK_ORDER'
   | 'INBOUND_RECEIPT'
-  | 'LOT';
+  | 'LOT'
+  | 'INBOUND_LOT';
 
 export interface HandoverAlertType {
   alertTypeCode: string;
@@ -38,7 +39,15 @@ export const HANDOVER_ALERT_TYPES: readonly HandoverAlertType[] = [
     aggregateTypeCode: 'LOT',
     name: '검사 불합격(IQC)',
     nameVi: 'Không đạt kiểm tra (IQC)',
-    description: 'IQC 검사가 불합격으로 확정될 때(LOT 1건마다) — 불량 창고로 입하 처리할 담당자',
+    description: 'IQC 검사가 불합격으로 확정될 때(LOT 1건마다) — 부적합을 처분할 담당자. 불량창고 적치는 「적치 대기」로 알린다',
+  },
+  {
+    // 피처 009(omf-all-around#294) — 구매 입하 자재는 PDA 적치가 곧 입고다. 005 이전 흐름 IQC 단건 확정은 대상이 LOT 이다.
+    alertTypeCode: 'PUTAWAY_PENDING',
+    aggregateTypeCode: 'INBOUND_LOT',
+    name: '적치 대기',
+    nameVi: 'Chờ xếp kho',
+    description: 'IQC 판정 확정·입하 마감(검사 불필요·생략 품목)으로 적치할 자재 관리 LOT 이 생길 때(입하 LOT 1건마다)',
   },
   {
     alertTypeCode: 'PUTAWAY_REQUESTED',

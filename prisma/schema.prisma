@@ -75,7 +75,6 @@ model app_user {
   equipment_calibration_performer                        equipment_calibration[]           @relation("equipment_calibration_calibrated_by")
   equipment_calibration_recorder                         equipment_calibration[]           @relation("equipment_calibration_recorded_by")
   equipment_calibration_clearer                          equipment_calibration[]           @relation("equipment_calibration_cleared_by")
-  inspection_plan                                        inspection_plan[]
   nonconformance                                         nonconformance[]
   impact_analysis                                        impact_analysis[]
   lot_hold_lot_hold_held_byToapp_user                    lot_hold[]                         @relation("lot_hold_held_byToapp_user")
@@ -120,7 +119,6 @@ model approval_request {
   target_type_code                               String                 @db.VarChar(50)
   target_id                                      BigInt
   requested_by                                   BigInt?
-  requested_worker_id                            BigInt?
   requested_at                                   DateTime               @db.Timestamptz(6)
   status_code                                    String                 @db.VarChar(50)
   reason                                         String
@@ -132,7 +130,6 @@ model approval_request {
   decided_by                                     BigInt?
   app_user_approval_request_decided_byToapp_user app_user?              @relation("approval_request_decided_byToapp_user", fields: [decided_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   app_user                                       app_user?              @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  requested_worker                               worker?                @relation(fields: [requested_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   approval_step                                  approval_step[]
   inventory_adjustment                           inventory_adjustment[]
   goods_issue                                    goods_issue[]
@@ -984,8 +981,13 @@ model goods_receipt {
   updated_at                DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                BigInt?
   version_no                Int                   @default(1)
+  /// PDA 지시 없는 적치로 만든 전표만 채운다(omf-all-around#325). 부분 색인 둘은 마이그레이션에만 있다.
+  putaway_worker_id         BigInt?
+  putaway_terminal_id       BigInt?
   plant                     plant                 @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   warehouse                 warehouse             @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  putaway_worker            worker?               @relation("goods_receipt_putaway_worker", fields: [putaway_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  putaway_terminal          terminal?             @relation("goods_receipt_putaway_terminal", fields: [putaway_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
   goods_receipt_line        goods_receipt_line[]
   subcontract_receipt       subcontract_receipt[]
 
@@ -1014,6 +1016,8 @@ model goods_receipt_line {
   expected_qty                        Decimal?                    @db.Decimal(20, 6)
   variance_reason_code                String?                     @db.VarChar(50)
   variance_note                       String?
+  /// PDA 지시 없는 적치의 적치 방식(공통코드 GOODS_RECEIPT_PUTAWAY_MODE) — 그 밖의 입고는 NULL(omf-all-around#294)
+  putaway_mode_code                   String?                     @db.VarChar(30)
   shipment_lot_allocation             shipment_lot_allocation?    @relation(fields: [original_shipment_lot_allocation_id], references: [shipment_lot_allocation_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_goods_receipt_line_orig_shipment")
   location                            location                    @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   goods_receipt                       goods_receipt               @relation(fields: [goods_receipt_id], references: [goods_receipt_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1343,6 +1347,7 @@ model purchase_order_line {
   asn_line               asn_line[]
   inbound_receipt_line   inbound_receipt_line[]
   inbound_receipt_po_allocation inbound_receipt_po_allocation[]
+  material_lot_po_plan   material_lot_po_plan[]
   item                   item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   purchase_order         purchase_order         @relation(fields: [purchase_order_id], references: [purchase_order_id], onDelete: NoAction, onUpdate: NoAction)
   uom                    uom                    @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1405,9 +1410,14 @@ model putaway_task {
   version_no                                              Int                         @default(1)
   reason_code                                             String?                     @db.VarChar(50)
   shopfloor_receipt_line_id                               BigInt?
+  /// 단말이 완료·임시 완료할 때 채운다(omf-all-around#325). 부분 색인 둘은 마이그레이션에만 있다.
+  completed_worker_id                                     BigInt?
+  completed_terminal_id                                   BigInt?
+  completed_worker                                        worker?                     @relation("putaway_task_completed_worker", fields: [completed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  completed_terminal                                      terminal?                   @relation("putaway_task_completed_terminal", fields: [completed_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
   location_putaway_task_actual_location_idTolocation      location?                   @relation("putaway_task_actual_location_idTolocation", fields: [actual_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   putaway_rule                                            putaway_rule?               @relation(fields: [applied_putaway_rule_id], references: [putaway_rule_id], onDelete: NoAction, onUpdate: NoAction)
-  worker                                                  worker?                     @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                                                  worker?                     @relation("putaway_task_assigned_worker", fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   location_putaway_task_from_location_idTolocation        location                    @relation("putaway_task_from_location_idTolocation", fields: [from_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   goods_receipt_line                                      goods_receipt_line?         @relation(fields: [goods_receipt_line_id], references: [goods_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_transaction_line                              inventory_transaction_line? @relation(fields: [inventory_transaction_line_id], references: [inventory_transaction_line_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1482,7 +1492,7 @@ model shipment {
   shipment_id                              BigInt           @id @default(autoincrement())
   shipment_no                              String           @unique @db.VarChar(100)
   shipment_request_id                      BigInt
-  warehouse_id                             BigInt
+  warehouse_id                             BigInt?
   vehicle_no                               String?          @db.VarChar(50)
   driver_name                              String?          @db.VarChar(100)
   seal_no                                  String?          @db.VarChar(50)
@@ -1506,12 +1516,17 @@ model shipment {
   cancellation_reason_code                 String?          @db.VarChar(50)
   expedited                                Boolean          @default(false)
   expedite_reason                          String?
+  completed_terminal_id                    BigInt?
+  completed_worker_id                      BigInt?
   app_user_shipment_cancelled_byToapp_user app_user?        @relation("shipment_cancelled_byToapp_user", fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   partner                                  partner?         @relation(fields: [carrier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   app_user_shipment_confirmed_byToapp_user app_user?        @relation("shipment_confirmed_byToapp_user", fields: [confirmed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   worker                                   worker?          @relation(fields: [loading_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_request                         shipment_request @relation(fields: [shipment_request_id], references: [shipment_request_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse                                warehouse        @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse                                warehouse?       @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  completed_terminal                       terminal?        @relation(fields: [completed_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+  completed_worker                         worker?          @relation("shipment_completed_worker", fields: [completed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  shipment_request_lot                     shipment_request_lot[]
   shipment_line                            shipment_line[]
   shipping_unit                            shipping_unit[]
 
@@ -1620,16 +1635,20 @@ model shipment_request {
   ship_time_slot_code                                  String?                 @db.VarChar(50)
   sales_order_id                                       BigInt?
   fulfillment_plant_id                                 BigInt?
+  /// 지시서 사업부 — 새 지시서는 필수(서비스), 배포 전 지시서는 이행 공장의 사업부로 채움(omf-all-around#338)
+  business_unit_id                                     BigInt?
   shipment                                             shipment[]
   partner_shipment_request_customer_idTopartner        partner                 @relation("shipment_request_customer_idTopartner", fields: [customer_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   partner_shipment_request_ship_to_partner_idTopartner partner                 @relation("shipment_request_ship_to_partner_idTopartner", fields: [ship_to_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   sales_order                                          sales_order?            @relation(fields: [sales_order_id], references: [sales_order_id], onDelete: NoAction, onUpdate: NoAction)
   fulfillment_plant                                    plant?                  @relation(fields: [fulfillment_plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  business_unit                                        business_unit?          @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_request_line                                shipment_request_line[]
 
   @@index([customer_id, requested_ship_date, status_code], map: "ix_shipment_customer_date")
   @@index([sales_order_id], map: "ix_shipment_request_sales_order")
   @@index([fulfillment_plant_id, status_code], map: "ix_shipment_request_fulfillment_plant_status")
+  @@index([business_unit_id, status_code], map: "ix_shipment_request_business_unit_status")
   @@schema("logistics")
 }
 
@@ -1652,13 +1671,52 @@ model shipment_request_line {
   updated_at                        DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                        BigInt?
   version_no                        Int               @default(1)
+  /// 출고 창고 — 새 줄은 필수(서비스), NULL = 배포 전 줄(창고 미지정)(omf-all-around#338)
+  warehouse_id                      BigInt?
+  warehouse                         warehouse?        @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_line                     shipment_line[]
+  shipment_request_lot              shipment_request_lot[]
   item                              item              @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   sales_order_line                  sales_order_line? @relation(fields: [sales_order_line_id], references: [sales_order_line_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_request                  shipment_request  @relation(fields: [shipment_request_id], references: [shipment_request_id], onDelete: NoAction, onUpdate: NoAction)
   uom                               uom               @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([shipment_request_id, line_no], map: "uq_shipment_request_line")
+  @@index([warehouse_id], map: "ix_shipment_request_line_warehouse")
+  @@schema("logistics")
+}
+
+model shipment_request_lot {
+  shipment_request_lot_id      BigInt                @id @default(autoincrement())
+  shipment_request_line_id     BigInt
+  lot_id                       BigInt
+  picked_qty                   Decimal               @db.Decimal(20, 6)
+  uom_id                       BigInt
+  status_code                  String                @db.VarChar(20)
+  management_code              String?               @db.VarChar(100)
+  picked_at                    DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  picked_worker_id             BigInt?
+  replaced_at                  DateTime?             @db.Timestamptz(6)
+  replaced_worker_id           BigInt?
+  replace_inspection_result_id BigInt?
+  replace_nonconformance_id    BigInt?
+  shipment_id                  BigInt?
+  created_at                   DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                   BigInt?
+  updated_at                   DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                   BigInt?
+  version_no                   Int                   @default(1)
+  shipment_request_line        shipment_request_line @relation(fields: [shipment_request_line_id], references: [shipment_request_line_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                          lot                   @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                          uom                   @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  picked_worker                worker?               @relation("shipment_request_lot_picked_worker", fields: [picked_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  replaced_worker              worker?               @relation("shipment_request_lot_replaced_worker", fields: [replaced_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  replace_inspection_result    inspection_result?    @relation(fields: [replace_inspection_result_id], references: [inspection_result_id], onDelete: NoAction, onUpdate: NoAction)
+  replace_nonconformance       nonconformance?       @relation(fields: [replace_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction)
+  shipment                     shipment?             @relation(fields: [shipment_id], references: [shipment_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([lot_id], map: "ix_shipment_request_lot_lot")
+  @@index([shipment_id], map: "ix_shipment_request_lot_shipment")
   @@schema("logistics")
 }
 
@@ -1896,6 +1954,7 @@ model business_unit {
   plant                                                                  plant[]
   warehouse                                                              warehouse[]
   worker                                                                 worker[]
+  shipment_request                                                       shipment_request[]
   production_order                                                       production_order[]
   notification_subscription_recipient                                    notification_subscription_recipient[]
   inspection_sheet_template inspection_sheet_template[]
@@ -1974,7 +2033,6 @@ model department {
   production_line      production_line[]
   notification_event   notification_event[]
   notification_department_setting notification_department_setting[]
-  department_production_warehouse department_production_warehouse[]
 
   @@index([parent_department_id], map: "ix_department_parent")
   @@schema("mdm")
@@ -2100,6 +2158,8 @@ model item {
   erp_spec                                             String?
   erp_item_group_code                                  String?                              @db.VarChar(10)
   erp_item_group_name                                  String?                              @db.VarChar(200)
+  default_package_uom_id                               BigInt?
+  default_package_count                                Int?
   operation_policy                                     operation_policy[]
   outbound_item_setting                                outbound_item_setting[]
   handling_unit_content                                handling_unit_content[]
@@ -2130,6 +2190,7 @@ model item {
   subcontract_order                                    subcontract_order[]
   uom                                                  uom                                  @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   uom_item_default_lot_storage_uom_idTouom             uom?                                 @relation("item_default_lot_storage_uom_idTouom", fields: [default_lot_storage_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  default_package_uom                                  uom?                                 @relation("item_default_package_uom_idTouom", fields: [default_package_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   item_bu_item_map_item_bu_item_map_from_item_idToitem item_bu_item_map[]                   @relation("item_bu_item_map_from_item_idToitem")
   item_bu_item_map_item_bu_item_map_to_item_idToitem   item_bu_item_map[]                   @relation("item_bu_item_map_to_item_idToitem")
   item_external_code                                   item_external_code[]
@@ -2267,6 +2328,8 @@ model location {
   system_role_code                                                                  String?                      @db.VarChar(30)
   alias_name                                                                        String?                      @db.VarChar(200)
   location_level_code                                                               String?                      @db.VarChar(30)
+  /// 지정 품목만 받기 — true 면 지정 밖 품목의 재고 기록을 거절한다. false 면 지정은 안내(omf-all-around#294)
+  item_restricted                                                                   Boolean                      @default(false)
   location_item                                                                     location_item[]
   handling_unit                                                                     handling_unit[]
   inventory_adjustment_line                                                         inventory_adjustment_line[]
@@ -2304,22 +2367,21 @@ model location {
   production_line_default_fg                                                        production_line[]            @relation("production_line_default_fg_location_idTolocation")
   production_line_default_scrap                                                     production_line[]            @relation("production_line_default_scrap_location_idTolocation")
   lot_status_event                                                                  lot_status_event[]
+  product_lot_split product_lot_split[]
 
-  @@unique([warehouse_id, location_code], map: "uq_location")
+  @@unique([location_code], map: "uq_location_code")
   @@index([parent_location_id], map: "ix_location_parent")
   @@schema("mdm")
 }
 
-model department_production_warehouse {
-  department_id BigInt
-  warehouse_id  BigInt
-  created_at    DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by    BigInt?
-  department    department @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse     warehouse  @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+/// 위치 코드에 창고 위치 코드를 붙일 때(omf-all-around#292) 바뀐 위치의 옛 코드 → 새 코드. 위치 라벨 재발행 목록
+model location_code_rename {
+  location_id  BigInt   @id
+  warehouse_id BigInt
+  old_code     String   @db.VarChar(50)
+  new_code     String   @db.VarChar(50)
+  renamed_at   DateTime @default(now()) @db.Timestamptz(6)
 
-  @@id([department_id, warehouse_id], map: "pk_department_production_warehouse")
-  @@index([warehouse_id], map: "ix_department_production_warehouse_warehouse")
   @@schema("mdm")
 }
 
@@ -2469,6 +2531,7 @@ model plant {
   material_lot_batch material_lot_batch[]
   supplier_item_default supplier_item_default[]
   tracking_transmission tracking_transmission[]
+  product_lot_split product_lot_split[]
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")
 }
@@ -2602,6 +2665,11 @@ model terminal {
   work_session_event   work_session_event[]
   inspection_result    inspection_result[]
   terminal_printer     terminal_printer[]
+  shipment_completed shipment[]
+  completed_putaway_task putaway_task[]       @relation("putaway_task_completed_terminal")
+  putaway_goods_receipt goods_receipt[]       @relation("goods_receipt_putaway_terminal")
+  product_lot_split_split     product_lot_split[] @relation("product_lot_split_split_terminal")
+  product_lot_split_confirmed product_lot_split[] @relation("product_lot_split_confirmed_terminal")
 
   @@index([location_id], map: "ix_terminal_location")
   @@index([equipment_id], map: "ix_terminal_equipment")
@@ -2678,6 +2746,7 @@ model uom {
   equipment_inspection_item                                     equipment_inspection_item[]
   item                                                          item[]
   item_item_default_lot_storage_uom_idTouom                     item[]                               @relation("item_default_lot_storage_uom_idTouom")
+  item_default_package_uom                                      item[]                               @relation("item_default_package_uom_idTouom")
   item_uom_conversion_item_uom_conversion_from_uom_idTouom      item_uom_conversion[]                @relation("item_uom_conversion_from_uom_idTouom")
   item_uom_conversion_item_uom_conversion_to_uom_idTouom        item_uom_conversion[]                @relation("item_uom_conversion_to_uom_idTouom")
   location                                                      location[]
@@ -2714,7 +2783,9 @@ model uom {
   material_lot_batch material_lot_batch[]
   supplier_item_default supplier_item_default[]
   tracking_transmission_shortage tracking_transmission_shortage[]
+  product_lot_split product_lot_split[]
   @@schema("mdm")
+  shipment_request_lot shipment_request_lot[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -2735,6 +2806,8 @@ model warehouse {
   version_no                                                                         Int                          @default(1)
   is_defect                                                                          Boolean                      @default(false)
   alias_name                                                                         String?                      @db.VarChar(200)
+  /// 창고 위치 코드 — 위치 코드 앞에 붙는다({창고 위치 코드}-Z01). 모든 창고에서 유일, 등록 뒤 바꾸지 않는다(omf-all-around#292)
+  location_prefix                                                                    String                       @unique(map: "uq_warehouse_location_prefix") @default(dbgenerated("mdm.new_location_prefix()")) @db.VarChar(6)
   handling_unit                                                                      handling_unit[]
   inventory_balance                                                                  inventory_balance[]
   inventory_count                                                                    inventory_count[]
@@ -2756,12 +2829,13 @@ model warehouse {
   recycle_entry                                                                      recycle_entry[]
   terminal                                                                           terminal[]
   material_issue_request          material_issue_request[]
-  department_production_warehouse department_production_warehouse[]
   replenishment_item              replenishment_item[]             @relation("replenishment_item_warehouse")
   replenishment_item_source       replenishment_item[]             @relation("replenishment_item_source_warehouse")
   replenishment_warehouse_setting replenishment_warehouse_setting?
   replenishment_run               replenishment_run[]
   tracking_transmission_shortage  tracking_transmission_shortage[]
+  shipment_request_line           shipment_request_line[]
+  product_lot_split product_lot_split[]
 
   @@unique([plant_id, warehouse_code], map: "uq_warehouse")
   @@schema("mdm")
@@ -2786,7 +2860,9 @@ model worker {
   name_ko                        String?                          @db.VarChar(200)
   name_vi                        String?                          @db.VarChar(200)
   picking_order                  picking_order[]
-  putaway_task                   putaway_task[]
+  putaway_task                   putaway_task[]                   @relation("putaway_task_assigned_worker")
+  completed_putaway_task         putaway_task[]                   @relation("putaway_task_completed_worker")
+  putaway_goods_receipt          goods_receipt[]                  @relation("goods_receipt_putaway_worker")
   shipment                       shipment[]
   equipment_inspection           equipment_inspection[]
   maintenance_order              maintenance_order[]
@@ -2811,7 +2887,6 @@ model worker {
   production_result_worker_allocation production_result_worker_allocation[]
   defect_record                  defect_record[]
   inspection_result              inspection_result[]
-  requested_approval_requests    approval_request[]
   changed_lot_status_events      lot_status_event[]
   held_lot_holds                 lot_hold[]                       @relation("lot_hold_held_worker")
   released_lot_holds             lot_hold[]                       @relation("lot_hold_released_worker")
@@ -2829,6 +2904,9 @@ model worker {
   inspection_request_event inspection_request_event[]
   @@index([department_id], map: "ix_worker_department")
   @@schema("mdm")
+  shipment_completed            shipment[]             @relation("shipment_completed_worker")
+  shipment_request_lot_picked   shipment_request_lot[] @relation("shipment_request_lot_picked_worker")
+  shipment_request_lot_replaced shipment_request_lot[] @relation("shipment_request_lot_replaced_worker")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -3598,7 +3676,7 @@ model concession {
   allowed_work_order_id BigInt?
   allowed_process_id    BigInt?
   allowed_customer_id   BigInt?
-  approval_request_id   BigInt
+  approval_request_id   BigInt?
   status_code           String           @db.VarChar(50)
   remarks               String?
   created_at            DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -3612,7 +3690,7 @@ model concession {
   lot                   lot              @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   nonconformance        nonconformance   @relation(fields: [nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction)
   uom                   uom              @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  approval_request      approval_request @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_concession_approval")
+  approval_request      approval_request? @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_concession_approval")
 
   @@index([lot_id, status_code], map: "ix_concession_lot")
   @@schema("quality")
@@ -3809,8 +3887,6 @@ model inspection_plan {
   process_id              BigInt?
   routing_id              BigInt?
   inspection_type_code    String                    @db.VarChar(50)
-  approved_by             BigInt?
-  approved_at             DateTime?                 @db.Timestamptz(6)
   is_active               Boolean                   @default(true)
   created_at              DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by              BigInt?
@@ -3823,7 +3899,6 @@ model inspection_plan {
   simple_judgment_allowed Boolean                   @default(false)
   name_ko                 String?                   @db.VarChar(200)
   name_vi                 String?                   @db.VarChar(200)
-  app_user                app_user?                 @relation(fields: [approved_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   item                    item?                     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   process                 process?                  @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
   routing                 routing?                  @relation(fields: [routing_id], references: [routing_id], onDelete: NoAction, onUpdate: NoAction)
@@ -4264,6 +4339,7 @@ model inspection_result {
   inspection_result_lot inspection_result_lot[]
   @@unique([inspection_request_id, inspection_round], map: "uq_inspection_round")
   @@schema("quality")
+  shipment_request_lot_replaced shipment_request_lot[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -4306,6 +4382,7 @@ model nonconformance {
   @@index([responsible_department_id], map: "ix_nonconformance_responsible_department")
   @@index([inspection_request_id], map: "ix_nonconformance_inspection_request")
   @@schema("quality")
+  shipment_request_lot_replaced shipment_request_lot[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -4465,6 +4542,59 @@ model lot {
   @@index([source_type_code, source_id], map: "ix_lot_source")
   @@index([inbound_lot_id], map: "ix_lot_inbound_lot")
   @@schema("trace")
+  shipment_request_lot shipment_request_lot[]
+  product_lot_split_parent product_lot_split[] @relation("product_lot_split_parent_lot")
+  product_lot_split_child  product_lot_split?  @relation("product_lot_split_child_lot")
+  material_lot_po_plan     material_lot_po_plan?
+}
+
+/// 생산 LOT 수량 분리 기록(피처 013 · omf-all-around#303) — confirmed_at 이 NULL 이면 PDA 확인 대기.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_lot_split {
+  product_lot_split_id  BigInt    @id @default(autoincrement())
+  plant_id              BigInt
+  parent_lot_id         BigInt
+  child_lot_id          BigInt    @unique(map: "uq_product_lot_split_child")
+  warehouse_id          BigInt
+  location_id           BigInt
+  split_qty             Decimal   @db.Decimal(20, 6)
+  uom_id                BigInt
+  split_at              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  split_by              BigInt?
+  split_worker_no       String?   @db.VarChar(50)
+  split_terminal_id     BigInt?
+  confirmed_at          DateTime? @db.Timestamptz(6)
+  confirmed_by          BigInt?
+  confirmed_worker_no   String?   @db.VarChar(50)
+  confirmed_terminal_id BigInt?
+  created_at            DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  updated_at            DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by            BigInt?
+  version_no            Int       @default(1)
+  plant                 plant     @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  parent_lot            lot       @relation("product_lot_split_parent_lot", fields: [parent_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  child_lot             lot       @relation("product_lot_split_child_lot", fields: [child_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse             warehouse @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  location              location  @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                   uom       @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  split_terminal        terminal? @relation("product_lot_split_split_terminal", fields: [split_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+  confirmed_terminal    terminal? @relation("product_lot_split_confirmed_terminal", fields: [confirmed_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([parent_lot_id, split_at(sort: Desc)], map: "ix_product_lot_split_parent")
+  @@schema("trace")
+}
+
+/// 자동 생성 자재 관리 LOT 의 P/O 라인 몫(피처 014 R-1) — 수량은 lot.initial_qty 를 따른다.
+model material_lot_po_plan {
+  lot_id                 BigInt              @id
+  purchase_order_line_id BigInt
+  created_at             DateTime            @default(now()) @db.Timestamptz(6)
+  lot                    lot                 @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  purchase_order_line    purchase_order_line @relation(fields: [purchase_order_line_id], references: [purchase_order_line_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([purchase_order_line_id], map: "ix_material_lot_po_plan_line")
+  @@schema("trace")
 }
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
@@ -4480,6 +4610,7 @@ model lot_external_identifier {
   lot                        lot      @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   partner                    partner? @relation(fields: [partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([identifier_type_code, external_identifier], map: "ix_lot_external_identifier_value")
   @@schema("trace")
 }
 
@@ -6162,6 +6293,7 @@ model material_lot_batch {
   created_at            DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by            BigInt?
   created_worker_id     BigInt?
+  creation_mode_code    String   @default("MANUAL") @db.VarChar(10)
   plant                 plant    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   item                  item     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   supplier              partner  @relation(fields: [supplier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)

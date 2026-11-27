@@ -274,19 +274,6 @@ describe('창고 보충 요청 W/O null 대응 (e2e)', () => {
     await detail('T1', p2.material_issue_request_id).expect(401);
   });
 
-  it('R2-5 부서 생산 창고 해제 미리보기의 활성 요청 수에 그 창고로 들어오는 활성 보충 요청이 든다(해제는 막지 않는다)', async () => {
-    const target = await fx.warehouse(fx.ids.p1, 'PROD2');
-    const department = await fx.department('D2', [target.warehouseId]);
-    await replenishment({ destination: target });
-    await replenishment({ destination: target, status: 'CANCELLED' });
-    const preview = await request(app.getHttpServer())
-      .put(`/api/mdm/departments/${department}/production-warehouses?dryRun=true`)
-      .set('Cookie', fx.cookie)
-      .set('Idempotency-Key', randomUUID())
-      .send({ warehouseIds: [] })
-      .expect(200);
-    expect(preview.body.removed).toEqual([{ warehouseId: Number(target.warehouseId), activeRequestCount: 1 }]);
-  });
   it('R2-1 출고 예정 조회 requestTypeCode — 그 유형 요청만 싣고 없는 행은 빼며, 부족 계산은 전 유형(W-02-11 부족 탭)', async () => {
     // 생산 창고 X 100 에 W/O 예정 20 + 보충(출발 = 생산 창고) 예정 200 → 부족 120.
     await replenishment({ source: production, destination: material, qty: 200 });

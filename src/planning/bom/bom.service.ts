@@ -61,6 +61,7 @@ export interface BomQuery {
   parentItemId: number;
   bomCode?: string;
   usableOnly?: boolean;
+  plantId?: number;
 }
 
 type BomRow = Prisma.bomGetPayload<object>;
@@ -82,6 +83,8 @@ export class BomService {
         parent_item_id: query.parentItemId,
         ...(query.bomCode === undefined ? {} : { bom_code: query.bomCode }),
         ...(query.usableOnly ? usableWhere() : {}),
+        // 공장이 빈 BOM 은 공통이다 — 품목 목록의 hasBom·plantId 가 같은 셈을 한다.
+        ...(query.plantId === undefined ? {} : { OR: [{ plant_id: query.plantId }, { plant_id: null }] }),
       },
       orderBy: [{ bom_code: 'asc' }, { bom_version: 'desc' }],
     });

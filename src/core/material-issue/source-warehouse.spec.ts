@@ -121,35 +121,35 @@ describe('출발 생산 창고 고르기', () => {
   });
 
   describe('US2-5 후보 집합 D·입고지 — 빠진 기준정보를 모은다', () => {
-    function lineDb(line: { department_id: bigint | null; default_wip_location_id: bigint | null } | null, links: bigint[], inactive: bigint[] = []) {
-      const findLinks = jest.fn().mockResolvedValue(
-        [...links, ...inactive].map((warehouse_id) => ({ warehouse_id, warehouse: { is_active: !inactive.includes(warehouse_id) } })),
+    function lineDb(line: { default_wip_location_id: bigint | null } | null, active: bigint[], inactive: bigint[] = []) {
+      const findWarehouses = jest.fn().mockResolvedValue(
+        [...active, ...inactive].map((warehouse_id) => ({ warehouse_id, is_active: !inactive.includes(warehouse_id) })),
       );
       const db = {
         production_line: { findUnique: jest.fn().mockResolvedValue(line) },
-        department_production_warehouse: { findMany: findLinks },
+        warehouse: { findMany: findWarehouses },
       } as unknown as Prisma.TransactionClient;
-      return { db, findLinks };
+      return { db, findWarehouses };
     }
 
-    it('라인 부서 없음 · 생산 현장 위치 없음을 함께 낸다', async () => {
-      const { db } = lineDb({ department_id: null, default_wip_location_id: null }, []);
+    it('공장 생산창고 없음 · 생산 현장 위치 없음을 함께 낸다 — 라인 담당 부서는 묻지 않는다', async () => {
+      const { db } = lineDb({ default_wip_location_id: null }, []);
       const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
-      expect('errors' in result && result.errors.map((e) => e.code)).toEqual([
-        'LINE_DEPARTMENT_MISSING',
-        'PRODUCTION_FLOOR_LOCATION_MISSING',
+      expect('errors' in result && result.errors.map((e) => [e.code, e.field])).toEqual([
+        ['PRODUCTION_WAREHOUSE_MISSING', 'plantId'],
+        ['PRODUCTION_FLOOR_LOCATION_MISSING', 'productionLineId'],
       ]);
     });
 
-    it('부서에 이 공장의 활성 생산 창고가 없으면 PRODUCTION_WAREHOUSE_MISSING — 다른 공장 창고는 후보가 아니다', async () => {
-      const { db, findLinks } = lineDb({ department_id: 7n, default_wip_location_id: 40n }, []);
+    it('이 공장의 생산창고 유형만 찾는다 — 없으면 PRODUCTION_WAREHOUSE_MISSING', async () => {
+      const { db, findWarehouses } = lineDb({ default_wip_location_id: 40n }, []);
       const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
       expect('errors' in result && result.errors.map((e) => e.code)).toEqual(['PRODUCTION_WAREHOUSE_MISSING']);
-      expect(findLinks.mock.calls[0][0].where).toEqual({ department_id: 7n, warehouse: { plant_id: 1n } });
+      expect(findWarehouses.mock.calls[0][0].where).toEqual({ plant_id: 1n, warehouse_type_code: 'PRODUCTION' });
     });
 
-    it('연결된 생산 창고가 모두 사용 중지면 같은 사유 · 다른 안내', async () => {
-      const { db } = lineDb({ department_id: 7n, default_wip_location_id: 40n }, [], [3n]);
+    it('생산창고가 모두 사용 중지면 같은 사유 · 다른 안내', async () => {
+      const { db } = lineDb({ default_wip_location_id: 40n }, [], [3n]);
       const result = await resolveCandidates(db, { plantId: 1n, productionLineId: 5n });
       expect('errors' in result && result.errors).toEqual([
         expect.objectContaining({ code: 'PRODUCTION_WAREHOUSE_MISSING', message: expect.stringContaining('모두 사용 중지') }),
@@ -157,12 +157,12 @@ describe('출발 생산 창고 고르기', () => {
     });
 
     it('사용 중지된 창고는 D 에서 빠진다', async () => {
-      const { db } = lineDb({ department_id: 7n, default_wip_location_id: 40n }, [1n], [2n]);
+      const { db } = lineDb({ default_wip_location_id: 40n }, [1n], [2n]);
       expect(await resolveCandidates(db, { plantId: 1n, productionLineId: 5n })).toEqual({ warehouseIds: [1n], destinationLocationId: 40n });
     });
 
     it('다 있으면 D 와 라인 생산 현장을 낸다', async () => {
-      const { db } = lineDb({ department_id: 7n, default_wip_location_id: 40n }, [1n, 2n]);
+      const { db } = lineDb({ default_wip_location_id: 40n }, [1n, 2n]);
       expect(await resolveCandidates(db, { plantId: 1n, productionLineId: 5n })).toEqual({
         warehouseIds: [1n, 2n],
         destinationLocationId: 40n,

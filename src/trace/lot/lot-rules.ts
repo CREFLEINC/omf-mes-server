@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { day } from '../../common/master';
+import { workOrderLotFamilySql } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 import { LotCompletionJudgment } from './lot-progress';
 
@@ -74,6 +75,16 @@ export function expiryWhere(from: string | undefined, to: string | undefined): P
 /** 「이 W/O 를 원천으로 발행된 LOT 만」 — 원천은 유형과 id 가 «짝»이다. */
 export function workOrderWhere(workOrderId: number | undefined): Prisma.lotWhereInput {
   return workOrderId === undefined ? {} : { source_type_code: WORK_ORDER_LOT_SOURCE, source_id: workOrderId };
+}
+
+/** W/O 로 찾는 LOT 목록 — 원천 W/O LOT 과 그 제품 분리 자손(피처 013 R-10). */
+export async function workOrderFamilyWhere(
+  db: Pick<Prisma.TransactionClient, '$queryRawUnsafe'>,
+  workOrderId: number | undefined,
+): Promise<Prisma.lotWhereInput> {
+  if (workOrderId === undefined) return {};
+  const rows = await db.$queryRawUnsafe<{ lot_id: bigint }[]>(workOrderLotFamilySql('$1::bigint'), workOrderId);
+  return { lot_id: { in: rows.map((row) => row.lot_id) } };
 }
 
 /** 「현재 생산 LOT」 후보 — 그 W/O 의 선발행 생산 LOT 중 완료되지 않고 폐번되지 않은 것(장부 P-103). */

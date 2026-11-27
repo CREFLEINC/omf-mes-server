@@ -29,7 +29,10 @@ export interface LockedShipment {
   shipment_id: bigint;
   shipment_no: string;
   shipment_request_id: bigint;
-  warehouse_id: bigint;
+  /** POP 완료 출하(피처 010)는 NULL. */
+  warehouse_id: bigint | null;
+  /** POP 완료 출하(피처 010)만 — 송신 전 취소를 받는 출하다. */
+  completed_terminal_id: bigint | null;
   shipped_at: Date | null;
   status_code: string;
   version_no: number;
@@ -38,7 +41,7 @@ export interface LockedShipment {
 /** ⛔ 확정과 취소가 경합하면 둘째가 첫째의 커밋을 기다렸다가 바뀐 상태를 본다 — 그래서 잠근다. */
 export async function lockShipment(tx: Tx, shipmentId: number): Promise<LockedShipment | undefined> {
   const rows = await tx.$queryRaw<LockedShipment[]>`
-    SELECT shipment_id, shipment_no, shipment_request_id, warehouse_id, shipped_at, status_code, version_no
+    SELECT shipment_id, shipment_no, shipment_request_id, warehouse_id, completed_terminal_id, shipped_at, status_code, version_no
       FROM logistics.shipment
      WHERE shipment_id = ${BigInt(shipmentId)}
        FOR UPDATE`;

@@ -5,18 +5,19 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { FgPlace, FgRule, LOCATION_FACT_SELECT } from '../../core/erp-warehouse/fg-location';
 import { FgOverrideBody, judgeFgOverride } from './fg-override';
 import { WorkOrderSupplement } from '../production-plan/expand';
+import { cycleTimeEstimate, cycleTimeWindow } from '../production-plan/standard-cycle-time';
 import { PlanWindow, dayStartOf, dayWindow, localDate, shiftWindow, timeOfColumn } from '../production-plan/plan-window';
 import { Proposal, ProposalBasis, ProposalPlan } from './proposal-builder';
 import { DraftRef, ExistingDraftAction, draftActionOf, draftChoiceErrors, planSetErrors } from './plan-set-rules';
 import { TimeCorrection, TimeSource, TimedOperation, judgeTime, precedenceWarnings } from './plan-times';
 import type { RevalidationWarning } from './proposal-warnings';
 import { ProposalFacts } from './proposal-reader';
-import { resourceFindings } from './resource-rules';
+import { WorkOrderResources, resourceFindings } from './resource-rules';
 import { pairKey } from '../production-plan/resource-assign';
 
 /**
  * 계약 `ProductionPlanProposalConfirm`·`ProductionPlanProposalRevalidate` — 형식·양수는 계약 가드가 이미 막았다.
- * 재검증 본문은 생산 라인·기본 위치 셋이 비어도 받는다(판정이 REQUIRED 로 낸다). 확정 본문은 계약 가드가 막는다.
+ * 재검증 본문은 생산 라인·생산품 입고 위치가 비어도 받는다(판정이 REQUIRED 로 낸다). 확정 본문은 계약 가드가 막는다.
  */
 export interface ProposalConfirmBody {
   basis: ProposalBasis;
@@ -63,8 +64,9 @@ export interface ResolvedPlan {
   body: ProposalConfirmPlan;
   proposal: ProposalPlan;
   operationCount: number;
-  /** 생산 라인·기본 위치 셋이 다 찬 공정만 — 빈 칸이 있으면 오류가 있어 저장하지 않는다. */
+  /** 생산 라인·생산품 입고 위치가 다 찬 공정만 — 빈 칸이 있으면 오류가 있어 저장하지 않는다. */
   supplements: Map<bigint, WorkOrderSupplement>;
+  locations?: Map<bigint, WorkOrderResources>;
   /** 공정마다 저장할 계획 시각 — SYSTEM 은 계획일과 교대로 정했고 USER 는 본문 그대로다. */
   windows: Map<bigint, PlanWindow>;
   /** 사람이 ERP 와 다르게 고른 입고 창고 — 받아들인 것만(보내지 않았거나 거부했으면 null). */
@@ -150,7 +152,8 @@ export async function judgeConfirm(
     if (plan.plannedLineId !== null && !lineUsable(refs.lines.get(BigInt(plan.plannedLineId)), order.plant_id)) {
       error(`${path}.plannedLineId`, 'LINE_PLANT_MISMATCH', '이 ERP W/O 공장의 사용 중인 라인이 아닙니다.');
     }
-    const operationIds = (facts.operations.get(routingId) ?? []).map((operation) => operation.routing_operation_id);
+    const operations = facts.operations.get(routingId) ?? [];
+    const operationIds = operations.map((operation) => operation.routing_operation_id);
     const sent = plan.workOrders.map((workOrder) => BigInt(workOrder.routingOperationId));
     if (usable.has(routingId) && !sameSet(operationIds, sent)) {
       error(`${path}.workOrders`, ERROR_CODE.INVALID, 'Routing 공정마다 W/O 하나씩 실어야 합니다 — 공정이 빠졌거나 겹쳤거나 다른 Routing 의 공정입니다.');
@@ -159,6 +162,7 @@ export async function judgeConfirm(
     const override = judgeFgOverride(path, plan.fgWarehouseOverride, proposal.fg, order.plant_id, refs.warehouses, error);
     const fgRule: FgRule = override.locationRule === null ? proposal.fg : { kind: 'MANUAL_WAREHOUSE', warehouse: override.locationRule };
     const supplements = new Map<bigint, WorkOrderSupplement>();
+    const locations = new Map<bigint, WorkOrderResources>();
     const windows = new Map<bigint, PlanWindow>();
     const timed: TimedOperation[] = [];
     const day = dayWindow(plan.planDate, dayStart, timezone);
@@ -171,13 +175,14 @@ export async function judgeConfirm(
         productionLineId: idOf(workOrder.productionLineId),
         equipmentId: idOf(workOrder.plannedEquipmentId),
         moldId: idOf(workOrder.plannedMoldId),
-        defaultWipLocationId: idOf(workOrder.defaultWipLocationId),
+        defaultWipLocationId: refs.lines.get(idOf(workOrder.productionLineId) ?? -1n)?.default_wip_location_id ?? null,
         defaultFgLocationId: idOf(workOrder.defaultFgLocationId),
-        defaultScrapLocationId: idOf(workOrder.defaultScrapLocationId),
+        defaultScrapLocationId: refs.lines.get(idOf(workOrder.productionLineId) ?? -1n)?.default_scrap_location_id ?? null,
       };
       // 제안이 사유를 내는 판정과 같은 것 — 「확정 가능」 제안을 그대로 보내면 여기서 막히지 않는다.
+      locations.set(BigInt(workOrder.routingOperationId), resources);
       for (const finding of resourceFindings(order.plant_id, resources, refs, fgRule)) {
-        if (!EMPTY_CODES.has(finding.code)) error(field(finding.field), finding.code, finding.message);
+        if (!EMPTY_CODES.has(finding.code) || finding.field === 'defaultWipLocationId') error(field(finding.field), finding.code, finding.message);
       }
       const workerId = idOf(workOrder.responsibleWorkerId);
       if (workerId !== null) {
@@ -190,21 +195,28 @@ export async function judgeConfirm(
       const shiftTimes = shift === undefined
         ? null
         : shiftWindow(plan.planDate, { startTime: timeOfColumn(shift.start_time), endTime: timeOfColumn(shift.end_time) }, timezone);
-      const time = judgeTime(`${path}.workOrders[${at}]`, workOrder, { system: shiftTimes ?? day, day, shift: shiftTimes, planDate: plan.planDate, timezone });
+      const operationId = BigInt(workOrder.routingOperationId);
+      const operation = operations.find((candidate) => candidate.routing_operation_id === operationId);
+      const estimate = cycleTimeEstimate(plan.plannedQty, operation?.standard_cycle_time_sec);
+      const available = shiftTimes ?? day;
+      const system = cycleTimeWindow(available, estimate.expectedDurationSec);
+      if (system.plannedEndAt > available.plannedEndAt) {
+        warnings.push({ code: 'PLAN_CYCLE_TIME_CAPACITY_EXCEEDED', field: field('plannedEndAt'), message: '예상 소요시간이 가동 시간을 초과합니다.' });
+      }
+      const time = judgeTime(`${path}.workOrders[${at}]`, workOrder, { system, day, shift: shiftTimes, planDate: plan.planDate, timezone });
       errors.push(...time.errors);
       warnings.push(...time.warnings);
       corrections.push(...time.corrections);
       const window = time.window;
-      const operationId = BigInt(workOrder.routingOperationId);
       windows.set(operationId, window);
       timed.push({ path: `${path}.workOrders[${at}]`, routingOperationId: operationId, source: workOrder.plannedTimeSourceCode, window });
       const { productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId } = resources;
-      if (productionLineId !== null && defaultWipLocationId !== null && defaultFgLocationId !== null && defaultScrapLocationId !== null) {
+      if (productionLineId !== null && defaultWipLocationId !== null && defaultFgLocationId !== null) {
         supplements.set(operationId, { ...resources, productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId, workerId, shiftId, window });
       }
     });
     warnings.push(...precedenceWarnings(timed, facts.dependencies.get(routingId) ?? [], timezone));
-    return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, windows, fgOverride: override.applied, fgOverrideSent: override.sent }];
+    return [{ index, body: plan, proposal: proposed, operationCount: operationIds.length, supplements, locations, windows, fgOverride: override.applied, fgOverrideSent: override.sent }];
   });
 
   return { resolved, errors, warnings, corrections };
@@ -231,12 +243,10 @@ function proposedFor(proposal: Proposal, key: string): ProposalPlan | undefined 
 export const draftRefsOf = (proposal: Proposal): DraftRef[] =>
   proposal.drafts.map(({ row }) => ({ productionPlanId: row.production_plan_id, versionNo: row.version_no, planNo: row.plan_no }));
 
-const REQUIRED_RESOURCES = ['productionLineId', 'defaultWipLocationId', 'defaultFgLocationId', 'defaultScrapLocationId'] as const;
+const REQUIRED_RESOURCES = ['productionLineId', 'defaultFgLocationId'] as const;
 const REQUIRED_MESSAGE: Record<(typeof REQUIRED_RESOURCES)[number], string> = {
   productionLineId: '생산 라인이 비었습니다. 라인을 고르세요.',
-  defaultWipLocationId: 'WIP 위치가 비었습니다. 위치를 고르세요.',
   defaultFgLocationId: '완제품 위치가 비었습니다. 위치를 고르세요.',
-  defaultScrapLocationId: '스크랩 위치가 비었습니다. 위치를 고르세요.',
 };
 const EMPTY_CODES: ReadonlySet<string> = new Set(['WORK_ORDER_LINE_REQUIRED', 'WORK_ORDER_LOCATION_REQUIRED']);
 
@@ -258,10 +268,10 @@ async function readReferences(client: Prisma.TransactionClient, body: ProposalCo
   const equipmentIds = ids(workOrders.map((workOrder) => workOrder.plannedEquipmentId));
   const moldIds = ids(workOrders.map((workOrder) => workOrder.plannedMoldId));
   const workerIds = ids(workOrders.map((workOrder) => workOrder.responsibleWorkerId));
-  const locationIds = ids(workOrders.flatMap((workOrder) => [workOrder.defaultWipLocationId, workOrder.defaultFgLocationId, workOrder.defaultScrapLocationId]));
+  const lines = await client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true, is_active: true, default_wip_location_id: true, default_scrap_location_id: true } });
+  const locationIds = [...new Set([...lines.flatMap((line) => line.default_wip_location_id === null ? [] : [line.default_wip_location_id]), ...ids(workOrders.flatMap((workOrder) => [workOrder.defaultWipLocationId, workOrder.defaultFgLocationId, workOrder.defaultScrapLocationId]))])];
   const warehouseIds = ids(body.plans.map((plan) => plan.fgWarehouseOverride?.warehouseId));
-  const [lines, equipments, molds, workers, locations, warehouses] = await Promise.all([
-    client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true, is_active: true } }),
+  const [equipments, molds, workers, locations, warehouses] = await Promise.all([
     client.equipment.findMany({ where: { equipment_id: { in: equipmentIds } }, select: { equipment_id: true, plant_id: true, status_code: true, is_active: true, production_line_id: true } }),
     client.mold.findMany({ where: { mold_id: { in: moldIds } }, select: { mold_id: true, plant_id: true, status_code: true, is_active: true } }),
     client.worker.findMany({ where: { worker_id: { in: workerIds } }, select: { worker_id: true, plant_id: true, is_active: true } }),

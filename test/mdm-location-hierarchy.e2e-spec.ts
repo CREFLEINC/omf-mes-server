@@ -135,24 +135,27 @@ describe('위치 계층 (e2e)', () => {
     expect(kept).toMatchObject({ parentLocationId: zone.locationId, locationName: '고친 랙' });
   });
 
-  it('⭐ 코드는 서버가 발행한다 — Z01 · Z01-R001 · -L01 · -C01 · 같은 상위 안 다음 번호 · 꺼진 번호도 다시 쓰지 않는다', async () => {
+  it('⭐ 코드는 서버가 발행한다 — {창고 위치 코드}-Z01 · -R001 · -L01 · -C01 · 같은 상위 안 다음 번호 · 꺼진 번호도 다시 쓰지 않는다', async () => {
     const fresh = await createWarehouse(`${PREFIX}-WH2`);
+    // 창고 코드가 아니라 창고 위치 코드로 시작한다(#292).
+    const head = await prefixOf(fresh);
     // 화면이 코드를 실어 보내도 쓰지 않는다.
     const zone = await send({ warehouseId: fresh, locationCode: 'MINE' }, 201);
     const rack = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
     const level = await send({ warehouseId: fresh, parentLocationId: rack.locationId }, 201);
     const cell = await send({ warehouseId: fresh, parentLocationId: level.locationId }, 201);
     expect([zone, rack, level, cell].map((row) => row.locationCode))
-      .toEqual(['Z01', 'Z01-R001', 'Z01-R001-L01', 'Z01-R001-L01-C01']);
+      .toEqual(['Z01', 'Z01-R001', 'Z01-R001-L01', 'Z01-R001-L01-C01'].map((code) => `${head}-${code}`));
 
     const second = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
     await transition(second.locationId, 'deactivate', 200);
     const third = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
-    expect([second.locationCode, third.locationCode]).toEqual(['Z01-R002', 'Z01-R003']);
+    expect([second.locationCode, third.locationCode]).toEqual([`${head}-Z01-R002`, `${head}-Z01-R003`]);
   });
 
   it('⭐ 목록을 상위·단계로 나눠 받는다', async () => {
     const fresh = await createWarehouse(`${PREFIX}-WH3`);
+    const head = await prefixOf(fresh);
     const zone = await send({ warehouseId: fresh }, 201);
     const rack = await send({ warehouseId: fresh, parentLocationId: zone.locationId }, 201);
     await send({ warehouseId: fresh, parentLocationId: rack.locationId }, 201);
@@ -160,7 +163,7 @@ describe('위치 계층 (e2e)', () => {
     const children = await list(fresh, { parentLocationId: String(zone.locationId) });
     expect(children.map((row) => row.locationId)).toEqual([rack.locationId]);
     const zones = await list(fresh, { locationLevelCode: 'ZONE' });
-    expect(zones.map((row) => row.locationCode).sort()).toEqual(['SYS-STAGING', 'SYS-WHOLE', 'Z01']);
+    expect(zones.map((row) => row.locationCode).sort()).toEqual(['SYS-STAGING', 'SYS-WHOLE', 'Z01'].map((code) => `${head}-${code}`));
   });
 
   it('⭐ 목록·상세가 단계와 isLeaf 를 싣는다 — 하위를 끄면 다시 맨 아래다', async () => {
@@ -213,6 +216,19 @@ describe('위치 계층 (e2e)', () => {
     expect(await prisma.location.count({ where: { warehouse_id: warehouseId } })).toBe(before);
   });
 
+  it('⭐ 층 0 · 셀 0 이면 랙 하나만 만들고 그 랙이 맨 아래 위치다 — 층 0 에 셀이 있으면 400 INVALID · 하나도 안 만든다', async () => {
+    const zone = await create();
+
+    const rack = await buildRack(zone.locationId, 0, 0, 201);
+
+    expect(rack).toMatchObject({ locationCode: `${zone.locationCode}-R001`, locationLevelCode: 'RACK', isLeaf: true });
+    expect(await childrenOf(rack.locationId as number)).toEqual([]);
+    const before = await prisma.location.count({ where: { warehouse_id: warehouseId } });
+    const rejected = await buildRack(zone.locationId, 0, 3, 400);
+    expect(rejected.errors).toEqual([expect.objectContaining({ field: 'cellCountPerLevel', code: 'INVALID' })]);
+    expect(await prisma.location.count({ where: { warehouse_id: warehouseId } })).toBe(before);
+  });
+
   it('⭐ 안 쓰인 위치는 밑의 위치까지 함께 지운다 — 지운 번호는 다시 발행된다', async () => {
     const zone = await create();
     const rack = await buildRack(zone.locationId, 2, 3, 201);
@@ -257,14 +273,45 @@ describe('위치 계층 (e2e)', () => {
     expect(await detail(zone.locationId)).toMatchObject({ hasItemRestriction: false });
   });
 
-  it('⛔ 지정 밖 품목의 재고가 있으면 걸 수 없다 — 400 STATE_LOCKED(itemIds) · 지정 품목의 재고만 있으면 된다', async () => {
+  // 피처 009(omf-all-around#294 · 2026-11-18 결정) — 품목 지정은 안내다. 지정 밖 재고 검사는 「지정 품목만 받기」를 켤 때·켠 위치에서만.
+  it('FR-017b 「지정 품목만 받기」가 꺼진 위치는 지정 밖 품목의 재고가 있어도 지정 품목을 저장한다', async () => {
     const zone = await create();
     const [one, two] = await itemIds();
     await stock(zone.locationId, 5);
 
-    const rejected = await restrict(zone.locationId, [two], 400);
-    expect(rejected.errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'STATE_LOCKED' })]);
+    const saved = await restrict(zone.locationId, [two], 200);
+    expect((saved.items as { itemId: number }[]).map((row) => row.itemId)).toEqual([two]);
+    expect(await detail(zone.locationId)).toMatchObject({ hasItemRestriction: true, itemRestricted: false });
     await restrict(zone.locationId, [one], 200);
+  });
+
+  it('FR-017c Q26 「지정 품목만 받기」 켜기 — 지정 0개·지정 밖 재고·시스템 자리는 400, 조건이 맞으면 켜지고 끄기는 늘 된다', async () => {
+    const zone = await create();
+    const [one, two] = await itemIds();
+    expect(await detail(zone.locationId)).toMatchObject({ itemRestricted: false });
+
+    const empty = await update(zone.locationId, { itemRestricted: true }, 400);
+    expect(empty.errors).toEqual([expect.objectContaining({ field: 'itemRestricted', code: 'STATE_LOCKED', message: expect.stringContaining('지정 품목') })]);
+
+    await restrict(zone.locationId, [two], 200);
+    await stock(zone.locationId, 5);
+    const outside = await update(zone.locationId, { itemRestricted: true }, 400);
+    expect(outside.errors).toEqual([expect.objectContaining({ field: 'itemRestricted', code: 'STATE_LOCKED', message: expect.stringContaining('지정 밖') })]);
+
+    await restrict(zone.locationId, [one, two], 200);
+    const on = await update(zone.locationId, { itemRestricted: true }, 200);
+    expect(on).toMatchObject({ itemRestricted: true, hasItemRestriction: true });
+    // 켠 위치는 지정을 바꿀 때도 같은 조건이다 — 지정 밖 재고·지정 0개면 막는다.
+    expect((await restrict(zone.locationId, [two], 400)).errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'STATE_LOCKED' })]);
+    expect((await restrict(zone.locationId, [], 400)).errors).toEqual([expect.objectContaining({ field: 'itemIds', code: 'STATE_LOCKED' })]);
+
+    const off = await update(zone.locationId, { itemRestricted: false }, 200);
+    expect(off).toMatchObject({ itemRestricted: false });
+
+    const staging = await prisma.location.findFirstOrThrow({ where: { warehouse_id: warehouseId, system_role_code: 'PUTAWAY_STAGING' }, select: { location_id: true } });
+    const system = await update(Number(staging.location_id), { itemRestricted: true }, 400);
+    expect(system.errors).toEqual([expect.objectContaining({ field: 'itemRestricted', code: 'STATE_LOCKED' })]);
+    await update(Number(staging.location_id), { itemRestricted: false }, 200);
   });
 
   it('⛔ 서버가 만든 자리 · 없는 품목은 400', async () => {
@@ -474,6 +521,12 @@ describe('위치 계층 (e2e)', () => {
       },
     });
     return row.inventory_balance_id;
+  }
+
+  /** 창고 위치 코드 — 위치 코드 앞 조각(#292). 창고를 넣을 때 DB 가 무작위로 채운다. */
+  async function prefixOf(warehouseId: number | bigint): Promise<string> {
+    const row = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: warehouseId }, select: { location_prefix: true } });
+    return row.location_prefix;
   }
 
   async function createWarehouse(warehouseCode: string): Promise<number> {

@@ -62,7 +62,7 @@ describe('결재함 조회 (e2e)', () => {
     'GOODS_ISSUE_DISPOSAL',
     'GOODS_RECEIPT_CANCEL',
     'SHIPMENT_CANCEL',
-    'IQC_SKIP',
+    'INBOUND_RECEIPT_CANCEL',
     'PRODUCTION_RESULT_CORRECT',
   ];
 
@@ -201,7 +201,7 @@ describe('결재함 조회 (e2e)', () => {
   });
 
   it('결재함 — 승인자도 상신자도 아니면 상세가 403 이다', async () => {
-    const req = await createRequest('IQC_SKIP', requesterId, 'INBOUND_LOT', 900061n);
+    const req = await createRequest('INBOUND_RECEIPT_CANCEL', requesterId, 'INBOUND_RECEIPT', 900061n);
     await request(app.getHttpServer())
       .get(`/api/app/approval-requests/${req.approvalRequestId}`)
       .set('Cookie', thirdPartyCookie)

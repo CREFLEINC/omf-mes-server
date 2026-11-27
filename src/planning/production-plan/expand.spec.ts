@@ -128,7 +128,7 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
     const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: 33n };
     const fg = {
       kind: 'ERP_STORAGE_LOCATION' as const, erpCode: 'S510',
-      warehouse: { id: 5n, code: 'S510', name: '완제품' }, location: { id: 55n, code: 'WH', name: '창고 전체', isActive: true },
+      warehouse: { id: 5n, code: 'S510', name: '완제품' }, location: { id: 55n, code: 'WH', name: '창고 전체', isActive: true, systemRoleCode: 'WAREHOUSE_WHOLE' },
     };
     const rows = workOrderRows(plan({ line, fg }), ['WO-A', 'WO-B', 'WO-C'], 9);
 
