@@ -21,7 +21,6 @@ const RELEASE_SELECT = {
   work_order_type_code: true,
   default_wip_location_id: true,
   default_fg_location_id: true,
-  default_scrap_location_id: true,
   responsible_worker_id: true,
   // 배포 자체는 라인을 안 쓴다 — 현장 단말의 권한 검사가 «라인의 공장»으로 판정하므로
   // 라인이 비었거나 다른 공장이면 배포 뒤 전부 거부된다(omf-all-around#36). 여기서 막는다.

@@ -222,7 +222,6 @@ export function workOrderUpdateData(body: WorkOrderUpdate): Record<string, unkno
     ...optional('responsible_worker_id', id(body.responsibleWorkerId)),
     ...optional('default_wip_location_id', id(body.defaultWipLocationId)),
     ...optional('default_fg_location_id', id(body.defaultFgLocationId)),
-    ...optional('default_scrap_location_id', id(body.defaultScrapLocationId)),
     ...optional('remarks', body.remarks),
   };
 }

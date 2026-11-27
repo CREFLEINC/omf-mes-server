@@ -177,7 +177,7 @@ export async function judgeConfirm(
         moldId: idOf(workOrder.plannedMoldId),
         defaultWipLocationId: refs.lines.get(idOf(workOrder.productionLineId) ?? -1n)?.default_wip_location_id ?? null,
         defaultFgLocationId: idOf(workOrder.defaultFgLocationId),
-        defaultScrapLocationId: refs.lines.get(idOf(workOrder.productionLineId) ?? -1n)?.default_scrap_location_id ?? null,
+        defaultScrapLocationId: null,
       };
       // 제안이 사유를 내는 판정과 같은 것 — 「확정 가능」 제안을 그대로 보내면 여기서 막히지 않는다.
       locations.set(BigInt(workOrder.routingOperationId), resources);
@@ -268,8 +268,8 @@ async function readReferences(client: Prisma.TransactionClient, body: ProposalCo
   const equipmentIds = ids(workOrders.map((workOrder) => workOrder.plannedEquipmentId));
   const moldIds = ids(workOrders.map((workOrder) => workOrder.plannedMoldId));
   const workerIds = ids(workOrders.map((workOrder) => workOrder.responsibleWorkerId));
-  const lines = await client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true, is_active: true, default_wip_location_id: true, default_scrap_location_id: true } });
-  const locationIds = [...new Set([...lines.flatMap((line) => line.default_wip_location_id === null ? [] : [line.default_wip_location_id]), ...ids(workOrders.flatMap((workOrder) => [workOrder.defaultWipLocationId, workOrder.defaultFgLocationId, workOrder.defaultScrapLocationId]))])];
+  const lines = await client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true, is_active: true, default_wip_location_id: true } });
+  const locationIds = [...new Set([...lines.flatMap((line) => line.default_wip_location_id === null ? [] : [line.default_wip_location_id]), ...ids(workOrders.flatMap((workOrder) => [workOrder.defaultWipLocationId, workOrder.defaultFgLocationId]))])];
   const warehouseIds = ids(body.plans.map((plan) => plan.fgWarehouseOverride?.warehouseId));
   const [equipments, molds, workers, locations, warehouses] = await Promise.all([
     client.equipment.findMany({ where: { equipment_id: { in: equipmentIds } }, select: { equipment_id: true, plant_id: true, status_code: true, is_active: true, production_line_id: true } }),

@@ -51,7 +51,7 @@ interface EquipmentGroupView {
   departmentName: string | null;
 }
 
-/** 라인 기본 위치 셋 — 계획 확정·4M 라인 선택 때 W/O 기본 위치로 복사된다. 생략 = 유지, null = 비움. */
+/** 라인 기본 위치 — 계획 확정·4M 라인 선택 때 W/O 기본 위치로 복사된다. 생략 = 유지, null = 비움. */
 interface LineDefaultLocations {
   defaultWipLocationId?: number | null;
   defaultFgLocationId?: number | null;
@@ -61,7 +61,6 @@ interface LineDefaultLocations {
 const DEFAULT_LOCATION_COLUMNS = {
   defaultWipLocationId: 'default_wip_location_id',
   defaultFgLocationId: 'default_fg_location_id',
-  defaultScrapLocationId: 'default_scrap_location_id',
 } as const;
 
 export interface EquipmentGroupCreate extends LineDefaultLocations {

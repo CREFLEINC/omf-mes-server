@@ -455,11 +455,12 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
       expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).default_fg_location_id).toBe(wh.B.zone);
     });
 
-    it('WIP·스크랩은 입고 창고와 무관하지만 자재창고·다른 공장 위치는 400 LOCATION_INVALID', async () => {
+    it('WIP는 입고 창고와 별개이고 스크랩 위치 수정 요청은 무시한다', async () => {
       await put(workOrderId, { defaultWipLocationId: Number(id.locFg) }, 200);
-      const response = await put(workOrderId, { defaultScrapLocationId: Number(id.locMaterial) }, 400);
-
-      expect(response.body.errors[0]).toMatchObject({ field: 'defaultScrapLocationId', code: 'LOCATION_INVALID' });
+      const original = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
+      await put(workOrderId, { defaultScrapLocationId: Number(id.locMaterial) }, 200);
+      const updated = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
+      expect(updated.default_scrap_location_id).toBe(original.default_scrap_location_id);
     });
 
     it('라인을 바꿔도 완제품 위치는 라인 기본값으로 덮어써지지 않는다', async () => {

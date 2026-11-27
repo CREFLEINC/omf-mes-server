@@ -26009,6 +26009,7 @@
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
+      "deprecated": true,
       "type": [
        "integer",
        "null"
@@ -27056,6 +27057,7 @@
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
+      "deprecated": true,
       "type": [
        "integer",
        "null"
@@ -27152,6 +27154,7 @@
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
+      "deprecated": true,
       "type": [
        "integer",
        "null"
@@ -27232,6 +27235,7 @@
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
+      "deprecated": true,
       "type": [
        "integer",
        "null"

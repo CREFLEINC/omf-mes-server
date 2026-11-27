@@ -64,7 +64,7 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
       9,
     );
 
-    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, planned_mold_id: 61n, production_line_id: 22n, default_wip_location_id: 41n, default_scrap_location_id: 43n });
+    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, planned_mold_id: 61n, production_line_id: 22n, default_wip_location_id: 41n, default_scrap_location_id: null });
     expect(rows[1]).toMatchObject({ planned_equipment_id: null, planned_mold_id: null, production_line_id: null });
   });
 
@@ -132,7 +132,7 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
     };
     const rows = workOrderRows(plan({ line, fg }), ['WO-A', 'WO-B', 'WO-C'], 9);
 
-    for (const row of rows) expect(row).toMatchObject({ default_wip_location_id: 31n, default_fg_location_id: 55n, default_scrap_location_id: 33n });
+    for (const row of rows) expect(row).toMatchObject({ default_wip_location_id: 31n, default_fg_location_id: 55n, default_scrap_location_id: null });
   });
 
   it('⑦ 입고 창고 연결이 실패한 오더는 라인 기본 완제품 위치로 대체하지 않는다', () => {

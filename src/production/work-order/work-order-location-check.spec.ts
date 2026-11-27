@@ -64,11 +64,12 @@ describe('assertLocationsAllowed — MES W/O 수정의 기본 위치 검증', ()
     expect(await failures(fakeTx({ erpCode: null }), { defaultFgLocationId: 200 })).toEqual([['defaultFgLocationId', 'LOCATION_INVALID']]);
   });
 
-  it('WIP·스크랩은 입고 창고와 무관하게 기존 자원 규칙만 본다', async () => {
+  it('WIP만 위치 유효성을 검사하고 기존 스크랩 요청 값은 무시한다', async () => {
     expect(await failures(fakeTx({ erpCode: 'S99' }), { defaultWipLocationId: 150, defaultScrapLocationId: 150 })).toBeNull();
+    expect(await failures(fakeTx({ erpCode: 'S10' }), { defaultScrapLocationId: 200 })).toBeNull();
     expect(await failures(fakeTx({ erpCode: 'S10' }), { defaultWipLocationId: 200, defaultScrapLocationId: 200 })).toEqual([
       ['defaultWipLocationId', 'LOCATION_INVALID'],
-      ['defaultScrapLocationId', 'LOCATION_INVALID'],
+
     ]);
   });
 
