@@ -22334,7 +22334,7 @@
       "x-source-column": "inspection_required",
       "type": "boolean",
       "default": false,
-      "description": "MES 확장 · W-01-01 IQC 대상 판정의 입력 ⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있어도 전용 IQC 기준이 기본 생략이면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다. 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 IQC 기준에 그날 유효한 확정 버전이 없으면 입하 IQC 는 생략(SKIPPED · DEFAULT)으로 남는다(omf-all-around#366). omf-all-around#215",
+      "description": "MES 확장 · W-01-01 IQC 대상 판정의 입력 ⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있으면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다 — 켜져 있어도 그날 유효한 전용 IQC 기준이 없으면 생략이다(omf-all-around#366). 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 IQC 기준에 그날 유효한 확정 버전이 없으면 입하 IQC 는 생략(SKIPPED · DEFAULT)으로 남는다(omf-all-around#366). omf-all-around#215",
       "example": true
      },
      "fifoPolicyCode": {
@@ -22496,7 +22496,7 @@
       "x-source-column": "inspection_required",
       "type": "boolean",
       "example": true,
-      "description": "⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있어도 전용 IQC 기준이 기본 생략이면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다. 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 IQC 기준에 그날 유효한 확정 버전이 없으면 입하 IQC 는 생략(SKIPPED · DEFAULT)으로 남는다(omf-all-around#366). omf-all-around#215"
+      "description": "⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있으면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다 — 켜져 있어도 그날 유효한 전용 IQC 기준이 없으면 생략이다(omf-all-around#366). 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 IQC 기준에 그날 유효한 확정 버전이 없으면 입하 IQC 는 생략(SKIPPED · DEFAULT)으로 남는다(omf-all-around#366). omf-all-around#215"
      },
      "fifoPolicyCode": {
       "x-source-column": "fifo_policy_code",

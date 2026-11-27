@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { inspectionPlanMissing, itemIqcDefaultSkipped, resolveInspectionPlanVersion } from './inspection-plan-version';
+import { inspectionPlanMissing, resolveInspectionPlanVersion } from './inspection-plan-version';
 
 type Row = { id: bigint; plan?: bigint; version?: number };
 
@@ -57,31 +57,5 @@ describe('inspectionPlanMissing — 기준 없는 품목은 생략 (omf-all-arou
     ['둘 이상이면 거짓(없는 것이 아니다)', new Map([[10, [1n, 3n]]]), false],
   ])('%s', async (_label, byItem, expected) => {
     await expect(inspectionPlanMissing(stub(byItem).tx, 'IQC', 10, '2026-10-16')).resolves.toBe(expected);
-  });
-});
-
-describe('itemIqcDefaultSkipped — 품목 전용 IQC 기준의 기본 생략 (omf-all-around#215)', () => {
-  const tx = (rows: { inspection_plan_id?: bigint; plan_version?: number; inspection_plan: { default_skip: boolean } }[]) => {
-    const findMany = jest.fn().mockResolvedValue(rows.map((row, index) => ({ inspection_plan_id: BigInt(index + 1), plan_version: 1, ...row })));
-    return { tx: { inspection_plan_version: { findMany } } as unknown as Prisma.TransactionClient, findMany };
-  };
-
-  it('품목 전용 기준 하나가 기본 생략이면 참 — 공통 기준(품목 없음)은 묻지 않는다', async () => {
-    const { tx: client, findMany } = tx([{ inspection_plan: { default_skip: true } }]);
-    await expect(itemIqcDefaultSkipped(client, 10, '2026-10-29')).resolves.toBe(true);
-    expect(findMany.mock.calls[0][0].where.inspection_plan).toEqual({ item_id: 10, inspection_type_code: 'IQC', is_active: true });
-  });
-
-  it.each([
-    ['기본 생략이 아니면', [{ inspection_plan: { default_skip: false } }]],
-    ['기준이 없으면', []],
-    ['둘 이상이면(고르지 않는다)', [{ inspection_plan: { default_skip: true } }, { inspection_plan: { default_skip: true } }]],
-  ])('%s 거짓', async (_label, rows) => {
-    await expect(itemIqcDefaultSkipped(tx(rows).tx, 10, '2026-10-29')).resolves.toBe(false);
-  });
-
-  it('한 기준의 확정 버전이 여럿이어도 하나로 센다 (omf-all-around#208)', async () => {
-    const rows = [1, 2].map((version) => ({ inspection_plan_id: 7n, plan_version: version, inspection_plan: { default_skip: true } }));
-    await expect(itemIqcDefaultSkipped(tx(rows).tx, 10, '2026-10-29')).resolves.toBe(true);
   });
 });

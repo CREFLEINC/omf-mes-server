@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { INITIAL_LOT_STATUS, IqcHandoverNotifier, LotRegistryService } from '../../core/lot';
-import { itemIqcDefaultSkipped } from '../../core/quality/inspection-plan-version';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
@@ -168,6 +167,7 @@ export class InboundReceiptService {
           incomingIqc:
             iqcRecords.get(BigInt(line.itemId)) === true
               ? {
+                  inspectionRequired: inspection.get(BigInt(line.itemId)) === true,
                   requestNo: requiredIqcValue(iqcRequestNos[index], '의뢰번호'),
                   effectiveDate: requiredIqcValue(businessDate, '업무일자'),
                   requestedAt: requiredIqcValue(occurredAt, '요청시각'),
@@ -348,8 +348,8 @@ export async function inspectionFlags(
 }
 
 /**
- * IQC 의뢰(생략 기록 포함)를 세울 품목. 품목 「수입검사 대상」이거나, 꺼져 있어도 품목 전용 IQC 기준이 「기본 생략」이면
- * 참이다 — 그 경우 의뢰는 생략(DEFAULT)으로 선다(omf-all-around#215). 입하 라인의 `inspection_required` 는 품목 값 그대로다.
+ * IQC 의뢰(생략 기록 포함)를 세울 품목. 업무일이 있으면 모든 품목이다 — 「수입검사 대상」이 아니거나 기준이 없는 품목도 의뢰가
+ * 생략(DEFAULT)으로 선다(사용자 결정 2026-11-27 · omf-all-around#366). 업무일이 없으면(옛 경로) 품목 「수입검사 대상」 그대로다.
  */
 export async function iqcRecordFlags(
   tx: Prisma.TransactionClient,
@@ -358,11 +358,7 @@ export async function iqcRecordFlags(
 ): Promise<Map<bigint, boolean>> {
   const flags = await inspectionFlags(tx, lines);
   if (businessDate === undefined) return flags;
-  const result = new Map(flags);
-  for (const [itemId, required] of flags) {
-    if (!required && (await itemIqcDefaultSkipped(tx, Number(itemId), businessDate))) result.set(itemId, true);
-  }
-  return result;
+  return new Map([...flags.keys()].map((itemId) => [itemId, true]));
 }
 
 function bigintOrNull(value: number | null | undefined): bigint | null {

@@ -16,7 +16,6 @@ import { assertInstant } from '../../trace/lot/lot-rules';
 import { CLOSED_ORDER_STATUSES } from '../purchase-order/purchase-order-receipt';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { recordInboundLotEvent } from './inbound-lot-event';
-import { iqcSkipRecorded } from './inbound-lot-iqc-skip-default';
 import { InboundLotView, loadInboundLotViews } from './inbound-lot-view';
 import { AutoAllocationResult, allocateByOrderAge } from './po-auto-allocate';
 
@@ -211,13 +210,12 @@ interface IqcRecord {
 }
 
 /**
- * 마감이 세울 IQC 요청 — 지금 입하의 규칙 그대로(#101·#212·#215). 검사 필요로 받은 입하 LOT 은 검사 요청, 아니면 품목이 검사
- * 대상(기준이 기본 생략)이거나 품목 전용 기준이 기본 생략일 때만 생략(DEFAULT) 기록, 그 밖(검사 대상 아님)은 요청 없음.
+ * 마감이 세울 IQC 요청(#101·#212·#215). 검사 필요로 받은 입하 LOT 은 검사 요청, 아니면 생략(DEFAULT) 기록이다 — 검사 대상이
+ * 아니거나 기준이 없는 품목도 모든 입하가 생략 기록을 남긴다(사용자 결정 2026-11-27 · omf-all-around#366).
  */
 export async function iqcRecordOf(
   db: Prisma.TransactionClient, itemId: bigint, inspectionNeeded: boolean, effectiveDate: string,
 ): Promise<IqcRecord | null> {
-  if (!inspectionNeeded && !(await iqcSkipRecorded(db, itemId, effectiveDate))) return null;
   return {
     statusCode: inspectionNeeded ? 'REQUESTED' : 'SKIPPED',
     planVersionId: await findInspectionPlanVersion(db, 'IQC', Number(itemId), effectiveDate),

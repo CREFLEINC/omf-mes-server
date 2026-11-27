@@ -18,7 +18,6 @@ import { assertDay, assertInstant, isDuplicateLotNo } from '../../trace/lot/lot-
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import { RegisteredLotSummary, recordInboundLotEvent } from './inbound-lot-event';
 import { InboundLotCloseService, IqcRequestNoNeeded } from './inbound-lot-close';
-import { iqcSkipRecorded } from './inbound-lot-iqc-skip-default';
 import { OpenInboundLot, createInboundLotWithin, lockOpenInboundLot } from './inbound-lot-open';
 import {
   InboundLotReceiveEntry, ResolvedReceiveLot, assertReceiveEntries, resolveReceiveLots,
@@ -224,7 +223,8 @@ export class InboundLotReceiveService {
     const statusCode = line.inspection_required ? INITIAL_LOT_STATUS : NORMAL;
     return {
       inboundLotId: Number(open.inboundLotId), inboundLotNo: open.inboundLotNo, created, autoClosedInboundLotNo,
-      iqcDefaultSkipApplies: !line.inspection_required && (await iqcSkipRecorded(tx, lotKey.itemId, ctx.localDay)),
+      // 검사 불필요로 받은 입하 LOT 은 마감하면 언제나 「검사 생략」이 남는다(omf-all-around#366).
+      iqcDefaultSkipApplies: !line.inspection_required,
       inboundReceiptNo: line.inbound_receipt.inbound_receipt_no, receivedQty: Number(line.received_qty),
       lotCount: await tx.lot.count({ where: { inbound_lot_id: open.inboundLotId } }),
       lots: group.map((lot) => ({

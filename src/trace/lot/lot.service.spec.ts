@@ -182,13 +182,14 @@ describe('LotService.create — 입하 SUPPLIER(사전부착) 자재 LOT', () =>
     expect(recorded.numbering).toEqual([['INSPECTION_REQUEST', 1n, '2026-09-11']]);
   });
 
-  it('IQC 대상이 아닌 라인이면 의뢰번호를 뽑지 않고 IQC 문맥도 넘기지 않는다', async () => {
+  /* omf-all-around#366 — IQC 대상이 아닌 라인도 의뢰번호를 뽑아 IQC 문맥을 넘긴다 — 의뢰는 생략 기록으로 선다. */
+  it('IQC 대상이 아닌 라인도 의뢰번호를 뽑고 IQC 문맥을 넘긴다', async () => {
     const { service, recorded } = fake(100, '0009', false);
 
     await service.create(input({ numberSourceCode: 'SUPPLIER', lotNo: 'SUP-LOT-0002' }), 7);
 
     expect(recorded.register).toMatchObject({ lotNo: 'SUP-LOT-0002' });
-    expect(recorded.register?.incomingIqc).toBeUndefined();
-    expect(recorded.numbering).toEqual([]);
+    expect(recorded.register?.incomingIqc).toBeDefined();
+    expect(recorded.numbering).toHaveLength(1);
   });
 });

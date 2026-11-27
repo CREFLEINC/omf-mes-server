@@ -300,6 +300,17 @@ describe('LotRegistryService', () => {
     });
   });
 
+  /* omf-all-around#366 — 검사 불필요 입하 라인은 기준이 있어도 정상 LOT · 보류 없음 · 의뢰는 생략 기록이다. */
+  it('LOT 코어 — 검사 불필요 라인이면 유효한 IQC 계획이 있어도 SKIPPED(DEFAULT)', async () => {
+    const { tx, calls, args } = fake({ line: { lot_id: null }, iqcPlans: [{ inspection_plan_version_id: 55n }] });
+
+    await service.createWithin(tx, input({ incomingIqc: { ...incomingIqc, inspectionRequired: false } }), 7);
+
+    expect(args[calls.indexOf('lot.create')].data).toMatchObject({ status_code: 'NORMAL' });
+    expect(calls).not.toContain('lot_hold.create');
+    expect(args[calls.indexOf('iqc.request.create')].data).toMatchObject({ status_code: 'SKIPPED', skip_basis_code: 'DEFAULT' });
+  });
+
   /* omf-all-around#101 결정 A — 기준이 둘 이상이면 임의로 고르지 않고, LOT·라벨은 막지 않고 기준 칸이 빈 의뢰를 세운다. */
   it('LOT 코어 — 유효한 IQC 계획이 복수면 LOT 과 기준 빈 의뢰(REQUESTED)를 만든다', async () => {
     const iqcPlans = [{ inspection_plan_version_id: 55n, inspection_plan_id: 5n, plan_version: 1 }, { inspection_plan_version_id: 56n, inspection_plan_id: 6n, plan_version: 1 }];

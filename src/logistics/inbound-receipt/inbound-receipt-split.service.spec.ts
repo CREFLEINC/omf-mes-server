@@ -124,7 +124,7 @@ function fake(codeValues?: string[]) {
     item: {
       findMany: async () => [{ item_id: 40n, inspection_required: false }],
     },
-    // 무검사 품목의 전용 IQC 기준 조회(#215) — 기본 생략 기준이 없다.
+    // 무검사 품목의 전용 IQC 기준 조회 — 기준이 없다.
     inspection_plan_version: { findMany: async () => [] },
     inbound_receipt: {
       create: async ({ data }: { data: Args }) => {
@@ -144,6 +144,8 @@ function fake(codeValues?: string[]) {
       findUniqueOrThrow: async () => ({ lot_id: 7000n, lot_hold: [] }),
     },
     lot_hold: { create: async () => undefined },
+    // 무검사 품목도 IQC 생략 기록을 남긴다(omf-all-around#366).
+    inspection_request: { create: async () => ({ inspection_request_id: 1n }) },
     // 배정 표(이중 쓰기) — 이 spec 은 몫의 수량을 보지 않는다(등록 spec 이 본다).
     inbound_receipt_po_allocation: { create: async () => ({}) },
   };

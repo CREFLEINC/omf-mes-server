@@ -99,29 +99,6 @@ export async function planDefaultSkip(
 }
 
 /**
- * 품목 전용 IQC 기준(공통 기준 제외)이 그 날짜에 하나로 정해지고 「기본 생략」인가(omf-all-around#215).
- * 품목 「수입검사 대상」이 꺼져 있어도 이것이 참이면 입하가 생략 기록을 남긴다 — 두 설정은 저장 때 서로 맞춰진다.
- */
-export async function itemIqcDefaultSkipped(
-  tx: Pick<Prisma.TransactionClient, 'inspection_plan_version'>,
-  itemId: number,
-  effectiveDate: string,
-): Promise<boolean> {
-  const date = day('businessDate', effectiveDate);
-  const versions = await tx.inspection_plan_version.findMany({
-    where: {
-      status_code: 'CONFIRMED',
-      effective_from: { lte: date },
-      OR: [{ effective_to: null }, { effective_to: { gte: date } }],
-      inspection_plan: { item_id: itemId, inspection_type_code: 'IQC', is_active: true },
-    },
-    select: { inspection_plan_id: true, plan_version: true, inspection_plan: { select: { default_skip: true } } },
-  });
-  const latest = latestPerPlan(versions);
-  return latest.length === 1 && latest[0].inspection_plan.default_skip;
-}
-
-/**
  * 한 기준에 그날 유효한 확정 버전이 여럿이면 최신(`plan_version` 이 가장 큰) 것만 남긴다(omf-all-around#208 · 사용자 결정 2026-10-30).
  * 엑셀 올리기는 새 버전을 바로 확정하고 앞 버전을 폐기하지 않는다 — 같은 기준의 옛 버전이 「여러 개」로 세지면 안 된다.
  * 서로 다른 기준끼리는 그대로 둔다(고르지 않는다).
