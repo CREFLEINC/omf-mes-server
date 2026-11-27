@@ -141,7 +141,8 @@ describe('계약 커버리지', () => {
     // 교대 다시 사용 1(omf-all-around#318): 657.
     // BOM 구성 자재 가용 수량 1(omf-all-around#320): 658.
     // 부서 생산 창고 조회·바꾸기 2건 삭제 — 생산 창고는 창고 유형(사용자 결정 2026-11-25): 658 → 656.
-    expect(registry.size).toBe(656);
+    // 추적 시스템 수량 출고·재고 조회 2 오퍼레이션(flowtrack 연동 제안 §3-5): 656 → 658.
+    expect(registry.size).toBe(658);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
