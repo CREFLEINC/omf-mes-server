@@ -119,6 +119,7 @@ function preIssue(extra: Partial<LotPreIssueInput> = {}): LotPreIssueInput {
     uomId: 3,
     bomId: 8,
     bomVersion: 2,
+    lotTypeCode: 'PRODUCTION',
     lotNos: ['A', 'B', 'C'],
     qtys: [dec('300'), dec('300'), dec('100')],
     ...extra,
@@ -360,6 +361,14 @@ describe('선발행 슬롯', () => {
       source_id: 55n,
     });
     expect(rows).toHaveLength(3);
+  });
+
+  it('FR-001 — 슬롯 유형은 배포가 넘긴 값(반제품이면 WIP)으로 선다', async () => {
+    const { tx, created } = fake({});
+
+    await service.preIssueWithin(tx, preIssue({ lotTypeCode: 'WIP' }), 7);
+
+    expect(created.map((d) => d.lot_type_code)).toEqual(['WIP', 'WIP', 'WIP']);
   });
 
   it('슬롯 — lot_hold 를 만들지 않는다(입하 등록과 다르다)', async () => {

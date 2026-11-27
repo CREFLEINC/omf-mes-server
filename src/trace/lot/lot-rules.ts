@@ -4,6 +4,7 @@ import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../comm
 import { day } from '../../common/master';
 import { workOrderLotFamilySql } from '../../core/lot/lot-genealogy';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
+import { PRODUCED_LOT_TYPES } from '../../core/lot/lot-type';
 import { LotCompletionJudgment } from './lot-progress';
 
 /**
@@ -87,9 +88,12 @@ export async function workOrderFamilyWhere(
   return { lot_id: { in: rows.map((row) => row.lot_id) } };
 }
 
-/** 「현재 생산 LOT」 후보 — 그 W/O 의 선발행 생산 LOT 중 완료되지 않고 폐번되지 않은 것(장부 P-103). */
+/**
+ * 「현재 생산 LOT」 후보 — 그 W/O 의 선발행 생산 LOT 중 완료되지 않고 폐번되지 않은 것(장부 P-103).
+ * 반제품 공정 W/O 의 슬롯은 WIP 다 — POP 생산 작업이 그 W/O 에서도 현재 LOT 을 찾아야 한다(피처 016 R-1).
+ */
 export const CURRENT_LOT_WHERE: Prisma.lotWhereInput = {
-  lot_type_code: 'PRODUCTION',
+  lot_type_code: { in: PRODUCED_LOT_TYPES },
   completed_at: null,
   lifecycle_status_code: { in: ['ACTIVE', 'WAITING'] },
 };

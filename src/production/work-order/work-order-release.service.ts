@@ -2,10 +2,11 @@ import { assertEquipmentOccupancy, lockEquipmentOccupancy } from './equipment-oc
 import { HttpStatus, Injectable } from '@nestjs/common';
 
 import { DocumentStateService } from '../../core/document-state';
-import { LotRegistryService, nextMesLotNos, Tx } from '../../core/lot';
+import { LotRegistryService, nextMesLotNos, PRODUCTION_LOT_TYPE, Tx, WIP_LOT_TYPE } from '../../core/lot';
 import { MaterialIssueReleaser } from '../../core/material-issue/release-request';
 import { NumberingService } from '../../core/numbering';
 import { PickingHandoverNotifier, PickingPlan, planPicking, writePicking } from '../../core/picking';
+import { isLastOperation } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ISSUE_REGISTERED, MaterialIssueLine } from './material-issue';
 import { PqcRequestPlan, preparePqcRequest, writePqcRequest } from './work-order-pqc-request';
@@ -144,6 +145,8 @@ export class WorkOrderReleaseService {
 
     const plantId = Number(plan.plan.production_order.plant_id);
     const lotNos = await nextMesLotNos(tx, plantId, plan.businessDate, plan.qtys.length);
+    // 마지막이 아닌 공정의 산출은 반제품이다 — 다음 공정에 투입된다(피처 016 R-1). 이미 발행된 슬롯은 바꾸지 않는다.
+    const last = await isLastOperation(tx, plan.row.routing_operation);
     await this.lots.preIssueWithin(
       tx,
       {
@@ -153,6 +156,7 @@ export class WorkOrderReleaseService {
         uomId: Number(plan.row.uom_id),
         bomId: Number(plan.plan.bom_id),
         bomVersion: plan.plan.bom.bom_version,
+        lotTypeCode: last ? PRODUCTION_LOT_TYPE : WIP_LOT_TYPE,
         lotNos,
         qtys: plan.qtys,
       },

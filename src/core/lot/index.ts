@@ -8,6 +8,7 @@ export * from './lot-lifecycle.service';
 export * from './lot-number';
 export * from './lot-quality-status.service';
 export * from './lot-registry.service';
+export * from './lot-type';
 export * from './pqc-release';
 export {
   GOODS_ISSUE_SPLIT_SOURCE,

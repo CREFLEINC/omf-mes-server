@@ -33,6 +33,7 @@ const RELEASE_SELECT = {
       standard_yield_rate: true,
       process_id: true,
       routing_id: true,
+      operation_seq: true,
     },
   },
   production_plan: {
