@@ -1,447 +1,367 @@
 /**
- * 자재 반출 — 조회 2건(PR ①) + 등록 `POST /production/material-returns`(PR ③).
+ * 반납 입고(피처 019 · omf-all-around#367) — US1~US3 서버. 시험 이름 앞의 ID 는 verification.md 의 것이다.
  *
- * ⭐ 조회가 보는 반출은 **직접 INSERT** 한다 — 이 PR 에 `POST` 가 없다(PR ③ 몫).
- * ⭐ 라인 전건 `return_quality_status_code: null` 이다 — M-2(NOT NULL 완화)가 실제로 먹었는지를
- *    픽스처가 증명한다. 계약 `MaterialReturnLine` 에 그 칸이 없어 서버가 값을 만들지 않는다.
- * ⭐ 목록도 상세도 `lines` 를 싣는다 — 같은 `MaterialReturn` 스키마라 비우면 자리마다 모양이
- *    갈린다(I-10 §5-3).
- * ⛔ 계약이 조회 둘에 403 도 ETag 도 선언하지 않았다 — 권한 없는 계정을 세우지 않는다.
- * ⛔ `TRUNCATE` 를 쓰지 않는다 — 원장 행을 한 건도 만들지 않는다(I-10 §7-2).
+ * ⭐ 옛 「반출 요청」 시험(I-10 PR ③ 등록 · 조회 2건)은 새 본문 기준으로 다시 썼다 — 등록은 LOT·수량만 받고 바로 입고한다.
+ * ⭐ 최종 마감(017) 판정은 대역(`FinalCloseFake`)으로 바꾼다 — 017 표가 아직 없어 진짜 판정은 늘 거짓이다(R-2).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
-import addFormats from 'ajv-formats';
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
-import { hashPassword } from '../src/auth/password';
+import { allocateStock } from '../src/core/picking';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { FinalCloseProbe } from '../src/production/material-return/final-close';
+import { FinalCloseFake, MaterialReturnFixture, RETURNS } from './support/material-return-fixture';
+import { contractValidator } from './support/wip-lot-fixture';
 
-const LOGIN_ID = 'e2e-mr-probe';
-const PASSWORD = 'MR-자재반출-비밀번호';
-const PREFIX = 'MRE2E';
-const RETURNS = '/api/production/material-returns';
-const REQUESTED_1 = '2026-09-07T01:00:00.000Z';
-const REQUESTED_2 = '2026-09-07T03:00:00.000Z';
-/** 계약 `statusCode` 는 `x-no-code-key` 다 — 서버가 대조하지 않는 자유 문자다(문의 053). */
-const STATUS_REQUESTED = 'REQUESTED';
-const STATUS_RECEIVED = 'RECEIVED';
+const CONTRACT = 'production-02생산실행.json';
+const OVER = (n: number) => `출고된 양보다 많이 반납할 수 없습니다 (반납 가능 ${n})`;
 
-function validator(file: string, operation: string, status = 200): ValidateFunction {
-  const contract = JSON.parse(readFileSync(join(__dirname, `../contracts/${file}`), 'utf8')) as object;
-  const [method, path] = operation.split(' ');
-  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
-  const ajv = new Ajv2020({ strict: false, allErrors: true });
-  addFormats(ajv);
-  for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
-  ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
-  return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
-}
-
-describe('자재 반출 조회 2건 (e2e)', () => {
+describe('반납 입고 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let cookie: string[];
-
-  let workOrderId: number;
-  /** 라인 둘(`line_no` 2 를 «먼저» 심어 정렬이 저장 순서가 아님을 본다). */
-  let returnOneId: number;
-  let returnTwoId: number;
-  let otherReturnId: number;
-  let lotAId: number;
-  let lotBId: number;
+  let fx: MaterialReturnFixture;
+  const finalClose = new FinalCloseFake();
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(FinalCloseProbe).useValue(finalClose).compile();
     app = moduleRef.createNestApplication();
     configureApp(app, 'api');
     await app.init();
     prisma = app.get(PrismaService);
-
-    // 자가 치유 — 앞 회차가 죽어 남긴 행을 먼저 지운다.
-    await cleanup();
-    await makeFixtures();
-    await makeUser();
+    fx = new MaterialReturnFixture(app, prisma);
+    await fx.setup();
   });
 
   afterAll(async () => {
-    await cleanup();
     await app.close();
   });
 
-  it('목록이 workOrderId·statusCode 로 걸러진다', async () => {
-    const byOrder = await request(app.getHttpServer())
-      .get(`${RETURNS}?workOrderId=${workOrderId}`)
-      .set('Cookie', cookie)
-      .expect(200);
-
-    expect(byOrder.body.page).toMatchObject({ page: 1, size: 50, total: 2 });
-    // 정렬 고정 `requested_at DESC` · 동률은 PK DESC — 늦게 요청한 것이 앞이다.
-    expect(byOrder.body.items.map((item: { materialReturnId: number }) => item.materialReturnId)).toEqual([
-      returnTwoId,
-      returnOneId,
-    ]);
-    expect(byOrder.body.items.map((item: { materialReturnId: number }) => item.materialReturnId)).not.toContain(
-      otherReturnId,
-    );
-    expect(validator('production-02생산실행.json', 'GET /production/material-returns')(byOrder.body)).toBe(true);
-
-    // `x-no-code-key` — 문자 그대로 건다. 대조를 걸면 값이 늘 때 목록이 400 이 된다.
-    const byStatus = await request(app.getHttpServer())
-      .get(`${RETURNS}?workOrderId=${workOrderId}&statusCode=${STATUS_RECEIVED}`)
-      .set('Cookie', cookie)
-      .expect(200);
-    expect(byStatus.body.items.map((item: { materialReturnId: number }) => item.materialReturnId)).toEqual([
-      returnTwoId,
-    ]);
-  });
-
-  it('목록이 requestedFrom·requestedTo 반개구간으로 걸러진다', async () => {
-    const response = await request(app.getHttpServer())
-      .get(`${RETURNS}?workOrderId=${workOrderId}&requestedFrom=${REQUESTED_1}&requestedTo=${REQUESTED_2}`)
-      .set('Cookie', cookie)
-      .expect(200);
-
-    // From 이상 · To 미만(공유계약 L-3) — 끝 경계 정각의 R2 가 빠진다.
-    expect(response.body.items.map((item: { materialReturnId: number }) => item.materialReturnId)).toEqual([
-      returnOneId,
-    ]);
-  });
-
-  it('⭐ 목록 항목이 lines 를 함께 싣는다', async () => {
-    const response = await request(app.getHttpServer())
-      .get(`${RETURNS}?workOrderId=${workOrderId}`)
-      .set('Cookie', cookie)
-      .expect(200);
-
-    const [second, first] = response.body.items;
-    expect(first.lines).toHaveLength(2);
-    expect(second.lines).toHaveLength(1);
-    // 라인은 계약에 «있는» 5칸뿐이다 — `lineNo`·`returnQualityStatusCode`·`packageOpened`·
-    // `qualityCheckRequired`·`inventoryTransactionLineId` 는 응답 스키마에 자리가 없다.
-    expect(Object.keys(first.lines[0]).sort()).toEqual([
-      'itemId',
-      'lotId',
-      'materialReturnLineId',
-      'returnQty',
-      'uomId',
-    ]);
-    // 채우는 오퍼레이션이 0건이라 `received_at` 은 NULL 이고 뷰가 키를 생략한다(문의 051).
-    expect(first).not.toHaveProperty('receivedAt');
-  });
-
-  it('상세가 라인을 line_no 오름차순으로 낸다', async () => {
-    const response = await request(app.getHttpServer())
-      .get(`${RETURNS}/${returnOneId}`)
-      .set('Cookie', cookie)
-      .expect(200);
-
-    // `line_no` 2 를 «먼저» 심었다 — 저장 순서가 아니라 `line_no` 로 정렬한다.
-    expect(response.body.lines.map((line: { lotId: number }) => line.lotId)).toEqual([lotAId, lotBId]);
-    expect(response.body).toMatchObject({
-      materialReturnId: returnOneId,
-      workOrderId,
-      statusCode: STATUS_REQUESTED,
-      requestedAt: REQUESTED_1,
-    });
-    expect(
-      validator('production-02생산실행.json', 'GET /production/material-returns/{materialReturnId}')(response.body),
-    ).toBe(true);
-  });
-
-  it('없는 반출은 404', async () => {
-    await request(app.getHttpServer()).get(`${RETURNS}/999999999`).set('Cookie', cookie).expect(404);
-  });
-
-  it('⛔ 조회 응답에 ETag 가 없다', async () => {
-    const response = await request(app.getHttpServer())
-      .get(`${RETURNS}/${returnOneId}`)
-      .set('Cookie', cookie)
-      .expect(200);
-
-    // 계약이 I-10 6건 어디에도 ETag 를 선언하지 않았다 — `setEtag` 를 부르지 않는다.
-    // ⚠ Express 가 붙이는 «약한» 내용 해시는 남는다 — 우리가 싣는 숫자 토큰이 아니다.
-    expect(response.headers.etag).toMatch(/^W\/"/);
-    expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
-  });
-
-  // ⛔ 옛 「반출 요청」 등록 본문은 피처 019 반납 입고로 바뀌었다(계약 MaterialReturnReceive) — 등록 시험은 다음 PR 이 새 본문으로 다시 쓴다.
-
-  async function makeFixtures(): Promise<void> {
-    const entity = await prisma.legal_entity.create({
-      data: {
-        legal_entity_code: `${PREFIX}-LE`,
-        legal_entity_name: '자재반출검사법인',
-        country_code: 'VN',
-        timezone_code: 'Asia/Ho_Chi_Minh',
-      },
-    });
-    const unit = await prisma.business_unit.create({
-      data: {
-        legal_entity_id: entity.legal_entity_id,
-        business_unit_code: `${PREFIX}-BU`,
-        business_unit_name: '자재반출검사사업부',
-      },
-    });
-    const plant = await prisma.plant.create({
-      data: {
-        legal_entity_id: entity.legal_entity_id,
-        plant_code: `${PREFIX}-P`,
-        plant_name: '자재반출검사공장',
-        timezone_code: 'Asia/Ho_Chi_Minh',
-      },
-    });
-    const uom = await prisma.uom.findFirstOrThrow();
-    const item = await prisma.item.create({
-      data: {
-        item_code: `${PREFIX}-IT`,
-        item_name: '자재반출검사품목',
-        item_type_code: 'FINISHED_GOODS',
-        base_uom_id: uom.uom_id,
-        lot_controlled: true,
-      },
-    });
-    const component = await prisma.item.create({
-      data: {
-        item_code: `${PREFIX}-CI`,
-        item_name: '자재반출검사원자재',
-        item_type_code: 'RAW_MATERIAL',
-        base_uom_id: uom.uom_id,
-        lot_controlled: true,
-      },
-    });
-    const warehouse = await prisma.warehouse.create({
-      data: {
-        plant_id: plant.plant_id,
-        business_unit_id: unit.business_unit_id,
-        warehouse_code: `${PREFIX}-WH`,
-        warehouse_name: '자재반출검사창고',
-        warehouse_type_code: 'RAW',
-        management_level_code: 'LOCATION',
-      },
-    });
-    const location = await prisma.location.create({
-      data: {
-        warehouse_id: warehouse.warehouse_id,
-        location_code: `${PREFIX}-LOC`,
-        location_name: '자재반출검사위치',
-        location_type_code: 'BIN',
-      },
-    });
-    const process = await prisma.process.create({
-      data: { process_code: `${PREFIX}-PR`, process_name: '사출공정', process_type_code: 'MOLDING' },
-    });
-    const routing = await prisma.routing.create({
-      data: { item_id: item.item_id, routing_code: `${PREFIX}-RT`, routing_version: 1, status_code: 'ACTIVE' },
-    });
-    const operation = await prisma.routing_operation.create({
-      data: { routing_id: routing.routing_id, operation_seq: 10, process_id: process.process_id, operation_name: '사출' },
-    });
-    const bom = await prisma.bom.create({
-      data: {
-        parent_item_id: item.item_id,
-        bom_code: `${PREFIX}-BOM`,
-        bom_version: 1,
-        status_code: 'ACTIVE',
-        effective_from: new Date('2026-01-01T00:00:00.000Z'),
-        base_qty: 1,
-        base_uom_id: uom.uom_id,
-      },
-    });
-    // ⭐ PR ③ 의 `X-Worker-No` 검증이 이 위에 선다 — 조회는 읽지 않는다.
-    await prisma.worker.create({
-      data: {
-        worker_no: `${PREFIX}-WK`,
-        worker_name: '자재반출검사작업자',
-        business_unit_id: unit.business_unit_id,
-        plant_id: plant.plant_id,
-        status_code: 'EMPLOYED',
-      },
-    });
-    const order = await prisma.production_order.create({
-      data: {
-        production_order_no: `${PREFIX}-PO`,
-        business_unit_id: unit.business_unit_id,
-        plant_id: plant.plant_id,
-        item_id: item.item_id,
-        order_qty: 100,
-        uom_id: uom.uom_id,
-        status_code: 'CONFIRMED',
-      },
-    });
-    const plan = await prisma.production_plan.create({
-      data: {
-        production_order_id: order.production_order_id,
-        plan_no: `${PREFIX}-PP`,
-        plan_date: new Date('2026-09-07T00:00:00.000Z'),
-        planned_qty: 100,
-        uom_id: uom.uom_id,
-        bom_id: bom.bom_id,
-        routing_id: routing.routing_id,
-        status_code: 'CONFIRMED',
-      },
-    });
-    const workOrder = async (suffix: string) =>
-      prisma.work_order.create({
-        data: {
-          work_order_no: `${PREFIX}-${suffix}`,
-          production_plan_id: plan.production_plan_id,
-          routing_operation_id: operation.routing_operation_id,
-          item_id: item.item_id,
-          order_qty: 100,
-          uom_id: uom.uom_id,
-          status_code: 'IN_PROGRESS',
-        },
-      });
-    const main = await workOrder('WO');
-    workOrderId = Number(main.work_order_id);
-    const other = await workOrder('WO2');
-
-    const lot = async (suffix: string, sourceId: number) =>
-      prisma.lot.create({
-        data: {
-          lot_no: `${PREFIX}-LOT-${suffix}`,
-          item_id: component.item_id,
-          lot_type_code: 'MATERIAL',
-          plant_id: plant.plant_id,
-          initial_qty: 1000,
-          uom_id: uom.uom_id,
-          source_type_code: 'INBOUND_RECEIPT_LINE',
-          source_id: sourceId,
-          status_code: 'NORMAL',
-        },
-      });
-    const lotA = await lot('A', 1);
-    lotAId = Number(lotA.lot_id);
-    const lotB = await lot('B', 2);
-    lotBId = Number(lotB.lot_id);
-
-    // ⭐ 원장 무변화 단언의 대조 대상 — 이 한 행의 `on_hand_qty`·`version_no` 가 그대로여야 한다.
-    //    ⛔ `post()` 가 아니라 픽스처가 직접 심는다(반출은 원장을 지나지 않는다 · 문의 051).
-    await prisma.inventory_balance.create({
-      data: {
-        legal_entity_id: entity.legal_entity_id,
-        business_unit_id: unit.business_unit_id,
-        plant_id: plant.plant_id,
-        warehouse_id: warehouse.warehouse_id,
-        location_id: location.location_id,
-        item_id: component.item_id,
-        lot_id: lotA.lot_id,
-        quality_status_code: 'GOOD',
-        inventory_status_code: 'AVAILABLE',
-        ownership_type_code: 'OWNED',
-        on_hand_qty: 1000,
-        uom_id: uom.uom_id,
-      },
-    });
-
-    let sequence = 0;
-    const materialReturn = async (
-      workOrderIdValue: bigint,
-      requestedAt: string,
-      statusCode: string,
-      lots: bigint[],
-    ) => {
-      sequence += 1;
-      return prisma.material_return.create({
-        data: {
-          material_return_no: `${PREFIX}-MR-${sequence}`,
-          work_order_id: workOrderIdValue,
-          source_location_id: location.location_id,
-          destination_warehouse_id: warehouse.warehouse_id,
-          status_code: statusCode,
-          requested_at: new Date(requestedAt),
-          material_return_line: {
-            create: lots.map((lotId, index) => ({
-              // ⭐ `line_no` 를 내림차순으로 심는다 — 정렬이 저장 순서가 아님을 상세가 본다.
-              line_no: lots.length - index,
-              item_id: component.item_id,
-              lot_id: lotId,
-              return_qty: 5,
-              uom_id: uom.uom_id,
-              // ⭐ M-2 — 완화 전이면 이 INSERT 가 NOT NULL 위반으로 죽는다.
-              return_quality_status_code: null,
-            })),
-          },
-        },
-      });
-    };
-    returnOneId = Number(
-      (await materialReturn(main.work_order_id, REQUESTED_1, STATUS_REQUESTED, [lotB.lot_id, lotA.lot_id]))
-        .material_return_id,
-    );
-    returnTwoId = Number(
-      (await materialReturn(main.work_order_id, REQUESTED_2, STATUS_RECEIVED, [lotA.lot_id])).material_return_id,
-    );
-    otherReturnId = Number(
-      (await materialReturn(other.work_order_id, REQUESTED_2, STATUS_REQUESTED, [lotA.lot_id])).material_return_id,
-    );
+  /** W/O 하나에 LOT 하나를 `qty` 만큼 출고한 상태. */
+  async function issued(qty: number, key: 'A' | 'B' | 'C' = 'A', status?: string) {
+    const wo = await fx.workOrder();
+    const lot = await fx.lot(key, { status });
+    const { goodsIssueLineId } = await fx.issue(lot.lotId, qty, wo.workOrderId);
+    return { ...wo, ...lot, goodsIssueLineId };
   }
 
-  async function makeUser(): Promise<void> {
-    // 조회 둘은 403 미선언이라 역할을 안 붙인다 — 로그인 세션만 있으면 된다.
-    cookie = await login(LOGIN_ID, null, []);
-  }
-
-  /** 역할 코드가 널이면 역할을 안 붙인다(조회 전용 세션). */
-  async function login(loginId: string, roleCode: string | null, permissions: string[]): Promise<string[]> {
-    const user = await prisma.app_user.create({
-      data: { login_id: loginId, user_name: '자재반출검사', status_code: 'EMPLOYED' },
-    });
-    await prisma.user_credential.create({
-      data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
-    });
-    if (roleCode !== null) {
-      const role = await prisma.role.create({ data: { role_code: roleCode, role_name: '자재반출검사용' } });
-      await prisma.role_permission.createMany({
-        data: permissions.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+  describe('US1 창고 POP 반납 입고', () => {
+    it('US1-1 LOT 스캔 → 품목·단위·반납 가능 양·귀속될 W/O·출고 생산창고', async () => {
+      const a = await issued(120);
+      const response = await fx.lookup(a.lotNo).expect(200);
+      expect(response.body).toMatchObject({
+        lotId: Number(a.lotId), lotNo: a.lotNo, returnableQty: 120, labelUnprinted: false,
+        item: { itemId: Number(fx.ids.itemA) }, uom: { uomId: Number(fx.ids.uom) },
+        workOrder: { workOrderId: Number(a.workOrderId), workOrderNo: a.workOrderNo, finalized: false },
+        issueWarehouse: { warehouseId: Number(fx.ids.g) },
       });
-      await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
-    }
-    const response = await request(app.getHttpServer())
-      .post('/api/app/sessions')
-      .set('Idempotency-Key', randomUUID())
-      .send({ loginId, password: PASSWORD })
-      .expect(200);
-    const raw: unknown = response.headers['set-cookie'];
-    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
-  }
+      expect(contractValidator(CONTRACT, 'GET /production/material-returns/lot-lookup')(response.body)).toBe(true);
+    });
 
-  /** 만든 행을 FK 역순으로 지운다(§7-2 · `LIKE '${PREFIX}%'` 또는 id 서브쿼리 · ⛔ TRUNCATE 금지). */
-  async function cleanup(): Promise<void> {
-    const orderScope = { production_plan: { plan_no: { startsWith: PREFIX } } };
-    // ⭐ `POST` 가 발행한 번호는 `MR-…` 라 접두어로 안 잡힌다 — W/O 축으로도 되짚는다.
-    const returnWhere = {
-      OR: [{ material_return_no: { startsWith: PREFIX } }, { work_order: orderScope }],
-    };
-    await prisma.material_return_line.deleteMany({ where: { material_return: returnWhere } });
-    await prisma.material_return.deleteMany({ where: returnWhere });
-    await prisma.inventory_balance.deleteMany({ where: { lot: { lot_no: { startsWith: PREFIX } } } });
-    await prisma.lot.deleteMany({ where: { lot_no: { startsWith: PREFIX } } });
-    await prisma.work_order.deleteMany({ where: orderScope });
-    await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
-    await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
-    await prisma.bom.deleteMany({ where: { bom_code: { startsWith: PREFIX } } });
-    await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
-    await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
-    await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
-    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
-    await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
-    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
-    await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
-    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
-    await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
-    await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (!user) return;
-    await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
-    await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
-    await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
-  }
+    it('US1-2·Q1·SC-001 POP 에서 20 반납 → G 적치 대기 +20, 원장 「반납 입고」, 줄은 W/O 귀속(AUTO)', async () => {
+      const a = await issued(120);
+      const occurredAt = '2026-11-28T02:10:00.000Z';
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 20 }], fx.pop, { occurredAt }).expect(201);
+      expect(contractValidator(CONTRACT, 'POST /production/material-returns', 201)(response.body)).toBe(true);
+      expect(response.body).toMatchObject({
+        statusCode: 'RECEIVED', terminalKindCode: 'POP', businessDate: '2026-11-28', receivedAt: occurredAt,
+        destinationWarehouseId: Number(fx.ids.g),
+        lines: [{ lotId: Number(a.lotId), returnQty: 20, workOrderId: Number(a.workOrderId), workOrderNo: a.workOrderNo,
+          attributionCode: 'AUTO_LATEST_ISSUE', destinationLocationId: Number(fx.ids.staging), labelUnprinted: false }],
+      });
+      expect(response.body).not.toHaveProperty('workOrderId');
+
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 20, 'NORMAL', 'AVAILABLE']]);
+      const header = await prisma.material_return.findUniqueOrThrow({ where: { material_return_id: BigInt(response.body.materialReturnId) } });
+      expect(header).toMatchObject({ status_code: 'RECEIVED', terminal_kind_code: 'POP', received_by: fx.pop.workerId, work_order_id: null, source_location_id: null });
+      expect(header.received_at?.toISOString()).toBe(occurredAt);
+      const [line] = await fx.returnLines(response.body.materialReturnId);
+      expect(line).toMatchObject({ work_order_id: a.workOrderId, goods_issue_line_id: a.goodsIssueLineId, attribution_code: 'AUTO_LATEST_ISSUE' });
+      const ledger = await prisma.inventory_transaction_line.findUniqueOrThrow({
+        where: { inventory_transaction_line_id: line.inventory_transaction_line_id as bigint }, include: { inventory_transaction: true },
+      });
+      expect(ledger.inventory_transaction).toMatchObject({
+        transaction_type_code: 'MATERIAL_RETURN', source_document_type_code: 'MATERIAL_RETURN',
+        source_document_id: BigInt(response.body.materialReturnId), transaction_no: response.body.materialReturnNo,
+      });
+      expect(ledger.inventory_transaction.business_date.toISOString().slice(0, 10)).toBe('2026-11-28');
+      expect(ledger).toMatchObject({ from_location_id: null, to_location_id: fx.ids.staging, to_quality_status_code: 'NORMAL' });
+      // FR-008 ERP 로 보내지 않는다 — 이 반납을 가리키는 연계 메시지가 없다.
+      expect(await prisma.integration_message.count({ where: { target_id: BigInt(response.body.materialReturnId), target_type_code: 'MATERIAL_RETURN' } })).toBe(0);
+    });
+
+    it('US1-3·Q2·SC-002 남은 100 에 101 → 400 RANGE 「반납 가능 100」, 재고 그대로', async () => {
+      const a = await issued(120);
+      await fx.receive([{ lotId: a.lotId, returnQty: 20 }]).expect(201);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 101 }]).expect(400);
+      expect(response.body.errors).toEqual([expect.objectContaining({ field: 'lines[0].returnQty', code: 'RANGE', message: OVER(100) })]);
+      expect((await fx.lookup(a.lotNo).expect(200)).body.returnableQty).toBe(100);
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 20, 'NORMAL', 'AVAILABLE']]);
+    });
+
+    it('US1-4·Q3·SC-002 입하만 된 LOT·반제품·제품 LOT 은 「반납할 수 있는 자재 LOT 이 아닙니다」, 다 반납한 LOT 은 「반납할 양이 남지 않았습니다」', async () => {
+      const inboundOnly = await fx.lot('A');
+      const wo = await fx.workOrder();
+      const wip = await fx.lot('A', { lotType: 'WIP', source: ['WORK_ORDER', wo.workOrderId] });
+      await fx.issue(wip.lotId, 10, wo.workOrderId);
+      const product = await fx.lot('A', { lotType: 'PRODUCTION', source: ['WORK_ORDER', wo.workOrderId] });
+      await fx.issue(product.lotId, 10, wo.workOrderId);
+      for (const lot of [inboundOnly, wip, product]) {
+        const response = await fx.lookup(lot.lotNo).expect(400);
+        expect(response.body.errors).toEqual([expect.objectContaining({ code: 'NOT_RETURNABLE', message: '반납할 수 있는 자재 LOT 이 아닙니다' })]);
+        const write = await fx.receive([{ lotId: lot.lotId, returnQty: 1 }]).expect(400);
+        expect(write.body.errors[0]).toMatchObject({ field: 'lines[0].lotId', code: 'NOT_RETURNABLE' });
+      }
+      const done = await issued(30);
+      await fx.receive([{ lotId: done.lotId, returnQty: 30 }]).expect(201);
+      expect((await fx.lookup(done.lotNo).expect(400)).body.errors[0]).toMatchObject({ code: 'NOTHING_TO_RETURN', message: '반납할 양이 남지 않았습니다' });
+      expect((await fx.receive([{ lotId: done.lotId, returnQty: 1 }]).expect(400)).body.errors[0]).toMatchObject({ code: 'NOTHING_TO_RETURN' });
+      await fx.lookup(`${fx.run}-없는-LOT`).expect(404);
+    });
+
+    it('US1-5·Q4 LOT 셋을 한 번에 → 반납 한 건, 줄 셋', async () => {
+      const lots = [await issued(50, 'A'), await issued(60, 'B'), await issued(70, 'C')];
+      const response = await fx.receive(lots.map((lot, index) => ({ lotId: lot.lotId, returnQty: 10 * (index + 1) }))).expect(201);
+      expect(response.body.lines.map((line: { lotId: number; returnQty: number }) => [line.lotId, line.returnQty]))
+        .toEqual([[Number(lots[0].lotId), 10], [Number(lots[1].lotId), 20], [Number(lots[2].lotId), 30]]);
+      expect(await prisma.material_return_line.count({ where: { material_return_id: BigInt(response.body.materialReturnId) } })).toBe(3);
+      const ledger = await prisma.inventory_transaction.count({ where: { source_document_type_code: 'MATERIAL_RETURN', source_document_id: BigInt(response.body.materialReturnId) } });
+      expect(ledger).toBe(1);
+    });
+
+    it('US1-6·Q5 「반납 가능」이 꺼진 POP 은 403(조회·등록 모두), 남의 공장 POP 은 이 공장 LOT 을 못 찾는다', async () => {
+      const a = await issued(40);
+      const lookup = await fx.lookup(a.lotNo, fx.popOff).expect(403);
+      expect(lookup.body.errors[0].message).toContain('반납 가능');
+      await fx.receive([{ lotId: a.lotId, returnQty: 1 }], fx.popOff).expect(403);
+      await fx.lookup(a.lotNo, fx.foreignPop).expect(404);
+      await fx.receive([{ lotId: a.lotId, returnQty: 1 }], fx.foreignPop).expect(400);
+      expect(await fx.onHand(a.lotId)).toEqual([]);
+    });
+
+    it('FR-007 품질·재고 상태는 LOT 의 지금 상태 그대로 — 불량 LOT 은 DEFECTIVE/ON_HOLD', async () => {
+      const bad = await issued(30, 'A', 'DEFECTIVE');
+      await fx.receive([{ lotId: bad.lotId, returnQty: 5 }]).expect(201);
+      expect(await fx.onHand(bad.lotId)).toEqual([[fx.ids.staging, 5, 'DEFECTIVE', 'ON_HOLD']]);
+    });
+
+    it('SC-003 동시성 — 남은 100 에 60·60 두 요청은 하나만 201 이다', async () => {
+      const a = await issued(100);
+      const results = await Promise.all([fx.receive([{ lotId: a.lotId, returnQty: 60 }]), fx.receive([{ lotId: a.lotId, returnQty: 60 }])]);
+      expect(results.map((result) => result.status).sort()).toEqual([201, 400]);
+      expect(results.find((result) => result.status === 400)?.body.errors[0]).toMatchObject({ code: 'RANGE', message: OVER(40) });
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 60, 'NORMAL', 'AVAILABLE']]);
+    });
+
+    it('C-9 같은 Idempotency-Key 두 번 → 한 건(같은 응답)', async () => {
+      const a = await issued(50);
+      const key = randomUUID();
+      const first = await fx.receive([{ lotId: a.lotId, returnQty: 10 }], fx.pop, { key }).expect(201);
+      const second = await fx.receive([{ lotId: a.lotId, returnQty: 10 }], fx.pop, { key }).expect(201);
+      expect(second.body.materialReturnId).toBe(first.body.materialReturnId);
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 10, 'NORMAL', 'AVAILABLE']]);
+    });
+
+    it('D-1 옛 본문(workOrderId·sourceLocationId·destinationWarehouseId 머리)은 400', async () => {
+      const a = await issued(50);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 10 }], fx.pop, {
+        extra: { workOrderId: Number(a.workOrderId), sourceLocationId: Number(fx.ids.s01), destinationWarehouseId: Number(fx.ids.g) },
+      }).expect(400);
+      expect(JSON.stringify(response.body.errors)).toContain('sourceLocationId');
+      const old = await fx.as(fx.http().post(RETURNS).set('Idempotency-Key', randomUUID()).send({
+        workOrderId: Number(a.workOrderId), sourceLocationId: Number(fx.ids.s01), destinationWarehouseId: Number(fx.ids.g),
+        lines: [{ itemId: Number(fx.ids.itemA), lotId: Number(a.lotId), returnQty: 1, uomId: Number(fx.ids.uom) }],
+      }), fx.pop).expect(400);
+      expect(old.body.errors.length).toBeGreaterThan(0);
+      expect(await fx.onHand(a.lotId)).toEqual([]);
+    });
+
+    it('FR-009 취소·상태 전이 경로가 없다 — 계약에도 라우트에도', async () => {
+      const contract = (await import(`../contracts/${CONTRACT}`)) as { paths: Record<string, Record<string, unknown>> };
+      const paths = Object.keys(contract.paths).filter((path) => path.startsWith('/production/material-returns'));
+      expect(paths.filter((path) => path.includes(':'))).toEqual([]);
+      expect(paths.flatMap((path) => Object.keys(contract.paths[path])).filter((method) => !['get', 'post'].includes(method))).toEqual([]);
+      const a = await issued(10);
+      const created = await fx.receive([{ lotId: a.lotId, returnQty: 5 }]).expect(201);
+      await fx.as(fx.http().post(`${RETURNS}/${created.body.materialReturnId}:cancel`).set('Idempotency-Key', randomUUID()).send({}), 'session').expect(404);
+    });
+
+    it('R-3 #362 전 출고분 — 도착 위치에 남은 그 LOT 재고에서 빼서 옮기고, 모자라는 양만 입고한다', async () => {
+      const wo = await fx.workOrder();
+      const lot = await fx.lot('A');
+      await fx.issue(lot.lotId, 80, wo.workOrderId, { destinationLocationId: fx.ids.fl01 });
+      await fx.balance(lot.lotId, 'A', fx.ids.floor, fx.ids.fl01, 50);
+      const moved = await fx.receive([{ lotId: lot.lotId, returnQty: 30 }]).expect(201);
+      expect(await fx.onHand(lot.lotId)).toEqual([[fx.ids.staging, 30, 'NORMAL', 'AVAILABLE'], [fx.ids.fl01, 20, 'NORMAL', 'AVAILABLE']].sort((x, y) => (x[0] < y[0] ? -1 : 1)));
+      const [line] = await fx.returnLines(moved.body.materialReturnId);
+      const ledger = await prisma.inventory_transaction_line.findUniqueOrThrow({ where: { inventory_transaction_line_id: line.inventory_transaction_line_id as bigint } });
+      expect(ledger).toMatchObject({ from_location_id: fx.ids.fl01, to_location_id: fx.ids.staging });
+      expect(Number(ledger.qty)).toBe(30);
+      // 남은 현장 재고 20 + 새로 들어오는 20.
+      await fx.receive([{ lotId: lot.lotId, returnQty: 40 }]).expect(201);
+      expect(await fx.onHand(lot.lotId)).toEqual([[fx.ids.staging, 70, 'NORMAL', 'AVAILABLE']]);
+    });
+  });
+
+  describe('US2 PDA 반납 입고·적치', () => {
+    it('US2-1·Q6·SC-001 PDA LOT·수량·위치 S-01 → S-01 +10, 단말 PDA', async () => {
+      const a = await issued(120);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 10, destinationLocationId: fx.ids.s01 }], fx.pda).expect(201);
+      expect(response.body).toMatchObject({ terminalKindCode: 'PDA', lines: [{ destinationLocationId: Number(fx.ids.s01), attributionCode: 'AUTO_LATEST_ISSUE' }] });
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.s01, 10, 'NORMAL', 'AVAILABLE']]);
+      expect((await prisma.material_return.findUniqueOrThrow({ where: { material_return_id: BigInt(response.body.materialReturnId) } })).received_by).toBe(fx.pda.workerId);
+    });
+
+    it('US2-3 「지정 품목만 받기」 위치에 다른 품목 → 400 RESTRICTED_LOCATION, 미지정 위치는 확인해야 받는다(409 → 확인 뒤 201·보관 품목 추가)', async () => {
+      const a = await issued(50);
+      const restricted = await fx.receive([{ lotId: a.lotId, returnQty: 5, destinationLocationId: fx.ids.r01 }], fx.pda).expect(400);
+      expect(restricted.body.errors[0]).toMatchObject({ field: 'lines[0].destinationLocationId', code: 'RESTRICTED_LOCATION', message: '이 위치는 지정 품목만 받습니다.' });
+      const staging = await fx.receive([{ lotId: a.lotId, returnQty: 5, destinationLocationId: fx.ids.staging }], fx.pda).expect(400);
+      expect(staging.body.errors[0]).toMatchObject({ code: 'STAGING' });
+      const u01 = await fx.freshLocation(fx.ids.g);
+      const confirm = await fx.receive([{ lotId: a.lotId, returnQty: 5, destinationLocationId: u01 }], fx.pda).expect(409);
+      expect(confirm.body.errors[0]).toMatchObject({ code: 'UNDESIGNATED_NEEDS_CONFIRM' });
+      await fx.receive([{ lotId: a.lotId, returnQty: 5, destinationLocationId: u01, confirmUndesignated: true }], fx.pda).expect(201);
+      expect(await fx.onHand(a.lotId)).toEqual([[u01, 5, 'NORMAL', 'AVAILABLE']]);
+      expect(await prisma.location_item.count({ where: { location_id: u01, item_id: fx.ids.itemA } })).toBe(1);
+    });
+
+    it('US2-2·Q7 PDA 위치 없이 → 출고 생산창고 적치 대기', async () => {
+      const a = await issued(50);
+      await fx.receive([{ lotId: a.lotId, returnQty: 7 }], fx.pda).expect(201);
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 7, 'NORMAL', 'AVAILABLE']]);
+    });
+
+    it('US2-2 경계 — 출고 창고와 다른 생산창고 위치를 스캔하면 그 창고로 받는다', async () => {
+      const a = await issued(50);
+      const s21 = await fx.freshLocation(fx.ids.g2);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 8, destinationLocationId: s21, confirmUndesignated: true }], fx.pda).expect(201);
+      expect(response.body.lines[0]).toMatchObject({ destinationWarehouseId: Number(fx.ids.g2) });
+      expect(await fx.onHand(a.lotId)).toEqual([[s21, 8, 'NORMAL', 'AVAILABLE']]);
+    });
+
+    it('US2-4·Q8 적치 대기의 반납분은 위치 이동으로 자리를 옮기고, 다른 W/O 피킹 후보로 잡힌다', async () => {
+      const a = await issued(50, 'C');
+      await fx.receive([{ lotId: a.lotId, returnQty: 20 }], fx.pda).expect(201);
+      // ⭐ 다른 W/O 의 피킹 배정이 적치 대기의 반납분을 후보로 잡는다(출발 창고 G) — 앞 시험의 C 재고까지 다 집도록 넉넉히 요구한다.
+      const allocation = await allocateStock(prisma as unknown as Prisma.TransactionClient, {
+        plantId: fx.ids.plant, warehouseId: fx.ids.g, demands: [{ lineNo: 1, itemId: fx.ids.itemC, uomId: fx.ids.uom, qty: new Prisma.Decimal(100000) }],
+      });
+      const picked = allocation.orders.flatMap((order) => order.lines).filter((line) => line.lotId === a.lotId);
+      expect(picked.map((line) => line.locationId)).toEqual([fx.ids.staging]);
+      // ⭐ 자리 이동 — 적치 대기 → S-01(같은 창고 위치 이동).
+      await fx.as(fx.http().post('/api/logistics/location-moves').set('Idempotency-Key', randomUUID()).send({
+        warehouseId: Number(fx.ids.g), businessDate: '2026-11-28', occurredAt: '2026-11-28T03:00:00.000Z',
+        lines: [{ lotId: Number(a.lotId), fromLocationId: Number(fx.ids.staging), toLocationId: Number(fx.ids.s01), qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', qty: 20 }],
+      }), 'session').expect(201);
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.s01, 20, 'NORMAL', 'AVAILABLE']]);
+    });
+  });
+
+  describe('US3 W/O 자동 귀속', () => {
+    it('US3-1 W/O 하나에만 출고된 LOT → 전량 그 W/O 귀속', async () => {
+      const a = await issued(40);
+      await fx.receive([{ lotId: a.lotId, returnQty: 15 }]).expect(201);
+      await fx.receive([{ lotId: a.lotId, returnQty: 25 }], fx.pda).expect(201);
+      expect(await fx.attributedSum(a.workOrderId, a.lotId)).toBe(40);
+    });
+
+    it('US3-2·Q9 출고 → 전량 반납 → 다른 W/O 로 다시 출고 → 반납: 새 W/O 귀속, 가능 양은 새 출고 기준', async () => {
+      const a = await issued(120);
+      await fx.receive([{ lotId: a.lotId, returnQty: 120 }]).expect(201);
+      const wo12 = await fx.workOrder();
+      const again = await fx.issue(a.lotId, 90, wo12.workOrderId, { at: '2026-11-28T05:00:00.000Z' });
+      const lookup = await fx.lookup(a.lotNo).expect(200);
+      expect(lookup.body).toMatchObject({ returnableQty: 90, workOrder: { workOrderId: Number(wo12.workOrderId) } });
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 50 }]).expect(201);
+      expect(response.body.lines[0]).toMatchObject({ workOrderId: Number(wo12.workOrderId), goodsIssueLineId: Number(again.goodsIssueLineId) });
+      expect(await fx.attributedSum(a.workOrderId, a.lotId)).toBe(120);
+      expect(await fx.attributedSum(wo12.workOrderId, a.lotId)).toBe(50);
+      await fx.receive([{ lotId: a.lotId, returnQty: 41 }]).expect(400);
+    });
+
+    it('US3-3·Q10 최종 마감 W/O → 재고는 들어오고 줄은 귀속 없음(NONE_FINALIZED · W/O null)', async () => {
+      const a = await issued(60);
+      finalClose.finalized.add(a.workOrderId);
+      expect((await fx.lookup(a.lotNo).expect(200)).body.workOrder.finalized).toBe(true);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 25 }]).expect(201);
+      expect(response.body.lines[0]).toMatchObject({ workOrderId: null, workOrderNo: null, attributionCode: 'NONE_FINALIZED' });
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 25, 'NORMAL', 'AVAILABLE']]);
+      const [line] = await fx.returnLines(response.body.materialReturnId);
+      expect(line).toMatchObject({ work_order_id: null, goods_issue_line_id: a.goodsIssueLineId, attribution_code: 'NONE_FINALIZED' });
+      // 귀속 없음 줄도 그 출고 라인 뒤의 반납이라 반납 가능 양에서 빠진다.
+      expect((await fx.lookup(a.lotNo).expect(200)).body.returnableQty).toBe(35);
+    });
+
+    it('Q15 오프라인 대기분(앞선 occurredAt)이 최종 마감 뒤 도착 → 도착 때 판정으로 귀속 없음', async () => {
+      const a = await issued(60);
+      const queuedAt = '2026-11-27T23:00:00.000Z';
+      finalClose.finalized.add(a.workOrderId);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 10 }], fx.pop, { occurredAt: queuedAt, businessDate: '2026-11-28' }).expect(201);
+      expect(response.body).toMatchObject({ receivedAt: queuedAt, lines: [{ attributionCode: 'NONE_FINALIZED', workOrderId: null }] });
+    });
+
+    it('SC-003 출고·반납 순서를 섞어도 W/O 별 귀속 합 ≤ 그 W/O 출고량, 귀속 W/O = 그때 가장 최근 출고 W/O', async () => {
+      const lot = await fx.lot('B');
+      const orders = [await fx.workOrder(), await fx.workOrder(), await fx.workOrder()];
+      const issuedTo = new Map<bigint, number>();
+      let seed = 19;
+      const rand = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+      let hour = 0;
+      for (let round = 0; round < 6; round += 1) {
+        const wo = orders[rand(3)];
+        const qty = 20 + rand(30);
+        hour += 1;
+        await fx.issue(lot.lotId, qty, wo.workOrderId, { at: `2026-11-29T${String(hour).padStart(2, '0')}:00:00.000Z` });
+        issuedTo.set(wo.workOrderId, (issuedTo.get(wo.workOrderId) ?? 0) + qty);
+        const returnQty = 1 + rand(qty);
+        const response = await fx.receive([{ lotId: lot.lotId, returnQty }]).expect(201);
+        expect(response.body.lines[0].workOrderId).toBe(Number(wo.workOrderId));
+      }
+      for (const wo of orders) expect(await fx.attributedSum(wo.workOrderId, lot.lotId)).toBeLessThanOrEqual(issuedTo.get(wo.workOrderId) ?? 0);
+    });
+
+    it('US3-5·Q14(019 몫) 여러 반납 뒤 W/O·LOT 별 귀속 합 = 손계산, 귀속 없음 줄은 어느 W/O 합에도 없다', async () => {
+      const a = await issued(100);
+      const b = await issued(80, 'B');
+      await fx.receive([{ lotId: a.lotId, returnQty: 10 }, { lotId: b.lotId, returnQty: 5 }]).expect(201);
+      await fx.receive([{ lotId: a.lotId, returnQty: 15 }], fx.pda).expect(201);
+      finalClose.finalized.add(b.workOrderId);
+      await fx.receive([{ lotId: b.lotId, returnQty: 20 }]).expect(201);
+      expect(await fx.attributedSum(a.workOrderId, a.lotId)).toBe(25);
+      expect(await fx.attributedSum(b.workOrderId, b.lotId)).toBe(5);
+      const unattributed = await prisma.material_return_line.aggregate({ where: { lot_id: b.lotId, work_order_id: null }, _sum: { return_qty: true } });
+      expect(Number(unattributed._sum.return_qty)).toBe(20);
+    });
+
+    it('US3-4·Q13 LOT 거래 이력에 거래 유형 MATERIAL_RETURN 줄(W/O 칸 없음), 위치별 조회에 G 적치 대기 반납분', async () => {
+      const a = await issued(30);
+      await fx.receive([{ lotId: a.lotId, returnQty: 12 }]).expect(201);
+      const history = await fx.as(fx.http().get('/api/inventory/transactions').query({
+        lotId: Number(a.lotId), businessDateFrom: '2026-11-28', businessDateTo: '2026-11-28',
+      }), 'session').expect(200);
+      expect(history.body.items).toHaveLength(1);
+      expect(history.body.items[0]).toMatchObject({ transactionTypeCode: 'MATERIAL_RETURN', sourceDocumentTypeCode: 'MATERIAL_RETURN' });
+      expect(JSON.stringify(history.body.items[0])).not.toMatch(/workOrder/i);
+      const balances = await fx.as(fx.http().get('/api/inventory/balances').query({ lotId: Number(a.lotId), warehouseId: Number(fx.ids.g) }), 'session').expect(200);
+      expect(balances.body.items).toEqual([expect.objectContaining({ locationId: Number(fx.ids.staging), onHandQty: 12 })]);
+    });
+  });
+
+  describe('§5 조회', () => {
+    it('상세·목록이 반납 입고 줄을 새 칸과 함께 낸다(계약 모양)', async () => {
+      const a = await issued(30);
+      const created = await fx.receive([{ lotId: a.lotId, returnQty: 3 }]).expect(201);
+      const detail = await fx.as(fx.http().get(`${RETURNS}/${created.body.materialReturnId}`), 'session').expect(200);
+      expect(detail.body).toMatchObject({ materialReturnNo: created.body.materialReturnNo, statusCode: 'RECEIVED', lines: [{ attributionCode: 'AUTO_LATEST_ISSUE' }] });
+      expect(detail.body.lines[0]).not.toHaveProperty('labelUnprinted');
+      expect(contractValidator(CONTRACT, 'GET /production/material-returns/{materialReturnId}')(detail.body)).toBe(true);
+      const list = await fx.as(fx.http().get(RETURNS).query({ statusCode: 'RECEIVED', size: 5 }), 'session').expect(200);
+      expect(contractValidator(CONTRACT, 'GET /production/material-returns')(list.body)).toBe(true);
+    });
+  });
 });
