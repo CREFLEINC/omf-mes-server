@@ -179,8 +179,14 @@ export class MaterialReturnService {
         errors.push(field(`${at}.returnQty`, ERROR_CODE.RANGE, `소수 ${lot.decimalScale}자리까지 적을 수 있습니다.`));
         continue;
       }
+      // W/O 로 찾기 줄(FR-016) — 고른 W/O 는 그 LOT 의 가장 최근 출고 W/O 여야 한다(자동 귀속과 결과가 같다).
+      const picked = line.workOrderId !== undefined && line.workOrderId !== null;
+      if (picked && BigInt(line.workOrderId as number) !== lot.issue.workOrderId) {
+        errors.push(field(`${at}.workOrderId`, 'WORK_ORDER_MISMATCH', RETURN_MESSAGES.WORK_ORDER_MISMATCH));
+        continue;
+      }
       const statuses = RECEIPT_STATUS_OF_LOT[lot.statusCode];
-      const attribution = attributionOf(lot.issue.workOrderId, lot.finalized, false);
+      const attribution = attributionOf(lot.issue.workOrderId, lot.finalized, picked);
       const base = { lot, qty, ...attribution };
       if (line.destinationLocationId === undefined || line.destinationLocationId === null) {
         const locationId = await arrivalLocationId(db, lot.issue.sourceWarehouseId);
