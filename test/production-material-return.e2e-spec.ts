@@ -29,7 +29,6 @@ const PREFIX = 'MRE2E';
 const RETURNS = '/api/production/material-returns';
 const REQUESTED_1 = '2026-09-07T01:00:00.000Z';
 const REQUESTED_2 = '2026-09-07T03:00:00.000Z';
-const WORKER_NO = `${PREFIX}-WK`;
 /** 계약 `statusCode` 는 `x-no-code-key` 다 — 서버가 대조하지 않는 자유 문자다(문의 053). */
 const STATUS_REQUESTED = 'REQUESTED';
 const STATUS_RECEIVED = 'RECEIVED';
@@ -57,13 +56,6 @@ describe('자재 반출 조회 2건 (e2e)', () => {
   let otherReturnId: number;
   let lotAId: number;
   let lotBId: number;
-  /** PR ③ 이 본문에 싣는 축 — 픽스처 그대로여야 원장 무변화 단언이 좁게 선다. */
-  let componentItemId: number;
-  let uomId: number;
-  let locationId: number;
-  let warehouseId: number;
-  /** ⭐ 두 번째 공장의 창고 — 「같은 공장」 거부(R-11)를 e2e 가 본다. */
-  let otherWarehouseId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -179,200 +171,7 @@ describe('자재 반출 조회 2건 (e2e)', () => {
     expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
   });
 
-  /**
-   * `POST /production/material-returns` — I-10 PR ③. 계약이 이 하나에만 403 을 선언하므로
-   * 조회 전용 `cookie` 대신 이 describe 전용 세션 둘을 쓴다(① 의 `makeUser()` 를 고치지 않는다).
-   * ⛔ 실제 채번 번호(`MR-{YYYYMMDD}-{SEQ4}`)는 `MRE2E` 접두어가 아니다 — 정리는 W/O 축으로 되짚는다.
-   */
-  describe('POST /production/material-returns', () => {
-    const POST_LOGIN_ID = 'e2e-mre-post';
-    const POST_ROLE = 'E2E_MRE_POST';
-    const NO_PERM_LOGIN_ID = 'e2e-mre-post-np';
-    const NO_PERM_ROLE = 'E2E_MRE_POST_NP';
-
-    let postCookie: string[];
-    let noPermCookie: string[];
-    let successResponse: request.Response;
-    let sentBefore: number;
-    let sentAfter: number;
-    let ledgerBefore: { onHand: string; version: number };
-    let ledgerAfter: { onHand: string; version: number };
-    let txLineCountBefore: number;
-    let txLineCountAfter: number;
-
-    interface PostOptions {
-      key?: string;
-      cookie?: string[];
-      workerNo?: string | null;
-    }
-
-    function post(payload: object, options: PostOptions = {}) {
-      const call = request(app.getHttpServer())
-        .post(RETURNS)
-        .set('Cookie', options.cookie ?? postCookie)
-        .set('Idempotency-Key', options.key ?? randomUUID());
-      if (options.workerNo !== null) call.set('X-Worker-No', options.workerNo ?? WORKER_NO);
-      return call.send(payload);
-    }
-
-    function returnBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-      return {
-        workOrderId,
-        sourceLocationId: locationId,
-        destinationWarehouseId: warehouseId,
-        lines: [{ itemId: componentItemId, lotId: lotAId, returnQty: 5, uomId }],
-        ...overrides,
-      };
-    }
-
-    beforeAll(async () => {
-      postCookie = await login(POST_LOGIN_ID, POST_ROLE, ['P-02-03']);
-      noPermCookie = await login(NO_PERM_LOGIN_ID, NO_PERM_ROLE, []);
-
-      // 원장 단언은 픽스처 item_id/lot_id 축으로 좁힌다 — 다른 스위트의 행을 세지 않는다.
-      const balanceBefore = await prisma.inventory_balance.findFirstOrThrow({
-        where: { item_id: componentItemId, lot_id: lotAId },
-      });
-      ledgerBefore = { onHand: balanceBefore.on_hand_qty.toString(), version: balanceBefore.version_no };
-      txLineCountBefore = await prisma.inventory_transaction_line.count({ where: { lot_id: lotAId } });
-
-      sentBefore = Date.now();
-      successResponse = await post(
-        returnBody({
-          lines: [
-            { itemId: componentItemId, lotId: lotBId, returnQty: 7, uomId },
-            { itemId: componentItemId, lotId: lotAId, returnQty: 5, uomId },
-          ],
-        }),
-      );
-      sentAfter = Date.now();
-
-      const balanceAfter = await prisma.inventory_balance.findFirstOrThrow({
-        where: { item_id: componentItemId, lot_id: lotAId },
-      });
-      ledgerAfter = { onHand: balanceAfter.on_hand_qty.toString(), version: balanceAfter.version_no };
-      txLineCountAfter = await prisma.inventory_transaction_line.count({ where: { lot_id: lotAId } });
-    });
-
-    afterAll(async () => {
-      for (const loginId of [POST_LOGIN_ID, NO_PERM_LOGIN_ID]) {
-        const target = await prisma.app_user.findUnique({ where: { login_id: loginId } });
-        if (!target) continue;
-        await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
-        await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
-        await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
-        await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
-      }
-      for (const roleCode of [POST_ROLE, NO_PERM_ROLE]) {
-        await prisma.role_permission.deleteMany({ where: { role: { role_code: roleCode } } });
-        await prisma.role.deleteMany({ where: { role_code: roleCode } });
-      }
-    });
-
-    it('라인 둘을 실으면 201 이고 line_no 가 1·2 로 매겨진다', async () => {
-      expect(successResponse.status).toBe(201);
-      const validate = validator('production-02생산실행.json', 'POST /production/material-returns', 201);
-      expect(validate(successResponse.body)).toBe(true);
-      expect(validate.errors ?? []).toEqual([]);
-      expect(successResponse.body).toMatchObject({ workOrderId, statusCode: STATUS_REQUESTED });
-
-      // 계약 응답에 `lineNo` 칸이 없다 — 서버가 본문 순서로 매긴 값은 DB 에서 본다.
-      const lines = await prisma.material_return_line.findMany({
-        where: { material_return_id: BigInt(successResponse.body.materialReturnId as number) },
-        orderBy: { line_no: 'asc' },
-      });
-      expect(lines.map((line) => [line.line_no, Number(line.lot_id)])).toEqual([
-        [1, lotBId],
-        [2, lotAId],
-      ]);
-    });
-
-    it('⛔ 반출이 inventory_transaction 을 만들지 않고 inventory_balance 가 그대로다', () => {
-      // 설계 미정 — 문의 051
-      expect(ledgerAfter).toEqual(ledgerBefore);
-      expect(txLineCountAfter).toBe(txLineCountBefore);
-      expect(txLineCountAfter).toBe(0);
-    });
-
-    it('⛔ material_return_line.inventory_transaction_line_id 가 NULL 이다', async () => {
-      const rows = await prisma.$queryRaw<{ n: bigint }[]>`
-        SELECT count(*) AS n
-          FROM production.material_return_line
-         WHERE material_return_id = ${BigInt(successResponse.body.materialReturnId as number)}
-           AND inventory_transaction_line_id IS NOT NULL`;
-      expect(Number(rows[0].n)).toBe(0);
-    });
-
-    it('⛔ received_at 이 NULL 이고 requested_at 이 서버 시각으로 찬다', async () => {
-      const rows = await prisma.$queryRaw<{ received_at: Date | null; requested_at: Date }[]>`
-        SELECT received_at, requested_at
-          FROM production.material_return
-         WHERE material_return_id = ${BigInt(successResponse.body.materialReturnId as number)}`;
-      expect(rows[0].received_at).toBeNull();
-      // 담을 칸은 있는데 받을 칸이 없다 — 요청에 날짜가 0개다(문의 051).
-      expect(rows[0].requested_at.getTime()).toBeGreaterThanOrEqual(sentBefore);
-      expect(rows[0].requested_at.getTime()).toBeLessThanOrEqual(sentAfter);
-      expect(successResponse.body).not.toHaveProperty('receivedAt');
-    });
-
-    it('lines 가 비면 400 RANGE(계약 가드 minItems)', async () => {
-      // ⭐ 서비스가 아니라 계약 가드가 막는다 — `LINE_REQUIRED` 를 만들지 않았다(§4-3 ⓑ).
-      const response = await post(returnBody({ lines: [] })).expect(400);
-      expect(response.body.errors).toContainEqual(expect.objectContaining({ field: 'lines', code: 'RANGE' }));
-    });
-
-    it('같은 (itemId, lotId) 가 두 줄이면 400 INVALID', async () => {
-      const response = await post(
-        returnBody({
-          lines: [
-            { itemId: componentItemId, lotId: lotAId, returnQty: 5, uomId },
-            { itemId: componentItemId, lotId: lotAId, returnQty: 1, uomId },
-          ],
-        }),
-      ).expect(400);
-      expect(response.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'lines[1].lotId', code: 'INVALID' }),
-      );
-    });
-
-    it('source_location 의 창고와 destination_warehouse 가 다른 공장이면 400 INVALID', async () => {
-      // 계약이 시키지 않은 이 슬라이스의 유일한 거부다 — 거부는 완화가 싸다(R-11).
-      const response = await post(returnBody({ destinationWarehouseId: otherWarehouseId })).expect(400);
-      expect(response.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'destinationWarehouseId', code: 'INVALID' }),
-      );
-    });
-
-    it('같은 Idempotency-Key 재전송이 반출을 두 벌 만들지 않는다', async () => {
-      // ⭐ `material_return` 에 `idempotency_key` 칸이 없다 — 멱등은 `runIdempotent` 하나뿐이다.
-      const key = randomUUID();
-      const first = await post(returnBody(), { key }).expect(201);
-      const again = await post(returnBody(), { key }).expect(201);
-      expect(again.body.materialReturnId).toBe(first.body.materialReturnId);
-      expect(again.body.materialReturnNo).toBe(first.body.materialReturnNo);
-    });
-
-    it('X-Worker-No 가 없으면 400 REQUIRED', async () => {
-      // 저장할 칸이 없어 읽고 버린다 — 부재만 거부한다(§4-8).
-      const response = await post(returnBody(), { workerNo: null }).expect(400);
-      expect(response.body.errors).toContainEqual(
-        expect.objectContaining({ field: 'X-Worker-No', code: 'REQUIRED' }),
-      );
-    });
-
-    it('무권한 사용자는 403', async () => {
-      // ⭐ `manual-permissions.ts` 등록이 살아 있음을 증명한다 — 미등록이면 가드가 던져 500 이다.
-      await post(returnBody(), { cookie: noPermCookie }).expect(403);
-    });
-
-    it('⭐ 발행된 번호가 MR-{YYYYMMDD}-{SEQ4} 다', () => {
-      expect(successResponse.body.materialReturnNo).toMatch(/^MR-\d{8}-\d{4}$/);
-      // 기간 축은 서버 시각의 UTC 날짜다 — 계약에 `businessDate` 도 `occurredAt` 도 없다(§4-6).
-      expect(successResponse.body.materialReturnNo).toContain(
-        `MR-${new Date(sentBefore).toISOString().slice(0, 10).replace(/-/g, '')}-`,
-      );
-    });
-  });
+  // ⛔ 옛 「반출 요청」 등록 본문은 피처 019 반납 입고로 바뀌었다(계약 MaterialReturnReceive) — 등록 시험은 다음 PR 이 새 본문으로 다시 쓴다.
 
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
@@ -435,33 +234,6 @@ describe('자재 반출 조회 2건 (e2e)', () => {
         location_type_code: 'BIN',
       },
     });
-    componentItemId = Number(component.item_id);
-    uomId = Number(uom.uom_id);
-    locationId = Number(location.location_id);
-    warehouseId = Number(warehouse.warehouse_id);
-    // 다른 공장의 창고 — 계약이 시키지 않은 유일한 거부(R-11)를 증명할 상대다.
-    const otherPlant = await prisma.plant.create({
-      data: {
-        legal_entity_id: entity.legal_entity_id,
-        plant_code: `${PREFIX}-P2`,
-        plant_name: '자재반출검사타공장',
-        timezone_code: 'Asia/Ho_Chi_Minh',
-      },
-    });
-    otherWarehouseId = Number(
-      (
-        await prisma.warehouse.create({
-          data: {
-            plant_id: otherPlant.plant_id,
-            business_unit_id: unit.business_unit_id,
-            warehouse_code: `${PREFIX}-WH2`,
-            warehouse_name: '자재반출검사타공장창고',
-            warehouse_type_code: 'RAW',
-            management_level_code: 'LOCATION',
-          },
-        })
-      ).warehouse_id,
-    );
     const process = await prisma.process.create({
       data: { process_code: `${PREFIX}-PR`, process_name: '사출공정', process_type_code: 'MOLDING' },
     });

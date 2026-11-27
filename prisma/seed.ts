@@ -1653,6 +1653,8 @@ const ENTITY_TYPES = [
     table: 'material_consumption',
     idColumn: 'material_consumption_id',
   },
+  // 반납 입고 원장(거래 유형·원천 MATERIAL_RETURN)이 반납 머리를 가리킨다(피처 019 · 마이그 20261127190000).
+  { code: 'MATERIAL_RETURN', schema: 'production', table: 'material_return', idColumn: 'material_return_id' },
 ];
 
 const NUMBERING_RULES = [

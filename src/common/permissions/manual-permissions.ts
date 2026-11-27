@@ -444,10 +444,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `M-01-06` 입하 오류 등록 — 그 화면이 이 자원의 유일한 소유자다(계약 description 근거).
   'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['M-01-06'],
 
-  // 설계 미정 — 문의 050. 계약이 소유 화면을 비워 두었다(2026-08-26). 회신이 오면 이 한
-  // 줄을 그 화면으로 바꾼다. 선례 `PUT /logistics/goods-issues/{id}/lines`·
-  // `PUT /logistics/inbound-receipts/{id}`(부르는 화면이 0건이어도 가드가 등록을 요구한다 · I-10 R-10 넷째).
-  'POST /production/material-returns': ['P-02-03'],
+  // 반납 입고(피처 019 · omf-all-around#367) — POP P-01-03·PDA M-01-15 가 LOT 조회·W/O 로 찾기·등록을 함께 쓴다.
+  // 문의 050(소유 화면 미정)이 여기서 닫힌다. POP 단말은 계정 권한이 아니라 단말 공정 매핑 can_return_material 로 연다.
+  'GET /production/material-returns/lot-lookup': ['P-01-03', 'M-01-15'],
+  'GET /production/material-returns/work-orders': ['P-01-03', 'M-01-15'],
+  'GET /production/material-returns/work-orders/{workOrderId}/lots': ['P-01-03', 'M-01-15'],
+  'POST /production/material-returns': ['P-01-03', 'M-01-15'],
 
   // `P-02-01` 작업 시작 — 그 화면이 세션 작업자 목록을 소유한다(계약 `GET …/workers` 근거 =
   // `P-02-01` §5 · §5-A 가 `work_session_worker` 를 「작업자 — 사번 귀속 — REQ-PR-0023」으로
