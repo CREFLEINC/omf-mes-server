@@ -50,7 +50,7 @@ const PRESENCE_ONLY = [
   'logistics/picking/picking-pick.service.ts',
   'logistics/shipment-allocation/allocation-packing.service.ts',
   'logistics/shopfloor-receipt/shopfloor-receipt.service.ts',
-  'production/material-return/material-return.service.ts',
+  // 반납(피처 019)은 단말 범위(`terminal-material-return-scope.ts`)가 작업자를 찾아 심는다 — 서비스가 사번을 따로 보지 않는다.
   'trace/lot/lot-complete.service.ts',
 ];
 
@@ -150,6 +150,8 @@ const WORKER_TABLE_READERS = [
   'auth/terminal-maintenance-scope.ts',
   // 자재 관리 LOT 발행·폐기(POP · 피처 005) — 단말 작업자를 사번으로 찾는다.
   'auth/terminal-material-lot-scope.ts',
+  // 반납 입고(POP·PDA · 피처 019) — 단말 작업자를 사번으로 찾는다.
+  'auth/terminal-material-return-scope.ts',
   'auth/terminal-mobile-production-scope.ts',
   'auth/terminal-production-scope.ts',
   'auth/terminal-quality-write-scope.ts',

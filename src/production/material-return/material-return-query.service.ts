@@ -1,15 +1,31 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ERROR_CODE, field, one } from '../../common/errors';
+import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
+import { unprintedSplitLotIds } from '../../logistics/split-material-lot/split-material-lot-query.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FinalCloseProbe } from './final-close';
 import {
   MATERIAL_RETURN_LINE_INCLUDE,
   MaterialReturnView,
   materialReturnView,
 } from './material-return-view';
+import { RETURN_MESSAGES } from './material-return.constants';
+import { loadReturnLots } from './return-lots';
+
+/** 계약 `MaterialReturnLotLookup`(§1). */
+export interface MaterialReturnLotLookup {
+  lotId: number;
+  lotNo: string;
+  item: { itemId: number; itemCode: string; itemName: string };
+  uom: { uomId: number; uomCode: string; decimalScale: number };
+  returnableQty: number;
+  workOrder: { workOrderId: number; workOrderNo: string; finalized: boolean };
+  issueWarehouse: { warehouseId: number; warehouseCode: string; warehouseName: string };
+  labelUnprinted: boolean;
+}
 
 /** 계약 질의 6 전건 — 필수는 하나도 없다. 형·기본값은 `@Contract` 가드가 이미 맞춰 둔다. */
 export interface MaterialReturnListQuery {
@@ -27,10 +43,39 @@ export const MATERIAL_RETURN_ORDER_BY: Prisma.material_returnOrderByWithRelation
   { material_return_id: 'desc' },
 ];
 
-/** 자재 반출 조회 2건 — 목록·단건(I-10 PR ①). ⛔ ETag·403 을 계약이 선언하지 않았다. */
+/** 반납 조회 — 목록·단건(I-10 PR ① · ETag·403 미선언)과 반납 입고 LOT 조회(피처 019 §1). */
 @Injectable()
 export class MaterialReturnQueryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly finalClose: FinalCloseProbe) {}
+
+  /**
+   * LOT 스캔(§1) — 반납할 수 있으면 품목·반납 가능 양·귀속될 W/O·출고 생산창고. `plantId` 가 있으면(단말) 그 공장 LOT 만 찾는다.
+   * 없으면 404, 반납 대상이 아니면 400 NOT_RETURNABLE, 남은 양이 없으면 400 NOTHING_TO_RETURN — 화면은 문구를 그대로 보인다.
+   */
+  async lotLookup(lotNo: string, plantId: bigint | null): Promise<MaterialReturnLotLookup> {
+    const lot = await this.prisma.lot.findFirst({
+      where: { lot_no: lotNo, ...(plantId === null ? {} : { plant_id: plantId }) }, select: { lot_id: true },
+    });
+    if (lot === null) throw new NotFoundException('LOT 을 찾을 수 없습니다.');
+    const facts = (await loadReturnLots(this.prisma, this.finalClose, [lot.lot_id], plantId)).get(lot.lot_id);
+    if (facts === undefined || facts === 'NOT_FOUND') throw new NotFoundException('LOT 을 찾을 수 없습니다.');
+    if (typeof facts === 'string') throw new ContractException(HttpStatus.BAD_REQUEST, [field('lotNo', facts, RETURN_MESSAGES[facts])]);
+    const [warehouse, unprinted] = await Promise.all([
+      this.prisma.warehouse.findUniqueOrThrow({
+        where: { warehouse_id: facts.issue.sourceWarehouseId }, select: { warehouse_code: true, warehouse_name: true },
+      }),
+      unprintedSplitLotIds(this.prisma, [facts.lotId]),
+    ]);
+    return {
+      lotId: Number(facts.lotId), lotNo: facts.lotNo,
+      item: { itemId: Number(facts.itemId), itemCode: facts.itemCode, itemName: facts.itemName },
+      uom: { uomId: Number(facts.uomId), uomCode: facts.uomCode, decimalScale: facts.decimalScale },
+      returnableQty: facts.returnable.toNumber(),
+      workOrder: { workOrderId: Number(facts.issue.workOrderId), workOrderNo: facts.issue.workOrderNo, finalized: facts.finalized },
+      issueWarehouse: { warehouseId: Number(facts.issue.sourceWarehouseId), warehouseCode: warehouse.warehouse_code, warehouseName: warehouse.warehouse_name },
+      labelUnprinted: unprinted.has(facts.lotId),
+    };
+  }
 
   async list(query: MaterialReturnListQuery): Promise<PagedResponse<MaterialReturnView>> {
     const page = pageRequest(query);
@@ -58,7 +103,7 @@ export class MaterialReturnQueryService {
       }),
       this.prisma.material_return.count({ where }),
     ]);
-    return pagedResponse(rows.map(materialReturnView), total, page);
+    return pagedResponse(rows.map((row) => materialReturnView(row)), total, page);
   }
 
   /** 없으면 404(계약 선언). 라인은 `line_no` 오름차순 — 칸이 물리에 실재한다(§5-4). */
