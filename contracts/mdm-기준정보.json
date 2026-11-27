@@ -21044,7 +21044,7 @@
       "x-source-column": "inspection_managed",
       "type": "boolean",
       "default": false,
-      "description": "⚠ PQC 에 쓰지 않는다 — 저장된 값만 그대로 둔다. PQC 대상은 공정이 아니라 품목이다: 사용 중인 품목 전용 PQC 검사 기준이 있는 품목의 작업지시를 배포하면 PQC 의뢰가 선다(사용자 결정 2026-11-05).",
+      "description": "⚠ PQC 에 쓰지 않는다 — 저장된 값만 그대로 둔다. PQC 대상은 공정이 아니라 품목이다: 작업지시를 배포하면 PQC 의뢰가 선다 — 그날 유효한 품목 전용 PQC 기준이 없으면 생략(SKIPPED · DEFAULT) 의뢰다(사용자 결정 2026-11-05 · 2026-11-27 omf-all-around#366).",
       "example": false
      },
      "isOutsourced": {
@@ -21188,7 +21188,7 @@
       "x-source-column": "inspection_managed",
       "type": "boolean",
       "default": false,
-      "description": "⚠ PQC 에 쓰지 않는다 — 저장된 값만 그대로 둔다. PQC 대상은 공정이 아니라 품목이다: 사용 중인 품목 전용 PQC 검사 기준이 있는 품목의 작업지시를 배포하면 PQC 의뢰가 선다(사용자 결정 2026-11-05).",
+      "description": "⚠ PQC 에 쓰지 않는다 — 저장된 값만 그대로 둔다. PQC 대상은 공정이 아니라 품목이다: 작업지시를 배포하면 PQC 의뢰가 선다 — 그날 유효한 품목 전용 PQC 기준이 없으면 생략(SKIPPED · DEFAULT) 의뢰다(사용자 결정 2026-11-05 · 2026-11-27 omf-all-around#366).",
       "example": false
      },
      "isOutsourced": {
@@ -22334,7 +22334,7 @@
       "x-source-column": "inspection_required",
       "type": "boolean",
       "default": false,
-      "description": "MES 확장 · W-01-01 IQC 대상 판정의 입력 ⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있어도 전용 IQC 기준이 기본 생략이면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다. 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 기준이 없는 품목은 「전 품목 공통」 IQC 기준을 저장할 때 그 defaultSkip 의 반대 값으로 맞춰진다(사용자 결정 2026-11-04). omf-all-around#215",
+      "description": "MES 확장 · W-01-01 IQC 대상 판정의 입력 ⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있으면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다 — 켜져 있어도 그날 유효한 전용 IQC 기준이 없으면 생략이다(omf-all-around#366). 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 IQC 기준에 그날 유효한 확정 버전이 없으면 입하 IQC 는 생략(SKIPPED · DEFAULT)으로 남는다(omf-all-around#366). omf-all-around#215",
       "example": true
      },
      "fifoPolicyCode": {
@@ -22496,7 +22496,7 @@
       "x-source-column": "inspection_required",
       "type": "boolean",
       "example": true,
-      "description": "⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있어도 전용 IQC 기준이 기본 생략이면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다. 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 기준이 없는 품목은 「전 품목 공통」 IQC 기준을 저장할 때 그 defaultSkip 의 반대 값으로 맞춰진다(사용자 결정 2026-11-04). omf-all-around#215"
+      "description": "⭐ 그 품목 전용 IQC 검사 기준(품목이 지정된 사용 중 IQC 기준)의 defaultSkip 과 반대 값으로 연동된다 — 이 칸을 저장하면 서버가 같은 트랜잭션에서 그 기준들의 defaultSkip 을 맞추고(어긋난 기준만 · 기준 versionNo +1), 기준을 저장하면 이 칸이 맞춰진다. 꺼져 있으면 입하가 생략 의뢰(skipBasisCode=DEFAULT)를 남긴다 — 켜져 있어도 그날 유효한 전용 IQC 기준이 없으면 생략이다(omf-all-around#366). 전용 IQC 기준이 없는 품목에서 이 값을 바꾸면 서버가 같은 트랜잭션에서 그 품목 전용 IQC 기준(버전 없는 헤더 · 코드 IQC-품목코드)을 만들어 설정을 고정한다. 전용 IQC 기준에 그날 유효한 확정 버전이 없으면 입하 IQC 는 생략(SKIPPED · DEFAULT)으로 남는다(omf-all-around#366). omf-all-around#215"
      },
      "fifoPolicyCode": {
       "x-source-column": "fifo_policy_code",
@@ -23210,7 +23210,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "비우면 「전 품목 공통 기준」[추정] — 적용 우선순위 §8-4",
+      "description": "품목 — 품목 전용 기준만 둔다. 옛 「전 품목 공통」 기준(품목 없음)은 omf-all-around#366 에서 없앴다 — 목록에 나오지 않는다",
       "example": 1001
      },
      "processId": {
@@ -23246,7 +23246,7 @@
       "x-source-column": "default_skip",
       "type": "boolean",
       "default": false,
-      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 품목이 빈(전 품목 공통) IQC 기준은 생성·defaultSkip 변경·다시 사용 때 전용 IQC 기준(사용 중)이 없는 모든 품목의 inspectionRequired 를 반대 값으로 맞춘다(어긋난 품목만 · 품목 versionNo +1 · 이름만 바꾼 저장은 건드리지 않는다 · 사용자 결정 2026-11-04). PQC 기준은 라우팅 공정의 inspectionManaged 와 연동하지 않는다 — 품목 전용 PQC 기준이 있는 품목의 작업지시가 PQC 대상이고(전 품목 공통 PQC 기준은 대상을 만들지 않는다), PQC 기준의 defaultSkip 은 그 제품의 모든 PQC 의뢰에 걸린다(사용자 결정 2026-11-05). OQC 는 연동하지 않는다. omf-all-around#215",
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 품목이 빈 「전 품목 공통」 기준은 없앴다(omf-all-around#366) — 그날 유효한 품목 전용 기준이 없는 품목의 검사(IQC·PQC·OQC)는 생략(SKIPPED · DEFAULT)으로 남는다. PQC 기준은 라우팅 공정의 inspectionManaged 와 연동하지 않는다 — PQC 기준의 defaultSkip 은 그 제품의 모든 PQC 의뢰에 걸린다(사용자 결정 2026-11-05). OQC 는 연동하지 않는다. omf-all-around#215",
       "example": false
      },
      "pqcSkipAllowed": {
@@ -23314,7 +23314,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "품목. ⛔ inspectionTypeCode=PQC 면 같은 품목(비면 전 품목 공통)에 사용 중인 PQC 기준이 이미 있을 때 400 UNIQUE_VIOLATION(field: itemId) — 저장과 다시 사용(:activate) 모두 막는다. 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04)",
+      "description": "품목. ⛔ inspectionTypeCode=PQC 면 같은 품목에 사용 중인 PQC 기준이 이미 있을 때 400 UNIQUE_VIOLATION(field: itemId) — 저장과 다시 사용(:activate) 모두 막는다. 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04). ⛔ 품목은 필수다 — 등록에서 비우거나 수정에서 null 을 보내면 400 REQUIRED(field: itemId · 「전 품목 공통」 기준 폐지 omf-all-around#366)",
       "example": 1001
      },
      "processId": {
@@ -23325,7 +23325,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "공정. ⛔ inspectionTypeCode=PQC 면 보내도 무시하고 비워 저장한다 — PQC 기준은 제품에 붙고, 사용 중인 품목 전용 PQC 기준이 있는 품목의 작업지시가 PQC 대상이다(공정과 무관 · 사용자 결정 2026-11-05). IQC · OQC 는 그대로 저장한다"
+      "description": "공정. ⛔ inspectionTypeCode=PQC 면 보내도 무시하고 비워 저장한다 — PQC 기준은 제품에 붙고, 작업지시마다 그 제품의 PQC 기준으로 의뢰가 선다(공정과 무관 · 사용자 결정 2026-11-05 · 기준이 없으면 생략 omf-all-around#366). IQC · OQC 는 그대로 저장한다"
      },
      "routingId": {
       "x-source-column": "routing_id",
@@ -23348,7 +23348,7 @@
       "x-source-column": "default_skip",
       "type": "boolean",
       "default": false,
-      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 품목이 빈(전 품목 공통) IQC 기준은 생성·defaultSkip 변경·다시 사용 때 전용 IQC 기준(사용 중)이 없는 모든 품목의 inspectionRequired 를 반대 값으로 맞춘다(어긋난 품목만 · 품목 versionNo +1 · 이름만 바꾼 저장은 건드리지 않는다 · 사용자 결정 2026-11-04). PQC 기준은 라우팅 공정의 inspectionManaged 와 연동하지 않는다 — 품목 전용 PQC 기준이 있는 품목의 작업지시가 PQC 대상이고(전 품목 공통 PQC 기준은 대상을 만들지 않는다), PQC 기준의 defaultSkip 은 그 제품의 모든 PQC 의뢰에 걸린다(사용자 결정 2026-11-05). OQC 는 연동하지 않는다. omf-all-around#215",
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 품목이 빈 「전 품목 공통」 기준은 없앴다(omf-all-around#366) — 그날 유효한 품목 전용 기준이 없는 품목의 검사(IQC·PQC·OQC)는 생략(SKIPPED · DEFAULT)으로 남는다. PQC 기준은 라우팅 공정의 inspectionManaged 와 연동하지 않는다 — PQC 기준의 defaultSkip 은 그 제품의 모든 PQC 의뢰에 걸린다(사용자 결정 2026-11-05). OQC 는 연동하지 않는다. omf-all-around#215",
       "example": false
      },
      "pqcSkipAllowed": {
@@ -23451,7 +23451,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "품목. ⛔ inspectionTypeCode=PQC 면 같은 품목(비면 전 품목 공통)에 사용 중인 PQC 기준이 이미 있을 때 400 UNIQUE_VIOLATION(field: itemId) — 저장과 다시 사용(:activate) 모두 막는다. 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04)",
+      "description": "품목. ⛔ inspectionTypeCode=PQC 면 같은 품목에 사용 중인 PQC 기준이 이미 있을 때 400 UNIQUE_VIOLATION(field: itemId) — 저장과 다시 사용(:activate) 모두 막는다. 수정 본문에 없으면 저장된 값을 본다(사용자 결정 2026-11-04). ⛔ 품목은 필수다 — 등록에서 비우거나 수정에서 null 을 보내면 400 REQUIRED(field: itemId · 「전 품목 공통」 기준 폐지 omf-all-around#366)",
       "example": 1001
      },
      "processId": {
@@ -23462,7 +23462,7 @@
       ],
       "format": "int64",
       "example": 1001,
-      "description": "공정. ⛔ inspectionTypeCode=PQC 면 보내도 무시하고 비워 저장한다 — PQC 기준은 제품에 붙고, 사용 중인 품목 전용 PQC 기준이 있는 품목의 작업지시가 PQC 대상이다(공정과 무관 · 사용자 결정 2026-11-05). IQC · OQC 는 그대로 저장한다"
+      "description": "공정. ⛔ inspectionTypeCode=PQC 면 보내도 무시하고 비워 저장한다 — PQC 기준은 제품에 붙고, 작업지시마다 그 제품의 PQC 기준으로 의뢰가 선다(공정과 무관 · 사용자 결정 2026-11-05 · 기준이 없으면 생략 omf-all-around#366). IQC · OQC 는 그대로 저장한다"
      },
      "routingId": {
       "x-source-column": "routing_id",
@@ -23485,7 +23485,7 @@
       "x-source-column": "default_skip",
       "type": "boolean",
       "default": false,
-      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 품목이 빈(전 품목 공통) IQC 기준은 생성·defaultSkip 변경·다시 사용 때 전용 IQC 기준(사용 중)이 없는 모든 품목의 inspectionRequired 를 반대 값으로 맞춘다(어긋난 품목만 · 품목 versionNo +1 · 이름만 바꾼 저장은 건드리지 않는다 · 사용자 결정 2026-11-04). PQC 기준은 라우팅 공정의 inspectionManaged 와 연동하지 않는다 — 품목 전용 PQC 기준이 있는 품목의 작업지시가 PQC 대상이고(전 품목 공통 PQC 기준은 대상을 만들지 않는다), PQC 기준의 defaultSkip 은 그 제품의 모든 PQC 의뢰에 걸린다(사용자 결정 2026-11-05). OQC 는 연동하지 않는다. omf-all-around#215",
+      "description": "기본 생략 — 검사 유형(IQC·PQC·OQC) 공통. 켜진 기준이 걸리는 입하 LOT(IQC)·작업지시(PQC)·출하작업지시(OQC)는 검사할 의뢰를 세우지 않고 생략(SKIPPED · skipBasisCode=DEFAULT) 기록만 남긴다. 요청에 없으면 pqcSkipAllowed 를 그 값으로 읽는다. 서버 선행 · 장부 P-152 · omf-all-around#212 ⭐ 품목이 지정된 IQC 기준이면 그 품목의 inspectionRequired 와 반대 값으로 연동된다 — 저장하거나 다시 사용(:activate)하면 서버가 같은 트랜잭션에서 품목 값을 맞춘다(어긋난 경우만 · 품목 versionNo +1). 품목이 빈 「전 품목 공통」 기준은 없앴다(omf-all-around#366) — 그날 유효한 품목 전용 기준이 없는 품목의 검사(IQC·PQC·OQC)는 생략(SKIPPED · DEFAULT)으로 남는다. PQC 기준은 라우팅 공정의 inspectionManaged 와 연동하지 않는다 — PQC 기준의 defaultSkip 은 그 제품의 모든 PQC 의뢰에 걸린다(사용자 결정 2026-11-05). OQC 는 연동하지 않는다. omf-all-around#215",
       "example": false
      },
      "pqcSkipAllowed": {

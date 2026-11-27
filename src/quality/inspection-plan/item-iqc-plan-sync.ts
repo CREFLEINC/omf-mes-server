@@ -1,23 +1,11 @@
 import { Prisma } from '@prisma/client';
 
-/** 품목 전용 기준이 «있는» 품목 — 확정 버전이 없어도 친다. 품목 화면이 만든 빈 기준도 그 품목의 설정을 고정한다. */
+/** 품목 전용 기준이 «있는» 품목 — 확정 버전이 없어도 친다. */
 const ownActiveIqcPlan = { inspection_type_code: 'IQC', is_active: true } as const;
 
 /**
- * 「전 품목 공통」 IQC 기준의 「기본 생략」을 전용 IQC 기준이 없는 품목의 「수입검사 대상」에 반대로 맞춘다.
- * 규칙: 품목 전용 기준이 있으면 그것을, 없으면 공통 기준을 따른다(사용자 결정 2026-11-04).
- * 이미 맞는 품목은 건드리지 않는다(품목 화면의 저장 토큰을 지킨다).
- */
-export async function syncItemsToCommonIqcPlan(tx: Prisma.TransactionClient, defaultSkip: boolean): Promise<void> {
-  await tx.item.updateMany({
-    where: { inspection_required: defaultSkip, inspection_plan: { none: ownActiveIqcPlan } },
-    data: { inspection_required: !defaultSkip, version_no: { increment: 1 } },
-  });
-}
-
-/**
- * 품목 화면에서 「수입검사 대상」을 바꿨는데 그 품목 전용 IQC 기준이 없으면 새로 만든다 — 다음 공통 기준 저장이
- * 그 품목의 설정을 덮지 않게(사용자 결정 2026-11-04). 버전 없는 헤더라 입하는 종전처럼 공통 기준의 검사 항목을 쓴다.
+ * 품목 화면에서 「수입검사 대상」을 바꿨는데 그 품목 전용 IQC 기준이 없으면 새로 만든다(사용자 결정 2026-11-04).
+ * 버전 없는 헤더라 확정 버전을 채우기 전까지 입하는 IQC 를 생략으로 남긴다(omf-all-around#366).
  */
 export async function ensureItemIqcPlan(
   tx: Prisma.TransactionClient,

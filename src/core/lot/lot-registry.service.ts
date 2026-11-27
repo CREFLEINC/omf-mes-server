@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
-import { findInspectionPlanVersion, planDefaultSkip } from '../quality/inspection-plan-version';
+import { findInspectionPlanVersion, inspectionPlanMissing, planDefaultSkip } from '../quality/inspection-plan-version';
 import { LotHoldService } from './lot-hold.service';
 import { MaterialLotFormatError, materialLotPrefix, materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
@@ -58,6 +58,8 @@ export interface LotRegisterInput {
   remarks?: string | null;
   externalIdentifiers?: ExternalIdentifierInput[];
   incomingIqc?: {
+    /** 입하 라인의 「검사 필요」. `false` 면 의뢰를 생략 기록으로만 남긴다(omf-all-around#366). 없으면 검사 대상으로 본다. */
+    inspectionRequired?: boolean;
     requestNo: string;
     effectiveDate: string;
     requestedAt: string;
@@ -95,8 +97,13 @@ export class LotRegistryService {
       ? await resolveIncomingIqcPlanVersion(tx, input.itemId, input.incomingIqc.effectiveDate)
       : undefined;
     // 고른 IQC 기준이 「기본 생략」이면 무검사 LOT 처럼 정상으로 세우고, 의뢰는 생략 기록으로만 남긴다(omf-all-around#212).
+    // 검사 불필요로 받은 입하 라인이거나 품목 전용 기준이 없어도 생략이다 — 모든 입하가 IQC 기록을 남긴다(omf-all-around#366).
     const iqcDefaultSkipped =
-      iqcPlanVersionId !== undefined && iqcPlanVersionId !== null && (await planDefaultSkip(tx, iqcPlanVersionId));
+      input.incomingIqc !== undefined &&
+      (input.incomingIqc.inspectionRequired === false ||
+        (iqcPlanVersionId === null || iqcPlanVersionId === undefined
+          ? await inspectionPlanMissing(tx, 'IQC', input.itemId, input.incomingIqc.effectiveDate)
+          : await planDefaultSkip(tx, iqcPlanVersionId)));
     const awaitsInspection =
       (input.incomingIqc !== undefined && !iqcDefaultSkipped) || input.sourceTypeCode !== INBOUND_RECEIPT_LINE;
     const lot = await tx.lot.create({
@@ -138,7 +145,7 @@ export class LotRegistryService {
     }
 
     if (input.incomingIqc && iqcPlanVersionId !== undefined) {
-      // ⚠ 기준 버전이 `null` 일 수 있다 — 기준이 없어도 의뢰는 선다(#101 결정 A). 판정은 항목 없이 수량·판정만 한다.
+      // ⚠ 기준 버전이 `null` 일 수 있다 — 기준이 없으면 생략 기록(#366), 둘 이상이면 의뢰는 선다(#101 결정 A). 판정은 항목 없이 수량·판정만 한다.
       const request = await tx.inspection_request.create({
         data: {
           inspection_request_no: input.incomingIqc.requestNo,

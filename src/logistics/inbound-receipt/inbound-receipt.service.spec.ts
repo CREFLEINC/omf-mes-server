@@ -56,6 +56,7 @@ function fake(options: Options = {}) {
   const recorded = {
     calls: [] as string[],
     numbering: [] as unknown[],
+    iqcNumbering: 0,
     lockSql: '',
     lockIds: [] as bigint[],
     header: {} as Args,
@@ -224,7 +225,9 @@ function fake(options: Options = {}) {
   const numbering = {
     next: async (...args: unknown[]) => {
       recorded.calls.push('numbering');
-      recorded.numbering = args;
+      // 입하 번호만 담는다 — IQC 의뢰 번호(무검사 품목도 생략 기록으로 뽑는다 · #366)는 따로 센다.
+      if (args[0] === 'INSPECTION_REQUEST') recorded.iqcNumbering += 1;
+      else recorded.numbering = args;
       return 'IR-20260806-0001';
     },
   } as unknown as NumberingService;
@@ -307,7 +310,8 @@ describe('InboundReceiptService.create', () => {
 
     await service.create(input(), 99);
 
-    expect(recorded.calls).toEqual(['numbering', 'transaction', 'lock']);
+    // 입하 번호 · IQC 의뢰 번호(무검사 품목도 생략 기록 · #366) 모두 트랜잭션 전이다.
+    expect(recorded.calls).toEqual(['numbering', 'numbering', 'transaction', 'lock']);
   });
 
   it('귀속 — 잠글 purchase_order_id 를 오름차순으로 정렬해 한 문장으로 잠근다(데드락 회피)', async () => {

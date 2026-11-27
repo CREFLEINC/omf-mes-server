@@ -54,6 +54,36 @@ export async function findInspectionPlanVersion(
 }
 
 /**
+ * 출하(OQC)용 — 품목 전용 기준이 없으면 `null`(그 의뢰는 생략 · omf-all-around#366), 하나면 그 버전, 둘 이상이면 400 이다.
+ */
+export async function resolveInspectionPlanVersionOrNone(
+  tx: Prisma.TransactionClient,
+  inspectionTypeCode: string,
+  itemId: number,
+  effectiveDate: string,
+): Promise<bigint | null> {
+  const plans = await candidatePlanVersions(tx, inspectionTypeCode, itemId, effectiveDate);
+  if (plans.length === 0) return null;
+  if (plans.length > 1) {
+    throw one({ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: `유효한 ${inspectionTypeCode} 검사기준이 여러 개입니다.` });
+  }
+  return plans[0];
+}
+
+/**
+ * 그 날짜에 유효한 품목 전용 기준(확정 버전)이 하나도 없는가(omf-all-around#366). 없으면 검사를 «생략»(SKIPPED · 근거 DEFAULT)으로
+ * 남긴다 — 둘 이상(어느 것인지 모름)은 여기 들지 않는다.
+ */
+export async function inspectionPlanMissing(
+  tx: Prisma.TransactionClient,
+  inspectionTypeCode: string,
+  itemId: number,
+  effectiveDate: string,
+): Promise<boolean> {
+  return (await candidatePlanVersions(tx, inspectionTypeCode, itemId, effectiveDate)).length === 0;
+}
+
+/**
  * 고른 기준 버전의 헤더가 「기본 생략」인가(omf-all-around#212 · 장부 P-152). 켜져 있으면 의뢰를 «검사할 일»로 세우지 않고
  * 생략(SKIPPED · 근거 DEFAULT) 기록만 남긴다 — 기록이 있어야 검사 목록이 그 건을 보이고 출하 관문이 통과로 읽는다.
  */
@@ -66,29 +96,6 @@ export async function planDefaultSkip(
     select: { inspection_plan: { select: { default_skip: true } } },
   });
   return row?.inspection_plan.default_skip === true;
-}
-
-/**
- * 품목 전용 IQC 기준(공통 기준 제외)이 그 날짜에 하나로 정해지고 「기본 생략」인가(omf-all-around#215).
- * 품목 「수입검사 대상」이 꺼져 있어도 이것이 참이면 입하가 생략 기록을 남긴다 — 두 설정은 저장 때 서로 맞춰진다.
- */
-export async function itemIqcDefaultSkipped(
-  tx: Pick<Prisma.TransactionClient, 'inspection_plan_version'>,
-  itemId: number,
-  effectiveDate: string,
-): Promise<boolean> {
-  const date = day('businessDate', effectiveDate);
-  const versions = await tx.inspection_plan_version.findMany({
-    where: {
-      status_code: 'CONFIRMED',
-      effective_from: { lte: date },
-      OR: [{ effective_to: null }, { effective_to: { gte: date } }],
-      inspection_plan: { item_id: itemId, inspection_type_code: 'IQC', is_active: true },
-    },
-    select: { inspection_plan_id: true, plan_version: true, inspection_plan: { select: { default_skip: true } } },
-  });
-  const latest = latestPerPlan(versions);
-  return latest.length === 1 && latest[0].inspection_plan.default_skip;
 }
 
 /**
@@ -126,10 +133,7 @@ async function candidatePlanVersions(
       },
       select: { inspection_plan_version_id: true, inspection_plan_id: true, plan_version: true },
     }).then(latestPerPlan);
-  // 품목 전용 기준이 먼저다. 없을 때만 「전 품목 공통」(품목 칸이 빈 기준 · W-06-02)으로 내려간다
-  // (omf-all-around#101) — 둘을 한 번에 세면 전용 기준이 있는 품목이 「여러 개」로 막힌다.
-  // 출하 OQC 도 같은 규칙이다(사용자 결정 2026-11-04 — 공통 기준만 있으면 편성이 막혔다).
-  const own = await find(itemId);
-  const plans = own.length > 0 ? own : await find(null);
+  // 품목 전용 기준만 본다 — 「전 품목 공통」 기준(품목 칸이 빈 기준)은 쓰지 않는다(omf-all-around#366).
+  const plans = await find(itemId);
   return plans.map((plan) => plan.inspection_plan_version_id);
 }

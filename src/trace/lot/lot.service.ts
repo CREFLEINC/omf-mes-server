@@ -18,7 +18,6 @@ import {
   optionalInstant,
 } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
-import { itemIqcDefaultSkipped } from '../../core/quality/inspection-plan-version';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   assertDay,
@@ -236,11 +235,8 @@ export class LotService {
     // ⭐ IQC 의뢰는 번호 출처와 상관없이 입하 라인의 검사 여부를 따른다 — SUPPLIER(사전부착)도
     //    MES 와 같이 의뢰를 만든다. 안 만들면 보류만 걸리고 검사할 의뢰가 없다(omf-all-around#18).
     const iqcSource = inboundSource ?? (await this.inboundLine(input.sourceId));
-    // 품목이 수입검사 대상이 아니어도 품목 전용 IQC 기준이 「기본 생략」이면 생략 기록을 남긴다(omf-all-around#215).
-    const iqcRecorded =
-      iqcSource !== undefined &&
-      (iqcSource.inspection_required ||
-        (await itemIqcDefaultSkipped(this.prisma, effectiveInput.itemId, input.businessDate)));
+    // 입하 라인에서 오면 언제나 IQC 의뢰를 남긴다 — 검사 대상이 아니거나 기준이 없으면 생략 기록이다(omf-all-around#366).
+    const iqcRecorded = iqcSource !== undefined;
     const iqcRequestNo =
       iqcSource !== undefined && iqcRecorded
         ? await this.numbering.next('INSPECTION_REQUEST', iqcSource.inbound_receipt.plant_id, input.businessDate)
@@ -250,7 +246,7 @@ export class LotService {
       try {
         const row =
           source === 'SUPPLIER'
-            ? await this.insert(effectiveInput, input.lotNo as string, iqcRequestNo, registerActor)
+            ? await this.insert(effectiveInput, input.lotNo as string, iqcRequestNo, iqcSource?.inspection_required !== false, registerActor)
             : await this.insertInboundMes(effectiveInput, iqcRequestNo, registerActor);
         return (await this.get(Number(row.lot_id))).detail;
       } catch (error) {
@@ -322,6 +318,7 @@ export class LotService {
     input: LotCreate,
     lotNo: string,
     iqcRequestNo: string | undefined,
+    inspectionRequired: boolean,
     actor: LotRegisterActor,
   ): Promise<LotRow> {
     return this.prisma.$transaction(async (tx) => {
@@ -333,7 +330,7 @@ export class LotService {
           incomingIqc:
             iqcRequestNo === undefined
               ? undefined
-              : { requestNo: iqcRequestNo, effectiveDate: input.businessDate, requestedAt: input.occurredAt },
+              : { inspectionRequired, requestNo: iqcRequestNo, effectiveDate: input.businessDate, requestedAt: input.occurredAt },
         },
         actor,
       );
@@ -383,6 +380,7 @@ export class LotService {
           // 번호는 IQC 기록 대상일 때만 미리 뽑혔다 — 판정은 `create` 의 `iqcRecorded` 하나다.
           incomingIqc: iqcRequestNo !== undefined
             ? {
+                inspectionRequired: source.inspection_required,
                 requestNo: requiredIqcRequestNo(iqcRequestNo),
                 effectiveDate: current.businessDate,
                 requestedAt: current.occurredAt,

@@ -30033,7 +30033,7 @@
      },
      "iqcDefaultSkipApplies": {
       "type": "boolean",
-      "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 품목이 검사 대상이거나 품목 기준이 기본 생략일 때만 true. 아니면 마감해도 IQC 요청이 생기지 않는다(US2-7). 검사 필요 입하 LOT 은 false. 판단 날짜는 공장 현지 오늘(받기는 스캔 날짜). M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
+      "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 언제나 true 다: 검사 대상이 아니거나 기준이 없는 품목도 마감하면 생략 기록이 남는다(사용자 결정 2026-11-27 · omf-all-around#366). 검사 필요 입하 LOT 은 false. M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
       "example": false
      },
      "firstRegisteredAt": {
@@ -30401,7 +30401,7 @@
         },
         "iqcDefaultSkipApplies": {
          "type": "boolean",
-         "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 품목이 검사 대상이거나 품목 기준이 기본 생략일 때만 true. 아니면 마감해도 IQC 요청이 생기지 않는다(US2-7). 검사 필요 입하 LOT 은 false. 판단 날짜는 공장 현지 오늘(받기는 스캔 날짜). M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
+         "description": "검사 불필요로 받은 입하 LOT 을 마감하면 IQC 가 「검사 생략」(SKIPPED)으로 남는가 — 언제나 true 다: 검사 대상이 아니거나 기준이 없는 품목도 마감하면 생략 기록이 남는다(사용자 결정 2026-11-27 · omf-all-around#366). 검사 필요 입하 LOT 은 false. M-01-01·M-01-03 마감 확인 창 문구용(피처 005 G2 L15)",
          "example": false
         },
         "inboundReceiptNo": {

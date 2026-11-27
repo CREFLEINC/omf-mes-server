@@ -42,7 +42,7 @@ export interface PqcRequestPlan {
   requestNo: string;
   inspectionPlanVersionId: bigint | null;
   targetQty: Prisma.Decimal;
-  /** 고른 기준이 기본 생략이면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다(#119 · P-82). */
+  /** 고른 기준이 기본 생략이거나 기준이 없으면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다(#119 · P-82 · #366). */
   skipped: boolean;
 }
 
@@ -59,7 +59,7 @@ async function resolvePqcPlanVersion(
   prisma: PrismaService,
   itemId: bigint,
   effectiveDate: Date,
-): Promise<PqcPlanVersion | null> {
+): Promise<PqcPlanVersion | null | 'MISSING'> {
   const candidates = latestPerPlan(await prisma.inspection_plan_version.findMany({
     where: {
       status_code: 'CONFIRMED',
@@ -77,6 +77,8 @@ async function resolvePqcPlanVersion(
       inspection_plan: { select: { default_skip: true } },
     },
   }));
+  /* 그날 유효한 확정 버전이 없으면 기준이 없는 것이다 — 의뢰는 생략으로 선다(omf-all-around#366). */
+  if (candidates.length === 0) return 'MISSING';
   /* 둘 이상이면 고르지 않는다 — 임의로 고르면 어느 기준으로 검사했는지가 기록에서 사라진다. 저장 때 제품당 하나로 막는다. */
   if (candidates.length !== 1) return null;
 
@@ -114,11 +116,11 @@ export function inspectionQty(orderQty: Prisma.Decimal, version: PqcPlanVersion 
 }
 
 /**
- * 배포 전 준비 — PQC 대상 품목이 아니면 `null`(의뢰를 만들지 않는다).
+ * 배포 전 준비 — 모든 작업지시에 PQC 의뢰를 하나 세운다.
  *
- * ⭐ PQC 대상은 공정이 아니라 품목이다(사용자 결정 2026-11-05) — 사용 중인 품목 전용 PQC 기준이 있으면 그 품목의
- *   작업지시마다 의뢰를 만든다. 라우팅 공정의 「검사 관리」는 더 보지 않는다. 기준에 확정 버전이 없으면 종전처럼
- *   기준 없는 의뢰다.
+ * ⭐ 그날 유효한 품목 전용 PQC 기준(확정 버전)이 없으면 의뢰를 생략(SKIPPED · DEFAULT)으로 남긴다(사용자 결정 2026-11-27 ·
+ *   omf-all-around#366). 종전에는 기준이 없는 품목은 의뢰를 만들지 않았다. 기준이 둘 이상이면 종전처럼 기준 없는 의뢰다.
+ *   라우팅 공정의 「검사 관리」는 보지 않는다(사용자 결정 2026-11-05).
  *
  * ⛔ 채번·기준 조회는 `$transaction` **밖**이다. 안에서 부르면 한 요청이 커넥션을 둘 쥐어
  *    `P2024` 로 죽는다(출하 OQC 선례와 같은 규율).
@@ -131,20 +133,16 @@ export async function preparePqcRequest(
     orderQty: Prisma.Decimal;
     businessDate: string;
   },
-): Promise<PqcRequestPlan | null> {
-  const targeted = await prisma.inspection_plan.count({
-    where: { inspection_type_code: 'PQC', is_active: true, item_id: input.itemId },
-  });
-  if (targeted === 0) return null;
-
-  const version = await resolvePqcPlanVersion(prisma, input.itemId, new Date(input.businessDate));
+): Promise<PqcRequestPlan> {
+  const resolved = await resolvePqcPlanVersion(prisma, input.itemId, new Date(input.businessDate));
+  const version = resolved === 'MISSING' ? null : resolved;
   const requestNo = await numbering.next('INSPECTION_REQUEST', null, input.businessDate);
 
   return {
     requestNo,
     inspectionPlanVersionId: version?.inspectionPlanVersionId ?? null,
     targetQty: inspectionQty(input.orderQty, version),
-    skipped: version?.defaultSkip === true,
+    skipped: resolved === 'MISSING' || version?.defaultSkip === true,
   };
 }
 

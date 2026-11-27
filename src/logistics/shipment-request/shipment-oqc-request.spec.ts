@@ -85,15 +85,14 @@ describe('출하검사 의뢰 준비', () => {
     expect(prisma.inspection_plan_version.findMany).not.toHaveBeenCalled();
   });
 
-  it('⛔ 유효한 기준이 없으면 400 STATE_LOCKED 로 편성을 막는다', async () => {
-    // 품목 전용 · 전 품목 공통(omf-all-around#101) 둘 다 없다.
-    (prisma.inspection_plan_version.findMany as jest.Mock).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+  it('품목 전용 기준이 없으면 기준 빈 생략 의뢰로 준비한다 — 편성을 막지 않는다(omf-all-around#366)', async () => {
+    (prisma.inspection_plan_version.findMany as jest.Mock).mockResolvedValueOnce([]);
 
-    await expect(
-      prepareOqcRequests(prisma, numbering, [line(10, 1)], '2026-09-16'),
-    ).rejects.toMatchObject({ status: 400 });
-    // 막힌 뒤에는 번호를 태우지 않는다.
-    expect(numbering.nextMany).not.toHaveBeenCalled();
+    const prepared = await prepareOqcRequests(prisma, numbering, [line(10, 1)], '2026-09-16');
+
+    expect(prepared).toEqual([expect.objectContaining({ itemId: 10, planVersionId: null, defaultSkip: true })]);
+    // 공통 기준(품목 없음)은 묻지 않는다.
+    expect(prisma.inspection_plan_version.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('⛔ 기준이 둘이면 서버가 고르지 않고 막는다', async () => {
