@@ -16,6 +16,8 @@ interface Labels {
   stages: Record<LineageStage, string>;
   basis: Record<string, string>;
   fates: Record<string, string>;
+  /** 반제품 단계 뒤에 붙는 공정 — 「반제품 LOT · 공정 10」(피처 016). */
+  operation: string;
   duplicate: string;
   cycle: string;
   partial: string;
@@ -32,7 +34,8 @@ const KO: Labels = {
     COMPONENT_SERIAL: '부품 시리얼', INBOUND_LOT: '입하 LOT',
   },
   basis: { RECORDED: '기록', LOT_GENEALOGY_ESTIMATE: '추정(계보)', WORK_ORDER_ESTIMATE: '추정(W/O 단위)' },
-  fates: { SHIPPED: '출하', IN_STOCK: '재고', PARTIAL: '일부 출하', CONSUMED_OUT: '소진', VOIDED: '폐기' },
+  fates: { SHIPPED: '출하', IN_STOCK: '재고', PARTIAL: '일부 출하', CONSUMED_OUT: '소진', VOIDED: '폐기', WIP_PENDING: '다음 공정 투입 전' },
+  operation: '공정',
   duplicate: '중복 — 위와 같음',
   cycle: '순환 참조 — 전개 중단',
   partial: '일부',
@@ -52,7 +55,8 @@ const VI: Labels = {
     SERIAL: 'Sê-ri', COMPONENT_SERIAL: 'Sê-ri linh kiện', INBOUND_LOT: 'LOT nhập hàng',
   },
   basis: { RECORDED: 'Ghi nhận', LOT_GENEALOGY_ESTIMATE: 'Ước tính (phả hệ)', WORK_ORDER_ESTIMATE: 'Ước tính (theo W/O)' },
-  fates: { SHIPPED: 'Xuất hàng', IN_STOCK: 'Tồn kho', PARTIAL: 'Xuất một phần', CONSUMED_OUT: 'Đã dùng hết', VOIDED: 'Hủy bỏ' },
+  fates: { SHIPPED: 'Xuất hàng', IN_STOCK: 'Tồn kho', PARTIAL: 'Xuất một phần', CONSUMED_OUT: 'Đã dùng hết', VOIDED: 'Hủy bỏ', WIP_PENDING: 'Chờ đưa vào công đoạn sau' },
+  operation: 'Công đoạn',
   duplicate: 'Trùng — giống phía trên',
   cycle: 'Tham chiếu vòng — dừng mở rộng',
   partial: 'Một phần',

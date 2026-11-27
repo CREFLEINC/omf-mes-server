@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Workbook } from 'exceljs';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
-import { followGraph, reachableFrom } from '../../core/lot';
+import { WIP_LOT_TYPE, followGraph, reachableFrom } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { backwardEndRows } from './backward-end-rows';
 import { backwardExpand, serialKey } from './backward-expand';
@@ -114,13 +114,15 @@ export class TraceExportService {
 
 /**
  * 계보 줄의 단계 이름 — 화면 `graph-rows` 와 같은 규칙. 008 분할(출고 번호 있음·자재 LOT)은 「분할 LOT」, 출고 번호 없는 생산 LOT 자식은
- * 013 「분리 LOT」, 역방향에서 자식이 가리키는 원래 LOT 은 자식 갈래를 따라 「분할된/분리된 원래 LOT」, 다음 W/O 에 투입된 생산 LOT 은 「반제품 LOT」.
+ * 013 「분리 LOT」, 역방향에서 자식이 가리키는 원래 LOT 은 자식 갈래를 따라 「분할된/분리된 원래 LOT」, 다음 W/O 에 투입된 생산 LOT 과 유형 반제품(WIP —
+ * 투입 전이어도) 은 「반제품 LOT」(피처 016).
  */
 function stageOf(node: any, edge: TraceEdge | null, out: Map<string, TraceEdge[]>, parentStage: LineageStage | null): LineageStage {
   if (edge?.kind === 'SPLIT_FROM') return parentStage === 'SEPARATED_LOT' ? 'SEPARATED_ORIGIN' : 'SPLIT_ORIGIN';
   if (node === undefined) return 'PRODUCTION_LOT';
   if (node.kind === 'SPLIT_LOT') return (node.split?.goodsIssueNo ?? null) === null && node.lot?.lotTypeCode !== 'MATERIAL' ? 'SEPARATED_LOT' : 'SPLIT_LOT';
-  if (node.kind === 'PRODUCTION_LOT' && (edge?.kind === 'CONSUMED' || (out.get(node.nodeKey) ?? []).some((next) => next.kind === 'CONSUMED'))) return 'SEMI_LOT';
+  if (node.kind === 'PRODUCTION_LOT' && (node.lot?.lotTypeCode === WIP_LOT_TYPE || edge?.kind === 'CONSUMED'
+    || (out.get(node.nodeKey) ?? []).some((next) => next.kind === 'CONSUMED'))) return 'SEMI_LOT';
   return node.kind as LineageStage;
 }
 
@@ -133,7 +135,10 @@ function lineageRows(
   const path = new Set<string>();
   const line = (key: string, depth: number, edge: TraceEdge | null, parent: string | null, stage: LineageStage, note: string | null): Cell[] => {
     const node = nodes.get(key) as any;
-    return [base, depth, labels.stages[stage], node === undefined ? key : numberOf(node), node?.item?.code ?? null, node?.item?.name ?? null,
+    // 반제품은 단계 뒤에 공정을 붙인다 — 「반제품 LOT · 공정 10」(화면과 같은 말).
+    const seq = stage === 'SEMI_LOT' ? (node?.lot?.operationSeq ?? null) : stage === 'WORK_ORDER' ? (node?.workOrder?.operationSeq ?? null) : null;
+    const stageName = seq === null ? labels.stages[stage] : `${labels.stages[stage]} · ${labels.operation} ${seq}`;
+    return [base, depth, stageName, node === undefined ? key : numberOf(node), node?.item?.code ?? null, node?.item?.name ?? null,
       edge === null ? (node?.qty ?? null) : edge.qty, node?.uomCode ?? null, parent, edge === null ? null : labels.basis[edge.basis], status(node?.lot?.statusCode), note];
   };
   const visit = (key: string, depth: number, edge: TraceEdge | null, parent: string | null, parentStage: LineageStage | null): void => {
