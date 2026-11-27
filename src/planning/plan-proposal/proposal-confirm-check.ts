@@ -53,7 +53,6 @@ export interface ProposalConfirmWorkOrder {
   plannedTimeSourceCode: TimeSource;
   plannedStartAt?: string | null;
   plannedEndAt?: string | null;
-  defaultWipLocationId?: number | null;
   defaultFgLocationId?: number | null;
   defaultScrapLocationId?: number | null;
 }
@@ -175,7 +174,6 @@ export async function judgeConfirm(
         productionLineId: idOf(workOrder.productionLineId),
         equipmentId: idOf(workOrder.plannedEquipmentId),
         moldId: idOf(workOrder.plannedMoldId),
-        defaultWipLocationId: refs.lines.get(idOf(workOrder.productionLineId) ?? -1n)?.default_wip_location_id ?? null,
         defaultFgLocationId: idOf(workOrder.defaultFgLocationId),
         defaultScrapLocationId: null,
       };
@@ -210,9 +208,9 @@ export async function judgeConfirm(
       const window = time.window;
       windows.set(operationId, window);
       timed.push({ path: `${path}.workOrders[${at}]`, routingOperationId: operationId, source: workOrder.plannedTimeSourceCode, window });
-      const { productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId } = resources;
+      const { productionLineId, defaultFgLocationId, defaultScrapLocationId } = resources;
       if (productionLineId !== null && defaultFgLocationId !== null) {
-        supplements.set(operationId, { ...resources, productionLineId, defaultWipLocationId, defaultFgLocationId, defaultScrapLocationId, workerId, shiftId, window });
+        supplements.set(operationId, { ...resources, productionLineId, defaultFgLocationId, defaultScrapLocationId, workerId, shiftId, window });
       }
     });
     warnings.push(...precedenceWarnings(timed, facts.dependencies.get(routingId) ?? [], timezone));
@@ -268,8 +266,8 @@ async function readReferences(client: Prisma.TransactionClient, body: ProposalCo
   const equipmentIds = ids(workOrders.map((workOrder) => workOrder.plannedEquipmentId));
   const moldIds = ids(workOrders.map((workOrder) => workOrder.plannedMoldId));
   const workerIds = ids(workOrders.map((workOrder) => workOrder.responsibleWorkerId));
-  const lines = await client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true, is_active: true, default_wip_location_id: true } });
-  const locationIds = [...new Set([...lines.flatMap((line) => line.default_wip_location_id === null ? [] : [line.default_wip_location_id]), ...ids(workOrders.flatMap((workOrder) => [workOrder.defaultWipLocationId, workOrder.defaultFgLocationId]))])];
+  const lines = await client.production_line.findMany({ where: { production_line_id: { in: lineIds } }, select: { production_line_id: true, plant_id: true, is_active: true } });
+  const locationIds = [...new Set(ids(workOrders.map((workOrder) => workOrder.defaultFgLocationId)))];
   const warehouseIds = ids(body.plans.map((plan) => plan.fgWarehouseOverride?.warehouseId));
   const [equipments, molds, workers, locations, warehouses] = await Promise.all([
     client.equipment.findMany({ where: { equipment_id: { in: equipmentIds } }, select: { equipment_id: true, plant_id: true, status_code: true, is_active: true, production_line_id: true } }),

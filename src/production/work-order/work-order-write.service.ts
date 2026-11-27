@@ -8,7 +8,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { WORK_ORDER_DEFAULT_PRIORITY, WORK_ORDER_DEFAULT_TYPE, WORK_ORDER_INITIAL_STATUS } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertLocationsAllowed, withLineWip } from './work-order-location-check';
+import { assertLocationsAllowed, assertLineAssignmentAllowed } from './work-order-location-check';
 
 /** 계약 `WorkOrderCreate` 11칸 — required 넷. */
 export interface WorkOrderCreate {
@@ -36,7 +36,6 @@ export interface WorkOrderUpdate {
   plannedShiftId?: number | null;
   productionLineId?: number | null;
   responsibleWorkerId?: number | null;
-  defaultWipLocationId?: number | null;
   defaultFgLocationId?: number | null;
   defaultScrapLocationId?: number | null;
   remarks?: string | null;
@@ -189,13 +188,13 @@ export class WorkOrderWriteService {
         body.plannedEndAt !== undefined ? at(body.plannedEndAt) ?? null : locked.planned_end_at,
       );
 
-      const resolved = await withLineWip(tx, workOrderId, body);
-      await assertLocationsAllowed(tx, workOrderId, resolved);
+      await assertLineAssignmentAllowed(tx, workOrderId, body.productionLineId);
+      await assertLocationsAllowed(tx, workOrderId, body);
 
       await tx.work_order.update({
         where: { work_order_id: BigInt(workOrderId) },
         data: {
-          ...workOrderUpdateData(resolved),
+          ...workOrderUpdateData(body),
           updated_by: appUserId ?? null,
           version_no: { increment: 1 },
         },
@@ -220,7 +219,6 @@ export function workOrderUpdateData(body: WorkOrderUpdate): Record<string, unkno
     ...optional('planned_shift_id', id(body.plannedShiftId)),
     ...optional('production_line_id', id(body.productionLineId)),
     ...optional('responsible_worker_id', id(body.responsibleWorkerId)),
-    ...optional('default_wip_location_id', id(body.defaultWipLocationId)),
     ...optional('default_fg_location_id', id(body.defaultFgLocationId)),
     ...optional('remarks', body.remarks),
   };

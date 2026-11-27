@@ -93,7 +93,6 @@ export interface LineRow {
   production_line_id: bigint;
   plant_id: bigint;
   is_active: boolean;
-  default_wip_location_id: bigint | null;
   default_fg_location_id: bigint | null;
   version_no: number;
 }
@@ -234,7 +233,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
       orderBy: { production_line_id: 'asc' },
       select: {
         production_line_id: true, plant_id: true, is_active: true, version_no: true,
-        default_wip_location_id: true, default_fg_location_id: true,
+        default_fg_location_id: true,
       },
     }),
     plantIds.length === 0 ? [] : client.shift.findMany({
@@ -246,7 +245,7 @@ export async function readProposalFacts(client: Prisma.TransactionClient, orderI
 
   const fg = await resolveFgLocations(client, orders.map((order) => ({ plantId: order.plant_id, erpCode: order.erp_storage_location_code })));
   const erpLocationIds = [...fg.values()].map((resolution) => (resolution.kind === 'ERP_STORAGE_LOCATION' ? resolution.location.id : null));
-  const locationIds = unique([...lineRows.flatMap((line) => [line.default_wip_location_id, line.default_fg_location_id]), ...erpLocationIds]);
+  const locationIds = unique([...lineRows.flatMap((line) => [line.default_fg_location_id]), ...erpLocationIds]);
   const locationRows = locationIds.length === 0 ? [] : await client.location.findMany({
     where: { location_id: { in: locationIds } },
     orderBy: { location_id: 'asc' },

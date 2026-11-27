@@ -1,8 +1,8 @@
 import { ContractException } from '../../common/errors';
-import { assertLocationsAllowed, withLineWip } from './work-order-location-check';
+import { assertLocationsAllowed, assertLineAssignmentAllowed } from './work-order-location-check';
 
 /** ERP W/O 공장 1, SL_CD S10 → 창고 10(전체 100·구역 101·적치 대기 102). 창고 11 은 다른 창고. 위치 200 은 자재창고. */
-function fakeTx(options: { erpCode: string | null; planned?: boolean; current?: { wip?: bigint | null; fg?: bigint | null; scrap?: bigint | null } }) {
+function fakeTx(options: { erpCode: string | null; planned?: boolean; current?: { fg?: bigint | null; scrap?: bigint | null } }) {
   const warehouses = [
     { warehouse_id: 10n, warehouse_code: 'S10', warehouse_name: '완제품', plant_id: 1n, warehouse_type_code: 'PRODUCT', is_active: true, is_defect: false, is_external: false },
   ];
@@ -17,7 +17,6 @@ function fakeTx(options: { erpCode: string | null; planned?: boolean; current?: 
   return {
     work_order: {
       findUniqueOrThrow: jest.fn(async () => ({
-        default_wip_location_id: current.wip ?? null,
         default_fg_location_id: current.fg ?? null,
         default_scrap_location_id: current.scrap ?? null,
         production_plan: options.planned === false ? null : { production_order: { plant_id: 1n, erp_storage_location_code: options.erpCode } },
@@ -64,13 +63,8 @@ describe('assertLocationsAllowed — MES W/O 수정의 기본 위치 검증', ()
     expect(await failures(fakeTx({ erpCode: null }), { defaultFgLocationId: 200 })).toEqual([['defaultFgLocationId', 'LOCATION_INVALID']]);
   });
 
-  it('WIP만 위치 유효성을 검사하고 기존 스크랩 요청 값은 무시한다', async () => {
-    expect(await failures(fakeTx({ erpCode: 'S99' }), { defaultWipLocationId: 150, defaultScrapLocationId: 150 })).toBeNull();
+  it('기존 스크랩 요청 값은 무시한다', async () => {
     expect(await failures(fakeTx({ erpCode: 'S10' }), { defaultScrapLocationId: 200 })).toBeNull();
-    expect(await failures(fakeTx({ erpCode: 'S10' }), { defaultWipLocationId: 200, defaultScrapLocationId: 200 })).toEqual([
-      ['defaultWipLocationId', 'LOCATION_INVALID'],
-
-    ]);
   });
 
   it('값을 바꾸지 않는 재전송과 null 해제는 검증하지 않는다 — 옛 W/O 를 다른 칸 수정으로 막지 않는다', async () => {
@@ -84,28 +78,19 @@ describe('assertLocationsAllowed — MES W/O 수정의 기본 위치 검증', ()
 });
 
 
-describe('withLineWip — 계획 화면에서 WIP를 입력받지 않는다', () => {
-  const setup = (stored: bigint | null = 100n, lineWip: bigint | null = 200n) => ({
-    work_order: { findUniqueOrThrow: jest.fn().mockResolvedValue({ production_line_id: 1n, default_wip_location_id: stored, production_plan: { production_order: { plant_id: 1n } } }) },
-    production_line: { findUnique: jest.fn().mockResolvedValue({ plant_id: 1n, is_active: true, default_wip_location_id: lineWip }) },
+describe('생산라인 배정 검증', () => {
+  const setup = () => ({
+    work_order: { findUniqueOrThrow: jest.fn().mockResolvedValue({ production_line_id: 1n, production_plan: { production_order: { plant_id: 1n } } }) },
+    production_line: { findUnique: jest.fn().mockResolvedValue({ plant_id: 1n, is_active: true }) },
   });
-  it('같은 라인의 기존 WIP는 숨은 입력값으로 해제하지 않는다', async () => {
+  it('같은 라인은 재조회하지 않는다', async () => {
     const tx = setup();
-    expect(await withLineWip(tx as never, 1, { productionLineId: 1, defaultWipLocationId: null })).toEqual({ productionLineId: 1, defaultWipLocationId: 100 });
+    await assertLineAssignmentAllowed(tx as never, 1, 1);
     expect(tx.production_line.findUnique).not.toHaveBeenCalled();
-  });
-  it('라인을 바꾸면 새 라인의 기본값으로 바꾼다', async () => {
-    expect(await withLineWip(setup() as never, 1, { productionLineId: 2 })).toEqual({ productionLineId: 2, defaultWipLocationId: 200 });
-  });
-  it('기존 WIP가 비어 있으면 같은 라인의 기본값으로 채운다', async () => {
-    expect(await withLineWip(setup(null) as never, 1, { productionLineId: 1 })).toEqual({ productionLineId: 1, defaultWipLocationId: 200 });
-  });
-  it('라인 기본값도 없으면 다른 위치를 임의로 정하지 않는다', async () => {
-    expect(await withLineWip(setup(null, null) as never, 1, { productionLineId: 1 })).toEqual({ productionLineId: 1, defaultWipLocationId: null });
   });
   it('다른 공장 라인은 거절한다', async () => {
     const tx = setup();
-    tx.production_line.findUnique.mockResolvedValue({ plant_id: 2n, is_active: true, default_wip_location_id: 200n });
-    await expect(withLineWip(tx as never, 1, { productionLineId: 2 })).rejects.toBeInstanceOf(ContractException);
+    tx.production_line.findUnique.mockResolvedValue({ plant_id: 2n, is_active: true });
+    await expect(assertLineAssignmentAllowed(tx as never, 1, 2)).rejects.toBeInstanceOf(ContractException);
   });
 });

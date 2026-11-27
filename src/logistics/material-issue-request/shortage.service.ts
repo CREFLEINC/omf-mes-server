@@ -28,7 +28,7 @@ const PLAN_SELECT = {
  *   올리지만(P-16 · 046 해소) 축이 다르다 — 이 화면은 «W/O 앞으로» 나간 합이라 요청 라인과
  *   짝이 없는 출고(피킹 라인을 안 실은 건)도 세야 한다. 두 값이 같은지는 e2e 가 지킨다.
  * ⓒ 부족 = `max(소요 − 기출고, 0)`(계약 ⌜음수면 0 으로 낸다⌝).
- * ⛔ `skipsMaterialIssue`·`default_wip_location_id` 판정은 안 건다 — 그 둘은 배포의 «자동
+ * ⛔ `skipsMaterialIssue` 판정은 안 건다 — 그 둘은 배포의 «자동
  *   발행» 조건이고, 이 화면은 긴급 W/O 도 검색해 요청을 만든다.
  */
 @Injectable()

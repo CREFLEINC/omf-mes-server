@@ -39,7 +39,6 @@ export interface ProposalWorkOrder {
   productionLineId: bigint | null;
   equipmentId: bigint | null;
   moldId: bigint | null;
-  defaultWipLocationId: bigint | null;
   defaultFgLocationId: bigint | null;
   /** 완제품 위치가 어디서 왔는가 — W/O 마다 다른 것은 라인 기본값뿐이라 이 칸만 W/O 에 둔다. */
   defaultFgLocationSource: FgSource;
@@ -265,7 +264,6 @@ function workOrdersOf(
       productionLineId: lineId,
       equipmentId: resource?.equipmentId ?? null,
       moldId: resource?.moldId ?? null,
-      defaultWipLocationId: line?.default_wip_location_id ?? null,
       defaultFgLocationId: fgPick.locationId,
       defaultScrapLocationId: null,
     };
@@ -310,7 +308,7 @@ function basisOf(facts: ProposalFacts, order: OrderRow, saved: readonly PlanRow[
   const locationIds = new Set([
     ...[...lineIds].flatMap((id) => {
       const line = facts.lines.get(id);
-      return line === undefined ? [] : [line.default_wip_location_id, line.default_fg_location_id];
+      return line === undefined ? [] : [line.default_fg_location_id];
     }),
     fg.kind === 'ERP_STORAGE_LOCATION' ? fg.location.id : null,
   ].filter((id) => id !== null));

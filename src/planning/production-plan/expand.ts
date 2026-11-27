@@ -29,7 +29,6 @@ export interface PlanToExpand {
 
 export interface PlanLine {
   productionLineId: bigint | null;
-  defaultWipLocationId: bigint | null;
   defaultFgLocationId: bigint | null;
   defaultScrapLocationId: bigint | null;
 }
@@ -44,7 +43,6 @@ export interface WorkOrderSupplement {
   moldId: bigint | null;
   workerId: bigint | null;
   shiftId: bigint | null;
-  defaultWipLocationId: bigint | null;
   defaultFgLocationId: bigint;
   defaultScrapLocationId: bigint | null;
   window: PlanWindow;
@@ -80,7 +78,6 @@ export function workOrderRows(
       planned_start_at: window.plannedStartAt,
       planned_end_at: window.plannedEndAt,
       production_line_id: line.productionLineId,
-      default_wip_location_id: line.defaultWipLocationId,
       default_fg_location_id: fgLocationOf(plan.fg, line.defaultFgLocationId).locationId,
       default_scrap_location_id: null,
       planned_equipment_id: resource?.equipmentId ?? null,
@@ -97,7 +94,6 @@ export function workOrderRows(
       planned_start_at: supplement.window.plannedStartAt,
       planned_end_at: supplement.window.plannedEndAt,
       production_line_id: supplement.productionLineId,
-      default_wip_location_id: supplement.defaultWipLocationId,
       default_fg_location_id: supplement.defaultFgLocationId,
       default_scrap_location_id: null,
       planned_equipment_id: supplement.equipmentId,

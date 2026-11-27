@@ -30,7 +30,6 @@ export interface WorkOrderResources {
   productionLineId: bigint | null;
   equipmentId: bigint | null;
   moldId: bigint | null;
-  defaultWipLocationId: bigint | null;
   defaultFgLocationId: bigint | null;
   defaultScrapLocationId: bigint | null;
 }

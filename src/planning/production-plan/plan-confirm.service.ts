@@ -193,11 +193,10 @@ async function equipmentLinesOf(client: Prisma.TransactionClient, lineIds: (bigi
 async function planLine(client: Prisma.TransactionClient, lineId: bigint | null): Promise<PlanLine> {
   const row = lineId === null ? null : await client.production_line.findUnique({
     where: { production_line_id: lineId },
-    select: { default_wip_location_id: true, default_fg_location_id: true },
+    select: { default_fg_location_id: true },
   });
   return {
     productionLineId: lineId,
-    defaultWipLocationId: row?.default_wip_location_id ?? null,
     defaultFgLocationId: row?.default_fg_location_id ?? null,
     defaultScrapLocationId: null,
   };

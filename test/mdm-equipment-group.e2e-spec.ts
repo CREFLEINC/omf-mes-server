@@ -284,7 +284,7 @@ describe('설비 그룹 (e2e)', () => {
   });
 
   it('⭐ 라인 기본 위치 셋을 등록·조회하고, 생산라인 목록에도 싣는다', async () => {
-    const locations = { defaultWipLocationId: locationId, defaultFgLocationId: locationId, defaultScrapLocationId: null };
+    const locations = { defaultFgLocationId: locationId, defaultScrapLocationId: null };
     const { id } = await create(`${PREFIX}-LOC`, locations);
 
     const detail = await request(app.getHttpServer())
@@ -292,6 +292,7 @@ describe('설비 그룹 (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     expect(detail.body.equipmentGroup).toMatchObject(locations);
+    expect(detail.body.equipmentGroup).not.toHaveProperty('defaultWipLocationId');
     expect(validator('GET /mdm/equipment-groups/{equipmentGroupId}')(detail.body)).toBe(true);
 
     const lines = await request(app.getHttpServer())
@@ -302,16 +303,16 @@ describe('설비 그룹 (e2e)', () => {
   });
 
   it('⭐ 수정에서 기본 위치를 바꾸고 null 로 비운다 — 생략하면 그대로 둔다', async () => {
-    const { id, etag } = await create(`${PREFIX}-LOCU`, { defaultWipLocationId: locationId });
+    const { id, etag } = await create(`${PREFIX}-LOCU`, { defaultFgLocationId: locationId });
 
     const cleared = await request(app.getHttpServer())
       .put(`/api/mdm/equipment-groups/${id}`)
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', etag)
-      .send({ ...updateBody(`${PREFIX}-LOCU`), defaultWipLocationId: null, defaultScrapLocationId: locationId })
+      .send({ ...updateBody(`${PREFIX}-LOCU`), defaultFgLocationId: null, defaultScrapLocationId: locationId })
       .expect(200);
-    expect(cleared.body).toMatchObject({ defaultWipLocationId: null, defaultFgLocationId: null, defaultScrapLocationId: null });
+    expect(cleared.body).toMatchObject({ defaultFgLocationId: null, defaultScrapLocationId: null });
 
     const kept = await request(app.getHttpServer())
       .put(`/api/mdm/equipment-groups/${id}`)
@@ -332,9 +333,9 @@ describe('설비 그룹 (e2e)', () => {
       .post('/api/mdm/equipment-groups')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send(body(`${PREFIX}-LOC${code}`, { defaultWipLocationId: stockLocationId }))
+      .send(body(`${PREFIX}-LOC${code}`, { defaultFgLocationId: stockLocationId }))
       .expect(400);
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'defaultWipLocationId', code: 'INVALID' });
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'defaultFgLocationId', code: 'INVALID' });
   });
 
   it('⛔ 없는 위치·다른 공장 위치는 400 INVALID 다', async () => {
@@ -342,18 +343,18 @@ describe('설비 그룹 (e2e)', () => {
       .post('/api/mdm/equipment-groups')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send(body(`${PREFIX}-LOCX`, { defaultWipLocationId: 999999999 }))
+      .send(body(`${PREFIX}-LOCX`, { defaultFgLocationId: 999999999 }))
       .expect(400);
-    expect(missing.body.errors[0]).toMatchObject({ field: 'defaultWipLocationId', code: 'INVALID' });
+    expect(missing.body.errors[0]).toMatchObject({ field: 'defaultFgLocationId', code: 'INVALID' });
 
     if (otherPlantLocationId === null) return;
     const cross = await request(app.getHttpServer())
       .post('/api/mdm/equipment-groups')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
-      .send(body(`${PREFIX}-LOCY`, { defaultWipLocationId: otherPlantLocationId }))
+      .send(body(`${PREFIX}-LOCY`, { defaultFgLocationId: otherPlantLocationId }))
       .expect(400);
-    expect(cross.body.errors[0]).toMatchObject({ field: 'defaultWipLocationId', code: 'INVALID' });
+    expect(cross.body.errors[0]).toMatchObject({ field: 'defaultFgLocationId', code: 'INVALID' });
   });
 
   it('⛔ 없는 그룹은 404 다', async () => {

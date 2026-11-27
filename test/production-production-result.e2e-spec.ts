@@ -737,17 +737,13 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
         .set('Idempotency-Key', randomUUID())
         .set('If-Match', created.headers.etag as string)
         .send({
-          defaultWipLocationId: Number(ids.wipLocation),
           defaultFgLocationId: Number(ids.fgLocation),
-          defaultScrapLocationId: Number(ids.scrapLocation),
           // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
           productionLineId: Number(ids.productionLine),
         })
         .expect(200);
       expect(configured.body).toMatchObject({
-        defaultWipLocationId: Number(ids.wipLocation),
         defaultFgLocationId: Number(ids.fgLocation),
-        defaultScrapLocationId: Number(ids.scrapLocation),
         versionNo: Number(created.body.versionNo) + 1,
       });
       const released = await request(app.getHttpServer())

@@ -69,8 +69,7 @@ interface Proposal {
       plannedMoldId: number | null;
       responsibleWorkerId: number | null;
       plannedShiftId: number | null;
-      defaultWipLocationId: number | null;
-      defaultFgLocationId: number | null;
+        defaultFgLocationId: number | null;
       defaultScrapLocationId: number | null;
       issues: { severity: string; code: string; field?: string }[];
     }[];
@@ -145,7 +144,6 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
           plannedEquipmentId: workOrder.plannedEquipmentId,
           plannedMoldId: workOrder.plannedMoldId,
           plannedTimeSourceCode: 'SYSTEM' as 'SYSTEM' | 'USER',
-          defaultWipLocationId: workOrder.defaultWipLocationId ?? fill.defaultWipLocationId,
           defaultFgLocationId: workOrder.defaultFgLocationId ?? fill.defaultFgLocationId,
           defaultScrapLocationId: workOrder.defaultScrapLocationId ?? fill.defaultScrapLocationId,
         })),
@@ -179,7 +177,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(first).toMatchObject({
         routingOperationId: Number(id.op10), predecessors: [],
         plannedEquipmentId: Number(id.eq1), plannedMoldId: Number(id.mold), productionLineId: Number(id.line),
-        defaultWipLocationId: Number(id.loc1), defaultFgLocationId: Number(id.loc2), defaultScrapLocationId: Number(id.loc3),
+        defaultFgLocationId: Number(id.loc2), defaultScrapLocationId: null,
         responsibleWorkerId: null, plannedShiftId: null, issues: [],
       });
       // 공정을 지정한 매핑은 그 공정에 — 금형은 첫 필요 공정에만 간다.
@@ -203,9 +201,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const lineless = (response.body.items as Proposal[])[2].plans[0].workOrders[0];
       expect(lineless.issues.map((issue) => [issue.severity, issue.code, issue.field])).toEqual([
         ['BLOCK', 'WORK_ORDER_LINE_REQUIRED', 'productionLineId'],
-        ['BLOCK', 'WORK_ORDER_LOCATION_REQUIRED', 'defaultWipLocationId'],
         ['BLOCK', 'WORK_ORDER_LOCATION_REQUIRED', 'defaultFgLocationId'],
-        ['BLOCK', 'WORK_ORDER_LOCATION_REQUIRED', 'defaultScrapLocationId'],
       ]);
     });
 
@@ -283,7 +279,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       expect(workOrders.map((row) => Number(row.work_order_id))).toEqual(planResult.workOrders.map((row) => row.workOrderId));
       expect(workOrders[0]).toMatchObject({
         production_line_id: id.line, planned_equipment_id: id.eq1, planned_mold_id: id.mold, responsible_worker_id: id.worker, planned_shift_id: id.nightShift,
-        default_wip_location_id: id.loc1, default_fg_location_id: id.loc2, default_scrap_location_id: id.loc3,
+        default_wip_location_id: null, default_fg_location_id: id.loc2, default_scrap_location_id: null,
       });
       // 야간 19:00~07:00(공장 시각 +07:00).
       expect([workOrders[0].planned_start_at?.toISOString(), workOrders[0].planned_end_at?.toISOString()])
@@ -339,14 +335,14 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const proposal = await proposalOf(order.J);
       const body = bodyOf(proposal);
       body.plans[0].bomId = Number(id.bomOld);
-      Object.assign(body.plans[0].workOrders[0], { productionLineId: Number(id.foreignLine), defaultWipLocationId: Number(id.materialLoc), plannedEquipmentId: Number(id.eqDown) });
+      Object.assign(body.plans[0].workOrders[0], { productionLineId: Number(id.foreignLine), defaultFgLocationId: Number(id.materialLoc), plannedEquipmentId: Number(id.eqDown) });
       const before = await snapshot();
 
       const response = await confirm(order.J, body).expect(400);
       expect(response.body.errors).toEqual(expect.arrayContaining([
         expect.objectContaining({ field: 'plans[0].bomId', code: 'BOM_NOT_DEFAULT' }),
         expect.objectContaining({ field: 'plans[0].workOrders[0].productionLineId', code: 'LINE_PLANT_MISMATCH' }),
-        expect.objectContaining({ field: 'plans[0].workOrders[0].defaultWipLocationId', code: 'LOCATION_INVALID' }),
+        expect.objectContaining({ field: 'plans[0].workOrders[0].defaultFgLocationId', code: 'LOCATION_INVALID' }),
         expect.objectContaining({ field: 'plans[0].workOrders[0].plannedEquipmentId', code: 'EQUIPMENT_NOT_IN_SERVICE' }),
       ]));
       expect(await snapshot()).toEqual(before);
@@ -369,12 +365,12 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     });
 
     it('보완 필요(라인 미지정)는 확정 본문에 라인·기본 위치를 채우면 확정된다', async () => {
-      const fill = { productionLineId: Number(id.line), defaultWipLocationId: Number(id.loc1), defaultFgLocationId: Number(id.loc2), defaultScrapLocationId: Number(id.loc3) };
+      const fill = { productionLineId: Number(id.line), defaultFgLocationId: Number(id.loc2), defaultScrapLocationId: Number(id.loc3) };
       const response = await confirm(order.D, bodyOf(await proposalOf(order.D), fill)).expect(200);
 
       expect(response.body).toMatchObject({ outcome: 'CONFIRMED' });
       const [workOrder] = await prisma.work_order.findMany({ where: { production_plan: { production_order_id: order.D } } });
-      expect(workOrder).toMatchObject({ production_line_id: id.line, default_wip_location_id: id.loc1, planned_equipment_id: null });
+      expect(workOrder).toMatchObject({ production_line_id: id.line, default_wip_location_id: null, planned_equipment_id: null });
     });
 
     it('수량을 줄여 확정하면 나머지는 잔량으로 남고, 다음 제안이 그 잔량으로 새 계획을 낸다', async () => {
@@ -416,17 +412,11 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       await confirm(order.N, fixed).expect(200);
     });
 
-    it('라인 기본 위치가 자재창고면 제안이 LOCATION_INVALID 를 내고 확정도 같다 — 기준정보를 고치면 CONFIRMABLE 이고 제안 값 그대로 확정된다', async () => {
+    it('과거 라인 기본 WIP 위치가 자재창고여도 제안과 확정을 막지 않는다', async () => {
       const proposal = await proposalOf(order.P);
-      expect(proposal).toMatchObject({ status: 'NEEDS_INPUT', reasons: [{ code: 'LOCATION_INVALID', category: 'INPUT' }] });
-      const rejected = await confirm(order.P, bodyOf(proposal)).expect(400);
-      expect(rejected.body.errors.map((error: { field: string; code: string }) => [error.field, error.code]))
-        .toEqual([['plans[0].workOrders[0].defaultWipLocationId', 'LOCATION_INVALID']]);
-
-      await prisma.production_line.update({ where: { production_line_id: id.line3 }, data: { default_wip_location_id: id.loc1, version_no: { increment: 1 } } });
-      const fixed = await proposalOf(order.P);
-      expect(fixed).toMatchObject({ status: 'CONFIRMABLE', reasons: [] });
-      await confirm(order.P, bodyOf(fixed)).expect(200);
+      expect(proposal).toMatchObject({ status: 'CONFIRMABLE', reasons: [] });
+      expect(proposal.plans[0].workOrders[0]).not.toHaveProperty('defaultWipLocationId');
+      await confirm(order.P, bodyOf(proposal)).expect(200);
     });
 
     it.each([
@@ -444,7 +434,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
         await prisma.item_resource_map.create({ data: { plant_id: id.plant, item_id: id.itemChg, equipment_id: id.eq1, is_default: true } });
       }],
     ])('검토한 뒤 %s 기준이 바뀌면 409 — %s', async (basis, _, change) => {
-      const body = bodyOf(await proposalOf(order.R), { productionLineId: Number(id.line), defaultWipLocationId: Number(id.loc1), defaultFgLocationId: Number(id.loc2), defaultScrapLocationId: Number(id.loc3) });
+      const body = bodyOf(await proposalOf(order.R), { productionLineId: Number(id.line), defaultFgLocationId: Number(id.loc2), defaultScrapLocationId: Number(id.loc3) });
       await change();
       const response = await confirm(order.R, body).expect(409);
       expect(response.body.proposalChanges.map((item: { basis: string }) => item.basis)).toEqual([basis]);
@@ -587,7 +577,7 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
       const proposal = await proposalOf(order.J);
       const body = bodyOf(proposal);
       body.plans[0].bomId = Number(id.bomOld);
-      Object.assign(body.plans[0].workOrders[0], { productionLineId: Number(id.foreignLine), defaultWipLocationId: Number(id.materialLoc), plannedEquipmentId: Number(id.eqDown) });
+      Object.assign(body.plans[0].workOrders[0], { productionLineId: Number(id.foreignLine), defaultFgLocationId: Number(id.materialLoc), plannedEquipmentId: Number(id.eqDown) });
       const before = await snapshot();
 
       const confirmed = await confirm(order.J, body).expect(400);
@@ -611,16 +601,16 @@ describe('ERP W/O 계획 제안 (e2e)', () => {
     it('생산 라인·기본 위치가 빈 본문(제안이 정하지 못한 칸)도 200 이고 그 칸마다 REQUIRED 다 — 확정 본문은 계약 가드가 막는다', async () => {
       const orderId = await newOrder('RV-EMPTY', planStart);
       const body = bodyOf(await proposalOf(orderId));
-      Object.assign(body.plans[0].workOrders[0], { productionLineId: null, defaultWipLocationId: null, defaultFgLocationId: null, defaultScrapLocationId: null });
+      Object.assign(body.plans[0].workOrders[0], { productionLineId: null, defaultFgLocationId: null, defaultScrapLocationId: null });
       const response = await revalidate(orderId, body).expect(200);
       expect(validator(response200('/planning/production-orders/{productionOrderId}:revalidate-plan-proposal', 'post'))(response.body)).toBe(true);
       const result = revalidated(response);
       const path = 'plans[0].workOrders[0]';
       expect(result.errors.map((error) => [error.field, error.code])).toEqual(expect.arrayContaining([
-        [`${path}.productionLineId`, 'REQUIRED'], [`${path}.defaultWipLocationId`, 'REQUIRED'], [`${path}.defaultScrapLocationId`, 'REQUIRED'],
+        [`${path}.productionLineId`, 'REQUIRED'], [`${path}.defaultFgLocationId`, 'REQUIRED'],
       ]));
       expect(result.errors.map((error) => error.code)).not.toContain('WORK_ORDER_LINE_REQUIRED');
-      expect(result.plans[0].workOrders[0]).toMatchObject({ productionLineId: null, defaultWipLocationId: null });
+      expect(result.plans[0].workOrders[0]).toMatchObject({ productionLineId: null, defaultFgLocationId: null });
       await confirm(orderId, body).expect(400);
     });
 

@@ -22,7 +22,7 @@ describe('resourceFindings — 공정 W/O 의 라인·설비·금형·기본 위
     locations: new Map([[1n, location(PLANT)], [2n, location(PLANT, 'MATERIAL')], [3n, location(2n)], [4n, location(PLANT, 'GENERAL', false)], [5n, location(PLANT, 'GENERAL', true, 2n)], [6n, location(PLANT, 'GENERAL', true, 3n, { is_external: true })], [7n, location(PLANT, 'GENERAL', true, 4n, { is_defect: true })]]),
   };
   const ok: WorkOrderResources = {
-    productionLineId: 10n, equipmentId: 100n, moldId: 200n, defaultWipLocationId: 1n, defaultFgLocationId: 1n, defaultScrapLocationId: 1n,
+    productionLineId: 10n, equipmentId: 100n, moldId: 200n, defaultFgLocationId: 1n, defaultScrapLocationId: 1n,
   };
   const noCode: FgResolution = { kind: 'NO_STORAGE_CODE' };
   const erp: FgResolution = {
@@ -51,10 +51,10 @@ describe('resourceFindings — 공정 W/O 의 라인·설비·금형·기본 위
   });
 
   it('기본 위치 — 비면 REQUIRED, 자재창고·다른 공장·사용 중지는 LOCATION_INVALID', () => {
-    expect(codes({ defaultWipLocationId: null, defaultFgLocationId: 2n, defaultScrapLocationId: 3n })).toEqual([
+    expect(codes({ defaultFgLocationId: 2n, defaultScrapLocationId: 3n })).toEqual([
       ['defaultFgLocationId', 'LOCATION_INVALID'],
     ]);
-    expect(codes({ defaultWipLocationId: 4n })).toEqual([]);
+    expect(codes({ })).toEqual([]);
     expect(codes({ defaultFgLocationId: null })).toEqual([['defaultFgLocationId', 'WORK_ORDER_LOCATION_REQUIRED']]);
   });
 
@@ -72,8 +72,8 @@ describe('resourceFindings — 공정 W/O 의 라인·설비·금형·기본 위
   it('완제품 위치 — 입고 창고가 정해졌으면 그 창고 안 위치만, 다른 창고면 FG_LOCATION_OUTSIDE_WAREHOUSE', () => {
     expect(codes({ defaultFgLocationId: 1n }, erp)).toEqual([]);
     expect(codes({ defaultFgLocationId: 5n }, erp)).toEqual([['defaultFgLocationId', 'FG_LOCATION_OUTSIDE_WAREHOUSE']]);
-    // WIP·스크랩 위치는 입고 창고와 무관하다.
-    expect(codes({ defaultWipLocationId: 5n, defaultScrapLocationId: 5n }, erp)).toEqual([]);
+    // 스크랩 위치는 입고 창고와 무관하다.
+    expect(codes({ defaultScrapLocationId: 5n }, erp)).toEqual([]);
   });
 
   it('완제품 위치 — 연결 실패는 구분된 사유이고 위치가 비어 있어도 REQUIRED 가 아니라 그 사유다', () => {
