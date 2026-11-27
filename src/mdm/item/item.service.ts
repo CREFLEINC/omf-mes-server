@@ -8,6 +8,7 @@ import { loadStockUomTable, toStockUom } from '../../core/bom/stock-uom';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ensureItemIqcPlan } from '../../quality/inspection-plan/item-iqc-plan-sync';
 import { Editability, ReferenceQuery, assertCodeValues, optional, referencePage, referenceWhere } from '../../common/master';
+import { itemPlantWhere } from './item-plant';
 
 /** 계약 `Item` 과 동형. 위(ERP 원본)와 아래(MES 확장)를 화면이 나눠 그린다. */
 interface ItemView {
@@ -106,7 +107,7 @@ export class ItemService {
         ? {}
         : { routing: query.hasRouting ? { some: {} } : { none: {} } }),
       // q 가 최상위 OR 를 쓴다 — 공장 조건은 AND 에 싣는다.
-      ...(query.plantId === undefined ? {} : { AND: [plantWhere(query.plantId)] }),
+      ...(query.plantId === undefined ? {} : { AND: [itemPlantWhere(query.plantId)] }),
       ...(query.hasBom === undefined ? {} : bomWhere(query.hasBom, query.plantId)),
       ...(query.inspectionRequired === undefined ? {} : { inspection_required: query.inspectionRequired }),
     });
@@ -284,22 +285,6 @@ function view(row: ItemRow): ItemView {
     defaultPackageCount: row.default_package_count,
     erpSpec: row.erp_spec,
     erpItemGroupCode: row.erp_item_group_code,
-  };
-}
-
-/**
- * 품목에는 공장 칸이 없어 BOM 으로 정한다 — 모품목이나 구성품으로 든 BOM 중 그 공장 것이 있으면 그 공장 품목이다.
- * 공장이 정해진 BOM 에 한 번도 들지 않은 품목은 공장을 몰라 어느 공장에도 든다(클라이언트 요청 2026-11-26).
- */
-function plantWhere(plantId: number): Prisma.itemWhereInput {
-  const inPlant = { plant_id: plantId };
-  const known = { plant_id: { not: null } };
-  return {
-    OR: [
-      { bom: { some: inPlant } },
-      { bom_component: { some: { bom: inPlant } } },
-      { bom: { none: known }, bom_component: { none: { bom: known } } },
-    ],
   };
 }
 

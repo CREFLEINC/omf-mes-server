@@ -17,6 +17,7 @@ import {
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { NumberingService } from '../../core/numbering';
+import { itemPlantWhere } from '../../mdm/item/item-plant';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { syncItemsToCommonIqcPlan } from './item-iqc-plan-sync';
@@ -73,6 +74,7 @@ export type InspectionPlanCreate = Omit<InspectionPlanWrite, 'inspectionPlanCode
 export interface InspectionPlanQuery extends ReferenceQuery {
   inspectionTypeCode?: string;
   itemId?: number;
+  plantId?: number;
 }
 
 type PlanRow = Prisma.inspection_planGetPayload<object>;
@@ -101,6 +103,10 @@ export class InspectionPlanService {
         ...(query.inspectionTypeCode === undefined
           ? {}
           : { inspection_type_code: query.inspectionTypeCode }),
+        // q 가 최상위 OR 를 쓴다 — 공장 조건은 AND 에 싣는다. 품목 없는 기준은 공장을 몰라 어느 공장에도 든다.
+        ...(query.plantId === undefined
+          ? {}
+          : { AND: [{ OR: [{ item_id: null }, { item: itemPlantWhere(query.plantId) }] }] }),
       },
     );
     const [rows, total] = await Promise.all([

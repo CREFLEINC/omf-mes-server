@@ -253,6 +253,99 @@ describe('검사기준 헤더 (e2e)', () => {
     expect(byItem.body.items).toHaveLength(1);
   });
 
+  describe('공장으로 거른다 — 기준의 공장은 품목의 공장(BOM)이다(클라이언트 요청 2026-11-27)', () => {
+    const Q = `${PREFIX}-PL-`;
+    let plantA = 0;
+    let plantB = 0;
+
+    beforeAll(async () => {
+      const base = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
+      const uom = await prisma.uom.findFirstOrThrow({ select: { uom_id: true } });
+      const plant = async (suffix: string): Promise<number> =>
+        Number(
+          (
+            await prisma.plant.create({
+              data: {
+                plant_code: `${PREFIX}_${suffix}`,
+                plant_name: `${PREFIX} ${suffix}`,
+                legal_entity_id: base.legal_entity_id,
+                timezone_code: 'Asia/Ho_Chi_Minh',
+              },
+            })
+          ).plant_id,
+        );
+      plantA = await plant('A');
+      plantB = await plant('B');
+      const item: Record<string, bigint> = {};
+      for (const name of ['PA', 'PB', 'BOTH', 'NONE']) {
+        item[name] = (
+          await prisma.item.create({
+            data: { item_code: `${Q}${name}`, item_name: name, item_type_code: 'FINISHED', base_uom_id: uom.uom_id },
+          })
+        ).item_id;
+      }
+      // BOTH 는 두 공장 BOM 의 구성품이다.
+      for (const [parent, plantId] of [['PA', plantA], ['PB', plantB]] as const) {
+        await prisma.bom.create({
+          data: {
+            parent_item_id: item[parent],
+            bom_code: `${Q}BOM`,
+            bom_version: 1,
+            status_code: 'CONFIRMED',
+            effective_from: new Date('2026-01-01'),
+            base_qty: 1,
+            base_uom_id: uom.uom_id,
+            plant_id: plantId,
+            bom_component: {
+              create: [{ component_item_id: item.BOTH, required_qty: 1, uom_id: uom.uom_id, sequence_no: 1 }],
+            },
+          },
+        });
+      }
+      for (const name of ['PA', 'PB', 'BOTH', 'NONE', 'COMMON']) {
+        await prisma.inspection_plan.create({
+          data: {
+            inspection_plan_code: `${Q}${name}`,
+            inspection_plan_name: name,
+            inspection_type_code: name === 'PA' ? 'IQC' : 'OQC',
+            item_id: name === 'COMMON' ? null : item[name],
+          },
+        });
+      }
+    });
+
+    const listed = async (query: string): Promise<string[]> =>
+      (
+        await request(app.getHttpServer())
+          .get(`/api/quality/inspection-plans?q=${Q}&size=50&${query}`)
+          .set('Cookie', cookie)
+          .expect(200)
+      ).body.items
+        .map((p: { inspectionPlanCode: string }) => p.inspectionPlanCode.slice(Q.length))
+        .sort();
+
+    it('⭐ plantId 는 품목이 모품목·구성품으로 든 BOM 의 공장으로 거른다 — 두 공장 BOM 에 든 품목의 기준은 두 공장에서 나온다', async () => {
+      expect(await listed(`plantId=${plantA}`)).toEqual(['BOTH', 'COMMON', 'NONE', 'PA']);
+      expect(await listed(`plantId=${plantB}`)).toEqual(['BOTH', 'COMMON', 'NONE', 'PB']);
+    });
+
+    it('⭐ 공장을 모르는 품목의 기준과 품목이 빈 기준은 어느 plantId 로도 나온다', async () => {
+      expect(await listed('plantId=999999999')).toEqual(['COMMON', 'NONE']);
+      expect(await listed('')).toHaveLength(5);
+    });
+
+    it('⭐ q·inspectionTypeCode 와 함께 쓰고 page.total 도 걸러진 건수다', async () => {
+      expect(await listed(`plantId=${plantA}&inspectionTypeCode=IQC`)).toEqual(['PA']);
+      expect(await listed(`plantId=${plantB}&inspectionTypeCode=IQC`)).toEqual([]);
+      const paged = await request(app.getHttpServer())
+        .get(`/api/quality/inspection-plans?q=${Q}&plantId=${plantA}&size=2`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(paged.body.items).toHaveLength(2);
+      expect(paged.body.page.total).toBe(4);
+    });
+  });
+
   it('사용 중지·다시 사용이 목록 기본값을 가른다', async () => {
     const id = await create('P8');
 
@@ -423,7 +516,11 @@ describe('검사기준 헤더 (e2e)', () => {
     const items = { item: { item_code: { startsWith: PREFIX } } };
     await prisma.item_inspection_level_history.deleteMany({ where: items });
     await prisma.item_inspection_level.deleteMany({ where: items });
+    const boms = { item: { item_code: { startsWith: PREFIX } } };
+    await prisma.bom_component.deleteMany({ where: { bom: boms } });
+    await prisma.bom.deleteMany({ where: boms });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
 
     for (const id of [LOGIN_ID, NOPERM_ID]) {
