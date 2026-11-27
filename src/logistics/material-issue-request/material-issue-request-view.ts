@@ -24,7 +24,7 @@ export function materialIssueRequestView(row: Prisma.material_issue_requestGetPa
     issueRequestNo: row.issue_request_no,
     // 창고 보충 요청(피처 004)은 W/O 가 없다 — null.
     workOrderId: id(row.work_order_id),
-    destinationLocationId: Number(row.destination_location_id),
+    destinationLocationId: row.destination_location_id === null ? null : Number(row.destination_location_id),
     requiredAt: row.required_at === null ? null : row.required_at.toISOString(),
     statusCode: row.status_code,
     requestedBy: id(row.requested_by),

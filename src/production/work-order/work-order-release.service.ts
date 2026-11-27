@@ -171,9 +171,8 @@ export class WorkOrderReleaseService {
       );
     }
 
-    const destination = plan.row.default_wip_location_id;
-    if (issue !== null && destination !== null) {
-      await this.issueRequest(tx, workOrderId, issue, destination, appUserId);
+    if (issue !== null) {
+      await this.issueRequest(tx, workOrderId, issue, appUserId);
     }
     const waiting =
       plan.waiting === null
@@ -197,14 +196,13 @@ export class WorkOrderReleaseService {
     tx: Tx,
     workOrderId: number,
     issue: IssuePlan,
-    destinationLocationId: bigint,
     appUserId: number | null,
   ): Promise<void> {
     const header = await tx.material_issue_request.create({
       data: {
         issue_request_no: issue.issueRequestNo,
         work_order_id: BigInt(workOrderId),
-        destination_location_id: destinationLocationId,
+        destination_location_id: null,
         status_code: ISSUE_REGISTERED,
         requested_by: appUserId,
         created_by: appUserId,

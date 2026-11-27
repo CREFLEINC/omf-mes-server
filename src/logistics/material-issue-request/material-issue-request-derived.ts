@@ -83,13 +83,13 @@ export interface RequestDerived {
   productionDate: string | null;
   productionPlanId: number | null;
   productionPlanNo: string | null;
-  destinationLocationName: string;
+  destinationLocationName?: string;
   /** 입고지 코드 · 별칭 · 서버가 둔 위치의 역할(omf-all-around#268) — 관리웹이 「코드 · 별칭」 또는 역할 이름으로 보인다. */
-  destinationLocationCode: string;
-  destinationLocationAliasName: string | null;
-  destinationLocationSystemRoleCode: string | null;
-  destinationWarehouseId: number;
-  destinationWarehouseName: string;
+  destinationLocationCode?: string;
+  destinationLocationAliasName?: string | null;
+  destinationLocationSystemRoleCode?: string | null;
+  destinationWarehouseId?: number;
+  destinationWarehouseName?: string;
   lineCount: number;
   /** 줄 저장 부족(만들 때 줄인 양)의 합. */
   shortageQtyTotal: number;
@@ -140,12 +140,14 @@ export function derive(row: DerivedRow, dynamic: ReadonlyMap<bigint, Prisma.Deci
     productionDate: plannedStart === null || timezone === null ? null : localDate(plannedStart, timezone),
     productionPlanId: workOrder?.production_plan_id == null ? null : Number(workOrder.production_plan_id),
     productionPlanNo: workOrder?.production_plan?.plan_no ?? null,
-    destinationLocationName: row.location.location_name,
-    destinationLocationCode: row.location.location_code,
-    destinationLocationAliasName: row.location.alias_name,
-    destinationLocationSystemRoleCode: row.location.system_role_code,
-    destinationWarehouseId: Number(row.location.warehouse_id),
-    destinationWarehouseName: row.location.warehouse.warehouse_name,
+    ...(row.location === null ? {} : {
+      destinationLocationName: row.location.location_name,
+      destinationLocationCode: row.location.location_code,
+      destinationLocationAliasName: row.location.alias_name,
+      destinationLocationSystemRoleCode: row.location.system_role_code,
+      destinationWarehouseId: Number(row.location.warehouse_id),
+      destinationWarehouseName: row.location.warehouse.warehouse_name,
+    }),
     lineCount: row.material_issue_request_line.length,
     shortageQtyTotal: stored.toNumber(),
     dynamicShortageQtyTotal: dynamicTotal.toNumber(),

@@ -39,6 +39,7 @@ interface LineRow {
   inventory_reservation_id: bigint | null;
   version_no: number;
   warehouse_id: bigint;
+  order_status_code: string;
 }
 
 /** 등록만 된 출고는 라인을 안 잠근다 — 전기 전에 `picking_line_id` 가 이미 저장된다(R-14). */
@@ -74,7 +75,7 @@ export class PickingPickService {
       // ① 라인만 잠근다(`OF l`) — 지시까지 잡으면 같은 지시의 두 라인이 서로를 막는다.
       const [line] = await tx.$queryRaw<LineRow[]>`
         SELECT l.picking_line_id, l.item_id, l.lot_id, l.location_id, l.planned_qty,
-               l.picked_qty, l.inventory_reservation_id, l.version_no, o.warehouse_id
+               l.picked_qty, l.inventory_reservation_id, l.version_no, o.warehouse_id, o.status_code AS order_status_code
           FROM logistics.picking_line l
           JOIN logistics.picking_order o ON o.picking_order_id = l.picking_order_id
          WHERE l.picking_line_id = ${pickingLineId}
@@ -85,8 +86,12 @@ export class PickingPickService {
       // ② 업무 검사보다 «먼저» 본다(`document-cancel.service.ts:75-78` 선례).
       if (context.version !== undefined && line.version_no !== context.version) assertUpdated(0);
 
-      await assertNotIssued(tx, pickingLineId);
+      if (line.order_status_code !== REGISTERED) {
+        throw one(field('pickedQty', ERROR_CODE.STATE_LOCKED, '완료되거나 취소된 피킹 지시는 변경할 수 없습니다.'));
+      }
       const pickedQty = new Prisma.Decimal(body.pickedQty);
+      // 부분 출고 뒤에는 나머지를 더 집을 수 있다. 이미 나간 수량은 감액 정정하지 않는다.
+      if (pickedQty.lte(line.picked_qty)) await assertNotIssued(tx, pickingLineId);
       assertQty(pickedQty, line, body.lotId);
       await assertPickable(tx, line.lot_id);
 

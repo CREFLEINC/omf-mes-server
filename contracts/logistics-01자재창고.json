@@ -24344,9 +24344,13 @@
      },
      "destinationLocationId": {
       "x-source-column": "destination_location_id",
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "작업지시에 직접 출고하면 null. 창고 보충과 기존 위치 출고는 도착 위치를 반환한다."
      },
      "requiredAt": {
       "x-source-column": "required_at",
@@ -24728,7 +24732,7 @@
       "x-source-column": "destination_location_id",
       "type": "integer",
       "format": "int64",
-      "description": "도착 위치. FK 라 실재하는 위치여야 한다. 근거: W-02-10 §5-4 생산 창고를 쓰는 공장에서는 비울 수 있다 — 라인의 생산 현장. 근거: 피처 003 계획 기반 출고 요청 · omf-all-around#66",
+      "description": "도착 위치. FK 라 실재하는 위치여야 한다. 근거: W-02-10 §5-4 생산창고 직접 출고에서는 위치를 보내지 않는다. 근거: omf-all-around#362",
       "example": 1001
      },
      "requiredAt": {
@@ -26571,7 +26575,10 @@
      },
      "destinationLocationId": {
       "x-source-column": "destination_location_id",
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "example": 1001
      },
@@ -26622,7 +26629,6 @@
     "type": "object",
     "required": [
      "goodsIssueId",
-     "destinationLocationId",
      "receivedAt",
      "businessDate",
      "occurredAt",
@@ -26651,7 +26657,7 @@
       "type": "integer",
       "format": "int64",
       "example": 1001,
-      "description": "창고 보충 출고(workOrderId 없음)는 출고가 실은 도착 위치와 같아야 한다(아니면 400 INVALID). W/O 출고는 대조하지 않는다(지금 동작 그대로). 근거: 피처 004 생산 창고 보충 G2 보완 · omf-all-around#230"
+      "description": "작업지시 직접 출고 수령이면 생략한다. 기존 위치 출고와 창고 보충 출고는 필수이며, 보충 출고는 출고의 도착 위치와 일치해야 한다."
      },
      "receivedAt": {
       "x-source-column": "received_at",

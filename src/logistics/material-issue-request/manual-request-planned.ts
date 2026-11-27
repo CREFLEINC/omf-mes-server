@@ -68,21 +68,17 @@ export class PlannedManualRequestCreator {
     return { materialIssueRequest: views[0], lines: lines.map((line) => materialIssueRequestLineView(line)), requests: views };
   }
 
-  /** 트랜잭션 밖 — 후보 창고 D(또는 고른 창고)·입고지·공장 오늘·보충 행. */
+  /** 트랜잭션 밖 — 후보 창고 D(또는 고른 창고)·공장 오늘·보충 행. */
   private async prepare(input: MaterialIssueRequestCreate, plantId: bigint) {
     const workOrder = await this.prisma.work_order.findUniqueOrThrow({
       where: { work_order_id: input.workOrderId },
       select: { production_line_id: true, production_plan: { select: { production_order: { select: { plant: { select: { timezone_code: true } } } } } } },
     });
     const timezone = workOrder.production_plan?.production_order.plant.timezone_code ?? 'UTC';
-    const scope = workOrder.production_line_id === null
+    const scope: Awaited<ReturnType<typeof resolveCandidates>> = workOrder.production_line_id === null
       ? { errors: [field('workOrderId', ERROR_CODE.LINE_DEPARTMENT_MISSING, 'W/O 에 생산라인이 없습니다.')], warehouseIds: [] }
-      : await resolveCandidates(this.prisma, { plantId, productionLineId: workOrder.production_line_id });
-    // 공장의 생산창고가 없으면 배포와 같은 사유로 막는다 — 입고지를 직접 고르면 생산 현장 누락은 넘어간다.
-    if ('errors' in scope) {
-      const errors = scope.errors.filter((e) => e.code !== ERROR_CODE.PRODUCTION_FLOOR_LOCATION_MISSING || input.destinationLocationId == null);
-      if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-    }
+      : await resolveCandidates(this.prisma, plantId);
+    if (scope.errors !== undefined) throw new ContractException(HttpStatus.BAD_REQUEST, scope.errors);
     const candidates = scope.warehouseIds;
     let warehouseIds = candidates;
     if (input.sourceWarehouseId != null) {
@@ -92,17 +88,13 @@ export class PlannedManualRequestCreator {
       }
       warehouseIds = [BigInt(input.sourceWarehouseId)];
     }
-    const destination = input.destinationLocationId != null ? BigInt(input.destinationLocationId) : 'errors' in scope ? null : scope.destinationLocationId;
-    if (destination === null) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [field('destinationLocationId', ERROR_CODE.REQUIRED, '입고지를 고르거나 라인에 생산 현장 위치를 지정해야 합니다.')]);
-    }
     if (input.unsourcedShortageId != null) {
       const row = await this.prisma.material_issue_unsourced_shortage.findUnique({ where: { material_issue_unsourced_shortage_id: input.unsourcedShortageId } });
       if (row === null || row.work_order_id !== BigInt(input.workOrderId) || row.resolved_request_id !== null) {
         throw new ContractException(HttpStatus.BAD_REQUEST, [field('unsourcedShortageId', ERROR_CODE.INVALID, '이 W/O 의 보충되지 않은 부족 행이 아닙니다.')]);
       }
     }
-    return { warehouseIds, destination, today: localDate(new Date(), timezone), chooseAuto: input.sourceWarehouseId == null };
+    return { warehouseIds, today: localDate(new Date(), timezone), chooseAuto: input.sourceWarehouseId == null };
   }
 
   private async write(
@@ -181,6 +173,12 @@ export class PlannedManualRequestCreator {
       const warehouseId = sourceOf.get(itemId) as bigint;
       byWarehouse.set(warehouseId, [...(byWarehouse.get(warehouseId) ?? []), { line, requested, shortage: qty.minus(requested) }]);
     }
+    // 기존 위치 출고를 사용하던 작업지시는 후속 출고도 같은 방식으로 마친다.
+    const legacyRequest = await tx.material_issue_request.findFirst({
+      where: { work_order_id: input.workOrderId, destination_location_id: { not: null }, request_type_code: 'WORK_ORDER' },
+      orderBy: { material_issue_request_id: 'desc' },
+      select: { destination_location_id: true },
+    });
     const ids: bigint[] = [];
     for (const [index, [warehouseId, rows]] of [...byWarehouse].sort(([a], [b]) => (a < b ? -1 : 1)).entries()) {
       const header = await tx.material_issue_request.create({
@@ -188,7 +186,7 @@ export class PlannedManualRequestCreator {
           issue_request_no: requestNos[index],
           work_order_id: input.workOrderId,
           source_warehouse_id: warehouseId,
-          destination_location_id: plan.destination,
+          destination_location_id: legacyRequest?.destination_location_id ?? null,
           issue_work_date: new Date(`${plan.today}T00:00:00.000Z`),
           required_at: input.requiredAt == null ? null : new Date(input.requiredAt),
           status_code: 'WAITING',

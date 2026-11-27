@@ -190,6 +190,15 @@ describe('출고 요청 수정·취소 (e2e)', () => {
     const other = await fx.warehouse(fx.ids.p1, `S${seq}-DEST`);
     await put(row.material_issue_request_id, {
       versionNo: row.version_no,
+      destinationLocationId: Number(other.locationId),
+    }).expect(400);
+    // 예전 위치 출고 요청의 편집은 유지한다.
+    await prisma.material_issue_request.update({
+      where: { material_issue_request_id: row.material_issue_request_id },
+      data: { destination_location_id: a.locationId },
+    });
+    await put(row.material_issue_request_id, {
+      versionNo: row.version_no,
       sourceWarehouseId: Number(b.warehouseId),
       destinationLocationId: Number(other.locationId),
     }).expect(200);
@@ -204,7 +213,7 @@ describe('출고 요청 수정·취소 (e2e)', () => {
     const sourceName = async (id: bigint) => (await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id } })).warehouse_name;
     const locationName = async (id: bigint) => (await prisma.location.findUniqueOrThrow({ where: { location_id: id } })).location_name;
     expect(history.body.items).toEqual([
-      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'DESTINATION_CHANGED', detail: { before: await locationName(row.destination_location_id), after: await locationName(other.locationId) } },
+      { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'DESTINATION_CHANGED', detail: { before: await locationName(a.locationId), after: await locationName(other.locationId) } },
       { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'SOURCE_CHANGED', detail: { before: await sourceName(a.warehouseId), after: await sourceName(b.warehouseId) } },
       { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'QTY_CHANGED', detail: { itemCode: `${PREFIX}-X`, before: 20, after: 10, shortageBefore: 0, shortageAfter: 10 } },
       { occurredAt: expect.any(String), actorName: '출고요청시험', eventCode: 'CREATED', detail: {} },

@@ -175,7 +175,7 @@ describe('창고 보충 요청 취소·잔량 마감·수령 요약 (e2e)', () =
       data: {
         shopfloor_receipt_no: `${PREFIX}-SR${++seq}`,
         goods_issue_id: BigInt(first.body.goodsIssue.goodsIssueId as number),
-        destination_location_id: (await prisma.material_issue_request.findUniqueOrThrow({ where: { material_issue_request_id: id } })).destination_location_id,
+        destination_location_id: (await prisma.material_issue_request.findUniqueOrThrow({ where: { material_issue_request_id: id } })).destination_location_id!,
         received_at: new Date(),
         status_code: 'POSTED',
       },

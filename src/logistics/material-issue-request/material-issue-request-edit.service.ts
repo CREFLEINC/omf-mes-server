@@ -304,8 +304,11 @@ export class MaterialIssueRequestEditService {
     }
     const source = body.sourceWarehouseId === undefined ? (request.source_warehouse_id as bigint) : BigInt(body.sourceWarehouseId);
     if (source !== request.source_warehouse_id) await this.assertWarehouse(tx, request, source, head.plantId);
+    if (request.destination_location_id === null && body.destinationLocationId !== undefined) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('destinationLocationId', ERROR_CODE.INVALID, '작업지시 직접 출고에는 도착 위치가 없습니다.')]);
+    }
     const destination = body.destinationLocationId === undefined ? request.destination_location_id : BigInt(body.destinationLocationId);
-    if (destination !== request.destination_location_id && (await tx.location.count({ where: { location_id: destination } })) === 0) {
+    if (destination !== null && destination !== request.destination_location_id && (await tx.location.count({ where: { location_id: destination } })) === 0) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('destinationLocationId', ERROR_CODE.INVALID, '없는 위치입니다.')]);
     }
 
@@ -330,9 +333,9 @@ export class MaterialIssueRequestEditService {
       const name = (id: bigint | null) => names.find((w) => w.warehouse_id === id)?.warehouse_name ?? null;
       events.push({ action: 'SOURCE_CHANGED', detail: { before: name(request.source_warehouse_id), after: name(source) } });
     }
-    if (destination !== request.destination_location_id) {
-      const names = await tx.location.findMany({ where: { location_id: { in: [request.destination_location_id, destination] } }, select: { location_id: true, location_name: true } });
-      const name = (id: bigint) => names.find((l) => l.location_id === id)?.location_name ?? null;
+    if (destination !== null && destination !== request.destination_location_id) {
+      const names = await tx.location.findMany({ where: { location_id: { in: request.destination_location_id === null ? [destination] : [request.destination_location_id, destination] } }, select: { location_id: true, location_name: true } });
+      const name = (id: bigint | null) => names.find((l) => l.location_id === id)?.location_name ?? null;
       events.push({ action: 'DESTINATION_CHANGED', detail: { before: name(request.destination_location_id), after: name(destination) } });
     }
 
@@ -413,7 +416,7 @@ export class MaterialIssueRequestEditService {
   private async assertWarehouse(tx: Prisma.TransactionClient, request: Locked, warehouseId: bigint, plantId: bigint): Promise<void> {
     // 수정은 W/O 요청만 온다(창고 보충 요청은 update 입구에서 409).
     const workOrder = await tx.work_order.findUniqueOrThrow({ where: { work_order_id: request.work_order_id as bigint }, select: { production_line_id: true } });
-    const scope = workOrder.production_line_id === null ? null : await resolveCandidates(tx, { plantId, productionLineId: workOrder.production_line_id });
+    const scope = workOrder.production_line_id === null ? null : await resolveCandidates(tx, plantId);
     if (scope === null || !scope.warehouseIds.includes(warehouseId)) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('sourceWarehouseId', ERROR_CODE.INVALID, '이 공장의 사용 중인 생산창고가 아닙니다.')]);
     }

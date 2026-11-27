@@ -54,7 +54,9 @@ export async function replenishmentStock(
   ]);
   const inProgress = new Map<string, { qty: Prisma.Decimal; requests: Set<bigint> }>();
   for (const line of incoming) {
-    const key = pairKey(line.material_issue_request.location.warehouse_id, line.item_id);
+    const location = line.material_issue_request.location;
+    if (location === null) continue;
+    const key = pairKey(location.warehouse_id, line.item_id);
     const cur = inProgress.get(key) ?? { qty: ZERO, requests: new Set<bigint>() };
     cur.requests.add(line.material_issue_request_id);
     inProgress.set(key, { qty: cur.qty.plus(Prisma.Decimal.max(line.requested_qty.minus(line.issued_qty), ZERO)), requests: cur.requests });

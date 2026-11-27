@@ -80,7 +80,7 @@ function fake(seed: Seed = {}) {
       const sql = strings.join('?');
       // 잔액 잠금과 라인 잠금이 같은 문으로 오므로 표 이름으로 가른다.
       if (sql.includes('inventory_balance')) return seed.balances ?? [balanceRow()];
-      return line === undefined ? [] : [line];
+      return line === undefined ? [] : [{ order_status_code: 'REGISTERED', ...line }];
     },
     goods_issue_line: {
       findFirst: async (args: Row) => {
@@ -242,27 +242,22 @@ describe('라인 피킹 :pick', () => {
     expect(picks).toEqual([]);
   });
 
-  it('이미 출고된 라인이면 400 STATE_LOCKED', async () => {
-    const { service, picks } = fake({ issuedLine: true });
-
-    const error = await thrown(() => service.pick(ORDER, LINE, body(), context));
-
+  it('부분 출고 뒤에는 남은 피킹을 추가하고 기존 피킹 수량의 감액은 막는다', async () => {
+    const base = {
+      picking_line_id: BigInt(LINE), item_id: ITEM, lot_id: LOT, location_id: LOC,
+      planned_qty: new Prisma.Decimal(10), picked_qty: new Prisma.Decimal(5),
+      inventory_reservation_id: null, version_no: 1, warehouse_id: WH,
+    };
+    const { service, picks, issuedWhere } = fake({ line: base, issuedLine: true });
+    await service.pick(ORDER, LINE, body({ pickedQty: 7 }), context);
+    expect(picks).toHaveLength(1);
+    const error = await thrown(() => service.pick(ORDER, LINE, body({ pickedQty: 4 }), context));
     expect(codeOf(error)).toBe('STATE_LOCKED');
-    expect(picks).toEqual([]);
-  });
-
-  it('등록만 된 출고는 라인을 막지 않는다', async () => {
-    const { service, picks, issuedWhere } = fake();
-
-    await service.pick(ORDER, LINE, body(), context);
-
-    // R-14 — 축은 `status_code <> 'REGISTERED'` 다. 존재만으로 막으면 등록만 해 둔 출고가
-    // 피킹 라인을 영구히 잠근다.
+    expect(picks).toHaveLength(1);
     expect(issuedWhere[0]).toEqual({
       picking_line_id: LINE,
       goods_issue: { status_code: { not: 'REGISTERED' } },
     });
-    expect(picks).toHaveLength(1);
   });
 
   it('X-Worker-No 가 없으면 400 REQUIRED', async () => {

@@ -29,7 +29,7 @@ export interface ShopfloorReceiptCreateLine {
 export interface ShopfloorReceiptCreate {
   goodsIssueId: number;
   workOrderId?: number | null;
-  destinationLocationId: number;
+  destinationLocationId?: number | null;
   receivedAt: string;
   businessDate: string;
   occurredAt: string;
@@ -60,7 +60,7 @@ export interface ReceiveOptions {
 /**
  * 생산창고 입고 등록 — 이 슬라이스의 심장(I-9.md §3). ⛔ 원장을 안 지난다(§3-4 · `plan.md`
  * §0 #13 「기록만」) · ⛔ `transitions.ts` 무변경(§3-5 — 이 전표는 영원히 `REGISTERED`) ·
- * ⛔ 마이그레이션 0(§2-4). 차이는 `variance_qty`(GENERATED) + `variance_reason_code` 로
+ * 차이는 `variance_qty`(GENERATED) + `variance_reason_code` 로
  * 기록만 하고 재고를 맞추는 것은 I-14 재고 조정의 몫이다.
  */
 @Injectable()
@@ -98,7 +98,7 @@ export class ShopfloorReceiptService {
    * 번호는 트랜잭션 밖에서 받은 수량 > 0 인 줄 수만큼 — 쓰지 않으면 결번이다.
    */
   private async putawayNumbers(input: ShopfloorReceiptCreate, plantId: bigint): Promise<string[]> {
-    if (input.workOrderId != null) return [];
+    if (input.workOrderId != null || input.destinationLocationId == null) return [];
     const location = await this.prisma.location.findUnique({ where: { location_id: input.destinationLocationId }, select: { system_role_code: true } });
     if (location?.system_role_code !== PUTAWAY_STAGING) return [];
     const count = input.lines.filter((line) => line.receivedQty > 0).length;
@@ -115,7 +115,13 @@ export class ShopfloorReceiptService {
     putawayNos: string[],
   ): Promise<ShopfloorReceiptDetail> {
     // 목적은 재고가 아니라 «중복 수령»이다 — UNIQUE(goods_issue_id) 가 없어 행 잠금으로 레이스를 막는다(I-9 §3-8).
-    await tx.$queryRaw`SELECT status_code FROM logistics.goods_issue WHERE goods_issue_id = ${input.goodsIssueId} FOR UPDATE`;
+    const [locked] = await tx.$queryRaw<{ status_code: string }[]>`
+      SELECT status_code FROM logistics.goods_issue WHERE goods_issue_id = ${input.goodsIssueId} FOR UPDATE
+    `;
+    if (locked === undefined) throw one(field('goodsIssueId', ERROR_CODE.INVALID, '없는 출고입니다.'));
+    const issueErrors: ErrorItem[] = [];
+    assertIssueStatus(locked.status_code, issueErrors);
+    if (issueErrors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, issueErrors);
     const dup = await tx.shopfloor_receipt.count({ where: { goods_issue_id: input.goodsIssueId } });
     if (dup > 0) {
       if (options.alreadyReceivedAsError === true) throw new AlreadyReceivedError('이미 수령한 출고입니다.');
@@ -127,7 +133,7 @@ export class ShopfloorReceiptService {
         shopfloor_receipt_no: shopfloorReceiptNo,
         goods_issue_id: input.goodsIssueId,
         work_order_id: input.workOrderId ?? null,
-        destination_location_id: input.destinationLocationId,
+        destination_location_id: input.destinationLocationId ?? null,
         received_at: new Date(input.receivedAt),
         // 계정 없는 단말은 같은 tx의 worker 감사 이벤트가 실제 행위자를 보존한다.
         received_by: actor.appUserId ?? null,
@@ -150,7 +156,9 @@ export class ShopfloorReceiptService {
       })),
     });
 
-    const putawayTaskIds = putawayNos.length === 0 ? [] : await createPutawayTasks(tx, header.shopfloor_receipt_id, input, putawayNos, actor.appUserId);
+    const putawayTaskIds = putawayNos.length === 0 || input.destinationLocationId == null
+      ? []
+      : await createPutawayTasks(tx, header.shopfloor_receipt_id, input.destinationLocationId, putawayNos, actor.appUserId);
 
     if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
       actor: actor.terminalAudit, targetTypeCode: 'SHOPFLOOR_RECEIPT',
@@ -201,7 +209,9 @@ export class ShopfloorReceiptService {
             where: { work_order_id: input.workOrderId },
             select: { production_plan: { select: { production_order: { select: { plant_id: true } } } } },
           }),
-      this.prisma.location.count({ where: { location_id: input.destinationLocationId } }),
+      input.destinationLocationId == null
+        ? Promise.resolve(null)
+        : this.prisma.location.count({ where: { location_id: input.destinationLocationId } }),
     ]);
 
     if (issue === null) {
@@ -211,9 +221,21 @@ export class ShopfloorReceiptService {
       // 없는 출고면 라인 검증은 건너뛴다 — 대조 대상이 없다(R-9 표).
       assertIssueStatus(issue.status_code, errors);
       assertLinesAgainstIssue(input, issue.goods_issue_line, errors);
-      const replenishment = await this.isReplenishmentIssue(issue);
-      // 창고 보충 출고는 출고가 실은 도착지로만 받는다(피처 004 · research R-6). W/O 출고는 지금 동작 그대로 — 대조하지 않는다(SC-007).
-      if (replenishment && issue.destination_type_code === 'LOCATION' && issue.destination_id !== BigInt(input.destinationLocationId)) {
+      const sourceRequest = await this.sourceMaterialRequest(issue);
+      const replenishment = sourceRequest?.request_type_code === 'REPLENISHMENT';
+      const workOrderIssue = sourceRequest?.request_type_code === 'WORK_ORDER';
+      const locationless = workOrderIssue && sourceRequest.destination_location_id === null;
+      if (workOrderIssue && sourceRequest.work_order_id !== BigInt(input.workOrderId ?? 0)) {
+        errors.push(field('workOrderId', ERROR_CODE.INVALID, '출고 전표의 작업지시와 일치해야 합니다.'));
+      }
+      if (locationless && input.destinationLocationId != null) {
+        errors.push(field('destinationLocationId', ERROR_CODE.INVALID, '작업지시 직접 출고에는 도착 위치가 없습니다.'));
+      }
+      if (!locationless && input.destinationLocationId == null) {
+        errors.push(field('destinationLocationId', ERROR_CODE.REQUIRED, '도착 위치를 확인하세요.'));
+      }
+      if (replenishment && input.destinationLocationId != null &&
+          issue.destination_type_code === 'LOCATION' && issue.destination_id !== BigInt(input.destinationLocationId)) {
         errors.push(field('destinationLocationId', ERROR_CODE.INVALID, '출고의 도착 위치가 아닙니다.'));
       }
       if (input.workOrderId == null && !replenishment) {
@@ -242,19 +264,18 @@ export class ShopfloorReceiptService {
     return plantId;
   }
 
-  /** 출고 → 피킹 지시 → 출고 요청이 창고 보충 요청인가. */
-  private async isReplenishmentIssue(issue: { source_document_type_code: string; source_document_id: bigint }): Promise<boolean> {
-    if (issue.source_document_type_code !== 'PICKING_ORDER') return false;
+  /** 출고 → 피킹 지시 → 자재 출고 요청. */
+  private async sourceMaterialRequest(issue: { source_document_type_code: string; source_document_id: bigint }) {
+    if (issue.source_document_type_code !== 'PICKING_ORDER') return null;
     const picking = await this.prisma.picking_order.findUnique({
       where: { picking_order_id: issue.source_document_id },
       select: { source_document_type_code: true, source_document_id: true },
     });
-    if (picking?.source_document_type_code !== 'MATERIAL_ISSUE_REQUEST') return false;
-    const request = await this.prisma.material_issue_request.findUnique({
+    if (picking?.source_document_type_code !== 'MATERIAL_ISSUE_REQUEST') return null;
+    return this.prisma.material_issue_request.findUnique({
       where: { material_issue_request_id: picking.source_document_id },
-      select: { request_type_code: true },
+      select: { request_type_code: true, destination_location_id: true, work_order_id: true },
     });
-    return request?.request_type_code === 'REPLENISHMENT';
   }
 }
 
@@ -265,7 +286,7 @@ export class ShopfloorReceiptService {
 async function createPutawayTasks(
   tx: Prisma.TransactionClient,
   shopfloorReceiptId: bigint,
-  input: ShopfloorReceiptCreate,
+  destinationLocationId: number,
   putawayNos: string[],
   appUserId: number | undefined,
 ): Promise<bigint[]> {
@@ -283,7 +304,7 @@ async function createPutawayTasks(
         lot_id: line.lot_id,
         task_qty: line.received_qty,
         uom_id: line.uom_id,
-        from_location_id: BigInt(input.destinationLocationId),
+        from_location_id: BigInt(destinationLocationId),
         status_code: PUTAWAY_PENDING,
         created_by: appUserId == null ? null : BigInt(appUserId),
       },
