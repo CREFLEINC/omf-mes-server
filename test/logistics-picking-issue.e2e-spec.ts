@@ -17,6 +17,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { CancelEligibilityService } from '../src/logistics/document-progress/cancel-eligibility.service';
 
 const PREFIX = 'PIE2E';
 const LOGIN_ID = 'e2e-pick-issue-probe';
@@ -94,6 +95,8 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
       if (received === undefined) throw new Error('수령 응답이 없습니다.');
       expect(received.shopfloorReceipt).toMatchObject({ destinationLocationId: null, workOrderId: Number(workOrderId) });
       expect(received.lines).toEqual([expect.objectContaining({ lotId, receivedQty: 95 })]);
+      const eligibility = await app.get(CancelEligibilityService).evaluate(prisma, 'GOODS_ISSUE', BigInt(issueId));
+      expect(eligibility).toMatchObject({ cancellable: false, cancelBlockedReasonCode: 'STATE_LOCKED' });
       const available = await request(app.getHttpServer()).get('/api/logistics/shopfloor-receipts')
         .query({ workOrderId: Number(workOrderId) }).set('Cookie', cookie).expect(200);
       expect(available.body.items).toEqual([expect.objectContaining({
