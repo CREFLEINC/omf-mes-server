@@ -25,3 +25,4 @@ export * from './material-lot-revise';
 export * from './lot-split';
 export * from './inbound-lot-register';
 export * from './trace-graph';
+export * from './wip-lot';

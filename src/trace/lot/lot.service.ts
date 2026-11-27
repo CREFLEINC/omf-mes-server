@@ -41,6 +41,7 @@ import { LotProgressView, lotProgress } from './lot-progress';
 import { type FourMChangeRow, fourMChangeView } from '../../quality/inspection/four-m-change';
 import { lotSplitDetail } from './lot-split-detail';
 import { LOT_VIEW_RELATIONS, LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
+import { NOT_WIP, wipLotViews } from './lot-wip-view';
 import type { LotWriteActor } from './lot-write-actor';
 
 /**
@@ -166,8 +167,9 @@ export class LotService {
       // 한 W/O 의 선발행 슬롯만이라 후보가 적다 — 다 읽고 고른다. 받은 쪽(page·size)은 보지 않고 1쪽·1건으로 답한다.
       const current = pickCurrentLot(await this.prisma.lot.findMany({ where, include }));
       const items = current === undefined ? [] : [current];
+      const wips = await wipLotViews(this.prisma, items);
       return pagedResponse(
-        items.map((row) => omitEmpty({ ...lotView(row), fourMChange: fourMChangeView(row.lot_four_m_change) })),
+        items.map((row) => omitEmpty({ ...lotView(row), ...(wips.get(row.lot_id) ?? NOT_WIP), fourMChange: fourMChangeView(row.lot_four_m_change) })),
         items.length,
         pageRequest({ page: 1, size: 1 }),
       );
@@ -182,8 +184,9 @@ export class LotService {
       }),
       this.prisma.lot.count({ where }),
     ]);
+    const wips = await wipLotViews(this.prisma, rows);
     return pagedResponse(
-      rows.map((row) => omitEmpty({ ...lotView(row), fourMChange: fourMChangeView(row.lot_four_m_change) })),
+      rows.map((row) => omitEmpty({ ...lotView(row), ...(wips.get(row.lot_id) ?? NOT_WIP), fourMChange: fourMChangeView(row.lot_four_m_change) })),
       total,
       page,
     );
@@ -192,17 +195,19 @@ export class LotService {
   /** `withProgress` 는 **단건에만** 있다 — 계약이 ⌜목록에서는 LOT 마다 세게 되므로 기본은 끈다⌝. */
   async get(lotId: number, withProgress = false): Promise<{ detail: LotDetail; versionNo: number }> {
     const row = await this.row(lotId);
-    const [identifiers, { inbound, ...split }] = await Promise.all([
+    const [identifiers, { inbound, ...split }, wips] = await Promise.all([
       this.prisma.lot_external_identifier.findMany({
         where: { lot_id: lotId },
         orderBy: { lot_external_identifier_id: 'asc' },
       }),
       lotSplitDetail(this.prisma, row),
+      wipLotViews(this.prisma, [row]),
     ]);
     return {
       detail: {
         lot: omitEmpty({
           ...lotView(row),
+          ...(wips.get(row.lot_id) ?? NOT_WIP),
           ...split,
           ...(inbound ?? {}),
           ...(withProgress ? { progress: await this.progress(row) } : {}),

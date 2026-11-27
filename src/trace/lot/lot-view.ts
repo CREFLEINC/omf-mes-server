@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { toDateString } from '../../common/master';
 import { LotRow } from '../../core/lot';
 import { LotProgressView } from './lot-progress';
+import type { WipLotView } from './lot-wip-view';
 
 /**
  * 계약 `Lot`·`LotExternalIdentifier`·`LotHold` 로 옮기는 자리.
@@ -41,6 +42,10 @@ export interface LotView {
    *  기본은 끈다⌝ 라 적었고, 끈 요청에는 키 자체가 없다. `lotView()` 는 이 칸을 만들지 않고
    *  부르는 쪽(`lot.service.ts`)이 얹는다. */
   progress?: LotProgressView;
+  /** 반제품(WIP) 칸 셋(피처 016) — 목록·단건 조회가 얹는다(`lot-wip-view.ts`). 반제품이 아니면 null. */
+  producedOperation?: WipLotView['producedOperation'];
+  wipProducedQty?: number | null;
+  wipRemainingQty?: number | null;
   /** 4M 변경품(장부 P-86 · omf-all-around#63) — 목록 조회만 싣는다. 변경품이 아니면 키가 없다. POP 투입 스캔이 읽는다. */
   fourMChange?: { changeTypeCode?: string; remarks?: string };
 }

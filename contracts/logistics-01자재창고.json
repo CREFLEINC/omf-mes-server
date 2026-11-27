@@ -11138,7 +11138,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "LOT 유형으로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_TYPE 로 받는다(MATERIAL·PRODUCTION·PRODUCT) — 생산LOT 만 볼 때는 PRODUCTION 이다. 근거: 공유계약 G-32",
+      "description": "LOT 유형으로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_TYPE 로 받는다(MATERIAL·PRODUCTION·WIP·PRODUCT) — 마지막 공정 생산LOT 만 볼 때는 PRODUCTION, 공정 반제품은 WIP 다(피처 016). 근거: 공유계약 G-32",
       "x-code-key": "CD-LOT-TYPE"
      },
      {
@@ -11258,7 +11258,7 @@
        "type": "boolean",
        "default": false
       },
-      "description": "true 면 그 W/O 의 «현재» 생산 LOT 한 건만 낸다(items 0~1건 · 받은 page·size 는 무시하고 page 메타는 page 1·size 1) — 완료되지 않고 폐번되지 않은(생명주기 ACTIVE·WAITING) 생산 LOT 중 진행 중(ACTIVE)이 먼저, 그 안에서 선발행 회차(W/O 안 LOT 순번)가 가장 앞선 것. 진행 중이 둘 이상이어도 막지 않는다. 다른 질의(completed·lotTypeCode 등)는 이 조건과 함께(AND) 걸려 후보를 넓히지 못한다. workOrderId 가 필수 — 없으면 400 REQUIRED. POP 실적·완료가 다음 LOT 으로 넘어가는 축이다. 장부 P-103"
+      "description": "true 면 그 W/O 의 «현재» 생산 LOT 한 건만 낸다(items 0~1건 · 받은 page·size 는 무시하고 page 메타는 page 1·size 1) — 완료되지 않고 폐번되지 않은(생명주기 ACTIVE·WAITING) 생산 LOT(유형 PRODUCTION·WIP — 반제품 공정 W/O 의 LOT 도 현재 LOT 이다 · 피처 016) 중 진행 중(ACTIVE)이 먼저, 그 안에서 선발행 회차(W/O 안 LOT 순번)가 가장 앞선 것. 진행 중이 둘 이상이어도 막지 않는다. 다른 질의(completed·lotTypeCode 등)는 이 조건과 함께(AND) 걸려 후보를 넓히지 못한다. workOrderId 가 필수 — 없으면 400 REQUIRED. POP 실적·완료가 다음 LOT 으로 넘어가는 축이다. 장부 P-103"
      },
      {
       "name": "unreceivedOnly",
@@ -23132,7 +23132,7 @@
       "x-source-column": "lot_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "LOT 유형. 값 = MATERIAL·PRODUCTION·PRODUCT (2026-09-03 코드 사전 등재) — ⛔ 고객이 편집할 수 없다 — 우리가 정한 값이다 값 = `MATERIAL`·`PRODUCTION`·`PRODUCT`. 값 목록은 `GET /mdm/code-values?codeGroupCode=LOT_TYPE` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "description": "LOT 유형. 값 = MATERIAL·PRODUCTION·WIP·PRODUCT (2026-09-03 코드 사전 등재 · WIP 는 피처 016) — ⛔ 고객이 편집할 수 없다 — 우리가 정한 값이다 값 = `MATERIAL`·`PRODUCTION`·`WIP`·`PRODUCT`. ⭐ `WIP`(반제품)는 Routing 의 마지막이 아닌 공정 W/O 가 만든 LOT 이다 — 다음 공정 W/O 에 자재 투입(POST /production/material-consumptions)으로 넣고, 제품 입고·출하·생산 LOT 분리는 받지 않는다. 마지막 공정 W/O 의 LOT 은 지금처럼 `PRODUCTION` 이다. 근거: 피처 016 · omf-all-around#359. 값 목록은 `GET /mdm/code-values?codeGroupCode=LOT_TYPE` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "MATERIAL",
       "x-internal-note": "⛔ PRODUCTION → PRODUCT 전이 쓰기가 계약 7벌에 0건이다(실측). 갈래가 둘이다 — ⓐ 동일 행 유지(제품LOT 은 완제품 창고에 선 PRODUCTION LOT 을 부르는 이름) ⓑ 제품 LOT 별도 발번(발번 화면·POST 경로·W-03-01 유형별 분리 집계를 함께 세워야 한다). 사람 결정 대기 — 경계 B6-01. CLOSED 영향: W-01-07·W-01-04·W-02-04·W-02-05·W-03-01·W-03-02·W-03-03·M-01-04.",
       "x-code-key": "CD-LOT-TYPE"
@@ -23294,6 +23294,58 @@
        }
       },
       "description": "⭐ 4M 변경품 — IQC 판정 때 이 LOT 에 적은 변경 종류·비고. 변경품이 아니면 칸이 없다. 목록(GET /trace/lots)·단건(GET /trace/lots/{lotId}) 이 싣는다 — POP 자재 투입 스캔·러닝 체인지·LOT 상태 상세가 알린다. ⚠ 내부 「4M 자원배정」과 다른 말이다. 서버 선행 · 장부 P-86 · omf-all-around#63 · 변경 종류 선택(#133 · 장부 P-105)"
+     },
+     "producedOperation": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "workOrderId",
+       "operationSeq",
+       "processCode",
+       "processName"
+      ],
+      "properties": {
+       "workOrderId": {
+        "type": "integer",
+        "format": "int64",
+        "description": "반제품을 만든 W/O(= sourceId)",
+        "example": 12
+       },
+       "operationSeq": {
+        "type": "integer",
+        "description": "그 W/O 의 Routing 공정 순번",
+        "example": 10
+       },
+       "processCode": {
+        "type": "string",
+        "description": "공정 마스터 코드",
+        "example": "P10"
+       },
+       "processName": {
+        "type": "string",
+        "description": "공정 마스터 이름",
+        "example": "가공"
+       }
+      },
+      "description": "⭐ 반제품(lotTypeCode=WIP)의 생산 공정 — LOT 에 복사하지 않고 원천 W/O 에서 읽는다. 반제품이 아니면 null. 목록(GET /trace/lots)·단건(GET /trace/lots/{lotId})이 싣는다. 근거: 피처 016 · omf-all-around#359"
+     },
+     "wipProducedQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "⭐ 반제품(WIP)만 — 이 LOT 에 배분된 실적 양품 합. 반제품이 아니면 null. POP 투입 줄 근거 「실적 · 투입 · 남은」의 실적이다(투입 = wipProducedQty − wipRemainingQty). 근거: 피처 016",
+      "example": 100
+     },
+     "wipRemainingQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "⭐ 반제품(WIP)만 — 다음 공정에 더 넣을 수 있는 양 = 실적 배분 합 − 투입 합(정정된 원 투입 제외), 0 아래로 내려가지 않는다. 반제품이 아니면 null. 이 값을 넘는 투입은 409 WIP_QTY_EXCEEDED 다. 근거: 피처 016 FR-011",
+      "example": 40
      },
      "inboundLotId": {
       "x-source-column": "inbound_lot_id",
