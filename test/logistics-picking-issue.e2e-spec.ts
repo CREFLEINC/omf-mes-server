@@ -90,7 +90,8 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
 
       const receipts = await Promise.all([receive(receiptBody), receive(receiptBody)]);
       expect(receipts.map((result) => result.status).sort()).toEqual([201, 400]);
-      const received = receipts.find((result) => result.status === 201)!.body;
+      const received = receipts.find((result) => result.status === 201)?.body;
+      if (received === undefined) throw new Error('수령 응답이 없습니다.');
       expect(received.shopfloorReceipt).toMatchObject({ destinationLocationId: null, workOrderId: Number(workOrderId) });
       expect(received.lines).toEqual([expect.objectContaining({ lotId, receivedQty: 95 })]);
       const available = await request(app.getHttpServer()).get('/api/logistics/shopfloor-receipts')
