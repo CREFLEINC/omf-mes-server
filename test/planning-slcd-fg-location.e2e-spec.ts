@@ -40,7 +40,6 @@ interface ProposalWorkOrder {
   productionLineId: number | null;
   plannedEquipmentId: number | null;
   plannedMoldId: number | null;
-  defaultWipLocationId: number | null;
   defaultFgLocationId: number | null;
   defaultFgLocationSource: string;
   defaultScrapLocationId: number | null;
@@ -93,7 +92,7 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
   const confirm = (orderId: bigint, body: unknown) =>
     request(app.getHttpServer()).post(`/api/planning/production-orders/${orderId}:confirm-plan-proposal`).set('Cookie', cookie).set('Idempotency-Key', randomUUID()).send(body as object);
 
-  function bodyOf(proposal: Proposal, override: Partial<Record<'defaultWipLocationId' | 'defaultFgLocationId' | 'defaultScrapLocationId', number>> = {}) {
+  function bodyOf(proposal: Proposal, override: Partial<Record<'defaultFgLocationId' | 'defaultScrapLocationId', number>> = {}) {
     return {
       basis: proposal.basis,
       plans: proposal.plans.map((plan) => ({
@@ -105,7 +104,6 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
           plannedEquipmentId: workOrder.plannedEquipmentId,
           plannedMoldId: workOrder.plannedMoldId,
           plannedTimeSourceCode: 'SYSTEM',
-          defaultWipLocationId: override.defaultWipLocationId ?? workOrder.defaultWipLocationId ?? Number(id.locWip),
           defaultFgLocationId: override.defaultFgLocationId ?? workOrder.defaultFgLocationId ?? Number(id.locFg),
           defaultScrapLocationId: override.defaultScrapLocationId ?? workOrder.defaultScrapLocationId ?? Number(id.locScrap),
         })),
@@ -144,7 +142,7 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
         expect(workOrder).toMatchObject({ defaultFgLocationId: Number(wh.A.whole), defaultFgLocationSource: 'ERP_STORAGE_LOCATION' });
         // 두 공정이 같은 설비를 하루 내내 쓰는 시험 데이터라 설비 시간 중복 WARN 만 있다.
         expect(workOrder.issues.filter((issue) => issue.severity === 'BLOCK')).toEqual([]);
-        expect(workOrder.defaultWipLocationId).toBe(Number(id.locWip));
+        expect(workOrder).not.toHaveProperty('defaultWipLocationId');
       }
     });
 
@@ -455,11 +453,11 @@ describe('ERP W/O 입고 창고(SL_CD) → 완제품 위치 (e2e)', () => {
       expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).default_fg_location_id).toBe(wh.B.zone);
     });
 
-    it('WIP는 입고 창고와 별개이고 스크랩 위치 수정 요청은 무시한다', async () => {
-      await put(workOrderId, { defaultWipLocationId: Number(id.locFg) }, 200);
+    it('이전 클라이언트의 WIP·스크랩 위치 수정 요청은 무시한다', async () => {
       const original = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
-      await put(workOrderId, { defaultScrapLocationId: Number(id.locMaterial) }, 200);
+      await put(workOrderId, { defaultWipLocationId: Number(id.locFg), defaultScrapLocationId: Number(id.locMaterial) }, 200);
       const updated = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
+      expect(updated.default_wip_location_id).toBe(original.default_wip_location_id);
       expect(updated.default_scrap_location_id).toBe(original.default_scrap_location_id);
     });
 

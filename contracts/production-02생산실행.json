@@ -781,7 +781,6 @@
             "routingOperationId": 701,
             "productionLineId": 11,
             "plannedEquipmentId": 2001,
-            "defaultWipLocationId": 1101,
             "defaultFgLocationId": 5201,
             "defaultScrapLocationId": 1103,
             "plannedTimeSourceCode": "USER",
@@ -807,7 +806,6 @@
            {
             "routingOperationId": 701,
             "productionLineId": 12,
-            "defaultWipLocationId": 1201,
             "defaultFgLocationId": 5101,
             "defaultScrapLocationId": 1203,
             "plannedTimeSourceCode": "SYSTEM"
@@ -1247,7 +1245,6 @@
              "plannedEquipmentId": 2001,
              "plannedMoldId": null,
              "responsibleWorkerId": null,
-             "defaultWipLocationId": 1101,
              "defaultFgLocationId": 5101,
              "defaultScrapLocationId": 1103,
              "equipmentRequired": true,
@@ -1274,7 +1271,6 @@
              "plannedEquipmentId": null,
              "plannedMoldId": null,
              "responsibleWorkerId": 501,
-             "defaultWipLocationId": 1101,
              "defaultFgLocationId": 5101,
              "defaultScrapLocationId": 1103,
              "equipmentRequired": false,
@@ -8578,7 +8574,6 @@
      "plannedMoldId",
      "responsibleWorkerId",
      "plannedShiftId",
-     "defaultWipLocationId",
      "defaultFgLocationId",
      "defaultFgLocationSource",
      "defaultScrapLocationId",
@@ -8728,15 +8723,6 @@
       "format": "int64",
       "example": 1001,
       "description": "제안하지 않는다(늘 null — 계획 시각은 근무일 하루). 사람이 고르면 확정 본문에 싣고, 서버가 그 교대로 계획 시각을 정한다"
-     },
-     "defaultWipLocationId": {
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "example": 1001,
-      "description": "생산 라인 기본 WIP에서 서버가 자동 적용합니다. 직접 지정하지 않습니다. 배포 전 수정은 같은 라인의 저장값을 보존하고 라인 변경 또는 누락 시 기본값을 적용합니다."
      },
      "defaultFgLocationId": {
       "type": [
@@ -9532,12 +9518,6 @@
       "example": "2026-11-18T21:00:00+07:00",
       "description": "USER 면 필수 · 시작보다 늦어야 한다(아니면 400 RANGE)"
      },
-     "defaultWipLocationId": {
-      "description": "생산 라인 기본 WIP에서 서버가 자동 적용합니다. 직접 지정하지 않습니다. 배포 전 수정은 같은 라인의 저장값을 보존하고 라인 변경 또는 누락 시 기본값을 적용합니다.",
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     },
      "defaultFgLocationId": {
       "type": "integer",
       "format": "int64",
@@ -10160,15 +10140,6 @@
       "example": "2026-11-18T21:00:00+07:00",
       "description": "USER 면 필수 · 시작보다 늦어야 한다(아니면 400 RANGE)"
      },
-     "defaultWipLocationId": {
-      "description": "생산 라인 기본 WIP에서 서버가 자동 적용합니다. 직접 지정하지 않습니다. 배포 전 수정은 같은 라인의 저장값을 보존하고 라인 변경 또는 누락 시 기본값을 적용합니다.",
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "example": 1001
-     },
      "defaultFgLocationId": {
       "type": [
        "integer",
@@ -10481,7 +10452,7 @@
    },
    "ProductionPlanProposalRevalidatedWorkOrder": {
     "type": "object",
-    "description": "재검증한 공정 W/O 하나 — 확정하면 저장될 값. 본문 값은 그대로 두고 서버가 정하는 칸(수량·선후관계·계획 시각·라인 기본 WIP)만 계산해 채운다. 본문 순서다.",
+    "description": "재검증한 공정 W/O 하나 — 확정하면 저장될 값. 본문 값은 그대로 두고 서버가 정하는 칸(수량·선후관계·계획 시각)만 계산해 채운다. 본문 순서다.",
     "required": [
      "routingOperationId",
      "operationSeq",
@@ -10494,7 +10465,6 @@
      "plannedEquipmentId",
      "plannedMoldId",
      "responsibleWorkerId",
-     "defaultWipLocationId",
      "defaultFgLocationId",
      "defaultScrapLocationId",
      "equipmentRequired",
@@ -10626,15 +10596,6 @@
       ],
       "format": "int64",
       "example": 1001
-     },
-     "defaultWipLocationId": {
-      "type": [
-       "integer",
-       "null"
-      ],
-      "format": "int64",
-      "example": 1001,
-      "description": "생산 라인 기본 WIP에서 서버가 자동 적용합니다. 직접 지정하지 않습니다. 배포 전 수정은 같은 라인의 저장값을 보존하고 라인 변경 또는 누락 시 기본값을 적용합니다."
      },
      "defaultFgLocationId": {
       "type": [
@@ -12393,12 +12354,6 @@
       "default": 100,
       "example": 1
      },
-     "defaultWipLocationId": {
-      "description": "생산 라인 기본 WIP에서 서버가 자동 적용합니다. 직접 지정하지 않습니다. 배포 전 수정은 같은 라인의 저장값을 보존하고 라인 변경 또는 누락 시 기본값을 적용합니다.",
-      "type": "integer",
-      "format": "int64",
-      "example": 1001
-     },
      "defaultFgLocationId": {
       "type": "integer",
       "format": "int64",
@@ -13026,12 +12981,6 @@
       "format": "int64",
       "example": 1001,
       "description": "명시적 null = 해제(비움으로 되돌림) · 필드 생략 = 기존 값 유지. 근거: omf-mes#200·#201"
-     },
-     "defaultWipLocationId": {
-      "type": ["integer", "null"],
-      "format": "int64",
-      "example": 1001,
-      "description": "생산 라인 기본 WIP에서 서버가 자동 적용합니다. 직접 지정하지 않습니다. 배포 전 수정은 같은 라인의 저장값을 보존하고 라인 변경 또는 누락 시 기본값을 적용합니다."
      },
      "defaultFgLocationId": {
       "type": ["integer", "null"],

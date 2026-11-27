@@ -195,7 +195,6 @@ describe('WorkOrder 뷰', () => {
     );
 
     expect(view).toMatchObject({
-      defaultWipLocationId: 101,
       defaultFgLocationId: 102,
       defaultScrapLocationId: 103,
     });

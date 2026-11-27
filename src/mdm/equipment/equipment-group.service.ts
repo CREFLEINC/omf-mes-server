@@ -43,7 +43,6 @@ interface EquipmentGroupView {
   groupTypeCode: string;
   parentGroupId: number | null;
   isActive: boolean;
-  defaultWipLocationId: number | null;
   defaultFgLocationId: number | null;
   defaultScrapLocationId: number | null;
   /** 라인 담당 부서 — 알림 부서 판정 기준. 상위 그룹에서 상속하지 않는다(장부 P-90). */
@@ -53,13 +52,11 @@ interface EquipmentGroupView {
 
 /** 라인 기본 위치 — 계획 확정·4M 라인 선택 때 W/O 기본 위치로 복사된다. 생략 = 유지, null = 비움. */
 interface LineDefaultLocations {
-  defaultWipLocationId?: number | null;
   defaultFgLocationId?: number | null;
   defaultScrapLocationId?: number | null;
 }
 
 const DEFAULT_LOCATION_COLUMNS = {
-  defaultWipLocationId: 'default_wip_location_id',
   defaultFgLocationId: 'default_fg_location_id',
 } as const;
 
@@ -343,7 +340,6 @@ function view(row: LineRow): EquipmentGroupView {
     groupTypeCode: row.line_type_code,
     parentGroupId: row.parent_line_id === null ? null : Number(row.parent_line_id),
     isActive: row.is_active,
-    defaultWipLocationId: idOrNull(row.default_wip_location_id),
     defaultFgLocationId: idOrNull(row.default_fg_location_id),
     defaultScrapLocationId: idOrNull(row.default_scrap_location_id),
     departmentId: idOrNull(row.department_id),

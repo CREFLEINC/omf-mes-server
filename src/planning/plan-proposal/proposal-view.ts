@@ -127,7 +127,6 @@ function workOrderView(workOrder: ProposalWorkOrder) {
     // 작업자·교대는 제안하지 않는다 — 사람이 고르면 확정 본문에 싣는다.
     responsibleWorkerId: null,
     plannedShiftId: null,
-    defaultWipLocationId: id(workOrder.defaultWipLocationId),
     defaultFgLocationId: id(workOrder.defaultFgLocationId),
     defaultFgLocationSource: workOrder.defaultFgLocationSource,
     defaultScrapLocationId: id(workOrder.defaultScrapLocationId),

@@ -875,7 +875,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       const lots = await slots(workOrderId);
       expect(lots).toHaveLength(1);
       expect(lots[0].plant_id).toBe(ids.plant);
-      expect((await requests(workOrderId))[0].destination_location_id).toBe(ids.location);
+      expect((await requests(workOrderId))[0].destination_location_id).toBeNull();
     });
 
     /**
@@ -909,7 +909,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       })).status_code).toBe('PLANNED');
     });
 
-    it('배포 — 기본 위치 세 곳이 빠지면 필드별 400이며 슬롯·요청을 만들지 않는다', async () => {
+    it('배포 — 완제품 위치가 빠지면 400이며 슬롯·요청을 만들지 않는다', async () => {
       const workOrderId = await planned({
         default_wip_location_id: null,
         default_fg_location_id: null,
@@ -918,9 +918,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
 
       const response = await call(workOrderId, 100).expect(400);
       expect(response.body.errors).toEqual([
-        expect.objectContaining({ field: 'defaultWipLocationId', code: 'REQUIRED' }),
         expect.objectContaining({ field: 'defaultFgLocationId', code: 'REQUIRED' }),
-        expect.objectContaining({ field: 'defaultScrapLocationId', code: 'REQUIRED' }),
       ]);
       expect(await slots(workOrderId)).toEqual([]);
       expect(await requests(workOrderId)).toEqual([]);
@@ -939,7 +937,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(issued.issue_request_no).toMatch(/^MIR-\d{8}-\d{4}$/);
       expect(issued).toMatchObject({
         status_code: 'REGISTERED',
-        destination_location_id: ids.location,
+        destination_location_id: null,
         required_at: null,
         reason_code: null,
       });
@@ -1127,17 +1125,13 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         .set('Idempotency-Key', randomUUID())
         .set('If-Match', created.headers.etag)
         .send({
-          defaultWipLocationId: Number(ids.location),
           defaultFgLocationId: Number(ids.fgLocation),
-          defaultScrapLocationId: Number(ids.scrapLocation),
           // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
           productionLineId: Number(ids.productionLine),
         })
         .expect(200);
       expect(configured.body).toMatchObject({
-        defaultWipLocationId: Number(ids.location),
         defaultFgLocationId: Number(ids.fgLocation),
-        defaultScrapLocationId: Number(ids.scrapLocation),
         versionNo: created.body.versionNo + 1,
       });
 
@@ -1187,9 +1181,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         .set('Idempotency-Key', randomUUID())
         .set('If-Match', created.headers.etag)
         .send({
-          defaultWipLocationId: Number(ids.location),
           defaultFgLocationId: Number(ids.fgLocation),
-          defaultScrapLocationId: Number(ids.scrapLocation),
           productionLineId: Number(ids.productionLine),
         })
         .expect(200);

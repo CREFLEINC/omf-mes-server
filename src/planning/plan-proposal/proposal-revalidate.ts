@@ -187,7 +187,6 @@ function planView(facts: ProposalFacts, plan: ResolvedPlan, day: PlanningCalenda
         plannedEquipmentId: equipmentId,
         plannedMoldId: moldId,
         responsibleWorkerId: workOrder.responsibleWorkerId ?? null,
-        defaultWipLocationId: Number(plan.locations?.get(operationId)?.defaultWipLocationId) || null,
         defaultFgLocationId: workOrder.defaultFgLocationId ?? null,
         defaultScrapLocationId: Number(plan.locations?.get(operationId)?.defaultScrapLocationId) || null,
         equipmentRequired,

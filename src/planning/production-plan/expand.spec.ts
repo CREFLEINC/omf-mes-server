@@ -10,7 +10,7 @@ const plan = (overrides: Partial<PlanToExpand> = {}): PlanToExpand => ({
   uomId: 3n,
   operationIds: [101n, 102n, 103n],
   window: { plannedStartAt: new Date('2026-11-20T00:00:00.000Z'), plannedEndAt: new Date('2026-11-21T00:00:00.000Z') },
-  line: { productionLineId: null, defaultWipLocationId: null, defaultFgLocationId: null, defaultScrapLocationId: null },
+  line: { productionLineId: null, defaultFgLocationId: null, defaultScrapLocationId: null },
   fg: { kind: 'NO_STORAGE_CODE' },
   resources: new Map(),
   equipmentLines: new Map(),
@@ -47,14 +47,14 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
     // 교대는 정하지 않는다 — 현장이 4M 에서 고른다.
     expect(rows[0]).not.toHaveProperty('planned_shift_id');
     // 라인·기본 위치는 계획 라인에서 온다(여기선 비어 있다). 스냅샷은 칸 자체를 싣지 않는다 — `:release` 가 뜬다.
-    expect(rows[0]).toMatchObject({ production_line_id: null, default_wip_location_id: null, default_fg_location_id: null, default_scrap_location_id: null });
+    expect(rows[0]).toMatchObject({ production_line_id: null, default_fg_location_id: null, default_scrap_location_id: null });
     for (const column of ['operation_settings_snapshot']) {
       expect(rows[0]).not.toHaveProperty(column);
     }
   });
 
   it('기본 매핑의 설비·금형을 싣고, 계획에 라인이 없으면 설비의 라인과 그 기본 위치를 쓴다', () => {
-    const equipmentLine = { productionLineId: 22n, defaultWipLocationId: 41n, defaultFgLocationId: 42n, defaultScrapLocationId: 43n };
+    const equipmentLine = { productionLineId: 22n, defaultFgLocationId: 42n, defaultScrapLocationId: 43n };
     const rows = workOrderRows(
       plan({
         resources: new Map([[101n, { equipmentId: 51n, moldId: 61n, equipmentLineId: 22n }]]),
@@ -64,27 +64,27 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
       9,
     );
 
-    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, planned_mold_id: 61n, production_line_id: 22n, default_wip_location_id: 41n, default_scrap_location_id: null });
+    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, planned_mold_id: 61n, production_line_id: 22n, default_scrap_location_id: null });
     expect(rows[1]).toMatchObject({ planned_equipment_id: null, planned_mold_id: null, production_line_id: null });
   });
 
   it('계획 라인이 있으면 설비의 라인보다 계획 라인이 이긴다', () => {
-    const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: null };
+    const line = { productionLineId: 21n, defaultFgLocationId: 32n, defaultScrapLocationId: null };
     const rows = workOrderRows(
       plan({ line, resources: new Map([[101n, { equipmentId: 51n, moldId: null, equipmentLineId: 22n }]]) }),
       ['WO-A', 'WO-B', 'WO-C'],
       9,
     );
 
-    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, production_line_id: 21n, default_wip_location_id: 31n });
+    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, production_line_id: 21n });
   });
 
   it('계획 라인이 있으면 라인과 기본 위치 셋을 전개분 전부에 싣는다', () => {
-    const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: null };
+    const line = { productionLineId: 21n, defaultFgLocationId: 32n, defaultScrapLocationId: null };
     const rows = workOrderRows(plan({ line }), ['WO-A', 'WO-B', 'WO-C'], 9);
 
     for (const row of rows) {
-      expect(row).toMatchObject({ production_line_id: 21n, default_wip_location_id: 31n, default_fg_location_id: 32n, default_scrap_location_id: null });
+      expect(row).toMatchObject({ production_line_id: 21n, default_fg_location_id: 32n, default_scrap_location_id: null });
     }
   });
 
@@ -125,18 +125,18 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
   });
 
   it('⑥ ERP 입고 창고가 정해졌으면 모든 공정 W/O 의 완제품 위치가 그 위치다 — 라인 기본값은 덮어쓰이지 않는다', () => {
-    const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: 33n };
+    const line = { productionLineId: 21n, defaultFgLocationId: 32n, defaultScrapLocationId: 33n };
     const fg = {
       kind: 'ERP_STORAGE_LOCATION' as const, erpCode: 'S510',
       warehouse: { id: 5n, code: 'S510', name: '완제품' }, location: { id: 55n, code: 'WH', name: '창고 전체', isActive: true, systemRoleCode: 'WAREHOUSE_WHOLE' },
     };
     const rows = workOrderRows(plan({ line, fg }), ['WO-A', 'WO-B', 'WO-C'], 9);
 
-    for (const row of rows) expect(row).toMatchObject({ default_wip_location_id: 31n, default_fg_location_id: 55n, default_scrap_location_id: null });
+    for (const row of rows) expect(row).toMatchObject({ default_fg_location_id: 55n, default_scrap_location_id: null });
   });
 
   it('⑦ 입고 창고 연결이 실패한 오더는 라인 기본 완제품 위치로 대체하지 않는다', () => {
-    const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: 33n };
+    const line = { productionLineId: 21n, defaultFgLocationId: 32n, defaultScrapLocationId: 33n };
     const rows = workOrderRows(plan({ line, fg: { kind: 'LINK_FAILED', erpCode: 'S510', reason: 'FG_WAREHOUSE_UNMAPPED' } }), ['WO-A', 'WO-B', 'WO-C'], 9);
 
     for (const row of rows) expect(row.default_fg_location_id).toBeNull();

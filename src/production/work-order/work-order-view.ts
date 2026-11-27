@@ -63,7 +63,6 @@ export function workOrderView(
     plannedMoldId: id(row.planned_mold_id),
     plannedShiftId: id(row.planned_shift_id),
     priorityNo: row.priority_no,
-    defaultWipLocationId: id(row.default_wip_location_id),
     defaultFgLocationId: id(row.default_fg_location_id),
     defaultScrapLocationId: id(row.default_scrap_location_id),
     operationSettingsSnapshot: (row.operation_settings_snapshot as object | null) ?? undefined,

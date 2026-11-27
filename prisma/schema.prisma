@@ -2596,7 +2596,7 @@ model production_line {
   plant                           plant                             @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   production_plan                 production_plan[]
   work_order                      work_order[]
-  default_wip_location            location?                         @relation("production_line_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  default_wip_location            location?                         @relation("production_line_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: SetNull, onUpdate: NoAction)
   default_fg_location             location?                         @relation("production_line_default_fg_location_idTolocation", fields: [default_fg_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   default_scrap_location          location?                         @relation("production_line_default_scrap_location_idTolocation", fields: [default_scrap_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   department                      department?                       @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3521,7 +3521,7 @@ model work_order {
   nonconformance_work_order_rework_source_nonconformance_idTononconformance         nonconformance?                  @relation("work_order_rework_source_nonconformance_idTononconformance", fields: [rework_source_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_nc")
   location_work_order_default_fg_location_idTolocation                              location?                        @relation("work_order_default_fg_location_idTolocation", fields: [default_fg_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   location_work_order_default_scrap_location_idTolocation                           location?                        @relation("work_order_default_scrap_location_idTolocation", fields: [default_scrap_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  location_work_order_default_wip_location_idTolocation                             location?                        @relation("work_order_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  location_work_order_default_wip_location_idTolocation                             location?                        @relation("work_order_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: SetNull, onUpdate: NoAction)
   item                                                                              item                             @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   work_order_work_order_parent_work_order_idTowork_order                            work_order?                      @relation("work_order_parent_work_order_idTowork_order", fields: [parent_work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   other_work_order_work_order_parent_work_order_idTowork_order                      work_order[]                     @relation("work_order_parent_work_order_idTowork_order")
