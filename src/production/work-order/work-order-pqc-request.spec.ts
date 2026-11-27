@@ -28,8 +28,8 @@ describe('inspectionQty', () => {
   });
 });
 
-/** PQC 대상은 품목이다 — 품목 전용 PQC 기준이 있는 품목만, 「전 품목 공통」은 쓰지 않는다(사용자 결정 2026-11-05). */
-describe('preparePqcRequest — 품목 PQC 대상', () => {
+/** PQC 기준은 품목 전용만 본다. 기준이 없으면 생략 의뢰다(사용자 결정 2026-11-27 · omf-all-around#366). */
+describe('preparePqcRequest — 품목 PQC 기준', () => {
   const row = (id: bigint) => ({
     inspection_plan_version_id: id,
     inspection_plan_id: id,
@@ -39,16 +39,9 @@ describe('preparePqcRequest — 품목 PQC 대상', () => {
     sampling_qty: null,
     inspection_plan: { default_skip: false },
   });
-  const run = async (targeted: number, versions: ReturnType<typeof row>[]) => {
+  const run = async (versions: ReturnType<typeof row>[]) => {
     const asked: unknown[] = [];
-    const counted: unknown[] = [];
     const prisma = {
-      inspection_plan: {
-        count: async ({ where }: { where: unknown }) => {
-          counted.push(where);
-          return targeted;
-        },
-      },
       inspection_plan_version: {
         findMany: async ({ where }: { where: { inspection_plan: unknown } }) => {
           asked.push(where.inspection_plan);
@@ -60,30 +53,24 @@ describe('preparePqcRequest — 품목 PQC 대상', () => {
     const plan = await preparePqcRequest(prisma, numbering, {
       itemId: 10n, orderQty: new Prisma.Decimal(100), businessDate: '2026-11-04',
     });
-    return { plan, asked, counted, numbering };
+    return { plan, asked, numbering };
   };
 
   it('⭐ 품목 전용 기준이 있으면 그 기준으로 의뢰를 만든다 — 공정 · 라우팅 · 공통 기준 조건 없이', async () => {
-    const { plan, asked, counted } = await run(1, [row(1n)]);
-    expect(plan?.inspectionPlanVersionId).toBe(1n);
-    expect(counted).toEqual([{ inspection_type_code: 'PQC', is_active: true, item_id: 10n }]);
+    const { plan, asked } = await run([row(1n)]);
+    expect(plan).toMatchObject({ inspectionPlanVersionId: 1n, skipped: false });
     expect(asked).toEqual([{ inspection_type_code: 'PQC', is_active: true, item_id: 10n }]);
   });
 
-  it('품목 전용 기준이 없으면 의뢰를 만들지 않는다 — 「전 품목 공통」 기준이 있어도', async () => {
-    const { plan, asked, numbering } = await run(0, [row(2n)]);
-    expect(plan).toBeNull();
-    expect(asked).toEqual([]);
-    expect(numbering.next).not.toHaveBeenCalled();
+  it('그날 유효한 품목 전용 기준이 없으면 기준 없는 생략 의뢰다(지시수량 그대로)', async () => {
+    const { plan, numbering } = await run([]);
+    expect(plan).toMatchObject({ requestNo: 'IR-1', inspectionPlanVersionId: null, skipped: true });
+    expect(plan.targetQty.toString()).toBe('100');
+    expect(numbering.next).toHaveBeenCalledTimes(1);
   });
 
-  it('제품 기준 버전이 둘이면 고르지 않는다 — 기준 없는 의뢰', async () => {
-    const { plan } = await run(1, [row(1n), row(3n)]);
-    expect(plan?.inspectionPlanVersionId).toBeNull();
-  });
-
-  it('기준에 유효한 확정 버전이 없으면 종전처럼 기준 없는 의뢰다', async () => {
-    const { plan } = await run(1, []);
-    expect(plan?.inspectionPlanVersionId).toBeNull();
+  it('제품 기준 버전이 둘이면 고르지 않는다 — 기준 없는 의뢰(생략 아님)', async () => {
+    const { plan } = await run([row(1n), row(3n)]);
+    expect(plan).toMatchObject({ inspectionPlanVersionId: null, skipped: false });
   });
 });

@@ -17,6 +17,13 @@ const BOM = 44n;
 
 type Row = Record<string, unknown>;
 
+/** 서로 다른 PQC 기준 둘 — 고르지 않는다. */
+const twoPqcPlans: Row[] = [501n, 503n].map((id) => ({
+  inspection_plan_version_id: id, inspection_plan_id: id, plan_version: 1,
+  sampling_method_code: 'FULL_INSPECTION', sampling_ratio: null, sampling_qty: null,
+  inspection_plan: { default_skip: false },
+}));
+
 const component = (id: bigint, requiredQty: number): Row => ({
   bom_component_id: id,
   component_item_id: id + 100n,
@@ -182,13 +189,19 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
    * ⭐ PQC 의뢰는 **품목 전용 PQC 기준이 있는 품목**의 작업지시에 선다 — 라우팅 공정의 「검사 관리」는 보지 않는다
    *    (사용자 결정 2026-11-05). 그전까지 서버에 PQC 의뢰를 만드는 코드가 없어 P-02-13 이 열릴 대상이 없었다(#46).
    */
-  it('PQC — 품목 전용 기준이 없으면 공정이 「검사 관리」여도 의뢰를 만들지 않는다', async () => {
+  /* omf-all-around#366 — 품목 전용 기준이 없으면 생략 기록을 남긴다(사용자 결정 2026-11-27 · 종전에는 의뢰를 만들지 않았다). */
+  it('PQC — 품목 전용 기준이 없으면 생략(SKIPPED · DEFAULT) 의뢰 한 건을 기준 없이 만든다', async () => {
     const harness = stub({ inspectionManaged: true });
 
     await release(harness);
 
-    expect(harness.inspectionRequests).toEqual([]);
-    expect(harness.calls).not.toContain('numbering:pqc');
+    expect(harness.inspectionRequests).toHaveLength(1);
+    expect(harness.inspectionRequests[0]).toMatchObject({
+      inspection_type_code: 'PQC',
+      inspection_plan_version_id: null,
+      status_code: 'SKIPPED',
+      skip_basis_code: 'DEFAULT',
+    });
   });
 
   it('PQC — 대상 품목이면 공정과 무관하게 작업지시 대상 의뢰 한 건을 만든다', async () => {
@@ -237,8 +250,8 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
    *    액션이라 같은 규칙이면 기준 미등록 품목의 생산이 통째로 선다. 계약도 PQC 의뢰의
    *    기준이 비는 것을 허용한다.
    */
-  it('PQC — 기준을 못 고르면 비운 채로 의뢰를 만든다', async () => {
-    const harness = stub({ pqcTarget: true, pqcVersions: [] });
+  it('PQC — 기준을 못 고르면(둘 이상) 비운 채로 의뢰를 만든다', async () => {
+    const harness = stub({ pqcTarget: true, pqcVersions: twoPqcPlans });
 
     await release(harness);
 
@@ -350,8 +363,8 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     });
   });
 
-  it('PQC — 기준을 못 고르면 생략하지 않는다(REQUESTED)', async () => {
-    const harness = stub({ pqcTarget: true, pqcVersions: [] });
+  it('PQC — 기준을 못 고르면(둘 이상) 생략하지 않는다(REQUESTED)', async () => {
+    const harness = stub({ pqcTarget: true, pqcVersions: twoPqcPlans });
 
     await release(harness);
 
@@ -524,7 +537,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     await release(harness);
 
     // 트랜잭션 «안»에서 부르면 한 요청이 커넥션을 둘 쥔다.
-    expect(harness.calls).toEqual(['numbering', 'transaction']);
+    expect(harness.calls).toEqual(['numbering', 'numbering:pqc', 'transaction']);
     expect(harness.requests[0]).toMatchObject({
       issue_request_no: 'MIR-20260906-0001',
       destination_location_id: null,

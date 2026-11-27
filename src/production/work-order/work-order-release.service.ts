@@ -73,7 +73,7 @@ export class WorkOrderReleaseService {
       automatic: appUserId === null,
     });
     const issue = plan.issueRequestNo === null ? null : await this.issuePlan(plan, plan.issueRequestNo);
-    /* PQC 대상 품목이면 PQC 의뢰도 이 배포가 만든다 — 채번·기준 조회는 트랜잭션 밖이다. */
+    /* PQC 의뢰도 이 배포가 만든다(기준이 없으면 생략 · #366) — 채번·기준 조회는 트랜잭션 밖이다. */
     const pqc = await preparePqcRequest(this.prisma, this.numbering, {
       itemId: plan.row.item_id,
       orderQty: plan.row.order_qty,
