@@ -263,6 +263,20 @@ describe('반납 입고 (e2e)', () => {
       expect(response.body.lines[0].putawayTaskId).toBe(Number(tasks[0].putaway_task_id));
     });
 
+    it('US2-2 경계 — 사람 위치 없는 생산창고(창고 전체)로 출고된 LOT 을 위치 없이 → 창고 전체 +n, 적치 지시 없음(M-01-09 와 같은 판정)', async () => {
+      const wo = await fx.workOrder();
+      const lot = await fx.lot('A');
+      await fx.issue(lot.lotId, 40, wo.workOrderId, { warehouseId: fx.ids.g3 });
+      for (const session of [fx.pda, fx.pop]) {
+        const response = await fx.receive([{ lotId: lot.lotId, returnQty: 6 }], session).expect(201);
+        expect(contractValidator(CONTRACT, 'POST /production/material-returns', 201)(response.body)).toBe(true);
+        expect(response.body).toMatchObject({ destinationWarehouseId: Number(fx.ids.g3), lines: [{ destinationLocationId: Number(fx.ids.whole3) }] });
+        expect(await fx.putawayTasks(response.body.materialReturnId)).toHaveLength(0);
+        expect(response.body.lines[0].putawayTaskId ?? null).toBeNull();
+      }
+      expect(await fx.onHand(lot.lotId)).toEqual([[fx.ids.whole3, 12, 'NORMAL', 'AVAILABLE']]);
+    });
+
     it('US2-2 경계 — 출고 창고와 다른 생산창고 위치를 스캔하면 그 창고로 받는다', async () => {
       const a = await issued(50);
       const s21 = await fx.freshLocation(fx.ids.g2);

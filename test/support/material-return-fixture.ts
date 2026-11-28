@@ -1,6 +1,6 @@
 /**
  * 피처 019 반납 입고 e2e 의 바탕(omf-all-around#367) — 공장 둘, 생산창고 G(지정 S-01·「지정 품목만 받기」 R-01 + 적치 대기)·
- * 다른 생산창고 G2(S-21)·현장 창고(#362 전 출고 도착 위치 FL-01)·불량창고·자재창고 MAT(M-01)·남의 공장 생산창고 G9(S-91),
+ * 다른 생산창고 G2(S-21)·사람 위치 없는 생산창고 G3(창고 전체만)·현장 창고(#362 전 출고 도착 위치 FL-01)·불량창고·자재창고 MAT(M-01)·남의 공장 생산창고 G9(S-91),
  * 자재 품목 셋, W/O(공정 하나),
  * POP 셋(「반납 가능」 켬·끔·남의 공장)·PDA, 계정 세션(P-01-03·M-01-15·M-01-10·W-01-07).
  *
@@ -46,6 +46,7 @@ export class MaterialReturnFixture {
   readonly ids = {
     entity: 0n, unit: 0n, plant: 0n, plant2: 0n, uom: 0n, itemA: 0n, itemB: 0n, itemC: 0n, product: 0n,
     g: 0n, g2: 0n, floor: 0n, defect: 0n, material: 0n, foreignG: 0n, s01: 0n, r01: 0n, s21: 0n, fl01: 0n, d01: 0n, m01: 0n, s91: 0n, staging: 0n, staging2: 0n,
+    g3: 0n, whole3: 0n,
     process: 0n, operation: 0n, line: 0n,
   };
 
@@ -81,6 +82,8 @@ export class MaterialReturnFixture {
     )).warehouse_id;
     this.ids.g = await warehouse('G', 'PRODUCTION');
     this.ids.g2 = await warehouse('G2', 'PRODUCTION');
+    // G3 에는 사람 위치를 만들지 않는다 — 나뉘지 않은 창고라 도착 위치가 창고 전체다(적치 지시 없음).
+    this.ids.g3 = await warehouse('G3', 'PRODUCTION');
     this.ids.floor = await warehouse('FLOOR', 'GENERAL');
     this.ids.defect = await warehouse('DEF', 'GENERAL', true);
     this.ids.material = await warehouse('MAT', 'MATERIAL');
@@ -99,6 +102,7 @@ export class MaterialReturnFixture {
     const staging = async (warehouseId: bigint) => (await p.location.findFirstOrThrow({ where: { warehouse_id: warehouseId, system_role_code: 'PUTAWAY_STAGING' } })).location_id;
     this.ids.staging = await staging(this.ids.g);
     this.ids.staging2 = await staging(this.ids.g2);
+    this.ids.whole3 = (await p.location.findFirstOrThrow({ where: { warehouse_id: this.ids.g3, system_role_code: 'WAREHOUSE_WHOLE' } })).location_id;
 
     const item = async (code: string, type: string) => (await ensure(() => p.item.findFirst({ where: { item_code: `${X}-${code}` } }),
       () => p.item.create({ data: { item_code: `${X}-${code}`, item_name: `반납검사품목${code}`, item_type_code: type, base_uom_id: this.ids.uom, lot_controlled: true, serial_control_type_code: 'NONE' } }))).item_id;
