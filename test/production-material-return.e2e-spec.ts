@@ -18,6 +18,7 @@ import { FinalCloseFake, MaterialReturnFixture, RETURNS } from './support/materi
 import { contractValidator } from './support/wip-lot-fixture';
 
 const CONTRACT = 'production-02생산실행.json';
+const LOGISTICS = 'logistics-01자재창고.json';
 const OVER = (n: number) => `출고된 양보다 많이 반납할 수 없습니다 (반납 가능 ${n})`;
 
 describe('반납 입고 (e2e)', () => {
@@ -131,6 +132,11 @@ describe('반납 입고 (e2e)', () => {
       expect(await prisma.material_return_line.count({ where: { material_return_id: BigInt(response.body.materialReturnId) } })).toBe(3);
       const ledger = await prisma.inventory_transaction.count({ where: { source_document_type_code: 'MATERIAL_RETURN', source_document_id: BigInt(response.body.materialReturnId) } });
       expect(ledger).toBe(1);
+      // US2-2·Q7 POP 반납은 모두 적치 대기로 받는다 — 줄마다 PENDING 적치 지시 하나(2026-11-28 사용자 결정).
+      const tasks = await fx.putawayTasks(response.body.materialReturnId);
+      expect(tasks.map((task) => [task.lot_id, Number(task.task_qty), task.status_code, task.from_location_id]))
+        .toEqual(lots.map((lot, index) => [lot.lotId, 10 * (index + 1), 'PENDING', fx.ids.staging]));
+      expect(response.body.lines.map((line: { putawayTaskId?: number }) => line.putawayTaskId)).toEqual(tasks.map((task) => Number(task.putaway_task_id)));
     });
 
     it('US1-6·Q5 「반납 가능」이 꺼진 POP 은 403(조회·등록 모두), 남의 공장 POP 은 이 공장 LOT 을 못 찾는다', async () => {
@@ -214,6 +220,9 @@ describe('반납 입고 (e2e)', () => {
       expect(response.body).toMatchObject({ terminalKindCode: 'PDA', lines: [{ destinationLocationId: Number(fx.ids.s01), attributionCode: 'AUTO_LATEST_ISSUE' }] });
       expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.s01, 10, 'NORMAL', 'AVAILABLE']]);
       expect((await prisma.material_return.findUniqueOrThrow({ where: { material_return_id: BigInt(response.body.materialReturnId) } })).received_by).toBe(fx.pda.workerId);
+      // 위치를 스캔해 받은 줄은 적치 지시를 만들지 않는다.
+      expect(await fx.putawayTasks(response.body.materialReturnId)).toHaveLength(0);
+      expect(response.body.lines[0]).not.toHaveProperty('putawayTaskId');
     });
 
     it('US2-3 「지정 품목만 받기」 위치에 다른 품목 → 400 RESTRICTED_LOCATION, 미지정 위치는 확인해야 받는다(409 → 확인 뒤 201·보관 품목 추가)', async () => {
@@ -230,10 +239,22 @@ describe('반납 입고 (e2e)', () => {
       expect(await prisma.location_item.count({ where: { location_id: u01, item_id: fx.ids.itemA } })).toBe(1);
     });
 
-    it('US2-2·Q7 PDA 위치 없이 → 출고 생산창고 적치 대기', async () => {
+    it('US2-2·Q7 PDA 위치 없이 → 출고 생산창고 적치 대기 + 그 줄의 PENDING 적치 지시(M-01-09 와 같은 모양)', async () => {
       const a = await issued(50);
-      await fx.receive([{ lotId: a.lotId, returnQty: 7 }], fx.pda).expect(201);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 7 }], fx.pda).expect(201);
+      expect(contractValidator(CONTRACT, 'POST /production/material-returns', 201)(response.body)).toBe(true);
       expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 7, 'NORMAL', 'AVAILABLE']]);
+      const [line] = await fx.returnLines(response.body.materialReturnId);
+      const tasks = await fx.putawayTasks(response.body.materialReturnId);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).toMatchObject({
+        material_return_line_id: line.material_return_line_id, goods_receipt_line_id: null, shopfloor_receipt_line_id: null,
+        item_id: fx.ids.itemA, lot_id: a.lotId, uom_id: fx.ids.uom, from_location_id: fx.ids.staging, status_code: 'PENDING',
+        actual_location_id: null, assigned_worker_id: null,
+      });
+      expect(Number(tasks[0].task_qty)).toBe(7);
+      expect(tasks[0].putaway_task_no).toMatch(/^PT-/);
+      expect(response.body.lines[0].putawayTaskId).toBe(Number(tasks[0].putaway_task_id));
     });
 
     it('US2-2 경계 — 출고 창고와 다른 생산창고 위치를 스캔하면 그 창고로 받는다', async () => {
@@ -244,21 +265,40 @@ describe('반납 입고 (e2e)', () => {
       expect(await fx.onHand(a.lotId)).toEqual([[s21, 8, 'NORMAL', 'AVAILABLE']]);
     });
 
-    it('US2-4·Q8 적치 대기의 반납분은 위치 이동으로 자리를 옮기고, 다른 W/O 피킹 후보로 잡힌다', async () => {
+    it('US2-4·Q8 적치 대기의 반납분은 다른 W/O 피킹 후보로 잡히고, 반납 때 생긴 적치 지시를 PDA 「적치·입고 완료」에서 완료해 자리를 옮긴다', async () => {
       const a = await issued(50, 'C');
-      await fx.receive([{ lotId: a.lotId, returnQty: 20 }], fx.pda).expect(201);
+      const created = await fx.receive([{ lotId: a.lotId, returnQty: 20 }], fx.pda).expect(201);
       // ⭐ 다른 W/O 의 피킹 배정이 적치 대기의 반납분을 후보로 잡는다(출발 창고 G) — 앞 시험의 C 재고까지 다 집도록 넉넉히 요구한다.
       const allocation = await allocateStock(prisma as unknown as Prisma.TransactionClient, {
         plantId: fx.ids.plant, warehouseId: fx.ids.g, demands: [{ lineNo: 1, itemId: fx.ids.itemC, uomId: fx.ids.uom, qty: new Prisma.Decimal(100000) }],
       });
       const picked = allocation.orders.flatMap((order) => order.lines).filter((line) => line.lotId === a.lotId);
       expect(picked.map((line) => line.locationId)).toEqual([fx.ids.staging]);
-      // ⭐ 자리 이동 — 적치 대기 → S-01(같은 창고 위치 이동).
-      await fx.as(fx.http().post('/api/logistics/location-moves').set('Idempotency-Key', randomUUID()).send({
-        warehouseId: Number(fx.ids.g), businessDate: '2026-11-28', occurredAt: '2026-11-28T03:00:00.000Z',
-        lines: [{ lotId: Number(a.lotId), fromLocationId: Number(fx.ids.staging), toLocationId: Number(fx.ids.s01), qualityStatusCode: 'NORMAL', inventoryStatusCode: 'AVAILABLE', qty: 20 }],
-      }), 'session').expect(201);
+
+      // ⭐ PDA 「적치·입고 완료」 목록(M-01-05)에 반납 원천 지시가 뜬다 — 원천 문서 번호 = 반납 번호.
+      const taskId = created.body.lines[0].putawayTaskId as number;
+      const list = await fx.as(fx.http().get('/api/logistics/putaway-tasks').query({ lotId: Number(a.lotId), statusCode: 'PENDING', size: 100 }), fx.pda).expect(200);
+      expect(contractValidator(LOGISTICS, 'GET /logistics/putaway-tasks')(list.body)).toBe(true);
+      expect(list.body.items).toEqual([expect.objectContaining({
+        putawayTaskId: taskId, originCode: 'MATERIAL_RETURN', originDocumentNo: created.body.materialReturnNo,
+        goodsReceiptLineId: null, shopfloorReceiptLineId: null, fromLocationId: Number(fx.ids.staging),
+        warehouseId: Number(fx.ids.g), lotId: Number(a.lotId), taskQty: 20, statusCode: 'PENDING',
+      })]);
+
+      // ⭐ 기존 적치 지시 완료 API — 적치 대기 → S-01.
+      const done = await fx.as(fx.http().post(`/api/logistics/putaway-tasks/${taskId}:complete`).set('Idempotency-Key', randomUUID())
+        .send({ actualLocationId: Number(fx.ids.s01), businessDate: '2026-11-28', occurredAt: '2026-11-28T03:00:00.000Z' }), fx.pda).expect(200);
+      expect(contractValidator(LOGISTICS, 'POST /logistics/putaway-tasks/{putawayTaskId}:complete')(done.body)).toBe(true);
+      expect(done.body).toMatchObject({ statusCode: 'COMPLETED', actualLocationId: Number(fx.ids.s01), movedQty: 20, originCode: 'MATERIAL_RETURN' });
       expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.s01, 20, 'NORMAL', 'AVAILABLE']]);
+      const task = await prisma.putaway_task.findUniqueOrThrow({ where: { putaway_task_id: BigInt(taskId) } });
+      expect(task).toMatchObject({ status_code: 'COMPLETED', actual_location_id: fx.ids.s01, completed_worker_id: fx.pda.workerId, completed_terminal_id: fx.pda.terminalId });
+
+      // 옮긴 뒤에도 다른 W/O 의 피킹 후보다 — 이번에는 S-01 에서.
+      const again = await allocateStock(prisma as unknown as Prisma.TransactionClient, {
+        plantId: fx.ids.plant, warehouseId: fx.ids.g, demands: [{ lineNo: 1, itemId: fx.ids.itemC, uomId: fx.ids.uom, qty: new Prisma.Decimal(100000) }],
+      });
+      expect(again.orders.flatMap((order) => order.lines).filter((line) => line.lotId === a.lotId).map((line) => line.locationId)).toEqual([fx.ids.s01]);
     });
   });
 

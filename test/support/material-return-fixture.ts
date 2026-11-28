@@ -265,6 +265,13 @@ export class MaterialReturnFixture {
     return this.prisma.material_return_line.findMany({ where: { material_return_id: BigInt(materialReturnId) }, orderBy: { line_no: 'asc' } });
   }
 
+  /** 반납 한 건이 만든 적치 지시(반납 줄 순). */
+  async putawayTasks(materialReturnId: number) {
+    return this.prisma.putaway_task.findMany({
+      where: { material_return_line: { material_return_id: BigInt(materialReturnId) } }, orderBy: { material_return_line_id: 'asc' },
+    });
+  }
+
   /** W/O·LOT 별 귀속 반납 합(017 이 빼는 값 · Q14 앞단). */
   async attributedSum(workOrderId: bigint, lotId: bigint): Promise<number> {
     const rows = await this.prisma.material_return_line.aggregate({ where: { work_order_id: workOrderId, lot_id: lotId }, _sum: { return_qty: true } });
