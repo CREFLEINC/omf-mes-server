@@ -21,6 +21,7 @@ describe('DocumentIssueRenditionService', () => {
     issue_seq: 2,
     issued_at: new Date('2026-09-11T02:00:00Z'),
     lot: {
+      lot_id: 22n,
       lot_no: '040101-00022S|1250|260911|100019|0001',
       lot_type_code: 'MATERIAL',
       status_code: 'INSPECTION_PENDING',
@@ -35,6 +36,7 @@ describe('DocumentIssueRenditionService', () => {
   it('자재 LOT PNG 렌디션은 발행 기록의 LOT 값으로 80×30mm 라벨을 그린다', async () => {
     const prisma = {
       document_issue_log: { findUnique: jest.fn().mockResolvedValue(materialLotIssue) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     } as unknown as PrismaService;
 
     const png = await new DocumentIssueRenditionService(prisma).rendition(7);
@@ -47,6 +49,7 @@ describe('DocumentIssueRenditionService', () => {
   it('자재 LOT TSPL 렌디션은 발행 기록의 LOT·품목·수량·단위·회차·공장 시각을 쓴다', async () => {
     const prisma = {
       document_issue_log: { findUnique: jest.fn().mockResolvedValue(materialLotIssue) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     } as unknown as PrismaService;
     const text = (await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl')).toString('ascii');
     expect(text.startsWith('SIZE ')).toBe(true);
@@ -60,11 +63,22 @@ describe('DocumentIssueRenditionService', () => {
     expect(prisma.document_issue_log.findUnique).toHaveBeenCalledTimes(2);
   });
 
+  /* 피처 019 — 반납 줄이 있는 LOT 은 실물 수량(materialLotLabelQty)으로 찍는다. P-01-02 목록 qty 와 같은 식. */
+  it('자재 LOT TSPL 은 라벨 수량 식이 낸 값(반납 LOT 의 실물)을 QTY 로 쓴다', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn().mockResolvedValue(materialLotIssue) },
+      $queryRaw: jest.fn().mockResolvedValue([{ lot_id: 22n, qty: new Prisma.Decimal('40') }]),
+    } as unknown as PrismaService;
+    const text = (await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl')).toString('ascii');
+    expect(text).toContain('"QTY: 40 EA"');
+  });
+
   /* omf-all-around#110 — IQC 라벨은 자재 판을 쓰고 유형 칸만 IQC 다(양식은 #86 확정 후 교체 · P-40). */
   it('IQC 라벨 TSPL 은 자재 라벨 판에 유형 IQC 를 찍는다', async () => {
     const iqcIssue = { ...materialLotIssue, document_type_code: 'IQC_LABEL' };
     const prisma = {
       document_issue_log: { findUnique: jest.fn().mockResolvedValue(iqcIssue) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     } as unknown as PrismaService;
     const text = (await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl')).toString('ascii');
 

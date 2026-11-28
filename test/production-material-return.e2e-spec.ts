@@ -14,7 +14,7 @@ import { configureApp } from '../src/app.setup';
 import { allocateStock } from '../src/core/picking';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { FinalCloseProbe } from '../src/production/material-return/final-close';
-import { FinalCloseFake, MaterialReturnFixture, RETURNS } from './support/material-return-fixture';
+import { FinalCloseFake, MR_PREFIX as MR, MaterialReturnFixture, RETURNS } from './support/material-return-fixture';
 import { contractValidator } from './support/wip-lot-fixture';
 
 const CONTRACT = 'production-02생산실행.json';
@@ -41,6 +41,12 @@ describe('반납 입고 (e2e)', () => {
   afterAll(async () => {
     await app.close();
   });
+
+  /** 그 LOT 의 G2(다른 생산창고) 보유 합. */
+  async function g2OnHand(lotId: bigint): Promise<number> {
+    const sum = await prisma.inventory_balance.aggregate({ where: { lot_id: lotId, warehouse_id: fx.ids.g2 }, _sum: { on_hand_qty: true } });
+    return Number(sum._sum.on_hand_qty ?? 0);
+  }
 
   /** W/O 하나에 LOT 하나를 `qty` 만큼 출고한 상태. */
   async function issued(qty: number, key: 'A' | 'B' | 'C' = 'A', status?: string) {
@@ -257,12 +263,70 @@ describe('반납 입고 (e2e)', () => {
       expect(response.body.lines[0].putawayTaskId).toBe(Number(tasks[0].putaway_task_id));
     });
 
+    it('US2-2 경계 — 사람 위치 없는 생산창고(창고 전체)로 출고된 LOT 을 위치 없이 → 창고 전체 +n, 적치 지시 없음(M-01-09 와 같은 판정)', async () => {
+      const wo = await fx.workOrder();
+      const lot = await fx.lot('A');
+      await fx.issue(lot.lotId, 40, wo.workOrderId, { warehouseId: fx.ids.g3 });
+      for (const session of [fx.pda, fx.pop]) {
+        const response = await fx.receive([{ lotId: lot.lotId, returnQty: 6 }], session).expect(201);
+        expect(contractValidator(CONTRACT, 'POST /production/material-returns', 201)(response.body)).toBe(true);
+        expect(response.body).toMatchObject({ destinationWarehouseId: Number(fx.ids.g3), lines: [{ destinationLocationId: Number(fx.ids.whole3) }] });
+        expect(await fx.putawayTasks(response.body.materialReturnId)).toHaveLength(0);
+        expect(response.body.lines[0].putawayTaskId ?? null).toBeNull();
+      }
+      expect(await fx.onHand(lot.lotId)).toEqual([[fx.ids.whole3, 12, 'NORMAL', 'AVAILABLE']]);
+    });
+
     it('US2-2 경계 — 출고 창고와 다른 생산창고 위치를 스캔하면 그 창고로 받는다', async () => {
       const a = await issued(50);
       const s21 = await fx.freshLocation(fx.ids.g2);
       const response = await fx.receive([{ lotId: a.lotId, returnQty: 8, destinationLocationId: s21, confirmUndesignated: true }], fx.pda).expect(201);
       expect(response.body.lines[0]).toMatchObject({ destinationWarehouseId: Number(fx.ids.g2) });
       expect(await fx.onHand(a.lotId)).toEqual([[s21, 8, 'NORMAL', 'AVAILABLE']]);
+    });
+
+    it('T037 받는 위치 조회 — 출고 창고·다른 생산창고 위치 200, 자재창고 위치 400 NOT_PRODUCTION_WAREHOUSE, 적치 대기 400 STAGING, 없는 코드·남의 공장 404', async () => {
+      const op = 'GET /production/material-returns/location-lookup';
+      const s01 = await fx.locationLookup(`${MR}-S-01`).expect(200);
+      expect(contractValidator(CONTRACT, op)(s01.body)).toBe(true);
+      expect(s01.body).toEqual({
+        locationId: Number(fx.ids.s01), locationCode: `${MR}-S-01`, locationName: '반납검사S-01',
+        warehouse: { warehouseId: Number(fx.ids.g), warehouseCode: `${MR}-G`, warehouseName: '반납검사G' },
+      });
+      const s21 = await fx.locationLookup(`${MR}-S-21`).expect(200);
+      expect(s21.body).toMatchObject({ locationId: Number(fx.ids.s21), warehouse: { warehouseId: Number(fx.ids.g2) } });
+      // POP 도 같은 경로를 쓴다(「반납 가능」 POP) — 계정 세션은 공장을 거르지 않는다.
+      await fx.locationLookup(`${MR}-S-21`, fx.pop).expect(200);
+      await fx.locationLookup(`${MR}-S-91`, 'session').expect(200);
+
+      const material = await fx.locationLookup(`${MR}-M-01`).expect(400);
+      expect(material.body.errors[0]).toMatchObject({ field: 'locationCode', code: 'NOT_PRODUCTION_WAREHOUSE', message: '생산창고 위치가 아닙니다. 반납은 생산창고 위치로만 받습니다' });
+      await fx.locationLookup(`${MR}-D-01`).expect(400);
+      const staging = await fx.locationLookup(await fx.locationCode(fx.ids.staging2)).expect(400);
+      expect(staging.body.errors[0]).toMatchObject({ code: 'STAGING' });
+
+      await fx.locationLookup(`${MR}-${fx.run}-없는위치`).expect(404);
+      await fx.locationLookup(`${MR}-S-91`).expect(404);
+      await fx.locationLookup(`${MR}-S-21`, fx.popOff).expect(403);
+    });
+
+    it('T037 POST — 출고 창고와 다른 생산창고 위치(S-21)로 받으면 G2 재고가 는다, 자재창고 위치면 400 NOT_PRODUCTION_WAREHOUSE', async () => {
+      const a = await issued(40, 'B');
+      const g2Before = await g2OnHand(a.lotId);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 6, destinationLocationId: fx.ids.s21, confirmUndesignated: true }], fx.pda).expect(201);
+      expect(response.body.lines[0]).toMatchObject({ destinationWarehouseId: Number(fx.ids.g2), destinationLocationId: Number(fx.ids.s21) });
+      expect(await g2OnHand(a.lotId)).toBe(g2Before + 6);
+
+      const other = await issued(20, 'B');
+      const rejected = await fx.receive([
+        { lotId: a.lotId, returnQty: 1, destinationLocationId: fx.ids.s01 },
+        { lotId: other.lotId, returnQty: 1, destinationLocationId: fx.ids.m01 },
+      ], fx.pda).expect(400);
+      expect(rejected.body.errors).toEqual([expect.objectContaining({
+        field: 'lines[1].destinationLocationId', code: 'NOT_PRODUCTION_WAREHOUSE', message: '생산창고 위치가 아닙니다. 반납은 생산창고 위치로만 받습니다',
+      })]);
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.s21, 6, 'NORMAL', 'AVAILABLE']]);
+      expect(await fx.onHand(other.lotId)).toEqual([]);
     });
 
     it('US2-4·Q8 적치 대기의 반납분은 다른 W/O 피킹 후보로 잡히고, 반납 때 생긴 적치 지시를 PDA 「적치·입고 완료」에서 완료해 자리를 옮긴다', async () => {
@@ -376,6 +440,59 @@ describe('반납 입고 (e2e)', () => {
       expect(await fx.attributedSum(b.workOrderId, b.lotId)).toBe(5);
       const unattributed = await prisma.material_return_line.aggregate({ where: { lot_id: b.lotId, work_order_id: null }, _sum: { return_qty: true } });
       expect(Number(unattributed._sum.return_qty)).toBe(20);
+    });
+
+    /**
+     * 추적 시스템 연동 W/O = ERP W/O(`production_order`)에서 자동 계획(`production_plan.created_automatically`)으로 만든 W/O
+     * (`auto-work-order.service.ts`·`tracking-production.ts` `workOrderOf`). W/O 자체에 연동 칸은 없다.
+     * 연동 W/O 도 사람 출고 요청(WORK_ORDER)으로 나간 LOT 은 같은 규칙으로 귀속된다. 연동의 자재 차감(백플러시)은
+     * 피킹 없는 출고 전표(원천 PRODUCTION_RESULT)로 바로 소비되므로 W/O 출고 경로가 아니다 — 반납 대상이 아니다(FR-003).
+     */
+    it('T039 추적 시스템 연동 W/O 로 출고된 LOT 반납 → 그 W/O 귀속, 재고 들어옴 (백플러시 차감분은 반납 대상 아님)', async () => {
+      const n = fx.next();
+      const order = await prisma.production_order.create({ data: {
+        production_order_no: `${fx.run}-PO-LINK-${n}`, business_unit_id: fx.ids.unit, plant_id: fx.ids.plant, item_id: fx.ids.product,
+        order_qty: 1000, uom_id: fx.ids.uom, status_code: 'RECEIVED',
+      } });
+      const routingId = (await prisma.routing_operation.findUniqueOrThrow({ where: { routing_operation_id: fx.ids.operation } })).routing_id;
+      const bom = await prisma.bom.create({ data: {
+        parent_item_id: fx.ids.product, bom_code: `${fx.run}-BOM-LINK-${n}`, bom_version: 1, status_code: 'ACTIVE', is_default: false,
+        effective_from: new Date('2026-01-01'), base_qty: 1, base_uom_id: fx.ids.uom, plant_id: fx.ids.plant,
+      } });
+      const plan = await prisma.production_plan.create({ data: {
+        production_order_id: order.production_order_id, plan_no: `${fx.run}-PP-LINK-${n}`, plan_date: new Date('2026-11-27'), planned_qty: 1000,
+        uom_id: fx.ids.uom, bom_id: bom.bom_id, routing_id: routingId, status_code: 'CONFIRMED', confirmed_at: new Date('2026-11-27T00:00:00.000Z'),
+        plan_date_source_code: 'SYSTEM', created_automatically: true,
+      } });
+      const linked = await prisma.work_order.create({ data: {
+        work_order_no: `${fx.run}-WO-LINK-${n}`, production_plan_id: plan.production_plan_id, routing_operation_id: fx.ids.operation,
+        item_id: fx.ids.product, order_qty: 1000, uom_id: fx.ids.uom, production_line_id: fx.ids.line, status_code: 'IN_PROGRESS',
+        released_at: new Date('2026-11-27T00:00:00.000Z'),
+      } });
+
+      // 사람 출고 요청(WORK_ORDER)으로 연동 W/O 에 나간 LOT — 같은 규칙으로 귀속된다.
+      const a = await fx.lot('A');
+      const { goodsIssueLineId } = await fx.issue(a.lotId, 50, linked.work_order_id);
+      const lookup = await fx.lookup(a.lotNo).expect(200);
+      expect(lookup.body).toMatchObject({ returnableQty: 50, workOrder: { workOrderId: Number(linked.work_order_id), workOrderNo: linked.work_order_no, finalized: false } });
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 20 }]).expect(201);
+      expect(response.body.lines[0]).toMatchObject({
+        workOrderId: Number(linked.work_order_id), goodsIssueLineId: Number(goodsIssueLineId), attributionCode: 'AUTO_LATEST_ISSUE',
+      });
+      const [line] = await fx.returnLines(response.body.materialReturnId);
+      expect(line).toMatchObject({ work_order_id: linked.work_order_id, goods_issue_line_id: goodsIssueLineId, attribution_code: 'AUTO_LATEST_ISSUE' });
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 20, 'NORMAL', 'AVAILABLE']]);
+      expect(await fx.attributedSum(linked.work_order_id, a.lotId)).toBe(20);
+
+      // 연동 백플러시 차감(`backflush.ts` · 피킹 없는 출고 전표, 원천 PRODUCTION_RESULT)만 있는 LOT — W/O 출고 경로가 아니라 반납 대상이 아니다.
+      const b = await fx.lot('B');
+      await prisma.goods_issue.create({ data: {
+        goods_issue_no: `${fx.run}-GI-BF-${n}`, issue_type_code: 'PRODUCTION', source_document_type_code: 'PRODUCTION_RESULT', source_document_id: 1n,
+        source_warehouse_id: fx.ids.g, issued_at: new Date('2026-11-27T02:00:00.000Z'), status_code: 'POSTED',
+        goods_issue_line: { create: [{ line_no: 1, item_id: fx.ids.itemB, lot_id: b.lotId, issue_qty: 30, uom_id: fx.ids.uom, source_location_id: fx.ids.s01 }] },
+      } });
+      expect((await fx.lookup(b.lotNo).expect(400)).body.errors).toEqual([expect.objectContaining({ code: 'NOT_RETURNABLE' })]);
+      expect((await fx.receive([{ lotId: b.lotId, returnQty: 1 }]).expect(400)).body.errors[0]).toMatchObject({ code: 'NOT_RETURNABLE' });
     });
 
     it('US3-4·Q13 LOT 거래 이력에 거래 유형 MATERIAL_RETURN 줄(W/O 칸 없음), 위치별 조회에 G 적치 대기 반납분', async () => {

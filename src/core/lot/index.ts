@@ -19,6 +19,7 @@ export {
 } from './lot-source';
 export * from './production-root';
 export * from './lot-usable';
+export * from './material-lot-label-qty';
 export * from './lot-registry-batch';
 export * from './material-lot-po-plan';
 export * from './material-lot-revise';

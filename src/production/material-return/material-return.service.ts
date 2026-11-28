@@ -6,11 +6,11 @@ import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import type { MaterialReturnActor } from '../../auth/terminal-material-return-scope';
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
-import { idempotencyContextOf } from '../../common/master';
+import { PUTAWAY_STAGING, idempotencyContextOf } from '../../common/master';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { lockBalancesByItemLot } from '../../core/inventory-posting/balance-lock';
 import type { PostingLine } from '../../core/inventory-posting';
-import { arrivalLocationId } from '../../core/material-issue/production-warehouse';
+import { arrivalLocationId, isProductionWarehouse } from '../../core/material-issue/production-warehouse';
 import { NumberingService } from '../../core/numbering';
 import { RECEIPT_STATUS_OF_LOT } from '../../logistics/goods-receipt/receipt-gate';
 import { VERDICT_MESSAGES, designationAddable, loadVerdictLocation, verdictOf } from '../../logistics/putaway-direct/location-verdict';
@@ -49,7 +49,10 @@ interface PlannedLine {
   to: Endpoint;
   /** 미지정 위치에 받으면 그 위치 보관 품목에 더한다(피처 009 FR-017a 와 같다). */
   addDesignation: boolean;
-  /** 위치 없이 적치 대기로 받은 줄 — 적치 지시를 하나 만든다(2026-11-28 사용자 결정). 위치를 스캔해 받은 줄은 거짓. */
+  /**
+   * 위치 없이 받아 그 위치가 적치 대기(`PUTAWAY_STAGING`)인 줄 — 적치 지시를 하나 만든다(2026-11-28 사용자 결정).
+   * 창고 전체(사람 위치 없는 생산창고)로 받은 줄·위치를 스캔해 받은 줄은 거짓(생산창고 입고 M-01-09 와 같은 판정).
+   */
   staged: boolean;
 }
 
@@ -82,7 +85,7 @@ export class MaterialReturnService {
     if (replay !== undefined) return replay.body;
     const preview = await this.plan(this.prisma, body, plantId);
     const plant = preview[0].lot.plantId;
-    // 적치 지시 번호는 트랜잭션 «밖»에서 미리 받는다(생산창고 입고 M-01-09 와 같다) — 적치 대기로 받는 줄 수는 본문으로 정해진다.
+    // 적치 지시 번호는 트랜잭션 «밖»에서 미리 받는다(생산창고 입고 M-01-09 와 같다) — 적치 대기로 받는 줄 수만큼(창고 전체로 받는 줄은 빼고).
     const staged = preview.filter((line) => line.staged).length;
     const putawayNos = staged === 0 ? [] : await this.numbering.nextMany('PUTAWAY_TASK', plant, body.businessDate, staged);
 
@@ -179,16 +182,31 @@ export class MaterialReturnService {
         errors.push(field(`${at}.returnQty`, ERROR_CODE.RANGE, `소수 ${lot.decimalScale}자리까지 적을 수 있습니다.`));
         continue;
       }
+      // W/O 로 찾기 줄(FR-016) — 고른 W/O 는 그 LOT 의 가장 최근 출고 W/O 여야 한다(자동 귀속과 결과가 같다).
+      const picked = line.workOrderId !== undefined && line.workOrderId !== null;
+      if (picked && BigInt(line.workOrderId as number) !== lot.issue.workOrderId) {
+        errors.push(field(`${at}.workOrderId`, 'WORK_ORDER_MISMATCH', RETURN_MESSAGES.WORK_ORDER_MISMATCH));
+        continue;
+      }
       const statuses = RECEIPT_STATUS_OF_LOT[lot.statusCode];
-      const attribution = attributionOf(lot.issue.workOrderId, lot.finalized, false);
+      const attribution = attributionOf(lot.issue.workOrderId, lot.finalized, picked);
       const base = { lot, qty, ...attribution };
       if (line.destinationLocationId === undefined || line.destinationLocationId === null) {
         const locationId = await arrivalLocationId(db, lot.issue.sourceWarehouseId);
-        planned.push({ ...base, addDesignation: false, staged: true, to: { warehouseId: lot.issue.sourceWarehouseId, locationId, quality: statuses.quality, inventory: statuses.inventory } });
+        // M-01-09 와 같은 판정 — 받은 위치의 시스템 역할이 적치 대기일 때만 적치 지시(창고 전체는 둘 곳이 없어 지시도 없다).
+        const arrival = await db.location.findUnique({ where: { location_id: locationId }, select: { system_role_code: true } });
+        const staged = arrival?.system_role_code === PUTAWAY_STAGING;
+        planned.push({ ...base, addDesignation: false, staged, to: { warehouseId: lot.issue.sourceWarehouseId, locationId, quality: statuses.quality, inventory: statuses.inventory } });
         continue;
       }
       const location = await loadVerdictLocation(db, { locationId: BigInt(line.destinationLocationId) });
       const verdict = verdictOf(location, { plantId: lot.plantId, itemId: lot.itemId, defective: lot.statusCode === 'DEFECTIVE' });
+      // 받는 창고는 생산창고뿐(자재창고 역흐름은 범위 밖) — 찾을 수 있는 위치면 다른 판정보다 먼저 본다(위치 조회와 같은 순서).
+      const reachable = location !== null && verdict !== 'NOT_FOUND' && verdict !== 'INACTIVE' && verdict !== 'OTHER_PLANT';
+      if (reachable && !(await isProductionWarehouse(db, location.warehouseId))) {
+        errors.push(field(`${at}.destinationLocationId`, 'NOT_PRODUCTION_WAREHOUSE', RETURN_MESSAGES.NOT_PRODUCTION_WAREHOUSE));
+        continue;
+      }
       if (location === null || (verdict !== 'DESIGNATED' && verdict !== 'UNDESIGNATED')) {
         errors.push(field(`${at}.destinationLocationId`, verdict, VERDICT_MESSAGES[verdict]));
         continue;
@@ -240,7 +258,7 @@ async function postingLinesOf(tx: Prisma.TransactionClient, line: PlannedLine): 
 }
 
 /**
- * 적치 대기로 받은 줄마다 `PENDING` 적치 지시 하나(2026-11-28 사용자 결정) — 생산창고 입고(M-01-09 `createPutawayTasks`)와 같은 모양:
+ * 적치 대기(`PUTAWAY_STAGING`)로 받은 줄마다 `PENDING` 적치 지시 하나(창고 전체로 받은 줄은 없음)(2026-11-28 사용자 결정) — 생산창고 입고(M-01-09 `createPutawayTasks`)와 같은 모양:
  * 원천 = 반납 줄, 출발 = 적치 대기(받은 위치), 수량 = 반납 수량, 둘 곳은 읽을 때 보관 품목으로 계산, 담당자 없음.
  * PDA 「적치·입고 완료」의 기존 완료 API 가 적치 대기에 남은 그 LOT 만큼 옮긴다(입고 전표가 없는 원천 갈래).
  */
@@ -249,8 +267,8 @@ async function createPutawayTasks(
   appUserId: number | undefined,
 ): Promise<void> {
   const staged = lines.flatMap((line, index) => (line.staged ? [{ line, lineId: lineIds[index] }] : []));
-  // 번호는 미리 받은 본문 기준 줄 수다 — 잠근 뒤 다시 세운 계획이 달라질 수 없다(위치 유무는 본문이 정한다).
-  if (staged.length !== putawayNos.length) throw new Error(`적치 지시 번호 수가 다르다: ${putawayNos.length} ≠ ${staged.length}`);
+  // 번호는 잠그기 전 계획의 적치 대기 줄 수다 — 그 사이 창고가 나뉘어 적치 대기 줄이 늘면 번호가 모자란다(남는 번호는 결번).
+  if (staged.length > putawayNos.length) throw new Error(`적치 지시 번호 수가 다르다: ${putawayNos.length} ≠ ${staged.length}`);
   for (const [index, { line, lineId }] of staged.entries()) {
     await tx.putaway_task.create({
       data: {

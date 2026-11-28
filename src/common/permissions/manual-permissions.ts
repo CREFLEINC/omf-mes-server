@@ -447,6 +447,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 반납 입고(피처 019 · omf-all-around#367) — POP P-01-03·PDA M-01-15 가 LOT 조회·W/O 로 찾기·등록을 함께 쓴다.
   // 문의 050(소유 화면 미정)이 여기서 닫힌다. POP 단말은 계정 권한이 아니라 단말 공정 매핑 can_return_material 로 연다.
   'GET /production/material-returns/lot-lookup': ['P-01-03', 'M-01-15'],
+  'GET /production/material-returns/location-lookup': ['P-01-03', 'M-01-15'],
   'GET /production/material-returns/work-orders': ['P-01-03', 'M-01-15'],
   'GET /production/material-returns/work-orders/{workOrderId}/lots': ['P-01-03', 'M-01-15'],
   'POST /production/material-returns': ['P-01-03', 'M-01-15'],

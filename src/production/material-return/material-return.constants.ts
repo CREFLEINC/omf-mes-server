@@ -30,4 +30,6 @@ export const RETURN_MESSAGES = {
   NOTHING_TO_RETURN: '반납할 양이 남지 않았습니다',
   overReturnable: (returnable: string) => `출고된 양보다 많이 반납할 수 없습니다 (반납 가능 ${returnable})`,
   WORK_ORDER_MISMATCH: '고른 W/O 가 이 LOT 의 가장 최근 출고 W/O 가 아닙니다. 다시 찾아 고르세요',
+  NOT_PRODUCTION_WAREHOUSE: '생산창고 위치가 아닙니다. 반납은 생산창고 위치로만 받습니다',
+  LOCATION_NOT_FOUND: '찾을 수 없는 위치입니다',
 } as const;
