@@ -143,7 +143,8 @@ describe('역할·기능 권한 (e2e)', () => {
     // W-03-12(검사 수준 관리)는 W-06-02 에 합쳤다(omf-all-around#357) — 141.
     // W-02-13·W-02-14(자재 기준 생산 추적·제품 기준 역추적 · 피처 015 · omf-all-around#355) — 143. 단위 시험 `permissions.spec.ts` 와 같은 수다.
     // W-06-26(교대 관리 · omf-all-around#318) — 144.
-    expect(response.body.items).toHaveLength(144);
+    // P-01-03·M-01-15(POP·PDA 반납 입고 · 피처 019 · omf-all-around#367) — 146.
+    expect(response.body.items).toHaveLength(146);
     for (const retired of ['W-CO-05', 'P-02-08', 'P-02-09', 'P-02-13']) {
       expect(response.body.items.map((p: { code: string }) => p.code)).not.toContain(retired);
     }

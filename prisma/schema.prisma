@@ -956,6 +956,7 @@ model goods_issue_line {
   uom                           uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_line                 shipment_line[]
   shopfloor_receipt_line        shopfloor_receipt_line[]
+  material_return_line          material_return_line[]
 
   @@unique([goods_issue_id, line_no], map: "uq_goods_issue_line")
   @@index([source_location_id], map: "ix_goods_issue_line_source_location")
@@ -2331,6 +2332,7 @@ model location {
   /// 지정 품목만 받기 — true 면 지정 밖 품목의 재고 기록을 거절한다. false 면 지정은 안내(omf-all-around#294)
   item_restricted                                                                   Boolean                      @default(false)
   location_item                                                                     location_item[]
+  material_return_line                                                              material_return_line[]
   handling_unit                                                                     handling_unit[]
   inventory_adjustment_line                                                         inventory_adjustment_line[]
   inventory_balance                                                                 inventory_balance[]
@@ -2864,6 +2866,7 @@ model worker {
   completed_putaway_task         putaway_task[]                   @relation("putaway_task_completed_worker")
   putaway_goods_receipt          goods_receipt[]                  @relation("goods_receipt_putaway_worker")
   shipment                       shipment[]
+  material_return                material_return[]
   equipment_inspection           equipment_inspection[]
   maintenance_order              maintenance_order[]
   maintenance_result             maintenance_result[]
@@ -3254,8 +3257,8 @@ model material_loss {
 model material_return {
   material_return_id       BigInt                 @id @default(autoincrement())
   material_return_no       String                 @unique @db.VarChar(100)
-  work_order_id            BigInt
-  source_location_id       BigInt
+  work_order_id            BigInt?
+  source_location_id       BigInt?
   destination_warehouse_id BigInt
   status_code              String                 @db.VarChar(50)
   requested_at             DateTime               @db.Timestamptz(6)
@@ -3265,10 +3268,14 @@ model material_return {
   updated_at               DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by               BigInt?
   version_no               Int                    @default(1)
+  terminal_kind_code       String?                @db.VarChar(50)
+  received_by              BigInt?
+  business_date            DateTime?              @db.Date
   warehouse                warehouse              @relation(fields: [destination_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
-  location                 location               @relation(fields: [source_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order               work_order             @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  location                 location?              @relation(fields: [source_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order               work_order?            @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   material_return_line     material_return_line[]
+  worker                   worker?                @relation(fields: [received_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([destination_warehouse_id], map: "ix_material_return_destination_warehouse")
   @@index([source_location_id], map: "ix_material_return_source_location")
@@ -3290,13 +3297,22 @@ model material_return_line {
   inventory_transaction_line_id BigInt?
   created_at                    DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                    BigInt?
+  work_order_id                 BigInt?
+  goods_issue_line_id           BigInt?
+  attribution_code              String?                     @db.VarChar(50)
+  destination_location_id       BigInt?
   inventory_transaction_line    inventory_transaction_line? @relation(fields: [inventory_transaction_line_id], references: [inventory_transaction_line_id], onDelete: NoAction, onUpdate: NoAction)
   item                          item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   lot                           lot                         @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   material_return               material_return             @relation(fields: [material_return_id], references: [material_return_id], onDelete: NoAction, onUpdate: NoAction)
   uom                           uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order                    work_order?                 @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  goods_issue_line              goods_issue_line?           @relation(fields: [goods_issue_line_id], references: [goods_issue_line_id], onDelete: NoAction, onUpdate: NoAction)
+  location                      location?                   @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([material_return_id, line_no], map: "uq_material_return_line")
+  @@index([goods_issue_line_id], map: "ix_material_return_line_goods_issue_line")
+  @@index([work_order_id, lot_id], map: "ix_material_return_line_work_order_lot")
   @@schema("production")
 }
 
@@ -3505,6 +3521,7 @@ model work_order {
   close_judgment_code                                                               String?                          @db.VarChar(10)
   notice                                                                            notice[]
   material_issue_request                                                            material_issue_request[]
+  material_return_line                                                              material_return_line[]
   material_issue_unsourced_shortage                                                 material_issue_unsourced_shortage[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
   subcontract_order                                                                 subcontract_order[]

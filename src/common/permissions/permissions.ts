@@ -40,8 +40,12 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'M-01-10', name: '재고이동·불량 반출', groupCode: '01' },
   { code: 'M-01-11', name: '실물 카운트', groupCode: '01' },
   { code: 'M-01-12', name: '재생재 등록', groupCode: '01' },
+  // 피처 019(omf-all-around#367) — PDA 반납 입고. 마이그레이션이 M-01-05(적치) 보유 역할에 덧붙인다.
+  { code: 'M-01-15', name: '반납 입고', groupCode: '01' },
   { code: 'P-01-01', name: '자재LOT 등록·라벨 발행', groupCode: '01' },
   { code: 'P-01-02', name: '출고 QR 발행', groupCode: '01' },
+  // 피처 019 — POP 반납 입고. POP 단말은 단말 공정 매핑 can_return_material 로 연다. 마이그레이션이 P-01-02 보유 역할에 덧붙인다.
+  { code: 'P-01-03', name: '반납 입고', groupCode: '01' },
   { code: 'W-01-01', name: 'IQC 수입검사·판정', groupCode: '01' },
   { code: 'W-01-03', name: '초과 입하 분리', groupCode: '01' },
   { code: 'W-01-04', name: '재고실사', groupCode: '01' },
