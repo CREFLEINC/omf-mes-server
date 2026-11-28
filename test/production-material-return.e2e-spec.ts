@@ -378,6 +378,59 @@ describe('반납 입고 (e2e)', () => {
       expect(Number(unattributed._sum.return_qty)).toBe(20);
     });
 
+    /**
+     * 추적 시스템 연동 W/O = ERP W/O(`production_order`)에서 자동 계획(`production_plan.created_automatically`)으로 만든 W/O
+     * (`auto-work-order.service.ts`·`tracking-production.ts` `workOrderOf`). W/O 자체에 연동 칸은 없다.
+     * 연동 W/O 도 사람 출고 요청(WORK_ORDER)으로 나간 LOT 은 같은 규칙으로 귀속된다. 연동의 자재 차감(백플러시)은
+     * 피킹 없는 출고 전표(원천 PRODUCTION_RESULT)로 바로 소비되므로 W/O 출고 경로가 아니다 — 반납 대상이 아니다(FR-003).
+     */
+    it('T039 추적 시스템 연동 W/O 로 출고된 LOT 반납 → 그 W/O 귀속, 재고 들어옴 (백플러시 차감분은 반납 대상 아님)', async () => {
+      const n = fx.next();
+      const order = await prisma.production_order.create({ data: {
+        production_order_no: `${fx.run}-PO-LINK-${n}`, business_unit_id: fx.ids.unit, plant_id: fx.ids.plant, item_id: fx.ids.product,
+        order_qty: 1000, uom_id: fx.ids.uom, status_code: 'RECEIVED',
+      } });
+      const routingId = (await prisma.routing_operation.findUniqueOrThrow({ where: { routing_operation_id: fx.ids.operation } })).routing_id;
+      const bom = await prisma.bom.create({ data: {
+        parent_item_id: fx.ids.product, bom_code: `${fx.run}-BOM-LINK-${n}`, bom_version: 1, status_code: 'ACTIVE', is_default: false,
+        effective_from: new Date('2026-01-01'), base_qty: 1, base_uom_id: fx.ids.uom, plant_id: fx.ids.plant,
+      } });
+      const plan = await prisma.production_plan.create({ data: {
+        production_order_id: order.production_order_id, plan_no: `${fx.run}-PP-LINK-${n}`, plan_date: new Date('2026-11-27'), planned_qty: 1000,
+        uom_id: fx.ids.uom, bom_id: bom.bom_id, routing_id: routingId, status_code: 'CONFIRMED', confirmed_at: new Date('2026-11-27T00:00:00.000Z'),
+        plan_date_source_code: 'SYSTEM', created_automatically: true,
+      } });
+      const linked = await prisma.work_order.create({ data: {
+        work_order_no: `${fx.run}-WO-LINK-${n}`, production_plan_id: plan.production_plan_id, routing_operation_id: fx.ids.operation,
+        item_id: fx.ids.product, order_qty: 1000, uom_id: fx.ids.uom, production_line_id: fx.ids.line, status_code: 'IN_PROGRESS',
+        released_at: new Date('2026-11-27T00:00:00.000Z'),
+      } });
+
+      // 사람 출고 요청(WORK_ORDER)으로 연동 W/O 에 나간 LOT — 같은 규칙으로 귀속된다.
+      const a = await fx.lot('A');
+      const { goodsIssueLineId } = await fx.issue(a.lotId, 50, linked.work_order_id);
+      const lookup = await fx.lookup(a.lotNo).expect(200);
+      expect(lookup.body).toMatchObject({ returnableQty: 50, workOrder: { workOrderId: Number(linked.work_order_id), workOrderNo: linked.work_order_no, finalized: false } });
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 20 }]).expect(201);
+      expect(response.body.lines[0]).toMatchObject({
+        workOrderId: Number(linked.work_order_id), goodsIssueLineId: Number(goodsIssueLineId), attributionCode: 'AUTO_LATEST_ISSUE',
+      });
+      const [line] = await fx.returnLines(response.body.materialReturnId);
+      expect(line).toMatchObject({ work_order_id: linked.work_order_id, goods_issue_line_id: goodsIssueLineId, attribution_code: 'AUTO_LATEST_ISSUE' });
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.staging, 20, 'NORMAL', 'AVAILABLE']]);
+      expect(await fx.attributedSum(linked.work_order_id, a.lotId)).toBe(20);
+
+      // 연동 백플러시 차감(`backflush.ts` · 피킹 없는 출고 전표, 원천 PRODUCTION_RESULT)만 있는 LOT — W/O 출고 경로가 아니라 반납 대상이 아니다.
+      const b = await fx.lot('B');
+      await prisma.goods_issue.create({ data: {
+        goods_issue_no: `${fx.run}-GI-BF-${n}`, issue_type_code: 'PRODUCTION', source_document_type_code: 'PRODUCTION_RESULT', source_document_id: 1n,
+        source_warehouse_id: fx.ids.g, issued_at: new Date('2026-11-27T02:00:00.000Z'), status_code: 'POSTED',
+        goods_issue_line: { create: [{ line_no: 1, item_id: fx.ids.itemB, lot_id: b.lotId, issue_qty: 30, uom_id: fx.ids.uom, source_location_id: fx.ids.s01 }] },
+      } });
+      expect((await fx.lookup(b.lotNo).expect(400)).body.errors).toEqual([expect.objectContaining({ code: 'NOT_RETURNABLE' })]);
+      expect((await fx.receive([{ lotId: b.lotId, returnQty: 1 }]).expect(400)).body.errors[0]).toMatchObject({ code: 'NOT_RETURNABLE' });
+    });
+
     it('US3-4·Q13 LOT 거래 이력에 거래 유형 MATERIAL_RETURN 줄(W/O 칸 없음), 위치별 조회에 G 적치 대기 반납분', async () => {
       const a = await issued(30);
       await fx.receive([{ lotId: a.lotId, returnQty: 12 }]).expect(201);
