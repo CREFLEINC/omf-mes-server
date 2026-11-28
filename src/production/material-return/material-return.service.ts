@@ -10,7 +10,7 @@ import { idempotencyContextOf } from '../../common/master';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { lockBalancesByItemLot } from '../../core/inventory-posting/balance-lock';
 import type { PostingLine } from '../../core/inventory-posting';
-import { arrivalLocationId } from '../../core/material-issue/production-warehouse';
+import { arrivalLocationId, isProductionWarehouse } from '../../core/material-issue/production-warehouse';
 import { NumberingService } from '../../core/numbering';
 import { RECEIPT_STATUS_OF_LOT } from '../../logistics/goods-receipt/receipt-gate';
 import { VERDICT_MESSAGES, designationAddable, loadVerdictLocation, verdictOf } from '../../logistics/putaway-direct/location-verdict';
@@ -195,6 +195,12 @@ export class MaterialReturnService {
       }
       const location = await loadVerdictLocation(db, { locationId: BigInt(line.destinationLocationId) });
       const verdict = verdictOf(location, { plantId: lot.plantId, itemId: lot.itemId, defective: lot.statusCode === 'DEFECTIVE' });
+      // 받는 창고는 생산창고뿐(자재창고 역흐름은 범위 밖) — 찾을 수 있는 위치면 다른 판정보다 먼저 본다(위치 조회와 같은 순서).
+      const reachable = location !== null && verdict !== 'NOT_FOUND' && verdict !== 'INACTIVE' && verdict !== 'OTHER_PLANT';
+      if (reachable && !(await isProductionWarehouse(db, location.warehouseId))) {
+        errors.push(field(`${at}.destinationLocationId`, 'NOT_PRODUCTION_WAREHOUSE', RETURN_MESSAGES.NOT_PRODUCTION_WAREHOUSE));
+        continue;
+      }
       if (location === null || (verdict !== 'DESIGNATED' && verdict !== 'UNDESIGNATED')) {
         errors.push(field(`${at}.destinationLocationId`, verdict, VERDICT_MESSAGES[verdict]));
         continue;

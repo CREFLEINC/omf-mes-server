@@ -17,6 +17,7 @@ type TerminalType = 'POP' | 'MOBILE';
  */
 export const TERMINAL_MATERIAL_RETURN_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
   'GET /production/material-returns/lot-lookup': ['POP', 'MOBILE'],
+  'GET /production/material-returns/location-lookup': ['POP', 'MOBILE'],
   'GET /production/material-returns/work-orders': ['POP', 'MOBILE'],
   'GET /production/material-returns/work-orders/{workOrderId}/lots': ['POP', 'MOBILE'],
   'POST /production/material-returns': ['POP', 'MOBILE'],

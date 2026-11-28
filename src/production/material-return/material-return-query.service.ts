@@ -2,7 +2,9 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
-import { filter } from '../../common/master';
+import { PUTAWAY_STAGING, filter } from '../../common/master';
+import { PRODUCTION_WAREHOUSE } from '../../core/material-issue/production-warehouse';
+import { VERDICT_MESSAGES } from '../../logistics/putaway-direct/location-verdict';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { unprintedSplitLotIds } from '../../logistics/split-material-lot/split-material-lot-query.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -42,6 +44,14 @@ export interface MaterialReturnLotLookup {
   workOrder: { workOrderId: number; workOrderNo: string; finalized: boolean };
   issueWarehouse: { warehouseId: number; warehouseCode: string; warehouseName: string };
   labelUnprinted: boolean;
+}
+
+/** 계약 `MaterialReturnLocationLookup` — 받는 위치(PDA 스캔)와 그 생산창고. */
+export interface MaterialReturnLocationLookup {
+  locationId: number;
+  locationCode: string;
+  locationName: string;
+  warehouse: { warehouseId: number; warehouseCode: string; warehouseName: string };
 }
 
 /** 계약 질의 6 전건 — 필수는 하나도 없다. 형·기본값은 `@Contract` 가드가 이미 맞춰 둔다. */
@@ -113,6 +123,35 @@ export class MaterialReturnQueryService {
           issueQty: Number(lot.issue_qty), returnableQty: Number(lot.returnable), labelUnprinted: unprinted.has(lot.lot_id),
         };
       }),
+    };
+  }
+
+  /**
+   * 받는 위치 스캔(PDA) — 위치 코드(전역 유일 · #292)로 찾는다. `plantId` 가 있으면(단말) 그 공장 창고 위치만 찾는다.
+   * 없음·사용 중지(위치나 창고)·남의 공장은 404, 생산창고 위치가 아니면 400 NOT_PRODUCTION_WAREHOUSE(생산창고 판정은
+   * 출고·보충과 같은 `warehouse_type_code = PRODUCTION`), 적치 대기 자리는 400 STAGING(PDA 적치 위치 판정 `verdictOf` 와 같다 —
+   * 「창고 전체」는 받는다). LOT 에 매인 판정(불량창고·지정 품목·미지정 확인)은 등록(POST)이 줄마다 한다.
+   */
+  async locationLookup(locationCode: string, plantId: bigint | null): Promise<MaterialReturnLocationLookup> {
+    const row = await this.prisma.location.findFirst({
+      where: { location_code: locationCode },
+      select: {
+        location_id: true, location_code: true, location_name: true, is_active: true, system_role_code: true,
+        warehouse: { select: { warehouse_id: true, warehouse_code: true, warehouse_name: true, warehouse_type_code: true, is_active: true, plant_id: true } },
+      },
+    });
+    if (row === null || !row.is_active || !row.warehouse.is_active || (plantId !== null && row.warehouse.plant_id !== plantId)) {
+      throw new NotFoundException(RETURN_MESSAGES.LOCATION_NOT_FOUND);
+    }
+    if (row.warehouse.warehouse_type_code !== PRODUCTION_WAREHOUSE) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('locationCode', 'NOT_PRODUCTION_WAREHOUSE', RETURN_MESSAGES.NOT_PRODUCTION_WAREHOUSE)]);
+    }
+    if (row.system_role_code === PUTAWAY_STAGING) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [field('locationCode', 'STAGING', VERDICT_MESSAGES.STAGING)]);
+    }
+    return {
+      locationId: Number(row.location_id), locationCode: row.location_code, locationName: row.location_name,
+      warehouse: { warehouseId: Number(row.warehouse.warehouse_id), warehouseCode: row.warehouse.warehouse_code, warehouseName: row.warehouse.warehouse_name },
     };
   }
 

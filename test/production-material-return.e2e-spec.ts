@@ -14,7 +14,7 @@ import { configureApp } from '../src/app.setup';
 import { allocateStock } from '../src/core/picking';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { FinalCloseProbe } from '../src/production/material-return/final-close';
-import { FinalCloseFake, MaterialReturnFixture, RETURNS } from './support/material-return-fixture';
+import { FinalCloseFake, MR_PREFIX as MR, MaterialReturnFixture, RETURNS } from './support/material-return-fixture';
 import { contractValidator } from './support/wip-lot-fixture';
 
 const CONTRACT = 'production-02생산실행.json';
@@ -41,6 +41,12 @@ describe('반납 입고 (e2e)', () => {
   afterAll(async () => {
     await app.close();
   });
+
+  /** 그 LOT 의 G2(다른 생산창고) 보유 합. */
+  async function g2OnHand(lotId: bigint): Promise<number> {
+    const sum = await prisma.inventory_balance.aggregate({ where: { lot_id: lotId, warehouse_id: fx.ids.g2 }, _sum: { on_hand_qty: true } });
+    return Number(sum._sum.on_hand_qty ?? 0);
+  }
 
   /** W/O 하나에 LOT 하나를 `qty` 만큼 출고한 상태. */
   async function issued(qty: number, key: 'A' | 'B' | 'C' = 'A', status?: string) {
@@ -263,6 +269,50 @@ describe('반납 입고 (e2e)', () => {
       const response = await fx.receive([{ lotId: a.lotId, returnQty: 8, destinationLocationId: s21, confirmUndesignated: true }], fx.pda).expect(201);
       expect(response.body.lines[0]).toMatchObject({ destinationWarehouseId: Number(fx.ids.g2) });
       expect(await fx.onHand(a.lotId)).toEqual([[s21, 8, 'NORMAL', 'AVAILABLE']]);
+    });
+
+    it('T037 받는 위치 조회 — 출고 창고·다른 생산창고 위치 200, 자재창고 위치 400 NOT_PRODUCTION_WAREHOUSE, 적치 대기 400 STAGING, 없는 코드·남의 공장 404', async () => {
+      const op = 'GET /production/material-returns/location-lookup';
+      const s01 = await fx.locationLookup(`${MR}-S-01`).expect(200);
+      expect(contractValidator(CONTRACT, op)(s01.body)).toBe(true);
+      expect(s01.body).toEqual({
+        locationId: Number(fx.ids.s01), locationCode: `${MR}-S-01`, locationName: '반납검사S-01',
+        warehouse: { warehouseId: Number(fx.ids.g), warehouseCode: `${MR}-G`, warehouseName: '반납검사G' },
+      });
+      const s21 = await fx.locationLookup(`${MR}-S-21`).expect(200);
+      expect(s21.body).toMatchObject({ locationId: Number(fx.ids.s21), warehouse: { warehouseId: Number(fx.ids.g2) } });
+      // POP 도 같은 경로를 쓴다(「반납 가능」 POP) — 계정 세션은 공장을 거르지 않는다.
+      await fx.locationLookup(`${MR}-S-21`, fx.pop).expect(200);
+      await fx.locationLookup(`${MR}-S-91`, 'session').expect(200);
+
+      const material = await fx.locationLookup(`${MR}-M-01`).expect(400);
+      expect(material.body.errors[0]).toMatchObject({ field: 'locationCode', code: 'NOT_PRODUCTION_WAREHOUSE', message: '생산창고 위치가 아닙니다. 반납은 생산창고 위치로만 받습니다' });
+      await fx.locationLookup(`${MR}-D-01`).expect(400);
+      const staging = await fx.locationLookup(await fx.locationCode(fx.ids.staging2)).expect(400);
+      expect(staging.body.errors[0]).toMatchObject({ code: 'STAGING' });
+
+      await fx.locationLookup(`${MR}-${fx.run}-없는위치`).expect(404);
+      await fx.locationLookup(`${MR}-S-91`).expect(404);
+      await fx.locationLookup(`${MR}-S-21`, fx.popOff).expect(403);
+    });
+
+    it('T037 POST — 출고 창고와 다른 생산창고 위치(S-21)로 받으면 G2 재고가 는다, 자재창고 위치면 400 NOT_PRODUCTION_WAREHOUSE', async () => {
+      const a = await issued(40, 'B');
+      const g2Before = await g2OnHand(a.lotId);
+      const response = await fx.receive([{ lotId: a.lotId, returnQty: 6, destinationLocationId: fx.ids.s21, confirmUndesignated: true }], fx.pda).expect(201);
+      expect(response.body.lines[0]).toMatchObject({ destinationWarehouseId: Number(fx.ids.g2), destinationLocationId: Number(fx.ids.s21) });
+      expect(await g2OnHand(a.lotId)).toBe(g2Before + 6);
+
+      const other = await issued(20, 'B');
+      const rejected = await fx.receive([
+        { lotId: a.lotId, returnQty: 1, destinationLocationId: fx.ids.s01 },
+        { lotId: other.lotId, returnQty: 1, destinationLocationId: fx.ids.m01 },
+      ], fx.pda).expect(400);
+      expect(rejected.body.errors).toEqual([expect.objectContaining({
+        field: 'lines[1].destinationLocationId', code: 'NOT_PRODUCTION_WAREHOUSE', message: '생산창고 위치가 아닙니다. 반납은 생산창고 위치로만 받습니다',
+      })]);
+      expect(await fx.onHand(a.lotId)).toEqual([[fx.ids.s21, 6, 'NORMAL', 'AVAILABLE']]);
+      expect(await fx.onHand(other.lotId)).toEqual([]);
     });
 
     it('US2-4·Q8 적치 대기의 반납분은 다른 W/O 피킹 후보로 잡히고, 반납 때 생긴 적치 지시를 PDA 「적치·입고 완료」에서 완료해 자리를 옮긴다', async () => {

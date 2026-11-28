@@ -143,7 +143,8 @@ describe('계약 커버리지', () => {
     // 부서 생산 창고 조회·바꾸기 2건 삭제 — 생산 창고는 창고 유형(사용자 결정 2026-11-25): 658 → 656.
     // 추적 시스템 수량 출고·재고 조회 2 오퍼레이션(flowtrack 연동 제안 §3-5): 656 → 658.
     // 반납 입고 LOT 조회·W/O 로 찾기 3 오퍼레이션(피처 019 · omf-all-around#367): 658 → 661.
-    expect(registry.size).toBe(661);
+    // 반납 입고 받는 위치 조회 1 오퍼레이션(피처 019 T037 · omf-all-around#367): 661 → 662.
+    expect(registry.size).toBe(662);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
