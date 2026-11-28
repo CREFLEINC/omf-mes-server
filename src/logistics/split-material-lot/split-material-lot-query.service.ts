@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
-import { GOODS_ISSUE_SPLIT_SOURCE, SPLIT_RELATION, inboundLineLotSql } from '../../core/lot';
+import { GOODS_ISSUE_SPLIT_SOURCE, SPLIT_RELATION, inboundLineLotSql, materialLotLabelQtySql } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const LABEL = 'MATERIAL_LOT_LABEL';
@@ -69,7 +69,7 @@ export type SplitMaterialLotList = PagedResponse<SplitMaterialLotView> & { unpri
 
 interface Row {
   lot_id: bigint; lot_no: string; status_code: string; lifecycle_status_code: string | null;
-  item_id: bigint; item_code: string; item_name: string; uom_id: bigint; uom_code: string; initial_qty: Prisma.Decimal;
+  item_id: bigint; item_code: string; item_name: string; uom_id: bigint; uom_code: string; label_qty: Prisma.Decimal;
   parent_lot_id: bigint; parent_lot_no: string; split_at: Date;
   goods_issue_id: bigint; goods_issue_no: string; goods_issue_line_id: bigint; line_no: number;
   warehouse_code: string | null; location_code: string | null;
@@ -94,7 +94,7 @@ export class SplitMaterialLotQueryService {
       : Prisma.sql`NOT ${unprinted} AND ${issuedWindow(query.issuedFrom, query.issuedTo, now)}`;
     const base = Prisma.sql`
       SELECT l.lot_id, l.lot_no, l.status_code, l.lifecycle_status_code, i.item_id, i.item_code, i.item_name,
-             u.uom_id, u.uom_code, l.initial_qty, p.lot_id AS parent_lot_id, p.lot_no AS parent_lot_no,
+             u.uom_id, u.uom_code, ${materialLotLabelQtySql('l')} AS label_qty, p.lot_id AS parent_lot_id, p.lot_no AS parent_lot_no,
              COALESCE(r.occurred_at, l.created_at) AS split_at,
              gi.goods_issue_id, gi.goods_issue_no, gil.goods_issue_line_id, gil.line_no, gi.issued_at,
              w.warehouse_code, loc.location_code,
@@ -165,7 +165,8 @@ function view(row: Row, supplier: Named | null): SplitMaterialLotView {
     item: { itemId: Number(row.item_id), itemCode: row.item_code, itemName: row.item_name },
     uomId: Number(row.uom_id),
     uomCode: row.uom_code,
-    qty: Number(row.initial_qty),
+    // 라벨 수량 — 반납 줄이 있으면 실물(지금 재고, 없으면 최근 반납 수량), 아니면 분할 수량(피처 019).
+    qty: Number(row.label_qty),
     supplier: supplier === null ? null : { supplierId: supplier.id, supplierCode: supplier.code, supplierName: supplier.name },
     parentLot: { lotId: Number(row.parent_lot_id), lotNo: row.parent_lot_no },
     splitAt: row.split_at.toISOString(),

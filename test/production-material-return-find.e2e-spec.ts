@@ -6,6 +6,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
 import { AppModule } from '../src/app.module';
+import { DocumentIssueRenditionService } from '../src/app/document-issue/document-issue-rendition.service';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { FinalCloseProbe } from '../src/production/material-return/final-close';
@@ -13,6 +14,7 @@ import { FinalCloseFake, MaterialReturnFixture, RETURNS } from './support/materi
 import { contractValidator } from './support/wip-lot-fixture';
 
 const CONTRACT = 'production-02생산실행.json';
+const LOGISTICS = 'logistics-01자재창고.json';
 
 interface WorkOrderItem {
   workOrderId: number; workOrderNo: string; finalized: boolean; returnableLotCount: number; unprintedLotCount: number;
@@ -188,6 +190,41 @@ describe('반납 입고 — W/O 로 찾기 (e2e)', () => {
     expect(response.body.lines[0]).toMatchObject({ labelUnprinted: true });
     const list = await fx.as(fx.http().get('/api/logistics/split-material-lots').query({ plantId: Number(fx.ids.plant), labelState: 'UNPRINTED', size: 200 }), fx.pop).expect(200);
     expect((list.body.items as { lotId: number }[]).map((row) => row.lotId)).toContain(Number(lot.lotId));
+  });
+
+  it('P-01-02 라벨 수량 — 출고 300 → 반납 40 이면 qty 40(지금 재고), 재고가 없으면 최근 반납 수량, 반납 없는 LOT 은 initial_qty, 렌디션도 같다', async () => {
+    const splitQty = async (lotId: bigint) => {
+      const list = await fx.as(fx.http().get('/api/logistics/split-material-lots').query({ plantId: Number(fx.ids.plant), labelState: 'UNPRINTED', size: 200 }), fx.pop).expect(200);
+      expect(contractValidator(LOGISTICS, 'GET /logistics/split-material-lots')(list.body)).toBe(true);
+      return (list.body.items as { lotId: number; qty: number }[]).find((row) => row.lotId === Number(lotId))?.qty;
+    };
+    const wo = await fx.workOrder();
+    const returned = await splitIssued(wo.workOrderId, 300, '2026-11-27T02:00:00.000Z', 'NONE');
+    const untouched = await splitIssued(wo.workOrderId, 120, '2026-11-27T03:00:00.000Z', 'NONE');
+    // 분할 LOT 의 initial_qty 는 분할(출고) 수량이다.
+    await prisma.lot.update({ where: { lot_id: returned.lotId }, data: { initial_qty: 300 } });
+    await prisma.lot.update({ where: { lot_id: untouched.lotId }, data: { initial_qty: 120 } });
+    expect(await splitQty(returned.lotId)).toBe(300);
+
+    await fx.receive([{ lotId: returned.lotId, returnQty: 40, workOrderId: wo.workOrderId }]).expect(201);
+    expect(await splitQty(returned.lotId)).toBe(40);
+    expect(await splitQty(untouched.lotId)).toBe(120);
+
+    // 재고가 다 나가면(합성) 가장 최근 반납 줄의 반납 수량.
+    await prisma.inventory_balance.updateMany({ where: { lot_id: returned.lotId }, data: { on_hand_qty: 0 } });
+    expect(await splitQty(returned.lotId)).toBe(40);
+    await fx.receive([{ lotId: returned.lotId, returnQty: 15, workOrderId: wo.workOrderId }]).expect(201);
+    expect(await splitQty(returned.lotId)).toBe(15);
+    await prisma.inventory_balance.updateMany({ where: { lot_id: returned.lotId }, data: { on_hand_qty: 0 } });
+    expect(await splitQty(returned.lotId)).toBe(15);
+
+    // 서버 자재 LOT 라벨 렌디션도 같은 수량을 찍는다.
+    const issue = await prisma.document_issue_log.create({ data: {
+      document_type_code: 'MATERIAL_LOT_LABEL', target_type_code: 'LOT', target_id: returned.lotId, lot_id: returned.lotId, issue_seq: 1,
+      issued_worker_id: fx.pop.workerId, terminal_id: fx.pop.terminalId,
+    } });
+    const tspl = (await app.get(DocumentIssueRenditionService).rendition(Number(issue.document_issue_log_id), 'tspl')).toString('utf8');
+    expect(tspl).toContain('QTY: 15 ');
   });
 
   it('US1-6 「반납 가능」이 꺼진 POP 은 W/O 로 찾기도 403', async () => {

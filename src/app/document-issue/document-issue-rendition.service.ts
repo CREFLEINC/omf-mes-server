@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 
-import { productionRootOf } from '../../core/lot';
+import { materialLotLabelQty, productionRootOf } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { locationLabelPng, locationLabelValues } from './location-label';
 import type { LocationLabelValues } from './location-label-layout';
@@ -137,6 +137,8 @@ export class DocumentIssueRenditionService {
     if (!['MATERIAL_LOT_LABEL', 'IQC_LABEL'].includes(issue.document_type_code) || lot === null) {
       throw new UnprocessableEntityException('자재 LOT 라벨 발행 기록만 렌더링할 수 있습니다.');
     }
-    return materialLotLabelValues({ ...issue, lot });
+    // 반납 LOT 은 실물 수량으로 찍는다 — P-01-02 목록 qty 와 같은 식(피처 019).
+    const qty = (await materialLotLabelQty(this.prisma, [lot.lot_id])).get(lot.lot_id);
+    return materialLotLabelValues({ ...issue, lot, qty });
   }
 }
