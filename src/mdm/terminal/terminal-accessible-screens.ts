@@ -8,7 +8,8 @@
  *
  * ⛔ **계약에 근거가 없다.** 이 오퍼레이션 자체가 설계 사본에 없고(P-10), 화면 코드 ↔ 플래그
  * 대응을 적은 설계 문서도 없다(실측: `plan-uiux.md` U22~U26 은 «슬라이스 ↔ 화면» 표이고
- * 플래그 열이 없다 · 문의 050 이 「`can_return_material` 을 소비하는 화면이 0건」이라 적었다).
+ * 플래그 열이 없다). 문의 050 이 적은 「`can_return_material` 을 소비하는 화면 0건」은 피처 019 가
+ * POP 반납 입고(P-01-03)로 닫았다.
  * ⇒ 아래 표는 **서버가 세운 것**이다. 근거는 셋뿐이고 그 밖을 지어내지 않았다:
  *   ⓐ 플래그 이름이 화면의 일과 같은 것(`can_input_result` ↔ 생산 실적)
  *   ⓑ 서버가 실제로 그 플래그로 막는 자리(`can_start_work` ↔ 작업 시작 · `can_print_label`
@@ -27,7 +28,8 @@ export type TerminalProcessFlag =
   | 'can_input_result'
   | 'can_input_inspection'
   | 'can_print_label'
-  | 'can_complete_work';
+  | 'can_complete_work'
+  | 'can_return_material';
 
 /** 화면 하나가 요구하는 플래그. `null` 이면 축이 없어 «항상» 담는다. */
 export interface PopScreenRequirement {
@@ -46,6 +48,9 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   //    «생산» LOT 라벨과 개체 발번 둘뿐이다). 공정으로 막으면 화면 목록이 API 보다 엄격해진다.
   { code: 'P-01-01', flag: null },
   { code: 'P-01-02', flag: 'can_print_label' },
+  // ⭐ 반납 입고(피처 019 · omf-all-around#367 · D-4) — 생산창고 POP 에 「반납 가능」을 켜야 보인다(FR-006).
+  //    서버 반납 API 도 같은 플래그로 POP 을 막는다(`terminal-material-return-scope.ts`).
+  { code: 'P-01-03', flag: 'can_return_material' },
   // 작업 시작·중단 — `can_start_work`. 중단(`:hold`·`:resume`)도 같은 축이다:
   // `terminal-production-scope.ts` 의 `ownWorkOrder` 가 그 플래그로 가른다.
   { code: 'P-02-01', flag: 'can_start_work' },

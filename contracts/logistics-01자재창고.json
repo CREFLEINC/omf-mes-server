@@ -26167,16 +26167,17 @@
       "type": "string",
       "enum": [
        "GOODS_RECEIPT",
-       "REPLENISHMENT_RECEIPT"
+       "REPLENISHMENT_RECEIPT",
+       "MATERIAL_RETURN"
       ],
-      "description": "지시 원천 — 구매 입고 · 창고 보충 수령. 근거: 피처 004 생산 창고 보충 · omf-all-around#230"
+      "description": "지시 원천 — 구매 입고 · 창고 보충 수령 · 반납 입고(적치 대기로 받은 반납 줄 — goodsReceiptLineId·shopfloorReceiptLineId 둘 다 null). 근거: 피처 004 생산 창고 보충 · omf-all-around#230 · 피처 019 반납 입고 · omf-all-around#367"
      },
      "originDocumentNo": {
       "type": [
        "string",
        "null"
       ],
-      "description": "원천 문서 번호 — 구매 입고 원천은 입고 번호, 창고 보충 수령 원천은 창고 보충 요청 번호(모바일 「창고 보충 · 요청번호」). 근거: 피처 004 생산 창고 보충 G2 보완 · omf-all-around#230"
+      "description": "원천 문서 번호 — 구매 입고 원천은 입고 번호, 창고 보충 수령 원천은 창고 보충 요청 번호(모바일 「창고 보충 · 요청번호」), 반납 입고 원천은 반납 번호. 근거: 피처 004 생산 창고 보충 G2 보완 · omf-all-around#230 · 피처 019 · omf-all-around#367"
      },
      "movedQty": {
       "type": "number",
@@ -31912,9 +31913,10 @@
       "enum": [
        "PURCHASE",
        "PRODUCT",
-       "REPLENISHMENT"
+       "REPLENISHMENT",
+       "MATERIAL_RETURN"
       ],
-      "description": "입고 종류 — 제품 입고 지시는 PRODUCT, 생산 창고 보충 수령 지시(피처 004)는 REPLENISHMENT, 그 밖은 PURCHASE"
+      "description": "입고 종류 — 제품 입고 지시는 PRODUCT, 생산 창고 보충 수령 지시(피처 004)는 REPLENISHMENT, 반납 입고 지시(피처 019)는 MATERIAL_RETURN, 그 밖은 PURCHASE"
      },
      "recordedAt": {
       "type": "string",

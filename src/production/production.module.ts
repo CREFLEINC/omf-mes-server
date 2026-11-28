@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
+import { InventoryPostingModule } from '../core/inventory-posting';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { LotRegistryModule } from '../core/lot';
@@ -13,6 +14,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { MaterialConsumptionQueryService } from './material-consumption/material-consumption-query.service';
 import { MaterialConsumptionController } from './material-consumption/material-consumption.controller';
 import { MaterialConsumptionService } from './material-consumption/material-consumption.service';
+import { FinalCloseProbe } from './material-return/final-close';
 import { MaterialReturnQueryService } from './material-return/material-return-query.service';
 import { MaterialReturnController } from './material-return/material-return.controller';
 import { OperationHandoverQueryService } from './operation-handover/operation-handover-query.service';
@@ -76,6 +78,8 @@ import { WorkSessionService } from './work-session/work-session.service';
     OutboxModule,
     ApprovalModule,
     NotificationCoreModule,
+    // 반납 입고 원장(피처 019).
+    InventoryPostingModule,
   ],
   controllers: [
     WorkOrderController,
@@ -113,6 +117,7 @@ import { WorkSessionService } from './work-session/work-session.service';
     WorkSessionWorkerService,
     PrecheckDecisionQueryService,
     MaterialReturnService,
+    FinalCloseProbe,
     PrecheckDecisionService,
     OperationHandoverQueryService,
     RepairExecutionQueryService,

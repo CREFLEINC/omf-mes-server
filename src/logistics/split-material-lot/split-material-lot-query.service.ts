@@ -8,6 +8,30 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 const LABEL = 'MATERIAL_LOT_LABEL';
 const FAILED = 'FAILED';
+
+/** LOT `l` 의 마지막 자재 LOT 라벨 발행(x) — 목록과 반납 입고(피처 019)가 같은 판정을 쓴다. */
+const LAST_LABEL = Prisma.sql`
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*) OVER () AS issue_count, d.issue_seq AS last_issue_seq,
+           d.print_outcome_code AS last_outcome, d.issued_at AS last_issued_at
+      FROM app.document_issue_log d
+     WHERE d.target_type_code = 'LOT' AND d.target_id = l.lot_id AND d.document_type_code = ${LABEL}
+     ORDER BY d.issued_at DESC, d.document_issue_log_id DESC LIMIT 1
+  ) x ON true`;
+/** 미발행 = 발행 기록이 없거나 마지막 인쇄 결과가 실패(인쇄 대기 PENDING 은 찍은 것). */
+const UNPRINTED = Prisma.sql`(x.issue_count IS NULL OR x.last_outcome = ${FAILED})`;
+
+/**
+ * 라벨 미발행 분할 LOT(008 판정) — 그 LOT 중 부분 출고 분할 LOT 이고 자재 LOT 라벨이 미발행인 것.
+ * 반납 입고(피처 019 FR-015·017)가 POP 라벨 이어 찍기·W/O 로 찾기 정렬에 쓴다.
+ */
+export async function unprintedSplitLotIds(db: Pick<Prisma.TransactionClient, '$queryRaw'>, lotIds: readonly bigint[]): Promise<Set<bigint>> {
+  if (lotIds.length === 0) return new Set();
+  const rows = await db.$queryRaw<{ lot_id: bigint }[]>`
+    SELECT l.lot_id FROM trace.lot l ${LAST_LABEL}
+     WHERE l.source_type_code = ${GOODS_ISSUE_SPLIT_SOURCE} AND l.lot_id = ANY(${[...new Set(lotIds)]}::bigint[]) AND ${UNPRINTED}`;
+  return new Set(rows.map((row) => row.lot_id));
+}
 /** 「찍음」 목록의 기본 폭 — 미발행은 기간을 보지 않는다(FR-008 · SC-004). */
 const PRINTED_DEFAULT_DAYS = 7;
 const LABEL_STATES = ['UNPRINTED', 'PRINTED'] as const;
@@ -64,7 +88,7 @@ export class SplitMaterialLotQueryService {
   async list(query: SplitMaterialLotQuery, now = new Date()): Promise<SplitMaterialLotList> {
     const page = pageRequest({ page: query.page, size: query.size });
     const state = labelState(query.labelState);
-    const unprinted = Prisma.sql`(x.issue_count IS NULL OR x.last_outcome = ${FAILED})`;
+    const unprinted = UNPRINTED;
     const where = state === 'UNPRINTED'
       ? unprinted
       : Prisma.sql`NOT ${unprinted} AND ${issuedWindow(query.issuedFrom, query.issuedTo, now)}`;
@@ -87,13 +111,7 @@ export class SplitMaterialLotQueryService {
           SELECT r.occurred_at FROM trace.lot_relation r
            WHERE r.target_lot_id = l.lot_id AND r.relation_type_code = ${SPLIT_RELATION} LIMIT 1
         ) r ON true
-        LEFT JOIN LATERAL (
-          SELECT COUNT(*) OVER () AS issue_count, d.issue_seq AS last_issue_seq,
-                 d.print_outcome_code AS last_outcome, d.issued_at AS last_issued_at
-            FROM app.document_issue_log d
-           WHERE d.target_type_code = 'LOT' AND d.target_id = l.lot_id AND d.document_type_code = ${LABEL}
-           ORDER BY d.issued_at DESC, d.document_issue_log_id DESC LIMIT 1
-        ) x ON true
+        ${LAST_LABEL}
        WHERE l.source_type_code = ${GOODS_ISSUE_SPLIT_SOURCE} AND l.plant_id = ${BigInt(query.plantId)}`;
     const order = state === 'UNPRINTED' ? Prisma.sql`split_at ASC, lot_id ASC` : Prisma.sql`split_at DESC, lot_id DESC`;
     const [rows, [counts]] = await Promise.all([

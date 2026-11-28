@@ -10,7 +10,9 @@ export interface RecordRow {
   record_type: 'DIRECT' | 'TASK'; record_id: bigint; recorded_at: Date;
   /** DIRECT 는 라인 적치 방식, TASK 는 지시 상태(COMPLETED · COMPLETED_TEMPORARY). */
   mode_code: string;
-  receipt_type_code: string | null; replenishment: boolean; document_no: string;
+  receipt_type_code: string | null; replenishment: boolean;
+  /** 반납 입고 줄에서 생긴 지시(피처 019) — 적치 지시 쪽만 싣는다. */
+  material_return?: boolean; document_no: string;
   lot_id: bigint; lot_no: string; item_id: bigint; item_code: string; item_name: string;
   qty: Prisma.Decimal; uom_code: string; quality_status_code: string | null;
   warehouse_id: bigint; warehouse_code: string; warehouse_name: string; location_id: bigint; location_code: string;
@@ -18,7 +20,7 @@ export interface RecordRow {
 }
 
 export interface PutawayRecordView {
-  recordType: 'DIRECT' | 'TASK'; recordId: number; putawayModeCode: string; sourceCode: 'PURCHASE' | 'PRODUCT' | 'REPLENISHMENT';
+  recordType: 'DIRECT' | 'TASK'; recordId: number; putawayModeCode: string; sourceCode: 'PURCHASE' | 'PRODUCT' | 'REPLENISHMENT' | 'MATERIAL_RETURN';
   recordedAt: string; documentNo: string; lot: { lotId: number; lotNo: string };
   item: { itemId: number; itemCode: string; itemName: string }; qty: string; uomCode: string; qualityStatusCode: string | null;
   warehouse: { warehouseId: number; warehouseCode: string; warehouseName: string };
@@ -66,7 +68,8 @@ export async function loadPutawayRecords(prisma: PrismaService, filter: RecordFi
   // 수량·품질은 지시가 남긴 원장 줄 — 보충 수령 원천은 남은 만큼만 옮긴다(옮긴 것이 없으면 원장 줄이 없다).
   const task = prisma.$queryRawUnsafe<RecordRow[]>(`
     SELECT 'TASK' AS record_type, t.putaway_task_id AS record_id, t.completed_at AS recorded_at, t.status_code AS mode_code,
-           gr.receipt_type_code, t.shopfloor_receipt_line_id IS NOT NULL AS replenishment, t.putaway_task_no AS document_no,
+           gr.receipt_type_code, t.shopfloor_receipt_line_id IS NOT NULL AS replenishment,
+           t.material_return_line_id IS NOT NULL AS material_return, t.putaway_task_no AS document_no,
            COALESCE(il.qty, t.task_qty) AS qty, COALESCE(il.to_quality_status_code, gl.quality_status_code) AS quality_status_code,
            gr.status_code AS receipt_status_code, ${COMMON_COLUMNS}
       FROM logistics.putaway_task t
@@ -113,8 +116,9 @@ function modeOf(row: RecordRow): string {
   return row.mode_code === 'COMPLETED_TEMPORARY' ? 'TASK_TEMPORARY' : 'TASK';
 }
 
-/** 입고에서 온 지시는 입고 종류로(제품 입고만 PRODUCT), 보충 수령 원천(피처 004)은 REPLENISHMENT. */
+/** 입고에서 온 지시는 입고 종류로(제품 입고만 PRODUCT), 보충 수령 원천(피처 004)은 REPLENISHMENT, 반납 입고 원천(피처 019)은 MATERIAL_RETURN. */
 function sourceOf(row: RecordRow): PutawayRecordView['sourceCode'] {
   if (row.replenishment) return 'REPLENISHMENT';
+  if (row.material_return === true) return 'MATERIAL_RETURN';
   return row.receipt_type_code === 'PRODUCT' ? 'PRODUCT' : 'PURCHASE';
 }

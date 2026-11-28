@@ -416,7 +416,7 @@ export class TerminalService {
       where: { terminal_id: terminalId },
       select: {
         can_start_work: true, can_input_material: true, can_input_result: true,
-        can_input_inspection: true, can_print_label: true, can_complete_work: true,
+        can_input_inspection: true, can_print_label: true, can_complete_work: true, can_return_material: true,
       },
     });
     const codes = accessibleScreenCodes(rows);

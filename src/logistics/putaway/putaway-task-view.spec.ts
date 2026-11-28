@@ -21,6 +21,8 @@ function row(overrides: Partial<TaskRow> = {}): TaskRow {
     remarks: null,
     reason_code: null,
     version_no: 1,
+    shopfloor_receipt_line_id: null,
+    material_return_line_id: null,
     goods_receipt_line: {
       goods_receipt: { warehouse_id: 61n },
     },
@@ -65,5 +67,24 @@ describe('taskView — 창고 보충 수령 원천(피처 004)', () => {
     const view = taskView(row({ shopfloor_receipt_line_id: null, location_putaway_task_from_location_idTolocation: { warehouse_id: 999n } }), []);
 
     expect(view).toMatchObject({ warehouseId: 61, goodsReceiptLineId: 11, shopfloorReceiptLineId: null, originCode: 'GOODS_RECEIPT' });
+  });
+});
+
+describe('taskView — 반납 입고 원천(피처 019)', () => {
+  it('US2-2·Q7 반납 줄에서 생긴 지시는 originCode = MATERIAL_RETURN, 창고 = 출발 위치(적치 대기)의 창고', () => {
+    const view = taskView(
+      row({
+        goods_receipt_line_id: null,
+        goods_receipt_line: null,
+        material_return_line_id: 91n,
+        location_putaway_task_from_location_idTolocation: { warehouse_id: 81n },
+      }),
+      [],
+      'MR-2026-0001',
+    );
+
+    expect(view).toMatchObject({
+      warehouseId: 81, goodsReceiptLineId: null, shopfloorReceiptLineId: null, originCode: 'MATERIAL_RETURN', originDocumentNo: 'MR-2026-0001',
+    });
   });
 });
