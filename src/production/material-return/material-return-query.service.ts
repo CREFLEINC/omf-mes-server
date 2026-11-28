@@ -22,6 +22,8 @@ interface ItemRef { itemId: number; itemCode: string; itemName: string }
 export interface MaterialReturnWorkOrder {
   workOrderId: number; workOrderNo: string; item: ItemRef; processName: string | null; lineName: string | null;
   lastIssuedAt: string; finalized: boolean; returnableLotCount: number; unprintedLotCount: number;
+  /** 나간 자재 요약 — 가장 최근 출고 LOT 의 자재 품목 + 나머지 자재 품목 수. */
+  returnableMaterial: { item: ItemRef; otherItemCount: number };
 }
 
 /** 계약 `MaterialReturnWorkOrderLot`(§3). */
@@ -77,6 +79,10 @@ export class MaterialReturnQueryService {
       item: { itemId: Number(row.item_id), itemCode: row.item_code, itemName: row.item_name },
       processName: row.process_name, lineName: row.line_name, lastIssuedAt: row.last_issued_at.toISOString(),
       finalized: finalized.has(row.work_order_id), returnableLotCount: Number(row.lot_count), unprintedLotCount: unprinted.get(row.work_order_id) ?? 0,
+      returnableMaterial: {
+        item: { itemId: Number(row.material_item_id), itemCode: row.material_item_code, itemName: row.material_item_name },
+        otherItemCount: Number(row.material_item_count) - 1,
+      },
     }));
     return pagedResponse(items, rows.length === 0 ? 0 : Number(rows[0].total), page);
   }

@@ -14,19 +14,23 @@ type Db = Pick<Prisma.TransactionClient, '$queryRaw'>;
 export interface OpenReturnLot {
   lot_id: bigint; goods_issue_line_id: bigint; work_order_id: bigint; issued_at: Date;
   issue_qty: Prisma.Decimal; returnable: Prisma.Decimal;
+  /** LOT 의 자재 품목 — W/O 로 찾기 목록의 「나간 자재」 요약에 쓴다. */
+  material_item_id: bigint; material_item_code: string; material_item_name: string;
 }
 
 /** 반납 가능 양 > 0 인 LOT 과 그 귀속 출고 — `where` 는 `o`(이 CTE 의 줄)에 거는 조건. */
 function openLotsSql(plantId: bigint | null, where: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`
     WITH latest AS (
-      SELECT DISTINCT ON (gil.lot_id) gil.lot_id, gil.goods_issue_line_id, gil.issue_qty, gi.issued_at, mir.work_order_id
+      SELECT DISTINCT ON (gil.lot_id) gil.lot_id, gil.goods_issue_line_id, gil.issue_qty, gi.issued_at, mir.work_order_id,
+             mi.item_id AS material_item_id, mi.item_code AS material_item_code, mi.item_name AS material_item_name
         FROM logistics.goods_issue_line gil
         JOIN logistics.goods_issue gi ON gi.goods_issue_id = gil.goods_issue_id
         JOIN logistics.picking_line pl ON pl.picking_line_id = gil.picking_line_id
         JOIN logistics.material_issue_request_line mirl ON mirl.material_issue_request_line_id = pl.material_issue_request_line_id
         JOIN logistics.material_issue_request mir ON mir.material_issue_request_id = mirl.material_issue_request_id
         JOIN trace.lot l ON l.lot_id = gil.lot_id
+        JOIN mdm.item mi ON mi.item_id = l.item_id
        WHERE gi.status_code = 'POSTED' AND gi.cancelled_at IS NULL
          AND mir.request_type_code = 'WORK_ORDER' AND mir.work_order_id IS NOT NULL
          AND l.lot_type_code = 'MATERIAL' AND l.status_code IN ('NORMAL', 'DEFECTIVE')
@@ -44,6 +48,8 @@ function openLotsSql(plantId: bigint | null, where: Prisma.Sql): Prisma.Sql {
 export interface WorkOrderRow {
   work_order_id: bigint; work_order_no: string; item_id: bigint; item_code: string; item_name: string;
   process_name: string | null; line_name: string | null; last_issued_at: Date; lot_count: bigint; total: bigint;
+  /** 나간 자재 요약 — 가장 최근 출고 LOT 의 자재 품목(출고 시각이 같으면 품목 코드 오름차순 첫 품목)과 서로 다른 자재 품목 수. */
+  material_item_id: bigint; material_item_code: string; material_item_name: string; material_item_count: bigint;
 }
 
 /** §2 — 반납 남은 LOT 이 있는 W/O, 최근 출고 순(같으면 W/O id 역순). `q` 는 W/O 번호 일부. */
@@ -52,10 +58,17 @@ export async function returnWorkOrders(
 ): Promise<{ rows: WorkOrderRow[]; unprinted: Map<bigint, number> }> {
   const rows = await db.$queryRaw<WorkOrderRow[]>`
     WITH o AS (${openLotsSql(plantId, Prisma.sql`true`)}),
-         wo AS (SELECT work_order_id, MAX(issued_at) AS last_issued_at, COUNT(*) AS lot_count FROM o GROUP BY work_order_id)
+         wo AS (SELECT work_order_id, MAX(issued_at) AS last_issued_at, COUNT(*) AS lot_count,
+                       COUNT(DISTINCT material_item_id) AS material_item_count
+                  FROM o GROUP BY work_order_id),
+         -- 다 반납한 LOT 은 o 에 없다 ⇒ 대표 품목·품목 수에서 저절로 빠진다(2026-11-28 사용자 결정).
+         top AS (SELECT DISTINCT ON (work_order_id) work_order_id, material_item_id, material_item_code, material_item_name
+                   FROM o ORDER BY work_order_id, issued_at DESC, material_item_code ASC)
     SELECT wo.work_order_id, w.work_order_no, i.item_id, i.item_code, i.item_name, p.process_name, ln.line_name,
-           wo.last_issued_at, wo.lot_count, COUNT(*) OVER () AS total
+           wo.last_issued_at, wo.lot_count, COUNT(*) OVER () AS total,
+           top.material_item_id, top.material_item_code, top.material_item_name, wo.material_item_count
       FROM wo
+      JOIN top ON top.work_order_id = wo.work_order_id
       JOIN production.work_order w ON w.work_order_id = wo.work_order_id
       JOIN mdm.item i ON i.item_id = w.item_id
       LEFT JOIN planning.routing_operation ro ON ro.routing_operation_id = w.routing_operation_id

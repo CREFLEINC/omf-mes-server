@@ -14,7 +14,10 @@ import { contractValidator } from './support/wip-lot-fixture';
 
 const CONTRACT = 'production-02생산실행.json';
 
-interface WorkOrderItem { workOrderId: number; workOrderNo: string; finalized: boolean; returnableLotCount: number; unprintedLotCount: number }
+interface WorkOrderItem {
+  workOrderId: number; workOrderNo: string; finalized: boolean; returnableLotCount: number; unprintedLotCount: number;
+  returnableMaterial: { item: { itemId: number; itemCode: string; itemName: string }; otherItemCount: number };
+}
 interface LotItem { lotId: number; returnableQty: number; labelUnprinted: boolean; issueQty: number }
 
 describe('반납 입고 — W/O 로 찾기 (e2e)', () => {
@@ -82,6 +85,46 @@ describe('반납 입고 — W/O 로 찾기 (e2e)', () => {
     finalClose.finalized.add(old.workOrderId);
     const finalized = await workOrders(old.workOrderNo).expect(200);
     expect(finalized.body.items).toEqual([expect.objectContaining({ workOrderId: Number(old.workOrderId), finalized: true })]);
+  });
+
+  it('목록 줄의 나간 자재 — 가장 최근 출고 LOT 의 자재 품목(같은 시각이면 품목 코드 순)·나머지 품목 수, 다 반납한 품목은 세지 않는다', async () => {
+    const material = async (wo: { workOrderNo: string; workOrderId: bigint }) => {
+      const response = await workOrders(wo.workOrderNo).expect(200);
+      expect(contractValidator(CONTRACT, 'GET /production/material-returns/work-orders')(response.body)).toBe(true);
+      const row = (response.body.items as WorkOrderItem[]).find((item) => item.workOrderId === Number(wo.workOrderId));
+      return row?.returnableMaterial;
+    };
+    const itemOf = (key: 'A' | 'B' | 'C') => ({ itemId: Number(fx.item(key)), itemCode: `MRT19-${key}` });
+
+    // 자재 셋 — 가장 최근 출고는 B, 나머지 A·C 둘. W/O 생산 품목(item)은 그대로다.
+    const three = await fx.workOrder();
+    for (const [key, at] of [['A', '01:00'], ['B', '03:00'], ['C', '02:00']] as const) {
+      await fx.issue((await fx.lot(key)).lotId, 10, three.workOrderId, { at: `2026-11-27T${at}:00.000Z` });
+    }
+    expect(await material(three)).toEqual({ item: expect.objectContaining(itemOf('B')), otherItemCount: 2 });
+    const threeRow = ((await workOrders(three.workOrderNo).expect(200)).body.items as (WorkOrderItem & { item: { itemId: number } })[])[0];
+    expect(threeRow.item.itemId).toBe(Number(fx.ids.product));
+
+    // 출고 시각이 같으면 품목 코드 오름차순 첫 품목(A < C).
+    const tie = await fx.workOrder();
+    await fx.issue((await fx.lot('C')).lotId, 10, tie.workOrderId, { at: '2026-11-27T05:00:00.000Z' });
+    await fx.issue((await fx.lot('A')).lotId, 10, tie.workOrderId, { at: '2026-11-27T05:00:00.000Z' });
+    expect(await material(tie)).toEqual({ item: expect.objectContaining(itemOf('A')), otherItemCount: 1 });
+
+    // 자재 한 종(LOT 둘)이면 0.
+    const single = await fx.workOrder();
+    await fx.issue((await fx.lot('A')).lotId, 10, single.workOrderId, { at: '2026-11-27T01:00:00.000Z' });
+    await fx.issue((await fx.lot('A')).lotId, 10, single.workOrderId, { at: '2026-11-27T02:00:00.000Z' });
+    expect(await material(single)).toEqual({ item: expect.objectContaining(itemOf('A')), otherItemCount: 0 });
+
+    // 다 반납한 품목(B, 가장 최근 출고)은 대표에서도 수에서도 빠진다.
+    const returned = await fx.workOrder();
+    await fx.issue((await fx.lot('A')).lotId, 10, returned.workOrderId, { at: '2026-11-27T01:00:00.000Z' });
+    const done = await fx.lot('B');
+    await fx.issue(done.lotId, 10, returned.workOrderId, { at: '2026-11-27T04:00:00.000Z' });
+    expect(await material(returned)).toEqual({ item: expect.objectContaining(itemOf('B')), otherItemCount: 1 });
+    await fx.receive([{ lotId: done.lotId, returnQty: 10 }]).expect(201);
+    expect(await material(returned)).toEqual({ item: expect.objectContaining(itemOf('A')), otherItemCount: 0 });
   });
 
   it('US4-2·US4-3 그 W/O 가 가장 최근 출고인 반납 가능 LOT — 라벨 미발행(발행 없음·마지막 인쇄 실패)이 맨 위, 그 안에서 출고 시각 순', async () => {
