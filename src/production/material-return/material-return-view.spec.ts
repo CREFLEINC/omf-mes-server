@@ -8,7 +8,7 @@ function row(over: Partial<MaterialReturnLineRow>): MaterialReturnLineRow {
     package_opened: true, quality_check_required: true, return_quality_status_code: null, inventory_transaction_line_id: 9n,
     created_at: new Date('2026-11-27T01:00:00.000Z'), created_by: null,
     work_order_id: null, goods_issue_line_id: null, attribution_code: null, destination_location_id: null,
-    lot: { lot_no: 'M-LOT-1' }, work_order: null, location: null,
+    lot: { lot_no: 'M-LOT-1' }, work_order: null, location: null, putaway_task: [],
     ...over,
   } as MaterialReturnLineRow;
 }
@@ -36,5 +36,11 @@ describe('materialReturnLineView', () => {
     expect(view.workOrderId).toBeNull();
     expect(view.workOrderNo).toBeNull();
     expect(view).not.toHaveProperty('labelUnprinted');
+  });
+
+  it('US2-2·Q7 적치 대기로 받은 줄은 반납 때 만든 적치 지시 id 를 내고, 위치를 스캔해 받은 줄(US2-1·Q6)은 칸이 없다', () => {
+    const staged = materialReturnLineView(row({ attribution_code: 'AUTO_LATEST_ISSUE', putaway_task: [{ putaway_task_id: 42n }] }));
+    expect(staged.putawayTaskId).toBe(42);
+    expect(materialReturnLineView(row({ attribution_code: 'AUTO_LATEST_ISSUE' }))).not.toHaveProperty('putawayTaskId');
   });
 });

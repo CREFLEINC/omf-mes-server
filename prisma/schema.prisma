@@ -1414,6 +1414,8 @@ model putaway_task {
   /// 단말이 완료·임시 완료할 때 채운다(omf-all-around#325). 부분 색인 둘은 마이그레이션에만 있다.
   completed_worker_id                                     BigInt?
   completed_terminal_id                                   BigInt?
+  /// 적치 대기로 받은 반납 입고 줄에서 생긴 지시(피처 019). 원천 셋 중 정확히 하나(ck_putaway_task_origin).
+  material_return_line_id                                 BigInt?
   completed_worker                                        worker?                     @relation("putaway_task_completed_worker", fields: [completed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   completed_terminal                                      terminal?                   @relation("putaway_task_completed_terminal", fields: [completed_terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
   location_putaway_task_actual_location_idTolocation      location?                   @relation("putaway_task_actual_location_idTolocation", fields: [actual_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1428,9 +1430,11 @@ model putaway_task {
   uom                                                     uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   shopfloor_receipt_line                                  shopfloor_receipt_line?     @relation(fields: [shopfloor_receipt_line_id], references: [shopfloor_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
+  material_return_line                                    material_return_line?       @relation(fields: [material_return_line_id], references: [material_return_line_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([goods_receipt_line_id], map: "ix_putaway_receipt_line")
   @@index([shopfloor_receipt_line_id], map: "ix_putaway_task_shopfloor_receipt_line")
+  @@index([material_return_line_id], map: "ix_putaway_task_material_return_line")
   @@index([actual_location_id], map: "ix_putaway_task_actual_location")
   @@index([from_location_id], map: "ix_putaway_task_from_location")
   @@index([recommended_location_id], map: "ix_putaway_task_recommended_location")
@@ -3309,6 +3313,7 @@ model material_return_line {
   work_order                    work_order?                 @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   goods_issue_line              goods_issue_line?           @relation(fields: [goods_issue_line_id], references: [goods_issue_line_id], onDelete: NoAction, onUpdate: NoAction)
   location                      location?                   @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  putaway_task                  putaway_task[]
 
   @@unique([material_return_id, line_no], map: "uq_material_return_line")
   @@index([goods_issue_line_id], map: "ix_material_return_line_goods_issue_line")

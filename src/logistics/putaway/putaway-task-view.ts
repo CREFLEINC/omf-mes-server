@@ -24,8 +24,8 @@ export interface PutawayTaskView {
   putawayTaskId: number; putawayTaskNo: string;
   /** 창고 보충 수령 원천이면 null(피처 004) — 그때는 `shopfloorReceiptLineId` 가 있다. */
   goodsReceiptLineId: number | null; shopfloorReceiptLineId: number | null;
-  originCode: 'GOODS_RECEIPT' | 'REPLENISHMENT_RECEIPT';
-  /** 원천 문서 번호 — 구매 입고면 입고 번호, 창고 보충 수령이면 창고 보충 요청 번호(모바일 「창고 보충 · 요청번호」). */
+  originCode: 'GOODS_RECEIPT' | 'REPLENISHMENT_RECEIPT' | 'MATERIAL_RETURN';
+  /** 원천 문서 번호 — 구매 입고면 입고 번호, 창고 보충 수령이면 창고 보충 요청 번호(모바일 「창고 보충 · 요청번호」), 반납 입고면 반납 번호. */
   originDocumentNo: string | null;
   itemId: number; lotId: number; taskQty: number; uomId: number; fromLocationId: number;
   allowedLocations: AllowedLocation[]; actualLocationId: number | null;
@@ -41,7 +41,7 @@ export function taskView(row: TaskRow, allowedLocations: AllowedLocation[], orig
     putawayTaskNo: row.putaway_task_no,
     goodsReceiptLineId: id(row.goods_receipt_line_id),
     shopfloorReceiptLineId: id(row.shopfloor_receipt_line_id),
-    originCode: row.goods_receipt_line_id === null ? 'REPLENISHMENT_RECEIPT' : 'GOODS_RECEIPT',
+    originCode: originCodeOf(row),
     originDocumentNo,
     itemId: Number(row.item_id), lotId: Number(row.lot_id),
     taskQty: Number(row.task_qty), uomId: Number(row.uom_id),
@@ -53,6 +53,12 @@ export function taskView(row: TaskRow, allowedLocations: AllowedLocation[], orig
     completedAt: row.completed_at === null ? null : row.completed_at.toISOString(),
     remarks: row.remarks,
   };
+}
+
+/** 지시 원천 — 원천 칸은 셋 중 정확히 하나다(ck_putaway_task_origin). 반납 입고(피처 019)는 적치 대기로 받은 반납 줄. */
+function originCodeOf(row: Pick<TaskRow, 'goods_receipt_line_id' | 'material_return_line_id'>): PutawayTaskView['originCode'] {
+  if (row.goods_receipt_line_id !== null) return 'GOODS_RECEIPT';
+  return row.material_return_line_id !== null ? 'MATERIAL_RETURN' : 'REPLENISHMENT_RECEIPT';
 }
 
 /**
@@ -68,10 +74,22 @@ export function taskWarehouseId(row: TaskRow): bigint {
  * 피킹 지시 → 요청). 출고는 피킹을 원천 칸으로만 가리켜(FK 없음) 관계로 잇지 못한다. 한 쪽을 묶음 질의로 푼다.
  */
 export async function originDocumentNos(
-  db: Pick<Prisma.TransactionClient, 'goods_receipt_line' | 'shopfloor_receipt_line' | 'picking_order' | 'material_issue_request'>,
-  rows: readonly Pick<TaskRow, 'putaway_task_id' | 'goods_receipt_line_id' | 'shopfloor_receipt_line_id'>[],
+  db: Pick<Prisma.TransactionClient, 'goods_receipt_line' | 'shopfloor_receipt_line' | 'picking_order' | 'material_issue_request' | 'material_return_line'>,
+  rows: readonly Pick<TaskRow, 'putaway_task_id' | 'goods_receipt_line_id' | 'shopfloor_receipt_line_id' | 'material_return_line_id'>[],
 ): Promise<Map<bigint, string>> {
   const result = new Map<bigint, string>();
+  const returnLineIds = rows.flatMap((row) => (row.material_return_line_id == null ? [] : [row.material_return_line_id]));
+  if (returnLineIds.length > 0) {
+    const returnLines = await db.material_return_line.findMany({
+      where: { material_return_line_id: { in: returnLineIds } },
+      select: { material_return_line_id: true, material_return: { select: { material_return_no: true } } },
+    });
+    const noOf = new Map(returnLines.map((l) => [l.material_return_line_id, l.material_return.material_return_no]));
+    for (const row of rows) {
+      const no = row.material_return_line_id == null ? undefined : noOf.get(row.material_return_line_id);
+      if (no !== undefined) result.set(row.putaway_task_id, no);
+    }
+  }
   const receiptLineIds = rows.flatMap((row) => (row.goods_receipt_line_id == null ? [] : [row.goods_receipt_line_id]));
   if (receiptLineIds.length > 0) {
     const receiptLines = await db.goods_receipt_line.findMany({

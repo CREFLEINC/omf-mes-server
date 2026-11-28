@@ -36,6 +36,10 @@ describe('putaway-record.query', () => {
     expect(recordView(row({}), 'P').sourceCode).toBe('PURCHASE');
   });
 
+  it('US2-4·Q8 반납 입고 줄에서 생긴 지시(피처 019)는 MATERIAL_RETURN', () => {
+    expect(recordView(row({ record_type: 'TASK', mode_code: 'COMPLETED', material_return: true, receipt_type_code: null }), 'P').sourceCode).toBe('MATERIAL_RETURN');
+  });
+
   it('US1-1 줄 칸 — 수량은 소수 꼬리 없는 문자열, 경로·작업자·단말·입고 상태', () => {
     expect(recordView(row({ receipt_status_code: null }), 'WH › R1')).toEqual({
       recordType: 'DIRECT', recordId: 1, putawayModeCode: 'DESIGNATED', sourceCode: 'PURCHASE', recordedAt: '2026-11-18T05:00:00.000Z',

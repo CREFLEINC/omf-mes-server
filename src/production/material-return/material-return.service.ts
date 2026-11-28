@@ -49,10 +49,13 @@ interface PlannedLine {
   to: Endpoint;
   /** 미지정 위치에 받으면 그 위치 보관 품목에 더한다(피처 009 FR-017a 와 같다). */
   addDesignation: boolean;
+  /** 위치 없이 적치 대기로 받은 줄 — 적치 지시를 하나 만든다(2026-11-28 사용자 결정). 위치를 스캔해 받은 줄은 거짓. */
+  staged: boolean;
 }
 
 const NUMBER_RETRY = 3;
 const OWNED = 'OWNED';
+const PUTAWAY_PENDING = 'PENDING';
 const CORE_RESTRICTED = 'LOCATION_ITEM_RESTRICTED';
 
 /**
@@ -79,11 +82,14 @@ export class MaterialReturnService {
     if (replay !== undefined) return replay.body;
     const preview = await this.plan(this.prisma, body, plantId);
     const plant = preview[0].lot.plantId;
+    // 적치 지시 번호는 트랜잭션 «밖»에서 미리 받는다(생산창고 입고 M-01-09 와 같다) — 적치 대기로 받는 줄 수는 본문으로 정해진다.
+    const staged = preview.filter((line) => line.staged).length;
+    const putawayNos = staged === 0 ? [] : await this.numbering.nextMany('PUTAWAY_TASK', plant, body.businessDate, staged);
 
     for (let attempt = 0; ; attempt += 1) {
       const no = await this.numbering.next(MATERIAL_RETURN_DOCUMENT, plant, body.businessDate);
       try {
-        return (await this.idempotency.run(context, (tx) => this.write(tx, body, actor, plantId, no))).body;
+        return (await this.idempotency.run(context, (tx) => this.write(tx, body, actor, plantId, no, putawayNos))).body;
       } catch (error) {
         if (!isDuplicateNo(error) || attempt >= NUMBER_RETRY) throw restricted(error);
       }
@@ -92,6 +98,7 @@ export class MaterialReturnService {
 
   private async write(
     tx: Prisma.TransactionClient, body: MaterialReturnReceive, actor: MaterialReturnActor, plantId: bigint | null, no: string,
+    putawayNos: readonly string[],
   ): Promise<MaterialReturnView> {
     const lotIds = [...new Set(body.lines.map((line) => BigInt(line.lotId)))].sort((a, b) => (a < b ? -1 : 1));
     // 같은 LOT 동시 반납은 이 자물쇠로 줄을 서고, 뒤의 것은 아래 재계산의 반납 가능 양에 걸린다.
@@ -126,6 +133,7 @@ export class MaterialReturnService {
       ledgerIndex.push(posting.length);
       posting.push(...(await postingLinesOf(tx, line)));
     }
+    await createPutawayTasks(tx, lines, lineIds, putawayNos, actor.appUserId);
 
     const posted = await this.posting.post(tx, {
       businessDate: body.businessDate, occurredAt, transactionTypeCode: MATERIAL_RETURN_DOCUMENT, transactionNo: no, statusCode: 'POSTED',
@@ -176,7 +184,7 @@ export class MaterialReturnService {
       const base = { lot, qty, ...attribution };
       if (line.destinationLocationId === undefined || line.destinationLocationId === null) {
         const locationId = await arrivalLocationId(db, lot.issue.sourceWarehouseId);
-        planned.push({ ...base, addDesignation: false, to: { warehouseId: lot.issue.sourceWarehouseId, locationId, quality: statuses.quality, inventory: statuses.inventory } });
+        planned.push({ ...base, addDesignation: false, staged: true, to: { warehouseId: lot.issue.sourceWarehouseId, locationId, quality: statuses.quality, inventory: statuses.inventory } });
         continue;
       }
       const location = await loadVerdictLocation(db, { locationId: BigInt(line.destinationLocationId) });
@@ -189,7 +197,7 @@ export class MaterialReturnService {
         confirmNeeded ??= field(`${at}.confirmUndesignated`, 'UNDESIGNATED_NEEDS_CONFIRM', VERDICT_MESSAGES.UNDESIGNATED);
       }
       planned.push({
-        ...base, addDesignation: designationAddable(verdict, location),
+        ...base, addDesignation: designationAddable(verdict, location), staged: false,
         to: { warehouseId: location.warehouseId, locationId: location.locationId, quality: statuses.quality, inventory: statuses.inventory },
       });
     }
@@ -229,6 +237,29 @@ async function postingLinesOf(tx: Prisma.TransactionClient, line: PlannedLine): 
   }
   if (left.greaterThan(0)) lines.push({ ...common, qty: left.toNumber(), ownershipTypeCode: OWNED, to: to(line.to.quality, line.to.inventory) });
   return lines;
+}
+
+/**
+ * 적치 대기로 받은 줄마다 `PENDING` 적치 지시 하나(2026-11-28 사용자 결정) — 생산창고 입고(M-01-09 `createPutawayTasks`)와 같은 모양:
+ * 원천 = 반납 줄, 출발 = 적치 대기(받은 위치), 수량 = 반납 수량, 둘 곳은 읽을 때 보관 품목으로 계산, 담당자 없음.
+ * PDA 「적치·입고 완료」의 기존 완료 API 가 적치 대기에 남은 그 LOT 만큼 옮긴다(입고 전표가 없는 원천 갈래).
+ */
+async function createPutawayTasks(
+  tx: Prisma.TransactionClient, lines: readonly PlannedLine[], lineIds: readonly bigint[], putawayNos: readonly string[],
+  appUserId: number | undefined,
+): Promise<void> {
+  const staged = lines.flatMap((line, index) => (line.staged ? [{ line, lineId: lineIds[index] }] : []));
+  // 번호는 미리 받은 본문 기준 줄 수다 — 잠근 뒤 다시 세운 계획이 달라질 수 없다(위치 유무는 본문이 정한다).
+  if (staged.length !== putawayNos.length) throw new Error(`적치 지시 번호 수가 다르다: ${putawayNos.length} ≠ ${staged.length}`);
+  for (const [index, { line, lineId }] of staged.entries()) {
+    await tx.putaway_task.create({
+      data: {
+        putaway_task_no: putawayNos[index], material_return_line_id: lineId, item_id: line.lot.itemId, lot_id: line.lot.lotId,
+        task_qty: line.qty, uom_id: line.lot.uomId, from_location_id: line.to.locationId, status_code: PUTAWAY_PENDING,
+        created_by: appUserId === undefined ? null : BigInt(appUserId),
+      },
+    });
+  }
 }
 
 /** 형식 검증 — 업무일·시각, 본문 안 같은 LOT 두 줄(반납 가능 양이 두 벌이 된다). 형·필수·수량 > 0 은 계약 가드가 먼저 본다. */

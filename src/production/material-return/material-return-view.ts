@@ -17,6 +17,7 @@ export const MATERIAL_RETURN_LINE_INCLUDE = {
       lot: { select: { lot_no: true } },
       work_order: { select: { work_order_no: true } },
       location: { select: { location_code: true, warehouse_id: true } },
+      putaway_task: { select: { putaway_task_id: true }, orderBy: { putaway_task_id: 'asc' }, take: 1 },
     },
   },
 } as const;
@@ -64,5 +65,7 @@ export function materialReturnLineView(row: MaterialReturnLineRow, unprintedLotI
     destinationLocationCode: row.location?.location_code,
     destinationWarehouseId: row.location === null ? undefined : Number(row.location.warehouse_id),
     labelUnprinted: unprintedLotIds === undefined ? undefined : unprintedLotIds.has(row.lot_id),
+    // 적치 대기로 받은 줄에만 있다 — PDA 「적치·입고 완료」에서 옮길 지시(2026-11-28 사용자 결정).
+    putawayTaskId: row.putaway_task[0] === undefined ? undefined : Number(row.putaway_task[0].putaway_task_id),
   });
 }
